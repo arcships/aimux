@@ -30,4 +30,4 @@ response: SpeechResponse,
 /**
  * Additional provider-specific metadata, keyed by provider name.
  */
-provider_metadata: { [key in string]: JsonValue } | null, };
+provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, };

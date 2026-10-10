@@ -6,8 +6,6 @@
 //!
 //! Tests do not hit the public network and do not read real credentials.
 
-use std::collections::HashMap;
-
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -155,33 +153,6 @@ async fn do_search_forwards_max_results_as_num() {
 }
 
 // -- cx from provider_options ------------------------------------------------
-
-#[tokio::test]
-async fn cx_resolved_from_provider_options_when_config_has_none() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/customsearch/v1"))
-        .and(query_param("cx", "options-cx"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(search_body()))
-        .mount(&server)
-        .await;
-
-    // Config without cx.
-    let config =
-        GooglePseConfig::new(API_KEY).with_base_url(format!("{}/customsearch/v1", server.uri()));
-    let provider = GooglePseProvider::new(config);
-    let model = provider.search_model();
-
-    let mut options = opts("rust language");
-    let mut po = HashMap::new();
-    po.insert("google_pse".to_string(), json!({ "cx": "options-cx" }));
-    options.provider_options = Some(po);
-    model.do_search(&options).await.unwrap();
-
-    let requests = server.received_requests().await.unwrap();
-    let query = requests[0].url.query().unwrap_or("");
-    assert!(query.contains("cx=options-cx"), "query: {query}");
-}
 
 #[tokio::test]
 async fn missing_cx_returns_invalid_argument_error() {

@@ -7,6 +7,7 @@
 //! speak the OpenAI chat-completions wire format (notably Azure OpenAI) reuse
 //! the conversion + streaming logic while supplying their own URL and auth.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -16,7 +17,8 @@ use serde_json::{Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -156,23 +158,21 @@ fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
     let text_tokens = completion_tokens.saturating_sub(reasoning_tokens);
 
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(prompt_tokens),
             no_cache: Some(no_cache),
             cache_read: Some(cached),
             cache_write,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(completion_tokens),
             text: Some(text_tokens),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
         // M10 (RFC-0016): keep the provider's original usage JSON verbatim —
         // vendor-specific fields (e.g. Moonshot `cached_tokens`, DeepSeek
         // `prompt_cache_hit_tokens`) are otherwise lost for audit/billing.
-        raw: usage_raw.cloned(),
+        raw: usage_raw.and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -309,23 +309,22 @@ pub async fn execute_generate(
     if let Some(reasoning) = reasoning_text
         && !reasoning.is_empty()
     {
-        content.push(GenerateContent::Reasoning {
+        content.push(GenerateContent::Reasoning(ReasoningOutput {
             text: reasoning,
             provider_metadata: None,
-        });
+        }));
     }
     if let Some(tool_calls) = choice.message.tool_calls {
         for tc in tool_calls {
             let input = tc.function.arguments;
-            content.push(GenerateContent::ToolCall {
+            content.push(GenerateContent::ToolCall(RawToolCall {
                 tool_call_id: tc.id,
                 tool_name: tc.function.name,
                 input,
                 provider_executed: None,
                 dynamic: None,
-                thought_signature: None,
                 provider_metadata: None,
-            });
+            }));
         }
     }
     // Parse annotations (URL citations) → Source content items.
@@ -334,19 +333,19 @@ pub async fn execute_generate(
             if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation")
                 && let Some(uc) = ann.get("url_citation")
             {
-                content.push(GenerateContent::Source {
+                content.push(GenerateContent::Source(Source::Url {
                     id: format!("annotation-{i}"),
-                    source_type: "url".to_string(),
                     url: uc
                         .get("url")
                         .and_then(|v| v.as_str())
-                        .map(std::string::ToString::to_string),
+                        .unwrap_or_default()
+                        .to_string(),
                     title: uc
                         .get("title")
                         .and_then(|v| v.as_str())
                         .map(std::string::ToString::to_string),
                     provider_metadata: None,
-                });
+                }));
             }
         }
     }
@@ -378,7 +377,8 @@ pub async fn execute_generate(
             pm_openai["rejectedPredictionTokens"] = json!(rpt);
         }
     }
-    let provider_metadata = Some(serde_json::json!({ "openai": pm_openai }));
+    let provider_metadata =
+        Some(provider_namespace("openai", pm_openai).expect("provider metadata must be an object"));
 
     Ok(GenerateResult {
         content,
@@ -386,16 +386,17 @@ pub async fn execute_generate(
         usage,
         warnings: request_result.warnings,
         provider_metadata,
-        response: ResponseMetadata {
+        response: Some(aimux_core::shared::ResponseInfo {
             id: Some(data.id),
             timestamp: data
                 .created
                 .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
                 .map(|dt| dt.to_rfc3339()),
             model_id: Some(data.model),
-        },
-        request_body: Some(body),
-        response_headers: Some(response_headers),
+            headers: Some(response_headers),
+            body: Some(response_value),
+        }),
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
     })
 }
 
@@ -553,14 +554,14 @@ pub async fn execute_stream(
                         && (chunk.id.is_some() || chunk.model.is_some())
                     {
                         response_metadata_emitted = true;
-                        yield Ok(StreamPart::ResponseMetadata {
+                        yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                             id: chunk.id.clone(),
                             timestamp: chunk
                                 .created
                                 .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
                                 .map(|dt| dt.to_rfc3339()),
                             model_id: chunk.model.clone(),
-                        });
+                        }));
                     }
 
                     // Update usage based on profile.stream_usage_key.
@@ -663,19 +664,19 @@ pub async fn execute_stream(
                                     == Some("url_citation")
                                     && let Some(uc) = ann.get("url_citation")
                                 {
-                                    yield Ok(StreamPart::Source {
+                                    yield Ok(StreamPart::Source(Source::Url {
                                         id: format!("annotation-{i}"),
-                                        source_type: "url".to_string(),
                                         url: uc
                                             .get("url")
                                             .and_then(|v| v.as_str())
-                                            .map(std::string::ToString::to_string),
+                                            .unwrap_or_default()
+                                            .to_string(),
                                         title: uc
                                             .get("title")
                                             .and_then(|v| v.as_str())
                                             .map(std::string::ToString::to_string),
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                             }
                         }
@@ -752,7 +753,7 @@ pub async fn execute_stream(
                     pm_openai["rejectedPredictionTokens"] = json!(rpt);
                 }
             }
-        let provider_metadata = serde_json::json!({ "openai": pm_openai });
+        let provider_metadata = provider_namespace("openai", pm_openai).expect("provider metadata must be an object");
 
         // Final part: Finish.
         yield Ok(StreamPart::Finish {
@@ -778,8 +779,10 @@ pub async fn execute_stream(
 
     Ok(StreamResult {
         stream: Box::pin(stream),
-        request_body: Some(body),
-        response_headers: Some(response_headers),
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+        response: Some(aimux_core::shared::StreamResponseInfo {
+            headers: Some(response_headers),
+        }),
     })
 }
 

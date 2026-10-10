@@ -13,6 +13,7 @@
 //! genuinely different streaming loops are **not** force-merged into one
 //! function — only the shared framework is extracted.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 use std::pin::Pin;
 
@@ -21,9 +22,12 @@ use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
-use aimux_core::result::{GenerateContent, GenerateResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
+use aimux_core::types::{
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage, Warning,
+};
 
 use super::convert::{convert_responses_usage, map_responses_finish_reason, parse_usage};
 use super::types::ResponsesUsage;
@@ -139,34 +143,22 @@ pub fn build_responses_generate_result(
                             if !text.is_empty() {
                                 content.push(GenerateContent::Text {
                                     text,
-                                    provider_metadata: Some(json!({
-                                        (provider_key.clone()): {
+                                    provider_metadata: Some(provider_namespace(
+                                        &provider_key,
+                                        json!({
                                             "itemId": part.get("id").cloned().unwrap_or(Value::Null),
-                                        }
-                                    })),
+                                        }),
+                                    ).expect("provider metadata must be an object")),
                                 });
                             }
                         }
-                        // Annotations (url_citation → Source).
                         if let Some(annotations) = cp.get("annotations").and_then(|v| v.as_array())
                         {
-                            for (i, ann) in annotations.iter().enumerate() {
-                                if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation")
-                                {
-                                    content.push(GenerateContent::Source {
-                                        id: format!("annotation-{i}"),
-                                        source_type: "url".to_string(),
-                                        url: ann
-                                            .get("url")
-                                            .and_then(|v| v.as_str())
-                                            .map(std::string::ToString::to_string),
-                                        title: ann
-                                            .get("title")
-                                            .and_then(|v| v.as_str())
-                                            .map(std::string::ToString::to_string),
-                                        provider_metadata: None,
-                                    });
-                                }
+                            for ann in annotations {
+                                content.push(GenerateContent::Source(annotation_source(
+                                    ann,
+                                    &provider_key,
+                                )?));
                             }
                         }
                     }
@@ -190,19 +182,22 @@ pub fn build_responses_generate_result(
                     .unwrap_or("{}")
                     .to_string();
                 let input = arguments;
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: call_id,
                     tool_name: name,
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
-                    provider_metadata: Some(json!({
-                        (provider_key.clone()): {
-                            "itemId": part.get("id").cloned().unwrap_or(Value::Null),
-                        }
-                    })),
-                });
+                    provider_metadata: Some(
+                        provider_namespace(
+                            &provider_key,
+                            json!({
+                                "itemId": part.get("id").cloned().unwrap_or(Value::Null),
+                            }),
+                        )
+                        .expect("provider metadata must be an object"),
+                    ),
+                }));
             }
             Some("custom_tool_call") => {
                 has_function_call = true;
@@ -219,34 +214,38 @@ pub fn build_responses_generate_result(
                 let input_str = part.get("input").and_then(|v| v.as_str()).unwrap_or("{}");
                 let input = serde_json::to_string(input_str)
                     .expect("serializing a custom-tool input string cannot fail");
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: call_id,
                     tool_name: name,
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
-                    provider_metadata: Some(json!({
-                        (provider_key.clone()): {
-                            "itemId": part.get("id").cloned().unwrap_or(Value::Null),
-                        }
-                    })),
-                });
+                    provider_metadata: Some(
+                        provider_namespace(
+                            &provider_key,
+                            json!({
+                                "itemId": part.get("id").cloned().unwrap_or(Value::Null),
+                            }),
+                        )
+                        .expect("provider metadata must be an object"),
+                    ),
+                }));
             }
             Some("reasoning") => {
                 let summary = part.get("summary").and_then(|v| v.as_array());
                 let parts: Vec<&Value> = summary.map(|s| s.iter().collect()).unwrap_or_default();
-                let reasoning_metadata = Some(json!({
-                    (provider_key.clone()): {
+                let reasoning_metadata = Some(provider_namespace(
+                    &provider_key,
+                    json!({
                         "itemId": part.get("id").cloned().unwrap_or(Value::Null),
                         "reasoningEncryptedContent": part.get("encrypted_content").cloned().unwrap_or(Value::Null),
-                    }
-                }));
+                    }),
+                ).expect("provider metadata must be an object"));
                 if parts.is_empty() {
-                    content.push(GenerateContent::Reasoning {
+                    content.push(GenerateContent::Reasoning(ReasoningOutput {
                         text: String::new(),
                         provider_metadata: reasoning_metadata.clone(),
-                    });
+                    }));
                 } else {
                     for sp in parts {
                         let text = sp
@@ -254,12 +253,57 @@ pub fn build_responses_generate_result(
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        content.push(GenerateContent::Reasoning {
+                        content.push(GenerateContent::Reasoning(ReasoningOutput {
                             text,
                             provider_metadata: reasoning_metadata.clone(),
-                        });
+                        }));
                     }
                 }
+            }
+            Some("compaction") => {
+                content.push(GenerateContent::Custom {
+                    kind: "openai.compaction".to_string(),
+                    provider_metadata: Some(
+                        provider_namespace(
+                            &provider_key,
+                            json!({
+                                "type": "compaction", "itemId": part.get("id"),
+                                "encryptedContent": part.get("encrypted_content"),
+                            }),
+                        )
+                        .expect("provider metadata must be an object"),
+                    ),
+                });
+            }
+            Some("mcp_approval_request") => {
+                let tool_call_id = generate_source_id();
+                content.push(GenerateContent::ToolCall(RawToolCall {
+                    tool_call_id: tool_call_id.clone(),
+                    tool_name: format!(
+                        "mcp.{}",
+                        part.get("name").and_then(Value::as_str).unwrap_or("")
+                    ),
+                    input: part
+                        .get("arguments")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    provider_executed: Some(true),
+                    dynamic: Some(true),
+                    provider_metadata: None,
+                }));
+                content.push(GenerateContent::ToolApprovalRequest(
+                    aimux_core::result::RawToolApprovalRequest {
+                        approval_id: part
+                            .get("approval_request_id")
+                            .or_else(|| part.get("id"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        tool_call_id,
+                        provider_metadata: None,
+                    },
+                ));
             }
             _ => {}
         }
@@ -287,7 +331,8 @@ pub fn build_responses_generate_result(
     if let Some(st) = data.get("service_tier").and_then(|v| v.as_str()) {
         pm["serviceTier"] = json!(st);
     }
-    let provider_metadata = Some(json!({ provider_key: pm }));
+    let provider_metadata =
+        Some(provider_namespace(&provider_key, pm).expect("provider metadata must be an object"));
 
     let response_id = data
         .get("id")
@@ -309,13 +354,14 @@ pub fn build_responses_generate_result(
         usage,
         warnings: request_warnings,
         provider_metadata,
-        response: ResponseMetadata {
+        response: Some(aimux_core::shared::ResponseInfo {
             id: response_id,
             timestamp,
             model_id: model,
-        },
-        request_body: Some(body),
-        response_headers: Some(response_headers),
+            headers: Some(response_headers),
+            body: Some(data.clone()),
+        }),
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
     })
 }
 
@@ -349,15 +395,82 @@ fn reasoning_stream_metadata(
     provider_key: &str,
     item_id: &str,
     encrypted_content: Option<&str>,
-) -> Value {
+) -> ProviderMetadata {
     let mut inner = json!({ "itemId": item_id });
     if let Some(enc) = encrypted_content {
         inner["reasoningEncryptedContent"] = json!(enc);
     }
-    json!({ (provider_key): inner })
+    provider_namespace(provider_key, inner).expect("provider metadata must be an object")
 }
 
-/// Generate a unique source ID for streaming annotation sources.
+fn annotation_source(annotation: &Value, provider_key: &str) -> Result<Source, AiMuxError> {
+    let invalid = |field: &str| {
+        AiMuxError::InvalidResponseData(format!("Invalid Responses annotation field: {field}"))
+    };
+    let string = |field| {
+        annotation
+            .get(field)
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid(field))
+    };
+    let number = |field| {
+        annotation
+            .get(field)
+            .filter(|value| value.is_number())
+            .cloned()
+            .ok_or_else(|| invalid(field))
+    };
+    let annotation_type = string("type")?;
+    if annotation_type == "url_citation" {
+        number("start_index")?;
+        number("end_index")?;
+        return Ok(Source::Url {
+            id: generate_source_id(),
+            url: string("url")?.to_string(),
+            title: Some(string("title")?.to_string()),
+            provider_metadata: None,
+        });
+    }
+    let file_id = string("file_id")?;
+    let (media_type, filename, metadata) = match annotation_type {
+        "file_citation" | "file_path" => (
+            if annotation_type == "file_path" {
+                "application/octet-stream"
+            } else {
+                "text/plain"
+            },
+            if annotation_type == "file_path" {
+                file_id
+            } else {
+                string("filename")?
+            },
+            json!({ "type": annotation_type, "fileId": file_id, "index": number("index")? }),
+        ),
+        "container_file_citation" => {
+            number("start_index")?;
+            number("end_index")?;
+            (
+                "text/plain",
+                string("filename")?,
+                json!({
+                    "type": annotation_type,
+                    "fileId": file_id,
+                    "containerId": string("container_id")?,
+                }),
+            )
+        }
+        _ => return Err(invalid("type")),
+    };
+    Ok(Source::Document {
+        id: generate_source_id(),
+        media_type: media_type.to_string(),
+        title: filename.to_string(),
+        filename: Some(filename.to_string()),
+        provider_metadata: Some(provider_namespace(provider_key, metadata)?),
+    })
+}
+
+/// Generate a unique source ID for annotation sources.
 ///
 /// Uses a process-wide atomic counter — consistent with the xAI Responses
 /// provider (`aimux-providers/src/xai/responses/mod.rs`). Upstream TS uses
@@ -497,11 +610,11 @@ where
                                         chrono::DateTime::from_timestamp(secs as i64, 0)
                                     })
                                     .map(|dt| dt.to_rfc3339());
-                                yield Ok(StreamPart::ResponseMetadata {
+                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                     id: response_id.clone(),
                                     timestamp,
                                     model_id,
-                                });
+                                }));
                             }
                         }
 
@@ -517,6 +630,8 @@ where
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("");
                                 match item_type {
+
+
                                     "message" => {
                                         let id = item
                                             .get("id")
@@ -763,6 +878,30 @@ where
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("");
                                 match item_type {
+                                    "mcp_approval_request" => {
+                                        let tool_call_id = generate_source_id();
+                                        yield Ok(StreamPart::ToolCall(RawToolCall {
+                                            tool_call_id: tool_call_id.clone(),
+                                            tool_name: format!("mcp.{}", item.get("name").and_then(Value::as_str).unwrap_or("")),
+                                            input: item.get("arguments").and_then(Value::as_str).unwrap_or("").to_string(),
+                                            provider_executed: Some(true), dynamic: Some(true),
+                                            provider_metadata: None,
+                                        }));
+                                        yield Ok(StreamPart::ToolApprovalRequest(aimux_core::result::RawToolApprovalRequest {
+                                            approval_id: item.get("approval_request_id").or_else(|| item.get("id")).and_then(Value::as_str).unwrap_or("").to_string(),
+                                            tool_call_id, provider_metadata: None,
+                                        }));
+                                    }
+                                    "compaction" => {
+                                        yield Ok(StreamPart::Custom {
+                                            kind: "openai.compaction".to_string(),
+                                            provider_metadata: Some(provider_namespace(&provider_key, json!({
+                                                "type": "compaction", "itemId": item.get("id"),
+                                                "encryptedContent": item.get("encrypted_content"),
+                                            })).expect("provider metadata must be an object")),
+                                        });
+                                    }
+
                                     "message" => {
                                         let id = item
                                             .get("id")
@@ -793,18 +932,15 @@ where
                                             id: call_id.clone(),
                                             provider_metadata: None,
                                         });
-                                        let input = Value::String(arguments);
-                                        yield Ok(StreamPart::ToolCall {
+                                        let input = arguments;
+                                        yield Ok(StreamPart::ToolCall(RawToolCall {
                                             tool_call_id: call_id,
                                             tool_name: name,
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
-                                            thought_signature: None,
-                                            invalid: None,
-                                            error: None,
                                             provider_metadata: None,
-                                        });
+                                        }));
                                     }
                                     "custom_tool_call" => {
                                         has_function_call = true;
@@ -827,22 +963,18 @@ where
                                             id: call_id.clone(),
                                             provider_metadata: None,
                                         });
-                                        let input = Value::String(
+                                        let input =
                                             serde_json::to_string(input_str).expect(
                                                 "serializing a custom-tool input string cannot fail",
-                                            ),
-                                        );
-                                        yield Ok(StreamPart::ToolCall {
+                                            );
+                                        yield Ok(StreamPart::ToolCall(RawToolCall {
                                             tool_call_id: call_id,
                                             tool_name: name,
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
-                                            thought_signature: None,
-                                            invalid: None,
-                                            error: None,
                                             provider_metadata: None,
-                                        });
+                                        }));
                                     }
                                     "reasoning" => {
                                         let id = item
@@ -885,23 +1017,15 @@ where
 
                         // ── response.output_text.annotation.added → Source ─────────
                         "response.output_text.annotation.added" => {
-                            if let Some(ann) = parsed.get("annotation")
-                                && ann.get("type").and_then(|v| v.as_str())
-                                    == Some("url_citation")
-                            {
-                                yield Ok(StreamPart::Source {
-                                    id: generate_source_id(),
-                                    source_type: "url".to_string(),
-                                    url: ann
-                                        .get("url")
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string),
-                                    title: ann
-                                        .get("title")
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string),
-                                    provider_metadata: None,
-                                });
+                            match annotation_source(
+                                parsed.get("annotation").unwrap_or(&Value::Null),
+                                &provider_key,
+                            ) {
+                                Ok(source) => yield Ok(StreamPart::Source(source)),
+                                Err(error) => {
+                                    stream_errored = true;
+                                    yield Ok(StreamPart::Error { error });
+                                }
                             }
                         }
 
@@ -1056,7 +1180,7 @@ where
         if let Some(ctx) = final_reasoning_context {
             pm["reasoningContext"] = ctx;
         }
-        let provider_metadata = Some(json!({ provider_key: pm }));
+        let provider_metadata = Some(provider_namespace(&provider_key, pm).expect("provider metadata must be an object"));
 
         yield Ok(StreamPart::Finish {
             finish_reason: if stream_errored {

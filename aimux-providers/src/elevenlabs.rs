@@ -457,8 +457,7 @@ struct ElevenLabsPronunciationLocator {
 fn parse_elevenlabs_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Option<ElevenLabsSpeechProviderOptions> {
-    let provider_opts = options.and_then(|opts| opts.get("elevenlabs"))?;
-    let opts = provider_opts.as_object()?;
+    let opts = options.and_then(|opts| opts.get("elevenlabs"))?;
 
     let voice_settings = opts
         .get("voiceSettings")

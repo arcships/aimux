@@ -19,6 +19,7 @@ use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
+use aimux_core::shared::SharedProviderOptions;
 use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
 
 /// Fixed model ID for the Linkup search model.
@@ -34,7 +35,7 @@ struct LinkupOptions {
     output_type: Option<String>,
 }
 
-fn parse_linkup_options(provider_options: Option<&HashMap<String, Value>>) -> LinkupOptions {
+fn parse_linkup_options(provider_options: Option<&SharedProviderOptions>) -> LinkupOptions {
     let mut opts = LinkupOptions::default();
     if let Some(po) = provider_options
         && let Some(linkup) = po.get("linkup")

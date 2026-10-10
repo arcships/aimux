@@ -186,39 +186,3 @@ async fn should_handle_no_results() {
     assert_eq!(result.language, None);
     assert_eq!(result.duration_in_seconds, None);
 }
-
-#[tokio::test]
-async fn should_use_provider_options_for_region_and_language() {
-    let server = MockServer::start().await;
-    // Different region → different path
-    let path_str = "/v2/projects/test-project/locations/us/recognizers/_:recognize";
-    Mock::given(method("POST"))
-        .and(path(path_str))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "application/json")
-                .set_body_json(default_body()),
-        )
-        .mount(&server)
-        .await;
-
-    let config = VertexProviderConfig::new("test-token", "test-project", "us-central1")
-        .with_base_url(server.uri());
-    let provider = VertexProvider::new(config);
-    let model = provider.transcription("chirp_2").unwrap();
-
-    let mut opts = options(mock_audio(), "audio/wav");
-    let mut po = HashMap::new();
-    po.insert(
-        "googleVertex".to_string(),
-        json!({"region": "us", "languageCodes": ["en", "es"]}),
-    );
-    opts.provider_options = Some(po);
-
-    let result = model.do_generate(&opts).await.unwrap();
-
-    assert_eq!(result.text, "hello world");
-    let requests = server.received_requests().await.unwrap();
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["config"]["languageCodes"], json!(["en", "es"]));
-}

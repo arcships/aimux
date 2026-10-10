@@ -137,7 +137,10 @@ async fn should_forward_provider_options() {
     opts.n = 1;
     opts.provider_options.insert(
         "fal".into(),
-        json!({ "numInferenceSteps": 30, "guidanceScale": 7.5, "outputFormat": "png" }),
+        serde_json::from_value(
+            json!({ "numInferenceSteps": 30, "guidanceScale": 7.5, "outputFormat": "png" }),
+        )
+        .unwrap(),
     );
     model.do_generate(&opts).await.unwrap();
     let reqs = server.received_requests().await.unwrap();

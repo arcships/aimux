@@ -6,11 +6,13 @@
 //! - `map-xai-responses-finish-reason.ts`
 //! - `xai-responses-prepare-tools.ts`
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model_message::LanguageModelPrompt;
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort, Warning};
 
@@ -64,21 +66,21 @@ pub fn convert_xai_responses_usage(usage: &XaiResponsesUsage) -> aimux_core::typ
     };
 
     aimux_core::types::Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input_total as u32),
             no_cache: Some(input_no_cache as u32),
             cache_read: Some(cache_read as u32),
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(usage.output_tokens as u32),
             text: Some((usage.output_tokens - reasoning) as u32),
             reasoning: Some(reasoning as u32),
-            ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -271,10 +273,7 @@ fn prepare_provider_tool(
 
 // ── Provider options helpers ─────────────────────────────────────────────────
 
-fn xai_option(
-    options: &Option<std::collections::HashMap<String, Value>>,
-    key: &str,
-) -> Option<Value> {
+fn xai_option(options: &Option<SharedProviderOptions>, key: &str) -> Option<Value> {
     options
         .as_ref()
         .and_then(|m| m.get("xai"))
@@ -297,114 +296,85 @@ pub fn convert_to_xai_responses_input(
     let mut warnings: Vec<Warning> = Vec::new();
 
     for msg in prompt {
-        match msg.role {
-            Role::System => {
-                let content: String = msg
-                    .content
-                    .iter()
-                    .filter_map(|p| match p {
-                        ContentPart::Text { text, .. } => Some(text.as_str()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("");
+        match msg {
+            LanguageModelMessage::System { content, .. } => {
                 input.push(json!({ "role": "system", "content": content }));
             }
-            Role::User => {
+            LanguageModelMessage::User { content, .. } => {
                 let mut content_parts = Vec::new();
-                for part in &msg.content {
+                for part in content {
                     match part {
-                        ContentPart::Text { text, .. } => {
+                        UserPart::Text(TextPart { text, .. }) => {
                             content_parts.push(json!({ "type": "input_text", "text": text }));
                         }
-                        ContentPart::Image {
-                            image,
-                            media_type,
-                            provider_options,
-                        } => {
-                            use base64::Engine;
-                            let b64 = base64::engine::general_purpose::STANDARD.encode(image);
-                            content_parts.push(convert_image_part(
-                                media_type,
-                                Some(&b64),
-                                None,
-                                provider_options,
-                            ));
-                        }
-                        ContentPart::File {
-                            data,
-                            media_type,
-                            provider_options,
-                            ..
-                        } => {
-                            use base64::Engine;
-                            let b64 = base64::engine::general_purpose::STANDARD.encode(data);
-                            content_parts.push(convert_image_part(
-                                media_type,
-                                Some(&b64),
-                                None,
-                                provider_options,
-                            ));
-                        }
-                        ContentPart::FileBase64 {
-                            data,
-                            media_type,
-                            provider_options,
-                            ..
-                        } => {
-                            content_parts.push(convert_image_part(
-                                media_type,
-                                Some(data),
-                                None,
-                                provider_options,
-                            ));
-                        }
-                        ContentPart::FileUrl {
-                            url,
-                            media_type,
-                            provider_options,
-                        } => {
-                            let top_level = media_type.split('/').next().unwrap_or("");
-                            if top_level == "image" {
-                                content_parts.push(convert_image_part(
-                                    media_type,
-                                    None,
-                                    Some(url),
-                                    provider_options,
-                                ));
-                            } else {
-                                content_parts
-                                    .push(json!({ "type": "input_file", "file_url": url }));
+                        UserPart::File(file) => {
+                            if matches!(file.data, FileData::Data { .. })
+                                && file.media_type.split('/').next() != Some("image")
+                            {
+                                return Err(AiMuxError::UnsupportedFunctionality(format!(
+                                    "file part media type {} as inline data (xAI Responses requires a URL or a Files API reference for non-image files)",
+                                    file.media_type
+                                )));
                             }
-                        }
-                        ContentPart::FileReference {
-                            media_type,
-                            reference,
-                            provider_options,
-                            ..
-                        } => {
-                            let _ = (media_type, provider_options);
-                            let file_id = resolve_provider_reference(reference, "xai")
-                                .map_err(AiMuxError::InvalidArgument)?;
-                            content_parts.push(json!({ "type": "input_file", "file_id": file_id }));
-                        }
-                        _ => {
-                            warnings.push(Warning::Other {
-                                message: "xAI Responses API does not support this content type in user messages".to_string(),
+                            content_parts.push(match &file.data {
+                                FileData::Data {
+                                    data: FileBytes::Binary(bytes),
+                                } => {
+                                    use base64::Engine;
+                                    let b64 =
+                                        base64::engine::general_purpose::STANDARD.encode(bytes);
+                                    convert_image_part(
+                                        &file.media_type,
+                                        Some(&b64),
+                                        None,
+                                        &file.provider_options,
+                                    )
+                                }
+                                FileData::Data {
+                                    data: FileBytes::Base64(data),
+                                } => convert_image_part(
+                                    &file.media_type,
+                                    Some(data),
+                                    None,
+                                    &file.provider_options,
+                                ),
+                                FileData::Url { url, .. }
+                                    if file.media_type.split('/').next() == Some("image") =>
+                                {
+                                    convert_image_part(
+                                        &file.media_type,
+                                        None,
+                                        Some(url),
+                                        &file.provider_options,
+                                    )
+                                }
+                                FileData::Url { url, .. } => {
+                                    json!({ "type": "input_file", "file_url": url })
+                                }
+                                FileData::Reference { reference } => {
+                                    let file_id = resolve_provider_reference(reference, "xai")
+                                        .map_err(AiMuxError::InvalidArgument)?;
+                                    json!({ "type": "input_file", "file_id": file_id })
+                                }
+                                FileData::Text { .. } => {
+                                    return Err(AiMuxError::UnsupportedFunctionality(
+                                        "text file parts".into(),
+                                    ));
+                                }
                             });
                         }
                     }
                 }
                 input.push(json!({ "role": "user", "content": content_parts }));
             }
-            Role::Assistant => {
-                for part in &msg.content {
+            LanguageModelMessage::Assistant { content, .. } => {
+                for part in content {
                     match part {
-                        ContentPart::Text {
+                        AssistantPart::Text(TextPart {
                             text,
                             provider_options,
                             ..
-                        } => {
+                        }) => {
                             let id = provider_options
                                 .as_ref()
                                 .and_then(|po| po.get("xai"))
@@ -417,14 +387,14 @@ pub fn convert_to_xai_responses_input(
                             }
                             input.push(msg_obj);
                         }
-                        ContentPart::ToolCall {
+                        AssistantPart::ToolCall(ToolCallPart {
                             tool_call_id,
                             tool_name,
                             input: tool_input,
                             provider_executed,
                             provider_options,
                             ..
-                        } => {
+                        }) => {
                             // Skip provider-executed tool calls.
                             // The standardized field is authoritative. Fall back
                             // to the legacy provider option only when it is absent.
@@ -446,11 +416,7 @@ pub fn convert_to_xai_responses_input(
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
                             let item_id = id.unwrap_or_else(|| tool_call_id.clone());
-                            let arguments = if tool_input.is_null() {
-                                "{}".to_string()
-                            } else {
-                                tool_input.to_string()
-                            };
+                            let arguments = tool_input.to_string();
                             input.push(json!({
                                 "type": "function_call",
                                 "id": item_id,
@@ -460,12 +426,12 @@ pub fn convert_to_xai_responses_input(
                                 "status": "completed"
                             }));
                         }
-                        ContentPart::ToolResult { .. } => {}
-                        ContentPart::Reasoning {
+                        AssistantPart::ToolResult(_) => {}
+                        AssistantPart::Reasoning(ReasoningPart {
                             text,
                             provider_options,
                             ..
-                        } => {
+                        }) => {
                             let item_id = provider_options
                                 .as_ref()
                                 .and_then(|po| po.get("xai"))
@@ -508,24 +474,22 @@ pub fn convert_to_xai_responses_input(
                     }
                 }
             }
-            Role::Tool => {
-                for part in &msg.content {
-                    if let ContentPart::ToolResult {
+            LanguageModelMessage::Tool { content, .. } => {
+                for part in content {
+                    let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
-                        result,
+                        output,
                         ..
-                    } = part
-                    {
-                        let output_value = match result {
-                            Value::String(s) => s.clone(),
-                            other => other.to_string(),
-                        };
-                        input.push(json!({
-                            "type": "function_call_output",
-                            "call_id": tool_call_id,
-                            "output": output_value
-                        }));
-                    }
+                    }) = part
+                    else {
+                        continue;
+                    };
+                    let output_value = convert_tool_result_output(output);
+                    input.push(json!({
+                        "type": "function_call_output",
+                        "call_id": tool_call_id,
+                        "output": output_value
+                    }));
                 }
             }
         }
@@ -534,11 +498,55 @@ pub fn convert_to_xai_responses_input(
     Ok((input, warnings))
 }
 
+fn convert_tool_result_output(output: &ToolResultOutput) -> Value {
+    match output {
+        ToolResultOutput::ExecutionDenied { reason, .. } => {
+            json!(reason.as_deref().unwrap_or("tool execution denied"))
+        }
+        ToolResultOutput::Content { value } => {
+            let mut parts = Vec::new();
+            for item in value {
+                match item {
+                    ToolResultContent::Text(part) => {
+                        parts.push(json!({"type":"input_text", "text":part.text}))
+                    }
+                    ToolResultContent::File(part)
+                        if part.media_type.split('/').next() == Some("image") =>
+                    {
+                        let url = match &part.data {
+                            FileData::Url { url, .. } => url.clone(),
+                            FileData::Data { data } => {
+                                use base64::Engine;
+                                let b64 = match data {
+                                    FileBytes::Binary(bytes) => {
+                                        base64::engine::general_purpose::STANDARD.encode(bytes)
+                                    }
+                                    FileBytes::Base64(data) => data.clone(),
+                                };
+                                format!(
+                                    "data:{};base64,{}",
+                                    resolve_full_media_type(&part.media_type, &b64),
+                                    b64
+                                )
+                            }
+                            _ => continue,
+                        };
+                        parts.push(json!({"type":"input_image", "image_url":url}));
+                    }
+                    _ => {}
+                }
+            }
+            json!(parts)
+        }
+        _ => crate::openai::convert::tool_result_to_content(output),
+    }
+}
+
 fn convert_image_part(
     media_type: &str,
     b64_data: Option<&str>,
     url: Option<&str>,
-    provider_options: &Option<Value>,
+    provider_options: &Option<SharedProviderOptions>,
 ) -> Value {
     let image_url = if let Some(url_str) = url {
         url_str.to_string()
@@ -587,7 +595,61 @@ pub fn build_responses_request_body(
     stream: bool,
 ) -> Result<ResponsesRequestBodyResult, AiMuxError> {
     let mut warnings: Vec<Warning> = Vec::new();
-    let xai_opts = &options.provider_options;
+    let parsed_options = options
+        .provider_options
+        .as_ref()
+        .map(|namespaces| {
+            let mut namespaces = namespaces.clone();
+            if let Some(raw) = namespaces.get("xai") {
+                let parsed =
+                    crate::openai::convert::parse_option_fields(raw, "xai", |key, value| {
+                        let valid = match key {
+                            "reasoningEffort" => value.as_str().is_some_and(|s| {
+                                matches!(s, "none" | "low" | "medium" | "high" | "xhigh")
+                            }),
+                            "reasoningSummary" => value
+                                .as_str()
+                                .is_some_and(|s| matches!(s, "auto" | "concise" | "detailed")),
+                            "logprobs" | "parallelToolCalls" | "store" => value.is_boolean(),
+                            "topLogprobs" => value
+                                .as_f64()
+                                .is_some_and(|n| n.fract() == 0.0 && (0.0..=8.0).contains(&n)),
+                            "minP" => value.as_f64().is_some_and(|n| (0.0..=1.0).contains(&n)),
+                            "maxTurns" => value.as_f64().is_some_and(|n| {
+                                n.fract() == 0.0 && n.abs() <= 9_007_199_254_740_991.0
+                            }),
+                            "promptCacheKey" | "safetyIdentifier" | "previousResponseId"
+                            | "user" => value.is_string(),
+                            "serviceTier" => value
+                                .as_str()
+                                .is_some_and(|s| matches!(s, "default" | "priority")),
+                            "include" => {
+                                value.is_null()
+                                    || value.as_array().is_some_and(|items| {
+                                        items.iter().all(|item| {
+                                            item.as_str().is_some_and(|s| {
+                                                matches!(
+                                                    s,
+                                                    "file_search_call.results"
+                                                        | "web_search_call.action.sources"
+                                                        | "code_interpreter_call.outputs"
+                                                        | "reasoning.encrypted_content"
+                                                        | "no_inline_citations"
+                                                )
+                                            })
+                                        })
+                                    })
+                            }
+                            _ => return None,
+                        };
+                        Some(if valid { Ok(value.clone()) } else { Err(()) })
+                    })?;
+                namespaces.insert("xai".to_string(), parsed);
+            }
+            Ok::<_, AiMuxError>(namespaces)
+        })
+        .transpose()?;
+    let xai_opts = &parsed_options;
 
     if options.stop_sequences.is_some() {
         warnings.push(Warning::Unsupported {
@@ -599,7 +661,7 @@ pub fn build_responses_request_body(
     let (input, input_warnings) = convert_to_xai_responses_input(&options.prompt)?;
     warnings.extend(input_warnings);
 
-    let prepared = prepare_responses_tools(&options.tools, Some(&options.tool_choice));
+    let prepared = prepare_responses_tools(&options.tools, options.tool_choice.as_ref());
     for tw in &prepared.tool_warnings {
         warnings.push(tw.clone());
     }

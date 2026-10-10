@@ -6,6 +6,8 @@
 // pyo3 0.22 macros generate unsafe-op-in-unsafe-fn calls that trigger
 // edition-2024 lint. Suppress until pyo3 0.23+ lands.
 #![allow(unsafe_op_in_unsafe_fn)]
+// PyO3 0.22 wraps PyResult returns in an identity conversion.
+#![allow(clippy::useless_conversion)]
 
 mod decision;
 mod error;
@@ -243,7 +245,7 @@ impl Model {
                                 // deliver it as a StreamPart::Error data item and keep
                                 // pumping.
                                 match serde_json::to_string(
-                                    &aimux_core::stream_part::StreamPart::Error { error: e },
+                                    &aimux_core::stream_part::TextStreamPart::Error { error: e },
                                 ) {
                                     Ok(json) => {
                                         if tx.send(Ok(json)).await.is_err() {
@@ -410,7 +412,7 @@ impl StreamIterator {
         let item = py.allow_threads(|| runtime().block_on(self.rx.recv()));
 
         match item {
-            Some(Ok(json)) => Ok(Some(json.to_object(py).into())),
+            Some(Ok(json)) => Ok(Some(json.to_object(py))),
             Some(Err(f)) => Err(f.to_py_err()),
             None => Ok(None), // stream finished
         }
@@ -663,10 +665,10 @@ fn azure(
     if let Some(url) = base_url {
         config = config.with_base_url(url);
     }
-    if let Some(version) = api_version {
-        if !version.is_empty() {
-            config = config.with_api_version(version);
-        }
+    if let Some(version) = api_version
+        && !version.is_empty()
+    {
+        config = config.with_api_version(version);
     }
     if !resource_name.is_empty() {
         config = config.with_resource_name(resource_name);
@@ -775,6 +777,7 @@ fn create_provider(
 /// string (serialized `Catalogue`). `source_url` defaults to the anya2a
 /// `dist/all.json`.
 #[pyfunction]
+#[pyo3(signature = (source_url=None))]
 fn get_model_specs(source_url: Option<&str>) -> PyResult<String> {
     let catalogue = runtime()
         .block_on(async { aimux_providers::get_model_specs(source_url).await })

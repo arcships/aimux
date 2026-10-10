@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
+use crate::shared::SharedProviderOptions;
+
 /// A part of a multi-part message.
 ///
 /// Shared between `ModelMessage` (user-facing) and `LanguageModelPrompt` (provider-facing).
@@ -16,7 +18,36 @@ pub enum ContentPart {
         text: String,
         /// Provider-specific options for this part (e.g. `openai.promptCacheBreakpoint`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
+    },
+
+    /// Provider-specific custom content.
+    Custom {
+        kind: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+
+    /// A file generated during reasoning.
+    ReasoningFile {
+        data: crate::shared::GeneratedFileData,
+        media_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+
+    /// A request to approve a tool call on a later turn.
+    ToolApprovalRequest {
+        approval_id: String,
+        tool_call_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        is_automatic: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        input_schema_input: Option<Value>,
     },
 
     /// An image (raw bytes + MIME type).
@@ -24,7 +55,7 @@ pub enum ContentPart {
         image: Vec<u8>,
         media_type: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// A file (raw bytes + MIME type).
@@ -34,7 +65,7 @@ pub enum ContentPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// A file whose inline data is an already-base64-encoded string.
@@ -49,7 +80,7 @@ pub enum ContentPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// A file referenced by URL.
@@ -59,7 +90,7 @@ pub enum ContentPart {
         url: String,
         media_type: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// A file referenced by a provider-specific reference (e.g. an OpenAI file ID).
@@ -73,7 +104,7 @@ pub enum ContentPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// A reasoning / thinking segment produced by the model.
@@ -90,7 +121,7 @@ pub enum ContentPart {
         /// `anthropic.signature`, `anthropic.redactedData`,
         /// `anthropic.cacheControl`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// A tool call requested by the model.
@@ -104,15 +135,10 @@ pub enum ContentPart {
         /// need it to replay server tool calls on a later turn.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_executed: Option<bool>,
-        /// Provider-assigned thought signature (e.g. Google Gemini
-        /// `thoughtSignature`). Must be echoed back verbatim on the follow-up
-        /// turn when the tool result is sent.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        thought_signature: Option<String>,
         /// Provider-specific options for this part (e.g.
         /// `anthropic.cacheControl`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 
     /// The result of executing a tool call.
@@ -143,7 +169,7 @@ pub enum ContentPart {
         /// Provider-specific options for this part (e.g.
         /// `anthropic.cacheControl`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<Value>,
+        provider_options: Option<SharedProviderOptions>,
     },
 }
 
@@ -167,7 +193,6 @@ impl ContentPart {
             tool_name: tool_name.into(),
             input,
             provider_executed: None,
-            thought_signature: None,
             provider_options: None,
         }
     }

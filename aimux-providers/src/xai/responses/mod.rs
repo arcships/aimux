@@ -15,6 +15,8 @@
 pub mod convert;
 pub mod types;
 
+use aimux_core::tool::RawToolCall;
+use aimux_core::tool::ToolResult;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -25,7 +27,8 @@ use serde_json::{Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -118,7 +121,7 @@ impl LanguageModel for XaiResponsesModel {
 
         let response_headers = resp.response_headers;
 
-        let _raw_value = resp.raw_value.unwrap_or(Value::Null);
+        let response_value = resp.raw_value.unwrap_or(Value::Null);
         let data = resp.value;
 
         let mut content: Vec<GenerateContent> = Vec::new();
@@ -132,15 +135,14 @@ impl LanguageModel for XaiResponsesModel {
                 let tool_name = resolve_tool_name(part_type, None, &provider_tool_names);
                 let part_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: part_id.to_string(),
                     tool_name: tool_name.clone(),
                     input: String::new(),
                     provider_executed: Some(true),
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
 
                 let queries = part
                     .get("queries")
@@ -160,7 +162,7 @@ impl LanguageModel for XaiResponsesModel {
                         })
                         .unwrap_or(Value::Null);
 
-                content.push(GenerateContent::ToolResult {
+                content.push(GenerateContent::ToolResult(ToolResult {
                     tool_call_id: part_id.to_string(),
                     tool_name,
                     result: json!({ "queries": queries, "results": results }),
@@ -168,7 +170,7 @@ impl LanguageModel for XaiResponsesModel {
                     preliminary: None,
                     dynamic: None,
                     provider_metadata: None,
-                });
+                }));
                 continue;
             }
 
@@ -189,15 +191,14 @@ impl LanguageModel for XaiResponsesModel {
                 let tool_input = get_tool_input(part_type, part);
                 let part_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
 
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: part_id.to_string(),
                     tool_name,
                     input: tool_input,
                     provider_executed: Some(true),
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
                 continue;
             }
 
@@ -228,13 +229,12 @@ impl LanguageModel for XaiResponsesModel {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or(url)
                                         .to_string();
-                                    content.push(GenerateContent::Source {
+                                    content.push(GenerateContent::Source(Source::Url {
                                         id: generate_source_id(),
-                                        source_type: "url".to_string(),
-                                        url: Some(url.to_string()),
+                                        url: url.to_string(),
                                         title: Some(title),
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                             }
                         }
@@ -246,15 +246,14 @@ impl LanguageModel for XaiResponsesModel {
                     let name = part.get("name").and_then(|v| v.as_str()).unwrap_or("");
                     let arguments = part.get("arguments").and_then(|v| v.as_str()).unwrap_or("");
                     let input = arguments.to_string();
-                    content.push(GenerateContent::ToolCall {
+                    content.push(GenerateContent::ToolCall(RawToolCall {
                         tool_call_id: call_id.to_string(),
                         tool_name: name.to_string(),
                         input,
                         provider_executed: None,
                         dynamic: None,
-                        thought_signature: None,
                         provider_metadata: None,
-                    });
+                    }));
                 }
                 "reasoning" => {
                     let summary = part.get("summary").and_then(|v| v.as_array());
@@ -301,10 +300,13 @@ impl LanguageModel for XaiResponsesModel {
                         if let Some(id) = item_id {
                             meta["itemId"] = json!(id);
                         }
-                        content.push(GenerateContent::Reasoning {
+                        content.push(GenerateContent::Reasoning(ReasoningOutput {
                             text: reasoning_text,
-                            provider_metadata: Some(json!({ "xai": meta })),
-                        });
+                            provider_metadata: Some(
+                                provider_namespace("xai", meta)
+                                    .expect("provider metadata must be an object"),
+                            ),
+                        }));
                     }
                 }
                 _ => {}
@@ -325,9 +327,10 @@ impl LanguageModel for XaiResponsesModel {
 
         let (usage, provider_metadata) = if let Some(u) = &data.usage {
             let meta = if u.cost_in_usd_ticks.is_some() {
-                Some(json!({
-                    "xai": { "costInUsdTicks": u.cost_in_usd_ticks }
-                }))
+                Some(
+                    provider_namespace("xai", json!({ "costInUsdTicks": u.cost_in_usd_ticks }))
+                        .expect("provider metadata must be an object"),
+                )
             } else {
                 None
             };
@@ -346,13 +349,14 @@ impl LanguageModel for XaiResponsesModel {
             usage,
             warnings: request_result.warnings,
             provider_metadata,
-            response: ResponseMetadata {
+            response: Some(aimux_core::shared::ResponseInfo {
                 id: data.id,
                 timestamp,
                 model_id: data.model,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+                headers: Some(response_headers),
+                body: Some(response_value),
+            }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
@@ -431,7 +435,7 @@ impl LanguageModel for XaiResponsesModel {
                                 let timestamp = created_at.and_then(|c| {
                                     chrono::DateTime::from_timestamp(c as i64, 0).map(|dt| dt.to_rfc3339())
                                 });
-                                yield Ok(StreamPart::ResponseMetadata { id, timestamp, model_id: model });
+                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata { id, timestamp, model_id: model }));
                             }
                             continue;
                         }
@@ -444,7 +448,7 @@ impl LanguageModel for XaiResponsesModel {
                                 active_reasoning.insert(item_id.to_string(), ());
                                 yield Ok(StreamPart::ReasoningStart {
                                     id: block_id,
-                                    provider_metadata: Some(json!({ "xai": { "itemId": item_id } })),
+                                    provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
                                 });
                             }
                             continue;
@@ -458,7 +462,7 @@ impl LanguageModel for XaiResponsesModel {
                             yield Ok(StreamPart::ReasoningDelta {
                                 id: block_id,
                                 delta: delta.to_string(),
-                                provider_metadata: Some(json!({ "xai": { "itemId": item_id } })),
+                                provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
                             });
                             continue;
                         }
@@ -477,13 +481,13 @@ impl LanguageModel for XaiResponsesModel {
                                 active_reasoning.insert(item_id.to_string(), ());
                                 yield Ok(StreamPart::ReasoningStart {
                                     id: block_id.clone(),
-                                    provider_metadata: Some(json!({ "xai": { "itemId": item_id } })),
+                                    provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
                                 });
                             }
                             yield Ok(StreamPart::ReasoningDelta {
                                 id: block_id,
                                 delta: delta.to_string(),
-                                provider_metadata: Some(json!({ "xai": { "itemId": item_id } })),
+                                provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
                             });
                             continue;
                         }
@@ -517,13 +521,12 @@ impl LanguageModel for XaiResponsesModel {
                                     if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation") {
                                         let url = ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
                                         let title = ann.get("title").and_then(|v| v.as_str()).unwrap_or(url).to_string();
-                                        yield Ok(StreamPart::Source {
+                                        yield Ok(StreamPart::Source(Source::Url {
                                             id: generate_source_id(),
-                                            source_type: "url".to_string(),
-                                            url: Some(url.to_string()),
+                                            url: url.to_string(),
                                             title: Some(title),
                                             provider_metadata: None,
-                                        });
+                                        }));
                                     }
                                 }
                             }
@@ -536,13 +539,12 @@ impl LanguageModel for XaiResponsesModel {
                             if annotation.get("type").and_then(|v| v.as_str()) == Some("url_citation") {
                                 let url = annotation.get("url").and_then(|v| v.as_str()).unwrap_or("");
                                 let title = annotation.get("title").and_then(|v| v.as_str()).unwrap_or(url).to_string();
-                                yield Ok(StreamPart::Source {
+                                yield Ok(StreamPart::Source(Source::Url {
                                     id: generate_source_id(),
-                                    source_type: "url".to_string(),
-                                    url: Some(url.to_string()),
+                                    url: url.to_string(),
                                     title: Some(title),
                                     provider_metadata: None,
-                                });
+                                }));
                             }
                             continue;
                         }
@@ -668,7 +670,7 @@ impl LanguageModel for XaiResponsesModel {
                                         active_reasoning.insert(part_id.to_string(), ());
                                         yield Ok(StreamPart::ReasoningStart {
                                             id: block_id.clone(),
-                                            provider_metadata: Some(json!({ "xai": { "itemId": part_id } })),
+                                            provider_metadata: Some(provider_namespace("xai", json!({ "itemId": part_id })).expect("provider metadata must be an object")),
                                         });
                                     }
 
@@ -678,7 +680,7 @@ impl LanguageModel for XaiResponsesModel {
                                     }
                                     yield Ok(StreamPart::ReasoningEnd {
                                         id: block_id,
-                                        provider_metadata: Some(json!({ "xai": meta })),
+                                        provider_metadata: Some(provider_namespace("xai", meta).expect("provider metadata must be an object")),
                                     });
                                     active_reasoning.remove(part_id);
                                 }
@@ -709,17 +711,14 @@ impl LanguageModel for XaiResponsesModel {
                                         id: part_id.to_string(),
                                         provider_metadata: None,
                                     });
-                                    yield Ok(StreamPart::ToolCall {
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
-                                        input: Value::String(String::new()),
+                                        input: String::new(),
                                         provider_executed: Some(true),
                                         dynamic: None,
-                                        thought_signature: None,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
 
                                 if event_type == "response.output_item.done" {
@@ -732,7 +731,7 @@ impl LanguageModel for XaiResponsesModel {
                                             "text": r.get("text").cloned().unwrap_or(Value::Null),
                                         })).collect::<Vec<_>>())
                                     }).unwrap_or(Value::Null);
-                                    yield Ok(StreamPart::ToolResult {
+                                    yield Ok(StreamPart::ToolResult(ToolResult {
                                         tool_call_id: part_id.to_string(),
                                         tool_name,
                                         result: json!({ "queries": queries, "results": results }),
@@ -740,7 +739,7 @@ impl LanguageModel for XaiResponsesModel {
                                         preliminary: None,
                                         dynamic: None,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                                 continue;
                             }
@@ -782,21 +781,18 @@ impl LanguageModel for XaiResponsesModel {
                                         id: part_id.to_string(),
                                         provider_metadata: None,
                                     });
-                                    yield Ok(StreamPart::ToolCall {
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
-                                        input: Value::String(tool_input),
+                                        input: tool_input,
                                         provider_executed: Some(true),
                                         dynamic: None,
-                                        thought_signature: None,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
 
                                 if event_type == "response.output_item.done" {
-                                    yield Ok(StreamPart::ToolResult {
+                                    yield Ok(StreamPart::ToolResult(ToolResult {
                                         tool_call_id: part_id.to_string(),
                                         tool_name,
                                         result: json!({}),
@@ -804,7 +800,7 @@ impl LanguageModel for XaiResponsesModel {
                                         preliminary: None,
                                         dynamic: None,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                                 continue;
                             }
@@ -836,13 +832,12 @@ impl LanguageModel for XaiResponsesModel {
                                             if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation") {
                                                 let url = ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
                                                 let title = ann.get("title").and_then(|v| v.as_str()).unwrap_or(url).to_string();
-                                                yield Ok(StreamPart::Source {
+                                                yield Ok(StreamPart::Source(Source::Url {
                                                     id: generate_source_id(),
-                                                    source_type: "url".to_string(),
-                                                    url: Some(url.to_string()),
+                                                    url: url.to_string(),
                                                     title: Some(title),
                                                     provider_metadata: None,
-                                                });
+                                                }));
                                             }
                                         }
                                     }
@@ -874,18 +869,15 @@ impl LanguageModel for XaiResponsesModel {
                                         id: call_id.to_string(),
                                         provider_metadata: None,
                                     });
-                                    let input = Value::String(arguments.to_string());
-                                    yield Ok(StreamPart::ToolCall {
+                                    let input = arguments.to_string();
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: call_id.to_string(),
                                         tool_name: name.to_string(),
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
-                                        thought_signature: None,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                                 continue;
                             }
@@ -911,23 +903,21 @@ impl LanguageModel for XaiResponsesModel {
             }
 
             // Final part: Finish.
-            let provider_meta = cost_in_usd_ticks.map(|cost| json!({ "xai": { "costInUsdTicks": cost } }));
+            let provider_meta = cost_in_usd_ticks.map(|cost| provider_namespace("xai", json!({ "costInUsdTicks": cost })).expect("provider metadata must be an object"));
 
             yield Ok(StreamPart::Finish {
                 finish_reason: final_finish_reason,
                 usage: final_usage.unwrap_or(Usage {
-                    input_tokens: aimux_core::types::TokenUsage {
+                    input_tokens: aimux_core::types::InputTokenUsage {
                         total: Some(0),
                         no_cache: Some(0),
                         cache_read: Some(0),
                         cache_write: Some(0),
-                        ..Default::default()
                     },
-                    output_tokens: aimux_core::types::TokenUsage {
+                    output_tokens: aimux_core::types::OutputTokenUsage {
                         total: Some(0),
                         text: Some(0),
                         reasoning: Some(0),
-                        ..Default::default()
                     },
                     raw: None,
                 }),
@@ -937,8 +927,10 @@ impl LanguageModel for XaiResponsesModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

@@ -121,7 +121,7 @@ impl LanguageModel for OpenAIResponsesModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
-        let request_result = build_responses_request_body(&self.model_id, options, false);
+        let request_result = build_responses_request_body(&self.model_id, options, false)?;
         let body = request_result.body;
         let provider_key = self.provider_options_name().to_string();
 
@@ -155,7 +155,7 @@ impl LanguageModel for OpenAIResponsesModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
-        let request_result = build_responses_request_body(&self.model_id, options, true);
+        let request_result = build_responses_request_body(&self.model_id, options, false)?;
         let body = request_result.body;
         let warnings = request_result.warnings;
         let provider_key = self.provider_options_name().to_string();
@@ -171,9 +171,11 @@ impl LanguageModel for OpenAIResponsesModel {
             == Some(true);
 
         let endpoint = self.endpoint();
+        let mut stream_body = body.clone();
+        stream_body["stream"] = Value::Bool(true);
         let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest::new(endpoint.clone(), build_header_list(&headers), options),
-            body.clone(),
+            stream_body,
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             super::openai_failed_response_handler(),
         )
@@ -199,8 +201,10 @@ impl LanguageModel for OpenAIResponsesModel {
 
         Ok(StreamResult {
             stream,
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

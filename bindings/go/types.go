@@ -77,21 +77,103 @@ func ToolChoiceTool(name string) ToolChoice {
 
 // ── Core types ───────────────────────────────────────────────────────────────
 
-// TokenUsage is token usage detail with cache breakdown.
-type TokenUsage struct {
+// Source is a URL or document source. Exactly one variant is populated.
+type Source struct {
+	URL      *URLSource
+	Document *DocumentSource
+}
+
+type URLSource struct {
+	ID               string          `json:"id"`
+	URL              string          `json:"url"`
+	Title            *string         `json:"title,omitempty"`
+	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
+}
+
+type DocumentSource struct {
+	ID               string          `json:"id"`
+	MediaType        string          `json:"media_type"`
+	Title            string          `json:"title"`
+	Filename         *string         `json:"filename,omitempty"`
+	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
+}
+
+func (s Source) MarshalJSON() ([]byte, error) {
+	if s.URL != nil && s.Document == nil {
+		return json.Marshal(struct {
+			SourceType string `json:"source_type"`
+			*URLSource
+		}{"url", s.URL})
+	}
+	if s.Document != nil && s.URL == nil {
+		return json.Marshal(struct {
+			SourceType string `json:"source_type"`
+			*DocumentSource
+		}{"document", s.Document})
+	}
+	return nil, fmt.Errorf("aimux: Source must have exactly one variant")
+}
+
+func (s *Source) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	var sourceType string
+	if err := json.Unmarshal(fields["source_type"], &sourceType); err != nil {
+		return fmt.Errorf("aimux: invalid source_type: %w", err)
+	}
+	required := []string{"id"}
+	switch sourceType {
+	case "url":
+		required = append(required, "url")
+	case "document":
+		required = append(required, "media_type", "title")
+	default:
+		return fmt.Errorf("aimux: unknown source_type %q", sourceType)
+	}
+	for _, name := range required {
+		var value *string
+		if err := json.Unmarshal(fields[name], &value); err != nil || value == nil {
+			return fmt.Errorf("aimux: Source requires string %s", name)
+		}
+	}
+	if sourceType == "url" {
+		var value URLSource
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*s = Source{URL: &value}
+	} else {
+		var value DocumentSource
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*s = Source{Document: &value}
+	}
+	return nil
+}
+
+// InputTokenUsage is input token usage detail with cache breakdown.
+type InputTokenUsage struct {
 	Total      *uint32 `json:"total,omitempty"`
 	NoCache    *uint32 `json:"no_cache,omitempty"`
 	CacheRead  *uint32 `json:"cache_read,omitempty"`
 	CacheWrite *uint32 `json:"cache_write,omitempty"`
-	Text       *uint32 `json:"text,omitempty"`
-	Reasoning  *uint32 `json:"reasoning,omitempty"`
+}
+
+// OutputTokenUsage is output token usage detail.
+type OutputTokenUsage struct {
+	Total     *uint32 `json:"total,omitempty"`
+	Text      *uint32 `json:"text,omitempty"`
+	Reasoning *uint32 `json:"reasoning,omitempty"`
 }
 
 // Usage is token usage statistics.
 type Usage struct {
-	InputTokens  TokenUsage      `json:"input_tokens,omitempty"`
-	OutputTokens TokenUsage      `json:"output_tokens,omitempty"`
-	Raw          json.RawMessage `json:"raw,omitempty"`
+	InputTokens  InputTokenUsage            `json:"input_tokens,omitempty"`
+	OutputTokens OutputTokenUsage           `json:"output_tokens,omitempty"`
+	Raw          map[string]json.RawMessage `json:"raw,omitempty"`
 }
 
 // FinishReason is the finish reason.
@@ -108,7 +190,6 @@ type ToolCall struct {
 	Input            json.RawMessage `json:"input,omitempty"`
 	ProviderExecuted *bool           `json:"provider_executed,omitempty"`
 	Dynamic          *bool           `json:"dynamic,omitempty"`
-	ThoughtSignature *string         `json:"thought_signature,omitempty"`
 	// ProviderMetadata carries provider-specific data associated with this call.
 	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
 	// Invalid is set by Core when the tool call stays invalid after optional repair.
@@ -130,22 +211,34 @@ type ResponseMetadata struct {
 	ModelID   *string `json:"model_id,omitempty"`
 }
 
+// GenerateRequest contains the provider HTTP request body.
+type GenerateRequest struct {
+	Body json.RawMessage `json:"body,omitempty"`
+}
+
+// GenerateResponseMetadata is response metadata with optional headers and body.
+type GenerateResponseMetadata struct {
+	ResponseMetadata
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    json.RawMessage   `json:"body,omitempty"`
+}
+
 // GenerateResult is the raw provider result.
 // Mirrors Kotlin GenerateResult (Types.kt:853-871).
 type GenerateResult struct {
-	Content          []ContentPart     `json:"content,omitempty"`
-	FinishReason     FinishReason      `json:"finish_reason,omitempty"`
-	Usage            Usage             `json:"usage,omitempty"`
-	Warnings         []json.RawMessage `json:"warnings,omitempty"`
-	ProviderMetadata json.RawMessage   `json:"provider_metadata,omitempty"`
-	Response         ResponseMetadata  `json:"response,omitempty"`
-	RequestBody      json.RawMessage   `json:"request_body,omitempty"`
-	ResponseHeaders  map[string]string `json:"response_headers,omitempty"`
+	Content          []ContentPart             `json:"content,omitempty"`
+	FinishReason     FinishReason              `json:"finish_reason,omitempty"`
+	Usage            Usage                     `json:"usage,omitempty"`
+	Warnings         []json.RawMessage         `json:"warnings,omitempty"`
+	ProviderMetadata json.RawMessage           `json:"provider_metadata,omitempty"`
+	Response         *GenerateResponseMetadata `json:"response,omitempty"`
+	Request          *GenerateRequest          `json:"request,omitempty"`
 }
 
 // GenerateTextResult is the typed result of a GenerateText call.
 // Mirrors Kotlin GenerateTextResult (Types.kt:878-886).
 type GenerateTextResult struct {
+	Content          []ContentPart     `json:"content,omitempty"`
 	Text             string            `json:"text"`
 	ToolCalls        []ToolCall        `json:"tool_calls,omitempty"`
 	FinishReason     FinishReason      `json:"finish_reason,omitempty"`
@@ -154,7 +247,7 @@ type GenerateTextResult struct {
 	Raw              GenerateResult    `json:"raw"`
 	Reasoning        []json.RawMessage `json:"reasoning,omitempty"`
 	ReasoningText    string            `json:"reasoning_text,omitempty"`
-	Sources          []json.RawMessage `json:"sources,omitempty"`
+	Sources          []Source          `json:"sources,omitempty"`
 	Files            []json.RawMessage `json:"files,omitempty"`
 	ResponseMessages []ModelMessage    `json:"response_messages,omitempty"`
 	// RawFinishReason is the raw provider-specific finish reason string (M12).
@@ -190,11 +283,12 @@ type GenerateObjectResult struct {
 // Mirrors Rust StreamTextResultAggregated. reasoning/sources/files use weak
 // types (json.RawMessage) — same strategy as GenerateTextResult.
 type StreamTextResultAggregated struct {
+	Content          []ContentPart     `json:"content,omitempty"`
 	Text             string            `json:"text"`
 	Reasoning        []json.RawMessage `json:"reasoning,omitempty"`
 	ReasoningText    string            `json:"reasoning_text,omitempty"`
 	ToolCalls        []ToolCall        `json:"tool_calls,omitempty"`
-	Sources          []json.RawMessage `json:"sources,omitempty"`
+	Sources          []Source          `json:"sources,omitempty"`
 	Files            []json.RawMessage `json:"files,omitempty"`
 	FinishReason     FinishReason      `json:"finish_reason,omitempty"`
 	RawFinishReason  *string           `json:"raw_finish_reason,omitempty"`
@@ -309,6 +403,10 @@ type GenerateTextOptions struct {
 	RepairToolCall RepairToolCallFunc `json:"-"`
 }
 
+type FunctionToolInputExample struct {
+	Input map[string]json.RawMessage `json:"input"`
+}
+
 // Tool is a function tool definition (the "function" variant).
 // Mirrors Kotlin Tool.Function (Types.kt:209-230).
 type Tool struct {
@@ -318,7 +416,7 @@ type Tool struct {
 	InputSchema     json.RawMessage            `json:"input_schema,omitempty"`
 	Strict          *bool                      `json:"strict,omitempty"`
 	ProviderOptions map[string]json.RawMessage `json:"provider_options,omitempty"`
-	InputExamples   []json.RawMessage          `json:"input_examples,omitempty"`
+	InputExamples   []FunctionToolInputExample `json:"input_examples,omitempty"`
 }
 
 // MarshalOptions serializes GenerateTextOptions to JSON. Returns "" for nil opts.
@@ -359,6 +457,18 @@ func ParseStreamPart(jsonStr string) (*StreamPart, error) {
 		return &StreamPart{Tag: tag, Payload: payload}, nil
 	}
 	return &StreamPart{}, nil
+}
+
+// Source decodes the payload of a Source stream part.
+func (p *StreamPart) Source() (*Source, error) {
+	if p.Tag != "Source" {
+		return nil, fmt.Errorf("aimux: expected Source stream part, got %s", p.Tag)
+	}
+	var source Source
+	if err := json.Unmarshal(p.Payload, &source); err != nil {
+		return nil, err
+	}
+	return &source, nil
 }
 
 // TextDeltaPayload is the payload of a {"TextDelta":{...}} stream part.

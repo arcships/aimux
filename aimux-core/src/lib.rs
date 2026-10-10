@@ -22,6 +22,9 @@ pub mod composite;
 pub mod content;
 pub mod decision_model;
 mod decision_replay;
+pub(crate) mod download;
+#[doc(hidden)]
+pub mod download_guard;
 pub mod embedding_model;
 pub mod error;
 pub mod files_model;
@@ -96,15 +99,17 @@ pub mod prelude {
     };
     pub use crate::options::{CallOptions, ResponseFormat, ToolChoice};
     pub use crate::parse_tool_call::{
-        RawToolCall, ToolCallRepair, ToolCallRepairContext, ToolCallRepairReply,
-        apply_tool_call_repair, apply_tool_call_repair_to_result, tool_call_repair_context,
-        tool_call_repair_inputs,
+        ToolCallRepair, ToolCallRepairContext, ToolCallRepairReply, apply_tool_call_repair,
+        apply_tool_call_repair_to_result, tool_call_repair_context, tool_call_repair_inputs,
     };
     pub use crate::provider::Provider;
     pub use crate::reranking_model::{
         RerankingCallOptions, RerankingModel, RerankingResult, rerank,
     };
-    pub use crate::result::{GenerateResult, StreamResult};
+    pub use crate::result::{
+        GenerateResult, GeneratedFile, RawToolApprovalRequest, ReasoningOutput, ReasoningPart,
+        Source, StreamResult, TextContent, ToolApprovalRequestOutput,
+    };
     pub use crate::router::{
         FallbackPolicy, Router, RouterConfig, RouterModel, RuleRouter, WeightedRouter,
     };
@@ -116,18 +121,25 @@ pub mod prelude {
         init_session_store, list_sessions, session_calls,
     };
     pub use crate::shared::{
-        AspectRatio, FileBytes, FileData, SharedHeaders, SharedProviderMetadata,
-        SharedProviderOptions, SharedProviderReference, Size,
+        AspectRatio, FileBytes, FileData, GeneratedFileData, JsonObject, SharedHeaders,
+        SharedProviderMetadata, SharedProviderOptions, SharedProviderReference, Size,
+        provider_namespace,
     };
     pub use crate::speech_model::{SpeechCallOptions, SpeechModel, SpeechResult, generate_speech};
-    pub use crate::stream_part::StreamPart;
-    pub use crate::tool::{FunctionTool, ProviderTool, Tool, ToolCall, ToolResult};
+    pub use crate::stream_part::{StreamPart, TextStreamPart};
+    pub use crate::tool::{
+        FunctionTool, FunctionToolInputExample, ProviderTool, RawToolCall, Tool, ToolCall,
+        ToolResult,
+    };
     pub use crate::transcription_model::{
         AudioChunk, InputAudioFormat, TranscriptionCallOptions, TranscriptionModel,
         TranscriptionResult, TranscriptionStreamOptions, TranscriptionStreamPart,
         TranscriptionStreamResult, stream_transcribe, transcribe,
     };
-    pub use crate::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Usage, Warning};
+    pub use crate::types::{
+        FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, ReasoningEffort,
+        Usage, Warning,
+    };
     pub use crate::video_model::{
         VideoCallOptions, VideoModel, VideoOperationStart, VideoOperationStatus, VideoPollConfig,
         VideoPollOptions, VideoResult, generate_video,

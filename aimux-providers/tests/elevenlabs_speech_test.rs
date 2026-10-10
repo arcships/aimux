@@ -203,13 +203,14 @@ async fn should_pass_provider_specific_options() {
     let mut provider_options = HashMap::new();
     provider_options.insert(
         "elevenlabs".to_string(),
-        json!({
+        serde_json::from_value(json!({
             "voiceSettings": {
                 "stability": 0.5,
                 "similarityBoost": 0.75,
             },
             "seed": 123,
-        }),
+        }))
+        .unwrap(),
     );
     options.provider_options = Some(provider_options);
 

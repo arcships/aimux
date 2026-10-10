@@ -446,8 +446,7 @@ struct PollySpeechProviderOptions {
 fn parse_polly_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Option<PollySpeechProviderOptions> {
-    let provider_opts = options.and_then(|opts| opts.get("aws_polly"))?;
-    let opts = provider_opts.as_object()?;
+    let opts = options.and_then(|opts| opts.get("aws_polly"))?;
 
     Some(PollySpeechProviderOptions {
         engine: opts

@@ -310,7 +310,7 @@ impl ImageModel for ProdiaImageModel {
         let mut metadata = HashMap::new();
         let mut prodia_meta = Map::new();
         prodia_meta.insert("images".into(), json!([job_result]));
-        metadata.insert("prodia".into(), Value::Object(prodia_meta));
+        metadata.insert("prodia".into(), prodia_meta);
 
         Ok(ImageResult {
             images: ImageOutputs::Binary(vec![image_bytes]),

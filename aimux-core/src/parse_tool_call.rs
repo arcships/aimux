@@ -13,29 +13,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
+use crate::content::ContentPart;
 use crate::error::AiMuxError;
-use crate::tool::{Tool, ToolCall};
-use crate::types::ProviderMetadata;
-
-/// Provider-facing tool call before Core parses and validates its input.
-///
-/// The wire shape matches [`ToolCall`] field for field, except that `input`
-/// is the provider's raw argument *text* rather than a parsed value.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct RawToolCall {
-    pub tool_call_id: String,
-    pub tool_name: String,
-    pub input: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_executed: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dynamic: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thought_signature: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_metadata: Option<ProviderMetadata>,
-}
+use crate::result::{GenerateContent, TextContent};
+use crate::tool::{RawToolCall, Tool, ToolCall};
 
 /// Context supplied to a one-shot tool-call repair callback.
 #[derive(Debug, Clone)]
@@ -134,13 +115,13 @@ pub async fn parse_tool_call(
             })
         };
         return match parsed {
-            Ok(input) => valid_tool_call(tool_call, input, Some(true)),
+            Ok(input) => parsed_tool_call(tool_call, input, Some(true)),
             Err(error) => invalid_tool_call(tool_call, error),
         };
     };
 
     match parse_and_validate_tool_call(&tool_call, tools) {
-        Ok((input, dynamic)) => valid_tool_call(tool_call, input, dynamic),
+        Ok((input, dynamic)) => parsed_tool_call(tool_call, input, dynamic),
         Err(original_error) => {
             let Some(repair_tool_call) = repair_tool_call else {
                 return invalid_tool_call(tool_call, original_error);
@@ -181,7 +162,7 @@ fn apply_repair_outcome(
 ) -> ToolCall {
     let cause = match outcome {
         RepairOutcome::Repaired(repaired) => match parse_and_validate_tool_call(&repaired, tools) {
-            Ok((input, dynamic)) => return valid_tool_call(repaired, input, dynamic),
+            Ok((input, dynamic)) => return parsed_tool_call(repaired, input, dynamic),
             Err(repaired_error) => repaired_error,
         },
         RepairOutcome::Unchanged => return invalid_tool_call(tool_call, original_error),
@@ -298,24 +279,13 @@ fn contains_forbidden_prototype(value: &Value) -> bool {
     }
 }
 
-/// Recover the provider's raw argument text: string inputs pass through
-/// verbatim (possibly malformed JSON awaiting parse/repair); anything already
-/// structured re-serializes.
-pub(crate) fn raw_tool_input(input: &Value) -> String {
-    match input {
-        Value::String(input) => input.clone(),
-        input => serde_json::to_string(input).expect("serializing serde_json::Value cannot fail"),
-    }
-}
-
-fn valid_tool_call(tool_call: RawToolCall, input: Value, dynamic: Option<bool>) -> ToolCall {
+fn parsed_tool_call(tool_call: RawToolCall, input: Value, dynamic: Option<bool>) -> ToolCall {
     ToolCall {
         tool_call_id: tool_call.tool_call_id,
         tool_name: tool_call.tool_name,
         input,
         provider_executed: tool_call.provider_executed,
         dynamic,
-        thought_signature: tool_call.thought_signature,
         provider_metadata: tool_call.provider_metadata,
         invalid: None,
         error: None,
@@ -332,15 +302,9 @@ fn invalid_tool_call(tool_call: RawToolCall, error: AiMuxError) -> ToolCall {
     let input = serde_json::from_str(&tool_call.input)
         .unwrap_or_else(|_| Value::String(tool_call.input.clone()));
     ToolCall {
-        tool_call_id: tool_call.tool_call_id,
-        tool_name: tool_call.tool_name,
-        input,
-        provider_executed: tool_call.provider_executed,
-        dynamic: Some(true),
-        thought_signature: tool_call.thought_signature,
-        provider_metadata: tool_call.provider_metadata,
         invalid: Some(true),
         error: Some(error),
+        ..parsed_tool_call(tool_call, input, Some(true))
     }
 }
 
@@ -400,8 +364,8 @@ pub(crate) fn raw_tool_call_text(error: &AiMuxError) -> Option<String> {
 /// and that loses the JSON string quoting of a bare literal (`"Tokyo"` would
 /// come back as `Tokyo`), duplicate keys, number spelling and whitespace, all
 /// of which matter when a host re-submits the text unchanged under a new tool
-/// name. Only errors from before the text was recorded fall back to
-/// [`raw_tool_input`].
+/// name. Only errors from before the text was recorded fall back to the
+/// compact JSON of `input`.
 ///
 /// `dynamic` is not recovered: an invalid call always reports `Some(true)`.
 /// That only matters for re-deriving the original error, which is read off the
@@ -423,10 +387,14 @@ fn raw_from_invalid(tool_call: &ToolCall) -> Result<(RawToolCall, AiMuxError), A
         RawToolCall {
             tool_call_id: tool_call.tool_call_id.clone(),
             tool_name: tool_call.tool_name.clone(),
-            input: raw_tool_call_text(&error).unwrap_or_else(|| raw_tool_input(&tool_call.input)),
+            // An invalid call keeps unparsable argument text as a JSON string
+            // (see `invalid_tool_call`); that text is the raw input.
+            input: raw_tool_call_text(&error).unwrap_or_else(|| match &tool_call.input {
+                Value::String(text) => text.clone(),
+                input => input.to_string(),
+            }),
             provider_executed: tool_call.provider_executed,
             dynamic: tool_call.dynamic,
-            thought_signature: tool_call.thought_signature.clone(),
             provider_metadata: tool_call.provider_metadata.clone(),
         },
         error,
@@ -541,6 +509,11 @@ pub fn apply_tool_call_repair(
 /// is untouched, because it is parsed from the model's text, not from a tool
 /// call.
 ///
+/// The matching `content` entry, and the call embedded in a matching
+/// approval request, are replaced with the repaired call as well; a renamed
+/// call also renames the transcript's approval request. `raw` is the
+/// provider's output and stays as it was.
+///
 /// The OpenAI-shaped `ChatCompletion` is deliberately not supported: it drops
 /// `invalid` and `error`, so a host cannot tell from it that a call needs
 /// repairing in the first place. Repair the native result and convert.
@@ -637,5 +610,199 @@ pub fn apply_tool_call_repair_to_result(
         part.insert("input".to_string(), replay_input.clone());
     }
 
+    // `content` carries the same call, and an approval request embeds it, so
+    // both must agree with `tool_calls` too. `raw` stays as is: it is the
+    // provider's output, which a repair does not change.
+    for entry in target
+        .get_mut("content")
+        .and_then(Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
+        let Ok(mut content) = serde_json::from_value::<TextContent>(entry.clone()) else {
+            continue;
+        };
+        let call = match &mut content {
+            GenerateContent::ToolCall(call) => call,
+            GenerateContent::ToolApprovalRequest(approval) => &mut approval.tool_call,
+            _ => continue,
+        };
+        if call.tool_call_id != tool_call_id {
+            continue;
+        }
+        *call = repaired.clone();
+        *entry = serde_json::to_value(&content)
+            .map_err(|error| AiMuxError::InvalidArgument(format!("content: {error}")))?;
+    }
+    if repaired.tool_call_id != tool_call_id {
+        for part in target
+            .get_mut("response_messages")
+            .and_then(Value::as_array_mut)
+            .into_iter()
+            .flatten()
+            .filter_map(|message| message.get_mut("content")?.as_array_mut())
+            .flatten()
+        {
+            let Ok(mut approval) = serde_json::from_value::<ContentPart>(part.clone()) else {
+                continue;
+            };
+            let ContentPart::ToolApprovalRequest {
+                tool_call_id: approved_id,
+                ..
+            } = &mut approval
+            else {
+                continue;
+            };
+            if approved_id != tool_call_id {
+                continue;
+            }
+            approved_id.clone_from(&repaired.tool_call_id);
+            *part = serde_json::to_value(&approval).map_err(|error| {
+                AiMuxError::InvalidArgument(format!("response message: {error}"))
+            })?;
+        }
+    }
+
     Ok(patched)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::message::MessageContent;
+    use crate::response_messages::ResponseMessageBuilder;
+    use crate::result::{StreamTextResultAggregated, ToolApprovalRequestOutput};
+    use crate::tool::FunctionTool;
+    use crate::types::{FinishReason, FinishReasonUnified};
+
+    fn weather_tools() -> Vec<Tool> {
+        vec![Tool::Function(FunctionTool::new(
+            "weather",
+            serde_json::json!({
+                "type": "object",
+                "properties": { "city": { "type": "string" } },
+                "required": ["city"],
+            }),
+        ))]
+    }
+
+    fn raw_call(id: &str, input: &str) -> RawToolCall {
+        RawToolCall {
+            tool_call_id: id.to_string(),
+            tool_name: "weather".to_string(),
+            input: input.to_string(),
+            provider_executed: None,
+            dynamic: None,
+            provider_metadata: None,
+        }
+    }
+
+    /// A result document as `stream_text().consume()` assembles it, holding
+    /// one call the model got wrong (`city` is a number).
+    async fn result_with_invalid_call(with_approval: bool) -> Value {
+        let tools = weather_tools();
+        let call = parse_tool_call(
+            raw_call("call-1", r#"{"city":7}"#),
+            Some(&tools),
+            None,
+            &[],
+            None,
+        )
+        .await;
+        assert_eq!(call.invalid, Some(true));
+        let mut builder = ResponseMessageBuilder::default();
+        builder.tool_call(&call);
+        if with_approval {
+            builder.approval(&ToolApprovalRequestOutput {
+                approval_id: "approval-1".to_string(),
+                tool_call: call.clone(),
+                reason: None,
+                is_automatic: None,
+                signature: None,
+            });
+        }
+        let assembled = builder.finish();
+        serde_json::to_value(StreamTextResultAggregated {
+            content: assembled.content,
+            text: String::new(),
+            reasoning: Vec::new(),
+            reasoning_text: String::new(),
+            tool_calls: vec![call],
+            sources: Vec::new(),
+            files: Vec::new(),
+            finish_reason: FinishReason {
+                unified: FinishReasonUnified::ToolCalls,
+                raw: None,
+            },
+            raw_finish_reason: None,
+            usage: crate::types::Usage::default(),
+            total_usage: crate::types::Usage::default(),
+            warnings: Vec::new(),
+            provider_metadata: None,
+            request: crate::shared::RequestInfo::default(),
+            response: crate::shared::ResponseInfo::default(),
+            response_messages: assembled.messages,
+        })
+        .unwrap()
+    }
+
+    fn repair(result: &Value, tool_call_id: &str) -> StreamTextResultAggregated {
+        let patched = apply_tool_call_repair_to_result(
+            result,
+            Some(&weather_tools()),
+            "call-1",
+            ToolCallRepairReply::Repaired {
+                tool_call: raw_call(tool_call_id, r#"{"city":"Tokyo"}"#),
+            },
+        )
+        .unwrap();
+        serde_json::from_value(patched).unwrap()
+    }
+
+    fn content_calls(result: &StreamTextResultAggregated) -> Vec<&ToolCall> {
+        result
+            .content
+            .iter()
+            .filter_map(|content| match content {
+                GenerateContent::ToolCall(call) => Some(call),
+                GenerateContent::ToolApprovalRequest(approval) => Some(&approval.tool_call),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_repair_also_updates_the_content_call() {
+        let repaired = repair(&result_with_invalid_call(false).await, "call-1");
+
+        let expected = serde_json::to_value(&repaired.tool_calls[0]).unwrap();
+        assert_eq!(expected["input"], serde_json::json!({ "city": "Tokyo" }));
+        let calls = content_calls(&repaired);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(serde_json::to_value(calls[0]).unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn a_renaming_repair_updates_approval_requests() {
+        let repaired = repair(&result_with_invalid_call(true).await, "call-2");
+
+        let expected = serde_json::to_value(&repaired.tool_calls[0]).unwrap();
+        let calls = content_calls(&repaired);
+        assert_eq!(calls.len(), 2);
+        for call in calls {
+            assert_eq!(serde_json::to_value(call).unwrap(), expected);
+        }
+        let MessageContent::Parts(parts) = &repaired.response_messages[0].content else {
+            panic!("expected content parts");
+        };
+        let ids: Vec<_> = parts
+            .iter()
+            .map(|part| match part {
+                ContentPart::ToolCall { tool_call_id, .. }
+                | ContentPart::ToolApprovalRequest { tool_call_id, .. } => tool_call_id.as_str(),
+                other => panic!("unexpected part {other:?}"),
+            })
+            .collect();
+        assert_eq!(ids, ["call-2", "call-2"]);
+    }
 }

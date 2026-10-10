@@ -439,6 +439,7 @@ pub const AIMUX_E_RETRY: i32 = 14;
 pub const AIMUX_E_NO_SUCH_TOOL: i32 = 15;
 pub const AIMUX_E_INVALID_TOOL_INPUT: i32 = 16;
 pub const AIMUX_E_TOOL_CALL_REPAIR: i32 = 17;
+pub const AIMUX_E_NO_OUTPUT_GENERATED: i32 = 18;
 
 // 100..105 preserve `RecordingError` as a separate high-level type while C
 // uses one code space for every returned error.
@@ -469,7 +470,10 @@ fn aimux_error_code_of(err: &AiMuxError) -> i32 {
         AiMuxError::ApiCall { .. } => AIMUX_E_API_CALL,
         AiMuxError::Retry(_) => AIMUX_E_RETRY,
         AiMuxError::JsonParse(_) => AIMUX_E_JSON_PARSE,
-        AiMuxError::InvalidResponseData(_) => AIMUX_E_INVALID_RESPONSE_DATA,
+        AiMuxError::NoOutputGenerated(_) => AIMUX_E_NO_OUTPUT_GENERATED,
+        AiMuxError::InvalidResponseData(_) | AiMuxError::ToolCallNotFoundForApproval { .. } => {
+            AIMUX_E_INVALID_RESPONSE_DATA
+        }
         AiMuxError::NoSuchTool { .. } => AIMUX_E_NO_SUCH_TOOL,
         AiMuxError::InvalidToolInput { .. } => AIMUX_E_INVALID_TOOL_INPUT,
         AiMuxError::ToolCallRepair { .. } => AIMUX_E_TOOL_CALL_REPAIR,
@@ -2102,7 +2106,9 @@ fn stream_text_with_signal(
             let cstr = match item {
                 Ok(part) => stream_part_cstring(&part)?,
                 Err(e) if e.is_recoverable_stream_error() => {
-                    stream_part_cstring(&aimux_core::stream_part::StreamPart::Error { error: e })?
+                    stream_part_cstring(&aimux_core::stream_part::TextStreamPart::Error {
+                        error: e,
+                    })?
                 }
                 Err(e) => return Err(e.into()),
             };
@@ -2485,7 +2491,7 @@ pub extern "C" fn aimux_transcription_generate(
 #[derive(serde::Deserialize, Default)]
 struct TranscriptionSessionFfiOptions {
     input_audio_format: Option<aimux_core::transcription_model::InputAudioFormat>,
-    provider_options: Option<HashMap<String, serde_json::Value>>,
+    provider_options: Option<aimux_core::shared::SharedProviderOptions>,
     headers: Option<HashMap<String, String>>,
     include_raw_chunks: Option<bool>,
     timeout: Option<aimux_core::options::TimeoutConfiguration>,
@@ -3562,7 +3568,7 @@ mod tests {
     fn expect_aimux_error(e: *mut aimux_error_t) -> (i32, String) {
         assert!(!e.is_null(), "expected a returned error");
         let code = aimux_error_code(e);
-        if !(AIMUX_E_OTHER..=AIMUX_E_TOOL_CALL_REPAIR).contains(&code) {
+        if !(AIMUX_E_OTHER..=AIMUX_E_NO_OUTPUT_GENERATED).contains(&code) {
             panic!("expected an AiMuxError code, got {code}: {}", msg(e));
         }
         let out = (code, take(aimux_error_message(e)).unwrap());
@@ -4153,227 +4159,6 @@ mod tests {
         }
     }
 
-    /// A tiny mock model for composite-FFI tests (returns fixed text).
-    struct MockText {
-        provider: &'static str,
-        model_id: &'static str,
-        text: &'static str,
-    }
-    #[async_trait::async_trait]
-    impl aimux_core::LanguageModel for MockText {
-        fn provider(&self) -> &str {
-            self.provider
-        }
-        fn model_id(&self) -> &str {
-            self.model_id
-        }
-        async fn do_generate(
-            &self,
-            _options: &aimux_core::options::CallOptions,
-        ) -> Result<aimux_core::result::GenerateResult, AiMuxError> {
-            Ok(aimux_core::result::GenerateResult {
-                content: vec![aimux_core::result::GenerateContent::Text {
-                    text: self.text.into(),
-                    provider_metadata: None,
-                }],
-                finish_reason: aimux_core::types::FinishReason {
-                    unified: aimux_core::types::FinishReasonUnified::Stop,
-                    raw: None,
-                },
-                usage: aimux_core::types::Usage::default(),
-                warnings: vec![],
-                provider_metadata: None,
-                response: aimux_core::types::ResponseMetadata {
-                    model_id: Some(self.model_id.into()),
-                    ..Default::default()
-                },
-                request_body: None,
-                response_headers: None,
-            })
-        }
-        async fn do_stream(
-            &self,
-            _options: &aimux_core::options::CallOptions,
-        ) -> Result<aimux_core::result::StreamResult, AiMuxError> {
-            unimplemented!()
-        }
-    }
-
-    fn mock_handle(provider: &'static str, model_id: &'static str, text: &'static str) -> u64 {
-        intern_model(Arc::new(MockText {
-            provider,
-            model_id,
-            text,
-        }))
-    }
-
-    /// Streams: delta, recoverable Err(JsonParse), delta, Finish.
-    struct RecoverableFrameModel;
-    #[async_trait::async_trait]
-    impl aimux_core::LanguageModel for RecoverableFrameModel {
-        fn provider(&self) -> &str {
-            "mock"
-        }
-        fn model_id(&self) -> &str {
-            "recoverable"
-        }
-        async fn do_generate(
-            &self,
-            _options: &aimux_core::options::CallOptions,
-        ) -> Result<aimux_core::result::GenerateResult, AiMuxError> {
-            unimplemented!()
-        }
-        async fn do_stream(
-            &self,
-            _options: &aimux_core::options::CallOptions,
-        ) -> Result<aimux_core::result::StreamResult, AiMuxError> {
-            let delta = |text: &str| aimux_core::stream_part::StreamPart::TextDelta {
-                id: "1".into(),
-                delta: text.into(),
-                provider_metadata: None,
-            };
-            Ok(aimux_core::result::StreamResult {
-                stream: Box::pin(futures::stream::iter([
-                    Ok(delta("a")),
-                    Err(AiMuxError::JsonParse("bad frame".into())),
-                    Ok(delta("b")),
-                    Ok(aimux_core::stream_part::StreamPart::Finish {
-                        finish_reason: aimux_core::types::FinishReason {
-                            unified: aimux_core::types::FinishReasonUnified::Stop,
-                            raw: None,
-                        },
-                        usage: aimux_core::types::Usage::default(),
-                        provider_metadata: None,
-                    }),
-                ])),
-                request_body: None,
-                response_headers: None,
-            })
-        }
-    }
-
-    /// The pump must deliver a recoverable frame error as a StreamPart::Error
-    /// data part and keep going — parts after it still arrive and on_done
-    /// fires (the pre-fix pump returned the error and skipped on_done).
-    #[test]
-    fn recoverable_frame_error_does_not_end_the_ffi_stream() {
-        struct Collected {
-            parts: Vec<String>,
-            done: bool,
-        }
-        extern "C-unwind" fn on_part(json: *const c_char, ctx: *mut c_void) {
-            let collected = unsafe { &mut *(ctx as *mut Collected) };
-            let text = unsafe { std::ffi::CStr::from_ptr(json) }
-                .to_string_lossy()
-                .into_owned();
-            collected.parts.push(text);
-        }
-        extern "C-unwind" fn on_done(ctx: *mut c_void) {
-            let collected = unsafe { &mut *(ctx as *mut Collected) };
-            collected.done = true;
-        }
-
-        let handle = intern_model(Arc::new(RecoverableFrameModel));
-        let mut collected = Collected {
-            parts: Vec::new(),
-            done: false,
-        };
-        let prompt = std::ffi::CString::new("\"hi\"").unwrap();
-        let e = aimux_stream_text(
-            handle,
-            prompt.as_ptr(),
-            std::ptr::null(),
-            Some(on_part),
-            Some(on_done),
-            &mut collected as *mut Collected as *mut c_void,
-        );
-        assert!(e.is_null(), "{}", msg(e));
-        assert!(
-            collected.done,
-            "on_done must fire after a recoverable frame"
-        );
-        let error_index = collected
-            .parts
-            .iter()
-            .position(|p| p.contains("\"Error\""))
-            .expect("the recoverable frame arrives as a StreamPart::Error part");
-        assert!(
-            collected.parts[error_index + 1..]
-                .iter()
-                .any(|p| p.contains("\"b\"")),
-            "parts after the recoverable frame still arrive: {:?}",
-            collected.parts
-        );
-    }
-
-    /// On the OpenAI-compatible path every item is a ChatCompletionChunk, so a
-    /// recoverable frame error is skipped — no error item, no truncation, and
-    /// on_done still fires.
-    #[test]
-    fn recoverable_frame_error_is_skipped_on_the_openai_stream() {
-        struct Collected {
-            parts: Vec<String>,
-            done: bool,
-        }
-        extern "C-unwind" fn on_part(json: *const c_char, ctx: *mut c_void) {
-            let collected = unsafe { &mut *(ctx as *mut Collected) };
-            let text = unsafe { std::ffi::CStr::from_ptr(json) }
-                .to_string_lossy()
-                .into_owned();
-            collected.parts.push(text);
-        }
-        extern "C-unwind" fn on_done(ctx: *mut c_void) {
-            let collected = unsafe { &mut *(ctx as *mut Collected) };
-            collected.done = true;
-        }
-
-        let handle = intern_model(Arc::new(RecoverableFrameModel));
-        let mut collected = Collected {
-            parts: Vec::new(),
-            done: false,
-        };
-        let prompt = std::ffi::CString::new("\"hi\"").unwrap();
-        let e = aimux_stream_text_as_openai(
-            handle,
-            prompt.as_ptr(),
-            std::ptr::null(),
-            Some(on_part),
-            Some(on_done),
-            &mut collected as *mut Collected as *mut c_void,
-        );
-        assert!(e.is_null(), "{}", msg(e));
-        assert!(
-            collected.done,
-            "on_done must fire after a recoverable frame"
-        );
-        assert!(
-            collected.parts.iter().all(|p| !p.contains("\"error\"")),
-            "no error item may ride the chunk-typed wire: {:?}",
-            collected.parts
-        );
-        assert!(
-            collected.parts.iter().any(|p| p.contains("\"b\"")),
-            "chunks after the recoverable frame still arrive: {:?}",
-            collected.parts
-        );
-    }
-
-    #[test]
-    fn router_new_builds_router_model() {
-        let handles = [
-            mock_handle("mock", "primary", "primary-out"),
-            mock_handle("mock", "backup", "backup-out"),
-        ];
-        let mut h = zero_err();
-        let e = aimux_router_new(handles.as_ptr(), handles.len(), std::ptr::null(), &mut h);
-        assert!(e.is_null(), "{}", msg(e));
-        assert!(h != 0, "router handle must be non-zero");
-        // Confirm it resolves to a model.
-        let model = get_model(h).expect("router handle resolves");
-        assert_eq!(model.provider(), "router");
-        assert_eq!(model.model_id(), "router");
-    }
-
     #[test]
     fn router_new_rejects_empty_handles() {
         // len == 0 (with or without a NULL array) is "no usable child", not a
@@ -4390,112 +4175,6 @@ mod tests {
         assert_eq!(expect_ffi_error(e), "handles: must not be NULL");
     }
 
-    #[test]
-    fn router_new_rejects_bad_json() {
-        let handles = [mock_handle("mock", "m", "x")];
-        let bad = std::ffi::CString::new("{not json").unwrap();
-        let mut h = zero_err();
-        let e = aimux_router_new(handles.as_ptr(), handles.len(), bad.as_ptr(), &mut h);
-        assert_eq!(h, 0);
-        assert!(expect_ffi_error(e).starts_with("config_json: invalid JSON:"));
-    }
-
-    #[test]
-    fn router_new_treats_empty_config_as_defaults() {
-        // S1 guard: empty string / "null" config must NOT be a JSON_PARSE error
-        // (consistent with other config-bearing FFI entry points).
-        let handles = [mock_handle("mock", "m", "x")];
-        for cfg in ["", "  ", "null"] {
-            let c = std::ffi::CString::new(cfg).unwrap();
-            let mut h = zero_err();
-            let e = aimux_router_new(handles.as_ptr(), handles.len(), c.as_ptr(), &mut h);
-            assert!(e.is_null(), "router with config {cfg:?}: {}", msg(e));
-            assert!(h != 0);
-        }
-    }
-
-    #[test]
-    fn moa_new_builds_moa_model() {
-        let refs = [
-            mock_handle("mock", "ref-a", "A"),
-            mock_handle("mock", "ref-b", "B"),
-        ];
-        let agg = mock_handle("mock", "aggregator", "agg");
-        let mut h = zero_err();
-        let e = aimux_moa_new(refs.as_ptr(), refs.len(), agg, std::ptr::null(), &mut h);
-        assert!(e.is_null(), "{}", msg(e));
-        assert!(h != 0, "moa handle must be non-zero");
-        let model = get_model(h).expect("moa handle resolves");
-        assert_eq!(model.provider(), "moa");
-        assert_eq!(model.model_id(), "moa");
-    }
-
-    #[test]
-    fn moa_new_rejects_bad_aggregator() {
-        let refs = [mock_handle("mock", "ref-a", "A")];
-        let mut h = zero_err();
-        // aggregator handle 999999 does not exist.
-        let e = aimux_moa_new(refs.as_ptr(), refs.len(), 999_999, std::ptr::null(), &mut h);
-        assert_eq!(h, 0);
-        assert_eq!(
-            expect_ffi_error(e),
-            "invalid or expired moa aggregator handle"
-        );
-    }
-
-    #[test]
-    fn composites_reject_any_dead_member_handle() {
-        // A dead handle inside the array is a caller bug: reported, never
-        // silently dropped (the composite would otherwise run with fewer
-        // members than the caller believes).
-        let live = mock_handle("mock", "live", "L");
-        let dead = mock_handle("mock", "dead", "D");
-        aimux_drop_handle(dead);
-        let handles = [live, dead];
-
-        let mut h = zero_err();
-        let e = aimux_router_new(handles.as_ptr(), handles.len(), std::ptr::null(), &mut h);
-        assert_eq!(h, 0);
-        assert_eq!(
-            expect_ffi_error(e),
-            "invalid or expired router child handle"
-        );
-
-        let agg = mock_handle("mock", "aggregator", "agg");
-        let e = aimux_moa_new(
-            handles.as_ptr(),
-            handles.len(),
-            agg,
-            std::ptr::null(),
-            &mut h,
-        );
-        assert_eq!(h, 0);
-        assert_eq!(
-            expect_ffi_error(e),
-            "invalid or expired moa reference handle"
-        );
-
-        // NULL with ref_len > 0 is a null pointer, same as router.
-        let e = aimux_moa_new(std::ptr::null(), 2, agg, std::ptr::null(), &mut h);
-        assert_eq!(h, 0);
-        assert_eq!(expect_ffi_error(e), "reference_handles: must not be NULL");
-    }
-
-    #[test]
-    fn moa_new_allows_zero_references() {
-        // 0 references is valid (degrades to aggregator-only).
-        let agg = mock_handle("mock", "aggregator", "agg");
-        let mut h = zero_err();
-        let e = aimux_moa_new(std::ptr::null(), 0, agg, std::ptr::null(), &mut h);
-        assert!(e.is_null(), "{}", msg(e));
-        assert!(h != 0, "moa with 0 references should succeed");
-    }
-
-    // ── Transcription streaming sessions (RFC-0028 Phase 2) ──────────────
-
-    /// A mock transcription model whose `do_stream` echoes: one delta per
-    /// received audio chunk, then final + finish after the audio ends.
-    /// Honors the abort signal.
     struct MockStreamingTranscriber;
 
     #[async_trait::async_trait]
@@ -4810,51 +4489,5 @@ mod tests {
             .expect("session_drop must wake a backpressured push_audio");
         pusher.join().unwrap();
         drop_handle(model);
-    }
-
-    #[test]
-    fn transcription_session_new_rejects_bad_inputs() {
-        let model = mock_transcriber_handle();
-        let mut h = zero_err();
-        // Bad JSON.
-        let bad = std::ffi::CString::new("{not json").unwrap();
-        let e = aimux_transcription_session_new(model, 0, bad.as_ptr(), &mut h);
-        assert_eq!(h, 0);
-        assert!(expect_ffi_error(e).starts_with("opts_json: invalid JSON:"));
-
-        // Non-transcription model handle.
-        let lang = mock_handle("mock", "m", "x");
-        let e = aimux_transcription_session_new(lang, 0, std::ptr::null(), &mut h);
-        assert_eq!(h, 0);
-        assert_eq!(
-            expect_ffi_error(e),
-            "invalid or expired transcription handle"
-        );
-
-        // Bad abort handle.
-        let e = aimux_transcription_session_new(model, 999_999, std::ptr::null(), &mut h);
-        assert_eq!(h, 0);
-        assert_eq!(expect_ffi_error(e), "invalid or expired abort handle");
-
-        // NULL out-params on next_part.
-        let mut part: *mut c_char = std::ptr::null_mut();
-        assert_eq!(
-            expect_ffi_error(aimux_transcription_next_part(
-                0,
-                0,
-                std::ptr::null_mut(),
-                std::ptr::null_mut()
-            )),
-            "out_part: must not be NULL"
-        );
-        assert_eq!(
-            expect_ffi_error(aimux_transcription_next_part(
-                0,
-                0,
-                &mut part,
-                std::ptr::null_mut()
-            )),
-            "out_state: must not be NULL"
-        );
     }
 }

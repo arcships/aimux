@@ -40,7 +40,7 @@ async fn optional_usage_counts_do_not_discard_valid_answers() {
             actual.output_tokens.total,
             usage["output_tokens"].as_u64().map(|n| n as u32)
         );
-        assert_eq!(actual.raw, Some(usage));
+        assert_eq!(actual.raw.map(Value::Object), Some(usage));
     }
     let server = MockServer::start().await;
     let mut response = fixture();
@@ -193,14 +193,23 @@ async fn official_contract_round_trip_preserves_types_and_raw_metadata() {
     assert_eq!(result.usage.as_ref().unwrap().input_tokens.total, Some(392));
     assert_eq!(result.usage.as_ref().unwrap().output_tokens.total, Some(65));
     assert_eq!(
-        result.usage.as_ref().unwrap().raw,
+        result
+            .usage
+            .as_ref()
+            .unwrap()
+            .raw
+            .clone()
+            .map(Value::Object),
         Some(fixture()["usage"].clone())
     );
     assert_eq!(
         result.response.as_ref().unwrap().body.as_ref().unwrap(),
         &fixture()
     );
-    assert_eq!(result.provider_metadata.as_ref().unwrap()["jev"], fixture());
+    assert_eq!(
+        Value::Object(result.provider_metadata.as_ref().unwrap()["jev"].clone()),
+        fixture()
+    );
     assert_eq!(
         result.response.as_ref().unwrap().headers.as_ref().unwrap()["x-request-id"],
         "test-request"

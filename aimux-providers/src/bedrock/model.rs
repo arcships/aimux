@@ -5,6 +5,7 @@
 //! across all Bedrock-backed models (Anthropic Claude, Meta Llama, Mistral,
 //! etc.).
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -14,9 +15,12 @@ use futures::{StreamExt, stream::BoxStream};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+use aimux_core::types::{
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
+};
 
 use serde_json::json;
 
@@ -193,7 +197,7 @@ impl LanguageModel for BedrockModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let body = build_request_body(&self.model_id, options);
+        let body = build_request_body(&self.model_id, options)?;
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.endpoint(false);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
@@ -213,6 +217,7 @@ impl LanguageModel for BedrockModel {
         )
         .await?;
 
+        let response_body = resp.raw_value;
         let response_headers = resp.response_headers;
 
         let data: BedrockConverseResponse = resp.value;
@@ -249,18 +254,19 @@ impl LanguageModel for BedrockModel {
             usage,
             warnings: Vec::new(),
             provider_metadata: None,
-            response: ResponseMetadata {
+            response: Some(aimux_core::shared::ResponseInfo {
                 id: request_id,
                 timestamp: response_headers.get("date").cloned(),
                 model_id: Some(self.model_id.clone()),
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+                headers: Some(response_headers),
+                body: response_body,
+            }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let body = build_request_body(&self.model_id, options);
+        let body = build_request_body(&self.model_id, options)?;
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.endpoint(true);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
@@ -309,11 +315,11 @@ impl LanguageModel for BedrockModel {
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings: vec![] });
 
-            yield Ok(StreamPart::ResponseMetadata {
+            yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                 id: request_id,
                 timestamp: response_timestamp,
                 model_id: Some(model_id.clone()),
-            });
+            }));
 
             let messages = super::event_stream::decode_messages(&response_bytes);
 
@@ -480,22 +486,19 @@ impl LanguageModel for BedrockModel {
                             yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
                             // Empty input normalizes to "{}" per the upstream
                             // provider.
-                            let input = serde_json::Value::String(if acc.is_empty() {
+                            let input = if acc.is_empty() {
                                 "{}".to_string()
                             } else {
                                 acc
-                            });
-                            yield Ok(StreamPart::ToolCall {
+                            };
+                            yield Ok(StreamPart::ToolCall(RawToolCall {
                                 tool_call_id: id,
                                 tool_name: name,
                                 input,
                                 provider_executed: None,
                                 dynamic: None,
-                                thought_signature: None,
-                                invalid: None,
-                                error: None,
                                 provider_metadata: None,
-                            });
+                            }));
                         } else if reasoning_id.is_some() {
                             let id = idx.to_string();
                             if reasoning_id.as_deref() == Some(id.as_str()) {
@@ -594,11 +597,10 @@ impl LanguageModel for BedrockModel {
             let provider_metadata = if finish_meta.is_empty() {
                 None
             } else {
-                let payload = serde_json::Value::Object(finish_meta);
-                Some(json!({
-                    "amazonBedrock": payload,
-                    "bedrock": payload,
-                }))
+                Some(HashMap::from([
+                    ("amazonBedrock".to_string(), finish_meta.clone()),
+                    ("bedrock".to_string(), finish_meta),
+                ]))
             };
 
             yield Ok(StreamPart::Finish {
@@ -613,8 +615,10 @@ impl LanguageModel for BedrockModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
         })
     }
 }
@@ -622,12 +626,15 @@ impl LanguageModel for BedrockModel {
 /// Wrap the accumulated reasoning signature as provider_metadata in the same
 /// dual-key shape the non-streaming path emits (`amazonBedrock` + `bedrock`),
 /// so consumers reading either key see it.
-fn reasoning_signature_meta(sig: Option<String>) -> Option<serde_json::Value> {
+fn reasoning_signature_meta(sig: Option<String>) -> Option<ProviderMetadata> {
     sig.map(|s| {
-        json!({
-            "amazonBedrock": { "signature": &s },
-            "bedrock": { "signature": s }
-        })
+        let mut metadata = provider_namespace("amazonBedrock", json!({ "signature": &s }))
+            .expect("provider metadata must be an object");
+        metadata.extend(
+            provider_namespace("bedrock", json!({ "signature": s }))
+                .expect("provider metadata must be an object"),
+        );
+        metadata
     })
 }
 
@@ -649,15 +656,14 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
         });
     }
     if let Some(tool_use) = &block.tool_use {
-        content.push(GenerateContent::ToolCall {
+        content.push(GenerateContent::ToolCall(RawToolCall {
             tool_call_id: tool_use.tool_use_id.clone(),
             tool_name: tool_use.name.clone(),
             input: tool_use.input.to_string(),
             provider_executed: None,
             dynamic: None,
-            thought_signature: None,
             provider_metadata: None,
-        });
+        }));
     }
     if let Some(rc) = &block.reasoning_content {
         if let Some(rt) = rc.get("reasoningText") {
@@ -667,29 +673,36 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
                 .unwrap_or("")
                 .to_string();
             let provider_metadata = rt.get("signature").and_then(|v| v.as_str()).map(|sig| {
-                json!({
-                    "amazonBedrock": { "signature": sig },
-                    "bedrock": { "signature": sig }
-                })
+                let mut metadata = provider_namespace("amazonBedrock", json!({ "signature": sig }))
+                    .expect("provider metadata must be an object");
+                metadata.extend(
+                    provider_namespace("bedrock", json!({ "signature": sig }))
+                        .expect("provider metadata must be an object"),
+                );
+                metadata
             });
-            content.push(GenerateContent::Reasoning {
+            content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata,
-            });
+            }));
         } else if let Some(rr) = rc.get("redactedReasoning") {
             let data = rr
                 .get("data")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let provider_metadata = Some(json!({
-                "amazonBedrock": { "redactedData": data },
-                "bedrock": { "redactedData": data }
-            }));
-            content.push(GenerateContent::Reasoning {
+            let mut metadata =
+                provider_namespace("amazonBedrock", json!({ "redactedData": &data }))
+                    .expect("provider metadata must be an object");
+            metadata.extend(
+                provider_namespace("bedrock", json!({ "redactedData": data }))
+                    .expect("provider metadata must be an object"),
+            );
+            let provider_metadata = Some(metadata);
+            content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text: String::new(),
                 provider_metadata,
-            });
+            }));
         }
     }
 }

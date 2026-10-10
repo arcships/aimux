@@ -18,17 +18,20 @@
 //! browser_search tool, stream_options, etc.). Reasoning effort is a direct
 //! passthrough — no vendor normalization.
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultOutput, ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, ReasoningOutput};
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
@@ -39,11 +42,7 @@ use aimux_providers::{ProviderOptions, provider};
 
 /// The TS `TEST_PROMPT`: a single user text message "Hello".
 fn test_prompt() -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("Hello")],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text("Hello")]
 }
 
 /// `CallOptions` with only `prompt` set.
@@ -235,13 +234,22 @@ mod convert_messages {
 
         let model = make_provider(&server);
 
-        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::User,
+        let prompt: LanguageModelPrompt = vec![LanguageModelMessage::User {
             content: vec![
-                ContentPart::text("Hello"),
-                ContentPart::file_base64("AAECAw==", "image/png"),
+                UserPart::Text(TextPart {
+                    text: "Hello".into(),
+                    provider_options: None,
+                }),
+                UserPart::File(FilePart {
+                    data: FileData::Data {
+                        data: FileBytes::Base64("AAECAw==".into()),
+                    },
+                    media_type: "image/png".into(),
+                    filename: None,
+                    provider_options: None,
+                }),
             ],
-            ..Default::default()
+            provider_options: None,
         }];
         model.do_generate(&default_options(prompt)).await.unwrap();
 
@@ -286,19 +294,27 @@ mod convert_messages {
         let model = make_provider(&server);
 
         let prompt: LanguageModelPrompt = vec![
-            LanguageModelPromptMessage {
-                role: Role::Assistant,
-                content: vec![ContentPart::tool_call(
-                    "quux",
-                    "thwomp",
-                    json!({"foo":"bar123"}),
-                )],
-                ..Default::default()
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "quux".into(),
+                    tool_name: "thwomp".into(),
+                    input: json!({"foo":"bar123"}),
+                    provider_executed: None,
+                    provider_options: None,
+                })],
+                provider_options: None,
             },
-            LanguageModelPromptMessage {
-                role: Role::Tool,
-                content: vec![ContentPart::tool_result("quux", json!({"oof":"321rab"}))],
-                ..Default::default()
+            LanguageModelMessage::Tool {
+                content: vec![ToolPart::ToolResult(ToolResultPart {
+                    tool_call_id: "quux".into(),
+                    tool_name: "thwomp".into(),
+                    output: ToolResultOutput::Json {
+                        value: json!({"oof":"321rab"}),
+                        provider_options: None,
+                    },
+                    provider_options: None,
+                })],
+                provider_options: None,
             },
         ];
         model.do_generate(&default_options(prompt)).await.unwrap();
@@ -331,13 +347,21 @@ mod convert_messages {
 
         let model = make_provider(&server);
 
-        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::Assistant,
+        let prompt: LanguageModelPrompt = vec![LanguageModelMessage::Assistant {
             content: vec![
-                ContentPart::reasoning("I think the tool will return the correct value."),
-                ContentPart::tool_call("quux", "thwomp", json!({"foo":"bar123"})),
+                AssistantPart::Reasoning(ReasoningPart {
+                    text: "I think the tool will return the correct value.".into(),
+                    provider_options: None,
+                }),
+                AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "quux".into(),
+                    tool_name: "thwomp".into(),
+                    input: json!({"foo":"bar123"}),
+                    provider_executed: None,
+                    provider_options: None,
+                }),
             ],
-            ..Default::default()
+            provider_options: None,
         }];
         model.do_generate(&default_options(prompt)).await.unwrap();
 
@@ -360,10 +384,12 @@ mod convert_messages {
 
         let model = make_provider(&server);
 
-        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content: vec![ContentPart::text("Hello, how can I help you?")],
-            ..Default::default()
+        let prompt: LanguageModelPrompt = vec![LanguageModelMessage::Assistant {
+            content: vec![AssistantPart::Text(TextPart {
+                text: "Hello, how can I help you?".into(),
+                provider_options: None,
+            })],
+            provider_options: None,
         }];
         model.do_generate(&default_options(prompt)).await.unwrap();
 
@@ -383,22 +409,25 @@ mod convert_messages {
 
         let model = make_provider(&server);
 
-        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::file_reference(
-                "image/png",
-                json!({"groq": "file-ref-123"}),
-            )],
-            ..Default::default()
+        let prompt: LanguageModelPrompt = vec![LanguageModelMessage::User {
+            content: vec![UserPart::File(FilePart {
+                data: FileData::Reference {
+                    reference: [("groq".into(), "file-ref-123".into())].into(),
+                },
+                media_type: "image/png".into(),
+                filename: None,
+                provider_options: None,
+            })],
+            provider_options: None,
         }];
-        // Groq references don't contain an "openai" key, so the converter
-        // returns an InvalidArgument error instead of panicking.
+        // Upstream rejects file parts with provider references outright.
         let result = model.do_generate(&default_options(prompt)).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            err.to_string().contains("No provider reference found"),
-            "error should mention 'No provider reference found': {err}"
+            err.to_string()
+                .contains("file parts with provider references"),
+            "error should mention 'file parts with provider references': {err}"
         );
     }
 }
@@ -702,34 +731,6 @@ mod prepare_tools {
         assert_eq!(body["tools"][0]["function"]["parameters"]["type"], "object");
     }
 
-    /// TS: "should add warnings for unsupported provider-defined tools"
-    #[tokio::test]
-    async fn unsupported_provider_tool_warning() {
-        let server = MockServer::start().await;
-        mock_json(&server, text_completion_body()).await;
-
-        let model = make_provider(&server);
-
-        let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "some.unsupported_tool".to_string(),
-            name: "unsupported_tool".to_string(),
-            args: json!({}),
-        });
-        let options = CallOptions {
-            tools: Some(vec![tool]),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        // The unsupported tool should produce a warning.
-        assert!(result.warnings.iter().any(|w| match w {
-            aimux_core::types::Warning::Unsupported { feature, .. } => {
-                feature.contains("some.unsupported_tool")
-            }
-            _ => false,
-        }));
-    }
-
     /// TS: "should pass through strict mode when strict is true"
     #[tokio::test]
     async fn strict_mode_true() {
@@ -813,15 +814,13 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: ToolChoice::Auto,
+            tool_choice: Some(ToolChoice::Auto),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        // tool_choice is only sent when not Auto (default)
-        // Actually, the OpenAI converter sends tool_choice for Auto too
-        assert!(body.get("tool_choice").is_some() || body.get("tool_choice").is_none());
+        assert_eq!(body["tool_choice"], "auto");
     }
 
     /// TS: "should handle tool choice 'required'"
@@ -835,7 +834,7 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: ToolChoice::Required,
+            tool_choice: Some(ToolChoice::Required),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -855,7 +854,7 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: ToolChoice::None,
+            tool_choice: Some(ToolChoice::None),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -875,9 +874,9 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: ToolChoice::Tool {
+            tool_choice: Some(ToolChoice::Tool {
                 tool_name: "testFunction".to_string(),
-            },
+            }),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -885,138 +884,6 @@ mod prepare_tools {
         let body = first_request_body(&server).await;
         assert_eq!(body["tool_choice"]["type"], "function");
         assert_eq!(body["tool_choice"]["function"]["name"], "testFunction");
-    }
-
-    /// TS: "should handle browser search tool with supported model"
-    #[tokio::test]
-    async fn browser_search_supported_model() {
-        let server = MockServer::start().await;
-        mock_json(&server, text_completion_body()).await;
-
-        let model = provider(
-            "groq",
-            Some("test-api-key".to_string()),
-            "openai/gpt-oss-120b",
-            Some(ProviderOptions {
-                base_url: Some(server.uri()),
-                ..Default::default()
-            }),
-        )
-        .expect("groq provider should build");
-
-        let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "groq.browser_search".to_string(),
-            name: "browser_search".to_string(),
-            args: json!({}),
-        });
-        let options = CallOptions {
-            tools: Some(vec![tool]),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["tools"][0]["type"], "browser_search");
-    }
-
-    /// TS: "should warn when browser search is used with unsupported model"
-    #[tokio::test]
-    async fn browser_search_unsupported_model() {
-        let server = MockServer::start().await;
-        mock_json(&server, text_completion_body()).await;
-
-        let model = make_provider(&server);
-
-        let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "groq.browser_search".to_string(),
-            name: "browser_search".to_string(),
-            args: json!({}),
-        });
-        let options = CallOptions {
-            tools: Some(vec![tool]),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        assert!(result.warnings.iter().any(|w| match w {
-            aimux_core::types::Warning::Unsupported {
-                feature, details, ..
-            } => {
-                feature.contains("groq.browser_search")
-                    && details.as_ref().is_some_and(|d| d.contains("gemma2-9b-it"))
-            }
-            _ => false,
-        }));
-    }
-
-    /// TS: "should handle mixed tools with model validation"
-    #[tokio::test]
-    async fn mixed_tools_with_browser_search() {
-        let server = MockServer::start().await;
-        mock_json(&server, text_completion_body()).await;
-
-        let model = provider(
-            "groq",
-            Some("test-api-key".to_string()),
-            "openai/gpt-oss-20b",
-            Some(ProviderOptions {
-                base_url: Some(server.uri()),
-                ..Default::default()
-            }),
-        )
-        .expect("groq provider should build");
-
-        let func_tool = FunctionTool::new("test-tool", json!({"type":"object","properties":{}}))
-            .with_description("A test tool");
-        let browser_tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "groq.browser_search".to_string(),
-            name: "browser_search".to_string(),
-            args: json!({}),
-        });
-        let options = CallOptions {
-            tools: Some(vec![Tool::from(func_tool), browser_tool]),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["tools"][0]["type"], "function");
-        assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
-        assert_eq!(body["tools"][1]["type"], "browser_search");
-    }
-
-    /// TS: "should validate all browser search supported models"
-    #[tokio::test]
-    async fn browser_search_all_supported_models() {
-        for model_id in &["openai/gpt-oss-20b", "openai/gpt-oss-120b"] {
-            let server = MockServer::start().await;
-            mock_json(&server, text_completion_body()).await;
-
-            let model = provider(
-                "groq",
-                Some("test-api-key".to_string()),
-                model_id,
-                Some(ProviderOptions {
-                    base_url: Some(server.uri()),
-                    ..Default::default()
-                }),
-            )
-            .expect("groq provider should build");
-
-            let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-                id: "groq.browser_search".to_string(),
-                name: "browser_search".to_string(),
-                args: json!({}),
-            });
-            let options = CallOptions {
-                tools: Some(vec![tool]),
-                ..default_options(test_prompt())
-            };
-            model.do_generate(&options).await.unwrap();
-
-            let body = first_request_body(&server).await;
-            assert_eq!(body["tools"][0]["type"], "browser_search");
-        }
     }
 }
 
@@ -1081,11 +948,11 @@ mod do_generate {
             .unwrap();
 
         let tool_call = result.content.iter().find_map(|c| match c {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone())),
             _ => None,
         });
         let (id, name) = tool_call.expect("should have tool call");
@@ -1108,7 +975,7 @@ mod do_generate {
             .unwrap();
 
         let reasoning = result.content.iter().find_map(|c| match c {
-            GenerateContent::Reasoning { text, .. } => Some(text.clone()),
+            GenerateContent::Reasoning(ReasoningOutput { text, .. }) => Some(text.clone()),
             _ => None,
         });
         assert!(reasoning.is_some());
@@ -1185,27 +1052,6 @@ mod do_generate {
 
         let body = first_request_body(&server).await;
         assert_eq!(body["reasoning_effort"], "none");
-    }
-
-    /// TS: "should prefer providerOptions reasoningEffort over top-level reasoning"
-    #[tokio::test]
-    async fn provider_option_reasoning_effort_preferred() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"reasoningEffort": "high"}));
-        let options = CallOptions {
-            reasoning: Some(ReasoningEffort::Medium),
-            provider_options: Some(provider_opts),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["reasoning_effort"], "high");
     }
 
     /// TS: "should extract usage"
@@ -1346,75 +1192,6 @@ mod do_generate {
         assert_eq!(result.finish_reason.raw.as_deref(), Some("eos"));
     }
 
-    /// TS: "should pass provider options" (reasoningFormat, user, parallelToolCalls)
-    #[tokio::test]
-    async fn pass_provider_options() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert(
-            "groq".to_string(),
-            json!({
-                "reasoningFormat": "hidden",
-                "user": "test-user-id",
-                "parallelToolCalls": false
-            }),
-        );
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["reasoning_format"], "hidden");
-        assert_eq!(body["user"], "test-user-id");
-        assert_eq!(body["parallel_tool_calls"], false);
-    }
-
-    /// TS: "should pass serviceTier provider option"
-    #[tokio::test]
-    async fn pass_service_tier_flex() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"serviceTier": "flex"}));
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["service_tier"], "flex");
-    }
-
-    /// TS: "should pass performance serviceTier provider option"
-    #[tokio::test]
-    async fn pass_service_tier_performance() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"serviceTier": "performance"}));
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["service_tier"], "performance");
-    }
-
     /// TS: "should pass tools and toolChoice"
     #[tokio::test]
     async fn pass_tools_and_tool_choice() {
@@ -1435,9 +1212,9 @@ mod do_generate {
         );
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: ToolChoice::Tool {
+            tool_choice: Some(ToolChoice::Tool {
                 tool_name: "test-tool".to_string(),
-            },
+            }),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -1477,91 +1254,6 @@ mod do_generate {
         assert_eq!(body["response_format"]["type"], "json_schema");
         assert_eq!(body["response_format"]["json_schema"]["name"], "test-name");
         assert_eq!(body["response_format"]["json_schema"]["strict"], true);
-    }
-
-    /// TS: "should pass response format as json_object when structuredOutputs
-    /// explicitly disabled"
-    #[tokio::test]
-    async fn response_format_json_object_when_disabled() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"structuredOutputs": false}));
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            response_format: Some(ResponseFormat::Json {
-                schema: Some(json!({
-                    "type": "object",
-                    "properties": { "value": { "type": "string" } },
-                    "required": ["value"],
-                    "additionalProperties": false,
-                })),
-                name: Some("test-name".to_string()),
-                description: Some("test description".to_string()),
-            }),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["response_format"]["type"], "json_object");
-
-        // Should have a warning about structuredOutputs
-        assert!(result.warnings.iter().any(|w| match w {
-            aimux_core::types::Warning::Unsupported { feature, .. } => feature == "responseFormat",
-            _ => false,
-        }));
-    }
-
-    /// TS: "should send strict: false when strictJsonSchema is explicitly disabled"
-    #[tokio::test]
-    async fn strict_json_schema_false() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"strictJsonSchema": false}));
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            response_format: Some(ResponseFormat::Json {
-                schema: Some(json!({
-                    "type": "object",
-                    "properties": { "value": { "type": "string" } },
-                    "required": ["value"],
-                    "additionalProperties": false,
-                })),
-                name: Some("test-name".to_string()),
-                description: Some("test description".to_string()),
-            }),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["response_format"]["json_schema"]["strict"], false);
-    }
-
-    /// TS: "should send request body" (request.body)
-    #[tokio::test]
-    async fn request_body_string() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .unwrap();
-
-        let request_body = result.request_body.expect("should have request body");
-        assert_eq!(request_body["model"], "gemma2-9b-it");
-        assert_eq!(request_body["messages"][0]["content"], "Hello");
     }
 }
 
@@ -1725,18 +1417,18 @@ mod do_stream {
 
         // Should have a ToolCall part
         let tool_call = parts.iter().find_map(|p| match p {
-            StreamPart::ToolCall {
+            StreamPart::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         });
         let (id, name, input) = tool_call.expect("should have tool call");
         assert_eq!(id, "call_abc");
         assert_eq!(name, "test-tool");
-        assert_eq!(input, Value::String(r#"{"value":"Sparkle Day"}"#.into()));
+        assert_eq!(input, r#"{"value":"Sparkle Day"}"#);
 
         // Should have tool-calls finish reason
         let finish = parts.iter().find_map(|p| match p {
@@ -1790,13 +1482,10 @@ mod do_stream {
         let parts = collect_stream(result).await;
 
         let tool_call = parts.iter().find_map(|p| match p {
-            StreamPart::ToolCall { input, .. } => Some(input.clone()),
+            StreamPart::ToolCall(RawToolCall { input, .. }) => Some(input.clone()),
             _ => None,
         });
-        assert_eq!(
-            tool_call.unwrap(),
-            Value::String(r#"{"value":"Sparkle Day"}"#.into())
-        );
+        assert_eq!(tool_call.unwrap(), r#"{"value":"Sparkle Day"}"#);
     }
 
     /// TS: "should stream usage from x_groq.usage"

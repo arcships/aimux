@@ -10,14 +10,15 @@
 //! - `convert-openai-responses-usage.ts` -> [`convert_responses_usage`]
 //! - `map-openai-responses-finish-reason.ts` -> [`map_responses_finish_reason`]
 
-use std::collections::HashMap;
-
 use serde_json::{Value, json};
 
-use aimux_core::content::ContentPart;
-use aimux_core::language_model_message::LanguageModelPrompt;
-use aimux_core::message::Role;
+use aimux_core::error::AiMuxError;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Usage, Warning};
 
@@ -40,7 +41,7 @@ pub use crate::openai::convert_common::SystemMessageMode as ResponsesSystemMessa
 // -- Provider options helper -------------------------------------------------
 
 /// Get a value from `provider_options.openai.<key>`.
-fn openai_option(options: &Option<HashMap<String, Value>>, key: &str) -> Option<Value> {
+fn openai_option(options: &Option<SharedProviderOptions>, key: &str) -> Option<Value> {
     options
         .as_ref()
         .and_then(|m| m.get("openai"))
@@ -70,28 +71,33 @@ pub struct ResponsesInputResult {
 /// `has_previous_response_id` is true, assistant reasoning/function-call items
 /// that already carry an `itemId` are skipped (they live in the previous
 /// response chain).
+///
+/// # Errors
+/// Returns an unsupported-functionality error for text file parts.
 pub fn convert_to_responses_input(
     prompt: &LanguageModelPrompt,
     system_message_mode: SystemMessageMode,
     store: bool,
     has_previous_response_id: bool,
-) -> ResponsesInputResult {
+    has_conversation: bool,
+) -> Result<ResponsesInputResult, AiMuxError> {
     let mut input: Vec<Value> = Vec::new();
     let mut warnings: Vec<Warning> = Vec::new();
 
+    let mut processed_approval_ids = std::collections::HashSet::new();
     for msg in prompt {
-        match msg.role {
-            Role::System => match system_message_mode {
+        match msg {
+            LanguageModelMessage::System { content, .. } => match system_message_mode {
                 SystemMessageMode::System => {
                     input.push(json!({
                         "role": "system",
-                        "content": join_text_parts(&msg.content),
+                        "content": content,
                     }));
                 }
                 SystemMessageMode::Developer => {
                     input.push(json!({
                         "role": "developer",
-                        "content": join_text_parts(&msg.content),
+                        "content": content,
                     }));
                 }
                 SystemMessageMode::Remove => {
@@ -100,19 +106,22 @@ pub fn convert_to_responses_input(
                     });
                 }
             },
-            Role::User => {
-                let content: Vec<Value> = msg.content.iter().map(convert_user_part).collect();
+            LanguageModelMessage::User { content, .. } => {
+                let content: Vec<Value> = content
+                    .iter()
+                    .map(convert_user_part)
+                    .collect::<Result<_, _>>()?;
                 input.push(json!({ "role": "user", "content": content }));
             }
-            Role::Assistant => {
-                for part in &msg.content {
+            LanguageModelMessage::Assistant { content, .. } => {
+                for part in content {
                     match part {
-                        ContentPart::Text {
+                        AssistantPart::Text(TextPart {
                             text,
                             provider_options,
-                        } => {
+                        }) => {
                             let id = item_id(provider_options);
-                            if has_previous_response_id && id.is_some() {
+                            if (has_previous_response_id || has_conversation) && id.is_some() {
                                 continue;
                             }
                             if store && let Some(ref id) = id {
@@ -132,15 +141,15 @@ pub fn convert_to_responses_input(
                             }
                             input.push(item);
                         }
-                        ContentPart::ToolCall {
+                        AssistantPart::ToolCall(ToolCallPart {
                             tool_call_id,
                             tool_name,
                             input: tool_input,
                             provider_options,
                             ..
-                        } => {
+                        }) => {
                             let id = item_id(provider_options);
-                            if has_previous_response_id && id.is_some() {
+                            if (has_previous_response_id || has_conversation) && id.is_some() {
                                 continue;
                             }
                             let namespace = namespace_from_provider_options(provider_options);
@@ -155,13 +164,15 @@ pub fn convert_to_responses_input(
                             }
                             input.push(item);
                         }
-                        ContentPart::Reasoning {
+                        AssistantPart::Reasoning(ReasoningPart {
                             text,
                             provider_options,
                             ..
-                        } => {
+                        }) => {
                             let reasoning_id = openai_sub_option(provider_options, "itemId");
-                            if has_previous_response_id && reasoning_id.is_some() {
+                            if (has_previous_response_id || has_conversation)
+                                && reasoning_id.is_some()
+                            {
                                 continue;
                             }
                             if let Some(ref rid) = reasoning_id {
@@ -210,28 +221,84 @@ pub fn convert_to_responses_input(
                                 }
                             }
                         }
+                        AssistantPart::ToolResult(part) => {
+                            if has_conversation
+                                || matches!(part.output, ToolResultOutput::ExecutionDenied { .. })
+                                || matches!(&part.output, ToolResultOutput::Json { value, .. } if value.get("type").and_then(Value::as_str) == Some("execution-denied"))
+                            {
+                                continue;
+                            }
+                            if store {
+                                let id = item_id(&part.provider_options)
+                                    .unwrap_or_else(|| part.tool_call_id.clone());
+                                input.push(json!({"type":"item_reference", "id":id}));
+                            } else {
+                                warnings.push(Warning::Other {
+                                    message:format!("Results for OpenAI tool {} are not sent to the API when store is false", part.tool_name),
+                                });
+                            }
+                        }
+                        AssistantPart::Custom(part) if part.kind == "openai.compaction" => {
+                            let id = item_id(&part.provider_options);
+                            if has_conversation && id.is_some() {
+                                continue;
+                            }
+                            if let Some(id) = id {
+                                if store {
+                                    input.push(json!({"type":"item_reference", "id":id}));
+                                } else {
+                                    input.push(json!({"type":"compaction", "id":id, "encrypted_content":openai_sub_option(&part.provider_options, "encryptedContent")}));
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
             }
-            Role::Tool => {
-                for part in &msg.content {
-                    if let ContentPart::ToolResult {
-                        tool_call_id,
-                        result,
-                        ..
-                    } = part
-                    {
-                        let content_value = match result {
-                            Value::String(s) => Value::String(s.clone()),
-                            other => Value::String(other.to_string()),
-                        };
-                        input.push(json!({
-                            "type": "function_call_output",
-                            "call_id": tool_call_id,
-                            "output": content_value,
-                        }));
+            LanguageModelMessage::Tool { content, .. } => {
+                for part in content {
+                    if let ToolPart::ToolApprovalResponse(approval) = part {
+                        if !processed_approval_ids.insert(&approval.approval_id) {
+                            continue;
+                        }
+                        if store && !has_conversation && !has_previous_response_id {
+                            input.push(json!({"type":"item_reference", "id":approval.approval_id}));
+                        }
+                        input.push(json!({"type":"mcp_approval_response", "approval_request_id":approval.approval_id, "approve":approval.approved}));
+                        continue;
                     }
+                    let ToolPart::ToolResult(ToolResultPart {
+                        tool_call_id,
+                        output,
+                        provider_options,
+                        ..
+                    }) = part
+                    else {
+                        continue;
+                    };
+                    if let ToolResultOutput::ExecutionDenied {
+                        provider_options, ..
+                    } = output
+                        && openai_sub_option(provider_options, "approvalId")
+                            .and_then(|value| value.as_str().map(|id| !id.is_empty()))
+                            == Some(true)
+                    {
+                        continue;
+                    }
+                    let mut content_value = convert_tool_result_output(output, &mut warnings)?;
+                    if !matches!(output, ToolResultOutput::Content { .. })
+                        && let Some(breakpoint) =
+                            crate::openai::convert::tool_result_cache_breakpoint(output).or_else(
+                                || openai_sub_option(provider_options, "promptCacheBreakpoint"),
+                            )
+                    {
+                        content_value = json!([{"type":"input_text", "text":content_value, "prompt_cache_breakpoint":breakpoint}]);
+                    }
+                    input.push(json!({
+                        "type": "function_call_output",
+                        "call_id": tool_call_id,
+                        "output": content_value,
+                    }));
                 }
             }
         }
@@ -255,98 +322,126 @@ pub fn convert_to_responses_input(
         });
     }
 
-    ResponsesInputResult { input, warnings }
-}
-
-/// Join all text parts of a message into a single string (for system messages).
-fn join_text_parts(parts: &[ContentPart]) -> String {
-    parts
-        .iter()
-        .filter_map(|p| match p {
-            ContentPart::Text { text, .. } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("")
+    Ok(ResponsesInputResult { input, warnings })
 }
 
 /// Convert a single user-message content part into the Responses input shape.
-fn convert_user_part(part: &ContentPart) -> Value {
-    match part {
-        ContentPart::Text { text, .. } => json!({ "type": "input_text", "text": text }),
-        ContentPart::Image {
-            image,
+fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
+    Ok(match part {
+        UserPart::Text(TextPart { text, .. }) => json!({ "type": "input_text", "text": text }),
+        UserPart::File(FilePart {
+            data,
             media_type,
+            filename,
             provider_options,
-        } => {
-            let b64 = {
-                use base64::Engine;
-                base64::engine::general_purpose::STANDARD.encode(image)
+        }) => {
+            let is_image = media_type.split('/').next() == Some("image");
+            let mut item = match data {
+                FileData::Data { data } => {
+                    let b64 = match data {
+                        FileBytes::Binary(bytes) => {
+                            use base64::Engine;
+                            base64::engine::general_purpose::STANDARD.encode(bytes)
+                        }
+                        FileBytes::Base64(data) => data.clone(),
+                    };
+                    let data_url = format!("data:{media_type};base64,{b64}");
+                    if is_image {
+                        json!({ "type": "input_image", "image_url": data_url })
+                    } else {
+                        json!({
+                            "type": "input_file",
+                            "filename": filename.as_deref().unwrap_or("part.pdf"),
+                            "file_data": data_url,
+                        })
+                    }
+                }
+                FileData::Url { url, .. } => {
+                    if is_image {
+                        json!({ "type": "input_image", "image_url": url })
+                    } else {
+                        json!({ "type": "input_file", "file_url": url })
+                    }
+                }
+                FileData::Reference { reference } => {
+                    let file_id = reference.get("openai").ok_or_else(|| {
+                        AiMuxError::InvalidArgument(
+                            "missing file reference for provider openai".into(),
+                        )
+                    })?;
+                    json!({ "type": if is_image { "input_image" } else { "input_file" }, "file_id": file_id })
+                }
+                FileData::Text { .. } => {
+                    return Err(AiMuxError::UnsupportedFunctionality(
+                        "text file parts".into(),
+                    ));
+                }
             };
-            let detail = openai_sub_option(provider_options, "imageDetail");
-            let mut img = json!({
-                "type": "input_image",
-                "image_url": format!("data:{};base64,{}", media_type, b64),
-            });
-            if let Some(d) = detail {
-                img["detail"] = d;
+            if item["type"] == "input_image"
+                && let Some(detail) = openai_sub_option(provider_options, "imageDetail")
+            {
+                item["detail"] = detail;
             }
-            img
+            item
         }
-        ContentPart::File {
-            data,
-            media_type,
-            filename,
-            ..
-        } => {
-            let b64 = {
-                use base64::Engine;
-                base64::engine::general_purpose::STANDARD.encode(data)
-            };
-            let fname = filename.clone().unwrap_or_else(|| "part.pdf".to_string());
-            json!({
-                "type": "input_file",
-                "filename": fname,
-                "file_data": format!("data:{};base64,{}", media_type, b64),
-            })
-        }
-        ContentPart::FileBase64 {
-            data,
-            media_type,
-            filename,
-            ..
-        } => {
-            let fname = filename.clone().unwrap_or_else(|| "part.pdf".to_string());
-            json!({
-                "type": "input_file",
-                "filename": fname,
-                "file_data": format!("data:{};base64,{}", media_type, data),
-            })
-        }
-        ContentPart::FileUrl {
-            url, media_type, ..
-        } => {
-            if media_type.starts_with("image") {
-                json!({ "type": "input_image", "image_url": url })
-            } else {
-                json!({ "type": "input_file", "file_url": url })
-            }
-        }
-        _ => json!({ "type": "input_text", "text": "" }),
-    }
+    })
 }
 
-/// Serialize tool-call arguments: null/empty -> `"{}"`, objects -> JSON string.
-fn serialize_arguments(input: &Value) -> String {
-    match input {
-        Value::Null => "{}".to_string(),
-        Value::String(s) if s.is_empty() => "{}".to_string(),
-        other => other.to_string(),
+fn convert_tool_result_output(
+    output: &ToolResultOutput,
+    warnings: &mut Vec<Warning>,
+) -> Result<Value, AiMuxError> {
+    let ToolResultOutput::Content { value } = output else {
+        return Ok(crate::openai::convert::tool_result_to_content(output));
+    };
+    let mut parts = Vec::new();
+    for item in value {
+        let (mut converted, provider_options) = match item {
+            ToolResultContent::Text(part) => (
+                json!({"type":"input_text", "text":part.text}),
+                &part.provider_options,
+            ),
+            ToolResultContent::File(part) => {
+                if matches!(part.data, FileData::Text { .. }) {
+                    warnings.push(Warning::Other {
+                        message: "unsupported tool content part type: file with data type: text"
+                            .into(),
+                    });
+                    continue;
+                }
+                let mut converted = convert_user_part(&UserPart::File(part.clone()))?;
+                if converted["type"] == "input_file" && converted.get("file_data").is_some() {
+                    converted["filename"] = json!(part.filename.as_deref().unwrap_or("data"));
+                }
+                if converted["type"] == "input_image"
+                    && let Some(detail) = openai_sub_option(&part.provider_options, "imageDetail")
+                {
+                    converted["detail"] = detail;
+                }
+                (converted, &part.provider_options)
+            }
+            ToolResultContent::Custom { .. } => {
+                warnings.push(Warning::Other {
+                    message: "unsupported tool content part type: custom".into(),
+                });
+                continue;
+            }
+        };
+        if let Some(breakpoint) = openai_sub_option(provider_options, "promptCacheBreakpoint") {
+            converted["prompt_cache_breakpoint"] = breakpoint;
+        }
+        parts.push(converted);
     }
+    Ok(json!(parts))
+}
+
+/// Serialize tool-call arguments as JSON, mirroring JSON.stringify.
+fn serialize_arguments(input: &Value) -> String {
+    input.to_string()
 }
 
 /// Read the `itemId` from a content part's `providerOptions.openai.itemId`.
-fn item_id(provider_options: &Option<Value>) -> Option<String> {
+fn item_id(provider_options: &Option<SharedProviderOptions>) -> Option<String> {
     provider_options
         .as_ref()
         .and_then(|v| v.get("openai"))
@@ -356,7 +451,7 @@ fn item_id(provider_options: &Option<Value>) -> Option<String> {
 }
 
 /// Read the `phase` from a content part's `providerOptions.openai.phase`.
-fn phase_from_provider_options(provider_options: &Option<Value>) -> Option<String> {
+fn phase_from_provider_options(provider_options: &Option<SharedProviderOptions>) -> Option<String> {
     provider_options
         .as_ref()
         .and_then(|v| v.get("openai"))
@@ -366,7 +461,9 @@ fn phase_from_provider_options(provider_options: &Option<Value>) -> Option<Strin
 }
 
 /// Read the `namespace` from a content part's `providerOptions.openai.namespace`.
-fn namespace_from_provider_options(provider_options: &Option<Value>) -> Option<String> {
+fn namespace_from_provider_options(
+    provider_options: &Option<SharedProviderOptions>,
+) -> Option<String> {
     provider_options
         .as_ref()
         .and_then(|v| v.get("openai"))
@@ -376,7 +473,7 @@ fn namespace_from_provider_options(provider_options: &Option<Value>) -> Option<S
 }
 
 /// Read a sub-key from `providerOptions.openai.<key>` on a content part.
-fn openai_sub_option(provider_options: &Option<Value>, key: &str) -> Option<Value> {
+fn openai_sub_option(provider_options: &Option<SharedProviderOptions>, key: &str) -> Option<Value> {
     provider_options
         .as_ref()
         .and_then(|v| v.get("openai"))
@@ -513,7 +610,7 @@ fn push_unsupported_call_option_warnings(options: &CallOptions, warnings: &mut V
 /// wins over top-level `reasoning`), `reasoningSummary` (defaults to "detailed"
 /// when an effort other than "none" applies), and whether the model reasons.
 fn resolve_responses_reasoning(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     options: &CallOptions,
     caps: &ModelCapabilities,
 ) -> (Option<String>, Option<String>, bool) {
@@ -562,7 +659,7 @@ fn resolve_responses_reasoning(
 
 /// Warn when `conversation` and `previousResponseId` are both set.
 fn warn_conversation_conflict(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     warnings: &mut Vec<Warning>,
 ) {
     let has_conversation = openai_option(provider_opts, "conversation").is_some();
@@ -578,7 +675,7 @@ fn warn_conversation_conflict(
 }
 
 fn resolve_responses_system_message_mode(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     is_reasoning_model: bool,
     caps: &ModelCapabilities,
 ) -> SystemMessageMode {
@@ -600,7 +697,7 @@ fn resolve_responses_system_message_mode(
 fn apply_responses_sampling(
     body: &mut Value,
     options: &CallOptions,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     caps: &ModelCapabilities,
     is_reasoning_model: bool,
     resolved_reasoning_effort: &Option<String>,
@@ -656,7 +753,7 @@ fn apply_responses_sampling(
 fn apply_responses_text_format(
     body: &mut Value,
     options: &CallOptions,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
 ) {
     if let Some(ref rf) = options.response_format {
         match rf {
@@ -705,7 +802,7 @@ fn apply_responses_text_format(
 /// The computed `include` list (store=false on reasoning models adds
 /// `reasoning.encrypted_content`).
 fn resolve_responses_include(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     is_reasoning_model: bool,
 ) -> Option<Vec<Value>> {
     let mut include: Option<Vec<Value>> =
@@ -736,7 +833,7 @@ fn resolve_responses_include(
 /// set).
 fn apply_responses_provider_options(
     body: &mut Value,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
 ) {
     let mut set = |key: &str, body_key: &str| {
         if let Some(v) = openai_option(provider_opts, key) {
@@ -751,16 +848,23 @@ fn apply_responses_provider_options(
     set("user", "user");
     set("instructions", "instructions");
     set("promptCacheKey", "prompt_cache_key");
-    set("promptCacheOptions", "prompt_cache_options");
     set("promptCacheRetention", "prompt_cache_retention");
     set("safetyIdentifier", "safety_identifier");
     set("truncation", "truncation");
+    if let Some(Value::Object(options)) = openai_option(provider_opts, "promptCacheOptions") {
+        body["prompt_cache_options"] = Value::Object(
+            options
+                .into_iter()
+                .filter(|(key, _)| matches!(key.as_str(), "mode" | "ttl"))
+                .collect(),
+        );
+    }
 }
 
 /// `service_tier` with model-capability validation.
 fn apply_responses_service_tier(
     body: &mut Value,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     caps: &ModelCapabilities,
     warnings: &mut Vec<Warning>,
 ) {
@@ -793,7 +897,7 @@ fn apply_responses_service_tier(
 /// `reasoning` block for reasoning models.
 fn apply_responses_reasoning_block(
     body: &mut Value,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     is_reasoning_model: bool,
     resolved_reasoning_effort: &Option<String>,
     resolved_reasoning_summary: &Option<String>,
@@ -830,12 +934,14 @@ fn apply_responses_reasoning_block(
 ///
 /// Splits the original ~380-line function into focused helpers (issue M11);
 /// behavior is unchanged.
-#[must_use]
+///
+/// # Errors
+/// Returns an unsupported-functionality error for text file parts.
 pub fn build_responses_request_body(
     model_id: &str,
     options: &CallOptions,
     stream: bool,
-) -> ResponsesRequestBodyResult {
+) -> Result<ResponsesRequestBodyResult, AiMuxError> {
     let mut warnings: Vec<Warning> = Vec::new();
     let caps = get_model_capabilities(model_id);
     let provider_opts = &options.provider_options;
@@ -864,7 +970,8 @@ pub fn build_responses_request_body(
         system_message_mode,
         store_bool,
         has_previous_response_id,
-    );
+        openai_option(provider_opts, "conversation").is_some(),
+    )?;
     warnings.extend(input_result.warnings);
 
     // -- Base body --
@@ -922,7 +1029,7 @@ pub fn build_responses_request_body(
     );
 
     // -- Tools --
-    let prepared = prepare_responses_tools(&options.tools, Some(&options.tool_choice));
+    let prepared = prepare_responses_tools(&options.tools, options.tool_choice.as_ref());
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);
         if let Some(tc) = prepared.tool_choice {
@@ -933,7 +1040,7 @@ pub fn build_responses_request_body(
         warnings.push(tw);
     }
 
-    ResponsesRequestBodyResult { body, warnings }
+    Ok(ResponsesRequestBodyResult { body, warnings })
 }
 
 // -- Usage conversion --------------------------------------------------------
@@ -957,7 +1064,7 @@ pub fn build_responses_request_body(
 pub fn convert_responses_usage(usage: Option<&ResponsesUsage>, raw: Option<Value>) -> Usage {
     let Some(usage) = usage else {
         return Usage {
-            raw,
+            raw: raw.and_then(|value| value.as_object().cloned()),
             ..Default::default()
         };
     };
@@ -984,20 +1091,18 @@ pub fn convert_responses_usage(usage: Option<&ResponsesUsage>, raw: Option<Value
     let text_tokens = output_tokens - reasoning_tokens;
 
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input_tokens),
             no_cache: Some(no_cache),
             cache_read: Some(cached_tokens),
             cache_write,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(output_tokens),
             text: Some(text_tokens),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
-        raw,
+        raw: raw.and_then(|value| value.as_object().cloned()),
     }
 }
 

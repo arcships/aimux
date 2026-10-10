@@ -19,7 +19,7 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult, ImageUsage,
 };
-use aimux_core::shared::Warning;
+use aimux_core::shared::{Warning, provider_namespace};
 
 use aimux_provider_utils::HttpRequest;
 
@@ -119,16 +119,6 @@ impl VertexImageModel {
             .and_then(|v| v.as_str());
         let mask_dilation = edit_opts.and_then(|e| e.get("maskDilation"));
 
-        // Build other options (excluding "edit")
-        let mut other_options = Map::new();
-        if let Some(obj) = gv_opts.and_then(|v| v.as_object()) {
-            for (k, v) in obj {
-                if k != "edit" {
-                    other_options.insert(k.clone(), v.clone());
-                }
-            }
-        }
-
         let is_edit_mode = options.files.as_ref().is_some_and(|f| !f.is_empty());
 
         let mut parameters = Map::new();
@@ -176,10 +166,6 @@ impl VertexImageModel {
             if let Some(bs) = base_steps {
                 parameters.insert("editConfig".into(), json!({ "baseSteps": bs }));
             }
-        }
-
-        for (k, v) in &other_options {
-            parameters.insert(k.clone(), v.clone());
         }
 
         let body = if is_edit_mode {
@@ -235,9 +221,11 @@ impl VertexImageModel {
             .unwrap_or_default();
 
         let payload = json!({ "images": image_metas });
-        let mut metadata = HashMap::new();
-        metadata.insert("googleVertex".into(), payload.clone());
-        metadata.insert("vertex".into(), payload);
+        let mut metadata = provider_namespace("googleVertex", payload.clone())
+            .expect("provider metadata must be an object");
+        metadata.extend(
+            provider_namespace("vertex", payload).expect("provider metadata must be an object"),
+        );
 
         Ok(ImageResult {
             images: ImageOutputs::Base64(images),
@@ -313,17 +301,19 @@ impl VertexImageModel {
             gc.insert("seed".into(), json!(seed));
         }
 
-        // Passthrough provider options
+        // Only declared generation-config options survive the upstream language schema.
         let gv_opts = options
             .provider_options
             .get("googleVertex")
             .or_else(|| options.provider_options.get("vertex"));
-        if let Some(obj) = gv_opts.and_then(|v| v.as_object()) {
-            for (k, v) in obj {
-                if matches!(k.as_str(), "responseModalities" | "imageConfig") {
-                    continue;
+        if let Some(obj) = gv_opts {
+            for key in ["audioTimestamp", "thinkingConfig", "mediaResolution"] {
+                if let Some(value) = obj.get(key) {
+                    gc.insert(
+                        key.to_string(),
+                        crate::google::convert::image_generation_option(key, value),
+                    );
                 }
-                gc.insert(k.clone(), v.clone());
             }
         }
 
@@ -382,9 +372,11 @@ impl VertexImageModel {
         });
 
         let payload = json!({ "images": images.iter().map(|_| json!({})).collect::<Vec<_>>() });
-        let mut metadata = HashMap::new();
-        metadata.insert("googleVertex".into(), payload.clone());
-        metadata.insert("vertex".into(), payload);
+        let mut metadata = provider_namespace("googleVertex", payload.clone())
+            .expect("provider metadata must be an object");
+        metadata.extend(
+            provider_namespace("vertex", payload).expect("provider metadata must be an object"),
+        );
 
         Ok(ImageResult {
             images: ImageOutputs::Base64(images),

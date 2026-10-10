@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::Warning;
+use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
@@ -136,7 +136,7 @@ struct DeepgramOptions {
     diarize: Option<bool>,
 }
 
-fn parse_deepgram_options(provider_options: Option<&HashMap<String, Value>>) -> DeepgramOptions {
+fn parse_deepgram_options(provider_options: Option<&SharedProviderOptions>) -> DeepgramOptions {
     let mut opts = DeepgramOptions::default();
     if let Some(po) = provider_options
         && let Some(dg) = po.get("deepgram")

@@ -14,9 +14,7 @@
 //! - **reasoning_effort 直传**：7 档无归一化（none/minimal/low/medium/high/xhigh 原样
 //!   透传；provider-default 不发字段）。
 
-use aimux_core::content::ContentPart;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::types::{ReasoningEffort, Warning};
 use aimux_providers::openai::OpenAICompatProfile;
@@ -25,11 +23,7 @@ use aimux_providers::provider_registry_entry;
 use serde_json::json;
 
 fn user_prompt() -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("Hello")],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text("Hello")]
 }
 
 fn opts_with_max_tokens(n: u32) -> CallOptions {

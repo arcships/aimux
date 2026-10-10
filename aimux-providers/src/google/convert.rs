@@ -18,11 +18,14 @@
 //! fields we actually read back are `text`, function tool parts, and native
 //! provider-executed tool parts.
 
-use aimux_core::content::ContentPart;
-use aimux_core::language_model_message::LanguageModelPrompt;
-use aimux_core::message::Role;
+use aimux_core::error::AiMuxError;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, Source};
+use aimux_core::shared::{FileBytes, FileData, JsonObject, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
 use base64::Engine;
@@ -69,9 +72,9 @@ enum ProviderMetadataNamespace {
 /// cross-provider fallback. The public Google provider uses the inverse
 /// fallback so transcripts survive gateway/provider failover.
 fn read_provider_options(
-    provider_options: Option<&Value>,
+    provider_options: Option<&SharedProviderOptions>,
     namespace: ProviderMetadataNamespace,
-) -> Option<&Value> {
+) -> Option<&JsonObject> {
     let provider_options = provider_options?;
     match namespace {
         ProviderMetadataNamespace::Google => provider_options
@@ -100,25 +103,25 @@ fn read_provider_options(
 ///   as a string (JSON-stringified for non-string outputs, matching the TS
 ///   `output.type === 'json'` path).
 ///
-/// Thought signatures: `ContentPart::ToolCall.thought_signature` is echoed
-/// back as a `thoughtSignature` sibling of the `functionCall` part (required
-/// by Gemini thinking models on follow-up turns).
+/// Thought signatures from provider options are echoed as a
+/// `thoughtSignature` sibling of the `functionCall` part.
 #[must_use]
 pub fn convert_to_google_messages(prompt: &LanguageModelPrompt) -> GooglePrompt {
-    convert_to_google_messages_for_namespace(prompt, ProviderMetadataNamespace::Google)
+    convert_to_google_messages_for_namespace(prompt, ProviderMetadataNamespace::Google, true)
 }
 
 fn convert_to_google_messages_for_namespace(
     prompt: &LanguageModelPrompt,
     namespace: ProviderMetadataNamespace,
+    supports_function_response_parts: bool,
 ) -> GooglePrompt {
     let mut system_parts: Vec<Value> = Vec::new();
     let mut contents: Vec<Value> = Vec::new();
     let mut system_messages_allowed = true;
 
     for msg in prompt {
-        match msg.role {
-            Role::System => {
+        match msg {
+            LanguageModelMessage::System { content, .. } => {
                 if !system_messages_allowed {
                     // The TS SDK throws `UnsupportedFunctionalityError` here:
                     // system messages are only valid at the start of the
@@ -130,31 +133,54 @@ fn convert_to_google_messages_for_namespace(
                     // TODO: change the signature to `Result` to match TS semantics.
                     continue;
                 }
-                for part in &msg.content {
-                    if let ContentPart::Text { text, .. } = part {
-                        system_parts.push(json!({ "text": text }));
-                    }
-                }
+                system_parts.push(json!({ "text": content }));
             }
-            Role::User => {
+            LanguageModelMessage::User { content, .. } => {
                 system_messages_allowed = false;
-                let parts = convert_user_parts(&msg.content);
+                let parts = convert_user_parts(content, namespace);
                 contents.push(json!({ "role": "user", "parts": parts }));
             }
-            Role::Assistant => {
+            LanguageModelMessage::Assistant { content, .. } => {
                 system_messages_allowed = false;
-                let parts = convert_assistant_parts(&msg.content, namespace);
+                let parts = convert_assistant_parts(content, namespace);
                 if !parts.is_empty() {
                     contents.push(json!({ "role": "model", "parts": parts }));
                 }
             }
-            Role::Tool => {
+            LanguageModelMessage::Tool { content, .. } => {
                 system_messages_allowed = false;
                 // Gemini folds tool results into a `user`-role message as
                 // `functionResponse` parts. We emit them as their own user
                 // turn (matching how the TS SDK pushes a new `{role:'user'}`
                 // entry per tool-role message).
-                let parts = convert_tool_parts(&msg.content);
+                let mut ordinary = Vec::new();
+                for part in content {
+                    if let ToolPart::ToolResult(result) = part
+                        && let Some(options) =
+                            read_provider_options(result.provider_options.as_ref(), namespace)
+                        && let (Some(server_id), Some(server_type)) = (
+                            options.get("serverToolCallId"),
+                            options.get("serverToolType"),
+                        )
+                        && let Some(last) = contents.last_mut()
+                        && last.get("role").and_then(Value::as_str) == Some("model")
+                        && let Some(parts) = last.get_mut("parts").and_then(Value::as_array_mut)
+                    {
+                        let response = match &result.output {
+                            ToolResultOutput::Json { value, .. } => value.clone(),
+                            _ => json!({}),
+                        };
+                        let mut value = json!({ "toolResponse": { "toolType": server_type, "response": response, "id": server_id } });
+                        if let Some(signature) = options.get("thoughtSignature") {
+                            value["thoughtSignature"] = signature.clone();
+                        }
+                        parts.push(value);
+                    } else {
+                        ordinary.push(part.clone());
+                    }
+                }
+                let parts =
+                    convert_tool_parts(&ordinary, namespace, supports_function_response_parts);
                 if !parts.is_empty() {
                     contents.push(json!({ "role": "user", "parts": parts }));
                 }
@@ -175,32 +201,61 @@ fn convert_to_google_messages_for_namespace(
 }
 
 /// Convert user-role content parts into Google parts.
-fn convert_user_parts(content: &[ContentPart]) -> Vec<Value> {
+fn convert_user_parts(content: &[UserPart], namespace: ProviderMetadataNamespace) -> Vec<Value> {
     let mut parts = Vec::new();
     for part in content {
         match part {
-            ContentPart::Text { text, .. } => {
+            UserPart::Text(TextPart { text, .. }) => {
                 parts.push(json!({ "text": text }));
             }
-            ContentPart::Image {
-                image, media_type, ..
-            } => {
-                let b64 = base64::engine::general_purpose::STANDARD.encode(image);
-                parts.push(json!({
-                    "inlineData": { "mimeType": media_type, "data": b64 }
-                }));
-            }
-            ContentPart::File {
+            UserPart::File(FilePart {
                 data, media_type, ..
-            } => {
-                let b64 = base64::engine::general_purpose::STANDARD.encode(data);
+            }) => {
+                let inline_media_type = if matches!(data, FileData::Text { .. })
+                    && !media_type
+                        .split_once('/')
+                        .is_some_and(|(_, subtype)| !subtype.is_empty() && subtype != "*")
+                {
+                    "text/plain"
+                } else {
+                    media_type.as_str()
+                };
+                let data = match data {
+                    FileData::Data {
+                        data: FileBytes::Binary(bytes),
+                    } => base64::engine::general_purpose::STANDARD.encode(bytes),
+                    FileData::Text { text } => {
+                        base64::engine::general_purpose::STANDARD.encode(text.as_bytes())
+                    }
+                    FileData::Data {
+                        data: FileBytes::Base64(data),
+                    } => data.clone(),
+                    FileData::Url { url, original_url } => {
+                        let uri = if url.starts_with("gs:") {
+                            original_url.as_deref().unwrap_or(url)
+                        } else {
+                            url
+                        };
+                        parts.push(json!({
+                            "fileData": { "mimeType": media_type, "fileUri": uri }
+                        }));
+                        continue;
+                    }
+                    FileData::Reference { reference } => {
+                        if namespace == ProviderMetadataNamespace::Google
+                            && let Some(reference) = reference.get("google")
+                        {
+                            parts.push(json!({
+                                "fileData": { "mimeType": media_type, "fileUri": reference }
+                            }));
+                        }
+                        continue;
+                    }
+                };
                 parts.push(json!({
-                    "inlineData": { "mimeType": media_type, "data": b64 }
+                    "inlineData": { "mimeType": inline_media_type, "data": data }
                 }));
             }
-            // Tool calls / results inside a user message are unusual; skip
-            // them rather than trying to stringify a `ContentPart`.
-            _ => {}
         }
     }
     if parts.is_empty() {
@@ -214,16 +269,16 @@ fn convert_user_parts(content: &[ContentPart]) -> Vec<Value> {
 /// - `Text` → `{ text }` (skipped when empty, matching the TS SDK).
 /// - `ToolCall` → `{ functionCall: { id?, name, args } }`.
 fn convert_assistant_parts(
-    content: &[ContentPart],
+    content: &[AssistantPart],
     namespace: ProviderMetadataNamespace,
 ) -> Vec<Value> {
     let mut parts = Vec::new();
     for part in content {
         match part {
-            ContentPart::Text {
+            AssistantPart::Text(TextPart {
                 text,
                 provider_options,
-            } => {
+            }) => {
                 if !text.is_empty() {
                     let mut p = json!({ "text": text });
                     // Echo thoughtSignature from provider_options if present
@@ -237,34 +292,28 @@ fn convert_assistant_parts(
                     parts.push(p);
                 }
             }
-            ContentPart::Reasoning {
+            AssistantPart::Reasoning(ReasoningPart {
                 text,
-                signature,
                 provider_options,
-            } => {
+            }) => {
                 if !text.is_empty() {
                     let mut p = json!({ "text": text, "thought": true });
-                    // Prefer explicit signature field, then fall back to provider_options.
-                    if let Some(sig) = signature.as_ref() {
-                        p["thoughtSignature"] = json!(sig);
-                    } else if let Some(sig) =
-                        read_provider_options(provider_options.as_ref(), namespace)
-                            .and_then(|g| g.get("thoughtSignature"))
-                            .and_then(|v| v.as_str())
+                    if let Some(sig) = read_provider_options(provider_options.as_ref(), namespace)
+                        .and_then(|g| g.get("thoughtSignature"))
+                        .and_then(Value::as_str)
                     {
                         p["thoughtSignature"] = json!(sig);
                     }
                     parts.push(p);
                 }
             }
-            ContentPart::ToolCall {
+            AssistantPart::ToolCall(ToolCallPart {
                 tool_call_id,
                 tool_name,
                 input,
-                thought_signature,
                 provider_options,
                 ..
-            } => {
+            }) => {
                 let google_options = read_provider_options(provider_options.as_ref(), namespace);
                 let server_tool_call_id = google_options
                     .and_then(|options| options.get("serverToolCallId"))
@@ -272,11 +321,9 @@ fn convert_assistant_parts(
                 let server_tool_type = google_options
                     .and_then(|options| options.get("serverToolType"))
                     .and_then(|value| value.as_str());
-                let signature = thought_signature.as_deref().or_else(|| {
-                    google_options
-                        .and_then(|options| options.get("thoughtSignature"))
-                        .and_then(|value| value.as_str())
-                });
+                let signature = google_options
+                    .and_then(|options| options.get("thoughtSignature"))
+                    .and_then(Value::as_str);
 
                 let mut part_value = if let (Some(server_id), Some(server_type)) =
                     (server_tool_call_id, server_tool_type)
@@ -300,7 +347,7 @@ fn convert_assistant_parts(
                     }
                 } else {
                     let mut function_call = Map::new();
-                    if !tool_call_id.is_empty() {
+                    if !tool_call_id.is_empty() && namespace != ProviderMetadataNamespace::Vertex {
                         function_call.insert("id".to_string(), json!(tool_call_id));
                     }
                     function_call.insert("name".to_string(), json!(tool_name));
@@ -312,15 +359,21 @@ fn convert_assistant_parts(
                 }
                 parts.push(part_value);
             }
-            ContentPart::ToolResult {
-                tool_call_id: _,
-                tool_name: _,
-                result,
-                is_error: _,
-                preliminary: _,
-                dynamic: _,
+            AssistantPart::ToolResult(ToolResultPart {
+                output,
+                tool_name,
                 provider_options,
-            } => {
+                ..
+            }) => {
+                let result = match output {
+                    ToolResultOutput::Json { value, .. } => value.clone(),
+                    _ => json!({}),
+                };
+                if tool_name == "code_execution" && matches!(output, ToolResultOutput::Json { .. })
+                {
+                    parts.push(json!({ "codeExecutionResult": result }));
+                    continue;
+                }
                 // Provider-executed tool result in an assistant message —
                 // upstream convert-to-google-messages.ts:518-540.
                 // If it carries serverToolCallId + serverToolType, emit as
@@ -350,9 +403,60 @@ fn convert_assistant_parts(
                     }
                 }
             }
-            _ => {
-                // Files / images in assistant messages: skip.
+            AssistantPart::ReasoningFile(part) => {
+                if let aimux_core::shared::GeneratedFileData::Data { data } = &part.data {
+                    let data = match data {
+                        FileBytes::Binary(bytes) => {
+                            base64::engine::general_purpose::STANDARD.encode(bytes)
+                        }
+                        FileBytes::Base64(data) => data.clone(),
+                    };
+                    let mut value = json!({ "inlineData": { "mimeType": part.media_type, "data": data }, "thought": true });
+                    if let Some(signature) =
+                        read_provider_options(part.provider_options.as_ref(), namespace)
+                            .and_then(|options| options.get("thoughtSignature"))
+                    {
+                        value["thoughtSignature"] = signature.clone();
+                    }
+                    parts.push(value);
+                }
             }
+            AssistantPart::File(file) => {
+                let mut value = match &file.data {
+                    FileData::Data { data } => {
+                        let data = match data {
+                            FileBytes::Binary(bytes) => {
+                                base64::engine::general_purpose::STANDARD.encode(bytes)
+                            }
+                            FileBytes::Base64(data) => data.clone(),
+                        };
+                        json!({ "inlineData": { "mimeType": file.media_type, "data": data } })
+                    }
+                    FileData::Text { text } => {
+                        json!({ "inlineData": { "mimeType": if file.media_type.split_once('/').is_some_and(|(_, subtype)| !subtype.is_empty() && subtype != "*") { file.media_type.as_str() } else { "text/plain" }, "data": base64::engine::general_purpose::STANDARD.encode(text.as_bytes()) } })
+                    }
+                    FileData::Reference { reference } => {
+                        if let Some(uri) = reference.get("google") {
+                            json!({ "fileData": { "mimeType": file.media_type, "fileUri": uri } })
+                        } else {
+                            continue;
+                        }
+                    }
+                    FileData::Url { .. } => continue,
+                };
+                if let Some(options) =
+                    read_provider_options(file.provider_options.as_ref(), namespace)
+                {
+                    if options.get("thought").and_then(Value::as_bool) == Some(true) {
+                        value["thought"] = json!(true);
+                    }
+                    if let Some(signature) = options.get("thoughtSignature") {
+                        value["thoughtSignature"] = signature.clone();
+                    }
+                }
+                parts.push(value);
+            }
+            AssistantPart::Custom(_) => {}
         }
     }
     parts
@@ -364,40 +468,180 @@ fn convert_assistant_parts(
 /// `{ functionResponse: { id?, name, response: { name, content } } }`.
 /// `content` is the tool's output serialized to a string (string outputs
 /// pass through; JSON outputs are stringified).
-fn convert_tool_parts(content: &[ContentPart]) -> Vec<Value> {
+pub(crate) fn tool_file_media_type(
+    file: &FilePart,
+) -> Result<String, aimux_core::error::AiMuxError> {
+    if let FileData::Data { data } = &file.data {
+        let bytes = match data {
+            FileBytes::Binary(bytes) => bytes.clone(),
+            FileBytes::Base64(data) => base64::engine::general_purpose::STANDARD
+                .decode(data)
+                .unwrap_or_default(),
+        };
+        crate::anthropic::convert::resolve_full_media_type(&file.media_type, &bytes)
+    } else {
+        crate::anthropic::convert::resolve_full_media_type(&file.media_type, &[])
+    }
+}
+
+pub(crate) fn validate_tool_result_files(
+    prompt: &LanguageModelPrompt,
+) -> Result<(), aimux_core::error::AiMuxError> {
+    for message in prompt {
+        if let LanguageModelMessage::Tool { content, .. } = message {
+            for part in content {
+                if let ToolPart::ToolResult(part) = part
+                    && let ToolResultOutput::Content { value } = &part.output
+                {
+                    for item in value {
+                        if let ToolResultContent::File(file) = item
+                            && matches!(file.data, FileData::Data { .. })
+                        {
+                            tool_file_media_type(file)?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn contains_schema_reference(value: &Value) -> bool {
+    match value {
+        Value::Object(object) => {
+            object.contains_key("$ref") || object.values().any(contains_schema_reference)
+        }
+        Value::Array(array) => array.iter().any(contains_schema_reference),
+        _ => false,
+    }
+}
+
+fn convert_tool_parts(
+    content: &[ToolPart],
+    namespace: ProviderMetadataNamespace,
+    supports_function_response_parts: bool,
+) -> Vec<Value> {
     let mut parts = Vec::new();
     for part in content {
-        if let ContentPart::ToolResult {
+        let ToolPart::ToolResult(ToolResultPart {
             tool_call_id,
             tool_name,
-            result,
+            output,
             ..
-        } = part
-        {
-            let content_str = match result {
-                Value::String(s) => s.clone(),
-                other => other.to_string(),
-            };
-            let mut function_response = Map::new();
-            if !tool_call_id.is_empty() {
-                function_response.insert("id".to_string(), json!(tool_call_id));
+        }) = part
+        else {
+            continue;
+        };
+        let response = |content: Value| {
+            let mut value = json!({ "functionResponse": { "name": tool_name, "response": { "name": tool_name, "content": content } } });
+            if namespace != ProviderMetadataNamespace::Vertex && !tool_call_id.is_empty() {
+                value["functionResponse"]["id"] = json!(tool_call_id);
             }
-            // `name` is required by the API and must be the name of the tool
-            // that was called (Gemini pairs functionResponse with the prior
-            // functionCall by name; an empty or mismatched name is rejected
-            // with HTTP 400 on multi-turn tool calls). Prefer the framework
-            // provided `tool_name`, falling back to the call id for callers
-            // that never set one.
-            let name = tool_name
-                .clone()
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| tool_call_id.clone());
-            function_response.insert("name".to_string(), json!(name));
-            function_response.insert(
-                "response".to_string(),
-                json!({ "name": name, "content": content_str }),
-            );
-            parts.push(json!({ "functionResponse": function_response }));
+            value
+        };
+        match output {
+            ToolResultOutput::Content { value } => {
+                if supports_function_response_parts {
+                    let mut texts = Vec::new();
+                    let mut files = Vec::new();
+                    for part in value {
+                        match part {
+                            ToolResultContent::Text(part) => texts.push(part.text.clone()),
+                            ToolResultContent::File(file) => match &file.data {
+                                FileData::Data { data } => {
+                                    let data = match data {
+                                        FileBytes::Binary(bytes) => {
+                                            base64::engine::general_purpose::STANDARD.encode(bytes)
+                                        }
+                                        FileBytes::Base64(data) => data.clone(),
+                                    };
+                                    files.push(json!({ "inlineData": { "mimeType": tool_file_media_type(file).unwrap_or_else(|_| file.media_type.clone()), "data": data } }));
+                                }
+                                FileData::Url { url, .. } if url.starts_with("data:") => {
+                                    if let Some((media_type, data)) = url
+                                        .strip_prefix("data:")
+                                        .and_then(|url| url.split_once(";base64,"))
+                                    {
+                                        files.push(json!({ "inlineData": { "mimeType": media_type, "data": data } }));
+                                    } else {
+                                        texts.push(
+                                            crate::openai::convert::tool_result_content_value(
+                                                std::slice::from_ref(part),
+                                            )[0]
+                                            .to_string(),
+                                        );
+                                    }
+                                }
+                                FileData::Url { url, original_url }
+                                    if namespace == ProviderMetadataNamespace::Vertex
+                                        && url.starts_with("gs:")
+                                        && original_url
+                                            .as_deref()
+                                            .unwrap_or(url)
+                                            .starts_with("gs://")
+                                        && matches!(
+                                            file.media_type.as_str(),
+                                            "image/png"
+                                                | "image/jpeg"
+                                                | "image/webp"
+                                                | "application/pdf"
+                                                | "text/plain"
+                                        ) =>
+                                {
+                                    files.push(json!({ "fileData": { "mimeType": file.media_type, "fileUri": original_url.as_deref().unwrap_or(url) } }));
+                                }
+                                _ => texts.push(
+                                    crate::openai::convert::tool_result_content_value(
+                                        std::slice::from_ref(part),
+                                    )[0]
+                                    .to_string(),
+                                ),
+                            },
+                            _ => texts.push(
+                                crate::openai::convert::tool_result_content_value(
+                                    std::slice::from_ref(part),
+                                )[0]
+                                .to_string(),
+                            ),
+                        }
+                    }
+                    let mut result = response(json!(if texts.is_empty() {
+                        "Tool executed successfully.".to_string()
+                    } else {
+                        texts.join("\n")
+                    }));
+                    if !files.is_empty() {
+                        result["functionResponse"]["parts"] = json!(files);
+                    }
+                    parts.push(result);
+                    continue;
+                }
+                for part in value {
+                    match part {
+                        ToolResultContent::Text(part) => parts.push(response(json!(part.text))),
+                        ToolResultContent::File(file) => if let FileData::Data { data } = &file.data {
+                            let data = match data { FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes), FileBytes::Base64(data) => data.clone() };
+                            parts.push(json!({ "inlineData": { "mimeType": tool_file_media_type(file).unwrap_or_else(|_| file.media_type.clone()), "data": data } }));
+                            parts.push(json!({ "text": format!("Tool executed successfully and returned this {} as a response", if file.media_type.starts_with("image/") { "image" } else { "file" }) }));
+                        } else { parts.push(json!({ "text": crate::openai::convert::tool_result_content_value(std::slice::from_ref(part))[0].to_string() })); },
+                        _ => parts.push(json!({ "text": crate::openai::convert::tool_result_content_value(std::slice::from_ref(part))[0].to_string() })),
+                    }
+                }
+            }
+            ToolResultOutput::Text { value, .. } | ToolResultOutput::ErrorText { value, .. } => {
+                parts.push(response(json!(value)))
+            }
+            ToolResultOutput::Json { value, .. } | ToolResultOutput::ErrorJson { value, .. } => {
+                parts.push(response(if contains_schema_reference(value) {
+                    json!(value.to_string())
+                } else {
+                    value.clone()
+                }))
+            }
+            ToolResultOutput::ExecutionDenied { reason, .. } => parts.push(response(json!(
+                reason.as_deref().unwrap_or("Tool call execution denied.")
+            ))),
         }
     }
     parts
@@ -421,7 +665,10 @@ pub struct PreparedTools {
 /// tools (`google_search`, `code_execution`, …) are out of scope for the Rust
 /// port — only `FunctionTool`s are supported.
 #[must_use]
-pub fn prepare_tools(tools: &Option<Vec<FunctionTool>>, tool_choice: &ToolChoice) -> PreparedTools {
+pub fn prepare_tools(
+    tools: &Option<Vec<FunctionTool>>,
+    tool_choice: Option<&ToolChoice>,
+) -> PreparedTools {
     // Coerce empty arrays to None (matches TS `tools?.length ? tools : undefined`).
     let non_empty = tools.as_ref().filter(|&t| !t.is_empty());
 
@@ -454,22 +701,23 @@ pub fn prepare_tools(tools: &Option<Vec<FunctionTool>>, tool_choice: &ToolChoice
     ]);
 
     let tool_config = match tool_choice {
-        ToolChoice::Auto => {
+        None => has_strict.then(|| json!({ "functionCallingConfig": { "mode": "VALIDATED" } })),
+        Some(ToolChoice::Auto) => {
             if has_strict {
                 Some(json!({ "functionCallingConfig": { "mode": "VALIDATED" } }))
             } else {
                 Some(json!({ "functionCallingConfig": { "mode": "AUTO" } }))
             }
         }
-        ToolChoice::None => Some(json!({ "functionCallingConfig": { "mode": "NONE" } })),
-        ToolChoice::Required => {
+        Some(ToolChoice::None) => Some(json!({ "functionCallingConfig": { "mode": "NONE" } })),
+        Some(ToolChoice::Required) => {
             if has_strict {
                 Some(json!({ "functionCallingConfig": { "mode": "VALIDATED" } }))
             } else {
                 Some(json!({ "functionCallingConfig": { "mode": "ANY" } }))
             }
         }
-        ToolChoice::Tool { tool_name } => {
+        Some(ToolChoice::Tool { tool_name }) => {
             if has_strict {
                 Some(json!({
                     "functionCallingConfig": {
@@ -612,7 +860,7 @@ pub struct PreparedToolsWithWarnings {
 #[must_use]
 pub fn prepare_all_tools(
     tools: &Option<Vec<Tool>>,
-    tool_choice: &ToolChoice,
+    tool_choice: Option<&ToolChoice>,
     model_id: &str,
 ) -> PreparedToolsWithWarnings {
     let caps = get_google_model_capabilities(model_id);
@@ -656,23 +904,23 @@ pub fn prepare_all_tools(
 
             let mut combined_config = Map::new();
             let fc = match tool_choice {
-                ToolChoice::None => {
+                Some(ToolChoice::None) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("NONE"));
                     m
                 }
-                ToolChoice::Required => {
+                Some(ToolChoice::Required) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("ANY"));
                     m
                 }
-                ToolChoice::Tool { tool_name } => {
+                Some(ToolChoice::Tool { tool_name }) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("ANY"));
                     m.insert("allowedFunctionNames".to_string(), json!([tool_name]));
                     m
                 }
-                ToolChoice::Auto => {
+                None | Some(ToolChoice::Auto) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("VALIDATED"));
                     m
@@ -993,6 +1241,33 @@ fn is_empty_object_schema(obj: &Map<String, Value>) -> bool {
         && !obj.contains_key("additionalProperties")
 }
 
+// Image wrappers delegate these fields through the upstream language schema.
+#[must_use]
+pub(crate) fn image_generation_option(key: &str, value: &Value) -> Value {
+    let fields: &[&str] = match key {
+        "thinkingConfig" => &["thinkingBudget", "includeThoughts", "thinkingLevel"],
+        "imageConfig" => &[
+            "aspectRatio",
+            "imageSize",
+            "personGeneration",
+            "prominentPeople",
+            "imageOutputOptions",
+        ],
+        "imageOutputOptions" => &["mimeType", "compressionQuality"],
+        _ => return value.clone(),
+    };
+    let Some(object) = value.as_object() else {
+        return value.clone();
+    };
+    Value::Object(
+        object
+            .iter()
+            .filter(|(key, _)| fields.contains(&key.as_str()))
+            .map(|(key, value)| (key.clone(), image_generation_option(key, value)))
+            .collect(),
+    )
+}
+
 // ── build_request_body ───────────────────────────────────────────────────────
 
 /// Build the Gemini `generateContent` request body from `CallOptions`.
@@ -1004,31 +1279,40 @@ fn is_empty_object_schema(obj: &Map<String, Value>) -> bool {
 ///
 /// This is the request-body-only entry point; warnings about unsupported tools
 /// are discarded. Use [`build_request_body_with_warnings`] to surface them.
-#[must_use]
-pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
-    build_request_body_with_warnings(model_id, options).0
+///
+/// # Errors
+/// Returns an error when `structuredOutputs` is not a boolean.
+pub fn build_request_body(model_id: &str, options: &CallOptions) -> Result<Value, AiMuxError> {
+    build_request_body_with_warnings(model_id, options).map(|(body, _)| body)
 }
 
 /// Build a Vertex Gemini request body using Vertex's provider-metadata
 /// namespaces when replaying response parts.
-#[must_use]
-pub(crate) fn build_vertex_request_body(model_id: &str, options: &CallOptions) -> Value {
+///
+/// # Errors
+/// Returns an error when `structuredOutputs` is not a boolean.
+pub(crate) fn build_vertex_request_body(
+    model_id: &str,
+    options: &CallOptions,
+) -> Result<Value, AiMuxError> {
     build_request_body_with_warnings_for_namespace(
         model_id,
         options,
         ProviderMetadataNamespace::Vertex,
     )
-    .0
+    .map(|(body, _)| body)
 }
 
 /// Build the Gemini `generateContent` request body **and** collect the tool
 /// warnings (e.g. unsupported provider-defined tools, mixed function+provider
 /// tools on pre-Gemini-3 models).
-#[must_use]
+///
+/// # Errors
+/// Returns an error when `structuredOutputs` is not a boolean.
 pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
-) -> (Value, Vec<Warning>) {
+) -> Result<(Value, Vec<Warning>), AiMuxError> {
     build_request_body_with_warnings_for_namespace(
         model_id,
         options,
@@ -1040,11 +1324,35 @@ fn build_request_body_with_warnings_for_namespace(
     model_id: &str,
     options: &CallOptions,
     namespace: ProviderMetadataNamespace,
-) -> (Value, Vec<Warning>) {
+) -> Result<(Value, Vec<Warning>), AiMuxError> {
+    let names: &[&str] = match namespace {
+        ProviderMetadataNamespace::Google => &["google"],
+        ProviderMetadataNamespace::Vertex => &["googleVertex", "vertex", "google"],
+    };
+    let provider_options = options.provider_options.as_ref().and_then(|options| {
+        names
+            .iter()
+            .find_map(|name| options.get(*name).map(|value| (*name, value)))
+    });
+    let structured_outputs =
+        match provider_options.and_then(|(_, options)| options.get("structuredOutputs")) {
+            None => true,
+            Some(Value::Bool(value)) => *value,
+            Some(_) => {
+                return Err(AiMuxError::InvalidArgument(format!(
+                    "invalid {} provider options",
+                    provider_options.unwrap().0
+                )));
+            }
+        };
     let GooglePrompt {
         system_instruction,
         contents,
-    } = convert_to_google_messages_for_namespace(&options.prompt, namespace);
+    } = convert_to_google_messages_for_namespace(
+        &options.prompt,
+        namespace,
+        model_id.contains("gemini-3"),
+    );
 
     let mut generation_config = Map::new();
 
@@ -1079,7 +1387,9 @@ fn build_request_body_with_warnings_for_namespace(
         && let ResponseFormat::Json { schema, .. } = rf
     {
         generation_config.insert("responseMimeType".to_string(), json!("application/json"));
-        if let Some(s) = schema {
+        if let Some(s) = schema
+            && structured_outputs
+        {
             let openapi = convert_json_schema_to_openapi_schema(s, true);
             if !openapi.is_null() {
                 generation_config.insert("responseSchema".to_string(), openapi);
@@ -1099,7 +1409,7 @@ fn build_request_body_with_warnings_for_namespace(
         );
     }
 
-    let prepared = prepare_all_tools(&options.tools, &options.tool_choice, model_id);
+    let prepared = prepare_all_tools(&options.tools, options.tool_choice.as_ref(), model_id);
     if let Some(tools) = prepared.tools {
         body.insert("tools".to_string(), Value::Array(tools));
     }
@@ -1112,7 +1422,7 @@ fn build_request_body_with_warnings_for_namespace(
     // the TS SDK. (Some callers include it; the API ignores extra fields.)
     let _ = model_id;
 
-    (Value::Object(body), prepared.warnings)
+    Ok((Value::Object(body), prepared.warnings))
 }
 
 // ── finish reason ────────────────────────────────────────────────────────────
@@ -1155,7 +1465,7 @@ pub fn parse_finish_reason(reason: &str, has_tool_calls: bool) -> FinishReason {
 /// - `output.total = candidatesTokenCount + thoughtsTokenCount`
 #[must_use]
 pub fn convert_usage(usage: &super::types::GoogleUsageMetadata) -> aimux_core::types::Usage {
-    use aimux_core::types::{TokenUsage, Usage};
+    use aimux_core::types::Usage;
 
     let prompt = usage.prompt_token_count.unwrap_or(0);
     let candidates = usage.candidates_token_count.unwrap_or(0);
@@ -1163,19 +1473,21 @@ pub fn convert_usage(usage: &super::types::GoogleUsageMetadata) -> aimux_core::t
     let thoughts = usage.thoughts_token_count.unwrap_or(0);
 
     Usage {
-        input_tokens: TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(prompt),
             no_cache: Some(prompt - cached),
             cache_read: Some(cached),
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(candidates + thoughts),
-            ..Default::default()
+            text: Some(candidates),
+            reasoning: Some(thoughts),
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -1210,199 +1522,106 @@ pub fn extract_sources(
     };
 
     for chunk in chunks {
-        if let Some(web) = chunk.get("web") {
-            sources.push(GenerateContent::Source {
+        if let Some(web) = chunk.get("web").filter(|value| !value.is_null()) {
+            sources.push(GenerateContent::Source(Source::Url {
                 id: next_id(id_counter),
-                source_type: "url".to_string(),
                 url: web
                     .get("uri")
                     .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string),
+                    .unwrap_or_default()
+                    .to_string(),
                 title: web
                     .get("title")
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string),
                 provider_metadata: None,
-            });
-        } else if let Some(image) = chunk.get("image") {
-            sources.push(GenerateContent::Source {
+            }));
+        } else if let Some(image) = chunk.get("image").filter(|value| !value.is_null()) {
+            sources.push(GenerateContent::Source(Source::Url {
                 id: next_id(id_counter),
-                source_type: "url".to_string(),
                 url: image
                     .get("sourceUri")
                     .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string),
+                    .unwrap_or_default()
+                    .to_string(),
                 title: image
                     .get("title")
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string),
                 provider_metadata: None,
-            });
-        } else if let Some(rc) = chunk.get("retrievedContext") {
-            let uri = rc.get("uri").and_then(|v| v.as_str());
-            let file_search_store = rc.get("fileSearchStore").and_then(|v| v.as_str());
+            }));
+        } else if let Some(rc) = chunk
+            .get("retrievedContext")
+            .filter(|value| !value.is_null())
+        {
+            let uri = rc
+                .get("uri")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty());
+            let file_search_store = rc
+                .get("fileSearchStore")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty());
             let title = rc.get("title").and_then(|v| v.as_str());
             if let Some(uri) = uri {
                 if uri.starts_with("http://") || uri.starts_with("https://") {
-                    sources.push(GenerateContent::Source {
+                    sources.push(GenerateContent::Source(Source::Url {
                         id: next_id(id_counter),
-                        source_type: "url".to_string(),
-                        url: Some(uri.to_string()),
+                        url: uri.to_string(),
                         title: title.map(std::string::ToString::to_string),
                         provider_metadata: None,
-                    });
+                    }));
                 } else {
                     // Document with a file path (gs://, etc.).
-                    sources.push(GenerateContent::Source {
+                    let media_type = if uri.ends_with(".pdf") {
+                        "application/pdf"
+                    } else if uri.ends_with(".txt") {
+                        "text/plain"
+                    } else if uri.ends_with(".docx") {
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    } else if uri.ends_with(".doc") {
+                        "application/msword"
+                    } else if uri.ends_with(".md") || uri.ends_with(".markdown") {
+                        "text/markdown"
+                    } else {
+                        "application/octet-stream"
+                    };
+                    sources.push(GenerateContent::Source(Source::Document {
                         id: next_id(id_counter),
-                        source_type: "document".to_string(),
-                        url: None,
-                        title: Some(title.unwrap_or("Unknown Document").to_string()),
+                        media_type: media_type.to_string(),
+                        title: title.unwrap_or("Unknown Document").to_string(),
+                        filename: uri.rsplit('/').next().map(str::to_string),
                         provider_metadata: None,
-                    });
+                    }));
                 }
-            } else if file_search_store.is_some() {
+            } else if let Some(file_search_store) = file_search_store {
                 // New File Search format (no uri, has fileSearchStore).
-                sources.push(GenerateContent::Source {
+                sources.push(GenerateContent::Source(Source::Document {
                     id: next_id(id_counter),
-                    source_type: "document".to_string(),
-                    url: None,
-                    title: Some(title.unwrap_or("Unknown Document").to_string()),
+                    media_type: "application/octet-stream".to_string(),
+                    title: title.unwrap_or("Unknown Document").to_string(),
+                    filename: file_search_store.rsplit('/').next().map(str::to_string),
                     provider_metadata: None,
-                });
+                }));
             }
             // else: no uri and no fileSearchStore → no source.
-        } else if let Some(maps) = chunk.get("maps")
-            && let Some(uri) = maps.get("uri").and_then(|v| v.as_str())
+        } else if let Some(maps) = chunk.get("maps").filter(|value| !value.is_null())
+            && let Some(uri) = maps
+                .get("uri")
+                .and_then(|v| v.as_str())
+                .filter(|uri| !uri.is_empty())
         {
-            sources.push(GenerateContent::Source {
+            sources.push(GenerateContent::Source(Source::Url {
                 id: next_id(id_counter),
-                source_type: "url".to_string(),
-                url: Some(uri.to_string()),
+                url: uri.to_string(),
                 title: maps
                     .get("title")
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string),
                 provider_metadata: None,
-            });
+            }));
         }
     }
 
     sources
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use aimux_core::language_model_message::LanguageModelPromptMessage;
-
-    fn assistant_prompt(content: Vec<ContentPart>) -> LanguageModelPrompt {
-        vec![LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content,
-            provider_options: None,
-        }]
-    }
-
-    fn code_metadata(namespace: &str, id: &str) -> Value {
-        json!({
-            (namespace): {
-                "serverToolCallId": id,
-                "serverToolType": "code_execution",
-            }
-        })
-    }
-
-    #[test]
-    fn vertex_replays_native_code_execution_with_multiple_results() {
-        let call_id = "code-1";
-        let prompt = assistant_prompt(vec![
-            ContentPart::ToolCall {
-                tool_call_id: call_id.to_string(),
-                tool_name: "runCode".to_string(),
-                input: json!({ "language": "PYTHON", "code": "print(2)" }),
-                provider_executed: Some(true),
-                thought_signature: None,
-                provider_options: Some(code_metadata("googleVertex", call_id)),
-            },
-            ContentPart::ToolResult {
-                tool_call_id: call_id.to_string(),
-                tool_name: Some("runCode".to_string()),
-                result: json!({ "outcome": "OUTCOME_OK", "output": "2" }),
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
-                provider_options: Some(code_metadata("googleVertex", call_id)),
-            },
-            ContentPart::ToolResult {
-                tool_call_id: call_id.to_string(),
-                tool_name: Some("runCode".to_string()),
-                result: json!({ "outcome": "OUTCOME_OK", "output": "still 2" }),
-                is_error: None,
-                preliminary: None,
-                dynamic: None,
-                provider_options: Some(code_metadata("googleVertex", call_id)),
-            },
-        ]);
-
-        let converted =
-            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex);
-        assert_eq!(
-            converted.contents[0]["parts"],
-            json!([
-                { "executableCode": { "language": "PYTHON", "code": "print(2)" } },
-                { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "2" } },
-                { "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "still 2" } },
-            ])
-        );
-    }
-
-    #[test]
-    fn provider_metadata_namespace_precedence_matches_ai_sdk() {
-        let content = ContentPart::ToolCall {
-            tool_call_id: "call-1".to_string(),
-            tool_name: "weather".to_string(),
-            input: json!({}),
-            provider_executed: None,
-            thought_signature: None,
-            provider_options: Some(json!({
-                "googleVertex": { "thoughtSignature": "google-vertex" },
-                "vertex": { "thoughtSignature": "vertex" },
-                "google": { "thoughtSignature": "google" },
-            })),
-        };
-        let prompt = assistant_prompt(vec![content]);
-
-        let vertex =
-            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex);
-        assert_eq!(
-            vertex.contents[0]["parts"][0]["thoughtSignature"],
-            "google-vertex"
-        );
-
-        let google =
-            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Google);
-        assert_eq!(google.contents[0]["parts"][0]["thoughtSignature"], "google");
-    }
-
-    #[test]
-    fn vertex_reads_google_as_cross_namespace_fallback() {
-        let prompt = assistant_prompt(vec![ContentPart::ToolCall {
-            tool_call_id: "call-1".to_string(),
-            tool_name: "weather".to_string(),
-            input: json!({}),
-            provider_executed: None,
-            thought_signature: None,
-            provider_options: Some(json!({
-                "google": { "thoughtSignature": "gateway-signature" },
-            })),
-        }]);
-
-        let converted =
-            convert_to_google_messages_for_namespace(&prompt, ProviderMetadataNamespace::Vertex);
-        assert_eq!(
-            converted.contents[0]["parts"][0]["thoughtSignature"],
-            "gateway-signature"
-        );
-    }
 }

@@ -9,6 +9,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Provider results carry request and response information as the AI SDK does
+  (`aimux-core`). `GenerateResult` has `request: Option<RequestInfo>` and
+  `response: Option<ResponseInfo>`; `ResponseInfo` gains `id` and holds the
+  timestamp, model id, headers and body. `StreamResult` has `request` and
+  `response: Option<StreamResponseInfo>`. The flat `request_body` and
+  `response_headers` fields are removed and `response` is optional; the call
+  layer fills a missing id, timestamp and model id. The user-facing results and
+  their JSON are unchanged.
+
+- The prompt a provider receives is modelled by role (`aimux-core`), as the AI
+  SDK's `LanguageModelV4Message`. `LanguageModelPrompt` is
+  `Vec<LanguageModelMessage>`: `System { content: String }`,
+  `User { content: Vec<UserPart> }`, `Assistant { content: Vec<AssistantPart> }`,
+  `Tool { content: Vec<ToolPart> }`. The parts are `TextPart`, `FilePart`,
+  `ReasoningPart`, `ToolCallPart`, `ToolResultPart`. A provider sees one file
+  part, `FilePart { data: FileData, media_type, filename }`; the five
+  user-facing file variants are folded into it by
+  `convert_to_language_model_prompt`, which now returns `Result` and rejects a
+  part its role does not allow. `LanguageModelPromptMessage` is removed. The
+  user-facing `ModelMessage` and `ContentPart` are unchanged. Recordings store
+  the new prompt JSON: a system message's `content` is a string and every file
+  input is a `file` part.
+
+- Provider options and provider metadata have one typed shape, the AI SDK's
+  `Record<string, JSONObject>`: `SharedProviderOptions` and
+  `SharedProviderMetadata` (`ProviderMetadata` is an alias) are
+  `HashMap<String, JsonObject>`, namespace to JSON object. They replace
+  `serde_json::Value`, `HashMap<String, Value>` and the per-part
+  `Option<Value>`. Every `provider_options` / `provider_metadata` field of
+  content parts, messages, call options, tools, results and stream parts uses
+  them. `{"namespace": {"key": value}}` serializes as before; a value that is
+  not namespace -> object (a number, string or array under a namespace, or a
+  non-object at the top) is rejected when deserialized. Build one with
+  `provider_namespace(ns, json!({..}))`.
+
+- Tool-call and tool-result types are unified, one per protocol layer
+  (`aimux-core`). A provider emits `tool::RawToolCall` (`input` is the raw
+  argument text) in `GenerateContent::ToolCall(..)` and
+  `StreamPart::ToolCall(..)`, and `tool::ToolResult` in the `ToolResult`
+  variants; these variants are newtype variants now. `StreamPart` is generic
+  over the tool-call type: a provider's `do_stream` yields `StreamPart`
+  (= `StreamPart<RawToolCall>`), `stream_text` and everything after it yield
+  `TextStreamPart` (= `StreamPart<ToolCall>`, parsed input with `invalid` /
+  `error`). `RawToolCall` moved from `parse_tool_call` to `tool`. Wire format:
+  enum variants keep their JSON shape; a provider-layer `StreamPart::ToolCall`
+  has a string `input` and no `invalid` / `error`; a
+  `GenerateContent::ToolCall` with a non-string `input` no longer
+  deserializes; the standalone `tool::ToolResult` gains a required
+  `tool_name` and optional `dynamic` / `provider_metadata`.
+- Source, generated-file and reasoning types are unified, one per concept
+  (`aimux-core`). `result::Source`, `result::GeneratedFile` and
+  `result::ReasoningOutput` are the payloads of `GenerateContent::{Source,
+  File, Reasoning}` and `StreamPart::{Source, File}` (newtype variants now) and
+  the elements of `sources`, `files` and `reasoning` on `GenerateTextResult`
+  and `StreamTextResultAggregated`; `StreamPart::ResponseMetadata` wraps
+  `types::ResponseMetadata`. `SourcePart`, `FilePart` and `ReasoningPart` are
+  removed (TypeScript: `Source`, `GeneratedFile`, `ReasoningOutput`). Wire
+  format: enum variants keep their JSON shape; the top-level `sources` /
+  `files` / `reasoning` arrays gain `provider_metadata` (so the reasoning
+  signature is no longer dropped), and a source's `url` / `title` serialize as
+  `null` when absent instead of being omitted.
+
 - Removed the generated `ProviderName` type in every binding (Rust enum, TS
   const object, Go/Java/Kotlin consts, Swift enum, Dart consts, Python
   `Literal`) and `scripts/gen_provider_names.py`. Provider names are plain

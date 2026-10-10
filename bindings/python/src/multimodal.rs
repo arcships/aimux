@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 use crate::error::{
-    BindingError, AiMuxBindingError, binding_py_err, serialize_result, to_py_err, wire_error,
+    AiMuxBindingError, BindingError, binding_py_err, serialize_result, to_py_err, wire_error,
     wire_json,
 };
 use aimux_core::AiMuxError;
@@ -66,8 +66,7 @@ fn parse_opts_json<T: serde::de::DeserializeOwned>(
 /// Shape-only stand-in for `TranscriptionCallOptions::audio`, built from the
 /// real enum so a variant rename is a compile error rather than a runtime one.
 fn audio_placeholder() -> serde_json::Value {
-    serde_json::to_value(AudioInput::Base64(String::new()))
-        .expect("AudioInput always serializes")
+    serde_json::to_value(AudioInput::Base64(String::new())).expect("AudioInput always serializes")
 }
 
 /// Shape-only stand-in for `RerankingCallOptions::documents`.
@@ -192,22 +191,23 @@ impl TranscriptionModel {
             AudioInput::Base64(audio_base64.to_string()),
             media_type.to_string(),
         );
-        if let Some(s) = opts_json {
-            if !s.trim().is_empty() && s.trim() != "null" {
-                // Take every caller option; audio and media_type always come
-                // from the explicit args.
-                let mut parsed: TranscriptionCallOptions = parse_opts_json(
-                    "opts_json",
-                    s,
-                    &[
-                        ("audio", audio_placeholder()),
-                        ("media_type", serde_json::Value::from("")),
-                    ],
-                )?;
-                parsed.audio = opts.audio;
-                parsed.media_type = opts.media_type;
-                opts = parsed;
-            }
+        if let Some(s) = opts_json
+            && !s.trim().is_empty()
+            && s.trim() != "null"
+        {
+            // Take every caller option; audio and media_type always come
+            // from the explicit args.
+            let mut parsed: TranscriptionCallOptions = parse_opts_json(
+                "opts_json",
+                s,
+                &[
+                    ("audio", audio_placeholder()),
+                    ("media_type", serde_json::Value::from("")),
+                ],
+            )?;
+            parsed.audio = opts.audio;
+            parsed.media_type = opts.media_type;
+            opts = parsed;
         }
 
         let result = crate::runtime().block_on(async move {
@@ -246,22 +246,23 @@ impl RerankingModel {
         let docs: RerankingDocuments = wire_json("docs_json", docs_json)?;
 
         let mut opts = RerankingCallOptions::new(query.to_string(), docs);
-        if let Some(s) = opts_json {
-            if !s.trim().is_empty() && s.trim() != "null" {
-                // Take every caller option; query and documents always come
-                // from the explicit args.
-                let mut parsed: RerankingCallOptions = parse_opts_json(
-                    "opts_json",
-                    s,
-                    &[
-                        ("query", serde_json::Value::from("")),
-                        ("documents", documents_placeholder()),
-                    ],
-                )?;
-                parsed.query = opts.query;
-                parsed.documents = opts.documents;
-                opts = parsed;
-            }
+        if let Some(s) = opts_json
+            && !s.trim().is_empty()
+            && s.trim() != "null"
+        {
+            // Take every caller option; query and documents always come
+            // from the explicit args.
+            let mut parsed: RerankingCallOptions = parse_opts_json(
+                "opts_json",
+                s,
+                &[
+                    ("query", serde_json::Value::from("")),
+                    ("documents", documents_placeholder()),
+                ],
+            )?;
+            parsed.query = opts.query;
+            parsed.documents = opts.documents;
+            opts = parsed;
         }
 
         let result = crate::runtime().block_on(async move {
@@ -318,18 +319,16 @@ impl SearchModel {
     #[pyo3(signature = (query, opts_json=None))]
     pub fn search(&self, query: &str, opts_json: Option<&str>) -> PyResult<String> {
         let mut opts = SearchCallOptions::new(query.to_string());
-        if let Some(s) = opts_json {
-            if !s.trim().is_empty() && s.trim() != "null" {
-                // Take every caller option; the query always comes from the
-                // explicit arg.
-                let mut parsed: SearchCallOptions = parse_opts_json(
-                    "opts_json",
-                    s,
-                    &[("query", serde_json::Value::from(""))],
-                )?;
-                parsed.query = opts.query;
-                opts = parsed;
-            }
+        if let Some(s) = opts_json
+            && !s.trim().is_empty()
+            && s.trim() != "null"
+        {
+            // Take every caller option; the query always comes from the
+            // explicit arg.
+            let mut parsed: SearchCallOptions =
+                parse_opts_json("opts_json", s, &[("query", serde_json::Value::from(""))])?;
+            parsed.query = opts.query;
+            opts = parsed;
         }
 
         let result = crate::runtime().block_on(async move {
@@ -372,12 +371,13 @@ impl Files {
             },
             media_type.to_string(),
         );
-        if let Some(s) = opts_json {
-            if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: UploadFileCallOptions = wire_json("opts_json", s)?;
-                opts.filename = parsed.filename;
-                opts.provider_options = parsed.provider_options;
-            }
+        if let Some(s) = opts_json
+            && !s.trim().is_empty()
+            && s.trim() != "null"
+        {
+            let parsed: UploadFileCallOptions = wire_json("opts_json", s)?;
+            opts.filename = parsed.filename;
+            opts.provider_options = parsed.provider_options;
         }
 
         let result = crate::runtime().block_on(async move { self.inner.upload_file(&opts).await });
@@ -631,7 +631,7 @@ pub fn start_transcription_session(
     #[derive(serde::Deserialize, Default)]
     struct SessionOpts {
         input_audio_format: Option<aimux_core::transcription_model::InputAudioFormat>,
-        provider_options: Option<std::collections::HashMap<String, serde_json::Value>>,
+        provider_options: Option<aimux_core::shared::SharedProviderOptions>,
         headers: Option<std::collections::HashMap<String, String>>,
         include_raw_chunks: Option<bool>,
         timeout: Option<aimux_core::options::TimeoutConfiguration>,
@@ -672,8 +672,8 @@ pub fn start_transcription_session(
             include_raw_chunks: opts.include_raw_chunks.unwrap_or(false),
             timeout: opts.timeout,
         };
-        let result = aimux_core::transcription_model::stream_transcribe(model.as_ref(), options)
-            .await;
+        let result =
+            aimux_core::transcription_model::stream_transcribe(model.as_ref(), options).await;
         match result {
             Ok(stream_result) => {
                 use futures::StreamExt;
@@ -712,21 +712,18 @@ pub fn start_transcription_session(
                             return;
                         }
                     };
-                    loop {
-                        match tx.try_send(Ok(json.clone())) {
-                            Ok(()) => break,
-                            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                                tokio::select! {
-                                    _ = effective.cancelled() => return,
-                                    res = tx.send(Ok(json.clone())) => {
-                                        if res.is_err() { return; }
-                                        break;
-                                    }
+                    match tx.try_send(Ok(json.clone())) {
+                        Ok(()) => {}
+                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                            tokio::select! {
+                                _ = effective.cancelled() => return,
+                                res = tx.send(Ok(json.clone())) => {
+                                    if res.is_err() { return; }
                                 }
                             }
-                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                                return;
-                            }
+                        }
+                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                            return;
                         }
                     }
                 }
@@ -734,20 +731,17 @@ pub fn start_transcription_session(
             Err(e) => {
                 // Connect failure: deliver as the first channel item
                 // (try_send + abort-select; mirrors the FFI driver).
-                loop {
-                    match tx.try_send(Err(e.clone().into())) {
-                        Ok(()) => break,
-                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                            tokio::select! {
-                                _ = effective.cancelled() => return,
-                                res = tx.send(Err(e.clone().into())) => {
-                                    if res.is_err() { return; }
-                                    break;
-                                }
+                match tx.try_send(Err(e.clone().into())) {
+                    Ok(()) => {}
+                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                        tokio::select! {
+                            _ = effective.cancelled() => return,
+                            res = tx.send(Err(e.clone().into())) => {
+                                if res.is_err() { return; }
                             }
                         }
-                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => return,
                     }
+                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => return,
                 }
             }
         }

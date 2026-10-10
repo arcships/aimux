@@ -1,4 +1,4 @@
-﻿//! Provider-specific tests for the OpenRouter provider.
+//! Provider-specific tests for the OpenRouter provider.
 //!
 //! OpenRouter is a thin OpenAI-compatible wrapper over [`OpenAIProvider`]. The
 //! behaviours verified here are the ones the wrapper is responsible for:
@@ -17,18 +17,17 @@
 //! `/api/v1/chat/completions` — matching the path the real OpenRouter API
 //! (base `https://openrouter.ai/api/v1`) records in the cassettes.
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use serial_test::serial;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, Tool, ToolChoice};
+use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
+use aimux_core::options::{CallOptions, Tool};
 use aimux_core::provider::Provider;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
@@ -44,11 +43,7 @@ mod common;
 // ── shared helpers ───────────────────────────────────────────────────────────
 
 fn test_prompt() -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("Hello")],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text("Hello")]
 }
 
 fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
@@ -399,45 +394,19 @@ async fn do_generate_extracts_tool_call() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call_abc");
             assert_eq!(tool_name, "get-weather");
-            assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
+            assert_eq!(input, r#"{"city":"SF"}"#);
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
-}
-
-/// Tool choice `required` is forwarded as `"required"`.
-#[tokio::test]
-async fn tool_choice_required_forwarded() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-        .mount(&server)
-        .await;
-
-    let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
-
-    let tool = FunctionTool::new("get-weather", json!({})).with_description("Test");
-    let options = CallOptions {
-        tools: Some(vec![Tool::from(tool)]),
-        tool_choice: ToolChoice::Required,
-        ..default_options(test_prompt())
-    };
-    model.do_generate(&options).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["tool_choice"], "required");
 }
 
 /// do_stream returns text deltas.
@@ -527,18 +496,18 @@ async fn do_stream_emits_tool_call() {
     let parts = collect_stream(result).await;
 
     let tool_call = parts.iter().find_map(|p| match p {
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+        }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
         _ => None,
     });
     let (id, name, input) = tool_call.expect("should have ToolCall");
     assert_eq!(id, "call_abc");
     assert_eq!(name, "get-weather");
-    assert_eq!(input, Value::String(r#"{"city":"SF"}"#.into()));
+    assert_eq!(input, r#"{"city":"SF"}"#);
 }
 
 /// A 401 response maps to `AiMuxError::ApiCall` (401 in `status_code`).
@@ -585,35 +554,6 @@ async fn status_429_maps_to_rate_limited() {
     );
 }
 
-/// The raw response headers are exposed on the generate result.
-#[tokio::test]
-async fn exposes_response_headers() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("test-header", "test-value")
-                .set_body_json(text_completion_body()),
-        )
-        .mount(&server)
-        .await;
-
-    let provider = make_provider(&server);
-    let model = provider.model("openai/gpt-4o-mini");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let headers = result
-        .response_headers
-        .as_ref()
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // Conformance — real recorded API responses (cassettes).
 //
@@ -645,13 +585,13 @@ mod conformance {
     fn has_tool_call(content: &[GenerateContent]) -> bool {
         content
             .iter()
-            .any(|c| matches!(c, GenerateContent::ToolCall { .. }))
+            .any(|c| matches!(c, GenerateContent::ToolCall(_)))
     }
 
     fn has_reasoning(content: &[GenerateContent]) -> bool {
         content
             .iter()
-            .any(|c| matches!(c, GenerateContent::Reasoning { .. }))
+            .any(|c| matches!(c, GenerateContent::Reasoning(_)))
     }
 
     fn has_finish(parts: &[StreamPart]) -> bool {

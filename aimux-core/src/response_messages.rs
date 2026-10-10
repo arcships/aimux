@@ -1,17 +1,21 @@
 //! Assemble the assistant message replayed to the model on the next turn.
 //!
-//! Rust port of the AI SDK's `toResponseMessages`
-//! (`packages/ai/src/generate-text/to-response-messages.ts`): text and
-//! reasoning arrive as deltas and must be flushed as positioned segments the
-//! moment a part of a different kind lands, so the replayed transcript keeps
-//! provider order. Tool calls/results and reasoning signatures are replayed
-//! verbatim — Anthropic/Bedrock thinking signatures must round-trip exactly.
+//! Rust port of the AI SDK's `toResponseMessages` and streamed content
+//! assembly. Text and reasoning segments retain their first position while
+//! deltas update them by ID. Provider metadata is replayed on the next turn.
 
+use std::collections::HashMap;
+
+use base64::Engine;
 use serde_json::Value;
 
 use crate::content::ContentPart;
 use crate::message::{MessageContent, ModelMessage, Role};
-use crate::result::ReasoningPart;
+use crate::result::{
+    GenerateContent, GeneratedFile, ReasoningFileOutput, ReasoningOutput, ReasoningPart, Source,
+    TextContent, ToolApprovalRequestOutput,
+};
+use crate::shared::{FileBytes, GeneratedFileData, SharedProviderMetadata};
 
 /// Match the AI SDK's response-message safety rule for invalid tool calls:
 /// malformed primitive input must not be replayed as a prompt tool-call input.
@@ -28,33 +32,27 @@ pub(crate) fn response_tool_call_input(input: &Value, invalid: Option<bool>) -> 
 /// Reasoning signature echoed back on the next turn (Anthropic:
 /// `provider_metadata.anthropic.signature`; Bedrock: `.bedrock.signature` /
 /// `.amazonBedrock.signature`).
-pub(crate) fn extract_reasoning_signature(provider_metadata: Option<&Value>) -> Option<String> {
+pub(crate) fn extract_reasoning_signature(
+    provider_metadata: Option<&SharedProviderMetadata>,
+) -> Option<String> {
     let metadata = provider_metadata?;
     ["anthropic", "bedrock", "amazonBedrock"]
-        .iter()
+        .into_iter()
         .find_map(|ns| metadata.get(ns)?.get("signature")?.as_str())
         .map(str::to_owned)
 }
 
-/// Accumulates response-message content parts in provider order.
-///
-/// Streaming feeds it per-event (`text_start`/`text_delta`/…); the
-/// non-streaming path feeds whole segments (`text`/`reasoning`). Both paths
-/// share the flush discipline and the tool-call/result placement rules.
+/// Accumulates generated content in provider order, updating streamed segments by ID.
 #[derive(Default)]
 pub(crate) struct ResponseMessageBuilder {
-    parts: Vec<ContentPart>,
-    text_buf: String,
-    text_provider_options: Option<Value>,
-    reasoning_buf: String,
-    reasoning_provider_options: Option<Value>,
-    reasoning: Vec<ReasoningPart>,
+    content: Vec<TextContent>,
+    text_indexes: HashMap<String, usize>,
+    reasoning_indexes: HashMap<String, usize>,
 }
 
-/// What the builder produced: the replayable assistant message plus the
-/// reasoning aggregate surfaced on the result.
 pub(crate) struct ResponseMessages {
     pub messages: Vec<ModelMessage>,
+    pub content: Vec<TextContent>,
     pub reasoning: Vec<ReasoningPart>,
 }
 
@@ -63,167 +61,228 @@ impl ResponseMessageBuilder {
         Self::default()
     }
 
-    // ── Streaming events ────────────────────────────────────────────────
-
-    pub fn text_start(&mut self, provider_metadata: Option<Value>) {
-        self.flush_reasoning();
-        // A new text segment establishes its position immediately; flush a
-        // preceding implicit segment before starting it.
-        self.flush_text();
-        self.text_provider_options = provider_metadata;
+    pub fn text_start(&mut self, id: String, metadata: Option<SharedProviderMetadata>) {
+        self.text_delta(id, "", metadata);
     }
 
-    pub fn text_delta(&mut self, delta: &str, provider_metadata: Option<Value>) {
-        self.flush_reasoning();
-        self.text_buf.push_str(delta);
-        if provider_metadata.is_some() {
-            self.text_provider_options = provider_metadata;
-        }
-    }
-
-    pub fn text_end(&mut self, provider_metadata: Option<Value>) {
-        if provider_metadata.is_some() {
-            self.text_provider_options = provider_metadata;
-        }
-        self.flush_text();
-    }
-
-    pub fn reasoning_start(&mut self, provider_metadata: Option<Value>) {
-        self.flush_text();
-        self.flush_reasoning();
-        self.reasoning_provider_options = provider_metadata;
-    }
-
-    pub fn reasoning_delta(&mut self, delta: &str, provider_metadata: Option<Value>) {
-        self.flush_text();
-        self.reasoning_buf.push_str(delta);
-        if provider_metadata.is_some() {
-            self.reasoning_provider_options = provider_metadata;
-        }
-    }
-
-    pub fn reasoning_end(&mut self, provider_metadata: Option<Value>) {
-        self.flush_text();
-        if provider_metadata.is_some() {
-            self.reasoning_provider_options = provider_metadata;
-        }
-        self.flush_reasoning();
-    }
-
-    // ── Whole segments (non-streaming) ──────────────────────────────────
-
-    pub fn text(&mut self, text: &str, provider_metadata: Option<&Value>) {
-        if !text.is_empty() {
-            self.parts.push(ContentPart::Text {
-                text: text.to_owned(),
-                provider_options: provider_metadata.cloned(),
+    pub fn text_delta(
+        &mut self,
+        id: String,
+        delta: &str,
+        metadata: Option<SharedProviderMetadata>,
+    ) {
+        let index = *self.text_indexes.entry(id).or_insert_with(|| {
+            let index = self.content.len();
+            self.content.push(GenerateContent::Text {
+                text: String::new(),
+                provider_metadata: None,
             });
+            index
+        });
+        if let GenerateContent::Text {
+            text,
+            provider_metadata,
+        } = &mut self.content[index]
+        {
+            text.push_str(delta);
+            if metadata.is_some() {
+                *provider_metadata = metadata;
+            }
         }
     }
 
-    pub fn reasoning(&mut self, text: &str, provider_metadata: Option<&Value>) {
-        // Pushed unconditionally: redacted thinking has empty text but its
-        // provider metadata must still be replayed.
-        self.reasoning.push(ReasoningPart {
-            text: text.to_owned(),
+    pub fn text_end(&mut self, id: String, metadata: Option<SharedProviderMetadata>) {
+        self.text_delta(id.clone(), "", metadata);
+        self.text_indexes.remove(&id);
+    }
+
+    pub fn reasoning_start(&mut self, id: String, metadata: Option<SharedProviderMetadata>) {
+        self.reasoning_delta(id, "", metadata);
+    }
+
+    pub fn reasoning_delta(
+        &mut self,
+        id: String,
+        delta: &str,
+        metadata: Option<SharedProviderMetadata>,
+    ) {
+        let index = *self.reasoning_indexes.entry(id).or_insert_with(|| {
+            let index = self.content.len();
+            self.content
+                .push(GenerateContent::Reasoning(ReasoningOutput {
+                    text: String::new(),
+                    provider_metadata: None,
+                }));
+            index
         });
-        let signature = extract_reasoning_signature(provider_metadata);
-        self.parts.push(ContentPart::Reasoning {
+        if let GenerateContent::Reasoning(reasoning) = &mut self.content[index] {
+            reasoning.text.push_str(delta);
+            if metadata.is_some() {
+                reasoning.provider_metadata = metadata;
+            }
+        }
+    }
+
+    pub fn reasoning_end(&mut self, id: String, metadata: Option<SharedProviderMetadata>) {
+        self.reasoning_delta(id.clone(), "", metadata);
+        self.reasoning_indexes.remove(&id);
+    }
+
+    pub fn text(&mut self, text: &str, metadata: Option<&SharedProviderMetadata>) {
+        self.content.push(GenerateContent::Text {
             text: text.to_owned(),
-            signature,
-            provider_options: provider_metadata.cloned(),
+            provider_metadata: metadata.cloned(),
         });
     }
 
-    // ── Tool parts (both paths) ─────────────────────────────────────────
+    pub fn reasoning(&mut self, reasoning: &ReasoningOutput) {
+        self.content
+            .push(GenerateContent::Reasoning(reasoning.clone()));
+    }
+
+    pub fn custom(&mut self, kind: String, provider_metadata: Option<SharedProviderMetadata>) {
+        self.content.push(GenerateContent::Custom {
+            kind,
+            provider_metadata,
+        });
+    }
+
+    pub fn file(&mut self, file: &GeneratedFile, reasoning: bool) {
+        self.content.push(if reasoning {
+            GenerateContent::ReasoningFile(ReasoningFileOutput {
+                file: file.clone(),
+                provider_metadata: file.provider_metadata.clone(),
+            })
+        } else {
+            GenerateContent::File(file.clone())
+        });
+    }
+
+    pub fn approval(&mut self, approval: &ToolApprovalRequestOutput) {
+        self.content
+            .push(GenerateContent::ToolApprovalRequest(approval.clone()));
+    }
 
     pub fn tool_call(&mut self, call: &crate::tool::ToolCall) {
-        self.flush_text();
-        self.flush_reasoning();
-        self.parts.push(ContentPart::ToolCall {
-            tool_call_id: call.tool_call_id.clone(),
-            tool_name: call.tool_name.clone(),
-            input: response_tool_call_input(&call.input, call.invalid),
-            provider_executed: call.provider_executed,
-            thought_signature: call.thought_signature.clone(),
-            provider_options: call.provider_metadata.clone(),
-        });
+        self.content.push(GenerateContent::ToolCall(call.clone()));
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn tool_result(
-        &mut self,
-        tool_call_id: String,
-        tool_name: String,
-        result: Value,
-        is_error: Option<bool>,
-        preliminary: Option<bool>,
-        dynamic: Option<bool>,
-        provider_options: Option<Value>,
-    ) {
-        // Preliminary server-tool results are transient stream updates. The
-        // provider contract requires a later final result, and only that
-        // final value belongs in the replay transcript for the next turn.
-        if preliminary == Some(true) {
-            return;
+    pub fn tool_result(&mut self, result: crate::tool::ToolResult) {
+        if result.preliminary != Some(true) {
+            self.content.push(GenerateContent::ToolResult(result));
         }
-        self.flush_text();
-        self.flush_reasoning();
-        self.parts.push(ContentPart::ToolResult {
-            tool_call_id,
-            tool_name: Some(tool_name),
-            result,
-            is_error,
-            preliminary,
-            dynamic,
-            provider_options,
-        });
     }
 
-    // ── Finalization ────────────────────────────────────────────────────
+    pub fn source(&mut self, source: Source) {
+        self.content.push(GenerateContent::Source(source));
+    }
 
-    pub fn finish(mut self) -> ResponseMessages {
-        self.flush_text();
-        self.flush_reasoning();
-        let messages = if self.parts.is_empty() {
+    pub fn finish(self) -> ResponseMessages {
+        let mut parts = Vec::new();
+        let mut reasoning = Vec::new();
+        for content in &self.content {
+            parts.push(match content {
+                GenerateContent::Text {
+                    text,
+                    provider_metadata,
+                } => {
+                    if text.is_empty() {
+                        continue;
+                    }
+                    ContentPart::Text {
+                        text: text.clone(),
+                        provider_options: provider_metadata.clone(),
+                    }
+                }
+                GenerateContent::Reasoning(output) => {
+                    reasoning.push(ReasoningPart::Text(output.clone()));
+                    ContentPart::Reasoning {
+                        text: output.text.clone(),
+                        signature: extract_reasoning_signature(output.provider_metadata.as_ref()),
+                        provider_options: output.provider_metadata.clone(),
+                    }
+                }
+                GenerateContent::Custom {
+                    kind,
+                    provider_metadata,
+                } => ContentPart::Custom {
+                    kind: kind.clone(),
+                    provider_options: provider_metadata.clone(),
+                },
+                GenerateContent::File(file) => match &file.data {
+                    GeneratedFileData::Data { data } => ContentPart::FileBase64 {
+                        data: file_base64(data),
+                        media_type: file.media_type.clone(),
+                        filename: None,
+                        provider_options: file.provider_metadata.clone(),
+                    },
+                    GeneratedFileData::Url { url, .. } => ContentPart::FileUrl {
+                        url: url.clone(),
+                        media_type: file.media_type.clone(),
+                        provider_options: file.provider_metadata.clone(),
+                    },
+                },
+                GenerateContent::ReasoningFile(output) => {
+                    reasoning.push(ReasoningPart::File(output.clone()));
+                    ContentPart::ReasoningFile {
+                        data: match &output.file.data {
+                            GeneratedFileData::Data { data } => GeneratedFileData::Data {
+                                data: FileBytes::Base64(file_base64(data)),
+                            },
+                            url => url.clone(),
+                        },
+                        media_type: output.file.media_type.clone(),
+                        provider_options: output.provider_metadata.clone(),
+                    }
+                }
+                GenerateContent::ToolApprovalRequest(approval) => {
+                    ContentPart::ToolApprovalRequest {
+                        approval_id: approval.approval_id.clone(),
+                        tool_call_id: approval.tool_call.tool_call_id.clone(),
+                        reason: approval.reason.clone(),
+                        is_automatic: approval.is_automatic,
+                        signature: approval.signature.clone(),
+                        input_schema_input: None,
+                    }
+                }
+                GenerateContent::ToolCall(call) => ContentPart::ToolCall {
+                    tool_call_id: call.tool_call_id.clone(),
+                    tool_name: call.tool_name.clone(),
+                    input: response_tool_call_input(&call.input, call.invalid),
+                    provider_executed: call.provider_executed,
+                    provider_options: call.provider_metadata.clone(),
+                },
+                GenerateContent::ToolResult(result) => ContentPart::ToolResult {
+                    tool_call_id: result.tool_call_id.clone(),
+                    tool_name: Some(result.tool_name.clone()),
+                    result: result.result.clone(),
+                    is_error: result.is_error,
+                    preliminary: result.preliminary,
+                    dynamic: result.dynamic,
+                    provider_options: result.provider_metadata.clone(),
+                },
+                GenerateContent::Source(_) => continue,
+            });
+        }
+        let messages = if parts.is_empty() {
             Vec::new()
         } else {
             vec![ModelMessage {
                 role: Role::Assistant,
-                content: MessageContent::Parts(self.parts),
+                content: MessageContent::Parts(parts),
             }]
         };
         ResponseMessages {
             messages,
-            reasoning: self.reasoning,
+            content: self.content,
+            reasoning,
         }
     }
+}
 
-    fn flush_text(&mut self) {
-        if !self.text_buf.is_empty() {
-            self.parts.push(ContentPart::Text {
-                text: std::mem::take(&mut self.text_buf),
-                provider_options: self.text_provider_options.take(),
-            });
-        } else {
-            self.text_provider_options = None;
-        }
-    }
-
-    fn flush_reasoning(&mut self) {
-        if self.reasoning_buf.is_empty() && self.reasoning_provider_options.is_none() {
-            return;
-        }
-        let text = std::mem::take(&mut self.reasoning_buf);
-        if !text.is_empty() {
-            self.reasoning.push(ReasoningPart { text: text.clone() });
-        }
-        let provider_options = self.reasoning_provider_options.take();
-        let signature = extract_reasoning_signature(provider_options.as_ref());
-        self.parts.push(ContentPart::Reasoning {
-            text,
-            signature,
-            provider_options,
-        });
+fn file_base64(data: &FileBytes) -> String {
+    match data {
+        FileBytes::Base64(data) => data.clone(),
+        FileBytes::Binary(data) => base64::engine::general_purpose::STANDARD.encode(data),
     }
 }

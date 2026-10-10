@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use aimux_core::decision_model::*;
-use aimux_core::types::{TokenUsage, Usage};
+use aimux_core::types::{InputTokenUsage, OutputTokenUsage, Usage};
 use aimux_core::{AiMuxError, ApiCallError, Provider};
 use aimux_provider_utils::{HttpRequest, load_api_key};
 
@@ -264,15 +264,15 @@ fn convert_response(
         answers.insert(id, answer);
     }
     let usage = Some(Usage {
-        input_tokens: TokenUsage {
+        input_tokens: InputTokenUsage {
             total: data.usage.input_tokens,
             ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: OutputTokenUsage {
             total: data.usage.output_tokens,
             ..Default::default()
         },
-        raw: raw.get("usage").cloned(),
+        raw: raw.get("usage").and_then(Value::as_object).cloned(),
     });
     Ok(DecisionResult {
         rounding: JEV_ROUNDING,
@@ -283,7 +283,12 @@ fn convert_response(
         probability_source: source,
         usage,
         latency_ms: None,
-        provider_metadata: Some(HashMap::from([("jev".into(), raw.clone())])),
+        provider_metadata: Some(HashMap::from([(
+            "jev".into(),
+            raw.as_object().cloned().ok_or_else(|| {
+                AiMuxError::InvalidResponseData("Jev response must be an object".into())
+            })?,
+        )])),
         response: Some(DecisionResponse {
             headers: Some(headers),
             body: Some(raw),

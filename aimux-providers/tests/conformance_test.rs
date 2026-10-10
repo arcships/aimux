@@ -15,10 +15,8 @@ use common::replay::mount_cassettes;
 use futures::StreamExt;
 use wiremock::MockServer;
 
-use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
@@ -35,11 +33,7 @@ use aimux_providers::{
 // 閳光偓閳光偓 helpers 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
 
 fn test_prompt() -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("Hello")],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text("Hello")]
 }
 
 fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
@@ -67,13 +61,13 @@ fn has_text(content: &[GenerateContent]) -> bool {
 fn has_tool_call(content: &[GenerateContent]) -> bool {
     content
         .iter()
-        .any(|c| matches!(c, GenerateContent::ToolCall { .. }))
+        .any(|c| matches!(c, GenerateContent::ToolCall(_)))
 }
 
 fn has_reasoning(content: &[GenerateContent]) -> bool {
     content
         .iter()
-        .any(|c| matches!(c, GenerateContent::Reasoning { .. }))
+        .any(|c| matches!(c, GenerateContent::Reasoning(_)))
 }
 
 #[allow(dead_code)]
@@ -89,9 +83,7 @@ fn has_finish(parts: &[StreamPart]) -> bool {
 
 #[allow(dead_code)]
 fn has_tool_call_part(parts: &[StreamPart]) -> bool {
-    parts
-        .iter()
-        .any(|p| matches!(p, StreamPart::ToolCall { .. }))
+    parts.iter().any(|p| matches!(p, StreamPart::ToolCall(_)))
 }
 
 /// True when an error signals the request never matched a cassette — i.e. a

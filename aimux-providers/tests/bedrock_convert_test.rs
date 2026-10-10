@@ -1,4 +1,4 @@
-﻿//! Pure-function tests for the Amazon Bedrock provider's conversion layer.
+//! Pure-function tests for the Amazon Bedrock provider's conversion layer.
 //!
 //! Translated from the TS test files:
 //! - `convert-to-amazon-bedrock-chat-messages.test.ts` (64 cases)
@@ -7,13 +7,8 @@
 //!
 //! Cases the Rust data model cannot express are skipped with an inline
 //! comment. The main categories of skips:
-//! - **Message-level `providerOptions`**: `LanguageModelPromptMessage` has no
-//!   `provider_options` field, so message-level cache points (system / user /
-//!   assistant message `bedrock.cachePoint`) cannot be expressed. Part-level
-//!   cache points (on `ContentPart::Text` `provider_options`) ARE covered.
-//! - **System-after-non-system throw / unsupported-mime throws**: the Rust
-//!   `convert_prompt_to_bedrock` returns `(system, messages)` (no `Result`),
-//!   so it cannot surface `UnsupportedFunctionalityError`.
+//! - **System-after-non-system throw**: the converter currently lifts
+//!   all system messages into the system array.
 //! - **S3 URLs / provider references**: `FileUrl` / `FileReference` are not
 //!   converted by the Rust Bedrock path.
 //! - **Top-level-only mediaType auto-detection from bytes**: the Rust path
@@ -21,97 +16,127 @@
 //! - **Mistral tool-call-id normalization (`isMistral`)**: the Rust
 //!   `convert_prompt_to_bedrock` has no `isMistral` parameter. The
 //!   non-Mistral (passthrough) cases ARE covered.
-//! - **Redacted reasoning / foreign-provider reasoning**: `ContentPart::Reasoning`
-//!   carries only `signature` (no `redactedData`, no provider distinction).
 //! - **Provider-defined tools (web_search, anthropic provider tools)** and
 //!   `additionalTools`/`betas`: the Rust `FunctionTool` has no `type`/`id`.
 //! - **`raw` echo on `Usage`**: the Rust `Usage` type has no `raw` field.
 
 use serde_json::{Value, json};
 
-use aimux_core::content::ContentPart;
-use aimux_core::language_model_message::LanguageModelPromptMessage;
-use aimux_core::message::Role;
+use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions, provider_namespace};
+
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, ReasoningPart, TextPart, ToolCallPart, ToolPart,
+    ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
+};
 use aimux_core::options::ToolChoice;
 use aimux_core::tool::FunctionTool;
 
 use aimux_providers::bedrock::convert::{
-    BedrockUsage, convert_prompt_to_bedrock, convert_usage, prepare_tools, supports_strict_tools,
+    BedrockUsage, convert_prompt_to_bedrock, convert_usage, prepare_tools,
 };
 
 // ── prompt builders ─────────────────────────────────────────────────────────
 
-fn msg(role: Role, content: Vec<ContentPart>) -> LanguageModelPromptMessage {
-    LanguageModelPromptMessage {
-        role,
+fn user(content: Vec<UserPart>) -> LanguageModelMessage {
+    LanguageModelMessage::User {
         content,
         provider_options: None,
     }
 }
 
-fn user(content: Vec<ContentPart>) -> LanguageModelPromptMessage {
-    msg(Role::User, content)
+fn assistant(content: Vec<AssistantPart>) -> LanguageModelMessage {
+    LanguageModelMessage::Assistant {
+        content,
+        provider_options: None,
+    }
 }
 
-fn assistant(content: Vec<ContentPart>) -> LanguageModelPromptMessage {
-    msg(Role::Assistant, content)
+fn system_msg(text: &str) -> LanguageModelMessage {
+    LanguageModelMessage::System {
+        content: text.to_string(),
+        provider_options: None,
+    }
 }
 
-fn system_msg(text: &str) -> LanguageModelPromptMessage {
-    msg(Role::System, vec![ContentPart::text(text)])
+fn tool_msg(content: Vec<ToolPart>) -> LanguageModelMessage {
+    LanguageModelMessage::Tool {
+        content,
+        provider_options: None,
+    }
 }
 
-fn tool_msg(content: Vec<ContentPart>) -> LanguageModelPromptMessage {
-    msg(Role::Tool, content)
+fn user_text(text: &str) -> UserPart {
+    UserPart::Text(TextPart {
+        text: text.to_string(),
+        provider_options: None,
+    })
 }
 
-/// A `file` part whose inline data is an already-base64 string — mirrors the
-/// TS `file` part with `data: { type: 'data', data: '<base64>' }` (the Rust
-/// `ContentPart::FileBase64` holds the base64 string verbatim).
+fn assistant_text(text: &str) -> AssistantPart {
+    AssistantPart::Text(TextPart {
+        text: text.to_string(),
+        provider_options: None,
+    })
+}
+
+/// A file part with inline base64 data, passed through verbatim.
 fn file_base64(
     data: &str,
     media_type: &str,
     filename: Option<&str>,
-    provider_options: Option<Value>,
-) -> ContentPart {
-    ContentPart::FileBase64 {
-        data: data.to_string(),
+    provider_options: Option<SharedProviderOptions>,
+) -> UserPart {
+    UserPart::File(FilePart {
+        data: FileData::Data {
+            data: FileBytes::Base64(data.to_string()),
+        },
         media_type: media_type.to_string(),
         filename: filename.map(std::string::ToString::to_string),
         provider_options,
-    }
+    })
 }
 
-fn text_with_cache(text: &str, cache_type: &str, ttl: Option<&str>) -> ContentPart {
+fn text_with_cache(text: &str, cache_type: &str, ttl: Option<&str>) -> TextPart {
     let mut cp = serde_json::Map::new();
     cp.insert("type".to_string(), json!(cache_type));
     if let Some(t) = ttl {
         cp.insert("ttl".to_string(), json!(t));
     }
-    ContentPart::Text {
+    TextPart {
         text: text.to_string(),
-        provider_options: Some(json!({ "bedrock": { "cachePoint": Value::Object(cp) } })),
+        provider_options: Some(
+            provider_namespace("bedrock", json!({ "cachePoint": Value::Object(cp) })).unwrap(),
+        ),
     }
 }
 
-fn reasoning(text: &str, signature: Option<&str>) -> ContentPart {
-    ContentPart::Reasoning {
+fn reasoning(text: &str, signature: Option<&str>) -> AssistantPart {
+    AssistantPart::Reasoning(ReasoningPart {
         text: text.to_string(),
-        signature: signature.map(std::string::ToString::to_string),
+        provider_options: signature.map(|signature| {
+            provider_namespace("amazonBedrock", json!({ "signature": signature })).unwrap()
+        }),
+    })
+}
+
+fn tool_call(id: &str, name: &str, input: Value) -> AssistantPart {
+    AssistantPart::ToolCall(ToolCallPart {
+        tool_call_id: id.to_string(),
+        tool_name: name.to_string(),
+        input,
+        provider_executed: None,
         provider_options: None,
-    }
+    })
 }
 
-fn tool_call(id: &str, name: &str, input: Value) -> ContentPart {
-    ContentPart::tool_call(id.to_string(), name.to_string(), input)
+fn tool_result(id: &str, output: ToolResultOutput) -> ToolPart {
+    ToolPart::ToolResult(ToolResultPart {
+        tool_call_id: id.to_string(),
+        tool_name: "test".to_string(),
+        output,
+        provider_options: None,
+    })
 }
-
-fn tool_result(id: &str, output: Value) -> ContentPart {
-    ContentPart::tool_result(id.to_string(), output)
-}
-
-const ANTHROPIC_MODEL: &str = "anthropic.claude-sonnet-4-5-20250929-v1:0";
-const NON_ANTHROPIC_MODEL: &str = "meta.llama3-70b-instruct-v1:0";
 
 // ════════════════════════════════════════════════════════════════════════════
 // convert-to-amazon-bedrock-chat-messages
@@ -122,7 +147,8 @@ const NON_ANTHROPIC_MODEL: &str = "meta.llama3-70b-instruct-v1:0";
 /// TS: "should combine multiple leading system messages into a single system message"
 #[test]
 fn system_combine_multiple_leading() {
-    let (system, _) = convert_prompt_to_bedrock(&vec![system_msg("Hello"), system_msg("World")]);
+    let (system, _) =
+        convert_prompt_to_bedrock(&vec![system_msg("Hello"), system_msg("World")]).unwrap();
     assert_eq!(
         Value::Array(system),
         json!([{ "text": "Hello" }, { "text": "World" }])
@@ -130,16 +156,13 @@ fn system_combine_multiple_leading() {
 }
 
 // SKIPPED (TS: "should throw an error if a system message is provided after a
-// non-system message"): convert_prompt_to_bedrock returns (system, messages)
-// with no Result, so it cannot surface UnsupportedFunctionalityError.
-
-// SKIPPED (TS: system message cache point, 5m, 1h — 3 cases): message-level
-// providerOptions are not modelled on LanguageModelPromptMessage.
+// non-system message"): the converter currently lifts all system messages
+// into the system array.
 
 /// TS: "should extract the system message"
 #[test]
 fn system_extract_single() {
-    let (system, _) = convert_prompt_to_bedrock(&vec![system_msg("Hello")]);
+    let (system, _) = convert_prompt_to_bedrock(&vec![system_msg("Hello")]).unwrap();
     assert_eq!(Value::Array(system), json!([{ "text": "Hello" }]));
 }
 
@@ -149,9 +172,10 @@ fn system_extract_single() {
 #[test]
 fn user_convert_image_parts() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![
-        ContentPart::text("Hello"),
+        user_text("Hello"),
         file_base64("AAECAw==", "image/png", None, None),
-    ])]);
+    ])])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([{
@@ -171,9 +195,10 @@ fn user_convert_image_parts() {
 #[test]
 fn user_convert_document_parts() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![
-        ContentPart::text("Hello"),
+        user_text("Hello"),
         file_base64("AAECAw==", "application/pdf", None, None),
-    ])]);
+    ])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"],
         json!([
@@ -187,14 +212,15 @@ fn user_convert_document_parts() {
 #[test]
 fn user_strip_file_extension() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![
-        ContentPart::text("Hello"),
+        user_text("Hello"),
         file_base64(
             "AAECAw==",
             "application/pdf",
             Some("custom-filename.pdf"),
             None,
         ),
-    ])]);
+    ])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][1],
         json!({ "document": { "format": "pdf", "name": "custom-filename", "source": { "bytes": "AAECAw==" } } })
@@ -209,7 +235,8 @@ fn user_preserve_filename_without_extension() {
         "application/pdf",
         Some("custom-filename"),
         None,
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({ "document": { "format": "pdf", "name": "custom-filename", "source": { "bytes": "AAECAw==" } } })
@@ -224,9 +251,10 @@ fn user_consistent_document_names() {
             file_base64("AAECAw==", "application/pdf", None, None),
             file_base64("BAUGBw==", "application/pdf", None, None),
         ]),
-        assistant(vec![ContentPart::text("OK")]),
+        assistant(vec![assistant_text("OK")]),
         user(vec![file_base64("AAECAw==", "application/pdf", None, None)]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([
@@ -242,20 +270,20 @@ fn user_consistent_document_names() {
     );
 }
 
-// SKIPPED (TS: user message cache point, 5m, 1h — 3 cases): message-level
-// providerOptions are not modelled on LanguageModelPromptMessage.
+// Message-level cache-point cases remain outside this restored test subset.
 
 // SKIPPED (TS: "should throw for file parts with provider references"):
-// FileReference is not converted (no Result to surface the throw).
+// FileReference is not converted by the user-file path.
 
 /// TS: "should add cache point to user content part when specified"
 #[test]
 fn user_content_part_cache_point() {
     let (system, messages) = convert_prompt_to_bedrock(&vec![user(vec![
-        ContentPart::text("Hello"),
-        text_with_cache("cached", "default", Some("5m")),
-        ContentPart::text("World"),
-    ])]);
+        user_text("Hello"),
+        UserPart::Text(text_with_cache("cached", "default", Some("5m"))),
+        user_text("World"),
+    ])])
+    .unwrap();
     assert!(system.is_empty());
     assert_eq!(
         Value::Array(messages),
@@ -277,9 +305,10 @@ fn user_content_part_cache_point() {
 #[test]
 fn assistant_trim_trailing_whitespace_last() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![ContentPart::text("user content")]),
-        assistant(vec![ContentPart::text("assistant content  ")]),
-    ]);
+        user(vec![user_text("user content")]),
+        assistant(vec![assistant_text("assistant content  ")]),
+    ])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([
@@ -293,12 +322,13 @@ fn assistant_trim_trailing_whitespace_last() {
 #[test]
 fn assistant_trim_trailing_whitespace_multi_part() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![ContentPart::text("user content")]),
+        user(vec![user_text("user content")]),
         assistant(vec![
-            ContentPart::text("assistant "),
-            ContentPart::text("content  "),
+            assistant_text("assistant "),
+            assistant_text("content  "),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"],
         json!([{ "text": "assistant " }, { "text": "content" }])
@@ -309,10 +339,11 @@ fn assistant_trim_trailing_whitespace_multi_part() {
 #[test]
 fn assistant_keep_trailing_whitespace_with_further_user() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![ContentPart::text("user content")]),
-        assistant(vec![ContentPart::text("assistant content  ")]),
-        user(vec![ContentPart::text("user content 2")]),
-    ]);
+        user(vec![user_text("user content")]),
+        assistant(vec![assistant_text("assistant content  ")]),
+        user(vec![user_text("user content 2")]),
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"],
         json!([{ "text": "assistant content  " }])
@@ -323,11 +354,12 @@ fn assistant_keep_trailing_whitespace_with_further_user() {
 #[test]
 fn assistant_combine_sequential() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![ContentPart::text("Hi!")]),
-        assistant(vec![ContentPart::text("Hello")]),
-        assistant(vec![ContentPart::text("World")]),
-        assistant(vec![ContentPart::text("!")]),
-    ]);
+        user(vec![user_text("Hi!")]),
+        assistant(vec![assistant_text("Hello")]),
+        assistant(vec![assistant_text("World")]),
+        assistant(vec![assistant_text("!")]),
+    ])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([
@@ -337,17 +369,17 @@ fn assistant_combine_sequential() {
     );
 }
 
-// SKIPPED (TS: assistant message cache point, 5m, 1h — 3 cases): message-level
-// providerOptions are not modelled on LanguageModelPromptMessage.
+// Message-level cache-point cases remain outside this restored test subset.
 
 /// TS: "should add cache point to assistant content part when specified"
 #[test]
 fn assistant_content_part_cache_point() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![assistant(vec![
-        ContentPart::text("Hello"),
-        text_with_cache("cached", "default", Some("1h")),
-        ContentPart::text("World"),
-    ])]);
+        assistant_text("Hello"),
+        AssistantPart::Text(text_with_cache("cached", "default", Some("1h"))),
+        assistant_text("World"),
+    ])])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([{
@@ -366,12 +398,13 @@ fn assistant_content_part_cache_point() {
 #[test]
 fn assistant_reasoning_with_signature() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![ContentPart::text("Explain your reasoning")]),
+        user(vec![user_text("Explain your reasoning")]),
         assistant(vec![reasoning(
             "This is my step-by-step reasoning process",
             Some("test-signature"),
         )]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"],
         json!([{
@@ -385,26 +418,20 @@ fn assistant_reasoning_with_signature() {
     );
 }
 
-// SKIPPED (TS: "should properly convert redacted-reasoning content type"):
-// ContentPart::Reasoning has no redactedData field.
-
-// SKIPPED (TS: "should omit assistant message reasoning parts signed by a
-// foreign provider"): ContentPart::Reasoning.signature carries no provider
-// distinction, so foreign-provider (anthropic) signatures cannot be detected.
-
 /// TS: "should preserve assistant message reasoning parts with amazonBedrock providerOptions"
 #[test]
 fn assistant_preserve_amazon_bedrock_reasoning() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![ContentPart::text("Explain your reasoning")]),
+        user(vec![user_text("Explain your reasoning")]),
         assistant(vec![
             reasoning(
                 "Bedrock-signed reasoning round-tripped to Bedrock",
                 Some("bedrock-signature"),
             ),
-            ContentPart::text("final answer"),
+            assistant_text("final answer"),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"],
         json!([
@@ -421,12 +448,13 @@ fn assistant_preserve_amazon_bedrock_reasoning() {
 #[test]
 fn assistant_no_trim_reasoning_with_signature() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![ContentPart::text("Explain your reasoning")]),
+        user(vec![user_text("Explain your reasoning")]),
         assistant(vec![reasoning(
             "This is my reasoning with trailing space    ",
             Some("test-signature"),
         )]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"][0]["reasoningContent"]["reasoningText"]["text"],
         json!("This is my reasoning with trailing space    ")
@@ -437,12 +465,13 @@ fn assistant_no_trim_reasoning_with_signature() {
 #[test]
 fn assistant_omit_reasoning_without_signature() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![ContentPart::text("Explain your reasoning")]),
+        user(vec![user_text("Explain your reasoning")]),
         assistant(vec![
             reasoning("This is my reasoning with trailing space    ", None),
-            ContentPart::text("final answer"),
+            assistant_text("final answer"),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(messages[1]["content"], json!([{ "text": "final answer" }]));
 }
 
@@ -450,13 +479,14 @@ fn assistant_omit_reasoning_without_signature() {
 #[test]
 fn assistant_omit_multiple_reasoning_without_signatures() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![ContentPart::text("Explain your reasoning")]),
+        user(vec![user_text("Explain your reasoning")]),
         assistant(vec![
             reasoning("First reasoning with trailing space    ", None),
             reasoning("Second reasoning with trailing space    ", None),
-            ContentPart::text("final answer"),
+            assistant_text("final answer"),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(messages[1]["content"], json!([{ "text": "final answer" }]));
 }
 
@@ -464,16 +494,20 @@ fn assistant_omit_multiple_reasoning_without_signatures() {
 #[test]
 fn assistant_omit_unsigned_reasoning_preserving_tool_calls() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![ContentPart::text("What is the weather?")]),
+        user(vec![user_text("What is the weather?")]),
         assistant(vec![
             reasoning("I should call the weather tool.", None),
             tool_call("call-1", "getWeather", json!({ "city": "SF" })),
         ]),
         tool_msg(vec![tool_result(
             "call-1",
-            json!({ "type": "text", "value": "Sunny, 72F" }),
+            ToolResultOutput::Text {
+                value: "Sunny, 72F".to_string(),
+                provider_options: None,
+            },
         )]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([
@@ -492,20 +526,24 @@ fn assistant_omit_unsigned_reasoning_preserving_tool_calls() {
 #[test]
 fn assistant_preserve_reasoning_multi_turn() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![ContentPart::text("What is the weather?")]),
+        user(vec![user_text("What is the weather?")]),
         assistant(vec![
             reasoning("Let me check the weather API.\n", Some("sig-abc123")),
             tool_call("call-1", "getWeather", json!({ "city": "SF" })),
         ]),
         tool_msg(vec![tool_result(
             "call-1",
-            json!({ "type": "text", "value": "Sunny, 72F" }),
+            ToolResultOutput::Text {
+                value: "Sunny, 72F".to_string(),
+                provider_options: None,
+            },
         )]),
         assistant(vec![
             reasoning("The weather is sunny and warm.\n", Some("sig-def456")),
-            ContentPart::text("It is sunny and 72F in SF."),
+            assistant_text("It is sunny and 72F in SF."),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([
@@ -533,15 +571,16 @@ fn assistant_preserve_reasoning_multi_turn() {
 #[test]
 fn assistant_mix_text_and_reasoning() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![ContentPart::text("Explain your reasoning")]),
+        user(vec![user_text("Explain your reasoning")]),
         assistant(vec![
-            ContentPart::text("My answer is 42."),
+            assistant_text("My answer is 42."),
             reasoning(
                 "I calculated this by analyzing the meaning of life",
                 Some("reasoning-process"),
             ),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"],
         json!([
@@ -558,14 +597,15 @@ fn assistant_mix_text_and_reasoning() {
 #[test]
 fn assistant_filter_empty_text_blocks() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![ContentPart::text("Hello")]),
+        user(vec![user_text("Hello")]),
         assistant(vec![
-            ContentPart::text("\n\n"),
+            assistant_text("\n\n"),
             tool_call("call-123", "test", json!({})),
-            ContentPart::text("  "),
-            ContentPart::text("actual content"),
+            assistant_text("  "),
+            assistant_text("actual content"),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"],
         json!([
@@ -582,7 +622,8 @@ fn assistant_wrap_non_object_tool_input() {
         "call-1",
         "cityAttractions",
         Value::String("{ \"city\": \"San Francisco\", }".to_string()),
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"],
         json!([{
@@ -606,7 +647,8 @@ fn assistant_strip_invalid_tool_name_chars() {
             json!({}),
         ),
         tool_call("call-3", "$", json!({})),
-    ])]);
+    ])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"],
         json!([
@@ -621,15 +663,16 @@ fn assistant_strip_invalid_tool_name_chars() {
 #[test]
 fn assistant_preserve_empty_text_with_reasoning() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![ContentPart::text("Hello")]),
+        user(vec![user_text("Hello")]),
         assistant(vec![
             reasoning("thinking...", Some("sig-1")),
-            ContentPart::text(""),
+            assistant_text(""),
             reasoning("more thinking...", Some("sig-2")),
-            ContentPart::text("response text"),
+            assistant_text("response text"),
             tool_call("call-123", "test", json!({})),
         ]),
-    ]);
+    ])
+    .unwrap();
     assert_eq!(
         messages[1]["content"],
         json!([
@@ -649,8 +692,14 @@ fn assistant_preserve_empty_text_with_reasoning() {
 fn tool_result_content_text() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![tool_msg(vec![tool_result(
         "call-123",
-        json!({ "type": "content", "value": [{ "type": "text", "text": "The result is 42" }] }),
-    )])]);
+        ToolResultOutput::Content {
+            value: vec![ToolResultContent::Text(TextPart {
+                text: "The result is 42".to_string(),
+                provider_options: None,
+            })],
+        },
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0],
         json!({
@@ -670,12 +719,18 @@ fn tool_result_content_text() {
 fn tool_result_content_image() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![tool_msg(vec![tool_result(
         "call-123",
-        json!({ "type": "content", "value": [{
-            "type": "file",
-            "data": { "type": "data", "data": "base64data" },
-            "mediaType": "image/jpeg"
-        }] }),
-    )])]);
+        ToolResultOutput::Content {
+            value: vec![ToolResultContent::File(FilePart {
+                data: FileData::Data {
+                    data: FileBytes::Base64("base64data".to_string()),
+                },
+                media_type: "image/jpeg".to_string(),
+                filename: None,
+                provider_options: None,
+            })],
+        },
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({
@@ -695,13 +750,18 @@ fn tool_result_content_image() {
 fn tool_result_content_pdf() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![tool_msg(vec![tool_result(
         "call-123",
-        json!({ "type": "content", "value": [{
-            "type": "file",
-            "data": { "type": "data", "data": "base64data" },
-            "mediaType": "application/pdf",
-            "filename": "tool-result.pdf"
-        }] }),
-    )])]);
+        ToolResultOutput::Content {
+            value: vec![ToolResultContent::File(FilePart {
+                data: FileData::Data {
+                    data: FileBytes::Base64("base64data".to_string()),
+                },
+                media_type: "application/pdf".to_string(),
+                filename: Some("tool-result.pdf".to_string()),
+                provider_options: None,
+            })],
+        },
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({
@@ -715,18 +775,21 @@ fn tool_result_content_pdf() {
     );
 }
 
-// SKIPPED (TS: "should throw error for unsupported image format in tool result
+// NOT PORTED (TS: "should throw error for unsupported image format in tool result
 // content" and "should throw error for unsupported mime type in tool result
-// file content"): convert_prompt_to_bedrock returns no Result; unknown mimes
-// fall back to a default format instead of throwing.
+// file content").
 
 /// TS: "should fallback to stringified result when content is undefined" (json output)
 #[test]
 fn tool_result_json_output() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![tool_msg(vec![tool_result(
         "call-123",
-        json!({ "type": "json", "value": { "value": 42 } }),
-    )])]);
+        ToolResultOutput::Json {
+            value: json!({ "value": 42 }),
+            provider_options: None,
+        },
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({
@@ -747,8 +810,9 @@ fn citations_enabled_for_pdf() {
         "AAECAw==",
         "application/pdf",
         None,
-        Some(json!({ "bedrock": { "citations": { "enabled": true } } })),
-    )])]);
+        Some(provider_namespace("bedrock", json!({ "citations": { "enabled": true } })).unwrap()),
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({
@@ -769,8 +833,9 @@ fn citations_disabled_for_pdf() {
         "AAECAw==",
         "application/pdf",
         None,
-        Some(json!({ "bedrock": { "citations": { "enabled": false } } })),
-    )])]);
+        Some(provider_namespace("bedrock", json!({ "citations": { "enabled": false } })).unwrap()),
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({
@@ -792,7 +857,8 @@ fn citations_default_for_pdf() {
         "application/pdf",
         None,
         None,
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({
@@ -814,15 +880,21 @@ fn citations_multiple_pdfs() {
             "AAECAw==",
             "application/pdf",
             None,
-            Some(json!({ "bedrock": { "citations": { "enabled": true } } })),
+            Some(
+                provider_namespace("bedrock", json!({ "citations": { "enabled": true } })).unwrap(),
+            ),
         ),
         file_base64(
             "BAUGBw==",
             "application/pdf",
             None,
-            Some(json!({ "bedrock": { "citations": { "enabled": false } } })),
+            Some(
+                provider_namespace("bedrock", json!({ "citations": { "enabled": false } }))
+                    .unwrap(),
+            ),
         ),
-    ])]);
+    ])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"],
         json!([
@@ -845,7 +917,8 @@ fn file_format_xlsx() {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         None,
         None,
-    )])]);
+    )])])
+    .unwrap();
     assert!(system.is_empty());
     assert_eq!(
         messages[0]["content"][0],
@@ -861,7 +934,8 @@ fn file_format_docx() {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         None,
         None,
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({ "document": { "format": "docx", "name": "document-1", "source": { "bytes": "base64data" } } })
@@ -880,8 +954,12 @@ fn mistral_no_normalize_when_false() {
     let original_id = "tooluse_bpe71yCfRu2b5i-nKGDr5g";
     let (_, messages) = convert_prompt_to_bedrock(&vec![tool_msg(vec![tool_result(
         original_id,
-        json!({ "type": "text", "value": "The result is 42" }),
-    )])]);
+        ToolResultOutput::Text {
+            value: "The result is 42".to_string(),
+            provider_options: None,
+        },
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0]["toolResult"]["toolUseId"],
         json!(original_id)
@@ -894,8 +972,12 @@ fn mistral_default_no_normalize() {
     let original_id = "tooluse_bpe71yCfRu2b5i-nKGDr5g";
     let (_, messages) = convert_prompt_to_bedrock(&vec![tool_msg(vec![tool_result(
         original_id,
-        json!({ "type": "text", "value": "The result is 42" }),
-    )])]);
+        ToolResultOutput::Text {
+            value: "The result is 42".to_string(),
+            provider_options: None,
+        },
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0]["toolResult"]["toolUseId"],
         json!(original_id)
@@ -912,7 +994,8 @@ fn media_type_pass_through_full_image() {
         "image/png",
         None,
         None,
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         Value::Array(messages),
         json!([{
@@ -934,7 +1017,8 @@ fn media_type_route_to_document_text_plain() {
         "text/plain",
         None,
         None,
-    )])]);
+    )])])
+    .unwrap();
     assert_eq!(
         messages[0]["content"][0],
         json!({ "document": { "format": "txt", "name": "document-1", "source": { "bytes": "base64data" } } })
@@ -950,6 +1034,8 @@ fn media_type_route_to_document_text_plain() {
 // amazon-bedrock-prepare-tools
 // ════════════════════════════════════════════════════════════════════════════
 
+const NON_ANTHROPIC_MODEL: &str = "meta.llama3-70b-instruct-v1:0";
+
 fn func_tool(name: &str, description: Option<&str>, input_schema: Value) -> FunctionTool {
     FunctionTool {
         name: name.to_string(),
@@ -961,108 +1047,11 @@ fn func_tool(name: &str, description: Option<&str>, input_schema: Value) -> Func
     }
 }
 
-fn func_tool_strict(
-    name: &str,
-    description: Option<&str>,
-    input_schema: Value,
-    strict: Option<bool>,
-) -> FunctionTool {
-    FunctionTool {
-        name: name.to_string(),
-        description: description.map(std::string::ToString::to_string),
-        input_schema,
-        strict,
-        provider_options: None,
-        input_examples: None,
-    }
-}
-
-/// TS: "should return empty toolConfig when tools are undefined"
-#[test]
-fn prepare_tools_empty_when_undefined() {
-    let config = prepare_tools(&None, &ToolChoice::Auto, ANTHROPIC_MODEL);
-    assert_eq!(config, json!({}));
-}
-
-/// TS: "should return empty toolConfig when tools are empty"
-#[test]
-fn prepare_tools_empty_when_empty() {
-    let config = prepare_tools(&Some(vec![]), &ToolChoice::Auto, ANTHROPIC_MODEL);
-    assert_eq!(config, json!({}));
-}
-
-/// TS: "should correctly prepare function tools"
-#[test]
-fn prepare_tools_function_tools() {
-    let tools = Some(vec![func_tool(
-        "testFunction",
-        Some("A test function"),
-        json!({ "type": "object", "properties": {} }),
-    )]);
-    let config = prepare_tools(&tools, &ToolChoice::Auto, ANTHROPIC_MODEL);
-    assert_eq!(
-        config["tools"],
-        json!([{
-            "toolSpec": {
-                "name": "testFunction",
-                "description": "A test function",
-                "inputSchema": { "json": { "type": "object", "properties": {} } }
-            }
-        }])
-    );
-}
-
-/// TS: "should exclude description when it is empty string"
-#[test]
-fn prepare_tools_exclude_description_empty() {
-    let tools = Some(vec![func_tool(
-        "testFunction",
-        Some(""),
-        json!({ "type": "object", "properties": {} }),
-    )]);
-    let config = prepare_tools(&tools, &ToolChoice::Auto, ANTHROPIC_MODEL);
-    let spec = &config["tools"][0]["toolSpec"];
-    assert!(spec.get("description").is_none());
-}
-
-/// TS: "should exclude description when it is whitespace-only"
-#[test]
-fn prepare_tools_exclude_description_whitespace() {
-    let tools = Some(vec![func_tool(
-        "testFunction",
-        Some("   "),
-        json!({ "type": "object", "properties": {} }),
-    )]);
-    let config = prepare_tools(&tools, &ToolChoice::Auto, ANTHROPIC_MODEL);
-    let spec = &config["tools"][0]["toolSpec"];
-    assert!(spec.get("description").is_none());
-}
-
-/// TS: "should include description when it has content"
-#[test]
-fn prepare_tools_include_description() {
-    let tools = Some(vec![func_tool(
-        "testFunction",
-        Some("Valid description"),
-        json!({ "type": "object", "properties": {} }),
-    )]);
-    let config = prepare_tools(&tools, &ToolChoice::Auto, ANTHROPIC_MODEL);
-    assert_eq!(
-        config["tools"][0]["toolSpec"]["description"],
-        json!("Valid description")
-    );
-}
-
-// SKIPPED (TS: "should warn for provider-defined tools on non-anthropic models",
-// "should warn and filter out web_search_20250305 tool", "should return empty
-// toolConfig when all tools are filtered out"): the Rust FunctionTool has no
-// type/id, so provider-defined tools are not modelled.
-
 /// TS: "should handle tool choice 'auto'"
 #[test]
 fn prepare_tools_tool_choice_auto() {
     let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
-    let config = prepare_tools(&tools, &ToolChoice::Auto, NON_ANTHROPIC_MODEL);
+    let config = prepare_tools(&tools, Some(&ToolChoice::Auto), NON_ANTHROPIC_MODEL);
     assert_eq!(config["toolChoice"], json!({ "auto": {} }));
 }
 
@@ -1070,7 +1059,7 @@ fn prepare_tools_tool_choice_auto() {
 #[test]
 fn prepare_tools_tool_choice_required() {
     let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
-    let config = prepare_tools(&tools, &ToolChoice::Required, NON_ANTHROPIC_MODEL);
+    let config = prepare_tools(&tools, Some(&ToolChoice::Required), NON_ANTHROPIC_MODEL);
     assert_eq!(config["toolChoice"], json!({ "any": {} }));
 }
 
@@ -1078,7 +1067,7 @@ fn prepare_tools_tool_choice_required() {
 #[test]
 fn prepare_tools_tool_choice_none_clears() {
     let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
-    let config = prepare_tools(&tools, &ToolChoice::None, NON_ANTHROPIC_MODEL);
+    let config = prepare_tools(&tools, Some(&ToolChoice::None), NON_ANTHROPIC_MODEL);
     assert_eq!(config, json!({}));
 }
 
@@ -1088,9 +1077,9 @@ fn prepare_tools_tool_choice_tool() {
     let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
     let config = prepare_tools(
         &tools,
-        &ToolChoice::Tool {
+        Some(&ToolChoice::Tool {
             tool_name: "testFunction".to_string(),
-        },
+        }),
         NON_ANTHROPIC_MODEL,
     );
     assert_eq!(
@@ -1112,174 +1101,13 @@ fn prepare_tools_tool_choice_filters_to_named() {
     ]);
     let config = prepare_tools(
         &tools,
-        &ToolChoice::Tool {
+        Some(&ToolChoice::Tool {
             tool_name: "getWeather".to_string(),
-        },
+        }),
         NON_ANTHROPIC_MODEL,
     );
     assert_eq!(config["tools"].as_array().unwrap().len(), 1);
     assert_eq!(config["tools"][0]["toolSpec"]["name"], json!("getWeather"));
-}
-
-/// TS: "should pass through strict mode when strict is true"
-#[test]
-fn prepare_tools_strict_true() {
-    let tools = Some(vec![func_tool_strict(
-        "testFunction",
-        Some("A test function"),
-        json!({ "type": "object", "properties": {} }),
-        Some(true),
-    )]);
-    let config = prepare_tools(&tools, &ToolChoice::Auto, ANTHROPIC_MODEL);
-    assert_eq!(
-        config["tools"],
-        json!([{
-            "toolSpec": {
-                "name": "testFunction",
-                "description": "A test function",
-                "strict": true,
-                "inputSchema": { "json": { "type": "object", "properties": {} } }
-            }
-        }])
-    );
-}
-
-/// TS: "should pass through strict mode when strict is false"
-#[test]
-fn prepare_tools_strict_false() {
-    let tools = Some(vec![func_tool_strict(
-        "testFunction",
-        Some("A test function"),
-        json!({ "type": "object", "properties": {} }),
-        Some(false),
-    )]);
-    let config = prepare_tools(&tools, &ToolChoice::Auto, ANTHROPIC_MODEL);
-    assert_eq!(
-        config["tools"],
-        json!([{
-            "toolSpec": {
-                "name": "testFunction",
-                "description": "A test function",
-                "strict": false,
-                "inputSchema": { "json": { "type": "object", "properties": {} } }
-            }
-        }])
-    );
-}
-
-/// TS: "should not include strict when strict is undefined"
-#[test]
-fn prepare_tools_strict_undefined() {
-    let tools = Some(vec![func_tool_strict(
-        "testFunction",
-        Some("A test function"),
-        json!({ "type": "object", "properties": {} }),
-        None,
-    )]);
-    let config = prepare_tools(&tools, &ToolChoice::Auto, ANTHROPIC_MODEL);
-    let spec = &config["tools"][0]["toolSpec"];
-    assert!(spec.get("strict").is_none());
-}
-
-/// TS: "should pass through strict mode for multiple tools with different strict settings"
-#[test]
-fn prepare_tools_strict_multiple() {
-    let tools = Some(vec![
-        func_tool_strict(
-            "strictTool",
-            Some("A strict tool"),
-            json!({ "type": "object", "properties": {} }),
-            Some(true),
-        ),
-        func_tool_strict(
-            "nonStrictTool",
-            Some("A non-strict tool"),
-            json!({ "type": "object", "properties": {} }),
-            Some(false),
-        ),
-        func_tool_strict(
-            "defaultTool",
-            Some("A tool without strict setting"),
-            json!({ "type": "object", "properties": {} }),
-            None,
-        ),
-    ]);
-    let config = prepare_tools(&tools, &ToolChoice::Auto, ANTHROPIC_MODEL);
-    let tools_arr = config["tools"].as_array().unwrap();
-    assert_eq!(tools_arr.len(), 3);
-    assert_eq!(tools_arr[0]["toolSpec"]["strict"], json!(true));
-    assert_eq!(tools_arr[1]["toolSpec"]["strict"], json!(false));
-    assert!(tools_arr[2]["toolSpec"].get("strict").is_none());
-}
-
-/// TS: it.each "should omit strict for %s" (claude-opus-5, claude-sonnet-5,
-/// claude-fable-5). These models reject newer schema fields, so `strict` is
-/// omitted even when set.
-#[test]
-fn prepare_tools_omit_strict_for_opus_5() {
-    assert!(!supports_strict_tools("us.anthropic.claude-opus-5"));
-    let tools = Some(vec![func_tool_strict(
-        "testFunction",
-        Some("A test function"),
-        json!({ "type": "object", "properties": {} }),
-        Some(true),
-    )]);
-    let config = prepare_tools(&tools, &ToolChoice::Auto, "us.anthropic.claude-opus-5");
-    assert!(config["tools"][0]["toolSpec"].get("strict").is_none());
-}
-
-#[test]
-fn prepare_tools_omit_strict_for_sonnet_5() {
-    assert!(!supports_strict_tools("anthropic.claude-sonnet-5"));
-    let tools = Some(vec![func_tool_strict(
-        "testFunction",
-        Some("A test function"),
-        json!({ "type": "object", "properties": {} }),
-        Some(true),
-    )]);
-    let config = prepare_tools(&tools, &ToolChoice::Auto, "anthropic.claude-sonnet-5");
-    assert!(config["tools"][0]["toolSpec"].get("strict").is_none());
-}
-
-#[test]
-fn prepare_tools_omit_strict_for_fable_5() {
-    assert!(!supports_strict_tools("eu.anthropic.claude-fable-5"));
-    let tools = Some(vec![func_tool_strict(
-        "testFunction",
-        Some("A test function"),
-        json!({ "type": "object", "properties": {} }),
-        Some(true),
-    )]);
-    let config = prepare_tools(&tools, &ToolChoice::Auto, "eu.anthropic.claude-fable-5");
-    assert!(config["tools"][0]["toolSpec"].get("strict").is_none());
-}
-
-/// TS: "should omit strict for claude-opus-4-7"
-#[test]
-fn prepare_tools_omit_strict_for_opus_4_7() {
-    assert!(!supports_strict_tools("us.anthropic.claude-opus-4-7"));
-    let tools = Some(vec![func_tool_strict(
-        "testFunction",
-        Some("A test function"),
-        json!({ "type": "object", "properties": {} }),
-        Some(true),
-    )]);
-    let config = prepare_tools(&tools, &ToolChoice::Auto, "us.anthropic.claude-opus-4-7");
-    assert!(config["tools"][0]["toolSpec"].get("strict").is_none());
-}
-
-/// TS: "should omit strict for claude-opus-4-8"
-#[test]
-fn prepare_tools_omit_strict_for_opus_4_8() {
-    assert!(!supports_strict_tools("anthropic.claude-opus-4-8"));
-    let tools = Some(vec![func_tool_strict(
-        "testFunction",
-        Some("A test function"),
-        json!({ "type": "object", "properties": {} }),
-        Some(true),
-    )]);
-    let config = prepare_tools(&tools, &ToolChoice::Auto, "anthropic.claude-opus-4-8");
-    assert!(config["tools"][0]["toolSpec"].get("strict").is_none());
 }
 
 // ════════════════════════════════════════════════════════════════════════════

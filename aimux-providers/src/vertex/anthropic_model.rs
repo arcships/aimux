@@ -14,6 +14,7 @@
 //!
 //! Reference: <https://docs.cloud.google.com/claude-on-vertex-ai>
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -24,8 +25,11 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+use aimux_core::types::{
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
+};
 
 use aimux_provider_utils::{HttpRequest, RetryConfig};
 
@@ -195,11 +199,14 @@ impl LanguageModel for VertexAnthropicModel {
         )
         .await?;
 
+        let response_body = resp.raw_value;
+        let response_headers = resp.response_headers;
         let data: AnthropicResponse = resp.value;
 
         let content = crate::anthropic::stream::parse_anthropic_content(
             &data.content,
             &ToolNameMapping::new(options.tools.as_deref()),
+            &crate::anthropic::stream::generate_id,
         );
 
         let finish_reason = data
@@ -220,13 +227,14 @@ impl LanguageModel for VertexAnthropicModel {
             usage,
             warnings: req.warnings,
             provider_metadata: None,
-            response: ResponseMetadata {
+            response: Some(aimux_core::shared::ResponseInfo {
                 id: Some(data.id),
                 timestamp: None,
                 model_id: Some(data.model),
-            },
-            request_body: Some(body),
-            response_headers: None,
+                headers: Some(response_headers),
+                body: response_body,
+            }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
@@ -294,11 +302,11 @@ impl LanguageModel for VertexAnthropicModel {
                                         crate::anthropic::usage::usage_from_anthropic(usage);
                                 }
                                 if !response_meta_emitted {
-                                    yield Ok(StreamPart::ResponseMetadata {
+                                    yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                         id: Some(message.id.clone()),
                                         timestamp: None,
                                         model_id: Some(message.model.clone()),
-                                    });
+                                    }));
                                     response_meta_emitted = true;
                                 }
                             }
@@ -386,29 +394,24 @@ impl LanguageModel for VertexAnthropicModel {
                                     ContentBlock::McpToolUse { id, name, input, server_name } => {
                                         mcp_tool_calls
                                             .insert(id.clone(), (name.clone(), server_name.clone()));
-                                        yield Ok(StreamPart::ToolCall {
+                                        yield Ok(StreamPart::ToolCall(RawToolCall {
                                             tool_call_id: id.clone(),
                                             tool_name: name.clone(),
-                                            input: Value::String(input.to_string()),
+                                            input: input.to_string(),
                                             provider_executed: Some(true),
                                             dynamic: Some(true),
-                                            thought_signature: None,
-                                            invalid: None,
-                                            error: None,
-                                            provider_metadata: Some(json!({
-                                                "anthropic": {
-                                                    "type": "mcp-tool-use",
-                                                    "serverName": server_name,
-                                                }
-                                            })),
-                                        });
+                                            provider_metadata: Some(provider_namespace("anthropic", json!({
+                                                "type": "mcp-tool-use",
+                                                "serverName": server_name,
+                                            })).expect("provider metadata must be an object")),
+                                        }));
                                     }
                                     ContentBlock::RedactedThinking { data } => {
                                         yield Ok(StreamPart::ReasoningStart {
                                             id: index.to_string(),
-                                            provider_metadata: Some(json!({
-                                                "anthropic": { "redactedData": data }
-                                            })),
+                                            provider_metadata: Some(provider_namespace("anthropic", json!({
+                                                "redactedData": data
+                                            })).expect("provider metadata must be an object")),
                                         });
                                         blocks.insert(index, BlockState::Thinking { started: true });
                                     }
@@ -418,6 +421,7 @@ impl LanguageModel for VertexAnthropicModel {
                                             &tool_names,
                                             &mcp_tool_calls,
                                             &server_tool_calls,
+                                            &crate::anthropic::stream::generate_id,
                                         ) {
                                             yield Ok(part);
                                         }
@@ -535,23 +539,19 @@ impl LanguageModel for VertexAnthropicModel {
                                             ..
                                         } => {
                                             yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
-                                            let input =
-                                                Value::String(finalize_streamed_tool_input(
+                                            let input = finalize_streamed_tool_input(
                                                     accumulated_json,
                                                     provider_tool_name.as_deref(),
                                                     provider_tool_input_type.as_deref(),
-                                                ));
-                                            yield Ok(StreamPart::ToolCall {
+                                                );
+                                            yield Ok(StreamPart::ToolCall(RawToolCall {
                                                 tool_call_id: id,
                                                 tool_name: name,
                                                 input,
                                                 provider_executed,
                                                 dynamic,
-                                                thought_signature: None,
-                                                invalid: None,
-                                                error: None,
                                                 provider_metadata,
-                                            });
+                                            }));
                                         }
                                     }
                                 }
@@ -610,8 +610,10 @@ impl LanguageModel for VertexAnthropicModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
         })
     }
 }
@@ -629,7 +631,7 @@ enum BlockState {
         dynamic: Option<bool>,
         provider_tool_name: Option<String>,
         provider_tool_input_type: Option<String>,
-        provider_metadata: Option<Value>,
+        provider_metadata: Option<ProviderMetadata>,
         first_delta: bool,
     },
     Thinking {

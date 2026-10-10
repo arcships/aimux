@@ -7,4 +7,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * The wire shape matches [`ToolCall`] field for field, except that `input`
  * is the provider's raw argument *text* rather than a parsed value.
  */
-export type RawToolCall = { tool_call_id: string, tool_name: string, input: string, provider_executed?: boolean | null, dynamic?: boolean | null, thought_signature?: string | null, provider_metadata?: JsonValue | null, };
+export type RawToolCall = { tool_call_id: string, tool_name: string, input: string, provider_executed?: boolean | null, dynamic?: boolean | null, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, };

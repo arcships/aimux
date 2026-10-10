@@ -12,6 +12,10 @@ import type { JsonValue } from "./serde_json/JsonValue";
  */
 export type ResponseInfo = { 
 /**
+ * ID of the generated response, when supplied by the provider.
+ */
+id?: string | null, 
+/**
  * Timestamp for the start of the generated response (ISO 8601 string).
  */
 timestamp: string | null, 

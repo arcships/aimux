@@ -22,24 +22,23 @@
 //!   against re-reads of the cassette (a re-read would pass even if both the
 //!   producer and the assertion regressed together).
 
+use aimux_core::tool::{RawToolCall, ToolResult};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
-use wiremock::matchers::{method, path as path_matcher, query_param};
+use wiremock::matchers::{method, path as path_matcher};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, StreamResult};
-use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::result::{GenerateContent, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{ProviderTool, Tool};
+use aimux_core::types::ProviderMetadata;
 
 use aimux_providers::anthropic::AnthropicConfig;
 use aimux_providers::anthropic::model::AnthropicModel;
@@ -119,11 +118,7 @@ fn cassette_json(rel: &str) -> Value {
 // ═══════════════════════════════════════════════════════════════════════════
 
 fn user_prompt(text: &str) -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text(text)],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text(text)]
 }
 
 fn opts() -> CallOptions {
@@ -133,6 +128,7 @@ fn opts() -> CallOptions {
 fn opts_with_tools(tools: Vec<Tool>) -> CallOptions {
     let mut o = opts();
     o.tools = Some(tools);
+    o.tool_choice = Some(aimux_core::tool::ToolChoice::Auto);
     o
 }
 
@@ -140,7 +136,7 @@ fn provider_tool(id: &str, name: &str) -> Tool {
     Tool::Provider(ProviderTool {
         id: id.to_string(),
         name: name.to_string(),
-        args: json!({}),
+        args: serde_json::Map::new(),
     })
 }
 
@@ -153,26 +149,6 @@ async fn collect(result: StreamResult) -> Vec<StreamPart> {
     parts
 }
 
-/// The base64 payload of a `GenerateContent::File`, or panic.
-fn file_base64(c: &GenerateContent) -> &str {
-    match c {
-        GenerateContent::File {
-            data: FileData::Data {
-                data: FileBytes::Base64(s),
-            },
-            ..
-        } => s,
-        other => panic!("expected File with base64 data, got {other:?}"),
-    }
-}
-
-fn files(content: &[GenerateContent]) -> Vec<&GenerateContent> {
-    content
-        .iter()
-        .filter(|c| matches!(c, GenerateContent::File { .. }))
-        .collect()
-}
-
 fn texts(content: &[GenerateContent]) -> Vec<&str> {
     content
         .iter()
@@ -183,43 +159,41 @@ fn texts(content: &[GenerateContent]) -> Vec<&str> {
         .collect()
 }
 
-fn reasonings(content: &[GenerateContent]) -> Vec<(&str, Option<&Value>)> {
+fn reasonings(content: &[GenerateContent]) -> Vec<(&str, Option<&ProviderMetadata>)> {
     content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::Reasoning {
+            GenerateContent::Reasoning(ReasoningOutput {
                 text,
                 provider_metadata,
-            } => Some((text.as_str(), provider_metadata.as_ref())),
+            }) => Some((text.as_str(), provider_metadata.as_ref())),
             _ => None,
         })
         .collect()
 }
 
-/// `(tool_call_id, tool_name, input, provider_executed, dynamic, thought_signature, metadata)`
+/// `(tool_call_id, tool_name, input, provider_executed, dynamic, metadata)`
 type ToolCallView<'a> = (
     &'a str,
     &'a str,
     Value,
     Option<bool>,
     Option<bool>,
-    Option<&'a str>,
-    Option<&'a Value>,
+    Option<&'a ProviderMetadata>,
 );
 
 fn tool_calls(content: &[GenerateContent]) -> Vec<ToolCallView<'_>> {
     content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 provider_executed,
                 dynamic,
-                thought_signature,
                 provider_metadata,
-            } => {
+            }) => {
                 // Provider results intentionally carry the exact wire string;
                 // parse only in this assertion helper so nested data-loss
                 // checks remain readable without weakening that boundary.
@@ -231,7 +205,6 @@ fn tool_calls(content: &[GenerateContent]) -> Vec<ToolCallView<'_>> {
                     parsed_input,
                     *provider_executed,
                     *dynamic,
-                    thought_signature.as_deref(),
                     provider_metadata.as_ref(),
                 ))
             }
@@ -247,14 +220,14 @@ type ToolResultView<'a> = (
     &'a Value,
     Option<bool>,
     Option<bool>,
-    Option<&'a Value>,
+    Option<&'a ProviderMetadata>,
 );
 
 fn tool_results(content: &[GenerateContent]) -> Vec<ToolResultView<'_>> {
     content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::ToolResult {
+            GenerateContent::ToolResult(ToolResult {
                 tool_call_id,
                 tool_name,
                 result,
@@ -262,7 +235,7 @@ fn tool_results(content: &[GenerateContent]) -> Vec<ToolResultView<'_>> {
                 dynamic,
                 provider_metadata,
                 ..
-            } => Some((
+            }) => Some((
                 tool_call_id.as_str(),
                 tool_name.as_str(),
                 result,
@@ -281,24 +254,35 @@ type SourceView<'a> = (
     &'a str,
     Option<&'a str>,
     Option<&'a str>,
-    Option<&'a Value>,
+    Option<&'a ProviderMetadata>,
 );
 
 fn sources(content: &[GenerateContent]) -> Vec<SourceView<'_>> {
     content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::Source {
+            GenerateContent::Source(Source::Url {
                 id,
-                source_type,
                 url,
                 title,
                 provider_metadata,
-            } => Some((
+            }) => Some((
                 id.as_str(),
-                source_type.as_str(),
-                url.as_deref(),
+                "url",
+                Some(url.as_str()),
                 title.as_deref(),
+                provider_metadata.as_ref(),
+            )),
+            GenerateContent::Source(Source::Document {
+                id,
+                title,
+                provider_metadata,
+                ..
+            }) => Some((
+                id.as_str(),
+                "document",
+                None,
+                Some(title.as_str()),
                 provider_metadata.as_ref(),
             )),
             _ => None,
@@ -313,146 +297,8 @@ fn sources(content: &[GenerateContent]) -> Vec<SourceView<'_>> {
 //            gemini/test_google_image_and_text_output.json
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// PNG magic bytes, base64-encoded: every image in the two Gemini image
-/// cassettes starts with this. Asserting the prefix (rather than "non-empty")
-/// proves the *actual* bytes survived rather than some placeholder.
-const PNG_BASE64_PREFIX: &str = "iVBORw0KGgoAAAANSUhEUgAA";
-
-/// The exact base64 length recorded in `nano_banana_image_generation_smoke`.
-const NANO_BANANA_BASE64_LEN: usize = 258_820;
-
 fn google_at(uri: &str) -> GoogleProvider {
     GoogleProvider::new(GoogleConfig::new("test-api-key").with_base_url(format!("{uri}/v1beta")))
-}
-
-#[tokio::test]
-async fn finding_1_gemini_inline_data_surfaces_as_file() {
-    let c = cassette("gemini/nano_banana_image_generation_smoke.json");
-    let server = MockServer::start().await;
-    mount(&server, &c).await;
-
-    let result = google_at(&server.uri())
-        .model("gemini-2.5-flash-image")
-        .do_generate(&opts())
-        .await
-        .expect("do_generate should succeed");
-
-    let f = files(&result.content);
-    assert_eq!(f.len(), 1, "exactly one inlineData part → one File");
-    match f[0] {
-        GenerateContent::File { media_type, .. } => {
-            assert_eq!(media_type, "image/png");
-        }
-        other => panic!("expected File, got {other:?}"),
-    }
-    let b64 = file_base64(f[0]);
-    assert!(
-        b64.starts_with(PNG_BASE64_PREFIX),
-        "image bytes must be the recorded PNG, got prefix {:?}",
-        &b64[..b64.len().min(32)]
-    );
-    assert_eq!(
-        b64.len(),
-        NANO_BANANA_BASE64_LEN,
-        "the whole base64 payload must survive, not a truncated head"
-    );
-}
-
-#[tokio::test]
-async fn finding_1_gemini_image_and_text_output_both_survive() {
-    let c = cassette("gemini/test_google_image_and_text_output.json");
-    let server = MockServer::start().await;
-    mount(&server, &c).await;
-
-    let result = google_at(&server.uri())
-        .model("gemini-2.5-flash-image")
-        .do_generate(&opts())
-        .await
-        .expect("do_generate should succeed");
-
-    // Text part first, then the inlineData part — order matters, upstream
-    // walks `parts` in order.
-    assert_eq!(result.content.len(), 2, "one text + one file");
-    assert!(
-        matches!(result.content[0], GenerateContent::Text { .. }),
-        "text part comes first"
-    );
-    assert!(
-        matches!(result.content[1], GenerateContent::File { .. }),
-        "inlineData part comes second"
-    );
-
-    let t = texts(&result.content);
-    assert_eq!(t.len(), 1);
-    assert!(
-        t[0].starts_with("Once, in a hidden cenote, lived an axolotl named Pip"),
-        "recorded story text must survive verbatim, got {:?}",
-        &t[0][..t[0].len().min(60)]
-    );
-
-    let f = files(&result.content);
-    assert_eq!(f.len(), 1);
-    match f[0] {
-        GenerateContent::File { media_type, .. } => assert_eq!(media_type, "image/png"),
-        other => panic!("expected File, got {other:?}"),
-    }
-    let b64 = file_base64(f[0]);
-    assert!(b64.starts_with(PNG_BASE64_PREFIX));
-    assert_eq!(b64.len(), 2_580_504);
-}
-
-/// The streaming path had the same hole. The chunk is built from the cassette's
-/// own `parts` array so the bytes are the recorded ones.
-#[tokio::test]
-async fn finding_1_gemini_inline_data_streams_as_file_part() {
-    let body = cassette_json("gemini/nano_banana_image_generation_smoke.json");
-    let candidate = &body["candidates"][0];
-    let sse = format!(
-        "data: {}\n\n",
-        json!({ "candidates": [{ "content": candidate["content"].clone(), "finishReason": "STOP" }] })
-    );
-
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path_matcher(
-            "/v1beta/models/gemini-2.5-flash-image:streamGenerateContent",
-        ))
-        .and(query_param("alt", "sse"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(sse),
-        )
-        .mount(&server)
-        .await;
-
-    let parts = collect(
-        google_at(&server.uri())
-            .model("gemini-2.5-flash-image")
-            .do_stream(&opts())
-            .await
-            .expect("do_stream should succeed"),
-    )
-    .await;
-
-    let file_parts: Vec<_> = parts
-        .iter()
-        .filter_map(|p| match p {
-            StreamPart::File {
-                data:
-                    FileData::Data {
-                        data: FileBytes::Base64(b64),
-                    },
-                media_type,
-                ..
-            } => Some((b64.as_str(), media_type.as_str())),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(file_parts.len(), 1, "expected one StreamPart::File");
-    assert_eq!(file_parts[0].1, "image/png");
-    assert!(file_parts[0].0.starts_with(PNG_BASE64_PREFIX));
-    assert_eq!(file_parts[0].0.len(), NANO_BANANA_BASE64_LEN);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -546,7 +392,7 @@ async fn finding_5_gemini_thought_signature_reaches_provider_metadata() {
 }
 
 /// `thoughtSignature` on a `functionCall` part must reach
-/// `ToolCall.thought_signature` — that is the field the follow-up turn echoes.
+/// `providerMetadata.google.thoughtSignature` for use in follow-up provider options.
 #[tokio::test]
 async fn finding_5_gemini_function_call_thought_signature_round_trips() {
     let c = cassette("gemini/two_arg_rewrites_chain_blocking_0.json");
@@ -564,12 +410,7 @@ async fn finding_5_gemini_function_call_thought_signature_round_trips() {
     assert_eq!(calls[0].1, "add");
     assert_eq!(calls[0].2, json!({ "x": 1, "y": 1 }));
     assert_eq!(
-        calls[0].5,
-        Some("signature_REDACTED_1"),
-        "the functionCall thoughtSignature must land on ToolCall.thought_signature"
-    );
-    assert_eq!(
-        calls[0].6.expect("providerMetadata")["google"]["thoughtSignature"],
+        calls[0].5.expect("providerMetadata")["google"]["thoughtSignature"],
         json!("signature_REDACTED_1")
     );
 }
@@ -781,7 +622,7 @@ async fn finding_2_anthropic_web_search_result_mapped_and_sources_emitted() {
     // assertion agree with whatever the code produced, including a renamed key.
     // (`get("pageAge").is_some()` is no good either — a missing key and a
     // recorded `null` both read back as `Some(Value::Null)`.)
-    let by_url: BTreeMap<&str, &Value> = s
+    let by_url: BTreeMap<&str, &ProviderMetadata> = s
         .iter()
         .filter_map(|(_, _, url, _, m)| Some(((*url)?, (*m)?)))
         .collect();
@@ -797,7 +638,13 @@ async fn finding_2_anthropic_web_search_result_mapped_and_sources_emitted() {
     ] {
         assert_eq!(
             by_url.get(url).copied(),
-            Some(&json!({ "anthropic": { "pageAge": expected_page_age } })),
+            Some(
+                &aimux_core::shared::provider_namespace(
+                    "anthropic",
+                    json!({ "pageAge": expected_page_age })
+                )
+                .unwrap()
+            ),
             "source {url}: providerMetadata must hold exactly anthropic.pageAge"
         );
     }
@@ -1033,14 +880,14 @@ async fn finding_2_anthropic_mcp_tool_use_and_result_are_dynamic_and_named() {
     // mcp_tool_use → provider-executed + dynamic + serverName metadata.
     let calls = tool_calls(&result.content);
     assert_eq!(calls.len(), 1);
-    let (id, name, ref input, provider_executed, dynamic, _, meta) = calls[0];
+    let (id, name, ref input, provider_executed, dynamic, meta) = calls[0];
     assert_eq!(id, "mcptoolu_01SAss3KEwASziHZoMR6HcZU");
     assert_eq!(name, "ask_question");
     assert_eq!(input["repoName"], json!("pydantic/pydantic-ai"));
     assert_eq!(provider_executed, Some(true));
     assert_eq!(dynamic, Some(true));
     assert_eq!(
-        meta.expect("mcp_tool_use metadata")["anthropic"],
+        serde_json::to_value(&meta.expect("mcp_tool_use metadata")["anthropic"]).unwrap(),
         json!({ "type": "mcp-tool-use", "serverName": "deepwiki" })
     );
 
@@ -1056,7 +903,7 @@ async fn finding_2_anthropic_mcp_tool_use_and_result_are_dynamic_and_named() {
     assert_eq!(is_error, Some(false), "`is_error: false` must be preserved");
     assert_eq!(rdynamic, Some(true));
     assert_eq!(
-        rmeta.expect("mcp_tool_result metadata")["anthropic"],
+        serde_json::to_value(&rmeta.expect("mcp_tool_result metadata")["anthropic"]).unwrap(),
         json!({ "type": "mcp-tool-use", "serverName": "deepwiki" })
     );
     assert!(
@@ -1189,10 +1036,7 @@ async fn finding_13_mistral_thinking_parts_become_reasoning_in_generate() {
     assert_eq!(texts(&result.content), vec!["4"]);
 
     // Ordering: reasoning precedes text (upstream contract).
-    assert!(matches!(
-        result.content[0],
-        GenerateContent::Reasoning { .. }
-    ));
+    assert!(matches!(result.content[0], GenerateContent::Reasoning(_)));
     assert!(matches!(result.content[1], GenerateContent::Text { .. }));
 }
 

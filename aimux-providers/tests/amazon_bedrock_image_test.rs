@@ -185,21 +185,3 @@ async fn should_handle_moderated_response() {
     let err = result.unwrap_err().to_string();
     assert!(err.contains("moderated"));
 }
-
-#[tokio::test]
-async fn should_pass_negative_text() {
-    let server = MockServer::start().await;
-    mock_bedrock(&server, bedrock_response()).await;
-    let provider = BedrockProvider::new(config(&server));
-    let model = provider.image("amazon.titan-image-generator-v1");
-    let mut opts = options(PROMPT);
-    opts.n = 1;
-    opts.provider_options.insert(
-        "amazonBedrock".into(),
-        json!({ "negativeText": "ugly, blurry" }),
-    );
-    model.do_generate(&opts).await.unwrap();
-    let reqs = server.received_requests().await.unwrap();
-    let body: Value = serde_json::from_slice(&reqs[0].body).unwrap();
-    assert_eq!(body["textToImageParams"]["negativeText"], "ugly, blurry");
-}

@@ -6,6 +6,7 @@
 //! cached tokens, reasoning-effort model gating, 200-status errors) to warrant
 //! its own model implementation rather than reusing `OpenAIModel`.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -16,7 +17,7 @@ use serde_json::Value;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -123,7 +124,7 @@ impl LanguageModel for XaiModel {
         // Capture response headers.
         let response_headers = resp.response_headers;
 
-        let _raw_value = resp.raw_value.unwrap_or(Value::Null);
+        let response_value = resp.raw_value.unwrap_or(Value::Null);
         let data = resp.value;
 
         let choice = data
@@ -161,38 +162,36 @@ impl LanguageModel for XaiModel {
         if let Some(reasoning) = choice.message.reasoning_content
             && !reasoning.is_empty()
         {
-            content.push(GenerateContent::Reasoning {
+            content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text: reasoning,
                 provider_metadata: None,
-            });
+            }));
         }
 
         // Extract tool calls
         if let Some(tool_calls) = choice.message.tool_calls {
             for tc in tool_calls {
                 let input = tc.function.arguments;
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: tc.id,
                     tool_name: tc.function.name,
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
             }
         }
 
         // Extract citations
         if let Some(citations) = &data.citations {
             for url in citations {
-                content.push(GenerateContent::Source {
+                content.push(GenerateContent::Source(Source::Url {
                     id: generate_source_id(),
-                    source_type: "url".to_string(),
-                    url: Some(url.clone()),
+                    url: url.clone(),
                     title: None,
                     provider_metadata: None,
-                });
+                }));
             }
         }
 
@@ -206,18 +205,16 @@ impl LanguageModel for XaiModel {
             });
 
         let usage = data.usage.as_ref().map(convert_xai_usage).unwrap_or(Usage {
-            input_tokens: aimux_core::types::TokenUsage {
+            input_tokens: aimux_core::types::InputTokenUsage {
                 total: Some(0),
                 no_cache: Some(0),
                 cache_read: Some(0),
                 cache_write: Some(0),
-                ..Default::default()
             },
-            output_tokens: aimux_core::types::TokenUsage {
+            output_tokens: aimux_core::types::OutputTokenUsage {
                 total: Some(0),
                 text: Some(0),
                 reasoning: Some(0),
-                ..Default::default()
             },
             raw: None,
         });
@@ -232,13 +229,14 @@ impl LanguageModel for XaiModel {
             usage,
             warnings: request_result.warnings,
             provider_metadata: None,
-            response: ResponseMetadata {
+            response: Some(aimux_core::shared::ResponseInfo {
                 id: data.id,
                 timestamp,
                 model_id: data.model,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+                headers: Some(response_headers),
+                body: Some(response_value),
+            }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
@@ -339,23 +337,22 @@ impl LanguageModel for XaiModel {
                                 chrono::DateTime::from_timestamp(c as i64, 0)
                                     .map(|dt| dt.to_rfc3339())
                             });
-                            yield Ok(StreamPart::ResponseMetadata {
+                            yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                 id: chunk.id.clone(),
                                 timestamp,
                                 model_id: chunk.model.clone(),
-                            });
+                            }));
                         }
 
                         // Emit citations as sources.
                         if let Some(citations) = &chunk.citations {
                             for url in citations {
-                                yield Ok(StreamPart::Source {
+                                yield Ok(StreamPart::Source(Source::Url {
                                     id: generate_source_id(),
-                                    source_type: "url".to_string(),
-                                    url: Some(url.clone()),
+                                    url: url.clone(),
                                     title: None,
                                     provider_metadata: None,
-                                });
+                                }));
                             }
                         }
 
@@ -503,18 +500,15 @@ impl LanguageModel for XaiModel {
                                             id: id.clone(),
                                             provider_metadata: None,
                                         });
-                                        let input = Value::String(args.clone());
-                                        yield Ok(StreamPart::ToolCall {
+                                        let input = args.clone();
+                                        yield Ok(StreamPart::ToolCall(RawToolCall {
                                             tool_call_id: id.clone(),
                                             tool_name: name.clone(),
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
-                                            thought_signature: None,
-                                            invalid: None,
-                                            error: None,
                                             provider_metadata: None,
-                                        });
+                                        }));
                                     }
                                 }
                                 tool_calls.clear();
@@ -557,18 +551,15 @@ impl LanguageModel for XaiModel {
                         id: id.clone(),
                         provider_metadata: None,
                     });
-                    let input = Value::String(args.clone());
-                    yield Ok(StreamPart::ToolCall {
+                    let input = args.clone();
+                    yield Ok(StreamPart::ToolCall(RawToolCall {
                         tool_call_id: id.clone(),
                         tool_name: name.clone(),
                         input,
                         provider_executed: None,
                         dynamic: None,
-                        thought_signature: None,
-                        invalid: None,
-                        error: None,
                         provider_metadata: None,
-                    });
+                    }));
                 }
             }
 
@@ -579,18 +570,16 @@ impl LanguageModel for XaiModel {
                     raw: None,
                 }),
                 usage: final_usage.unwrap_or(Usage {
-                    input_tokens: aimux_core::types::TokenUsage {
+                    input_tokens: aimux_core::types::InputTokenUsage {
                         total: Some(0),
                         no_cache: Some(0),
                         cache_read: Some(0),
                         cache_write: Some(0),
-                        ..Default::default()
                     },
-                    output_tokens: aimux_core::types::TokenUsage {
+                    output_tokens: aimux_core::types::OutputTokenUsage {
                         total: Some(0),
                         text: Some(0),
                         reasoning: Some(0),
-                        ..Default::default()
                     },
                     raw: None,
                 }),
@@ -600,8 +589,10 @@ impl LanguageModel for XaiModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

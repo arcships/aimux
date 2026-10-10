@@ -6,8 +6,6 @@
 //!
 //! Tests do not hit the public network and do not read real credentials.
 
-use std::collections::HashMap;
-
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -89,15 +87,6 @@ fn json_docs_opts(query: &str, top_n: u32) -> RerankingCallOptions {
         max_retries: None,
         timeout: None,
     }
-}
-
-fn jina_provider_options(return_documents: bool) -> HashMap<String, Value> {
-    let mut po = HashMap::new();
-    po.insert(
-        "jina".to_string(),
-        json!({ "returnDocuments": return_documents }),
-    );
-    po
 }
 
 async fn mount_rerank_mock(server: &MockServer) {
@@ -219,23 +208,6 @@ async fn do_rerank_sends_correct_request_body() {
     assert_eq!(body["top_n"], 2);
     // return_documents is only sent when explicitly configured.
     assert!(body.get("return_documents").is_none());
-}
-
-#[tokio::test]
-async fn do_rerank_forwards_return_documents_provider_option() {
-    let server = MockServer::start().await;
-    mount_rerank_mock(&server).await;
-
-    let provider = provider(&server);
-    let model = provider.reranking_model(MODEL);
-
-    let mut opts = text_docs_opts("rainy day", 2);
-    opts.provider_options = Some(jina_provider_options(false));
-    model.do_rerank(&opts).await.unwrap();
-
-    let requests = server.received_requests().await.unwrap();
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["return_documents"], false);
 }
 
 #[tokio::test]

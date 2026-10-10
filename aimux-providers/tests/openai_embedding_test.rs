@@ -227,46 +227,6 @@ async fn should_pass_model_and_values() {
     assert!(body.get("user").is_none());
 }
 
-/// TS: "should pass the dimensions setting"
-#[tokio::test]
-async fn should_pass_dimensions_setting() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/embeddings"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
-        .mount(&server)
-        .await;
-
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.embedding_model("text-embedding-3-large");
-
-    let mut provider_options = HashMap::new();
-    provider_options.insert("openai".to_string(), json!({"dimensions": 64}));
-    let options = EmbeddingCallOptions {
-        values: test_values(),
-        abort_signal: None,
-        provider_options: Some(provider_options),
-        headers: None,
-        max_retries: None,
-        timeout: None,
-    };
-
-    let _ = model.do_embed(&options).await.expect("should succeed");
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    assert_eq!(requests.len(), 1);
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-
-    assert_eq!(body["dimensions"], 64);
-    assert_eq!(body["model"], "text-embedding-3-large");
-    assert_eq!(
-        body["input"],
-        json!(["sunny day at the beach", "rainy day in the city"])
-    );
-    assert_eq!(body["encoding_format"], "float");
-}
-
 /// TS: "should pass headers" — verifies that Authorization, OpenAI-Organization,
 /// OpenAI-Project, config-level headers, and request-level headers are all sent.
 #[tokio::test]

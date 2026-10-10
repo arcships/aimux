@@ -4,6 +4,7 @@
 //! format (not OpenAI-compatible) and streams named SSE events
 //! (`event: type\ndata: json`).
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -13,7 +14,8 @@ use serde_json::{Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -62,19 +64,20 @@ impl CohereModel {
 /// - `output.total = output_tokens`
 fn convert_usage(tokens: &TokenPair) -> Usage {
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(tokens.input_tokens),
             no_cache: Some(tokens.input_tokens),
             cache_read: None,
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(tokens.output_tokens),
             ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(tokens).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(tokens)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -119,7 +122,7 @@ impl LanguageModel for CohereModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let body_result = build_request_body(&self.model_id, options, false);
+        let body_result = build_request_body(&self.model_id, options, false)?;
         let body = body_result.body.clone();
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
@@ -137,6 +140,7 @@ impl LanguageModel for CohereModel {
         )
         .await?;
 
+        let response_body = resp.raw_value;
         let response_headers = resp.response_headers;
         let data: ChatResponse = resp.value;
 
@@ -159,10 +163,10 @@ impl LanguageModel for CohereModel {
                         // Mirrors TS: a `thinking` content item becomes a
                         // `reasoning` content item. Empty thinking is dropped.
                         if !thinking.is_empty() {
-                            content.push(GenerateContent::Reasoning {
+                            content.push(GenerateContent::Reasoning(ReasoningOutput {
                                 text: thinking.clone(),
                                 provider_metadata: None,
-                            });
+                            }));
                         }
                     }
                 }
@@ -185,6 +189,7 @@ impl LanguageModel for CohereModel {
                     .and_then(|src| src.get("document"))
                     .and_then(|d| d.get("title"))
                     .and_then(|t| t.as_str())
+                    .filter(|s| !s.is_empty())
                     .map(std::string::ToString::to_string)
                     .unwrap_or_else(|| "Document".to_string());
 
@@ -206,13 +211,13 @@ impl LanguageModel for CohereModel {
                 {
                     cohere_meta.insert("citationType".to_string(), Value::String(t.to_string()));
                 }
-                content.push(GenerateContent::Source {
+                content.push(GenerateContent::Source(Source::Document {
                     id: format!("citation-{i}"),
-                    source_type: "document".to_string(),
-                    url: None,
-                    title: Some(title),
-                    provider_metadata: Some(json!({ "cohere": cohere_meta })),
-                });
+                    media_type: "text/plain".to_string(),
+                    title,
+                    filename: None,
+                    provider_metadata: Some(HashMap::from([("cohere".to_string(), cohere_meta)])),
+                }));
             }
         }
 
@@ -227,15 +232,14 @@ impl LanguageModel for CohereModel {
                     tc.function.arguments.clone()
                 };
                 let input = args_str;
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: tc.id.clone(),
                     tool_name: tc.function.name.clone(),
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
             }
         }
 
@@ -248,18 +252,19 @@ impl LanguageModel for CohereModel {
             usage,
             warnings: body_result.warnings,
             provider_metadata: None,
-            response: ResponseMetadata {
+            response: Some(aimux_core::shared::ResponseInfo {
                 id: data.generation_id,
                 timestamp: None,
                 model_id: None,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+                headers: Some(response_headers),
+                body: response_body,
+            }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let body_result = build_request_body(&self.model_id, options, true);
+        let body_result = build_request_body(&self.model_id, options, true)?;
         let body = body_result.body.clone();
         let headers = self.build_headers(options.headers.as_ref());
         let endpoint = self.endpoint();
@@ -321,11 +326,11 @@ impl LanguageModel for CohereModel {
                     Ok(parsed) => {
                         match parsed.event_type.as_str() {
                             "message-start" => {
-                                yield Ok(StreamPart::ResponseMetadata {
+                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                     id: parsed.id.clone(),
                                     timestamp: None,
                                     model_id: None,
-                                });
+                                }));
                             }
 
                             "content-start" => {
@@ -498,18 +503,15 @@ impl LanguageModel for CohereModel {
                                     // instead of a terminal stream error.
                                     let trimmed = ptc.arguments.trim();
                                     let text = if trimmed.is_empty() { "{}" } else { trimmed };
-                                    let input = Value::String(text.to_string());
-                                    yield Ok(StreamPart::ToolCall {
+                                    let input = text.to_string();
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: ptc.id,
                                         tool_name: ptc.name,
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
-                                        thought_signature: None,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                             }
 
@@ -569,14 +571,16 @@ impl LanguageModel for CohereModel {
                 } else {
                     final_usage
                 },
-                provider_metadata: Some(serde_json::json!({ "cohere": {} })),
+                provider_metadata: Some(provider_namespace("cohere", json!({})).expect("provider metadata must be an object")),
             });
         };
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

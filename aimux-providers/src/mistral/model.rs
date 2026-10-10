@@ -10,6 +10,7 @@
 //! - Usage supports `num_cached_tokens` / `prompt_tokens_details.cached_tokens`.
 //! - Finish reasons include `model_length`.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -19,7 +20,8 @@ use serde_json::Value;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -91,7 +93,7 @@ fn convert_usage(usage: &UsageResponse) -> Usage {
     let no_cache = prompt_tokens - cache_read;
 
     Usage {
-        input_tokens: aimux_core::types::TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(prompt_tokens),
             no_cache: Some(no_cache),
             cache_read: if cache_read > 0 {
@@ -100,14 +102,15 @@ fn convert_usage(usage: &UsageResponse) -> Usage {
                 None
             },
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: aimux_core::types::TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(completion_tokens),
             ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw: serde_json::to_value(usage)
+            .ok()
+            .and_then(|value| value.as_object().cloned()),
     }
 }
 
@@ -222,7 +225,7 @@ impl LanguageModel for MistralModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let body = build_request_body(&self.model_id, options, false);
+        let body = build_request_body(&self.model_id, options, false)?;
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest::new(
@@ -239,6 +242,7 @@ impl LanguageModel for MistralModel {
         )
         .await?;
 
+        let response_body = resp.raw_value;
         let response_headers = resp.response_headers;
         let data: ChatCompletionResponse = resp.value;
 
@@ -255,10 +259,10 @@ impl LanguageModel for MistralModel {
         if let Some(r) = extract_reasoning_content(&choice.message.content)
             && !r.is_empty()
         {
-            content.push(GenerateContent::Reasoning {
+            content.push(GenerateContent::Reasoning(ReasoningOutput {
                 text: r,
                 provider_metadata: None,
-            });
+            }));
         }
 
         // Content can be a string (legacy) or an array of typed parts.
@@ -275,15 +279,14 @@ impl LanguageModel for MistralModel {
         if let Some(tool_calls) = choice.message.tool_calls {
             for tc in tool_calls {
                 let input = tc.function.arguments;
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: tc.id,
                     tool_name: tc.function.name,
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
             }
         }
 
@@ -304,21 +307,22 @@ impl LanguageModel for MistralModel {
             usage,
             warnings: Vec::new(),
             provider_metadata: None,
-            response: ResponseMetadata {
+            response: Some(aimux_core::shared::ResponseInfo {
                 id: data.id,
                 timestamp: data
                     .created
                     .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
                     .map(|dt| dt.to_rfc3339()),
                 model_id: data.model,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+                headers: Some(response_headers),
+                body: response_body,
+            }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let body = build_request_body(&self.model_id, options, true);
+        let body = build_request_body(&self.model_id, options, true)?;
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest::new(
@@ -408,7 +412,7 @@ impl LanguageModel for MistralModel {
                             && (chunk.id.is_some() || chunk.model.is_some())
                         {
                             response_metadata_emitted = true;
-                            yield Ok(StreamPart::ResponseMetadata {
+                            yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                 id: chunk.id.clone(),
                                 timestamp: chunk
                                     .created
@@ -417,7 +421,7 @@ impl LanguageModel for MistralModel {
                                     })
                                     .map(|dt| dt.to_rfc3339()),
                                 model_id: chunk.model.clone(),
-                            });
+                            }));
                         }
 
                         // Update usage.
@@ -520,18 +524,15 @@ impl LanguageModel for MistralModel {
                                         provider_metadata: None,
                                     });
 
-                                    let input = Value::String(args);
-                                    yield Ok(StreamPart::ToolCall {
+                                    let input = args;
+                                    yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: tool_id,
                                         tool_name,
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
-                                        thought_signature: None,
-                                        invalid: None,
-                                        error: None,
                                         provider_metadata: None,
-                                    });
+                                    }));
                                 }
                             }
 
@@ -600,14 +601,16 @@ impl LanguageModel for MistralModel {
                 } else {
                     final_usage
                 },
-                provider_metadata: Some(serde_json::json!({ "mistral": {} })),
+                provider_metadata: Some(provider_namespace("mistral", serde_json::json!({})).expect("provider metadata must be an object")),
             });
         };
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

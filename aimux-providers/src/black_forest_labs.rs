@@ -286,7 +286,7 @@ impl ImageModel for BlackForestLabsImageModel {
         }
 
         // Forward BFL provider options
-        if let Some(bfl) = bfl_opts.and_then(|v| v.as_object()) {
+        if let Some(bfl) = bfl_opts {
             let map: &[(&str, &str)] = &[
                 ("steps", "steps"),
                 ("guidance", "guidance"),
@@ -520,7 +520,7 @@ impl ImageModel for BlackForestLabsImageModel {
             img_meta.insert("outputMegapixels".into(), o.clone());
         }
         bfl_meta.insert("images".into(), json!([Value::Object(img_meta)]));
-        metadata.insert("blackForestLabs".into(), Value::Object(bfl_meta));
+        metadata.insert("blackForestLabs".into(), bfl_meta);
 
         Ok(ImageResult {
             images: ImageOutputs::Binary(vec![image_bytes]),

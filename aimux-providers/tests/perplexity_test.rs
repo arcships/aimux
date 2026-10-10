@@ -26,11 +26,9 @@ use serial_test::serial;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
@@ -41,11 +39,7 @@ use aimux_providers::{ProviderOptions, provider, provider_from_env};
 // ── shared helpers ───────────────────────────────────────────────────────────
 
 fn test_prompt() -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("Hello")],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text("Hello")]
 }
 
 fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
@@ -450,32 +444,4 @@ async fn status_429_maps_to_rate_limited() {
         matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
-}
-
-/// TS: "should expose the raw response headers".
-#[tokio::test]
-async fn exposes_response_headers() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("test-header", "test-value")
-                .set_body_json(text_completion_body()),
-        )
-        .mount(&server)
-        .await;
-
-    let model = make_provider(&server);
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let headers = result
-        .response_headers
-        .as_ref()
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }

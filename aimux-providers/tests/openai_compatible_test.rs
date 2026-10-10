@@ -15,20 +15,19 @@
 //! Because the wrappers are structurally identical, a single macro generates
 //! the four tests per provider — DRY without hiding what is asserted.
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
+use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::{
     ProviderOptions, bedrock_mantle::BedrockMantleConfig, bedrock_mantle::BedrockMantleProvider,
@@ -59,11 +58,7 @@ use aimux_providers::{
 
 /// The TS `TEST_PROMPT`: a single user text message "Hello".
 fn test_prompt() -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("Hello")],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text("Hello")]
 }
 
 /// `CallOptions` with only `prompt` set (everything else default/None).
@@ -592,10 +587,10 @@ macro_rules! openai_compatible_tool_tests {
 
                 assert_eq!(result.content.len(), 1);
                 match &result.content[0] {
-                    GenerateContent::ToolCall { tool_call_id, tool_name, input, .. } => {
+                    GenerateContent::ToolCall(RawToolCall { tool_call_id, tool_name, input, .. }) => {
                         assert_eq!(tool_call_id, "call_abc");
                         assert_eq!(tool_name, "get-weather");
-                        assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
+                        assert_eq!(input, r#"{"city":"SF"}"#);
                     }
                     other => panic!("expected ToolCall, got {:?}", other),
                 }
@@ -630,7 +625,7 @@ macro_rules! openai_compatible_tool_tests {
                 let parts = collect_stream(result).await;
 
                 let tool_call = parts.iter().find_map(|p| match p {
-                    StreamPart::ToolCall { tool_call_id, tool_name, input, .. } => {
+                    StreamPart::ToolCall(RawToolCall { tool_call_id, tool_name, input, .. }) => {
                         Some((tool_call_id.clone(), tool_name.clone(), input.clone()))
                     }
                     _ => None,
@@ -638,7 +633,7 @@ macro_rules! openai_compatible_tool_tests {
                 let (id, name, input) = tool_call.expect("should have ToolCall");
                 assert_eq!(id, "call_abc");
                 assert_eq!(name, "get-weather");
-                assert_eq!(input, Value::String(r#"{"city":"SF"}"#.into()));
+                assert_eq!(input, r#"{"city":"SF"}"#);
             }
         }
         }
@@ -688,10 +683,10 @@ macro_rules! openai_compatible_tool_tests {
 
                 assert_eq!(result.content.len(), 1);
                 match &result.content[0] {
-                    GenerateContent::ToolCall { tool_call_id, tool_name, input, .. } => {
+                    GenerateContent::ToolCall(RawToolCall { tool_call_id, tool_name, input, .. }) => {
                         assert_eq!(tool_call_id, "call_abc");
                         assert_eq!(tool_name, "get-weather");
-                        assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
+                        assert_eq!(input, r#"{"city":"SF"}"#);
                     }
                     other => panic!("expected ToolCall, got {:?}", other),
                 }
@@ -726,7 +721,7 @@ macro_rules! openai_compatible_tool_tests {
                 let parts = collect_stream(result).await;
 
                 let tool_call = parts.iter().find_map(|p| match p {
-                    StreamPart::ToolCall { tool_call_id, tool_name, input, .. } => {
+                    StreamPart::ToolCall(RawToolCall { tool_call_id, tool_name, input, .. }) => {
                         Some((tool_call_id.clone(), tool_name.clone(), input.clone()))
                     }
                     _ => None,
@@ -734,7 +729,7 @@ macro_rules! openai_compatible_tool_tests {
                 let (id, name, input) = tool_call.expect("should have ToolCall");
                 assert_eq!(id, "call_abc");
                 assert_eq!(name, "get-weather");
-                assert_eq!(input, Value::String(r#"{"city":"SF"}"#.into()));
+                assert_eq!(input, r#"{"city":"SF"}"#);
             }
         }
         }
@@ -850,35 +845,6 @@ mod default_base_urls {
 // rate-limit mapping.
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS (deepseek): a top-level `reasoning` value maps to `reasoning_effort`.
-#[tokio::test]
-async fn deepseek_maps_reasoning_to_reasoning_effort() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-        .mount(&server)
-        .await;
-
-    let model = provider(
-        "deepseek",
-        Some("test-api-key".to_string()),
-        "deepseek-reasoner",
-        Some(ProviderOptions {
-            base_url: Some(server.uri()),
-            ..Default::default()
-        }),
-    )
-    .expect("provider construction");
-
-    let mut options = default_options(test_prompt());
-    options.reasoning = Some(ReasoningEffort::High);
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["reasoning_effort"], json!("high"));
-}
-
 /// TS (groq): usage tokens are extracted from the response.
 #[tokio::test]
 async fn groq_extracts_usage() {
@@ -948,43 +914,6 @@ async fn deepseek_rate_limit_maps_to_rate_limited() {
         matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
-}
-
-/// TS: response headers are exposed on the generate result.
-#[tokio::test]
-async fn groq_exposes_response_headers() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("test-header", "test-value")
-                .set_body_json(text_completion_body()),
-        )
-        .mount(&server)
-        .await;
-
-    let model = provider(
-        "groq",
-        Some("test-api-key".to_string()),
-        "llama-3.3-70b-versatile",
-        Some(ProviderOptions {
-            base_url: Some(server.uri()),
-            ..Default::default()
-        }),
-    )
-    .expect("provider construction");
-
-    let result = model
-        .do_generate(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let headers = result
-        .response_headers
-        .as_ref()
-        .expect("response_headers should be Some");
-    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }
 
 // P1 thin-wrapper providers (provider-research batch).

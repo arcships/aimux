@@ -21,7 +21,7 @@ usage: EmbeddingUsage | null,
 /**
  * Additional provider-specific metadata.
  */
-provider_metadata: { [key in string]: JsonValue } | null, 
+provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
 /**
  * Optional response information for debugging.
  */

@@ -3,10 +3,13 @@
 //! Mirrors the TS `convert-to-mistral-chat-messages.ts`,
 //! `mistral-prepare-tools.ts`, and `map-mistral-finish-reason.ts`.
 
-use aimux_core::content::ContentPart;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::error::AiMuxError;
+use aimux_core::language_model_message::{
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart, ToolPart,
+    ToolResultOutput, ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified};
 use serde_json::{Value, json};
@@ -101,54 +104,68 @@ pub fn prepare_tools(
 ///   message if it is an assistant message (continuation mode).
 /// - Tool messages include `tool_call_id` (no `name` — the Rust data model
 ///   does not carry the tool name on `ToolResult` parts).
-#[must_use]
-pub fn convert_prompt_to_mistral_messages(prompt: &LanguageModelPrompt) -> Vec<Value> {
+///
+/// # Errors
+/// Returns an error for unsupported text file data.
+pub fn convert_prompt_to_mistral_messages(
+    prompt: &LanguageModelPrompt,
+) -> Result<Vec<Value>, AiMuxError> {
     let mut result = Vec::new();
     let last_idx = prompt.len().saturating_sub(1);
     for (i, msg) in prompt.iter().enumerate() {
         let is_last = i == last_idx;
-        for value in convert_message_to_mistral(msg, is_last) {
+        for value in convert_message_to_mistral(msg, is_last)? {
             result.push(value);
         }
     }
-    result
+    Ok(result)
 }
 
-fn convert_message_to_mistral(msg: &LanguageModelPromptMessage, is_last: bool) -> Vec<Value> {
-    match msg.role {
-        Role::System => {
-            let text = join_text_parts(&msg.content);
-            vec![json!({ "role": "system", "content": text })]
+fn convert_message_to_mistral(
+    msg: &LanguageModelMessage,
+    is_last: bool,
+) -> Result<Vec<Value>, AiMuxError> {
+    Ok(match msg {
+        LanguageModelMessage::System { content, .. } => {
+            vec![json!({ "role": "system", "content": content })]
         }
-        Role::User => {
-            let parts: Vec<Value> = msg.content.iter().map(convert_part_to_mistral).collect();
+        LanguageModelMessage::User { content, .. } => {
+            let parts: Vec<Value> = content
+                .iter()
+                .map(convert_part_to_mistral)
+                .collect::<Result<_, _>>()?;
             vec![json!({ "role": "user", "content": parts })]
         }
-        Role::Assistant => {
-            let text = join_text_parts(&msg.content);
-            let has_tool_calls = msg
-                .content
+        LanguageModelMessage::Assistant { content, .. } => {
+            let text = join_text_parts(content);
+            let has_reasoning = content.iter().any(|part| matches!(part, AssistantPart::Reasoning(_)));
+            let mut content_parts = Vec::new();
+            for part in content {
+                match part {
+                    AssistantPart::Text(part) => content_parts.push(json!({ "type": "text", "text": part.text })),
+                    AssistantPart::Reasoning(part) => content_parts.push(json!({ "type": "thinking", "thinking": [{ "type": "text", "text": part.text }], "closed": true })),
+                    AssistantPart::ToolCall(_) => {},
+                    _ => return Err(AiMuxError::UnsupportedFunctionality("assistant content part".to_string())),
+                }
+            }
+            let has_tool_calls = content
                 .iter()
-                .any(|p| matches!(p, ContentPart::ToolCall { .. }));
+                .any(|p| matches!(p, AssistantPart::ToolCall(_)));
 
             let mut msg_json = json!({ "role": "assistant", "content": text });
+            if has_reasoning { msg_json["content"] = json!(content_parts); }
 
             if has_tool_calls {
-                let tool_calls: Vec<Value> = msg
-                    .content
+                let tool_calls: Vec<Value> = content
                     .iter()
                     .filter_map(|p| match p {
-                        ContentPart::ToolCall {
+                        AssistantPart::ToolCall(ToolCallPart {
                             tool_call_id,
                             tool_name,
                             input,
                             ..
-                        } => {
-                            let arguments = if input.is_null() {
-                                "{}".to_string()
-                            } else {
-                                input.to_string()
-                            };
+                        }) => {
+                            let arguments = input.to_string();
                             Some(json!({
                                 "id": tool_call_id,
                                 "type": "function",
@@ -169,120 +186,127 @@ fn convert_message_to_mistral(msg: &LanguageModelPromptMessage, is_last: bool) -
             }
             vec![msg_json]
         }
-        Role::Tool => msg
-            .content
+        LanguageModelMessage::Tool { content, .. } => content
             .iter()
-            .filter_map(|part| match part {
-                ContentPart::ToolResult {
-                    tool_call_id,
-                    result,
-                    ..
-                } => {
-                    let content = tool_result_to_content(result);
-                    Some(json!({
-                        "role": "tool",
-                        "tool_call_id": tool_call_id,
-                        "content": content,
-                    }))
-                }
-                _ => None,
+            .filter_map(|part| {
+                let ToolPart::ToolResult(ToolResultPart { tool_call_id, tool_name, output, .. }) = part else { return None; };
+                Some(json!({ "role": "tool", "name": tool_name, "tool_call_id": tool_call_id, "content": tool_result_to_content(output) }))
             })
             .collect(),
-    }
+    })
 }
 
-fn join_text_parts(content: &[ContentPart]) -> String {
+fn join_text_parts(content: &[AssistantPart]) -> String {
     content
         .iter()
         .filter_map(|p| match p {
-            ContentPart::Text { text, .. } => Some(text.as_str()),
+            AssistantPart::Text(TextPart { text, .. }) => Some(text.as_str()),
             _ => None,
         })
         .collect::<Vec<_>>()
         .join("")
 }
 
-fn tool_result_to_content(output: &Value) -> Value {
-    match output {
-        Value::String(s) => Value::String(s.clone()),
-        other => Value::String(other.to_string()),
-    }
+fn tool_result_to_content(output: &ToolResultOutput) -> Value {
+    Value::String(match output {
+        ToolResultOutput::Text { value, .. } | ToolResultOutput::ErrorText { value, .. } => {
+            value.clone()
+        }
+        ToolResultOutput::ExecutionDenied { reason, .. } => reason
+            .clone()
+            .unwrap_or_else(|| "Tool call execution denied.".to_string()),
+        ToolResultOutput::Json { value, .. } | ToolResultOutput::ErrorJson { value, .. } => {
+            value.to_string()
+        }
+        ToolResultOutput::Content { value } => {
+            crate::openai::convert::tool_result_content_value(value).to_string()
+        }
+    })
 }
 
-fn convert_part_to_mistral(part: &ContentPart) -> Value {
-    match part {
-        ContentPart::Text { text, .. } => json!({ "type": "text", "text": text }),
-        ContentPart::Image {
-            image, media_type, ..
-        } => {
+fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
+    Ok(match part {
+        UserPart::Text(TextPart { text, .. }) => json!({ "type": "text", "text": text }),
+        UserPart::File(file) => {
             use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(image);
-            json!({
-                "type": "image_url",
-                "image_url": format!("data:{};base64,{}", media_type, b64),
-            })
-        }
-        ContentPart::File {
-            data, media_type, ..
-        } => {
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(data);
-            let top_level = media_type.split('/').next().unwrap_or("");
-            if top_level == "image" {
-                json!({
-                    "type": "image_url",
-                    "image_url": format!("data:{};base64,{}", media_type, b64),
-                })
+            let is_image = file.media_type.split('/').next() == Some("image");
+            let url = match &file.data {
+                FileData::Data { data } => {
+                    let b64 = match data {
+                        FileBytes::Binary(bytes) => {
+                            base64::engine::general_purpose::STANDARD.encode(bytes)
+                        }
+                        FileBytes::Base64(data) => data.clone(),
+                    };
+                    let media_type = crate::google::convert::tool_file_media_type(file)?;
+                    if !is_image && media_type != "application/pdf" {
+                        return Err(AiMuxError::UnsupportedFunctionality(
+                            "Only images and PDF file parts are supported".to_string(),
+                        ));
+                    }
+                    format!("data:{media_type};base64,{b64}")
+                }
+                FileData::Url { url, .. } => {
+                    if !is_image && file.media_type != "application/pdf" {
+                        return Err(AiMuxError::UnsupportedFunctionality(
+                            "Only images and PDF file parts are supported".to_string(),
+                        ));
+                    }
+                    url.clone()
+                }
+                FileData::Reference { .. } => {
+                    return Err(AiMuxError::UnsupportedFunctionality(
+                        "file parts with provider references".to_string(),
+                    ));
+                }
+                FileData::Text { .. } => {
+                    return Err(AiMuxError::UnsupportedFunctionality(
+                        "text file parts".to_string(),
+                    ));
+                }
+            };
+            if is_image {
+                json!({ "type": "image_url", "image_url": url })
             } else {
-                json!({
-                    "type": "document_url",
-                    "document_url": format!("data:{};base64,{}", media_type, b64),
-                })
+                json!({ "type": "document_url", "document_url": url })
             }
         }
-        // These variants are handled by `convert_message_to_mistral` for
-        // assistant/tool roles.
-        ContentPart::ToolCall {
-            tool_call_id,
-            tool_name,
-            input,
-            ..
-        } => {
-            json!({
-                "type": "tool_call",
-                "id": tool_call_id,
-                "function": {
-                    "name": tool_name,
-                    "arguments": input.to_string(),
-                }
-            })
-        }
-        ContentPart::ToolResult {
-            tool_call_id,
-            result,
-            ..
-        } => {
-            json!({
-                "type": "tool_result",
-                "tool_call_id": tool_call_id,
-                "content": result,
-            })
-        }
-
-        // Variants not yet modelled for Mistral; no test exercises these paths.
-        ContentPart::FileBase64 { .. }
-        | ContentPart::FileUrl { .. }
-        | ContentPart::FileReference { .. }
-        | ContentPart::Reasoning { .. } => Value::Null,
-    }
+    })
 }
 
 // ── Request body ────────────────────────────────────────────────────────────
 
 /// Convert `CallOptions` to a Mistral request body.
-#[must_use]
-pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -> Value {
-    let messages = convert_prompt_to_mistral_messages(&options.prompt);
+///
+/// # Errors
+/// Returns an error for unsupported text file data.
+pub fn build_request_body(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+) -> Result<Value, AiMuxError> {
+    let provider_options = options
+        .provider_options
+        .as_ref()
+        .and_then(|namespaces| namespaces.get("mistral"))
+        .map(|namespace| {
+            crate::openai::convert::parse_option_fields(namespace, "mistral", |key, value| {
+                let valid = match key {
+                    "safePrompt" | "structuredOutputs" | "strictJsonSchema"
+                    | "parallelToolCalls" => value.is_boolean(),
+                    "documentImageLimit" | "documentPageLimit" => value.is_number(),
+                    "promptCacheKey" => value.is_string(),
+                    "reasoningEffort" => value
+                        .as_str()
+                        .is_some_and(|value| matches!(value, "high" | "none")),
+                    _ => return None,
+                };
+                Some(if valid { Ok(value.clone()) } else { Err(()) })
+            })
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let messages = convert_prompt_to_mistral_messages(&options.prompt)?;
 
     let mut body = json!({
         "model": model_id,
@@ -291,6 +315,10 @@ pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -
 
     if stream {
         body["stream"] = json!(true);
+    }
+
+    if let Some(safe_prompt) = provider_options.get("safePrompt") {
+        body["safe_prompt"] = safe_prompt.clone();
     }
 
     if let Some(max_tokens) = options.max_output_tokens {
@@ -356,7 +384,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -
             })
             .collect()
     });
-    let prepared = prepare_tools(&function_tools, Some(&options.tool_choice));
+    let prepared = prepare_tools(&function_tools, options.tool_choice.as_ref());
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);
         if let Some(tc) = prepared.tool_choice {
@@ -364,7 +392,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -
         }
     }
 
-    body
+    Ok(body)
 }
 
 /// Parse Mistral finish reason string into `FinishReason`.

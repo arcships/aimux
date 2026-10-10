@@ -1,10 +1,12 @@
 //! Conversion between `LanguageModelPrompt` and OpenAI API format.
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolPart,
+    ToolResultContent, ToolResultOutput, UserPart,
+};
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::shared::{FileBytes, FileData, JsonObject, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
 use serde::Serialize;
@@ -15,7 +17,6 @@ use super::OpenAICompatProfile;
 /// `convert_common` in M10; re-exported for API compatibility).
 pub use super::convert_common::SystemMessageMode;
 use super::convert_common::{ModelCapabilities, get_model_capabilities};
-use std::collections::HashMap;
 
 // ── Model capabilities ──────────────────────────────────────────────────────
 // `GptVersion` / `get_gpt_version` / `get_o_series_version` /
@@ -270,19 +271,29 @@ pub fn convert_prompt_to_openai_messages_with_provider(
     system_message_mode: SystemMessageMode,
     provider: &str,
 ) -> Result<Vec<Value>, AiMuxError> {
+    convert_prompt_with_warnings(prompt, system_message_mode, provider, &mut Vec::new())
+}
+
+fn convert_prompt_with_warnings(
+    prompt: &LanguageModelPrompt,
+    system_message_mode: SystemMessageMode,
+    provider: &str,
+    warnings: &mut Vec<Warning>,
+) -> Result<Vec<Value>, AiMuxError> {
     let mut result = Vec::new();
     for msg in prompt {
         result.extend(convert_message_to_openai(
             msg,
             system_message_mode,
             provider,
+            warnings,
         )?);
     }
     Ok(result)
 }
 
 /// Get the prompt cache breakpoint from provider options.
-fn get_prompt_cache_breakpoint(provider_options: &Option<Value>) -> Option<Value> {
+fn get_prompt_cache_breakpoint(provider_options: &Option<SharedProviderOptions>) -> Option<Value> {
     provider_options
         .as_ref()
         .and_then(|po| po.get("openai"))
@@ -291,7 +302,7 @@ fn get_prompt_cache_breakpoint(provider_options: &Option<Value>) -> Option<Value
 }
 
 /// Get imageDetail from provider options.
-fn get_image_detail(provider_options: &Option<Value>) -> Option<Value> {
+fn get_image_detail(provider_options: &Option<SharedProviderOptions>) -> Option<Value> {
     provider_options
         .as_ref()
         .and_then(|po| po.get("openai"))
@@ -332,48 +343,63 @@ fn resolve_full_media_type(media_type: &str, b64_data: &str) -> String {
 }
 
 /// Resolve a provider reference, throwing if the provider is not found.
-fn resolve_provider_reference(reference: &Value, provider: &str) -> Result<String, String> {
-    if let Some(val) = reference.get(provider) {
-        if let Some(s) = val.as_str() {
-            return Ok(s.to_string());
-        }
-        return Ok(val.to_string());
-    }
-    let available: Vec<String> = reference
-        .as_object()
-        .map(|m| m.keys().cloned().collect())
-        .unwrap_or_default();
-    Err(format!(
-        "No provider reference found for provider '{}'. Available providers: {}",
-        provider,
-        available.join(", ")
-    ))
+fn resolve_provider_reference(
+    reference: &std::collections::HashMap<String, String>,
+    provider: &str,
+) -> Result<String, String> {
+    reference.get(provider).cloned().ok_or_else(|| {
+        let mut available: Vec<&str> = reference.keys().map(String::as_str).collect();
+        available.sort_unstable();
+        format!(
+            "No provider reference found for provider '{}'. Available providers: {}",
+            provider,
+            available.join(", ")
+        )
+    })
 }
 
 /// Convert a file part to the OpenAI format, handling images, audio, and PDF.
 fn convert_file_part_to_openai(
-    media_type: &str,
-    data_b64: Option<&str>,
-    url: Option<&str>,
-    reference: Option<&Value>,
-    filename: Option<&str>,
-    provider_options: &Option<Value>,
+    file: &FilePart,
     part_index: usize,
+    provider: &str,
 ) -> Result<Value, String> {
-    let prompt_cache_breakpoint = get_prompt_cache_breakpoint(provider_options);
+    use base64::Engine;
 
-    // Reference type
-    if let Some(ref_val) = reference {
-        let file_id = resolve_provider_reference(ref_val, "openai")?;
-        let mut part = json!({
-            "type": "file",
-            "file": { "file_id": file_id }
-        });
-        if let Some(bpt) = prompt_cache_breakpoint {
-            part["prompt_cache_breakpoint"] = bpt;
+    let FilePart {
+        data,
+        media_type,
+        filename,
+        provider_options,
+    } = file;
+    let prompt_cache_breakpoint = (provider == "openai")
+        .then(|| get_prompt_cache_breakpoint(provider_options))
+        .flatten();
+    let (data_b64, url) = match data {
+        FileData::Reference { reference } => {
+            let file_id = resolve_provider_reference(reference, provider)?;
+            let mut part = if provider == "deepseek" {
+                json!({ "type": "file", "file_id": file_id })
+            } else {
+                json!({ "type": "file", "file": { "file_id": file_id } })
+            };
+            if let Some(bpt) = prompt_cache_breakpoint {
+                part["prompt_cache_breakpoint"] = bpt;
+            }
+            return Ok(part);
         }
-        return Ok(part);
-    }
+        FileData::Text { .. } => return Err("text file parts".to_string()),
+        FileData::Url { url, .. } => (None, Some(url.as_str())),
+        FileData::Data { data } => {
+            let b64 = match data {
+                FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
+                FileBytes::Base64(data) => data.clone(),
+            };
+            (Some(b64), None)
+        }
+    };
+    let data_b64 = data_b64.as_deref();
+    let filename = filename.as_deref();
 
     let top_level = get_top_level_media_type(media_type);
 
@@ -459,433 +485,412 @@ fn convert_file_part_to_openai(
 
 /// Convert a single provider-facing message into one or more OpenAI messages.
 fn convert_message_to_openai(
-    msg: &LanguageModelPromptMessage,
+    msg: &LanguageModelMessage,
     system_message_mode: SystemMessageMode,
     provider: &str,
+    warnings: &mut Vec<Warning>,
 ) -> Result<Vec<Value>, AiMuxError> {
-    let role = match msg.role {
-        Role::System => "system",
-        Role::User => "user",
-        Role::Assistant => "assistant",
-        Role::Tool => "tool",
-    };
-
-    // System messages: respect systemMessageMode.
-    if msg.role == Role::System {
-        match system_message_mode {
-            SystemMessageMode::Remove => return Ok(vec![]),
-            SystemMessageMode::Developer => {
-                return Ok(convert_system_message(msg, "developer"));
-            }
-            SystemMessageMode::System => {
-                return Ok(convert_system_message(msg, "system"));
-            }
-        }
-    }
-
-    // Tool-role messages: each ToolResult part becomes its own OpenAI message.
-    if msg.role == Role::Tool {
-        let messages = msg
-            .content
-            .iter()
-            .filter_map(|part| match part {
-                ContentPart::ToolResult {
-                    tool_call_id,
-                    result,
-                    ..
-                } => {
-                    let content = tool_result_to_content(result);
-                    Some(json!({
-                        "role": "tool",
-                        "content": content,
-                        "tool_call_id": tool_call_id,
-                    }))
-                }
-                _ => None,
-            })
-            .collect();
-        return Ok(messages);
-    }
-
-    // Assistant messages with tool calls
-    let has_tool_calls = msg
-        .content
-        .iter()
-        .any(|p| matches!(p, ContentPart::ToolCall { .. }));
-
-    // Groq: assistant messages always collect text, reasoning, and tool_calls
-    // together (mirrors TS `convertToGroqChatMessages`). The `reasoning` field
-    // is added when non-empty, and `content` is "" (not null) when there is no
-    // text.
-    if msg.role == Role::Assistant && provider == "groq" {
-        let text: String = msg
-            .content
-            .iter()
-            .filter_map(|p| match p {
-                ContentPart::Text { text, .. } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("");
-
-        let reasoning: String = msg
-            .content
-            .iter()
-            .filter_map(|p| match p {
-                ContentPart::Reasoning { text, .. } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("");
-
-        let tool_calls_json: Vec<Value> = msg
-            .content
-            .iter()
-            .filter_map(|p| match p {
-                ContentPart::ToolCall {
-                    tool_call_id,
-                    tool_name,
-                    input,
-                    ..
-                } => {
-                    let arguments = if input.is_null() {
-                        "{}".to_string()
-                    } else {
-                        input.to_string()
-                    };
-                    Some(json!({
-                        "type": "function",
-                        "id": tool_call_id,
-                        "function": {
-                            "name": tool_name,
-                            "arguments": arguments,
-                        }
-                    }))
-                }
-                _ => None,
-            })
-            .collect();
-
-        let mut msg_obj = json!({
-            "role": "assistant",
-            "content": text,
-        });
-        if !reasoning.is_empty() {
-            msg_obj["reasoning"] = json!(reasoning);
-        }
-        if !tool_calls_json.is_empty() {
-            msg_obj["tool_calls"] = json!(tool_calls_json);
-        }
-        return Ok(vec![msg_obj]);
-    }
-
-    if msg.role == Role::Assistant && has_tool_calls {
-        let text: String = msg
-            .content
-            .iter()
-            .filter_map(|p| match p {
-                ContentPart::Text { text, .. } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("");
-
-        // Reasoning / thinking content. DeepSeek V4 thinking mode (and other
-        // OpenAI-compatible reasoning models such as xAI) require prior
-        // assistant `reasoning_content` to be replayed on subsequent turns,
-        // including tool-call turns. Mirrors the Vercel AI SDK
-        // `openai-compatible` assistant conversion, which emits
-        // `reasoning_content` whenever a reasoning part is present. Groq uses
-        // the `reasoning` field name and is handled in its own branch above.
-        let reasoning: String = collect_reasoning(&msg.content);
-
-        let tool_calls_json: Vec<Value> = msg
-            .content
-            .iter()
-            .filter_map(|p| match p {
-                ContentPart::ToolCall {
-                    tool_call_id,
-                    tool_name,
-                    input,
-                    ..
-                } => {
-                    let arguments = if input.is_null() {
-                        "{}".to_string()
-                    } else {
-                        input.to_string()
-                    };
-                    Some(json!({
-                        "type": "function",
-                        "id": tool_call_id,
-                        "function": {
-                            "name": tool_name,
-                            "arguments": arguments,
-                        }
-                    }))
-                }
-                _ => None,
-            })
-            .collect();
-
-        let content = if text.is_empty() {
-            Value::Null
-        } else {
-            Value::String(text)
+    if provider != "openai" && provider != "deepseek" {
+        let has_reference = match msg {
+            LanguageModelMessage::User { content, .. } => content.iter().any(|part| {
+                matches!(
+                    part,
+                    UserPart::File(FilePart {
+                        data: FileData::Reference { .. },
+                        ..
+                    })
+                )
+            }),
+            LanguageModelMessage::Assistant { content, .. } => content.iter().any(|part| {
+                matches!(
+                    part,
+                    AssistantPart::File(FilePart {
+                        data: FileData::Reference { .. },
+                        ..
+                    })
+                )
+            }),
+            _ => false,
         };
-
-        let mut msg_obj = json!({
-            "role": "assistant",
-            "content": content,
-            "tool_calls": tool_calls_json,
-        });
-        if !reasoning.is_empty() {
-            msg_obj["reasoning_content"] = json!(reasoning);
+        if has_reference {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "file parts with provider references".into(),
+            ));
         }
-        return Ok(vec![msg_obj]);
     }
-
-    // Default path (non-Groq, no tool calls). Assistant reasoning / thinking
-    // parts are lifted to a top-level `reasoning_content` string (DeepSeek V4
-    // thinking mode and other OpenAI-compatible reasoning models require it to
-    // be replayed on later turns); they are never valid OpenAI content parts,
-    // so they are excluded from the content shape below. Non-assistant roles do
-    // not carry reasoning, but the filter is harmless.
-    let reasoning = if msg.role == Role::Assistant {
-        collect_reasoning(&msg.content)
-    } else {
-        String::new()
-    };
-    let has_reasoning = !reasoning.is_empty();
-
-    // Consider only non-reasoning parts for the content shape. When they are
-    // all plain text (without providerOptions), collapse to a string — matching
-    // the Vercel AI SDK `openai-compatible` assistant conversion
-    // (`content: toolCalls.length > 0 ? text || null : text`).
-    //
-    // Provider-executed tool results are dropped from assistant messages: the
-    // OpenAI chat wire format has no content part for them, and upstream's
-    // assistant branch handles only `text` and `tool-call`
-    // (convert-to-openai-chat-messages.ts:246-300). Emitting one produces a
-    // part type the API rejects.
-    let content_parts: Vec<&ContentPart> = msg
-        .content
-        .iter()
-        .filter(|p| match p {
-            ContentPart::Reasoning { .. } => false,
-            ContentPart::ToolResult { .. } => msg.role != Role::Assistant,
-            _ => true,
-        })
-        .collect();
-    let all_plain_text = content_parts.iter().all(|p| {
-        matches!(
-            p,
-            ContentPart::Text {
-                provider_options: None,
-                ..
+    let message = match msg {
+        LanguageModelMessage::System {
+            content,
+            provider_options,
+        } => {
+            let role = match system_message_mode {
+                SystemMessageMode::Remove => return Ok(vec![]),
+                SystemMessageMode::Developer => "developer",
+                SystemMessageMode::System => "system",
+            };
+            let content = match (provider == "openai")
+                .then(|| get_prompt_cache_breakpoint(provider_options))
+                .flatten()
+            {
+                None => json!(content),
+                Some(bpt) => json!([{
+                    "type": "text", "text": content, "prompt_cache_breakpoint": bpt,
+                }]),
+            };
+            json!({ "role": role, "content": content })
+        }
+        LanguageModelMessage::Tool { content, .. } => {
+            let mut messages = Vec::new();
+            for part in content {
+                let ToolPart::ToolResult(result) = part else {
+                    continue;
+                };
+                let mut content = if provider == "deepseek" {
+                    deepseek_tool_result_content(&result.output, warnings)?
+                } else {
+                    tool_result_to_content(&result.output)
+                };
+                if provider == "openai"
+                    && let Some(breakpoint) = tool_result_cache_breakpoint(&result.output)
+                        .or_else(|| get_prompt_cache_breakpoint(&result.provider_options))
+                {
+                    content = json!([{"type":"text", "text":content, "prompt_cache_breakpoint":breakpoint}]);
+                }
+                messages.push(
+                    json!({"role":"tool", "content":content, "tool_call_id":result.tool_call_id}),
+                );
             }
-        )
-    });
+            return Ok(messages);
+        }
+        LanguageModelMessage::User { content, .. } => {
+            let all_plain_text = content.len() == 1 && content.iter().all(|part| {
+                matches!(part, UserPart::Text(text)
+                    if provider != "openai" || get_prompt_cache_breakpoint(&text.provider_options).is_none())
+            });
+            let content = if all_plain_text {
+                json!(
+                    content
+                        .iter()
+                        .filter_map(|part| match part {
+                            UserPart::Text(text) => Some(text.text.as_str()),
+                            UserPart::File(_) => None,
+                        })
+                        .collect::<String>()
+                )
+            } else {
+                json!(
+                    content
+                        .iter()
+                        .enumerate()
+                        .map(|(index, part)| match part {
+                            UserPart::Text(text) => Ok(convert_text_part_to_openai(text, provider)),
+                            UserPart::File(file) =>
+                                convert_file_part_to_openai(file, index, provider)
+                                    .map_err(AiMuxError::InvalidArgument),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?
+                )
+            };
+            json!({ "role": "user", "content": content })
+        }
+        LanguageModelMessage::Assistant { content, .. } => {
+            let mut text = String::new();
+            let mut reasoning = String::new();
+            let mut tool_calls = Vec::new();
+            for part in content {
+                match part {
+                    AssistantPart::Text(part) => text.push_str(&part.text),
+                    AssistantPart::Reasoning(part) => reasoning.push_str(&part.text),
+                    AssistantPart::ToolCall(part) => {
+                        let arguments = if provider == "openai" && !part.input.is_object() {
+                            "{}".to_string()
+                        } else {
+                            part.input.to_string()
+                        };
+                        tool_calls.push(json!({
+                            "type": "function", "id": part.tool_call_id,
+                            "function": { "name": part.tool_name, "arguments": arguments },
+                        }));
+                    }
+                    AssistantPart::File(_)
+                    | AssistantPart::ToolResult(_)
+                    | AssistantPart::ReasoningFile(_)
+                    | AssistantPart::Custom(_) => {}
+                }
+            }
+            let mut message = if provider == "groq" || !tool_calls.is_empty() {
+                let value = if provider != "groq" && text.is_empty() {
+                    Value::Null
+                } else {
+                    json!(text)
+                };
+                let mut message = json!({ "role": "assistant", "content": value });
+                if !tool_calls.is_empty() {
+                    message["tool_calls"] = json!(tool_calls);
+                }
+                message
+            } else {
+                let all_plain_text = content.iter().all(|part| {
+                    matches!(
+                        part,
+                        AssistantPart::Text(TextPart {
+                            provider_options: None,
+                            ..
+                        }) | AssistantPart::Reasoning(_)
+                            | AssistantPart::ToolResult(_)
+                            | AssistantPart::ReasoningFile(_)
+                            | AssistantPart::Custom(_)
+                    )
+                });
+                let value = if all_plain_text {
+                    json!(text)
+                } else {
+                    let mut parts = Vec::new();
+                    for part in content {
+                        match part {
+                            AssistantPart::Text(text) => {
+                                parts.push(convert_text_part_to_openai(text, provider))
+                            }
+                            AssistantPart::File(file) => parts.push(
+                                convert_file_part_to_openai(file, parts.len(), provider)
+                                    .map_err(AiMuxError::InvalidArgument)?,
+                            ),
+                            AssistantPart::Reasoning(_)
+                            | AssistantPart::ToolResult(_)
+                            | AssistantPart::ReasoningFile(_)
+                            | AssistantPart::Custom(_)
+                            | AssistantPart::ToolCall(_) => {}
+                        }
+                    }
+                    json!(parts)
+                };
+                json!({ "role": "assistant", "content": value })
+            };
+            if !reasoning.is_empty() {
+                let field = if provider == "groq" {
+                    "reasoning"
+                } else {
+                    "reasoning_content"
+                };
+                message[field] = json!(reasoning);
+            }
+            message
+        }
+    };
+    Ok(vec![message])
+}
 
-    let mut msg_obj = if all_plain_text {
-        let text: String = content_parts
+/// Serialize a tool-result value into the OpenAI tool message content string.
+fn deepseek_tool_result_content(
+    output: &ToolResultOutput,
+    warnings: &mut Vec<Warning>,
+) -> Result<Value, AiMuxError> {
+    let ToolResultOutput::Content { value } = output else {
+        return Ok(tool_result_to_content(output));
+    };
+    let is_image = |part: &FilePart| {
+        get_top_level_media_type(&part.media_type) == "image"
+            && !matches!(part.data, FileData::Text { .. })
+    };
+    if !value
+        .iter()
+        .any(|part| matches!(part, ToolResultContent::File(file) if is_image(file)))
+    {
+        return Ok(tool_result_to_content(output));
+    }
+    let mut parts = Vec::new();
+    for part in value {
+        match part {
+            ToolResultContent::Text(part) => parts.push(json!({"type":"text", "text":part.text})),
+            ToolResultContent::File(part) if is_image(part) => {
+                if let FileData::Reference { reference } = &part.data {
+                    let file_id = resolve_provider_reference(reference, "deepseek")
+                        .map_err(AiMuxError::InvalidArgument)?;
+                    parts.push(json!({"type":"file", "file_id":file_id}));
+                    continue;
+                }
+                let url = match &part.data {
+                    FileData::Url { url, .. } => {
+                        let media_type = resolve_full_media_type(&part.media_type, "");
+                        if !matches!(
+                            media_type.as_str(),
+                            "image/jpeg" | "image/jpg" | "image/png" | "image/gif" | "image/webp"
+                        ) {
+                            return Err(AiMuxError::UnsupportedFunctionality(format!(
+                                "DeepSeek image media type {media_type}"
+                            )));
+                        }
+                        if url.len() > 8192 {
+                            return Err(AiMuxError::InvalidPrompt(
+                                "DeepSeek image URLs must not exceed 8192 characters.".into(),
+                            ));
+                        }
+                        url.clone()
+                    }
+                    FileData::Data { data } => {
+                        use base64::Engine;
+                        let b64 = match data {
+                            FileBytes::Binary(bytes) => {
+                                base64::engine::general_purpose::STANDARD.encode(bytes)
+                            }
+                            FileBytes::Base64(data) => data.clone(),
+                        };
+                        let media_type = resolve_full_media_type(&part.media_type, &b64);
+                        let media_type = if media_type == "image/jpg" {
+                            "image/jpeg"
+                        } else {
+                            media_type.as_str()
+                        };
+                        if !matches!(
+                            media_type,
+                            "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+                        ) {
+                            return Err(AiMuxError::UnsupportedFunctionality(format!(
+                                "DeepSeek image media type {media_type}"
+                            )));
+                        }
+                        format!("data:{media_type};base64,{b64}")
+                    }
+                    _ => continue,
+                };
+                let mut image_url = json!({"url":url});
+                if let Some(detail) = part
+                    .provider_options
+                    .as_ref()
+                    .and_then(|options| options.get("deepseek"))
+                    .and_then(|options| options.get("imageDetail"))
+                {
+                    image_url["detail"] = detail.clone();
+                }
+                parts.push(json!({"type":"image_url", "image_url":image_url}));
+            }
+            part => warnings.push(Warning::Unsupported {
+                feature: format!(
+                    "tool result content part type: {}",
+                    if matches!(part, ToolResultContent::File(_)) {
+                        "file"
+                    } else {
+                        "custom"
+                    }
+                ),
+                details: None,
+            }),
+        }
+    }
+    Ok(json!(parts))
+}
+
+pub(crate) fn tool_result_to_content(output: &ToolResultOutput) -> Value {
+    Value::String(match output {
+        ToolResultOutput::Text { value, .. } | ToolResultOutput::ErrorText { value, .. } => {
+            value.clone()
+        }
+        ToolResultOutput::ExecutionDenied { reason, .. } => reason
+            .clone()
+            .unwrap_or_else(|| "Tool call execution denied.".to_string()),
+        ToolResultOutput::Json { value, .. } | ToolResultOutput::ErrorJson { value, .. } => {
+            value.to_string()
+        }
+        ToolResultOutput::Content { value } => tool_result_content_value(value).to_string(),
+    })
+}
+
+pub(crate) fn tool_result_content_value(content: &[ToolResultContent]) -> Value {
+    json!(
+        content
             .iter()
-            .filter_map(|p| match p {
-                ContentPart::Text { text, .. } => Some(text.as_str()),
-                _ => None,
+            .map(|part| {
+                let (mut item, provider_options) = match part {
+                    ToolResultContent::Text(part) => (
+                        json!({"type":"text", "text":part.text}),
+                        &part.provider_options,
+                    ),
+                    ToolResultContent::File(part) => {
+                        let data = match &part.data {
+                            FileData::Data { data } => {
+                                let data = match data {
+                                    FileBytes::Base64(data) => json!(data),
+                                    FileBytes::Binary(bytes) => Value::Object(
+                                        bytes
+                                            .iter()
+                                            .enumerate()
+                                            .map(|(i, byte)| (i.to_string(), json!(byte)))
+                                            .collect(),
+                                    ),
+                                };
+                                json!({"type":"data", "data":data})
+                            }
+                            FileData::Url { url, original_url } => {
+                                let mut data = json!({"type":"url", "url":url});
+                                if let Some(original_url) = original_url {
+                                    data["originalUrl"] = json!(original_url);
+                                }
+                                data
+                            }
+                            FileData::Reference { reference } => {
+                                json!({"type":"reference", "reference":reference})
+                            }
+                            FileData::Text { text } => json!({"type":"text", "text":text}),
+                        };
+                        let mut item =
+                            json!({"type":"file", "data":data, "mediaType":part.media_type});
+                        if let Some(filename) = &part.filename {
+                            item["filename"] = json!(filename);
+                        }
+                        (item, &part.provider_options)
+                    }
+                    ToolResultContent::Custom { provider_options } => {
+                        (json!({"type":"custom"}), provider_options)
+                    }
+                };
+                if let Some(provider_options) = provider_options {
+                    item["providerOptions"] = json!(provider_options);
+                }
+                item
             })
             .collect::<Vec<_>>()
-            .join("");
-        json!({ "role": role, "content": text })
-    } else {
-        let parts: Vec<Value> = content_parts
-            .iter()
-            .enumerate()
-            .map(|(i, part)| convert_part_to_openai(part, i))
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .filter(|p| !p.is_null())
-            .collect();
-        json!({ "role": role, "content": parts })
-    };
-    if has_reasoning {
-        msg_obj["reasoning_content"] = json!(reasoning);
-    }
-    Ok(vec![msg_obj])
+    )
 }
 
-/// Collect and concatenate the `text` of all `ContentPart::Reasoning` parts in
-/// `content`, mirroring the Vercel AI SDK assistant-message conversion. Used to
-/// build the OpenAI-compatible top-level `reasoning_content` / `reasoning`
-/// field that thinking models (DeepSeek V4, xAI, Groq) require to be replayed
-/// across turns.
-fn collect_reasoning(content: &[ContentPart]) -> String {
-    content
-        .iter()
-        .filter_map(|p| match p {
-            ContentPart::Reasoning { text, .. } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("")
-}
-
-/// Convert a system message, respecting promptCacheBreakpoint.
-fn convert_system_message(msg: &LanguageModelPromptMessage, role: &str) -> Vec<Value> {
-    // System messages in the Rust model are always a single text part.
-    let text = msg
-        .content
-        .iter()
-        .filter_map(|p| match p {
-            ContentPart::Text {
-                text,
-                provider_options,
-            } => {
-                let bpt = get_prompt_cache_breakpoint(provider_options);
-                Some((text.clone(), bpt))
-            }
-            _ => None,
-        })
-        .next();
-
-    match text {
-        Some((t, None)) => vec![json!({ "role": role, "content": t })],
-        Some((t, Some(bpt))) => vec![json!({
-            "role": role,
-            "content": [{
-                "type": "text",
-                "text": t,
-                "prompt_cache_breakpoint": bpt,
-            }]
-        })],
-        None => vec![json!({ "role": role, "content": "" })],
-    }
-}
-
-/// Serialize a tool-result `output` value into the OpenAI tool message
-/// `content` string.
-fn tool_result_to_content(output: &Value) -> Value {
+pub(crate) fn tool_result_cache_breakpoint(output: &ToolResultOutput) -> Option<Value> {
     match output {
-        Value::String(s) => Value::String(s.clone()),
-        other => Value::String(other.to_string()),
+        ToolResultOutput::Text {
+            provider_options, ..
+        }
+        | ToolResultOutput::Json {
+            provider_options, ..
+        }
+        | ToolResultOutput::ErrorText {
+            provider_options, ..
+        }
+        | ToolResultOutput::ErrorJson {
+            provider_options, ..
+        }
+        | ToolResultOutput::ExecutionDenied {
+            provider_options, ..
+        } => get_prompt_cache_breakpoint(provider_options),
+        ToolResultOutput::Content { value } => value.iter().find_map(|part| match part {
+            aimux_core::language_model_message::ToolResultContent::Text(part) => {
+                get_prompt_cache_breakpoint(&part.provider_options)
+            }
+            aimux_core::language_model_message::ToolResultContent::File(part) => {
+                get_prompt_cache_breakpoint(&part.provider_options)
+            }
+            aimux_core::language_model_message::ToolResultContent::Custom { provider_options } => {
+                get_prompt_cache_breakpoint(provider_options)
+            }
+        }),
     }
 }
 
-/// Convert a content part to the OpenAI format.
-fn convert_part_to_openai(part: &ContentPart, index: usize) -> Result<Value, AiMuxError> {
-    match part {
-        ContentPart::Text {
-            text,
-            provider_options,
-        } => {
-            let bpt = get_prompt_cache_breakpoint(provider_options);
-            let mut p = json!({ "type": "text", "text": text });
-            if let Some(b) = bpt {
-                p["prompt_cache_breakpoint"] = b;
-            }
-            Ok(p)
-        }
-        ContentPart::Image {
-            image,
-            media_type,
-            provider_options,
-        } => {
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(image);
-            convert_file_part_to_openai(
-                media_type,
-                Some(&b64),
-                None,
-                None,
-                None,
-                provider_options,
-                index,
-            )
-            .map_err(AiMuxError::InvalidArgument)
-        }
-        ContentPart::File {
-            data,
-            media_type,
-            filename,
-            provider_options,
-        } => {
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(data);
-            convert_file_part_to_openai(
-                media_type,
-                Some(&b64),
-                None,
-                None,
-                filename.as_deref(),
-                provider_options,
-                index,
-            )
-            .map_err(AiMuxError::InvalidArgument)
-        }
-        ContentPart::FileBase64 {
-            data,
-            media_type,
-            filename,
-            provider_options,
-        } => convert_file_part_to_openai(
-            media_type,
-            Some(data),
-            None,
-            None,
-            filename.as_deref(),
-            provider_options,
-            index,
-        )
-        .map_err(AiMuxError::InvalidArgument),
-        ContentPart::FileUrl {
-            url,
-            media_type,
-            provider_options,
-        } => convert_file_part_to_openai(
-            media_type,
-            None,
-            Some(url),
-            None,
-            None,
-            provider_options,
-            index,
-        )
-        .map_err(AiMuxError::InvalidArgument),
-        ContentPart::FileReference {
-            media_type,
-            reference,
-            filename,
-            provider_options,
-        } => convert_file_part_to_openai(
-            media_type,
-            None,
-            None,
-            Some(reference),
-            filename.as_deref(),
-            provider_options,
-            index,
-        )
-        .map_err(AiMuxError::InvalidArgument),
-        ContentPart::Reasoning { .. } => Ok(Value::Null),
-        // These variants are handled by `convert_message_to_openai` for
-        // assistant/tool roles; kept here as a defensive fallback.
-        ContentPart::ToolCall {
-            tool_call_id,
-            tool_name,
-            input,
-            ..
-        } => Ok(json!({
-            "type": "tool_call",
-            "id": tool_call_id,
-            "function": {
-                "name": tool_name,
-                "arguments": input.to_string(),
-            }
-        })),
-        // Tool results reach the wire as a separate `role: "tool"` message
-        // (built by `convert_message_to_openai`), never as a content part —
-        // there is no such part type in the OpenAI chat format.
-        ContentPart::ToolResult { .. } => Ok(Value::Null),
+fn convert_text_part_to_openai(part: &TextPart, provider: &str) -> Value {
+    let mut value = json!({ "type": "text", "text": part.text });
+    if provider == "openai"
+        && let Some(bpt) = get_prompt_cache_breakpoint(&part.provider_options)
+    {
+        value["prompt_cache_breakpoint"] = bpt;
     }
+    value
 }
 
 // ── Request body ────────────────────────────────────────────────────────────
@@ -897,15 +902,210 @@ pub struct RequestBodyResult {
     pub warnings: Vec<Warning>,
 }
 
+/// Parse declared namespace fields, discarding unknown keys like a default z.object.
+///
+/// # Errors
+/// Returns a parse error when a declared field fails its schema.
+pub(crate) fn parse_option_fields(
+    options: &JsonObject,
+    provider: &str,
+    parse: impl Fn(&str, &Value) -> Option<Result<Value, ()>>,
+) -> Result<JsonObject, AiMuxError> {
+    let mut parsed = JsonObject::new();
+    for (key, value) in options {
+        if let Some(result) = parse(key, value) {
+            parsed.insert(
+                key.clone(),
+                result.map_err(|()| {
+                    AiMuxError::InvalidArgument(format!("invalid {provider} provider options"))
+                })?,
+            );
+        }
+    }
+    Ok(parsed)
+}
+
+fn parse_chat_provider_options(
+    options: &Option<SharedProviderOptions>,
+    provider: &str,
+) -> Result<Option<SharedProviderOptions>, AiMuxError> {
+    let provider = if provider == "azure" {
+        "openai"
+    } else {
+        provider
+    };
+    if !matches!(provider, "openai" | "groq" | "deepseek") {
+        return Ok(options.clone());
+    }
+    let Some(namespace) = options.as_ref().and_then(|options| options.get(provider)) else {
+        return Ok(None);
+    };
+    let parsed = parse_option_fields(namespace, provider, |key, value| {
+        let one_of = |values: &[&str]| value.as_str().is_some_and(|s| values.contains(&s));
+        let valid = match (provider, key) {
+            ("openai", "logitBias") => {
+                return Some(value.as_object().ok_or(()).and_then(|object| {
+                    let mut parsed = JsonObject::new();
+                    for (key, value) in object {
+                        if !value.is_number() {
+                            return Err(());
+                        }
+                        let key = key.trim_matches(|c| {
+                            matches!(c,
+                                '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}'
+                                | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}'
+                                | '\u{205f}' | '\u{3000}' | '\u{feff}'
+                            )
+                        });
+                        let number = if key.is_empty() {
+                            0.0
+                        } else if let Some((digits, radix)) = key
+                            .strip_prefix("0x")
+                            .or_else(|| key.strip_prefix("0X"))
+                            .map(|s| (s, 16))
+                            .or_else(|| {
+                                key.strip_prefix("0o")
+                                    .or_else(|| key.strip_prefix("0O"))
+                                    .map(|s| (s, 8))
+                            })
+                            .or_else(|| {
+                                key.strip_prefix("0b")
+                                    .or_else(|| key.strip_prefix("0B"))
+                                    .map(|s| (s, 2))
+                            })
+                        {
+                            if digits.is_empty() {
+                                return Err(());
+                            }
+                            let bits_per_digit = match radix {
+                                16 => 4,
+                                8 => 3,
+                                _ => 1,
+                            };
+                            let mut significant_bits = 0usize;
+                            let mut mantissa = 0u64;
+                            let mut guard = false;
+                            let mut sticky = false;
+                            for digit in digits.chars() {
+                                let digit = digit.to_digit(radix).ok_or(())?;
+                                for shift in (0..bits_per_digit).rev() {
+                                    let bit = (digit >> shift) & 1;
+                                    if significant_bits == 0 && bit == 0 {
+                                        continue;
+                                    }
+                                    if significant_bits < 53 {
+                                        mantissa = (mantissa << 1) | u64::from(bit);
+                                    } else if significant_bits == 53 {
+                                        guard = bit != 0;
+                                    } else {
+                                        sticky |= bit != 0;
+                                    }
+                                    significant_bits += 1;
+                                }
+                            }
+                            if guard && (sticky || mantissa & 1 != 0) {
+                                mantissa += 1;
+                            }
+                            let exponent = significant_bits.saturating_sub(53);
+                            if exponent > 1023 {
+                                f64::INFINITY
+                            } else {
+                                mantissa as f64 * 2.0f64.powi(exponent as i32)
+                            }
+                        } else {
+                            key.parse::<f64>().map_err(|_| ())?
+                        };
+                        if !number.is_finite() {
+                            return Err(());
+                        }
+                        let key = if number == 0.0 {
+                            "0".to_string()
+                        } else if number.abs() >= 1e21 || number.abs() < 1e-6 {
+                            let scientific = format!("{number:e}");
+                            let (mantissa, exponent) = scientific.split_once('e').ok_or(())?;
+                            let exponent = exponent.parse::<i32>().map_err(|_| ())?;
+                            format!("{mantissa}e{exponent:+}")
+                        } else {
+                            number.to_string()
+                        };
+                        parsed.insert(key, value.clone());
+                    }
+                    Ok(Value::Object(parsed))
+                }));
+            }
+            ("openai", "logprobs") => value.is_boolean() || value.is_number(),
+            ("openai", "maxCompletionTokens") => value.is_number(),
+            ("openai", "metadata") => value.as_object().is_some_and(|object| {
+                object.iter().all(|(key, value)| {
+                    key.encode_utf16().count() <= 64
+                        && value
+                            .as_str()
+                            .is_some_and(|s| s.encode_utf16().count() <= 512)
+                })
+            }),
+            ("openai", "prediction") => value.is_object(),
+            ("openai", "reasoningEffort") => {
+                one_of(&["none", "minimal", "low", "medium", "high", "xhigh", "max"])
+            }
+            ("openai", "serviceTier") => {
+                one_of(&["auto", "flex", "priority", "fast", "ultrafast", "default"])
+            }
+            ("openai", "textVerbosity") => one_of(&["low", "medium", "high"]),
+            ("openai", "promptCacheRetention") => one_of(&["in_memory", "24h"]),
+            ("openai", "systemMessageMode") => one_of(&["system", "developer", "remove"]),
+            ("openai", "user" | "promptCacheKey" | "safetyIdentifier") | ("groq", "user") => {
+                value.is_string()
+            }
+            ("openai", "parallelToolCalls" | "store" | "strictJsonSchema" | "forceReasoning")
+            | ("groq", "parallelToolCalls" | "structuredOutputs" | "strictJsonSchema")
+            | ("deepseek", "logprobs" | "strictJsonSchema") => value.is_boolean(),
+            ("groq", "reasoningFormat") => one_of(&["parsed", "raw", "hidden"]),
+            ("groq", "reasoningEffort") => one_of(&["none", "default", "low", "medium", "high"]),
+            ("groq", "serviceTier") => one_of(&["on_demand", "performance", "flex", "auto"]),
+            ("deepseek", "reasoningEffort") => one_of(&["low", "medium", "high", "xhigh", "max"]),
+            ("deepseek", "topLogprobs") => value
+                .as_f64()
+                .is_some_and(|n| n.fract() == 0.0 && (0.0..=20.0).contains(&n)),
+            ("deepseek", "userId") => value.as_str().is_some_and(|s| {
+                !s.is_empty()
+                    && s.len() <= 512
+                    && s.bytes()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-'))
+            }),
+            ("openai", "promptCacheOptions") | ("deepseek", "thinking") => {
+                return Some(value.as_object().ok_or(()).and_then(|object| {
+                    parse_option_fields(object, provider, |key, value| {
+                        let valid = match (provider, key) {
+                            ("openai", "mode") => value
+                                .as_str()
+                                .is_some_and(|s| matches!(s, "implicit" | "explicit")),
+                            ("openai", "ttl") => value.as_str() == Some("30m"),
+                            ("deepseek", "type") => value
+                                .as_str()
+                                .is_some_and(|s| matches!(s, "adaptive" | "enabled" | "disabled")),
+                            _ => return None,
+                        };
+                        Some(if valid { Ok(value.clone()) } else { Err(()) })
+                    })
+                    .map(Value::Object)
+                    .map_err(|_| ())
+                }));
+            }
+            _ => return None,
+        };
+        Some(if valid { Ok(value.clone()) } else { Err(()) })
+    })?;
+    Ok(Some(std::collections::HashMap::from([(
+        provider.to_string(),
+        parsed,
+    )])))
+}
+
 /// Get a value from provider_options.openai.<key>.
-fn openai_option(
-    options: &Option<HashMap<std::string::String, Value>>,
-    key: &str,
-) -> Option<Value> {
-    use std::collections::HashMap;
+fn openai_option(options: &Option<SharedProviderOptions>, key: &str) -> Option<Value> {
     options
         .as_ref()
-        .and_then(|m: &HashMap<String, Value>| m.get("openai"))
+        .and_then(|m| m.get("openai"))
         .and_then(|o| o.get(key))
         .cloned()
 }
@@ -940,21 +1140,18 @@ pub fn build_request_body(
 /// Conversion errors propagate to the caller (fail-fast, issue H2): the old
 /// behaviour of silently returning `body: null` sent empty requests upstream
 /// and made conversion failures invisible.
-/// Look up a key from the provider-specific options (groq → "groq" then
-/// "openai"; otherwise "openai").
+/// Look up a key from the selected vendor namespace.
 fn provider_option(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     key: &str,
 ) -> Option<Value> {
-    if provider == "groq"
-        && let Some(v) = provider_opts
+    if matches!(provider, "groq" | "deepseek") {
+        return provider_opts
             .as_ref()
-            .and_then(|m| m.get("groq"))
+            .and_then(|m| m.get(provider))
             .and_then(|o| o.get(key))
-            .cloned()
-    {
-        return Some(v);
+            .cloned();
     }
     openai_option(provider_opts, key)
 }
@@ -963,7 +1160,7 @@ fn provider_option(
 /// vendor normalization). `providerOptions.reasoningEffort` wins over top-level
 /// `reasoning`; custom top-level levels map verbatim to `reasoning_effort`.
 fn resolve_reasoning_effort(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     reasoning: &Option<ReasoningEffort>,
 ) -> Option<String> {
@@ -983,7 +1180,7 @@ fn resolve_reasoning_effort(
 }
 
 fn resolve_is_reasoning_model(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     caps: &ModelCapabilities,
 ) -> bool {
@@ -993,7 +1190,7 @@ fn resolve_is_reasoning_model(
 }
 
 fn resolve_system_message_mode(
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     is_reasoning_model: bool,
     caps: &ModelCapabilities,
@@ -1021,13 +1218,12 @@ fn resolve_system_message_mode(
 fn apply_max_tokens(
     body: &mut Value,
     options: &CallOptions,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     profile: &OpenAICompatProfile,
     is_reasoning_model: bool,
 ) {
-    let max_completion_tokens_opt = provider_option(provider_opts, provider, "maxCompletionTokens")
-        .and_then(|v| v.as_u64().map(|n| n as u32));
+    let max_completion_tokens_opt = provider_option(provider_opts, provider, "maxCompletionTokens");
 
     let use_mct_key = match profile.max_tokens_key {
         Some("max_tokens") => false,
@@ -1157,7 +1353,7 @@ fn insert_sampling_params(body: &mut Value, params: &SamplingParams, options: &C
 fn apply_response_format(
     body: &mut Value,
     options: &CallOptions,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     profile: &OpenAICompatProfile,
     warnings: &mut Vec<Warning>,
@@ -1199,7 +1395,12 @@ fn apply_response_format(
                         .unwrap_or(true),
                 )
             } else {
-                (true, true)
+                (
+                    true,
+                    provider_option(provider_opts, provider, "strictJsonSchema")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true),
+                )
             };
 
             if schema.is_some() && structured_outputs {
@@ -1237,7 +1438,7 @@ fn apply_response_format(
 /// field (plus Groq's `reasoning_format`).
 fn apply_provider_option_passthrough(
     body: &mut Value,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
 ) {
     let mut set = |key: &str, body_key: &str| {
@@ -1256,12 +1457,32 @@ fn apply_provider_option_passthrough(
     set("promptCacheRetention", "prompt_cache_retention");
     set("promptCacheOptions", "prompt_cache_options");
     set("safetyIdentifier", "safety_identifier");
-    // M3 (RFC-0016): logprobs request support. Previously `logprobs` /
-    // `topLogprobs` were silently dropped by the provider_options whitelist —
-    // the only option that "quietly did nothing". Pass-through as-is (OpenAI
-    // expects `logprobs: bool` and `top_logprobs: int`).
-    set("logprobs", "logprobs");
-    set("topLogprobs", "top_logprobs");
+    if provider == "deepseek" {
+        set("userId", "user_id");
+    }
+    if provider != "openai" {
+        set("topLogprobs", "top_logprobs");
+    }
+    if let Some(logprobs) = provider_option(provider_opts, provider, "logprobs") {
+        if provider == "openai" {
+            if logprobs == json!(true) || logprobs.is_number() {
+                body["logprobs"] = json!(true);
+                body["top_logprobs"] = if logprobs.is_number() {
+                    logprobs
+                } else {
+                    json!(0)
+                };
+            }
+        } else if provider == "deepseek" {
+            if logprobs == json!(true) || body.get("top_logprobs").is_some() {
+                body["logprobs"] = json!(true);
+            }
+        } else {
+            body["logprobs"] = logprobs;
+        }
+    } else if provider == "deepseek" && body.get("top_logprobs").is_some() {
+        body["logprobs"] = json!(true);
+    }
     // Groq: reasoning_format provider option
     if provider == "groq"
         && let Some(val) = provider_option(provider_opts, provider, "reasoningFormat")
@@ -1274,7 +1495,7 @@ fn apply_provider_option_passthrough(
 /// without validation).
 fn apply_service_tier(
     body: &mut Value,
-    provider_opts: &Option<HashMap<String, Value>>,
+    provider_opts: &Option<SharedProviderOptions>,
     provider: &str,
     caps: &ModelCapabilities,
     warnings: &mut Vec<Warning>,
@@ -1360,11 +1581,11 @@ fn apply_tools(
         prepare_tools_groq(
             &function_tools,
             options.tools.as_ref(),
-            Some(&options.tool_choice),
+            options.tool_choice.as_ref(),
             model_id,
         )
     } else {
-        prepare_tools(&function_tools, Some(&options.tool_choice))
+        prepare_tools(&function_tools, options.tool_choice.as_ref())
     };
 
     if let Some(tools) = prepared.tools {
@@ -1405,7 +1626,8 @@ pub fn build_request_body_with_warnings(
 ) -> Result<RequestBodyResult, AiMuxError> {
     let mut warnings: Vec<Warning> = Vec::new();
     let caps = get_model_capabilities(model_id);
-    let provider_opts = &options.provider_options;
+    let parsed_provider_opts = parse_chat_provider_options(&options.provider_options, provider)?;
+    let provider_opts = &parsed_provider_opts;
 
     let resolved_reasoning_effort =
         resolve_reasoning_effort(provider_opts, provider, &options.reasoning);
@@ -1422,10 +1644,11 @@ pub fn build_request_body_with_warnings(
         });
     }
 
-    let messages = convert_prompt_to_openai_messages_with_provider(
+    let messages = convert_prompt_with_warnings(
         &options.prompt,
         system_message_mode,
         provider,
+        &mut warnings,
     )?;
 
     let mut body = json!({
