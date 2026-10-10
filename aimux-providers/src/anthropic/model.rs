@@ -6,8 +6,6 @@
 //! and hands the result to the shared [`super::stream`] core, which sends it
 //! and parses the response or the SSE stream.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use serde_json::Value;
 
@@ -38,7 +36,7 @@ struct PreparedCall {
 pub struct AnthropicMessagesModel {
     model_id: String,
     config: AnthropicModelConfig,
-    generate_id: Arc<dyn Fn() -> String + Send + Sync>,
+    generate_id: aimux_provider_utils::IdGenerator,
 }
 
 impl AnthropicMessagesModel {
@@ -47,14 +45,14 @@ impl AnthropicMessagesModel {
         Self {
             model_id,
             config,
-            generate_id: Arc::new(aimux_provider_utils::generate_id),
+            generate_id: aimux_provider_utils::generate_id,
         }
     }
 
     #[must_use]
     pub(crate) fn with_generate_id(
         mut self,
-        generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+        generate_id: Option<aimux_provider_utils::IdGenerator>,
     ) -> Self {
         if let Some(generate_id) = generate_id {
             self.generate_id = generate_id;
@@ -105,9 +103,8 @@ impl AnthropicMessagesModel {
                 .is_some_and(|value| value.contains_key(&self.config.provider_options_name))
     }
 
-    /// Build the request for one call: the body (host preparation and the
-    /// provider's `transform_request_body` applied), its warnings, and the
-    /// URL/headers/transport the exchange goes through.
+    /// Build the request for one call: the body (host preparation applied),
+    /// its warnings, and the URL/headers/transport the exchange goes through.
     async fn prepare(
         &self,
         options: &CallOptions,
@@ -116,7 +113,7 @@ impl AnthropicMessagesModel {
         let config = self.config.resolved().await?;
         let built =
             build_request_body_for(&self.model_id, options, stream, &config.request_profile())?;
-        let body = config.transform_body(built.body);
+        let body = config.prepare_body(built.body);
         let headers = config
             .request_headers(options.headers.as_ref(), &built.betas)
             .await?;
@@ -160,7 +157,7 @@ impl LanguageModel for AnthropicMessagesModel {
             self.uses_custom_options(options),
             call.uses_json_response_tool,
             Self::citation_documents(options),
-            self.generate_id.clone(),
+            self.generate_id,
         )
         .await
     }
@@ -176,7 +173,7 @@ impl LanguageModel for AnthropicMessagesModel {
             self.uses_custom_options(options),
             call.uses_json_response_tool,
             Self::citation_documents(options),
-            self.generate_id.clone(),
+            self.generate_id,
         )
         .await
     }

@@ -35,6 +35,7 @@ use std::sync::{Arc, OnceLock};
 use futures::future::BoxFuture;
 use serde_json::Value;
 
+use crate::shared::ProviderHeaders;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::files_model::Files;
@@ -43,12 +44,12 @@ use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, load_optional_setting, validate_base_url,
+    FetchFunction, HeaderMapOpt, Resolvable, load_optional_setting, validate_base_url,
 };
 
-use crate::shared::{AuthScheme, Credential, credential_headers};
+use crate::shared::{AuthScheme, Credential};
 
-use config::{AnthropicModelConfig, AnthropicModelHooks};
+use config::{AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks};
 
 pub(crate) fn anthropic_failed_response_handler()
 -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -132,7 +133,7 @@ pub struct AnthropicProviderSettings {
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
     /// Generates identifiers for returned sources.
-    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    pub generate_id: Option<aimux_provider_utils::IdGenerator>,
 }
 
 impl std::fmt::Debug for AnthropicProviderSettings {
@@ -194,16 +195,13 @@ pub fn create_anthropic(
     Ok(AnthropicProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            credential_headers(
-                credential,
-                scheme,
-                vec![("anthropic-version".to_string(), API_VERSION.to_string())],
-                settings.headers,
-            ),
-            options::CANONICAL,
-            "4.0.68",
-        ),
+        headers: ProviderHeaders::new(
+            credential,
+            scheme,
+            vec![("anthropic-version".to_string(), API_VERSION.to_string())],
+            settings.headers,
+        )
+        .with_user_agent(options::CANONICAL, "4.0.68"),
         fetch: settings.fetch,
         supported_urls: supported_urls(),
         generate_id: settings.generate_id,
@@ -227,27 +225,24 @@ pub fn anthropic() -> &'static AnthropicProvider {
 pub struct AnthropicProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
     supported_urls: SupportedUrls,
-    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    generate_id: Option<aimux_provider_utils::IdGenerator>,
 }
 
 impl AnthropicProvider {
     /// The model configuration reporting `provider` as its identity.
     fn model_config(&self, provider: String) -> AnthropicModelConfig {
-        let base = self.base_url.clone();
         AnthropicModelConfig {
             provider,
-            url: Arc::new(move |path| format!("{base}{path}")),
             headers: self.headers.clone(),
             fetch: self.fetch.clone(),
             supported_urls: self.supported_urls.clone(),
-            transform_request_body: None,
             base_url: self.base_url.clone(),
             provider_options_name: options::options_name_of(&self.name),
             hooks: AnthropicModelHooks::default(),
-            resolve: None,
+            endpoint: AnthropicEndpoint::Fixed,
         }
     }
 
@@ -265,7 +260,7 @@ impl AnthropicProvider {
             model_id.to_string(),
             self.model_config(self.name.clone()),
         )
-        .with_generate_id(self.generate_id.clone())
+        .with_generate_id(self.generate_id)
     }
 
     /// An alias for the Messages model.

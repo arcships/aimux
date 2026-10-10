@@ -28,13 +28,9 @@ use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, HttpBody, Resolvable, validate_base_url,
-};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HttpBody, Resolvable, validate_base_url};
 
-use crate::shared::{
-    AuthScheme, Credential, EndpointConfig, TransformRequestBody, credential_headers,
-};
+use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
 
 pub(crate) mod options;
 
@@ -110,9 +106,6 @@ pub struct ElevenLabsProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
     /// Opens the WebSocket of realtime transcription (the AI SDK's
     /// `webSocket`). `None` uses the built-in tungstenite connector.
     #[cfg(feature = "realtime")]
@@ -131,11 +124,7 @@ impl std::fmt::Debug for ElevenLabsProviderSettings {
                 &self.headers.as_ref().map(std::collections::HashMap::len),
             )
             .field("name", &self.name)
-            .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            );
+            .field("fetch", &self.fetch.is_some());
         #[cfg(feature = "realtime")]
         debug.field("web_socket", &self.web_socket.is_some());
         debug.finish()
@@ -159,14 +148,13 @@ pub fn create_elevenlabs(
     Ok(ElevenLabsProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: credential_headers(
+        headers: ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "ElevenLabs"),
             AuthScheme::Header("xi-api-key"),
             Vec::new(),
             settings.headers,
         ),
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
     })
@@ -191,9 +179,8 @@ pub fn elevenlabs() -> &'static ElevenLabsProvider {
 pub struct ElevenLabsProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
     #[cfg(feature = "realtime")]
     web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
 }
@@ -205,7 +192,6 @@ impl ElevenLabsProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            self.transform_request_body.clone(),
         )
     }
 
@@ -302,7 +288,7 @@ impl SpeechModel for ElevenLabsSpeechModel {
 
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(url, options),
-            exchange.transform_body(Value::Object(body.clone())),
+            Value::Object(body.clone()),
             aimux_provider_utils::create_binary_response_handler(),
             elevenlabs_failed_response_handler(),
         )

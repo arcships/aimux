@@ -20,17 +20,19 @@
 
 use std::sync::Arc;
 
-use futures::future::BoxFuture;
 use serde_json::{Value, json};
 
-use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
-use aimux_provider_utils::{FetchFunction, Resolvable};
+use aimux_provider_utils::FetchFunction;
 
+use crate::shared::{Credential, ProviderHeaders};
+
+use super::Resolver;
 use crate::anthropic::AnthropicMessagesModel;
-use crate::anthropic::config::{AnthropicModelConfig, AnthropicModelHooks, TransformRequestBody};
+use crate::anthropic::config::{
+    AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks, MessagesUrl,
+};
 use crate::anthropic::options::options_name_of;
-use crate::shared::Endpoint;
 
 /// `anthropic_version` envelope value required by the Vertex AI `rawPredict` /
 /// `streamRawPredict` endpoints.
@@ -41,11 +43,6 @@ const PROVIDER: &str = "googleVertex.anthropic.messages";
 
 /// An Anthropic Claude language model served via Vertex AI.
 pub type VertexAnthropicModel = AnthropicMessagesModel;
-
-/// Resolves the endpoint of a request: the `.../publishers/anthropic/models`
-/// base URL and the provider headers.
-pub(super) type EndpointFn =
-    Arc<dyn Fn() -> BoxFuture<'static, Result<Endpoint, AiMuxError>> + Send + Sync>;
 
 /// Wrap a standard Messages request body in the `rawPredict` envelope: drop
 /// `model` (the URL carries it) and add `anthropic_version`.
@@ -61,67 +58,30 @@ fn raw_predict_envelope(body: Value) -> Value {
     Value::Object(envelope)
 }
 
-/// The configuration of one request against `endpoint`.
-fn request_config(
-    endpoint: Endpoint,
+/// The model `model_id` on the Vertex endpoint `resolver` resolves for each
+/// request.
+pub(super) fn model(
+    model_id: &str,
+    resolver: Arc<Resolver>,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
-) -> AnthropicModelConfig {
-    let Endpoint { base_url, headers } = endpoint;
-    let models = base_url.clone();
-    let url_base = base_url.clone();
-    AnthropicModelConfig {
+) -> VertexAnthropicModel {
+    // The model's own `base_url` and `headers` only describe its identity;
+    // every request uses the endpoint resolved for it.
+    let config = AnthropicModelConfig {
         provider: PROVIDER.to_string(),
-        url: Arc::new(move |path| format!("{url_base}{path}")),
-        headers: Resolvable::Value(headers),
+        headers: ProviderHeaders::bearer(Credential::None, Vec::new(), None),
         fetch,
         supported_urls: SupportedUrls::default(),
-        transform_request_body,
-        base_url,
+        base_url: String::new(),
         provider_options_name: options_name_of(PROVIDER),
         hooks: AnthropicModelHooks {
-            request_url: Some(Arc::new(move |model_id, stream| {
-                let method = if stream {
-                    "streamRawPredict"
-                } else {
-                    "rawPredict"
-                };
-                format!("{models}/{model_id}:{method}")
-            })),
-            prepare_body: Some(Arc::new(raw_predict_envelope)),
+            messages_url: MessagesUrl::RawPredict,
+            prepare_body: Some(raw_predict_envelope),
             failed_response_handler: crate::google::google_failed_response_handler,
             supports_native_structured_output: false,
             supports_strict_tools: false,
         },
-        resolve: None,
-    }
-}
-
-/// The model `model_id` on the Vertex endpoint `endpoint` resolves to for each
-/// request.
-pub(super) fn model(
-    model_id: &str,
-    endpoint: EndpointFn,
-    fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
-) -> VertexAnthropicModel {
-    let resolve_fetch = fetch.clone();
-    let resolve_transform = transform_request_body.clone();
-    let mut config = request_config(
-        Endpoint {
-            base_url: String::new(),
-            headers: Default::default(),
-        },
-        fetch,
-        transform_request_body,
-    );
-    // The model's own fields only describe its identity; every request is
-    // built from the endpoint resolved for it.
-    config.resolve = Some(Arc::new(move || {
-        let endpoint = endpoint.clone();
-        let fetch = resolve_fetch.clone();
-        let transform = resolve_transform.clone();
-        Box::pin(async move { Ok(request_config(endpoint().await?, fetch, transform)) })
-    }));
+        endpoint: AnthropicEndpoint::Vertex(resolver),
+    };
     AnthropicMessagesModel::with_config(model_id.to_string(), config)
 }

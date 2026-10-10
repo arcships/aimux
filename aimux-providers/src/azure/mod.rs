@@ -30,6 +30,7 @@ use std::sync::{Arc, OnceLock};
 
 use futures::future::BoxFuture;
 
+use crate::shared::ProviderHeaders;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
@@ -39,18 +40,17 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{
-    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt, HeadersFn,
-    HttpRequest, Resolvable, default_fetch, load_setting, validate_base_url,
-    without_trailing_slash,
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt, HttpRequest,
+    Resolvable, default_fetch, load_setting, validate_base_url, without_trailing_slash,
 };
 
-use crate::openai::config::OpenAIModelConfig;
+use crate::openai::config::{OpenAIModelConfig, OpenAIUrl};
 use crate::openai::responses::ResponsesProfile;
 use crate::openai::{
     OpenAIEmbeddingModel, OpenAIImageModel, OpenAIModel, OpenAIResponsesModel, OpenAISpeechModel,
     OpenAITranscriptionModel,
 };
-use crate::shared::{AuthScheme, Credential, credential_headers, is_valid_hostname_part};
+use crate::shared::{AuthScheme, Credential, is_valid_hostname_part};
 
 /// The chat-completions model of the Azure package (`provider.chat(id)`): the
 /// OpenAI one, configured for Azure.
@@ -210,8 +210,8 @@ pub fn create_azure(
         })
         .or(settings.fetch);
     let speech_headers = match &settings.token_provider {
-        Some(_) => Resolvable::Value(settings.headers.clone().unwrap_or_default()),
-        None => credential_headers(
+        Some(_) => ProviderHeaders::bearer(Credential::None, Vec::new(), settings.headers.clone()),
+        None => ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key.clone(), API_KEY_ENV_VAR, "Azure Speech"),
             AuthScheme::Header("Ocp-Apim-Subscription-Key"),
             Vec::new(),
@@ -219,8 +219,8 @@ pub fn create_azure(
         ),
     };
     let headers = match settings.token_provider {
-        Some(_) => Resolvable::Value(settings.headers.unwrap_or_default()),
-        None => credential_headers(
+        Some(_) => ProviderHeaders::bearer(Credential::None, Vec::new(), settings.headers),
+        None => ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Azure OpenAI"),
             AuthScheme::Header("api-key"),
             Vec::new(),
@@ -231,20 +231,12 @@ pub fn create_azure(
         resource_name: settings.resource_name,
         base_url,
         speech_base_url,
-        speech_headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            speech_headers,
-            options::NAMESPACE,
-            "4.0.84",
-        ),
+        speech_headers: speech_headers.with_user_agent(options::NAMESPACE, "4.0.84"),
         info,
         api_version: settings.api_version,
         use_deployment_based_urls: settings.use_deployment_based_urls,
         fetch,
-        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            headers,
-            options::NAMESPACE,
-            "4.0.84",
-        ),
+        headers: headers.with_user_agent(options::NAMESPACE, "4.0.84"),
     })
 }
 
@@ -298,17 +290,17 @@ pub struct AzureOpenAIProvider {
     resource_name: Option<String>,
     base_url: Option<String>,
     speech_base_url: Option<String>,
-    speech_headers: HeadersFn,
+    speech_headers: ProviderHeaders,
     info: BaseUrlInfo,
     api_version: Option<String>,
     use_deployment_based_urls: bool,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
-/// Everything the URL of a request depends on, owned so a closure can hold it.
+/// Everything the URL of a request depends on.
 #[derive(Clone)]
-struct UrlRules {
+pub(crate) struct UrlRules {
     resource_name: Option<String>,
     base_url: Option<String>,
     info: BaseUrlInfo,
@@ -340,7 +332,7 @@ impl UrlRules {
     }
 
     /// The AI SDK's `url({ path, modelId })`.
-    fn url(&self, path: &str, model_id: &str) -> Result<String, AiMuxError> {
+    pub(crate) fn url(&self, path: &str, model_id: &str) -> Result<String, AiMuxError> {
         let prefix = self.prefix()?;
         let info = self.info;
         let full = if self.use_deployment_based_urls {
@@ -360,6 +352,25 @@ impl UrlRules {
             set_query_param(&mut url, "api-version", &self.api_version);
         }
         Ok(url.to_string())
+    }
+
+    /// The Azure AI Speech transcription URL: `speech_base_url`, or the
+    /// resource's Cognitive Services host.
+    pub(crate) fn speech_url(&self, speech_base_url: Option<&str>) -> Result<String, AiMuxError> {
+        let prefix = match speech_base_url {
+            Some(prefix) => without_trailing_slash(prefix),
+            None => {
+                // Reuse the resource-name validation and lazy environment lookup.
+                let mut rules = self.clone();
+                rules.base_url = None;
+                rules
+                    .prefix()?
+                    .replace(".openai.azure.com/openai", ".cognitiveservices.azure.com")
+            }
+        };
+        Ok(format!(
+            "{prefix}/speechtotext/transcriptions:transcribe?api-version=2025-10-15"
+        ))
     }
 }
 
@@ -405,16 +416,16 @@ impl AzureOpenAIProvider {
     /// The model configuration of a deployment, reporting `provider` as its
     /// identity.
     fn model_config(&self, provider: &str, deployment: &str) -> OpenAIModelConfig {
-        let rules = self.url_rules();
-        let deployment = deployment.to_string();
         OpenAIModelConfig {
             provider: provider.to_string(),
-            url: Arc::new(move |path| rules.url(path, &deployment)),
+            url: OpenAIUrl::AzureDeployment {
+                rules: self.url_rules(),
+                deployment: deployment.to_string(),
+            },
             headers: self.headers.clone(),
             token_provider: None,
             fetch: self.fetch.clone(),
             supported_urls: crate::openai::config::supported_urls(provider),
-            transform_request_body: None,
             responses: ResponsesProfile::default(),
             chat_options: options::CHAT_OPTIONS,
         }
@@ -471,24 +482,10 @@ impl AzureOpenAIProvider {
     #[must_use]
     pub fn transcription(&self, deployment: &str) -> AzureTranscriptionModel {
         let mut speech = self.model_config("azure.transcription", deployment);
-        let rules = self.url_rules();
-        let base_url = self.speech_base_url.clone();
-        speech.url = Arc::new(move |_| {
-            let prefix = match &base_url {
-                Some(prefix) => without_trailing_slash(prefix),
-                None => {
-                    // Reuse the resource-name validation and lazy environment lookup.
-                    let mut rules = rules.clone();
-                    rules.base_url = None;
-                    rules
-                        .prefix()?
-                        .replace(".openai.azure.com/openai", ".cognitiveservices.azure.com")
-                }
-            };
-            Ok(format!(
-                "{prefix}/speechtotext/transcriptions:transcribe?api-version=2025-10-15"
-            ))
-        });
+        speech.url = OpenAIUrl::AzureSpeech {
+            rules: self.url_rules(),
+            speech_base_url: self.speech_base_url.clone(),
+        };
         speech.headers = self.speech_headers.clone();
         AzureTranscriptionModel::new(
             deployment.to_string(),

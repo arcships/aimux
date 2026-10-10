@@ -1,6 +1,10 @@
 use std::hash::{BuildHasher, RandomState};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// A function that returns a fresh id (the AI SDK's `IdGenerator`). A plain
+/// function pointer: it captures no state and can sit in a `const` config.
+pub type IdGenerator = fn() -> String;
+
 /// Generate a non-cryptographic, 16-character alphanumeric ID, like `generateId`.
 #[must_use]
 pub fn generate_id() -> String {

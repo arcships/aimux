@@ -5,6 +5,8 @@
 //!
 //! Uses the Bedrock Agent Runtime `/rerank` endpoint.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -18,7 +20,7 @@ use aimux_core::shared::SharedProviderOptions;
 
 use aimux_provider_utils::HttpBody;
 
-use super::RegionFn;
+use super::Auth;
 use super::options;
 use crate::shared::EndpointConfig;
 
@@ -76,15 +78,16 @@ struct BedrockRerankingResult {
 pub struct BedrockRerankingModel {
     model_id: String,
     config: EndpointConfig,
-    region: RegionFn,
+    /// The region of a request (the model ARN names it), resolved per request.
+    auth: Arc<Auth>,
 }
 
 impl BedrockRerankingModel {
-    pub(crate) fn from_config(model_id: String, config: EndpointConfig, region: RegionFn) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig, auth: Arc<Auth>) -> Self {
         Self {
             model_id,
             config,
-            region,
+            auth,
         }
     }
 }
@@ -105,7 +108,7 @@ impl RerankingModel for BedrockRerankingModel {
     ) -> Result<RerankingResult, AiMuxError> {
         let bedrock_options = parse_bedrock_reranking_options(options.provider_options.as_ref())?;
 
-        let region = (self.region)()?;
+        let region = self.auth.region()?;
         let model_arn = format!(
             "arn:aws:bedrock:{region}::foundation-model/{}",
             self.model_id
@@ -171,7 +174,6 @@ impl RerankingModel for BedrockRerankingModel {
         }
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(body);
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = exchange.url("/rerank");
 

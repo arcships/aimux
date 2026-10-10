@@ -30,9 +30,9 @@ use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{AuthScheme, Credential, EndpointConfig, credential_headers};
+use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
 
 /// Hume errors carry a top-level `message` with a `code` such as `"E0101"`
 /// (https://dev.hume.ai/docs/resources/errors); the nested `{error:
@@ -133,7 +133,7 @@ pub fn create_hume(settings: HumeProviderSettings) -> Result<HumeProvider, AiMux
     Ok(HumeProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: credential_headers(
+        headers: ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Hume"),
             AuthScheme::Header("X-Hume-Api-Key"),
             Vec::new(),
@@ -159,7 +159,7 @@ pub fn hume() -> &'static HumeProvider {
 pub struct HumeProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
@@ -170,7 +170,6 @@ impl HumeProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            None,
         )
     }
 

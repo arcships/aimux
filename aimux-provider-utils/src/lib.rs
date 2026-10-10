@@ -30,6 +30,7 @@ pub mod response_handler;
 pub mod sigv4_fetch;
 pub mod streaming_tool_call_argument_state;
 pub mod streaming_tool_call_tracker;
+pub mod transform_stream;
 pub mod url;
 /// WebSocket client for realtime provider APIs (RFC-0028). Empty unless the
 /// `ws` feature is enabled.
@@ -43,7 +44,7 @@ pub use fetch::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, ReqwestFetch,
     default_fetch,
 };
-pub use generate_id::generate_id;
+pub use generate_id::{IdGenerator, generate_id};
 pub use get_from_api::get_from_api;
 pub use headers::{
     HeaderMapOpt, HeadersFn, combine_headers, normalize_headers, with_user_agent_suffix,
@@ -71,4 +72,5 @@ pub use streaming_tool_call_argument_state::{
 pub use streaming_tool_call_tracker::{
     StreamingToolCallDelta, StreamingToolCallTracker, TrackerError, TypeValidation,
 };
+pub use transform_stream::{TransformStreamController, Transformer, pipe_through};
 pub use url::{validate_base_url, without_trailing_slash, without_trailing_slash_opt};

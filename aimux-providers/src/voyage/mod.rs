@@ -14,7 +14,6 @@ pub mod embedding;
 pub(crate) mod options;
 pub mod reranking;
 
-pub use crate::shared::TransformRequestBody;
 pub use embedding::VoyageEmbeddingModel;
 pub use reranking::VoyageRerankingModel;
 
@@ -26,9 +25,9 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_core::reranking_model::RerankingModel;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, provider_headers};
+use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
 pub(crate) fn voyage_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {
@@ -74,9 +73,6 @@ pub struct VoyageProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for VoyageProviderSettings {
@@ -91,10 +87,6 @@ impl std::fmt::Debug for VoyageProviderSettings {
             )
             .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -114,13 +106,12 @@ pub fn create_voyage(settings: VoyageProviderSettings) -> Result<VoyageProvider,
     Ok(VoyageProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: provider_headers(
+        headers: ProviderHeaders::bearer(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Voyage"),
             Vec::new(),
             settings.headers,
         ),
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -140,9 +131,8 @@ pub fn voyage() -> &'static VoyageProvider {
 pub struct VoyageProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl VoyageProvider {
@@ -152,7 +142,6 @@ impl VoyageProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            self.transform_request_body.clone(),
         )
     }
 

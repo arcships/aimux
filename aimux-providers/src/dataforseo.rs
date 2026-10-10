@@ -16,7 +16,6 @@
 use std::sync::OnceLock;
 
 use async_trait::async_trait;
-use base64::Engine;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -24,11 +23,9 @@ use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, validate_base_url,
-};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig};
+use crate::shared::{Credential, EndpointConfig, EndpointHeaders};
 
 /// Fixed model id for the DataForSEO search model.
 const MODEL_ID: &str = "dataforseo-search";
@@ -110,35 +107,6 @@ impl std::fmt::Debug for DataforseoProviderSettings {
     }
 }
 
-/// The provider headers: `Authorization: Basic base64(login:password)` with
-/// both parts resolved for every request, then the caller's headers.
-fn basic_auth_headers(
-    login: Credential,
-    password: Credential,
-    user: Option<HeaderMapOpt>,
-) -> HeadersFn {
-    Resolvable::from_async_fn(move || {
-        let login = login.clone();
-        let password = password.clone();
-        let user = user.clone();
-        async move {
-            let login = login.secret().await?.unwrap_or_default();
-            let password = password.secret().await?.unwrap_or_default();
-            let encoded = base64::engine::general_purpose::STANDARD
-                .encode(format!("{login}:{password}").as_bytes());
-            let mut layer = HeaderMapOpt::new();
-            layer.insert(
-                "Authorization".to_string(),
-                Some(format!("Basic {encoded}")),
-            );
-            Ok(match &user {
-                Some(user) => combine_headers(&[&layer, user]),
-                None => layer,
-            })
-        }
-    })
-}
-
 /// Create a DataForSEO provider.
 ///
 /// # Errors
@@ -156,11 +124,15 @@ pub fn create_dataforseo(
     Ok(DataforseoProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: basic_auth_headers(
-            Credential::explicit_or_env(settings.login, LOGIN_ENV_VAR, "DataForSEO login"),
-            Credential::explicit_or_env(settings.password, PASSWORD_ENV_VAR, "DataForSEO password"),
-            settings.headers,
-        ),
+        headers: EndpointHeaders::Basic {
+            login: Credential::explicit_or_env(settings.login, LOGIN_ENV_VAR, "DataForSEO login"),
+            password: Credential::explicit_or_env(
+                settings.password,
+                PASSWORD_ENV_VAR,
+                "DataForSEO password",
+            ),
+            user: settings.headers,
+        },
         fetch: settings.fetch,
     })
 }
@@ -180,7 +152,7 @@ pub fn dataforseo() -> &'static DataforseoProvider {
 pub struct DataforseoProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: EndpointHeaders,
     fetch: Option<FetchFunction>,
 }
 
@@ -191,7 +163,6 @@ impl DataforseoProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            None,
         )
     }
 

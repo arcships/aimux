@@ -238,7 +238,7 @@ impl TranscriptionModel for GoogleTranscriptionModel {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let response = aimux_provider_utils::post_json_to_api(
             exchange.request(exchange.url("/interactions"), options),
-            exchange.transform_body(body),
+            body,
             aimux_provider_utils::create_json_response_handler::<InteractionsResponse>(),
             super::google_failed_response_handler(),
         )

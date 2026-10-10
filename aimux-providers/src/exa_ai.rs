@@ -19,9 +19,9 @@ use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{AuthScheme, Credential, EndpointConfig, credential_headers};
+use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
 
 fn exa_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -104,7 +104,7 @@ pub fn create_exa_ai(settings: ExaAiProviderSettings) -> Result<ExaAiProvider, A
     Ok(ExaAiProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: credential_headers(
+        headers: ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Exa AI"),
             AuthScheme::Header("x-api-key"),
             Vec::new(),
@@ -130,7 +130,7 @@ pub fn exa_ai() -> &'static ExaAiProvider {
 pub struct ExaAiProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
@@ -141,7 +141,6 @@ impl ExaAiProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            None,
         )
     }
 

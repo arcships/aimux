@@ -9,8 +9,7 @@
 //! What is fixed when the provider is created, and what is not:
 //!
 //! - The explicit settings (`name`, `base_url`, `headers`, `query_params`,
-//!   `fetch`, the capability flags, `transform_request_body`) are fixed in the
-//!   factory.
+//!   `fetch`, the capability flags) are fixed in the factory.
 //! - A non-empty `api_key` produces a bearer header. `None` or `""` sends
 //!   no `Authorization` header, which is what a local server wants.
 //!
@@ -35,9 +34,7 @@ mod types;
 
 pub use chat::OpenAICompatibleChatModel;
 pub use completion::OpenAICompatibleCompletionModel;
-pub use config::{
-    ConvertUsage, MetadataExtractor, StreamMetadataExtractor, SupportedUrlsFn, TransformRequestBody,
-};
+pub use config::ConvertUsage;
 pub use embedding::OpenAICompatibleEmbeddingModel;
 pub use image::OpenAICompatibleImageModel;
 
@@ -52,12 +49,10 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, validate_base_url,
-};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, provider_headers};
-use config::{BaseUrl, ChatDialect, ChatSettings, CompatModelConfig};
+use crate::shared::{AuthScheme, Credential, ProviderHeaders};
+use config::{BaseUrl, ChatSettings, CompatModelConfig};
 
 /// Settings of [`create_openai_compatible`] (the AI SDK's
 /// `OpenAICompatibleProviderSettings`).
@@ -85,14 +80,9 @@ pub struct OpenAICompatibleProviderSettings {
     /// Whether the chat endpoint accepts `json_schema` response formats; when
     /// not, a schema degrades to `json_object` with a warning.
     pub supports_structured_outputs: Option<bool>,
-    /// Rewrites each chat JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
-    /// Extracts metadata from chat responses and streaming chunks.
-    pub metadata_extractor: Option<Arc<dyn MetadataExtractor>>,
-    /// URL patterns supported by chat models, evaluated when requested.
-    pub supported_urls: Option<SupportedUrlsFn>,
-    /// Custom chat token accounting.
+    /// URL patterns supported by chat models.
+    pub supported_urls: Option<SupportedUrls>,
+    /// How chat token usage is read; the generic OpenAI shape by default.
     pub convert_usage: Option<ConvertUsage>,
 }
 
@@ -114,13 +104,8 @@ impl std::fmt::Debug for OpenAICompatibleProviderSettings {
                 "supports_structured_outputs",
                 &self.supports_structured_outputs,
             )
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
-            .field("metadata_extractor", &self.metadata_extractor.is_some())
             .field("supported_urls", &self.supported_urls.is_some())
-            .field("convert_usage", &self.convert_usage.is_some())
+            .field("convert_usage", &self.convert_usage)
             .finish()
     }
 }
@@ -138,53 +123,31 @@ pub fn create_openai_compatible(
     let base_url = validate_base_url(&settings.base_url)?;
     let credential = settings
         .api_key
-        .clone()
         .filter(|key| !key.is_empty())
         .map_or(Credential::None, |key| {
             Credential::Explicit(Resolvable::Value(key))
         });
-    let user_headers = settings.headers.clone();
-    let mut provider = OpenAICompatibleProvider::assemble(Assembly {
+    let defaults = ChatSettings::default();
+    OpenAICompatibleProvider::assemble(Assembly {
         name: settings.name,
         base_url: BaseUrl::Fixed(base_url),
-        credential: credential.clone(),
+        credential,
         fixed_headers: Vec::new(),
         headers: settings.headers,
         query_params: settings.query_params,
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
-        profile: ChatProfile {
+        chat: ChatSettings {
             include_usage: settings.include_usage.unwrap_or(false),
             supports_structured_outputs: settings.supports_structured_outputs.unwrap_or(false),
-            dialect: ChatDialect::baseline(),
+            supported_urls: settings.supported_urls.unwrap_or_default(),
+            convert_usage: settings.convert_usage.unwrap_or_default(),
+            ..defaults
         },
-    })?;
-    let dialect = Arc::make_mut(&mut provider.chat.dialect);
-    dialect.metadata_extractor = settings.metadata_extractor;
-    dialect.supported_urls = settings.supported_urls;
-    dialect.convert_usage = settings.convert_usage;
-    let headers = compatible_headers(credential, user_headers);
-    provider.headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
-        headers,
-        "openai-compatible",
-        "3.0.59",
-    );
-    Ok(provider)
-}
-
-/// The chat-endpoint behavior of a compatible vendor: the capability flags the
-/// public settings expose, and the [`ChatDialect`] they cannot. A vendor
-/// package or preset supplies its own; the public factory uses the AI SDK
-/// baseline.
-#[derive(Clone)]
-pub(crate) struct ChatProfile {
-    pub include_usage: bool,
-    pub supports_structured_outputs: bool,
-    pub dialect: ChatDialect,
+    })
 }
 
 /// Everything a compatible provider is made of. The public factory fills it
-/// from the settings; vendor packages and presets fill it themselves.
+/// from the settings; presets fill it from their registry row.
 pub(crate) struct Assembly {
     pub name: String,
     pub base_url: BaseUrl,
@@ -194,8 +157,7 @@ pub(crate) struct Assembly {
     pub headers: Option<HeaderMapOpt>,
     pub query_params: Option<HashMap<String, String>>,
     pub fetch: Option<FetchFunction>,
-    pub transform_request_body: Option<TransformRequestBody>,
-    pub profile: ChatProfile,
+    pub chat: ChatSettings,
 }
 
 /// An OpenAI-compatible provider (the AI SDK's `OpenAICompatibleProvider`).
@@ -204,58 +166,31 @@ pub struct OpenAICompatibleProvider {
     name: String,
     base_url: BaseUrl,
     query_params: Option<Arc<Vec<(String, String)>>>,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
     chat: ChatSettings,
-}
-
-fn compatible_headers(credential: Credential, user: Option<HeaderMapOpt>) -> HeadersFn {
-    Resolvable::from_async_fn(move || {
-        let credential = credential.clone();
-        let user = user.clone();
-        async move {
-            let mut headers = HeaderMapOpt::new();
-            if let Some(key) = credential.secret().await?.filter(|key| !key.is_empty()) {
-                headers.insert("Authorization".into(), Some(format!("Bearer {key}")));
-            }
-            Ok(match user {
-                Some(user) => combine_headers(&[&headers, &user]),
-                None => headers,
-            })
-        }
-    })
 }
 
 impl OpenAICompatibleProvider {
     pub(crate) fn assemble(assembly: Assembly) -> Result<Self, AiMuxError> {
-        let name = assembly.name;
         let query_params = assembly.query_params.map(|params| {
             let mut pairs: Vec<(String, String)> = params.into_iter().collect();
             pairs.sort();
             Arc::new(pairs)
         });
         Ok(Self {
-            name,
+            name: assembly.name,
             base_url: assembly.base_url,
             query_params,
-            headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-                provider_headers(
-                    assembly.credential,
-                    assembly.fixed_headers,
-                    assembly.headers,
-                ),
-                "openai-compatible",
-                "3.0.59",
-            ),
-            fetch: assembly.fetch,
-            transform_request_body: assembly.transform_request_body,
-            chat: ChatSettings {
-                include_usage: assembly.profile.include_usage,
-                supports_structured_outputs: assembly.profile.supports_structured_outputs,
-                supported_urls: SupportedUrls::default(),
-                dialect: Arc::new(assembly.profile.dialect),
+            headers: ProviderHeaders {
+                credential: assembly.credential,
+                scheme: AuthScheme::Bearer,
+                fixed: assembly.fixed_headers,
+                user: assembly.headers,
+                user_agent: Some(("openai-compatible", "3.0.59")),
             },
+            fetch: assembly.fetch,
+            chat: assembly.chat,
         })
     }
 
@@ -266,11 +201,6 @@ impl OpenAICompatibleProvider {
             query_params: self.query_params.clone(),
             headers: self.headers.clone(),
             fetch: self.fetch.clone(),
-            transform_request_body: if method == "chat" {
-                self.transform_request_body.clone()
-            } else {
-                None
-            },
             chat: self.chat.clone(),
         }
     }

@@ -135,13 +135,11 @@ impl ImageModel for OpenAIImageModel {
             // ── Generation path: JSON body ──
             validate_image_options(&options.provider_options, false)?;
             let openai_options = parse_generation_provider_options(&options.provider_options);
-            let body = self
-                .config
-                .transform_body(Value::Object(build_generation_body(
-                    &self.model_id,
-                    options,
-                    &openai_options,
-                )));
+            let body = Value::Object(build_generation_body(
+                &self.model_id,
+                options,
+                &openai_options,
+            ));
 
             let resp = aimux_provider_utils::post_json_to_api(
                 self.config

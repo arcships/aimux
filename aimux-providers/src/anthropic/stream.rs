@@ -24,14 +24,17 @@ use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 use aimux_core::types::{ProviderMetadata, Warning};
-use aimux_provider_utils::HttpRequest;
+use aimux_provider_utils::{HttpRequest, TransformStreamController, Transformer, pipe_through};
 use serde_json::{Value, json};
 
 use super::config::AnthropicModelConfig;
 use super::convert::parse_stop_reason;
 use super::options::CANONICAL;
 use super::tool_name_mapping::ToolNameMapping;
-use super::types::{AnthropicResponse, ContentBlock, StreamErrorData, StreamEvent, ToolCallCaller};
+use super::types::{
+    AnthropicResponse, AnthropicUsage, ContentBlock, DeltaBlock, MessageDeltaBody,
+    MessageStartData, StreamErrorData, StreamEvent, ToolCallCaller,
+};
 
 pub(crate) fn anthropic_stream_error(
     error: &StreamErrorData,
@@ -364,7 +367,7 @@ pub(crate) fn stream_parts_for_result_block(
     names: &ToolNameMapping,
     mcp_tool_calls: &HashMap<String, (String, String)>,
     server_tool_calls: &HashMap<String, String>,
-    generate_id: &(dyn Fn() -> String + Send + Sync),
+    generate_id: aimux_provider_utils::IdGenerator,
 ) -> Vec<StreamPart> {
     let caller = match block {
         ContentBlock::WebSearchToolResult { caller, .. }
@@ -534,7 +537,7 @@ pub(crate) struct CitationDocument {
 fn citation_source(
     citation: &Value,
     documents: &[CitationDocument],
-    generate_id: &(dyn Fn() -> String + Send + Sync),
+    generate_id: aimux_provider_utils::IdGenerator,
 ) -> Option<Source> {
     match citation["type"].as_str()? {
         "web_search_result_location" => Some(Source::Url {
@@ -617,7 +620,7 @@ pub(crate) fn parse_anthropic_content(
     names: &ToolNameMapping,
     uses_json_response_tool: bool,
     mut citation_documents: Vec<CitationDocument>,
-    generate_id: &(dyn Fn() -> String + Send + Sync),
+    generate_id: aimux_provider_utils::IdGenerator,
 ) -> Vec<GenerateContent> {
     let options_name = CANONICAL;
     let mut content = Vec::new();
@@ -976,7 +979,7 @@ pub(crate) async fn anthropic_generate_core(
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
     citation_documents: Vec<CitationDocument>,
-    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
+    generate_id: aimux_provider_utils::IdGenerator,
 ) -> Result<GenerateResult, AiMuxError> {
     let resp = aimux_provider_utils::post_json_to_api(
         request,
@@ -1000,7 +1003,7 @@ pub(crate) async fn anthropic_generate_core(
         tool_names,
         uses_json_response_tool,
         citation_documents,
-        generate_id.as_ref(),
+        generate_id,
     );
 
     let mut finish_reason = data
@@ -1092,8 +1095,8 @@ pub(crate) async fn anthropic_stream_core(
     tool_names: ToolNameMapping,
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
-    mut citation_documents: Vec<CitationDocument>,
-    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
+    citation_documents: Vec<CitationDocument>,
+    generate_id: aimux_provider_utils::IdGenerator,
 ) -> Result<StreamResult, AiMuxError> {
     let endpoint = request.url.clone();
     let options_name = config.provider_options_name.clone();
@@ -1119,465 +1122,40 @@ pub(crate) async fn anthropic_stream_core(
             response_headers,
         ));
     }
-    let stream_error_url = endpoint;
-    let stream_request_body = body.clone();
-    let stream_response_headers = response_headers.clone();
 
-    let stream = async_stream::stream! {
-        // First part: StreamStart.
-        yield Ok(StreamPart::StreamStart { warnings });
-
-        let mut sse = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
-        let mut blocks: HashMap<usize, BlockState> = HashMap::new();
-        let mut is_json_response_from_tool = false;
-        let mut final_usage = Usage::default();
-        let mut final_finish_reason: Option<FinishReason> = None;
-        // Result-level providerMetadata: the raw usage (`message_start`'s,
-        // updated by every `message_delta`'s), the stop sequence, the
-        // container and the context-management edits.
-        let mut raw_usage = Value::Object(serde_json::Map::new());
-        let mut effective_usage = raw_usage.clone();
-        let mut stop_sequence: Option<String> = None;
-        let mut container: Option<Value> = None;
-        let mut context_management: Option<Value> = None;
-        let mut stop_details: Option<Value> = None;
-        let mut input_transformations: Option<Value> = None;
-        let mut safeguard_results: Option<Value> = None;
-        let mut response_meta_emitted = false;
-        let mut active_message_id: Option<String> = None;
-        let mut message_stopped = false;
-
-        // id → (tool name, server name), so `mcp_tool_result` can inherit them
-        // from the `mcp_tool_use` it answers.
-        let mut mcp_tool_calls: HashMap<String, (String, String)> = HashMap::new();
-        // tool_use_id → provider tool name. Both tool-search variants share
-        // one result block type, so the id is required to disambiguate aliases.
-        let mut server_tool_calls: HashMap<String, String> = HashMap::new();
-
-        while let Some(event) = sse.next().await {
-            match event {
-                Ok(stream_event) => {
-                    match stream_event {
-                        StreamEvent::MessageStart { message } => {
-                            if let Some(active_id) = &active_message_id {
-                                if active_id == &message.id {
-                                    continue;
-                                }
-                                yield Ok(StreamPart::Error {
-                                    error: AiMuxError::InvalidResponseData(format!(
-                                        "Received message_start for message {:?} while message {:?} is still open.",
-                                        message.id, active_id,
-                                    )),
-                                });
-                                return;
-                            }
-                            active_message_id = Some(message.id.clone());
-                            input_transformations = message.input_transformations.or(input_transformations);
-                            container = message.container.or(container);
-                            if let Some(reason) = message.stop_reason.as_deref() {
-                                final_finish_reason = Some(parse_stop_reason(reason));
-                            }
-                            if let Some(usage) = &message.usage {
-                                // RFC-0015 P0-2: full input side incl. cache
-                                // fields + raw (Anthropic reports cache only
-                                // in message_start).
-                                final_usage = super::usage::usage_from_anthropic(usage);
-                                raw_usage = serde_json::to_value(usage).unwrap_or(raw_usage);
-                                effective_usage = raw_usage.clone();
-                            }
-                            if !response_meta_emitted {
-                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
-                                    id: Some(message.id.clone()),
-                                    timestamp: None,
-                                    model_id: Some(message.model.clone()),
-                                }));
-                                response_meta_emitted = true;
-                            }
-                        }
-                        StreamEvent::ContentBlockStart { index, content_block } => {
-                            match content_block {
-                                ContentBlock::Text { .. } if uses_json_response_tool => {}
-                                ContentBlock::Text { .. } => {
-                                    blocks.insert(index, BlockState::Text { citations: Vec::new() });
-                                    yield Ok(StreamPart::TextStart { id: index.to_string(), provider_metadata: None });
-                                }
-                                ContentBlock::Compaction { content, signature } => {
-                                    blocks.insert(index, BlockState::Text { citations: Vec::new() });
-                                    yield Ok(StreamPart::TextStart { id: index.to_string(), provider_metadata: Some(compaction_metadata(signature.as_deref())) });
-                                    if signature.is_some()
-                                        && let Some(text) = content.filter(|text| !text.is_empty()) {
-                                            yield Ok(StreamPart::TextDelta { id: index.to_string(), delta: text, provider_metadata: None });
-                                        }
-                                }
-                                ContentBlock::Thinking { .. } => {
-                                    yield Ok(StreamPart::ReasoningStart { id: index.to_string(), provider_metadata: None });
-                                    blocks.insert(
-                                        index,
-                                        BlockState::Thinking,
-                                    );
-                                }
-                                ContentBlock::ToolUse { name, .. } if uses_json_response_tool && name == "json" => {
-                                    is_json_response_from_tool = true;
-                                    blocks.insert(index, BlockState::Text { citations: Vec::new() });
-                                    yield Ok(StreamPart::TextStart { id: index.to_string(), provider_metadata: None });
-                                }
-                                ContentBlock::ToolUse {
-                                    id,
-                                    name,
-                                    input,
-                                    toolset_name,
-                                    caller,
-                                } => {
-                                    let custom_name = toolset_name.as_deref().map_or_else(
-                                        || name.clone(),
-                                        |name| tool_names.to_custom_tool_name(name).to_string(),
-                                    );
-                                    let initial_input = initial_tool_input(&input);
-                                    yield Ok(StreamPart::ToolInputStart {
-                                        id: id.clone(),
-                                        tool_name: custom_name.clone(),
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        title: None,
-                                        provider_metadata: None,
-                                    });
-                                    blocks.insert(index, BlockState::ToolUse {
-                                        id,
-                                        name: custom_name,
-                                        first_delta: initial_input.is_empty(),
-                                        accumulated_json: initial_input,
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        provider_tool_name: None,
-                                        provider_tool_input_type: None,
-                                        provider_metadata: tool_call_metadata(caller.as_ref(), toolset_name.as_deref(), CANONICAL),
-                                        toolset_member_name: toolset_name.map(|_| name),
-                                    });
-                                }
-                                // Server-side tool use follows the same input
-                                // lifecycle as client tools because some code
-                                // execution inputs arrive entirely via deltas.
-                                ContentBlock::ServerToolUse { id, name, input, caller } => {
-                                    if is_tool_search_provider_name(&name) {
-                                        server_tool_calls.insert(id.clone(), name.clone());
-                                    }
-                                    let provider_name = server_tool_provider_name(&name);
-                                    let custom_name = tool_names
-                                        .to_custom_tool_name(provider_name)
-                                        .to_string();
-                                    let dynamic = (provider_name == "code_execution"
-                                        && tool_names.mark_code_execution_dynamic())
-                                    .then_some(true);
-                                    let initial_input = initial_tool_input(&input);
-                                    yield Ok(StreamPart::ToolInputStart {
-                                        id: id.clone(),
-                                        tool_name: custom_name.clone(),
-                                        provider_executed: Some(true),
-                                        dynamic,
-                                        title: None,
-                                        provider_metadata: None,
-                                    });
-                                    blocks.insert(index, BlockState::ToolUse {
-                                        id,
-                                        name: custom_name,
-                                        first_delta: initial_input.is_empty(),
-                                        accumulated_json: initial_input,
-                                        provider_executed: Some(true),
-                                        dynamic,
-                                        provider_tool_name: Some(provider_name.to_string()),
-                                        provider_tool_input_type: match name.as_str() {
-                                            "text_editor_code_execution" | "bash_code_execution" => {
-                                                Some(name)
-                                            }
-                                            "code_execution" => {
-                                                Some("programmatic-tool-call".to_string())
-                                            }
-                                            _ => None,
-                                        },
-                                        provider_metadata: tool_call_caller_metadata(caller.as_ref(), CANONICAL),
-                                        toolset_member_name: None,
-                                    });
-                                }
-                                // MCP tool use — provider-executed + dynamic.
-                                ContentBlock::McpToolUse { id, name, input, server_name } => {
-                                    mcp_tool_calls
-                                        .insert(id.clone(), (name.clone(), server_name.clone()));
-                                    yield Ok(StreamPart::ToolCall(RawToolCall {
-                                        tool_call_id: id.clone(),
-                                        tool_name: name.clone(),
-                                        input: input.to_string(),
-                                        provider_executed: Some(true),
-                                        dynamic: Some(true),
-                                        provider_metadata: Some(provider_namespace(CANONICAL, json!({
-                                                "type": "mcp-tool-use",
-                                                "serverName": server_name,
-                                            })).expect("provider metadata must be an object")),
-                                    }));
-                                }
-                                // Redacted thinking — emit as ReasoningStart.
-                                ContentBlock::RedactedThinking { data } => {
-                                    let id = index.to_string();
-                                    yield Ok(StreamPart::ReasoningStart {
-                                        id: id.clone(),
-                                        provider_metadata: Some(provider_namespace(CANONICAL, json!({ "redactedData": data })).expect("provider metadata must be an object")),
-                                    });
-                                    blocks.insert(
-                                        index,
-                                        BlockState::Thinking,
-                                    );
-                                }
-                                // Server-tool result blocks arrive whole on
-                                // `content_block_start`, so they reuse the
-                                // non-streaming payload mapping. Upstream
-                                // mirrors its `doGenerate` switch here too
-                                // (anthropic-language-model.ts:1901-2178).
-                                other => {
-                                    if let ContentBlock::WebFetchToolResult { content, .. } = &other
-                                        && let Some(document) = web_fetch_document(content) {
-                                        citation_documents.push(document);
-                                    }
-                                    for part in stream_parts_for_result_block(
-                                        CANONICAL,
-                                        &other,
-                                        &tool_names,
-                                        &mcp_tool_calls,
-                                        &server_tool_calls,
-                                        generate_id.as_ref(),
-                                    ) {
-                                        yield Ok(part);
-                                    }
-                                }
-                            }
-                        }
-                        StreamEvent::ContentBlockDelta { index, delta } => {
-                            if !uses_json_response_tool && let Some(text) = delta.text {
-                                yield Ok(StreamPart::TextDelta {
-                                    id: index.to_string(),
-                                    delta: text,
-                                    provider_metadata: None,
-                                });
-                            }
-                            if let Some(text) = delta.content {
-                                yield Ok(StreamPart::TextDelta { id: index.to_string(), delta: text, provider_metadata: None });
-                            }
-                            if let Some(citation) = delta.citation {
-                                if let Some(BlockState::Text { citations }) = blocks.get_mut(&index) {
-                                    citations.push(citation.clone());
-                                }
-                                if let Some(source) = citation_source(&citation, &citation_documents, generate_id.as_ref()) {
-                                    yield Ok(StreamPart::Source(source));
-                                }
-                            }
-                            if let Some(partial) = delta.partial_json {
-                                // Accumulate the partial JSON fragment and emit
-                                // a ToolInputDelta. Empty fragments (the
-                                // leading `input_json_delta` with
-                                // `partial_json: ""`) are skipped, matching the
-                                // TS SDK.
-                                if is_json_response_from_tool && matches!(blocks.get(&index), Some(BlockState::Text { .. })) && !partial.is_empty() {
-                                    yield Ok(StreamPart::TextDelta { id: index.to_string(), delta: partial, provider_metadata: None });
-                                    continue;
-                                }
-                                if is_json_response_from_tool { continue; }
-                                let delta_event: Option<(String, String)> =
-                                    match blocks.get_mut(&index) {
-                                        Some(BlockState::ToolUse {
-                                                id,
-                                                accumulated_json,
-                                                provider_tool_input_type,
-                                                first_delta,
-                                                toolset_member_name,
-                                                ..
-                                            }) if !partial.is_empty() => {
-                                            let emitted_delta = if *first_delta {
-                                                if let Some(input_type) = provider_tool_input_type {
-                                                    format!(
-                                                        "{{\"type\": \"{input_type}\",{}",
-                                                        partial.strip_prefix('{').unwrap_or(&partial)
-                                                    )
-                                                } else {
-                                                    partial
-                                                }
-                                            } else {
-                                                partial
-                                            };
-                                            accumulated_json.push_str(&emitted_delta);
-                                            *first_delta = false;
-                                            toolset_member_name.is_none().then(|| (id.clone(), emitted_delta))
-                                        }
-                                        _ => None,
-                                    };
-                                if let Some((id, delta)) = delta_event {
-                                    yield Ok(StreamPart::ToolInputDelta {
-                                        id,
-                                        delta,
-                                        provider_metadata: None,
-                                    });
-                                }
-                            }
-                            if let Some(thinking) = delta.thinking {
-                                yield Ok(StreamPart::ReasoningDelta {
-                                    id: index.to_string(),
-                                    delta: thinking,
-                                    provider_metadata: None,
-                                });
-                            }
-                            if let Some(sig) = delta.signature
-                                && let Some(BlockState::Thinking) = blocks.get(&index) {
-                                    yield Ok(StreamPart::ReasoningDelta {
-                                        id: index.to_string(), delta: String::new(),
-                                        provider_metadata: Some(provider_namespace(CANONICAL, json!({ "signature": sig })).expect("provider metadata must be an object")),
-                                    });
-                                }
-                        }
-                        StreamEvent::ContentBlockStop { index } => {
-                            // Removing the block releases the borrow before any
-                            // yield.
-                            if let Some(state) = blocks.remove(&index) {
-                                match state {
-                                    BlockState::Text { citations } => {
-                                        yield Ok(StreamPart::TextEnd {
-                                            id: index.to_string(),
-                                            provider_metadata: citation_metadata(&citations),
-                                        });
-                                    }
-                                    BlockState::Thinking => {
-                                        yield Ok(StreamPart::ReasoningEnd {
-                                            id: index.to_string(),
-                                            provider_metadata: None,
-                                        });
-                                    }
-                                    BlockState::ToolUse {
-                                        id,
-                                        name,
-                                        mut accumulated_json,
-                                        provider_executed,
-                                        dynamic,
-                                        provider_tool_name,
-                                        provider_tool_input_type,
-                                        provider_metadata,
-                                        toolset_member_name,
-                                        ..
-                                    } => {
-                                        if let Some(member_name) = toolset_member_name {
-                                            let parsed = if accumulated_json.is_empty() {
-                                                Ok(json!({}))
-                                            } else {
-                                                serde_json::from_str::<Value>(&accumulated_json)
-                                            };
-                                            if let Ok(input) = parsed {
-                                                accumulated_json = toolset_member_input(&member_name, &input).to_string();
-                                            }
-                                            yield Ok(StreamPart::ToolInputDelta {
-                                                id: id.clone(),
-                                                delta: accumulated_json.clone(),
-                                                provider_metadata: None,
-                                            });
-                                        }
-                                        yield Ok(StreamPart::ToolInputEnd {
-                                            id: id.clone(),
-                                            provider_metadata: None,
-                                        });
-                                        let input =
-                                            finalize_streamed_tool_input(
-                                                accumulated_json,
-                                                provider_tool_name.as_deref(),
-                                                provider_tool_input_type.as_deref(),
-                                            );
-                                        yield Ok(StreamPart::ToolCall(RawToolCall {
-                                            tool_call_id: id,
-                                            tool_name: name,
-                                            input,
-                                            provider_executed,
-                                            dynamic,
-                                            provider_metadata,
-                                        }));
-                                    }
-                                }
-                            }
-                        }
-                        StreamEvent::MessageDelta { delta, usage, context_management: edits, input_transformations: transformations } => {
-                            if let Some(reason) = delta.stop_reason {
-                                final_finish_reason = Some(parse_stop_reason(&reason));
-                            }
-                            stop_sequence = delta.stop_sequence;
-                            container = delta.container;
-                            context_management = edits.or(context_management);
-                            stop_details = delta.stop_details;
-                            input_transformations = transformations.or(input_transformations);
-                            safeguard_results = delta.safeguard_results.or(safeguard_results);
-                            if let Some(u) = usage {
-                                if let (Value::Object(raw), Ok(Value::Object(update))) =
-                                    (&mut raw_usage, serde_json::to_value(&u))
-                                {
-                                    if let Value::Object(effective) = &mut effective_usage {
-                                        effective.extend(update.iter().filter(|(_, value)| !value.is_null()).map(|(key, value)| (key.clone(), value.clone())));
-                                    }
-                                    raw.extend(update);
-                                }
-                                if let Ok(usage) = serde_json::from_value(effective_usage.clone()) {
-                                    final_usage = super::usage::usage_from_anthropic(&usage);
-                                    final_usage.raw = raw_usage.as_object().cloned();
-                                }
-                            }
-                        }
-                        StreamEvent::MessageStop => {
-                            message_stopped = true;
-                            break;
-                        },
-                        StreamEvent::Error { error } => {
-                            yield Ok(StreamPart::Error {
-                                error: anthropic_stream_error(
-                                    &error,
-                                    &stream_error_url,
-                                    stream_request_body.clone(),
-                                    stream_response_headers.clone(),
-                                ),
-                            });
-
-                        }
-                        _ => {}
-                    }
-                }
-                Err(error) => {
-                    let recoverable = error.is_recoverable_stream_error();
-                    yield Ok(StreamPart::Error { error });
-                    if !recoverable {
-                        return;
-                    }
-                }
-            }
-        }
-
-        // The provider completes a message explicitly; EOF after an error
-        // does not synthesize a finish event.
-        if !message_stopped {
-            return;
-        }
-        if is_json_response_from_tool && let Some(reason) = &mut final_finish_reason
-            && reason.unified == FinishReasonUnified::ToolCalls {
-            reason.unified = FinishReasonUnified::Stop;
-        }
-        yield Ok(StreamPart::Finish {
-            finish_reason: final_finish_reason.unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            }),
-            usage: final_usage,
-            provider_metadata: Some({
-                let mut metadata = super::usage::result_provider_metadata(
-                    options_name.as_str(),
-                                &raw_usage,
-                    stop_sequence.as_deref(),
-                    container.as_ref(),
-                    context_management.as_ref(),
-                    used_custom_options_key,
-                );
-                super::usage::extend_result_metadata(&mut metadata, stop_details.as_ref(), input_transformations.as_ref(), safeguard_results.as_ref());
-                metadata
-            }),
-        });
-    };
+    let raw_usage = Value::Object(serde_json::Map::new());
+    let stream = pipe_through(
+        futures::stream::iter(first_event).chain(sse_stream),
+        AnthropicMessagesStream {
+            warnings,
+            stream_error_url: endpoint,
+            stream_request_body: body.clone(),
+            stream_response_headers: response_headers.clone(),
+            options_name,
+            tool_names,
+            used_custom_options_key,
+            uses_json_response_tool,
+            citation_documents,
+            generate_id,
+            blocks: HashMap::new(),
+            is_json_response_from_tool: false,
+            final_usage: Usage::default(),
+            final_finish_reason: None,
+            effective_usage: raw_usage.clone(),
+            raw_usage,
+            stop_sequence: None,
+            container: None,
+            context_management: None,
+            stop_details: None,
+            input_transformations: None,
+            safeguard_results: None,
+            response_meta_emitted: false,
+            active_message_id: None,
+            message_stopped: false,
+            mcp_tool_calls: HashMap::new(),
+            server_tool_calls: HashMap::new(),
+        },
+    );
 
     Ok(StreamResult {
         stream: Box::pin(stream),
@@ -1586,4 +1164,622 @@ pub(crate) async fn anthropic_stream_core(
             headers: Some(response_headers),
         }),
     })
+}
+
+/// The `TransformStream` of `AnthropicMessagesLanguageModel.doStream`.
+struct AnthropicMessagesStream {
+    warnings: Vec<Warning>,
+    stream_error_url: String,
+    stream_request_body: Value,
+    stream_response_headers: HashMap<String, String>,
+    options_name: String,
+    tool_names: ToolNameMapping,
+    used_custom_options_key: bool,
+    uses_json_response_tool: bool,
+    citation_documents: Vec<CitationDocument>,
+    generate_id: aimux_provider_utils::IdGenerator,
+    blocks: HashMap<usize, BlockState>,
+    is_json_response_from_tool: bool,
+    final_usage: Usage,
+    final_finish_reason: Option<FinishReason>,
+    /// Result-level providerMetadata: the raw usage (`message_start`'s,
+    /// updated by every `message_delta`'s), the stop sequence, the
+    /// container and the context-management edits.
+    raw_usage: Value,
+    effective_usage: Value,
+    stop_sequence: Option<String>,
+    container: Option<Value>,
+    context_management: Option<Value>,
+    stop_details: Option<Value>,
+    input_transformations: Option<Value>,
+    safeguard_results: Option<Value>,
+    response_meta_emitted: bool,
+    active_message_id: Option<String>,
+    /// Set by `message_stop`; later events are ignored and only then does
+    /// `flush` emit the finish part.
+    message_stopped: bool,
+    /// id → (tool name, server name), so `mcp_tool_result` can inherit them
+    /// from the `mcp_tool_use` it answers.
+    mcp_tool_calls: HashMap<String, (String, String)>,
+    /// tool_use_id → provider tool name. Both tool-search variants share
+    /// one result block type, so the id is required to disambiguate aliases.
+    server_tool_calls: HashMap<String, String>,
+}
+
+impl AnthropicMessagesStream {
+    fn message_start(
+        &mut self,
+        message: MessageStartData,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        if let Some(active_id) = &self.active_message_id {
+            if active_id == &message.id {
+                return;
+            }
+            controller.enqueue(StreamPart::Error {
+                error: AiMuxError::InvalidResponseData(format!(
+                    "Received message_start for message {:?} while message {:?} is still open.",
+                    message.id, active_id,
+                )),
+            });
+            controller.terminate();
+            return;
+        }
+        self.active_message_id = Some(message.id.clone());
+        self.input_transformations = message
+            .input_transformations
+            .or(self.input_transformations.take());
+        self.container = message.container.or(self.container.take());
+        if let Some(reason) = message.stop_reason.as_deref() {
+            self.final_finish_reason = Some(parse_stop_reason(reason));
+        }
+        if let Some(usage) = &message.usage {
+            // RFC-0015 P0-2: full input side incl. cache
+            // fields + raw (Anthropic reports cache only
+            // in message_start).
+            self.final_usage = super::usage::usage_from_anthropic(usage);
+            if let Ok(raw_usage) = serde_json::to_value(usage) {
+                self.raw_usage = raw_usage;
+            }
+            self.effective_usage = self.raw_usage.clone();
+        }
+        if !self.response_meta_emitted {
+            controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
+                id: Some(message.id.clone()),
+                timestamp: None,
+                model_id: Some(message.model.clone()),
+            }));
+            self.response_meta_emitted = true;
+        }
+    }
+
+    fn content_block_start(
+        &mut self,
+        index: usize,
+        content_block: ContentBlock,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        match content_block {
+            ContentBlock::Text { .. } if self.uses_json_response_tool => {}
+            ContentBlock::Text { .. } => {
+                self.blocks.insert(
+                    index,
+                    BlockState::Text {
+                        citations: Vec::new(),
+                    },
+                );
+                controller.enqueue(StreamPart::TextStart {
+                    id: index.to_string(),
+                    provider_metadata: None,
+                });
+            }
+            ContentBlock::Compaction { content, signature } => {
+                self.blocks.insert(
+                    index,
+                    BlockState::Text {
+                        citations: Vec::new(),
+                    },
+                );
+                controller.enqueue(StreamPart::TextStart {
+                    id: index.to_string(),
+                    provider_metadata: Some(compaction_metadata(signature.as_deref())),
+                });
+                if signature.is_some()
+                    && let Some(text) = content.filter(|text| !text.is_empty())
+                {
+                    controller.enqueue(StreamPart::TextDelta {
+                        id: index.to_string(),
+                        delta: text,
+                        provider_metadata: None,
+                    });
+                }
+            }
+            ContentBlock::Thinking { .. } => {
+                controller.enqueue(StreamPart::ReasoningStart {
+                    id: index.to_string(),
+                    provider_metadata: None,
+                });
+                self.blocks.insert(index, BlockState::Thinking);
+            }
+            ContentBlock::ToolUse { name, .. }
+                if self.uses_json_response_tool && name == "json" =>
+            {
+                self.is_json_response_from_tool = true;
+                self.blocks.insert(
+                    index,
+                    BlockState::Text {
+                        citations: Vec::new(),
+                    },
+                );
+                controller.enqueue(StreamPart::TextStart {
+                    id: index.to_string(),
+                    provider_metadata: None,
+                });
+            }
+            ContentBlock::ToolUse {
+                id,
+                name,
+                input,
+                toolset_name,
+                caller,
+            } => {
+                let custom_name = toolset_name.as_deref().map_or_else(
+                    || name.clone(),
+                    |name| self.tool_names.to_custom_tool_name(name).to_string(),
+                );
+                let initial_input = initial_tool_input(&input);
+                controller.enqueue(StreamPart::ToolInputStart {
+                    id: id.clone(),
+                    tool_name: custom_name.clone(),
+                    provider_executed: None,
+                    dynamic: None,
+                    title: None,
+                    provider_metadata: None,
+                });
+                self.blocks.insert(
+                    index,
+                    BlockState::ToolUse {
+                        id,
+                        name: custom_name,
+                        first_delta: initial_input.is_empty(),
+                        accumulated_json: initial_input,
+                        provider_executed: None,
+                        dynamic: None,
+                        provider_tool_name: None,
+                        provider_tool_input_type: None,
+                        provider_metadata: tool_call_metadata(
+                            caller.as_ref(),
+                            toolset_name.as_deref(),
+                            CANONICAL,
+                        ),
+                        toolset_member_name: toolset_name.map(|_| name),
+                    },
+                );
+            }
+            // Server-side tool use follows the same input
+            // lifecycle as client tools because some code
+            // execution inputs arrive entirely via deltas.
+            ContentBlock::ServerToolUse {
+                id,
+                name,
+                input,
+                caller,
+            } => {
+                if is_tool_search_provider_name(&name) {
+                    self.server_tool_calls.insert(id.clone(), name.clone());
+                }
+                let provider_name = server_tool_provider_name(&name);
+                let custom_name = self
+                    .tool_names
+                    .to_custom_tool_name(provider_name)
+                    .to_string();
+                let dynamic = (provider_name == "code_execution"
+                    && self.tool_names.mark_code_execution_dynamic())
+                .then_some(true);
+                let initial_input = initial_tool_input(&input);
+                controller.enqueue(StreamPart::ToolInputStart {
+                    id: id.clone(),
+                    tool_name: custom_name.clone(),
+                    provider_executed: Some(true),
+                    dynamic,
+                    title: None,
+                    provider_metadata: None,
+                });
+                self.blocks.insert(
+                    index,
+                    BlockState::ToolUse {
+                        id,
+                        name: custom_name,
+                        first_delta: initial_input.is_empty(),
+                        accumulated_json: initial_input,
+                        provider_executed: Some(true),
+                        dynamic,
+                        provider_tool_name: Some(provider_name.to_string()),
+                        provider_tool_input_type: match name.as_str() {
+                            "text_editor_code_execution" | "bash_code_execution" => Some(name),
+                            "code_execution" => Some("programmatic-tool-call".to_string()),
+                            _ => None,
+                        },
+                        provider_metadata: tool_call_caller_metadata(caller.as_ref(), CANONICAL),
+                        toolset_member_name: None,
+                    },
+                );
+            }
+            // MCP tool use — provider-executed + dynamic.
+            ContentBlock::McpToolUse {
+                id,
+                name,
+                input,
+                server_name,
+            } => {
+                self.mcp_tool_calls
+                    .insert(id.clone(), (name.clone(), server_name.clone()));
+                controller.enqueue(StreamPart::ToolCall(RawToolCall {
+                    tool_call_id: id.clone(),
+                    tool_name: name.clone(),
+                    input: input.to_string(),
+                    provider_executed: Some(true),
+                    dynamic: Some(true),
+                    provider_metadata: Some(
+                        provider_namespace(
+                            CANONICAL,
+                            json!({
+                                "type": "mcp-tool-use",
+                                "serverName": server_name,
+                            }),
+                        )
+                        .expect("provider metadata must be an object"),
+                    ),
+                }));
+            }
+            // Redacted thinking — emit as ReasoningStart.
+            ContentBlock::RedactedThinking { data } => {
+                let id = index.to_string();
+                controller.enqueue(StreamPart::ReasoningStart {
+                    id: id.clone(),
+                    provider_metadata: Some(
+                        provider_namespace(CANONICAL, json!({ "redactedData": data }))
+                            .expect("provider metadata must be an object"),
+                    ),
+                });
+                self.blocks.insert(index, BlockState::Thinking);
+            }
+            // Server-tool result blocks arrive whole on
+            // `content_block_start`, so they reuse the
+            // non-streaming payload mapping. Upstream
+            // mirrors its `doGenerate` switch here too
+            // (anthropic-language-model.ts:1901-2178).
+            other => {
+                if let ContentBlock::WebFetchToolResult { content, .. } = &other
+                    && let Some(document) = web_fetch_document(content)
+                {
+                    self.citation_documents.push(document);
+                }
+                for part in stream_parts_for_result_block(
+                    CANONICAL,
+                    &other,
+                    &self.tool_names,
+                    &self.mcp_tool_calls,
+                    &self.server_tool_calls,
+                    self.generate_id,
+                ) {
+                    controller.enqueue(part);
+                }
+            }
+        }
+    }
+
+    fn content_block_delta(
+        &mut self,
+        index: usize,
+        delta: DeltaBlock,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        if !self.uses_json_response_tool
+            && let Some(text) = delta.text
+        {
+            controller.enqueue(StreamPart::TextDelta {
+                id: index.to_string(),
+                delta: text,
+                provider_metadata: None,
+            });
+        }
+        if let Some(text) = delta.content {
+            controller.enqueue(StreamPart::TextDelta {
+                id: index.to_string(),
+                delta: text,
+                provider_metadata: None,
+            });
+        }
+        if let Some(citation) = delta.citation {
+            if let Some(BlockState::Text { citations }) = self.blocks.get_mut(&index) {
+                citations.push(citation.clone());
+            }
+            if let Some(source) =
+                citation_source(&citation, &self.citation_documents, self.generate_id)
+            {
+                controller.enqueue(StreamPart::Source(source));
+            }
+        }
+        if let Some(partial) = delta.partial_json {
+            // Accumulate the partial JSON fragment and emit
+            // a ToolInputDelta. Empty fragments (the
+            // leading `input_json_delta` with
+            // `partial_json: ""`) are skipped, matching the
+            // TS SDK.
+            if self.is_json_response_from_tool
+                && matches!(self.blocks.get(&index), Some(BlockState::Text { .. }))
+                && !partial.is_empty()
+            {
+                controller.enqueue(StreamPart::TextDelta {
+                    id: index.to_string(),
+                    delta: partial,
+                    provider_metadata: None,
+                });
+                return;
+            }
+            if self.is_json_response_from_tool {
+                return;
+            }
+            let delta_event: Option<(String, String)> = match self.blocks.get_mut(&index) {
+                Some(BlockState::ToolUse {
+                    id,
+                    accumulated_json,
+                    provider_tool_input_type,
+                    first_delta,
+                    toolset_member_name,
+                    ..
+                }) if !partial.is_empty() => {
+                    let emitted_delta = if *first_delta {
+                        if let Some(input_type) = provider_tool_input_type {
+                            format!(
+                                "{{\"type\": \"{input_type}\",{}",
+                                partial.strip_prefix('{').unwrap_or(&partial)
+                            )
+                        } else {
+                            partial
+                        }
+                    } else {
+                        partial
+                    };
+                    accumulated_json.push_str(&emitted_delta);
+                    *first_delta = false;
+                    toolset_member_name
+                        .is_none()
+                        .then(|| (id.clone(), emitted_delta))
+                }
+                _ => None,
+            };
+            if let Some((id, delta)) = delta_event {
+                controller.enqueue(StreamPart::ToolInputDelta {
+                    id,
+                    delta,
+                    provider_metadata: None,
+                });
+            }
+        }
+        if let Some(thinking) = delta.thinking {
+            controller.enqueue(StreamPart::ReasoningDelta {
+                id: index.to_string(),
+                delta: thinking,
+                provider_metadata: None,
+            });
+        }
+        if let Some(sig) = delta.signature
+            && let Some(BlockState::Thinking) = self.blocks.get(&index)
+        {
+            controller.enqueue(StreamPart::ReasoningDelta {
+                id: index.to_string(),
+                delta: String::new(),
+                provider_metadata: Some(
+                    provider_namespace(CANONICAL, json!({ "signature": sig }))
+                        .expect("provider metadata must be an object"),
+                ),
+            });
+        }
+    }
+
+    fn content_block_stop(
+        &mut self,
+        index: usize,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        let Some(state) = self.blocks.remove(&index) else {
+            return;
+        };
+        match state {
+            BlockState::Text { citations } => {
+                controller.enqueue(StreamPart::TextEnd {
+                    id: index.to_string(),
+                    provider_metadata: citation_metadata(&citations),
+                });
+            }
+            BlockState::Thinking => {
+                controller.enqueue(StreamPart::ReasoningEnd {
+                    id: index.to_string(),
+                    provider_metadata: None,
+                });
+            }
+            BlockState::ToolUse {
+                id,
+                name,
+                mut accumulated_json,
+                provider_executed,
+                dynamic,
+                provider_tool_name,
+                provider_tool_input_type,
+                provider_metadata,
+                toolset_member_name,
+                ..
+            } => {
+                if let Some(member_name) = toolset_member_name {
+                    let parsed = if accumulated_json.is_empty() {
+                        Ok(json!({}))
+                    } else {
+                        serde_json::from_str::<Value>(&accumulated_json)
+                    };
+                    if let Ok(input) = parsed {
+                        accumulated_json = toolset_member_input(&member_name, &input).to_string();
+                    }
+                    controller.enqueue(StreamPart::ToolInputDelta {
+                        id: id.clone(),
+                        delta: accumulated_json.clone(),
+                        provider_metadata: None,
+                    });
+                }
+                controller.enqueue(StreamPart::ToolInputEnd {
+                    id: id.clone(),
+                    provider_metadata: None,
+                });
+                let input = finalize_streamed_tool_input(
+                    accumulated_json,
+                    provider_tool_name.as_deref(),
+                    provider_tool_input_type.as_deref(),
+                );
+                controller.enqueue(StreamPart::ToolCall(RawToolCall {
+                    tool_call_id: id,
+                    tool_name: name,
+                    input,
+                    provider_executed,
+                    dynamic,
+                    provider_metadata,
+                }));
+            }
+        }
+    }
+
+    fn message_delta(
+        &mut self,
+        delta: MessageDeltaBody,
+        usage: Option<AnthropicUsage>,
+        edits: Option<Value>,
+        transformations: Option<Value>,
+    ) {
+        if let Some(reason) = delta.stop_reason {
+            self.final_finish_reason = Some(parse_stop_reason(&reason));
+        }
+        self.stop_sequence = delta.stop_sequence;
+        self.container = delta.container;
+        self.context_management = edits.or(self.context_management.take());
+        self.stop_details = delta.stop_details;
+        self.input_transformations = transformations.or(self.input_transformations.take());
+        self.safeguard_results = delta.safeguard_results.or(self.safeguard_results.take());
+        if let Some(u) = usage {
+            if let (Value::Object(raw), Ok(Value::Object(update))) =
+                (&mut self.raw_usage, serde_json::to_value(&u))
+            {
+                if let Value::Object(effective) = &mut self.effective_usage {
+                    effective.extend(
+                        update
+                            .iter()
+                            .filter(|(_, value)| !value.is_null())
+                            .map(|(key, value)| (key.clone(), value.clone())),
+                    );
+                }
+                raw.extend(update);
+            }
+            if let Ok(usage) = serde_json::from_value(self.effective_usage.clone()) {
+                self.final_usage = super::usage::usage_from_anthropic(&usage);
+                self.final_usage.raw = self.raw_usage.as_object().cloned();
+            }
+        }
+    }
+}
+
+impl Transformer for AnthropicMessagesStream {
+    type Input = Result<StreamEvent, AiMuxError>;
+    type Output = StreamPart;
+
+    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+        // First part: StreamStart.
+        controller.enqueue(StreamPart::StreamStart {
+            warnings: std::mem::take(&mut self.warnings),
+        });
+    }
+
+    fn transform(
+        &mut self,
+        event: Result<StreamEvent, AiMuxError>,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        if self.message_stopped {
+            return;
+        }
+        let stream_event = match event {
+            Ok(stream_event) => stream_event,
+            Err(error) => {
+                let recoverable = error.is_recoverable_stream_error();
+                controller.enqueue(StreamPart::Error { error });
+                if !recoverable {
+                    controller.terminate();
+                }
+                return;
+            }
+        };
+        match stream_event {
+            StreamEvent::MessageStart { message } => self.message_start(message, controller),
+            StreamEvent::ContentBlockStart {
+                index,
+                content_block,
+            } => self.content_block_start(index, content_block, controller),
+            StreamEvent::ContentBlockDelta { index, delta } => {
+                self.content_block_delta(index, delta, controller);
+            }
+            StreamEvent::ContentBlockStop { index } => self.content_block_stop(index, controller),
+            StreamEvent::MessageDelta {
+                delta,
+                usage,
+                context_management: edits,
+                input_transformations: transformations,
+            } => self.message_delta(delta, usage, edits, transformations),
+            StreamEvent::MessageStop => self.message_stopped = true,
+            StreamEvent::Error { error } => {
+                controller.enqueue(StreamPart::Error {
+                    error: anthropic_stream_error(
+                        &error,
+                        &self.stream_error_url,
+                        self.stream_request_body.clone(),
+                        self.stream_response_headers.clone(),
+                    ),
+                });
+            }
+            StreamEvent::Other => {}
+        }
+    }
+
+    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+        // The provider completes a message explicitly; EOF after an error
+        // does not synthesize a finish event.
+        if !self.message_stopped {
+            return;
+        }
+        if self.is_json_response_from_tool
+            && let Some(reason) = &mut self.final_finish_reason
+            && reason.unified == FinishReasonUnified::ToolCalls
+        {
+            reason.unified = FinishReasonUnified::Stop;
+        }
+        let mut metadata = super::usage::result_provider_metadata(
+            self.options_name.as_str(),
+            &self.raw_usage,
+            self.stop_sequence.as_deref(),
+            self.container.as_ref(),
+            self.context_management.as_ref(),
+            self.used_custom_options_key,
+        );
+        super::usage::extend_result_metadata(
+            &mut metadata,
+            self.stop_details.as_ref(),
+            self.input_transformations.as_ref(),
+            self.safeguard_results.as_ref(),
+        );
+        controller.enqueue(StreamPart::Finish {
+            finish_reason: self.final_finish_reason.unwrap_or(FinishReason {
+                unified: FinishReasonUnified::Other,
+                raw: None,
+            }),
+            usage: self.final_usage,
+            provider_metadata: Some(metadata),
+        });
+    }
 }

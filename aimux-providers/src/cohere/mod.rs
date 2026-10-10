@@ -33,11 +33,9 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::reranking_model::RerankingModel;
-use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, without_trailing_slash,
-};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, without_trailing_slash};
 
-use crate::shared::{Credential, EndpointConfig, provider_headers};
+use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
 pub(crate) fn cohere_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {
@@ -76,7 +74,7 @@ pub struct CohereProviderSettings {
     /// including `Authorization`. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
     /// Generates a unique identifier for each citation.
-    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    pub generate_id: Option<aimux_provider_utils::IdGenerator>,
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
@@ -111,7 +109,7 @@ pub fn create_cohere(settings: CohereProviderSettings) -> Result<CohereProvider,
         Some(url) => without_trailing_slash(url),
         None => DEFAULT_BASE_URL.to_string(),
     };
-    let headers = provider_headers(
+    let headers = ProviderHeaders::bearer(
         Credential::explicit_or_env(
             settings.api_key.map(Resolvable::Value),
             API_KEY_ENV_VAR,
@@ -120,11 +118,7 @@ pub fn create_cohere(settings: CohereProviderSettings) -> Result<CohereProvider,
         Vec::new(),
         settings.headers,
     );
-    let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
-        headers,
-        options::NAMESPACE,
-        "4.0.52",
-    );
+    let headers = headers.with_user_agent(options::NAMESPACE, "4.0.52");
     Ok(CohereProvider {
         generate_id: settings.generate_id,
         base_url,
@@ -147,9 +141,9 @@ pub fn cohere() -> &'static CohereProvider {
 /// A Cohere provider (the AI SDK's `CohereProvider`). Cheap to clone the
 /// models out of; it holds no HTTP client.
 pub struct CohereProvider {
-    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    generate_id: Option<aimux_provider_utils::IdGenerator>,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
@@ -160,7 +154,6 @@ impl CohereProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            None,
         )
     }
 
@@ -168,7 +161,7 @@ impl CohereProvider {
     #[must_use]
     pub fn chat(&self, model_id: &str) -> CohereModel {
         CohereModel::from_config(model_id.to_string(), self.model_config("chat"))
-            .with_generate_id(self.generate_id.clone())
+            .with_generate_id(self.generate_id)
     }
 
     /// An embedding model (e.g. `"embed-english-v3.0"`); `provider()` is

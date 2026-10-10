@@ -210,7 +210,7 @@ impl Files for GoogleFiles {
                 abort_signal: options.abort_signal.clone(),
                 ..Default::default()
             }),
-            exchange.transform_body(init_body_value),
+            init_body_value,
             aimux_provider_utils::ResponseHandler::new(|input| async move {
                 let headers =
                     aimux_provider_utils::extract_response_headers::extract_response_headers(

@@ -165,6 +165,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `StreamingToolCallDelta::provider_metadata`, read from the delta that
   starts a call. `TrackerError` converts into
   `AiMuxError::InvalidResponseData`.
+- `StreamingToolCallTracker::with_generate_id` and `SigV4Fetch::with_clock`
+  take plain function pointers (`IdGenerator = fn() -> String`,
+  `fn() -> DateTime<Utc>`) instead of closures.
+- Gains `Transformer`, `TransformStreamController` and `pipe_through`, the
+  Rust form of the WHATWG `TransformStream` the AI SDK models build `doStream`
+  with (`start` / `transform` / `flush`; `enqueue`, `enqueue_error`, `error`,
+  `terminate`).
 
 **Rust (aimux-providers)**
 
@@ -183,6 +190,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `generate_id` instead of `tool-call` / `tool-call-N`, and
   `DeltaToolCall.index` is required again, so a chunk without it fails to
   parse.
+- Provider configuration is data, not closures. Removed: the
+  `transform_request_body` setting of every provider and of
+  `PresetSettings` (use the provider's providerOptions namespace for
+  vendor fields), and `OpenAICompatibleProviderSettings::metadata_extractor`
+  with the `MetadataExtractor` / `StreamMetadataExtractor` traits (nothing
+  implemented them). Changed: `OpenAICompatibleProviderSettings::supported_urls`
+  is a `SupportedUrls` value and `convert_usage` a `ConvertUsage` enum
+  (`OpenAICompatible`, `Alibaba`, `MoonshotAI`; registry rows select it with
+  `profile.convert_usage`); the `generate_id` settings of Anthropic, Google,
+  Cohere and Mistral take an `IdGenerator` (`fn() -> String`) instead of
+  `Arc<dyn Fn() -> String>`. User-supplied credentials (`Resolvable`) and the
+  `fetch` transport are unchanged. Requests are unchanged for callers that
+  did not set a removed field.
+- Every language-model `doStream` (OpenAI chat and Responses, OpenAI-compatible
+  chat and completion, Groq, DeepSeek, Mistral, Anthropic, Bedrock, Cohere,
+  Google, Vertex, xAI, Hugging Face, Open Responses) is a named stream struct
+  driven by `pipe_through`; emitted parts are unchanged. After an Anthropic
+  `message_stop` or a Google/Vertex/xAI/Hugging Face error event, the rest of
+  the response body is read and ignored before `Finish`, as the AI SDK's
+  `flush` does, instead of dropping the connection early.
 
 **Rust (provider factory, RFC-0036)**
 

@@ -38,9 +38,9 @@ use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, provider_headers};
+use crate::shared::{Credential, EndpointConfig, ProviderHeaders, SupportedUrlsSource};
 
 pub(crate) fn mistral_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {
@@ -130,7 +130,7 @@ pub struct MistralProviderSettings {
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
     /// Generates identifiers for reasoning and streamed tool calls.
-    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    pub generate_id: Option<aimux_provider_utils::IdGenerator>,
 }
 
 impl std::fmt::Debug for MistralProviderSettings {
@@ -161,19 +161,16 @@ pub fn create_mistral(settings: MistralProviderSettings) -> Result<MistralProvid
         Some(url) => validate_base_url(url)?,
         None => DEFAULT_BASE_URL.to_string(),
     };
-    let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
-        provider_headers(
-            Credential::explicit_or_env(
-                settings.api_key.map(Resolvable::Value),
-                API_KEY_ENV_VAR,
-                "Mistral",
-            ),
-            Vec::new(),
-            settings.headers,
+    let headers = ProviderHeaders::bearer(
+        Credential::explicit_or_env(
+            settings.api_key.map(Resolvable::Value),
+            API_KEY_ENV_VAR,
+            "Mistral",
         ),
-        options::NAMESPACE,
-        "4.0.54",
-    );
+        Vec::new(),
+        settings.headers,
+    )
+    .with_user_agent(options::NAMESPACE, "4.0.54");
     Ok(MistralProvider {
         base_url,
         headers,
@@ -197,9 +194,9 @@ pub fn mistral() -> &'static MistralProvider {
 /// models out of; it holds no HTTP client.
 pub struct MistralProvider {
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
-    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    generate_id: Option<aimux_provider_utils::IdGenerator>,
 }
 
 impl MistralProvider {
@@ -209,7 +206,6 @@ impl MistralProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            None,
         )
     }
 
@@ -219,8 +215,8 @@ impl MistralProvider {
         MistralModel::from_config(
             model_id.to_string(),
             self.model_config("chat")
-                .with_supported_urls(Arc::new(|_| chat_supported_urls())),
-            self.generate_id.clone(),
+                .with_supported_urls(SupportedUrlsSource::Fixed(chat_supported_urls())),
+            self.generate_id,
         )
     }
 

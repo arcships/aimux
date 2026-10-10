@@ -13,7 +13,6 @@
 //! Reference: <https://docs.aws.amazon.com/IAM/latest/UserGuide/create-signed-request.html>
 
 use std::fmt;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -277,7 +276,9 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
     mac.finalize().into_bytes().to_vec()
 }
 
-type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
+/// The signing clock: a plain function, so a fixed time in tests is a named
+/// function or a non-capturing closure.
+type Clock = fn() -> DateTime<Utc>;
 
 /// A [`Fetch`] decorator that signs every request with SigV4 and forwards it
 /// to the wrapped transport.
@@ -308,14 +309,14 @@ impl SigV4Fetch {
             inner,
             credentials,
             service: service.into(),
-            clock: Arc::new(Utc::now),
+            clock: Utc::now,
         }
     }
 
     /// Replace the signing clock (deterministic signatures in tests).
     #[must_use]
-    pub fn with_clock(mut self, clock: impl Fn() -> DateTime<Utc> + Send + Sync + 'static) -> Self {
-        self.clock = Arc::new(clock);
+    pub fn with_clock(mut self, clock: fn() -> DateTime<Utc>) -> Self {
+        self.clock = clock;
         self
     }
 }
@@ -368,7 +369,7 @@ impl Fetch for SigV4Fetch {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     use bytes::Bytes;
     use chrono::TimeZone;

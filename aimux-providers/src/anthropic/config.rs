@@ -12,34 +12,42 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-use futures::future::BoxFuture;
 use serde_json::Value;
 
+use crate::shared::{Credential, ProviderHeaders};
 use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
 use aimux_provider_utils::{
-    ExchangeContext, FetchFunction, HeaderMapOpt, HeadersFn, HttpRequest, ResponseHandler,
-    combine_headers, normalize_headers,
+    ExchangeContext, FetchFunction, HeaderMapOpt, HttpRequest, ResponseHandler, combine_headers,
+    normalize_headers,
 };
 
 use super::convert::RequestProfile;
-pub use crate::shared::TransformRequestBody;
+use crate::shared::Endpoint;
 
-/// Maps an endpoint path (`"/messages"`) to the full request URL.
-pub(crate) type UrlFn = Arc<dyn Fn(&str) -> String + Send + Sync>;
+/// Where the messages call of a model goes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum MessagesUrl {
+    /// `url("/messages")`: the first-party API and hosts that mirror it.
+    #[default]
+    Messages,
+    /// `{base_url}/{model id}:rawPredict`, or `:streamRawPredict` when
+    /// streaming: Anthropic on Vertex AI.
+    RawPredict,
+}
 
-/// `(model id, streaming)` to the full URL of the messages call, for hosts
-/// that put the model and the mode in the path.
-pub(crate) type RequestUrlFn = Arc<dyn Fn(&str, bool) -> String + Send + Sync>;
-
-/// Rewrites the request body a host-specific way.
-pub(crate) type BodyFn = Arc<dyn Fn(Value) -> Value + Send + Sync>;
-
-/// Builds the configuration of one request, for hosts whose endpoint or
-/// credentials (a Vertex project and location, say) can only be known when a
-/// call is made.
-pub(crate) type ResolveFn =
-    Arc<dyn Fn() -> BoxFuture<'static, Result<AnthropicModelConfig, AiMuxError>> + Send + Sync>;
+/// Where a model's endpoint (base URL and provider headers) comes from.
+#[derive(Clone, Default)]
+pub(crate) enum AnthropicEndpoint {
+    /// The config's own `base_url` and `headers`.
+    #[default]
+    Fixed,
+    /// The Vertex endpoint of Anthropic's models, resolved for every request:
+    /// the project, location and credentials are only known when a call is
+    /// made. The config's own `base_url` and `headers` then only describe the
+    /// model's static identity.
+    Vertex(Arc<crate::vertex::Resolver>),
+}
 
 /// Builds the host's error handler for non-2xx responses.
 pub(crate) type ErrorHandlerFn = fn() -> ResponseHandler<AiMuxError>;
@@ -49,12 +57,10 @@ pub(crate) type ErrorHandlerFn = fn() -> ResponseHandler<AiMuxError>;
 /// and `supportsStrictTools` config members, plus its error shape).
 #[derive(Clone)]
 pub(crate) struct AnthropicModelHooks {
-    /// The messages URL when it depends on the model and the mode. `None`:
-    /// `url("/messages")`.
-    pub(crate) request_url: Option<RequestUrlFn>,
-    /// Applied to the finished request body before the provider's own
-    /// `transform_request_body`.
-    pub(crate) prepare_body: Option<BodyFn>,
+    /// Where the messages call goes.
+    pub(crate) messages_url: MessagesUrl,
+    /// Applied to the finished request body before it is sent.
+    pub(crate) prepare_body: Option<fn(Value) -> Value>,
     /// Parses a failed response.
     pub(crate) failed_response_handler: ErrorHandlerFn,
     /// Structured outputs and their beta header.
@@ -67,7 +73,7 @@ impl Default for AnthropicModelHooks {
     /// The first-party API.
     fn default() -> Self {
         Self {
-            request_url: None,
+            messages_url: MessagesUrl::Messages,
             prepare_body: None,
             failed_response_handler: super::anthropic_failed_response_handler,
             supports_native_structured_output: true,
@@ -83,55 +89,67 @@ impl Default for AnthropicModelHooks {
 pub(crate) struct AnthropicModelConfig {
     /// The identity the model reports from `provider()`.
     pub(crate) provider: String,
-    /// Endpoint path to full URL.
-    pub(crate) url: UrlFn,
     /// Provider headers (credential, `anthropic-version`, user headers),
     /// resolved on every request.
-    pub(crate) headers: HeadersFn,
+    pub(crate) headers: ProviderHeaders,
     /// Transport; `None` uses the process default, resolved per request.
     pub(crate) fetch: Option<FetchFunction>,
     /// URLs the model fetches itself. Empty: the caller downloads them.
     pub(crate) supported_urls: SupportedUrls,
-    /// Provider-level request-body rewrite.
-    pub(crate) transform_request_body: Option<TransformRequestBody>,
-    /// The origin credentialed headers may be sent to. Never read for URLs.
+    /// The URL every endpoint path is appended to; also the origin
+    /// credentialed headers may be sent to.
     pub(crate) base_url: String,
     /// The providerOptions key read in addition to `anthropic` and written
     /// on response metadata.
     pub(crate) provider_options_name: String,
     /// Host differences.
     pub(crate) hooks: AnthropicModelHooks,
-    /// Late binding: when set, every request uses the configuration this
-    /// returns (its own `resolve` is `None`) instead of the fields above,
-    /// which then only describe the model's static identity.
-    pub(crate) resolve: Option<ResolveFn>,
+    /// Where `base_url` and `headers` of a request come from.
+    pub(crate) endpoint: AnthropicEndpoint,
 }
 
 impl AnthropicModelConfig {
-    /// The configuration to use for one request: itself, or what the host's
-    /// `resolve` builds now.
+    /// The configuration to use for one request: itself, or itself with the
+    /// endpoint the host resolves now.
     ///
     /// # Errors
     ///
     /// Returns the error of the host's setting or credential loading, for
     /// instance `AiMuxError::LoadSetting` for an unset Vertex project.
     pub(crate) async fn resolved(&self) -> Result<Self, AiMuxError> {
-        match &self.resolve {
-            Some(resolve) => resolve().await,
-            None => Ok(self.clone()),
+        match &self.endpoint {
+            AnthropicEndpoint::Fixed => Ok(self.clone()),
+            AnthropicEndpoint::Vertex(resolver) => {
+                let Endpoint { base_url, headers } = resolver
+                    .endpoint(crate::vertex::Publisher::Anthropic)
+                    .await?;
+                Ok(Self {
+                    base_url,
+                    headers: ProviderHeaders::bearer(Credential::None, Vec::new(), Some(headers)),
+                    endpoint: AnthropicEndpoint::Fixed,
+                    ..self.clone()
+                })
+            }
         }
     }
 
-    /// The full URL of an endpoint path.
+    /// The full URL of an endpoint path: `base_url` followed by `path`.
     pub(crate) fn url(&self, path: &str) -> String {
-        (self.url)(path)
+        format!("{}{path}", self.base_url)
     }
 
     /// The URL of the messages call for a model.
     pub(crate) fn messages_url(&self, model_id: &str, stream: bool) -> String {
-        match &self.hooks.request_url {
-            Some(request_url) => request_url(model_id, stream),
-            None => self.url("/messages"),
+        match self.hooks.messages_url {
+            MessagesUrl::Messages => self.url("/messages"),
+            MessagesUrl::RawPredict => {
+                let method = if stream {
+                    "streamRawPredict"
+                } else {
+                    "rawPredict"
+                };
+                format!("{}/{model_id}:{method}", self.base_url)
+            }
         }
     }
 
@@ -216,13 +234,10 @@ impl AnthropicModelConfig {
         request
     }
 
-    /// Run the host's body preparation, then the provider-level rewrite.
-    pub(crate) fn transform_body(&self, mut body: Value) -> Value {
-        if let Some(prepare) = &self.hooks.prepare_body {
-            body = prepare(body);
-        }
-        match &self.transform_request_body {
-            Some(transform) => transform(body),
+    /// Run the host's body preparation, when there is one.
+    pub(crate) fn prepare_body(&self, body: Value) -> Value {
+        match self.hooks.prepare_body {
+            Some(prepare) => prepare(body),
             None => body,
         }
     }

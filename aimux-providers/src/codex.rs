@@ -48,8 +48,9 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_core::types::Warning;
 
+use crate::shared::ProviderHeaders;
 use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, HttpRequest, Resolvable, validate_base_url,
+    FetchFunction, HeaderMapOpt, HttpRequest, Resolvable, validate_base_url,
 };
 
 use crate::openai::config::OpenAIModelConfig;
@@ -59,8 +60,7 @@ use crate::openai::responses::responses_convert::{
 use crate::openai::responses::{
     OpenAIResponsesModel, ResponsesNamespace, build_responses_request_body,
 };
-pub use crate::shared::TransformRequestBody;
-use crate::shared::{AuthScheme, Credential, credential_headers};
+use crate::shared::{AuthScheme, Credential};
 
 /// Default API-key base URL (official OpenAI Responses endpoint).
 pub const CODEX_API_BASE_URL: &str = "https://api.openai.com/v1";
@@ -134,10 +134,6 @@ pub struct CodexProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, after it is serialized (and
-    /// after the `store: false` rule of the subscription channel) and before it
-    /// is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for CodexProviderSettings {
@@ -153,10 +149,6 @@ impl std::fmt::Debug for CodexProviderSettings {
             .field("name", &self.name)
             .field("originator", &self.originator)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -209,9 +201,8 @@ pub fn create_codex(settings: CodexProviderSettings) -> Result<CodexProvider, Ai
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         channel,
         base_url,
-        headers: credential_headers(credential, AuthScheme::Bearer, fixed, settings.headers),
+        headers: ProviderHeaders::new(credential, AuthScheme::Bearer, fixed, settings.headers),
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -233,9 +224,8 @@ pub struct CodexProvider {
     name: String,
     channel: Channel,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl CodexProvider {
@@ -245,7 +235,6 @@ impl CodexProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            self.transform_request_body.clone(),
         )
     }
 
@@ -318,7 +307,7 @@ impl CodexModel {
     ) -> Result<(Value, Vec<Warning>), AiMuxError> {
         let mut result = build_responses_request_body(&self.model_id, options, true)?;
         result.body["store"] = Value::Bool(false);
-        Ok((self.config.transform_body(result.body), result.warnings))
+        Ok((result.body, result.warnings))
     }
 
     /// Map a subscription-channel authentication failure to

@@ -22,9 +22,9 @@ use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{AuthScheme, Credential, EndpointConfig, credential_headers};
+use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
 
 /// Fixed model id for the TinyFish search model.
 const MODEL_ID: &str = "tinyfish-search";
@@ -96,7 +96,7 @@ pub fn create_tinyfish(settings: TinyfishProviderSettings) -> Result<TinyfishPro
     Ok(TinyfishProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: credential_headers(
+        headers: ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "TinyFish"),
             AuthScheme::Header("X-API-Key"),
             Vec::new(),
@@ -122,7 +122,7 @@ pub fn tinyfish() -> &'static TinyfishProvider {
 pub struct TinyfishProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
@@ -133,7 +133,6 @@ impl TinyfishProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            None,
         )
     }
 

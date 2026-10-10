@@ -173,7 +173,7 @@ impl VideoModel for GoogleVideoModel {
 
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(url, options),
-            exchange.transform_body(body),
+            body,
             aimux_provider_utils::create_json_response_handler(),
             super::google_failed_response_handler(),
         )
@@ -260,7 +260,7 @@ impl VideoModel for GoogleVideoModel {
                     "No videos in response. Response: {raw_body}"
                 ))
             })?;
-        let endpoint = (self.config.endpoint)().await?;
+        let endpoint = self.config.endpoint().await?;
         let api_key = endpoint
             .headers
             .iter()

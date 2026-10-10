@@ -4,7 +4,7 @@
 > - `reasoning`（由 provider 包映射为其 wire 参数；不支持的设置产生 warning）
 > - `provider_options.<provider>`（per-call；OpenAI-compatible 家族里，厂商自己命名空间下 schema 不认识的字段**原样写入请求体**，用户定义一切厂商差异）
 >
-> 声明式 `bodyOverrides`（provider 级 + per-call 的 JSON deep-merge）已删除，`ProviderConfig` / `config_json` 里传 `body_overrides` 会报 `InvalidArgument`。OpenAI-compatible settings 保留上游的 `transform_request_body` 闭包；OpenAI、Anthropic、Google settings 没有这个字段。
+> 声明式 `bodyOverrides`（provider 级 + per-call 的 JSON deep-merge）已删除，`ProviderConfig` / `config_json` 里传 `body_overrides` 会报 `InvalidArgument`。请求体改写闭包 `transform_request_body` 已从所有 provider 的 settings 中删除（配置只接受数据）；厂商差异字段写在 `provider_options.<provider>` 里透传。
 >
 > 本手册是"知识"的归宿：各厂商的 wire 参数、配置示例、核实日期。知识会过期——以厂商官方文档为准，本手册仅作参考。
 > 数据来源：[model-config-research/](internal/model-config-research/)（2026-08-01 全网调研，250 家）。
@@ -108,22 +108,7 @@ await generateText(model, prompt, {
 // 通用命名空间 openaiCompatible 只认 schema 字段，未知字段会被丢弃——厂商专属字段请写在厂商自己的命名空间下。
 ```
 
-Rust 的 OpenAI-compatible 包支持对**最终**请求体做整体改写（provider 级、每次请求生效、可删字段），用该包 settings 的 `transform_request_body`：
-
-```rust
-let provider = create_openai_compatible(OpenAICompatibleProviderSettings {
-    name: "acme".into(),
-    base_url: "https://api.acme.example/v1".into(),
-    transform_request_body: Some(Arc::new(|mut body| {
-        body["enable_thinking"] = json!(false);
-        body.as_object_mut().unwrap().remove("reasoning_effort");
-        body
-    })),
-    ..Default::default()
-})?;
-```
-
-JS / Python / Go 等绑定没有闭包入口，provider 级的固定字段请在每次调用的 `provider_options` 里带上。
+provider 级的请求体改写（以前的 `transform_request_body` 闭包）已删除，Rust 与各绑定一致：需要固定写入的厂商字段，请在每次调用的 `provider_options.<provider>` 里带上。
 
 ## 6. 核实日期与来源
 

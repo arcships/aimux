@@ -24,7 +24,7 @@ use aimux_core::image_model::{
 use aimux_core::shared::Warning;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{AuthScheme, Credential, EndpointConfig, credential_headers};
+use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
 
 fn prodia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -152,7 +152,7 @@ impl ProdiaProvider {
             format!("{}.{method}", self.name),
             self.base_url.clone(),
             match method {
-                "image" => credential_headers(
+                "image" => ProviderHeaders::new(
                     self.credential.clone(),
                     AuthScheme::Header("X-Prodia-Key"),
                     vec![(
@@ -161,7 +161,7 @@ impl ProdiaProvider {
                     )],
                     self.user_headers.clone(),
                 ),
-                _ => credential_headers(
+                _ => ProviderHeaders::new(
                     self.credential.clone(),
                     AuthScheme::Header("X-Prodia-Key"),
                     Vec::new(),
@@ -169,7 +169,6 @@ impl ProdiaProvider {
                 ),
             },
             self.fetch.clone(),
-            None,
         )
     }
 

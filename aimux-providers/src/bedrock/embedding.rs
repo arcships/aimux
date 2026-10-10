@@ -181,7 +181,6 @@ impl EmbeddingModel for BedrockEmbeddingModel {
         };
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(body);
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = exchange.url(&format!(
             "/model/{}/invoke",

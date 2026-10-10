@@ -25,9 +25,9 @@ use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
 use aimux_core::shared::SharedProviderOptions;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{AuthScheme, Credential, EndpointConfig, credential_headers};
+use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
 
 /// Fixed model ID for the Google PSE search model.
 const MODEL_ID: &str = "google-pse-search";
@@ -129,7 +129,7 @@ pub fn create_google_pse(
         credential: Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Google PSE"),
         cx: settings.cx,
         // The key travels in the query string, so the headers carry none.
-        headers: credential_headers(
+        headers: ProviderHeaders::new(
             Credential::None,
             AuthScheme::Bearer,
             Vec::new(),
@@ -156,7 +156,7 @@ pub struct GooglePseProvider {
     base_url: String,
     credential: Credential,
     cx: Option<String>,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
@@ -170,7 +170,6 @@ impl GooglePseProvider {
                 self.base_url.clone(),
                 self.headers.clone(),
                 self.fetch.clone(),
-                None,
             ),
             self.credential.clone(),
             self.cx.clone(),

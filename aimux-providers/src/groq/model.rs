@@ -8,7 +8,6 @@ use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use futures::StreamExt;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -21,7 +20,8 @@ use aimux_core::types::{
     FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning,
 };
 use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallTracker, TypeValidation, generate_id,
+    StreamingToolCallDelta, StreamingToolCallTracker, TransformStreamController, Transformer,
+    TypeValidation, generate_id, pipe_through,
 };
 
 use crate::shared::EndpointConfig;
@@ -31,7 +31,7 @@ use super::error::{GroqErrorData, groq_failed_response_handler};
 use super::finish_reason::map_groq_finish_reason;
 use super::options::{self, GroqLanguageModelChatOptions, parse_groq_options};
 use super::prepare_tools::prepare_tools;
-use super::types::{GroqChatChunk, GroqChatResponse};
+use super::types::{GroqChatChunk, GroqChatResponse, GroqUsage};
 use super::usage::convert_groq_usage;
 
 /// A Groq chat language model.
@@ -280,7 +280,7 @@ impl LanguageModel for GroqChatLanguageModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let (args, warnings) = self.get_args(options)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(Value::Object(args));
+        let body = Value::Object(args);
 
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(exchange.url("/chat/completions"), options),
@@ -352,7 +352,7 @@ impl LanguageModel for GroqChatLanguageModel {
         let (mut args, warnings) = self.get_args(options)?;
         args.insert("stream".into(), json!(true));
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(Value::Object(args));
+        let body = Value::Object(args);
         let endpoint = exchange.url("/chat/completions");
 
         let resp = aimux_provider_utils::post_json_to_api(
@@ -363,202 +363,29 @@ impl LanguageModel for GroqChatLanguageModel {
         )
         .await?;
         let response_headers = resp.response_headers;
-        let mut sse_stream = resp.value;
 
-        let emit_raw_chunks = options.include_raw_chunks == Some(true);
-        let stream_error_url = endpoint;
-        let stream_error_body = body.clone();
-        let stream_response_headers = response_headers.clone();
-
-        let stream = async_stream::stream! {
-            yield Ok(StreamPart::StreamStart { warnings });
-
-            let mut tool_calls = StreamingToolCallTracker::new()
-                .with_generate_id(generate_id)
-                .with_type_validation(TypeValidation::Required);
-            let mut tool_parts = Vec::new();
-
-            let mut finish_reason = FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            };
-            let mut usage = None;
-            let mut is_first_chunk = true;
-            let mut is_active_text = false;
-            let mut is_active_reasoning = false;
-
-            while let Some(event) = sse_stream.next().await {
-                let parsed = match event {
-                    Ok(parsed) => parsed,
-                    // a chunk that fails to parse is reported as an error part
-                    // (`chunk.success === false`); a transport failure ends the stream.
-                    Err(error) => {
-                        if !error.is_recoverable_stream_error() {
-                            yield Err(error);
-                            return;
-                        }
-                        if emit_raw_chunks {
-                            yield Ok(StreamPart::Raw { raw_value: Value::Null });
-                        }
-                        finish_reason = FinishReason {
-                            unified: FinishReasonUnified::Error,
-                            raw: None,
-                        };
-                        yield Ok(StreamPart::Error { error });
-                        continue;
-                    }
-                };
-
-                // Emit the raw chunk if requested (before anything else).
-                if emit_raw_chunks {
-                    yield Ok(StreamPart::Raw { raw_value: parsed.clone() });
-                }
-
-                // handle error chunks:
-                if parsed.get("error").is_some() {
-                    finish_reason = FinishReason {
-                        unified: FinishReasonUnified::Error,
-                        raw: None,
-                    };
-                    yield Ok(StreamPart::Error {
-                        error: create_groq_stream_error(
-                            &parsed,
-                            &stream_error_url,
-                            stream_error_body.clone(),
-                            stream_response_headers.clone(),
-                        ),
-                    });
-                    continue;
-                }
-
-                // handle failed chunk parsing / validation:
-                let value: GroqChatChunk = match serde_json::from_value(parsed) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        finish_reason = FinishReason {
-                            unified: FinishReasonUnified::Error,
-                            raw: None,
-                        };
-                        yield Ok(StreamPart::Error { error: error.into() });
-                        continue;
-                    }
-                };
-
-                if is_first_chunk {
-                    is_first_chunk = false;
-                    let metadata = response_metadata(value.id, value.created, value.model);
-                    yield Ok(StreamPart::ResponseMetadata(metadata));
-                }
-
-                if let Some(chunk_usage) = value.x_groq.and_then(|x_groq| x_groq.usage) {
-                    usage = Some(chunk_usage);
-                }
-
-                let Some(choice) = value.choices.into_iter().next() else {
-                    continue;
-                };
-
-                if let Some(reason) = choice.finish_reason {
-                    finish_reason = FinishReason {
-                        unified: map_groq_finish_reason(Some(&reason)),
-                        raw: Some(reason),
-                    };
-                }
-
-                let Some(delta) = choice.delta else {
-                    continue;
-                };
-
-                if let Some(reasoning) = delta.reasoning.filter(|text| !text.is_empty()) {
-                    if !is_active_reasoning {
-                        yield Ok(StreamPart::ReasoningStart {
-                            id: "reasoning-0".to_string(),
-                            provider_metadata: None,
-                        });
-                        is_active_reasoning = true;
-                    }
-                    yield Ok(StreamPart::ReasoningDelta {
-                        id: "reasoning-0".to_string(),
-                        delta: reasoning,
-                        provider_metadata: None,
-                    });
-                }
-
-                if let Some(text) = delta.content.filter(|text| !text.is_empty()) {
-                    // end the active reasoning block before text starts
-                    if is_active_reasoning {
-                        yield Ok(StreamPart::ReasoningEnd {
-                            id: "reasoning-0".to_string(),
-                            provider_metadata: None,
-                        });
-                        is_active_reasoning = false;
-                    }
-                    if !is_active_text {
-                        yield Ok(StreamPart::TextStart {
-                            id: "txt-0".to_string(),
-                            provider_metadata: None,
-                        });
-                        is_active_text = true;
-                    }
-                    yield Ok(StreamPart::TextDelta {
-                        id: "txt-0".to_string(),
-                        delta: text,
-                        provider_metadata: None,
-                    });
-                }
-
-                if let Some(deltas) = delta.tool_calls.filter(|deltas| !deltas.is_empty()) {
-                    // end the active reasoning block before tool calls start
-                    if is_active_reasoning {
-                        yield Ok(StreamPart::ReasoningEnd {
-                            id: "reasoning-0".to_string(),
-                            provider_metadata: None,
-                        });
-                        is_active_reasoning = false;
-                    }
-                    for tool_call in &deltas {
-                        let delta = StreamingToolCallDelta {
-                            index: Some(tool_call.index),
-                            id: tool_call.id.as_deref(),
-                            r#type: tool_call.r#type.as_deref(),
-                            name: tool_call.function.name.as_deref(),
-                            arguments: tool_call.function.arguments.as_deref(),
-                            provider_metadata: None,
-                        };
-                        if let Err(error) = tool_calls.process(delta, &mut tool_parts) {
-                            yield Err(error.into());
-                            return;
-                        }
-                        for part in tool_parts.drain(..) {
-                            yield Ok(part);
-                        }
-                    }
-                }
-            }
-
-            if is_active_reasoning {
-                yield Ok(StreamPart::ReasoningEnd {
-                    id: "reasoning-0".to_string(),
-                    provider_metadata: None,
-                });
-            }
-            if is_active_text {
-                yield Ok(StreamPart::TextEnd {
-                    id: "txt-0".to_string(),
-                    provider_metadata: None,
-                });
-            }
-            tool_calls.finish(&mut tool_parts);
-            for part in tool_parts.drain(..) {
-                yield Ok(part);
-            }
-
-            yield Ok(StreamPart::Finish {
-                finish_reason,
-                usage: convert_groq_usage(usage.as_ref()),
-                provider_metadata: None,
-            });
-        };
+        let stream = pipe_through(
+            resp.value,
+            GroqChatStream {
+                warnings,
+                emit_raw_chunks: options.include_raw_chunks == Some(true),
+                stream_error_url: endpoint,
+                stream_error_body: body.clone(),
+                stream_response_headers: response_headers.clone(),
+                tool_calls: StreamingToolCallTracker::new()
+                    .with_generate_id(generate_id)
+                    .with_type_validation(TypeValidation::Required),
+                tool_parts: Vec::new(),
+                finish_reason: FinishReason {
+                    unified: FinishReasonUnified::Other,
+                    raw: None,
+                },
+                usage: None,
+                is_first_chunk: true,
+                is_active_text: false,
+                is_active_reasoning: false,
+            },
+        );
 
         Ok(StreamResult {
             stream: Box::pin(stream),
@@ -567,5 +394,211 @@ impl LanguageModel for GroqChatLanguageModel {
                 headers: Some(response_headers),
             }),
         })
+    }
+}
+
+/// The `TransformStream` of `GroqChatLanguageModel.doStream`.
+struct GroqChatStream {
+    warnings: Vec<Warning>,
+    emit_raw_chunks: bool,
+    stream_error_url: String,
+    stream_error_body: Value,
+    stream_response_headers: HashMap<String, String>,
+    tool_calls: StreamingToolCallTracker,
+    tool_parts: Vec<StreamPart>,
+    finish_reason: FinishReason,
+    usage: Option<GroqUsage>,
+    is_first_chunk: bool,
+    is_active_text: bool,
+    is_active_reasoning: bool,
+}
+
+impl GroqChatStream {
+    fn end_active_reasoning(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+        if self.is_active_reasoning {
+            controller.enqueue(StreamPart::ReasoningEnd {
+                id: "reasoning-0".to_string(),
+                provider_metadata: None,
+            });
+            self.is_active_reasoning = false;
+        }
+    }
+}
+
+impl Transformer for GroqChatStream {
+    type Input = Result<Value, AiMuxError>;
+    type Output = StreamPart;
+
+    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+        controller.enqueue(StreamPart::StreamStart {
+            warnings: std::mem::take(&mut self.warnings),
+        });
+    }
+
+    fn transform(
+        &mut self,
+        event: Result<Value, AiMuxError>,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        let parsed = match event {
+            Ok(parsed) => parsed,
+            // a chunk that fails to parse is reported as an error part
+            // (`chunk.success === false`); a transport failure ends the stream.
+            Err(error) => {
+                if !error.is_recoverable_stream_error() {
+                    controller.error(error);
+                    return;
+                }
+                if self.emit_raw_chunks {
+                    controller.enqueue(StreamPart::Raw {
+                        raw_value: Value::Null,
+                    });
+                }
+                self.finish_reason = FinishReason {
+                    unified: FinishReasonUnified::Error,
+                    raw: None,
+                };
+                controller.enqueue(StreamPart::Error { error });
+                return;
+            }
+        };
+
+        // Emit the raw chunk if requested (before anything else).
+        if self.emit_raw_chunks {
+            controller.enqueue(StreamPart::Raw {
+                raw_value: parsed.clone(),
+            });
+        }
+
+        // handle error chunks:
+        if parsed.get("error").is_some() {
+            self.finish_reason = FinishReason {
+                unified: FinishReasonUnified::Error,
+                raw: None,
+            };
+            controller.enqueue(StreamPart::Error {
+                error: create_groq_stream_error(
+                    &parsed,
+                    &self.stream_error_url,
+                    self.stream_error_body.clone(),
+                    self.stream_response_headers.clone(),
+                ),
+            });
+            return;
+        }
+
+        // handle failed chunk parsing / validation:
+        let value: GroqChatChunk = match serde_json::from_value(parsed) {
+            Ok(value) => value,
+            Err(error) => {
+                self.finish_reason = FinishReason {
+                    unified: FinishReasonUnified::Error,
+                    raw: None,
+                };
+                controller.enqueue(StreamPart::Error {
+                    error: error.into(),
+                });
+                return;
+            }
+        };
+
+        if self.is_first_chunk {
+            self.is_first_chunk = false;
+            let metadata = response_metadata(value.id, value.created, value.model);
+            controller.enqueue(StreamPart::ResponseMetadata(metadata));
+        }
+
+        if let Some(chunk_usage) = value.x_groq.and_then(|x_groq| x_groq.usage) {
+            self.usage = Some(chunk_usage);
+        }
+
+        let Some(choice) = value.choices.into_iter().next() else {
+            return;
+        };
+
+        if let Some(reason) = choice.finish_reason {
+            self.finish_reason = FinishReason {
+                unified: map_groq_finish_reason(Some(&reason)),
+                raw: Some(reason),
+            };
+        }
+
+        let Some(delta) = choice.delta else {
+            return;
+        };
+
+        if let Some(reasoning) = delta.reasoning.filter(|text| !text.is_empty()) {
+            if !self.is_active_reasoning {
+                controller.enqueue(StreamPart::ReasoningStart {
+                    id: "reasoning-0".to_string(),
+                    provider_metadata: None,
+                });
+                self.is_active_reasoning = true;
+            }
+            controller.enqueue(StreamPart::ReasoningDelta {
+                id: "reasoning-0".to_string(),
+                delta: reasoning,
+                provider_metadata: None,
+            });
+        }
+
+        if let Some(text) = delta.content.filter(|text| !text.is_empty()) {
+            // end the active reasoning block before text starts
+            self.end_active_reasoning(controller);
+            if !self.is_active_text {
+                controller.enqueue(StreamPart::TextStart {
+                    id: "txt-0".to_string(),
+                    provider_metadata: None,
+                });
+                self.is_active_text = true;
+            }
+            controller.enqueue(StreamPart::TextDelta {
+                id: "txt-0".to_string(),
+                delta: text,
+                provider_metadata: None,
+            });
+        }
+
+        if let Some(deltas) = delta.tool_calls.filter(|deltas| !deltas.is_empty()) {
+            // end the active reasoning block before tool calls start
+            self.end_active_reasoning(controller);
+            for tool_call in &deltas {
+                let delta = StreamingToolCallDelta {
+                    index: Some(tool_call.index),
+                    id: tool_call.id.as_deref(),
+                    r#type: tool_call.r#type.as_deref(),
+                    name: tool_call.function.name.as_deref(),
+                    arguments: tool_call.function.arguments.as_deref(),
+                    provider_metadata: None,
+                };
+                if let Err(error) = self.tool_calls.process(delta, &mut self.tool_parts) {
+                    controller.error(error.into());
+                    return;
+                }
+                for part in self.tool_parts.drain(..) {
+                    controller.enqueue(part);
+                }
+            }
+        }
+    }
+
+    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+        self.end_active_reasoning(controller);
+        if self.is_active_text {
+            controller.enqueue(StreamPart::TextEnd {
+                id: "txt-0".to_string(),
+                provider_metadata: None,
+            });
+        }
+        self.tool_calls.finish(&mut self.tool_parts);
+        for part in self.tool_parts.drain(..) {
+            controller.enqueue(part);
+        }
+
+        controller.enqueue(StreamPart::Finish {
+            finish_reason: self.finish_reason,
+            usage: convert_groq_usage(self.usage.as_ref()),
+            provider_metadata: None,
+        });
     }
 }

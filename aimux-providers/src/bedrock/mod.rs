@@ -46,25 +46,22 @@ use serde_json::Value;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
-use aimux_core::language_model::{LanguageModel, SupportedUrls};
+use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::reranking_model::RerankingModel;
 use aimux_provider_utils::{
     AwsCredentials, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
-    HeadersFn, Resolvable, SigV4Fetch, combine_headers, default_fetch, load_optional_setting,
-    load_setting, validate_base_url, without_trailing_slash,
+    Resolvable, SigV4Fetch, combine_headers, default_fetch, load_optional_setting, load_setting,
+    normalize_headers, validate_base_url, with_user_agent_suffix, without_trailing_slash,
 };
 
-use crate::shared::{Endpoint, EndpointConfig, TransformRequestBody, is_valid_hostname_part};
+use crate::shared::{Endpoint, EndpointConfig, EndpointSource, is_valid_hostname_part};
 
 pub use embedding::BedrockEmbeddingModel;
 pub use image::BedrockImageModel;
 pub use model::BedrockModel;
 pub use reranking::BedrockRerankingModel;
-
-/// The region of a request, resolved when the request is made.
-pub(crate) type RegionFn = Arc<dyn Fn() -> Result<String, AiMuxError> + Send + Sync>;
 
 const PROVIDER: &str = "amazon-bedrock";
 const SIGV4_SERVICE: &str = "bedrock";
@@ -199,9 +196,6 @@ pub struct AmazonBedrockProviderSettings {
     /// credentials. Its `region` is used only when neither `region` nor
     /// `AWS_REGION` names one.
     pub credential_provider: Option<Resolvable<AwsCredentials>>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent (and before it is signed).
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for AmazonBedrockProviderSettings {
@@ -220,17 +214,13 @@ impl std::fmt::Debug for AmazonBedrockProviderSettings {
             )
             .field("fetch", &self.fetch.is_some())
             .field("credential_provider", &self.credential_provider.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
 
 /// Where the region, the API key and the AWS credentials of a request come
 /// from.
-struct Auth {
+pub(crate) struct Auth {
     region: Option<String>,
     api_key: Option<Resolvable<String>>,
     access_key_id: Option<String>,
@@ -253,7 +243,7 @@ impl Auth {
 
     /// The region: the setting, `AWS_REGION`, or the region of a plain-value
     /// credential provider.
-    fn region(&self) -> Result<String, AiMuxError> {
+    pub(crate) fn region(&self) -> Result<String, AiMuxError> {
         let region =
             if let Some(region) = load_optional_setting(self.region.as_deref(), REGION_ENV_VAR) {
                 region
@@ -336,7 +326,7 @@ impl Auth {
         explicit: Option<&str>,
         service: &str,
         endpoint_env_var: &str,
-        region: &dyn Fn() -> Result<String, AiMuxError>,
+        auth: &Self,
     ) -> Result<String, AiMuxError> {
         if let Some(url) = explicit {
             return Ok(url.to_string());
@@ -346,7 +336,7 @@ impl Auth {
         {
             return validate_base_url(&url);
         }
-        let region = region()?;
+        let region = auth.region()?;
         let suffix = [
             ("cn-", "amazonaws.com.cn"),
             ("us-iso-", "c2s.ic.gov"),
@@ -404,32 +394,6 @@ pub fn create_amazon_bedrock(
         credential_provider: settings.credential_provider,
     });
 
-    let user_headers = settings.headers;
-    let header_auth = auth.clone();
-    let headers: HeadersFn = Resolvable::from_async_fn(move || {
-        let auth = header_auth.clone();
-        let mut user = combine_headers(&[&user_headers.clone().unwrap_or_default()]);
-        let suffix = concat!("ai-sdk-amazon-bedrock/", env!("CARGO_PKG_VERSION"));
-        let agent = user
-            .get("user-agent")
-            .and_then(|value| value.as_deref())
-            .map_or_else(|| suffix.to_string(), |value| format!("{value} {suffix}"));
-        user.insert("user-agent".into(), Some(agent));
-        async move {
-            match auth.bearer().await? {
-                Some(key) => {
-                    let mut bearer = HeaderMapOpt::new();
-                    bearer.insert("Authorization".to_string(), Some(format!("Bearer {key}")));
-                    Ok(combine_headers(&[&user, &bearer]))
-                }
-                None => {
-                    auth.preflight()?;
-                    Ok(user)
-                }
-            }
-        }
-    });
-
     let credentials_auth = auth.clone();
     let inner = settings.fetch.unwrap_or_else(default_fetch);
     let fetch: FetchFunction = Arc::new(BedrockAuthFetch {
@@ -447,13 +411,8 @@ pub fn create_amazon_bedrock(
     Ok(AmazonBedrockProvider {
         auth,
         base_url: base_url.map(|url| without_trailing_slash(&url)),
-        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            headers,
-            "amazon-bedrock",
-            "5.0.100",
-        ),
+        user_headers: settings.headers,
         fetch,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -474,9 +433,66 @@ pub fn amazon_bedrock() -> &'static AmazonBedrockProvider {
 pub struct AmazonBedrockProvider {
     auth: Arc<Auth>,
     base_url: Option<String>,
-    headers: HeadersFn,
+    user_headers: Option<HeaderMapOpt>,
     fetch: FetchFunction,
-    transform_request_body: Option<TransformRequestBody>,
+}
+
+/// The endpoint of a Bedrock request: the explicit base URL, the service's
+/// endpoint environment variable or the regional host; the caller's headers
+/// with the user-agent suffixes, and an API key as `Authorization: Bearer`
+/// when there is one (otherwise the transport signs with SigV4, after
+/// checking here that signing has its inputs).
+#[derive(Clone)]
+pub(crate) struct BedrockEndpoint {
+    auth: Arc<Auth>,
+    base_url: Option<String>,
+    /// `bedrock-runtime` or `bedrock-agent-runtime`.
+    service: &'static str,
+    endpoint_env_var: &'static str,
+    user: Option<HeaderMapOpt>,
+}
+
+impl BedrockEndpoint {
+    /// The base URL and provider headers of one request.
+    pub(crate) async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
+        let base_url = Auth::base_url(
+            self.base_url.as_deref(),
+            self.service,
+            self.endpoint_env_var,
+            &self.auth,
+        )?;
+        Ok(Endpoint {
+            base_url,
+            headers: self.headers().await?,
+        })
+    }
+
+    async fn headers(&self) -> Result<HeaderMapOpt, AiMuxError> {
+        let mut user = combine_headers(&[&self.user.clone().unwrap_or_default()]);
+        let suffix = concat!("ai-sdk-amazon-bedrock/", env!("CARGO_PKG_VERSION"));
+        let agent = user
+            .get("user-agent")
+            .and_then(|value| value.as_deref())
+            .map_or_else(|| suffix.to_string(), |value| format!("{value} {suffix}"));
+        user.insert("user-agent".into(), Some(agent));
+        let headers = match self.auth.bearer().await? {
+            Some(key) => {
+                let mut bearer = HeaderMapOpt::new();
+                bearer.insert("Authorization".to_string(), Some(format!("Bearer {key}")));
+                combine_headers(&[&user, &bearer])
+            }
+            None => {
+                self.auth.preflight()?;
+                user
+            }
+        };
+        let mut headers = normalize_headers(headers).into_iter().collect();
+        with_user_agent_suffix(&mut headers, "ai-sdk-amazon-bedrock/5.0.100");
+        Ok(headers
+            .into_iter()
+            .map(|(name, value)| (name, Some(value)))
+            .collect())
+    }
 }
 
 impl AmazonBedrockProvider {
@@ -487,33 +503,17 @@ impl AmazonBedrockProvider {
         service: &'static str,
         endpoint_env_var: &'static str,
     ) -> EndpointConfig {
-        let auth = self.auth.clone();
-        let base_url = self.base_url.clone();
-        let headers = self.headers.clone();
-        EndpointConfig {
-            provider: PROVIDER.to_string(),
-            endpoint: Arc::new(move || {
-                let auth = auth.clone();
-                let base_url = base_url.clone();
-                let headers = headers.clone();
-                Box::pin(async move {
-                    let region_auth = auth.clone();
-                    let base_url = Auth::base_url(
-                        base_url.as_deref(),
-                        service,
-                        endpoint_env_var,
-                        &move || region_auth.region(),
-                    )?;
-                    Ok(Endpoint {
-                        base_url,
-                        headers: headers.resolve().await?,
-                    })
-                })
+        EndpointConfig::new(
+            PROVIDER.to_string(),
+            EndpointSource::Bedrock(BedrockEndpoint {
+                auth: self.auth.clone(),
+                base_url: self.base_url.clone(),
+                service,
+                endpoint_env_var,
+                user: self.user_headers.clone(),
             }),
-            fetch: Some(self.fetch.clone()),
-            supported_urls: Arc::new(|_| SupportedUrls::default()),
-            transform_request_body: self.transform_request_body.clone(),
-        }
+            Some(self.fetch.clone()),
+        )
     }
 
     fn runtime_config(&self) -> EndpointConfig {
@@ -578,11 +578,10 @@ impl AmazonBedrockProvider {
     /// `rerank` endpoint; `provider()` is `"amazon-bedrock"`.
     #[must_use]
     pub fn reranking(&self, model_id: &str) -> BedrockRerankingModel {
-        let auth = self.auth.clone();
         BedrockRerankingModel::from_config(
             model_id.to_string(),
             self.model_config("bedrock-agent-runtime", AGENT_RUNTIME_ENDPOINT_ENV_VAR),
-            Arc::new(move || auth.region()),
+            self.auth.clone(),
         )
     }
 

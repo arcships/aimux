@@ -26,11 +26,11 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::Warning;
 use aimux_provider_utils::HttpRequest;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    Credential, EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, is_poll_control_key,
-    poll_interval_ms, poll_until, provider_headers, retry_download,
+    Credential, EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, ProviderHeaders,
+    is_poll_control_key, poll_interval_ms, poll_until, retry_download,
 };
 
 /// AI SDK's `isTrustedUrl` (black-forest-labs-api.ts): credentials may go to
@@ -156,7 +156,7 @@ pub fn create_black_forest_labs(
     Ok(BlackForestLabsProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: provider_headers(
+        headers: ProviderHeaders::bearer(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Black Forest Labs"),
             Vec::new(),
             settings.headers,
@@ -181,7 +181,7 @@ pub fn black_forest_labs() -> &'static BlackForestLabsProvider {
 pub struct BlackForestLabsProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
@@ -192,7 +192,6 @@ impl BlackForestLabsProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            None,
         )
     }
 

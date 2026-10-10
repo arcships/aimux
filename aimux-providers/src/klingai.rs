@@ -25,9 +25,9 @@ use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoModel, VideoOperationStart, VideoOperationStatus,
     VideoResponse, VideoResult,
 };
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, provider_headers};
+use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
 fn klingai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -112,7 +112,7 @@ pub fn create_klingai(settings: KlingAIProviderSettings) -> Result<KlingAIProvid
     Ok(KlingAIProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: provider_headers(
+        headers: ProviderHeaders::bearer(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "KlingAI"),
             Vec::new(),
             settings.headers,
@@ -137,7 +137,7 @@ pub fn klingai() -> &'static KlingAIProvider {
 pub struct KlingAIProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
@@ -148,7 +148,6 @@ impl KlingAIProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            None,
         )
     }
 

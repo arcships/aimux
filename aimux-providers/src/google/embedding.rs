@@ -180,7 +180,7 @@ impl EmbeddingModel for GoogleEmbeddingModel {
                 exchange.url(&format!("/models/{}:{endpoint}", self.model_id)),
                 options,
             ),
-            exchange.transform_body(body),
+            body,
             aimux_provider_utils::create_json_response_handler::<Value>(),
             super::google_failed_response_handler(),
         )

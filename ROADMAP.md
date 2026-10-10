@@ -31,7 +31,7 @@ aimux 是 **provider 接入与治理的运行时**：
 ├─ E 轨 内部清理（#164 已合入，改为 master 上独立 PR）+ 文档三层重组
 │
 ├── 新增（RFC-0036）：L0 native passthrough | ops 协议 schema | stdio CLI | 性能门禁 P
-├── 独立项：#185 ToolInput 类型化 + tracker 对齐上游并移入 provider-utils（#204）；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)
+├── 独立项：#185 由 RFC-0036 栈取代：tracker 对齐上游并移入 provider-utils（原 #204，已并入 integration），Raw / Parsed 由 provider 侧 `RawToolCall` 与 core 侧 `ToolCall` 两套类型区分；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)
 ├── 独立项：#170 registry 维护自动化 → #171 triage（前半：27 个 base_url 分歧）
 └── 小项（随时插空）：#181 session 后续 | #180 cache probe §10
 
@@ -50,7 +50,7 @@ aimux 是 **provider 接入与治理的运行时**：
 | **P** | 性能回归门禁：单请求开销、流式吞吐、RSS 增长 |
 | A2–A5 | 删 `ProviderName` 枚举及各语言副本；归档 `provider-inventory/`；aimux-web 类型副本；Flutter example 桌面脚手架 |
 | E1 | 内部清理 + 文档三层重组 |
-| #185 | `ToolInput{Raw,Parsed}`；tracker 不删，改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils（#204）；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系) |
+| #185 | 由 RFC-0036 栈取代：tracker 不删，对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils（原 #204，已并入 integration）；`ToolInput{Raw,Parsed}` 不再引入，由 `RawToolCall` / `ToolCall` 两套类型区分；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系) |
 | #170 / #171 前半 | sync/probe 脚本 + scheduled Action；27 个 base_url 分歧 triage |
 | **B1 + C2** | 解锁项：protocol 列 + `from_resolved`；40 个 FFI 构造器转发 shim（B1 形式由 descriptor 数据源 + `create_xxx` 工厂替代，C2 shim 已取消；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 | **ops 协议 schema** | op 表、消息与错误信封、二进制帧、版本协商——先以文档 + 测试落地（RFC-0036 §4） |
@@ -116,7 +116,7 @@ aimux 是 **provider 接入与治理的运行时**：
 1. **RFC-0032 / 0033 入库**：B1 与 #174 的前提。
 2. **S1 + S2**：一个小 PR——改 profile 名、staticlib job 换 profile、全产物体积阈值。
 3. **A2–A5**：四个独立 PR；#166 的 A1 checkbox 补勾（#169 已合入）。
-4. **#185**：先删 tracker，再换 `ToolInput`。
+4. **#185**：由 RFC-0036 栈取代（tracker 保留并对齐上游；Raw / Parsed 由 `RawToolCall` / `ToolCall` 区分），待维护者确认后关闭。
 5. **B1 + C2**：解锁项。
 
 ## 5. 版本节奏预估

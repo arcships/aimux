@@ -25,9 +25,9 @@ use aimux_core::reranking_model::{
 };
 use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, provider_headers};
+use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
 /// Jina AI error response structure: `{ "detail": "...", "code": "..." }`.
 ///
@@ -113,7 +113,7 @@ pub fn create_jina_ai(settings: JinaAiProviderSettings) -> Result<JinaAiProvider
     Ok(JinaAiProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: provider_headers(
+        headers: ProviderHeaders::bearer(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Jina AI"),
             Vec::new(),
             settings.headers,
@@ -138,7 +138,7 @@ pub fn jina_ai() -> &'static JinaAiProvider {
 pub struct JinaAiProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
@@ -149,7 +149,6 @@ impl JinaAiProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            None,
         )
     }
 

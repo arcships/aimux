@@ -24,7 +24,7 @@ use aimux_provider_utils::HttpRequest;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    AuthScheme, Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, credential_headers,
+    AuthScheme, Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, ProviderHeaders,
     is_poll_control_key, poll_interval_ms, retry_download,
 };
 
@@ -153,13 +153,13 @@ impl ReplicateProvider {
             format!("{}.{method}", self.name),
             self.base_url.clone(),
             match method {
-                "image" => credential_headers(
+                "image" => ProviderHeaders::new(
                     self.credential.clone(),
                     AuthScheme::Bearer,
                     Vec::new(),
                     self.user_headers.clone(),
                 ),
-                _ => credential_headers(
+                _ => ProviderHeaders::new(
                     self.credential.clone(),
                     AuthScheme::Scheme("Token"),
                     Vec::new(),
@@ -167,7 +167,6 @@ impl ReplicateProvider {
                 ),
             },
             self.fetch.clone(),
-            None,
         )
     }
 

@@ -5,7 +5,7 @@
 //! `user`, sampling settings, `response_format`, `stop`, `seed`, the
 //! pass-through fields of the provider's own options namespace, then
 //! `reasoning_effort`, `verbosity`, `messages`, `tools`, `tool_choice`).
-//! Compatible endpoint capabilities arrive as [`ChatDialect`] data.
+//! Compatible endpoint capabilities arrive as [`ChatSettings`] data.
 
 use aimux_core::shared::SharedProviderOptions;
 use base64::Engine;
@@ -22,7 +22,7 @@ use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
 use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 
-use super::config::ChatDialect;
+use super::config::ChatSettings;
 
 /// Option keys of the generic compatible schema
 /// (`openaiCompatibleLanguageModelChatOptions`): consumed by the model, never
@@ -113,15 +113,13 @@ pub(crate) fn to_camel_case(name: &str) -> String {
 pub(crate) struct ChatBodySpec<'a> {
     /// First segment of the provider string: the providerOptions namespace.
     pub provider_options_name: &'a str,
-    pub include_usage: bool,
-    pub supports_structured_outputs: bool,
-    pub dialect: &'a ChatDialect,
+    pub chat: &'a ChatSettings,
 }
 
 /// A request body and what building it produced.
 #[derive(Debug, Clone)]
 pub(crate) struct RequestBodyResult {
-    /// The JSON body, before the provider's `transform_request_body`.
+    /// The JSON body.
     pub body: Value,
     /// Warnings raised while building it.
     pub warnings: Vec<Warning>,
@@ -190,7 +188,7 @@ pub(crate) fn build_request_body(
 ) -> Result<RequestBodyResult, AiMuxError> {
     let name = spec.provider_options_name;
     let camel = to_camel_case(name);
-    let dialect = spec.dialect;
+    let chat = spec.chat;
     let mut warnings = Vec::new();
 
     // Resolved provider options: the generic namespace, then the provider's
@@ -238,7 +236,7 @@ pub(crate) fn build_request_body(
     }
     if let Some(max_tokens) = options.max_output_tokens {
         body.insert(
-            dialect.max_tokens_key.unwrap_or("max_tokens").into(),
+            chat.max_tokens_key.unwrap_or("max_tokens").into(),
             json!(max_tokens),
         );
     }
@@ -253,7 +251,7 @@ pub(crate) fn build_request_body(
         }
     }
     if let Some(top_k) = options.top_k {
-        if dialect.supports_top_k {
+        if chat.supports_top_k {
             body.insert("top_k".into(), json!(top_k));
         } else {
             warnings.push(Warning::Unsupported {
@@ -268,8 +266,8 @@ pub(crate) fn build_request_body(
             schema,
             name: format_name,
             description,
-        }) if dialect.supports_response_format => match schema {
-            Some(schema) if spec.supports_structured_outputs => {
+        }) if chat.supports_response_format => match schema {
+            Some(schema) if chat.supports_structured_outputs => {
                 let mut json_schema = Map::new();
                 json_schema.insert("schema".into(), schema.clone());
                 json_schema.insert("strict".into(), json!(strict_json_schema));
@@ -341,7 +339,7 @@ pub(crate) fn build_request_body(
     )?;
     body.insert("messages".into(), Value::Array(messages));
 
-    if dialect.supports_tools {
+    if chat.supports_tools {
         let prepared = prepare_function_tools(options);
         warnings.extend(prepared.warnings);
         if let Some(tools) = prepared.tools {
@@ -363,7 +361,7 @@ pub(crate) fn build_request_body(
 
     if stream {
         body.insert("stream".into(), json!(true));
-        if spec.include_usage {
+        if chat.include_usage {
             body.insert("stream_options".into(), json!({ "include_usage": true }));
         }
     }

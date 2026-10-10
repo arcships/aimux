@@ -37,7 +37,8 @@ use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
 
 use aimux_provider_utils::{
-    MediaTypeData, detect_media_type, get_top_level_media_type, is_full_media_type,
+    MediaTypeData, TransformStreamController, Transformer, detect_media_type,
+    get_top_level_media_type, is_full_media_type, pipe_through,
 };
 
 use crate::shared::EndpointConfig;
@@ -152,7 +153,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let request = build_request_body_with_warnings(&self.model_id, options, false)?;
-        let body = exchange.transform_body(request.body);
+        let body = request.body;
 
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(exchange.url("/responses"), options),
@@ -205,7 +206,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let request = build_request_body_with_warnings(&self.model_id, options, true)?;
-        let body = exchange.transform_body(request.body);
+        let body = request.body;
         let endpoint = exchange.url("/responses");
 
         let resp = aimux_provider_utils::post_json_to_api(
@@ -233,282 +234,22 @@ impl LanguageModel for HuggingFaceResponsesModel {
         let stream_response_headers = response_headers.clone();
 
         let warnings = request.warnings.clone();
-        let stream = async_stream::stream! {
-            // First part: StreamStart.
-            yield Ok(StreamPart::StreamStart { warnings });
-
-            let mut finish_reason = FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            };
-            let mut response_id: Option<String> = None;
-            let mut usage_raw: Option<Value> = None;
-            let mut event_iter = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
-
-            while let Some(event) = event_iter.next().await {
-                match event {
-                    Ok(parsed) => {
-                        if let Some(error) = huggingface_stream_error(
-                            &parsed,
-                            &stream_error_url,
-                            stream_request_body.clone(),
-                            stream_response_headers.clone(),
-                        ) {
-                            yield Ok(StreamPart::Error { error });
-                            break;
-                        }
-                        let chunk_type = parsed
-                            .get("type")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-
-                        match chunk_type {
-                            "response.created" => {
-                                if let Some(resp) = parsed.get("response") {
-                                    response_id = resp
-                                        .get("id")
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string);
-                                    let created_at = resp
-                                        .get("created_at")
-                                        .and_then(serde_json::Value::as_u64)
-                                        .unwrap_or(0);
-                                    let model = resp
-                                        .get("model")
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string);
-                                    yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
-                                        id: response_id.clone(),
-                                        timestamp: format_timestamp(created_at),
-                                        model_id: model,
-                                    }));
-                                }
-                            }
-
-                            "response.output_item.added" => {
-                                if let Some(item) = parsed.get("item") {
-                                    let item_type = item
-                                        .get("type")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("");
-                                    match item_type {
-                                        "message" => {
-                                            let role = item
-                                                .get("role")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("");
-                                            if role == "assistant" {
-                                                let id = item
-                                                    .get("id")
-                                                    .and_then(|v| v.as_str())
-                                                    .unwrap_or("")
-                                                    .to_string();
-                                                yield Ok(StreamPart::TextStart {
-                                                    id: id.clone(),
-                                                    provider_metadata: Some(super::options::huggingface_metadata(json!({ "itemId": id }))),
-                                                });
-                                            }
-                                        }
-                                        "function_call" => {
-                                            let call_id = item
-                                                .get("call_id")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("")
-                                                .to_string();
-                                            let name = item
-                                                .get("name")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("")
-                                                .to_string();
-                                            yield Ok(StreamPart::ToolInputStart {
-                                                id: call_id,
-                                                tool_name: name,
-                                                provider_executed: None,
-                                                dynamic: None,
-                                                title: None,
-                                                provider_metadata: None,
-                                            });
-                                        }
-                                        "reasoning" => {
-                                            let id = item
-                                                .get("id")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("")
-                                                .to_string();
-                                            yield Ok(StreamPart::ReasoningStart {
-                                                id: id.clone(),
-                                                provider_metadata: Some(super::options::huggingface_metadata(json!({ "itemId": id }))),
-                                            });
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-
-                            "response.output_item.done" => {
-                                if let Some(item) = parsed.get("item") {
-                                    let item_type = item
-                                        .get("type")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("");
-                                    match item_type {
-                                        "message" => {
-                                            let role = item
-                                                .get("role")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("");
-                                            if role == "assistant" {
-                                                let id = item
-                                                    .get("id")
-                                                    .and_then(|v| v.as_str())
-                                                    .unwrap_or("")
-                                                    .to_string();
-                                                yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
-                                            }
-                                        }
-                                        "function_call" => {
-                                            let call_id = item
-                                                .get("call_id")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("")
-                                                .to_string();
-                                            let name = item
-                                                .get("name")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("")
-                                                .to_string();
-                                            let arguments = item
-                                                .get("arguments")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("{}");
-                                            let input = arguments.to_string();
-
-                                            yield Ok(StreamPart::ToolInputEnd {
-                                                id: call_id.clone(),
-                                                provider_metadata: None,
-                                            });
-                                            yield Ok(StreamPart::ToolCall(RawToolCall {
-                                                tool_call_id: call_id.clone(),
-                                                tool_name: name.clone(),
-                                                input,
-                                                provider_executed: None,
-                                                dynamic: None,
-                                                provider_metadata: None,
-                                            }));
-
-                                            if let Some(output) =
-                                                item.get("output").and_then(|v| v.as_str())
-                                            {
-                                                yield Ok(StreamPart::ToolResult(ToolResult {
-                                                    tool_call_id: call_id,
-                                                    tool_name: name.clone(),
-                                                    result: Value::String(output.to_string()),
-                                                    is_error: None,
-                                                    preliminary: None,
-                                                    dynamic: None,
-                                                    provider_metadata: None,
-                                                }));
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-
-                            "response.output_text.delta" => {
-                                let item_id = parsed
-                                    .get("item_id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let delta = parsed
-                                    .get("delta")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                yield Ok(StreamPart::TextDelta { id: item_id, delta, provider_metadata: None});
-                            }
-
-                            "response.reasoning_text.delta" => {
-                                let item_id = parsed
-                                    .get("item_id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let delta = parsed
-                                    .get("delta")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                yield Ok(StreamPart::ReasoningDelta {
-                                    id: item_id,
-                                    delta,
-                provider_metadata: None,
-            });
-                            }
-
-                            "response.reasoning_text.done" => {
-                                let item_id = parsed
-                                    .get("item_id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                yield Ok(StreamPart::ReasoningEnd { id: item_id,
-                provider_metadata: None,
-            });
-                            }
-
-                            "response.completed" => {
-                                if let Some(resp) = parsed.get("response") {
-                                    response_id = resp
-                                        .get("id")
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string);
-
-                                    let incomplete_reason = resp
-                                        .get("incomplete_details")
-                                        .and_then(|d| d.get("reason"))
-                                        .and_then(|r| r.as_str());
-
-                                    finish_reason = FinishReason {
-                                        unified: map_finish_reason(
-                                            incomplete_reason.unwrap_or("stop"),
-                                        ),
-                                        raw: incomplete_reason.map(std::string::ToString::to_string),
-                                    };
-
-                                    if let Some(usage) = resp.get("usage")
-                                        && !usage.is_null()
-                                    {
-                                        usage_raw = Some(usage.clone());
-                                    }
-                                }
-                            }
-
-                            _ => {
-                                // Unknown chunk type — ignore (matches the TS
-                                // fallback schema which silently drops unknowns).
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        let recoverable = error.is_recoverable_stream_error();
-                        yield Err(error);
-                        if !recoverable {
-                            return;
-                        }
-                    }
-                }
-            }
-
-            let usage = convert_usage(usage_raw.as_ref());
-
-            yield Ok(StreamPart::Finish {
-                finish_reason,
-                usage,
-                provider_metadata: Some(super::options::huggingface_metadata(json!({ "responseId": response_id }))),
-            });
-        };
+        let stream = pipe_through(
+            futures::stream::iter(first_event).chain(sse_stream),
+            HuggingFaceResponsesStream {
+                warnings,
+                stream_error_url,
+                stream_request_body,
+                stream_response_headers,
+                finish_reason: FinishReason {
+                    unified: FinishReasonUnified::Other,
+                    raw: None,
+                },
+                response_id: None,
+                usage_raw: None,
+                finished: false,
+            },
+        );
 
         Ok(StreamResult {
             stream: Box::pin(stream),
@@ -517,6 +258,314 @@ impl LanguageModel for HuggingFaceResponsesModel {
                 headers: Some(response_headers),
             }),
         })
+    }
+}
+
+/// The `TransformStream` of the Hugging Face Responses `doStream`.
+struct HuggingFaceResponsesStream {
+    warnings: Vec<Warning>,
+    stream_error_url: String,
+    stream_request_body: Value,
+    stream_response_headers: HashMap<String, String>,
+    finish_reason: FinishReason,
+    response_id: Option<String>,
+    usage_raw: Option<Value>,
+    /// Set by an error chunk: later chunks are ignored, the stream still
+    /// finishes.
+    finished: bool,
+}
+
+impl Transformer for HuggingFaceResponsesStream {
+    type Input = Result<Value, AiMuxError>;
+    type Output = StreamPart;
+
+    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+        controller.enqueue(StreamPart::StreamStart {
+            warnings: std::mem::take(&mut self.warnings),
+        });
+    }
+
+    fn transform(
+        &mut self,
+        event: Result<Value, AiMuxError>,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        if self.finished {
+            return;
+        }
+        let Self {
+            ref mut finish_reason,
+            ref mut response_id,
+            ref mut usage_raw,
+            ..
+        } = *self;
+        match event {
+            Ok(parsed) => {
+                if let Some(error) = huggingface_stream_error(
+                    &parsed,
+                    &self.stream_error_url,
+                    self.stream_request_body.clone(),
+                    self.stream_response_headers.clone(),
+                ) {
+                    controller.enqueue(StreamPart::Error { error });
+                    self.finished = true;
+                    return;
+                }
+                let chunk_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
+
+                match chunk_type {
+                    "response.created" => {
+                        if let Some(resp) = parsed.get("response") {
+                            *response_id = resp
+                                .get("id")
+                                .and_then(|v| v.as_str())
+                                .map(std::string::ToString::to_string);
+                            let created_at = resp
+                                .get("created_at")
+                                .and_then(serde_json::Value::as_u64)
+                                .unwrap_or(0);
+                            let model = resp
+                                .get("model")
+                                .and_then(|v| v.as_str())
+                                .map(std::string::ToString::to_string);
+                            controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
+                                id: response_id.clone(),
+                                timestamp: format_timestamp(created_at),
+                                model_id: model,
+                            }));
+                        }
+                    }
+
+                    "response.output_item.added" => {
+                        if let Some(item) = parsed.get("item") {
+                            let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                            match item_type {
+                                "message" => {
+                                    let role =
+                                        item.get("role").and_then(|v| v.as_str()).unwrap_or("");
+                                    if role == "assistant" {
+                                        let id = item
+                                            .get("id")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        controller.enqueue(StreamPart::TextStart {
+                                            id: id.clone(),
+                                            provider_metadata: Some(
+                                                super::options::huggingface_metadata(
+                                                    json!({ "itemId": id }),
+                                                ),
+                                            ),
+                                        });
+                                    }
+                                }
+                                "function_call" => {
+                                    let call_id = item
+                                        .get("call_id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let name = item
+                                        .get("name")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    controller.enqueue(StreamPart::ToolInputStart {
+                                        id: call_id,
+                                        tool_name: name,
+                                        provider_executed: None,
+                                        dynamic: None,
+                                        title: None,
+                                        provider_metadata: None,
+                                    });
+                                }
+                                "reasoning" => {
+                                    let id = item
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    controller.enqueue(StreamPart::ReasoningStart {
+                                        id: id.clone(),
+                                        provider_metadata: Some(
+                                            super::options::huggingface_metadata(
+                                                json!({ "itemId": id }),
+                                            ),
+                                        ),
+                                    });
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    "response.output_item.done" => {
+                        if let Some(item) = parsed.get("item") {
+                            let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                            match item_type {
+                                "message" => {
+                                    let role =
+                                        item.get("role").and_then(|v| v.as_str()).unwrap_or("");
+                                    if role == "assistant" {
+                                        let id = item
+                                            .get("id")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        controller.enqueue(StreamPart::TextEnd {
+                                            id,
+                                            provider_metadata: None,
+                                        });
+                                    }
+                                }
+                                "function_call" => {
+                                    let call_id = item
+                                        .get("call_id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let name = item
+                                        .get("name")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let arguments = item
+                                        .get("arguments")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("{}");
+                                    let input = arguments.to_string();
+
+                                    controller.enqueue(StreamPart::ToolInputEnd {
+                                        id: call_id.clone(),
+                                        provider_metadata: None,
+                                    });
+                                    controller.enqueue(StreamPart::ToolCall(RawToolCall {
+                                        tool_call_id: call_id.clone(),
+                                        tool_name: name.clone(),
+                                        input,
+                                        provider_executed: None,
+                                        dynamic: None,
+                                        provider_metadata: None,
+                                    }));
+
+                                    if let Some(output) =
+                                        item.get("output").and_then(|v| v.as_str())
+                                    {
+                                        controller.enqueue(StreamPart::ToolResult(ToolResult {
+                                            tool_call_id: call_id,
+                                            tool_name: name.clone(),
+                                            result: Value::String(output.to_string()),
+                                            is_error: None,
+                                            preliminary: None,
+                                            dynamic: None,
+                                            provider_metadata: None,
+                                        }));
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    "response.output_text.delta" => {
+                        let item_id = parsed
+                            .get("item_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let delta = parsed
+                            .get("delta")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        controller.enqueue(StreamPart::TextDelta {
+                            id: item_id,
+                            delta,
+                            provider_metadata: None,
+                        });
+                    }
+
+                    "response.reasoning_text.delta" => {
+                        let item_id = parsed
+                            .get("item_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let delta = parsed
+                            .get("delta")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        controller.enqueue(StreamPart::ReasoningDelta {
+                            id: item_id,
+                            delta,
+                            provider_metadata: None,
+                        });
+                    }
+
+                    "response.reasoning_text.done" => {
+                        let item_id = parsed
+                            .get("item_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        controller.enqueue(StreamPart::ReasoningEnd {
+                            id: item_id,
+                            provider_metadata: None,
+                        });
+                    }
+
+                    "response.completed" => {
+                        if let Some(resp) = parsed.get("response") {
+                            *response_id = resp
+                                .get("id")
+                                .and_then(|v| v.as_str())
+                                .map(std::string::ToString::to_string);
+
+                            let incomplete_reason = resp
+                                .get("incomplete_details")
+                                .and_then(|d| d.get("reason"))
+                                .and_then(|r| r.as_str());
+
+                            *finish_reason = FinishReason {
+                                unified: map_finish_reason(incomplete_reason.unwrap_or("stop")),
+                                raw: incomplete_reason.map(std::string::ToString::to_string),
+                            };
+
+                            if let Some(usage) = resp.get("usage")
+                                && !usage.is_null()
+                            {
+                                *usage_raw = Some(usage.clone());
+                            }
+                        }
+                    }
+
+                    _ => {
+                        // Unknown chunk type — ignore (matches the TS
+                        // fallback schema which silently drops unknowns).
+                    }
+                }
+            }
+            Err(error) => {
+                if error.is_recoverable_stream_error() {
+                    controller.enqueue_error(error);
+                } else {
+                    controller.error(error);
+                }
+            }
+        }
+    }
+
+    fn flush(self, controller: &mut TransformStreamController<StreamPart>) {
+        let usage = convert_usage(self.usage_raw.as_ref());
+
+        controller.enqueue(StreamPart::Finish {
+            finish_reason: self.finish_reason,
+            usage,
+            provider_metadata: Some(super::options::huggingface_metadata(
+                json!({ "responseId": self.response_id }),
+            )),
+        });
     }
 }
 

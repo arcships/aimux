@@ -164,7 +164,7 @@ impl ImageModel for GoogleImageModel {
                 exchange.url(&format!("/models/{}:generateContent", self.model_id)),
                 options,
             ),
-            exchange.transform_body(body),
+            body,
             aimux_provider_utils::create_json_response_handler::<GenerateContentResponse>(),
             super::google_failed_response_handler(),
         )

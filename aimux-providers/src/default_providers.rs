@@ -110,7 +110,6 @@ pub fn create_provider(
         headers,
         fetch,
         params,
-        transform_request_body,
     } = settings;
     let unsupported = |field: &str| {
         Err(AiMuxError::InvalidArgument(format!(
@@ -120,28 +119,10 @@ pub fn create_provider(
     if !params.is_empty() {
         return unsupported("params");
     }
-    // The packages whose settings also support a body transform.
     macro_rules! package {
-        ($module:ident, $create:ident, $settings:ident) => {
+        ($module:ident, $create:ident, $settings:ident $(, $api_key:ident)?) => {{
             Ok(Arc::new(crate::$module::$create(
                 #[allow(clippy::needless_update)]
-                crate::$module::$settings {
-                    api_key,
-                    base_url,
-                    headers,
-                    fetch,
-                    transform_request_body,
-                    ..Default::default()
-                },
-            )?))
-        };
-    }
-    macro_rules! package_without_transform {
-        ($module:ident, $create:ident, $settings:ident $(, $api_key:ident)?) => {{
-            if transform_request_body.is_some() {
-                return unsupported("transform_request_body");
-            }
-            Ok(Arc::new(crate::$module::$create(
                 crate::$module::$settings {
                     $($api_key,)?
                     base_url,
@@ -154,9 +135,6 @@ pub fn create_provider(
     }
     macro_rules! package_with_string_key {
         ($module:ident, $create:ident, $settings:ident $(, $defaults:expr)?) => {{
-            if transform_request_body.is_some() {
-                return unsupported("transform_request_body");
-            }
             let api_key = match api_key {
                 Some(aimux_provider_utils::Resolvable::Value(key)) => Some(key),
                 None => None,
@@ -178,7 +156,8 @@ pub fn create_provider(
         "amazon_bedrock" => package!(
             bedrock,
             create_amazon_bedrock,
-            AmazonBedrockProviderSettings
+            AmazonBedrockProviderSettings,
+            api_key
         ),
         "anthropic" => {
             package_with_string_key!(
@@ -189,7 +168,7 @@ pub fn create_provider(
             )
         }
         "azure" => {
-            package_without_transform!(azure, create_azure, AzureOpenAIProviderSettings, api_key)
+            package!(azure, create_azure, AzureOpenAIProviderSettings, api_key)
         }
         "cohere" => package_with_string_key!(
             cohere,
@@ -198,7 +177,12 @@ pub fn create_provider(
             Default::default()
         ),
         "deepseek" => package_with_string_key!(deepseek, create_deepseek, DeepSeekProviderSettings),
-        "elevenlabs" => package!(elevenlabs, create_elevenlabs, ElevenLabsProviderSettings),
+        "elevenlabs" => package!(
+            elevenlabs,
+            create_elevenlabs,
+            ElevenLabsProviderSettings,
+            api_key
+        ),
         "google" => package_with_string_key!(
             google,
             create_google,
@@ -206,7 +190,12 @@ pub fn create_provider(
             Default::default()
         ),
         "groq" => package_with_string_key!(groq, create_groq, GroqProviderSettings),
-        "huggingface" => package!(huggingface, create_huggingface, HuggingFaceProviderSettings),
+        "huggingface" => package!(
+            huggingface,
+            create_huggingface,
+            HuggingFaceProviderSettings,
+            api_key
+        ),
         "mistral" => {
             package_with_string_key!(
                 mistral,
@@ -223,113 +212,113 @@ pub fn create_provider(
                 Default::default()
             )
         }
-        "voyage" => package!(voyage, create_voyage, VoyageProviderSettings),
+        "voyage" => package!(voyage, create_voyage, VoyageProviderSettings, api_key),
         "xai" => {
             package_with_string_key!(xai, create_xai, XAIProviderSettings, Default::default())
         }
-        "assemblyai" => package_without_transform!(
+        "assemblyai" => package!(
             assemblyai,
             create_assemblyai,
             AssemblyAIProviderSettings,
             api_key
         ),
-        "black_forest_labs" => package_without_transform!(
+        "black_forest_labs" => package!(
             black_forest_labs,
             create_black_forest_labs,
             BlackForestLabsProviderSettings,
             api_key
         ),
         "cartesia" => {
-            package_without_transform!(cartesia, create_cartesia, CartesiaProviderSettings, api_key)
+            package!(cartesia, create_cartesia, CartesiaProviderSettings, api_key)
         }
         "deepgram" => {
-            package_without_transform!(deepgram, create_deepgram, DeepgramProviderSettings, api_key)
+            package!(deepgram, create_deepgram, DeepgramProviderSettings, api_key)
         }
         "exa_ai" => {
-            package_without_transform!(exa_ai, create_exa_ai, ExaAiProviderSettings, api_key)
+            package!(exa_ai, create_exa_ai, ExaAiProviderSettings, api_key)
         }
-        "fal" => package_without_transform!(fal, create_fal, FalProviderSettings, api_key),
-        "firecrawl" => package_without_transform!(
+        "fal" => package!(fal, create_fal, FalProviderSettings, api_key),
+        "firecrawl" => package!(
             firecrawl,
             create_firecrawl,
             FirecrawlProviderSettings,
             api_key
         ),
         "gladia" => {
-            package_without_transform!(gladia, create_gladia, GladiaProviderSettings, api_key)
+            package!(gladia, create_gladia, GladiaProviderSettings, api_key)
         }
-        "google_pse" => package_without_transform!(
+        "google_pse" => package!(
             google_pse,
             create_google_pse,
             GooglePseProviderSettings,
             api_key
         ),
-        "hume" => package_without_transform!(hume, create_hume, HumeProviderSettings, api_key),
+        "hume" => package!(hume, create_hume, HumeProviderSettings, api_key),
         "jina_ai" => {
-            package_without_transform!(jina_ai, create_jina_ai, JinaAiProviderSettings, api_key)
+            package!(jina_ai, create_jina_ai, JinaAiProviderSettings, api_key)
         }
         "klingai" => {
-            package_without_transform!(klingai, create_klingai, KlingAIProviderSettings, api_key)
+            package!(klingai, create_klingai, KlingAIProviderSettings, api_key)
         }
         "linkup" => {
-            package_without_transform!(linkup, create_linkup, LinkupProviderSettings, api_key)
+            package!(linkup, create_linkup, LinkupProviderSettings, api_key)
         }
-        "lmnt" => package_without_transform!(lmnt, create_lmnt, LMNTProviderSettings, api_key),
-        "luma" => package_without_transform!(luma, create_luma, LumaProviderSettings, api_key),
-        "parallel_ai" => package_without_transform!(
+        "lmnt" => package!(lmnt, create_lmnt, LMNTProviderSettings, api_key),
+        "luma" => package!(luma, create_luma, LumaProviderSettings, api_key),
+        "parallel_ai" => package!(
             parallel_ai,
             create_parallel_ai,
             ParallelAiProviderSettings,
             api_key
         ),
         "prodia" => {
-            package_without_transform!(prodia, create_prodia, ProdiaProviderSettings, api_key)
+            package!(prodia, create_prodia, ProdiaProviderSettings, api_key)
         }
         "recraft" => {
-            package_without_transform!(recraft, create_recraft, RecraftProviderSettings, api_key)
+            package!(recraft, create_recraft, RecraftProviderSettings, api_key)
         }
-        "replicate" => package_without_transform!(
+        "replicate" => package!(
             replicate,
             create_replicate,
             ReplicateProviderSettings,
             api_key
         ),
-        "revai" => package_without_transform!(revai, create_revai, RevaiProviderSettings, api_key),
+        "revai" => package!(revai, create_revai, RevaiProviderSettings, api_key),
         "runwayml" => {
-            package_without_transform!(runwayml, create_runwayml, RunwaymlProviderSettings, api_key)
+            package!(runwayml, create_runwayml, RunwaymlProviderSettings, api_key)
         }
         "searxng" => {
-            package_without_transform!(searxng, create_searxng, SearxngProviderSettings, api_key)
+            package!(searxng, create_searxng, SearxngProviderSettings, api_key)
         }
         "serper" => {
-            package_without_transform!(serper, create_serper, SerperProviderSettings, api_key)
+            package!(serper, create_serper, SerperProviderSettings, api_key)
         }
-        "stability" => package_without_transform!(
+        "stability" => package!(
             stability,
             create_stability,
             StabilityProviderSettings,
             api_key
         ),
         "tavily" => {
-            package_without_transform!(tavily, create_tavily, TavilyProviderSettings, api_key)
+            package!(tavily, create_tavily, TavilyProviderSettings, api_key)
         }
         "tinyfish" => {
-            package_without_transform!(tinyfish, create_tinyfish, TinyfishProviderSettings, api_key)
+            package!(tinyfish, create_tinyfish, TinyfishProviderSettings, api_key)
         }
         "you_com" => {
-            package_without_transform!(you_com, create_you_com, YouComProviderSettings, api_key)
+            package!(you_com, create_you_com, YouComProviderSettings, api_key)
         }
         "aws_polly" => {
             if api_key.is_some() {
                 return unsupported("api_key");
             }
-            package_without_transform!(aws_polly, create_aws_polly, AwsPollyProviderSettings)
+            package!(aws_polly, create_aws_polly, AwsPollyProviderSettings)
         }
         "dataforseo" => {
             if api_key.is_some() {
                 return unsupported("api_key");
             }
-            package_without_transform!(dataforseo, create_dataforseo, DataforseoProviderSettings)
+            package!(dataforseo, create_dataforseo, DataforseoProviderSettings)
         }
         "google_vertex" => Ok(Arc::new(crate::vertex::create_google_vertex(
             crate::vertex::VertexProviderSettings {
@@ -337,7 +326,6 @@ pub fn create_provider(
                 base_url,
                 headers: headers.map(Into::into),
                 fetch,
-                transform_request_body,
                 ..Default::default()
             },
         )?)),
@@ -351,7 +339,6 @@ pub fn create_provider(
                         base_url,
                         headers,
                         fetch,
-                        transform_request_body,
                         ..Default::default()
                     },
                 )?))
@@ -361,7 +348,6 @@ pub fn create_provider(
                         base_url,
                         headers,
                         fetch,
-                        transform_request_body,
                         ..Default::default()
                     },
                 )?))

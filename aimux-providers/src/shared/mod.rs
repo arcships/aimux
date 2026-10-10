@@ -1,25 +1,28 @@
 //! Helpers the native packages and the presets share.
 //!
-//! Only transport plumbing lives here: how the provider-level request headers
-//! are produced. Nothing in this module knows a vendor.
+//! Only transport plumbing lives here: where the base URL and the
+//! provider-level request headers of a request come from, as data. The few
+//! vendors whose endpoint is decided by more than a URL and a credential
+//! (Vertex, Bedrock, Polly) keep that logic in their own modules.
 
 mod discovery;
 mod exchange;
 mod poll;
 
 pub(crate) use discovery::list_data_models;
-pub(crate) use exchange::{Endpoint, EndpointConfig};
+pub(crate) use exchange::{
+    BaseUrl, Endpoint, EndpointConfig, EndpointHeaders, EndpointSource, SupportedUrlsSource,
+};
 pub(crate) use poll::{
     POLL_INTERVAL_MILLIS_KEY, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key,
     poll_interval_ms, poll_until, retry_download,
 };
 
-use std::sync::Arc;
-
-use serde_json::Value;
-
 use aimux_core::AiMuxError;
-use aimux_provider_utils::{HeaderMapOpt, HeadersFn, Resolvable, combine_headers, load_api_key};
+use aimux_provider_utils::{
+    HeaderMapOpt, Resolvable, combine_headers, load_api_key, normalize_headers,
+    with_user_agent_suffix,
+};
 
 /// A host part (a Vertex location, an Azure resource name) is one DNS label: letters, digits and hyphens, not starting or
 /// ending with a hyphen (`isValidHostnamePart`).
@@ -33,10 +36,6 @@ pub(crate) fn is_valid_hostname_part(part: &str) -> bool {
         && bytes[0] != b'-'
         && bytes[bytes.len() - 1] != b'-'
 }
-
-/// A provider-level rewrite of every JSON request body, called once after the
-/// body is serialized and before it is sent.
-pub type TransformRequestBody = Arc<dyn Fn(Value) -> Value + Send + Sync>;
 
 /// Where the credential of a provider comes from.
 #[derive(Clone, Debug)]
@@ -92,58 +91,81 @@ pub(crate) enum AuthScheme {
     Scheme(&'static str),
 }
 
-/// Provider headers with a bearer credential: [`credential_headers`] with
-/// [`AuthScheme::Bearer`].
-pub(crate) fn provider_headers(
-    credential: Credential,
-    fixed: Vec<(String, String)>,
-    user: Option<HeaderMapOpt>,
-) -> HeadersFn {
-    credential_headers(credential, AuthScheme::Bearer, fixed, user)
+/// The provider-level request headers, as data. They are produced on every
+/// request: the credential first, then the fixed headers (organization,
+/// project, version, ...), then the user's headers, which may override or
+/// remove any of them (case-insensitively, `None` removes), and finally the
+/// `ai-sdk-{package}/{version}` user-agent suffix when one is set.
+#[derive(Clone, Debug)]
+pub(crate) struct ProviderHeaders {
+    pub credential: Credential,
+    pub scheme: AuthScheme,
+    pub fixed: Vec<(String, String)>,
+    pub user: Option<HeaderMapOpt>,
+    /// `(package, version)` of the user-agent suffix.
+    pub user_agent: Option<(&'static str, &'static str)>,
 }
 
-/// Provider headers, evaluated on every request: the credential first, then
-/// the fixed headers (organization, project, version, ...), then the user's
-/// headers, which may override or remove any of them (case-insensitively,
-/// `None` removes).
-pub(crate) fn credential_headers(
-    credential: Credential,
-    scheme: AuthScheme,
-    fixed: Vec<(String, String)>,
-    user: Option<HeaderMapOpt>,
-) -> HeadersFn {
-    Resolvable::from_async_fn(move || {
-        let credential = credential.clone();
-        let fixed = fixed.clone();
-        let user = user.clone();
-        async move {
-            let mut layer = HeaderMapOpt::new();
-            if let Some(secret) = credential.secret().await? {
-                match scheme {
-                    AuthScheme::Bearer => {
-                        layer.insert(
-                            "Authorization".to_string(),
-                            Some(format!("Bearer {secret}")),
-                        );
-                    }
-                    AuthScheme::Header(name) => {
-                        layer.insert(name.to_string(), Some(secret));
-                    }
-                    AuthScheme::Scheme(scheme) => {
-                        layer.insert(
-                            "Authorization".to_string(),
-                            Some(format!("{scheme} {secret}")),
-                        );
-                    }
-                }
-            }
-            for (name, value) in fixed {
-                layer.insert(name, Some(value));
-            }
-            Ok(match &user {
-                Some(user) => combine_headers(&[&layer, user]),
-                None => layer,
-            })
+impl ProviderHeaders {
+    /// Headers with `credential` put on the wire by `scheme`, no user-agent
+    /// suffix.
+    pub(crate) fn new(
+        credential: Credential,
+        scheme: AuthScheme,
+        fixed: Vec<(String, String)>,
+        user: Option<HeaderMapOpt>,
+    ) -> Self {
+        Self {
+            credential,
+            scheme,
+            fixed,
+            user,
+            user_agent: None,
         }
-    })
+    }
+
+    /// Headers with a bearer credential, no user-agent suffix.
+    pub(crate) fn bearer(
+        credential: Credential,
+        fixed: Vec<(String, String)>,
+        user: Option<HeaderMapOpt>,
+    ) -> Self {
+        Self::new(credential, AuthScheme::Bearer, fixed, user)
+    }
+
+    /// The same headers with the `ai-sdk-{package}/{version}` user-agent
+    /// suffix.
+    #[must_use]
+    pub(crate) fn with_user_agent(mut self, package: &'static str, version: &'static str) -> Self {
+        self.user_agent = Some((package, version));
+        self
+    }
+
+    pub(crate) async fn resolve(&self) -> Result<HeaderMapOpt, AiMuxError> {
+        let mut layer = HeaderMapOpt::new();
+        if let Some(secret) = self.credential.secret().await? {
+            let (name, value) = match self.scheme {
+                AuthScheme::Bearer => ("Authorization", format!("Bearer {secret}")),
+                AuthScheme::Header(name) => (name, secret),
+                AuthScheme::Scheme(scheme) => ("Authorization", format!("{scheme} {secret}")),
+            };
+            layer.insert(name.to_string(), Some(value));
+        }
+        for (name, value) in &self.fixed {
+            layer.insert(name.clone(), Some(value.clone()));
+        }
+        let headers = match &self.user {
+            Some(user) => combine_headers(&[&layer, user]),
+            None => layer,
+        };
+        let Some((package, version)) = self.user_agent else {
+            return Ok(headers);
+        };
+        let mut headers = normalize_headers(headers).into_iter().collect();
+        with_user_agent_suffix(&mut headers, &format!("ai-sdk-{package}/{version}"));
+        Ok(headers
+            .into_iter()
+            .map(|(name, value)| (name, Some(value)))
+            .collect())
+    }
 }

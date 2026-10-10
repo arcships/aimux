@@ -17,12 +17,13 @@ use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_core::video_model::VideoModel;
 use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, Resolvable, combine_headers, load_setting,
+    FetchFunction, HeaderMapOpt, Resolvable, combine_headers, load_setting, normalize_headers,
+    with_user_agent_suffix,
 };
 use std::sync::OnceLock;
 
 use crate::google::GoogleSpeechModel;
-use crate::shared::{Endpoint, EndpointConfig, TransformRequestBody};
+use crate::shared::{Endpoint, EndpointConfig, EndpointSource, SupportedUrlsSource};
 
 mod anthropic_model;
 mod anthropic_provider;
@@ -99,9 +100,6 @@ pub struct VertexProviderSettings {
     /// Custom WebSocket transport for Gemini live transcription.
     #[cfg(feature = "realtime")]
     pub web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for VertexProviderSettings {
@@ -116,10 +114,6 @@ impl std::fmt::Debug for VertexProviderSettings {
             .field("access_token", &self.access_token)
             .field("google_auth_options", &self.google_auth_options)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -136,7 +130,7 @@ fn location_host(location: &str) -> String {
 
 /// Which publisher's models a base URL addresses.
 #[derive(Clone, Copy)]
-enum Publisher {
+pub(crate) enum Publisher {
     Google,
     Anthropic,
 }
@@ -147,14 +141,66 @@ pub(crate) struct ProjectLocation {
     pub(crate) location: String,
 }
 
-/// Resolves the project and location of a request (Speech-to-Text and the
-/// operations that name them), failing for Express mode.
-pub(crate) type ProjectLocationFn =
-    Arc<dyn Fn() -> BoxFuture<'static, Result<ProjectLocation, AiMuxError>> + Send + Sync>;
+/// Where the project and location of a request come from (Speech-to-Text and
+/// the operations that name them); Express mode fails the request.
+#[derive(Clone)]
+pub(crate) struct ProjectLocationSource {
+    resolver: Arc<Resolver>,
+    /// The model kind named in the Express-mode error.
+    what: &'static str,
+}
+
+impl ProjectLocationSource {
+    /// The project and location of one request.
+    pub(crate) async fn resolve(&self) -> Result<ProjectLocation, AiMuxError> {
+        if self.resolver.express_key().await?.is_some() {
+            return Err(AiMuxError::InvalidArgument(format!(
+                "Google Vertex {} models do not support Express Mode API keys. \
+                 Use standard Google Cloud credentials instead.",
+                self.what
+            )));
+        }
+        Ok(ProjectLocation {
+            location: self.resolver.location()?,
+            project: self.resolver.project()?,
+        })
+    }
+}
+
+/// The endpoint of a Gemini-publisher model. With `tuned`, the request fails
+/// in Express mode (tuned models are served from a deployed endpoint, which
+/// an API key cannot reach) and the URL is the project/location root.
+#[derive(Clone)]
+pub(crate) struct GeminiEndpoint {
+    resolver: Arc<Resolver>,
+    tuned: bool,
+}
+
+impl GeminiEndpoint {
+    /// The base URL and provider headers of one request.
+    pub(crate) async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
+        if self.tuned && self.resolver.express_key().await?.is_some() {
+            return Err(AiMuxError::InvalidArgument(
+                "Google Vertex tuned models do not support Express Mode API keys. \
+                 Use standard Google Cloud credentials instead."
+                    .to_string(),
+            ));
+        }
+        let mut endpoint = self.resolver.endpoint(Publisher::Google).await?;
+        if self.tuned && self.resolver.base_url.is_none() {
+            endpoint.base_url = endpoint
+                .base_url
+                .strip_suffix("/publishers/google")
+                .unwrap_or(&endpoint.base_url)
+                .to_string();
+        }
+        Ok(endpoint)
+    }
+}
 
 /// The settings that decide, per request, which mode applies, where requests
 /// go and what authenticates them.
-struct Resolver {
+pub(crate) struct Resolver {
     api_key: Option<Resolvable<String>>,
     express_mode: bool,
     location: Option<String>,
@@ -247,20 +293,19 @@ impl Resolver {
     }
 
     /// The endpoint of `publisher`'s models for one request.
-    async fn endpoint(&self, publisher: Publisher) -> Result<Endpoint, AiMuxError> {
+    pub(crate) async fn endpoint(&self, publisher: Publisher) -> Result<Endpoint, AiMuxError> {
         let express_key = match publisher {
             Publisher::Google => self.express_key().await?,
             Publisher::Anthropic => None,
         };
         let base_url = self.base_url(express_key.is_some(), publisher)?;
         let headers = self.headers(express_key.as_deref()).await?;
-        let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            Resolvable::Value(headers),
-            "google-vertex",
-            "5.0.98",
-        )
-        .resolve()
-        .await?;
+        let mut headers = normalize_headers(headers).into_iter().collect();
+        with_user_agent_suffix(&mut headers, "ai-sdk-google-vertex/5.0.98");
+        let headers = headers
+            .into_iter()
+            .map(|(name, value)| (name, Some(value)))
+            .collect();
         Ok(Endpoint { base_url, headers })
     }
 }
@@ -303,7 +348,6 @@ pub fn create_google_vertex(
         fetch: settings.fetch,
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -326,7 +370,6 @@ pub struct VertexProvider {
     fetch: Option<FetchFunction>,
     #[cfg(feature = "realtime")]
     web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 /// The URL patterns the Vertex models fetch themselves
@@ -348,54 +391,23 @@ impl VertexProvider {
     /// With `tuned`, the request fails in Express mode (tuned models are
     /// served from a deployed endpoint, which an API key cannot reach).
     fn model_config(&self, provider: &str, tuned: bool) -> EndpointConfig {
-        let resolver = self.resolver.clone();
-        EndpointConfig {
-            provider: provider.to_string(),
-            endpoint: Arc::new(move || {
-                let resolver = resolver.clone();
-                Box::pin(async move {
-                    if tuned && resolver.express_key().await?.is_some() {
-                        return Err(AiMuxError::InvalidArgument(
-                            "Google Vertex tuned models do not support Express Mode API keys. \
-                             Use standard Google Cloud credentials instead."
-                                .to_string(),
-                        ));
-                    }
-                    let mut endpoint = resolver.endpoint(Publisher::Google).await?;
-                    if tuned && resolver.base_url.is_none() {
-                        endpoint.base_url = endpoint
-                            .base_url
-                            .strip_suffix("/publishers/google")
-                            .unwrap_or(&endpoint.base_url)
-                            .to_string();
-                    }
-                    Ok(endpoint)
-                })
+        EndpointConfig::new(
+            provider.to_string(),
+            EndpointSource::Vertex(GeminiEndpoint {
+                resolver: self.resolver.clone(),
+                tuned,
             }),
-            fetch: self.fetch.clone(),
-            supported_urls: Arc::new(|_| supported_urls()),
-            transform_request_body: self.transform_request_body.clone(),
-        }
+            self.fetch.clone(),
+        )
+        .with_supported_urls(SupportedUrlsSource::Fixed(supported_urls()))
     }
 
     /// The project and location of a request, for the Speech-to-Text models.
-    fn project_location(&self, what: &'static str) -> ProjectLocationFn {
-        let resolver = self.resolver.clone();
-        Arc::new(move || {
-            let resolver = resolver.clone();
-            Box::pin(async move {
-                if resolver.express_key().await?.is_some() {
-                    return Err(AiMuxError::InvalidArgument(format!(
-                        "Google Vertex {what} models do not support Express Mode API keys. \
-                         Use standard Google Cloud credentials instead."
-                    )));
-                }
-                Ok(ProjectLocation {
-                    location: resolver.location()?,
-                    project: resolver.project()?,
-                })
-            })
-        })
+    fn project_location(&self, what: &'static str) -> ProjectLocationSource {
+        ProjectLocationSource {
+            resolver: self.resolver.clone(),
+            what,
+        }
     }
 
     /// A Gemini model (e.g. `"gemini-2.0-flash"`, or a tuned

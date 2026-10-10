@@ -17,7 +17,6 @@
 pub(crate) mod options;
 pub mod responses;
 
-pub use crate::shared::TransformRequestBody;
 pub use responses::HuggingFaceResponsesModel;
 
 use std::sync::{Arc, OnceLock};
@@ -30,10 +29,10 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::openai::config::OpenAIModelConfig;
-use crate::shared::{Credential, EndpointConfig, provider_headers};
+use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
 const DEFAULT_BASE_URL: &str = "https://router.huggingface.co/v1";
 const API_KEY_ENV_VAR: &str = "HUGGINGFACE_API_KEY";
@@ -66,9 +65,6 @@ pub struct HuggingFaceProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for HuggingFaceProviderSettings {
@@ -83,10 +79,6 @@ impl std::fmt::Debug for HuggingFaceProviderSettings {
             )
             .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -108,13 +100,12 @@ pub fn create_huggingface(
     Ok(HuggingFaceProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: provider_headers(
+        headers: ProviderHeaders::bearer(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Hugging Face"),
             Vec::new(),
             settings.headers,
         ),
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -134,9 +125,8 @@ pub fn huggingface() -> &'static HuggingFaceProvider {
 pub struct HuggingFaceProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl HuggingFaceProvider {
@@ -146,7 +136,6 @@ impl HuggingFaceProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            self.transform_request_body.clone(),
         )
     }
 
@@ -156,7 +145,6 @@ impl HuggingFaceProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            self.transform_request_body.clone(),
         )
     }
 

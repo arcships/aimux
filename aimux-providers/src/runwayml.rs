@@ -26,9 +26,9 @@ use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoFrameType, VideoModel,
     VideoOperationStart, VideoOperationStatus, VideoPollConfig, VideoResponse, VideoResult,
 };
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, provider_headers};
+use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
 const PROVIDER_NAME: &str = "runwayml";
 /// Milliseconds between two status checks of a task. The Core poll loop reads
@@ -117,7 +117,7 @@ pub fn create_runwayml(settings: RunwaymlProviderSettings) -> Result<RunwaymlPro
     Ok(RunwaymlProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: provider_headers(
+        headers: ProviderHeaders::bearer(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "RunwayML"),
             vec![("X-Runway-Version".to_string(), RUNWAY_VERSION.to_string())],
             settings.headers,
@@ -142,7 +142,7 @@ pub fn runwayml() -> &'static RunwaymlProvider {
 pub struct RunwaymlProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
@@ -153,7 +153,6 @@ impl RunwaymlProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            None,
         )
     }
 
