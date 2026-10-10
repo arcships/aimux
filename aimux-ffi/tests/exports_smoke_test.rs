@@ -68,16 +68,16 @@ use aimux_ffi::{
     aimux_openai_image_new, aimux_openai_image_new_with_base, aimux_openai_new,
     aimux_openai_new_with_base, aimux_openai_speech_new, aimux_openai_speech_new_with_base,
     aimux_openai_transcription_new, aimux_openai_transcription_new_with_base,
-    aimux_provider_from_env, aimux_provider_handle_new, aimux_provider_list_models,
-    aimux_provider_model, aimux_provider_new, aimux_recording_flush, aimux_recording_stop,
-    aimux_recording_try_flush, aimux_register_providers, aimux_rerank, aimux_router_new,
-    aimux_search, aimux_session_calls, aimux_session_infer_init, aimux_session_store_init,
-    aimux_speech_generate, aimux_stream_text, aimux_stream_text_as_openai,
-    aimux_stream_text_as_openai_with_abort, aimux_stream_text_with_abort, aimux_tavily_search_new,
-    aimux_tavily_search_new_with_base, aimux_tool_call_repair_context, aimux_trace_aggregate,
-    aimux_trace_clear, aimux_trace_export_jsonl, aimux_trace_new, aimux_trace_new_audited,
-    aimux_trace_session_chain, aimux_trace_session_trajectory, aimux_transcription_generate,
-    aimux_transcription_input_done, aimux_transcription_next_part, aimux_transcription_push_audio,
+    aimux_provider_handle_new, aimux_provider_list_models, aimux_provider_model,
+    aimux_provider_new, aimux_recording_flush, aimux_recording_stop, aimux_recording_try_flush,
+    aimux_register_providers, aimux_rerank, aimux_router_new, aimux_search, aimux_session_calls,
+    aimux_session_infer_init, aimux_session_store_init, aimux_speech_generate, aimux_stream_text,
+    aimux_stream_text_as_openai, aimux_stream_text_as_openai_with_abort,
+    aimux_stream_text_with_abort, aimux_tavily_search_new, aimux_tavily_search_new_with_base,
+    aimux_tool_call_repair_context, aimux_trace_aggregate, aimux_trace_clear,
+    aimux_trace_export_jsonl, aimux_trace_new, aimux_trace_new_audited, aimux_trace_session_chain,
+    aimux_trace_session_trajectory, aimux_transcription_generate, aimux_transcription_input_done,
+    aimux_transcription_next_part, aimux_transcription_push_audio,
     aimux_transcription_session_drop, aimux_transcription_session_new, aimux_vertex_new,
     aimux_vertex_new_with_base, aimux_video_generate, aimux_xai_new, aimux_xai_new_with_base,
 };
@@ -567,19 +567,6 @@ fn constructor_exports_build_and_release_handles() {
     for h in handles {
         aimux_drop_handle(h);
     }
-}
-
-/// `provider_from_env` defers reading the key until request time.
-#[test]
-fn provider_from_env_handle() {
-    let mut h = 0;
-    let e = aimux_provider_from_env(
-        c("groq").as_ptr(),
-        c("llama-3.3-70b-versatile").as_ptr(),
-        &mut h,
-    );
-    expect_handle(e, h, "provider_from_env");
-    aimux_drop_handle(h);
 }
 
 // ── session class: text generation (4 exports) ──────────────────────────────

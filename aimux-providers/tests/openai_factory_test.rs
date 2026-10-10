@@ -304,18 +304,18 @@ impl Fixture {
 fn message(role: Role, text: &str) -> LanguageModelMessage {
     match role {
         Role::System => LanguageModelMessage::System {
-            content: text.into(),
+            content: text.to_string(),
             provider_options: None,
         },
         Role::User => LanguageModelMessage::user_text(text),
         Role::Assistant => LanguageModelMessage::Assistant {
             content: vec![AssistantPart::Text(TextPart {
-                text: text.into(),
+                text: text.to_string(),
                 provider_options: None,
             })],
             provider_options: None,
         },
-        Role::Tool => panic!("unmapped tool role"),
+        Role::Tool => panic!("tool messages require tool results"),
     }
 }
 

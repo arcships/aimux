@@ -28,6 +28,12 @@ pub struct BedrockConverseResponse {
     pub additional_model_response_fields: Option<Value>,
     #[serde(default)]
     pub metrics: Option<Value>,
+    #[serde(default)]
+    pub trace: Option<Value>,
+    #[serde(default)]
+    pub performance_config: Option<Value>,
+    #[serde(default)]
+    pub service_tier: Option<Value>,
 }
 
 /// `output` block — wraps the generated `message`.
@@ -55,6 +61,8 @@ pub struct BedrockContentBlock {
     pub tool_use: Option<BedrockToolUse>,
     #[serde(default, rename = "reasoningContent")]
     pub reasoning_content: Option<Value>,
+    #[serde(default, rename = "citationsContent")]
+    pub citations_content: Option<Value>,
 }
 
 /// `toolUse` block.
@@ -73,16 +81,28 @@ pub struct BedrockToolUse {
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BedrockUsage {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<u32>,
-    #[serde(default, rename = "cacheReadInputTokens")]
+    #[serde(
+        default,
+        rename = "cacheReadInputTokens",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub cache_read_input_tokens: Option<u32>,
-    #[serde(default, rename = "cacheWriteInputTokens")]
+    #[serde(
+        default,
+        rename = "cacheWriteInputTokens",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub cache_write_input_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_details: Option<Vec<BedrockCacheDetail>>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
 }
 
 // ── Error response ───────────────────────────────────────────────────────────
@@ -94,4 +114,21 @@ pub struct BedrockError {
     pub message: Option<String>,
     #[serde(default, rename = "type")]
     pub error_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BedrockCacheDetail {
+    #[serde(deserialize_with = "deserialize_cache_input_tokens")]
+    pub input_tokens: u32,
+    pub ttl: String,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
+}
+
+fn deserialize_cache_input_tokens<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<u32, D::Error> {
+    u32::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format!("inputTokens: {error}")))
 }

@@ -27,6 +27,8 @@ pub mod files;
 pub mod image;
 mod model;
 pub(crate) mod options;
+pub mod speech;
+pub mod transcription;
 pub mod types;
 pub mod utils;
 pub mod video;
@@ -35,6 +37,8 @@ pub use embedding::GoogleEmbeddingModel;
 pub use files::GoogleFiles;
 pub use image::{GoogleImageModel, GoogleImageSettings};
 pub use model::GoogleModel;
+pub use speech::GoogleSpeechModel;
+pub use transcription::GoogleTranscriptionModel;
 pub use video::GoogleVideoModel;
 
 use std::sync::{Arc, OnceLock};
@@ -44,13 +48,18 @@ use serde_json::Value;
 
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
+use aimux_core::evaluation_model::EvaluationModel;
 use aimux_core::files_model::Files;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
+use aimux_core::speech_model::SpeechModel;
+use aimux_core::transcription_model::TranscriptionModel;
 use aimux_core::video_model::VideoModel;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{
+    EvaluationLanguageModel, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url,
+};
 
 use crate::shared::{AuthScheme, Credential, Endpoint, EndpointConfig, credential_headers};
 
@@ -184,18 +193,26 @@ pub struct GoogleProviderSettings {
     /// Extra headers on every request. A `None` value removes the header,
     /// including `x-goog-api-key`. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the `provider()` string of the language, embedding,
-    /// image, video and files models. Default `"google.generative-ai"`.
+    /// The provider name, the `provider()` string of the language, embedding
+    /// image, video and files interfaces (`{name}.speech` and
+    /// `{name}.transcription` for the speech and transcription models). Default `"google.generative-ai"`.
     pub name: Option<String>,
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
+    /// Generates IDs for tool calls and sources that have no provider ID.
+    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    /// Opens the WebSocket of live transcription (the AI SDK's `webSocket`).
+    /// `None` uses the built-in client.
+    #[cfg(feature = "realtime")]
+    pub web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
 }
 
 impl std::fmt::Debug for GoogleProviderSettings {
     /// Never prints the key or header values.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GoogleProviderSettings")
+        let mut debug = f.debug_struct("GoogleProviderSettings");
+        debug
             .field("base_url", &self.base_url)
             .field("api_key", &self.api_key.is_some())
             .field(
@@ -204,7 +221,10 @@ impl std::fmt::Debug for GoogleProviderSettings {
             )
             .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
-            .finish()
+            .field("generate_id", &self.generate_id.is_some());
+        #[cfg(feature = "realtime")]
+        debug.field("web_socket", &self.web_socket.is_some());
+        debug.finish()
     }
 }
 
@@ -238,6 +258,9 @@ pub fn create_google(settings: GoogleProviderSettings) -> Result<GoogleProvider,
             "4.0.85",
         ),
         fetch: settings.fetch,
+        generate_id: settings.generate_id,
+        #[cfg(feature = "realtime")]
+        web_socket: settings.web_socket,
     })
 }
 
@@ -259,6 +282,9 @@ pub struct GoogleProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
+    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    #[cfg(feature = "realtime")]
+    web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
 }
 
 impl GoogleProvider {
@@ -290,6 +316,13 @@ impl GoogleProvider {
     #[must_use]
     pub fn chat(&self, model_id: &str) -> GoogleModel {
         GoogleModel::from_config(model_id.to_string(), self.model_config(self.name.clone()))
+            .with_generate_id(self.generate_id.clone())
+    }
+
+    /// Alias of [`chat`](Self::chat), matching `generativeAI`.
+    #[must_use]
+    pub fn generative_ai(&self, model_id: &str) -> GoogleModel {
+        self.chat(model_id)
     }
 
     /// A text embedding model (e.g. `"gemini-embedding-001"`); `provider()` is
@@ -302,8 +335,7 @@ impl GoogleProvider {
         )
     }
 
-    /// An image generation model (e.g. `"imagen-3.0-generate-002"` or
-    /// `"gemini-2.5-flash-image"`); `provider()` is the provider name.
+    /// An image generation model (e.g. `"gemini-2.5-flash-image"`); `provider()` is the provider name.
     #[must_use]
     pub fn image(&self, model_id: &str) -> GoogleImageModel {
         self.image_with_settings(model_id, GoogleImageSettings::default())
@@ -328,6 +360,30 @@ impl GoogleProvider {
     #[must_use]
     pub fn video(&self, model_id: &str) -> GoogleVideoModel {
         GoogleVideoModel::from_config(model_id.to_string(), self.model_config(self.name.clone()))
+    }
+
+    /// A speech (TTS) model (e.g. `"gemini-2.5-flash-preview-tts"`);
+    /// `provider()` is `"{name}.speech"`.
+    #[must_use]
+    pub fn speech(&self, model_id: &str) -> GoogleSpeechModel {
+        GoogleSpeechModel::from_config(
+            model_id.to_string(),
+            self.model_config(format!("{}.speech", self.name)),
+            options::Namespace::Google,
+        )
+    }
+
+    /// A transcription (STT) model: a unary one (`"gemini-3.5-transcribe"`)
+    /// or a live one (`"gemini-3.5-transcribe-live"`); `provider()` is
+    /// `"{name}.transcription"`.
+    #[must_use]
+    pub fn transcription(&self, model_id: &str) -> GoogleTranscriptionModel {
+        GoogleTranscriptionModel::from_config(
+            model_id.to_string(),
+            self.model_config(format!("{}.transcription", self.name)),
+            #[cfg(feature = "realtime")]
+            self.web_socket.clone(),
+        )
     }
 
     /// The files interface; `provider()` is the provider name.
@@ -364,6 +420,31 @@ impl Provider for GoogleProvider {
 
     fn video_model(&self, model_id: &str) -> Option<Result<Arc<dyn VideoModel>, AiMuxError>> {
         Some(Ok(Arc::new(self.video(model_id))))
+    }
+
+    fn speech_model(&self, model_id: &str) -> Option<Result<Arc<dyn SpeechModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.speech(model_id))))
+    }
+
+    fn transcription_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn TranscriptionModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.transcription(model_id))))
+    }
+
+    fn evaluation_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn EvaluationModel>, AiMuxError>> {
+        let name = self
+            .name
+            .strip_suffix(".generative-ai")
+            .unwrap_or(&self.name);
+        Some(Ok(Arc::new(EvaluationLanguageModel::new(
+            Arc::new(self.chat(model_id)),
+            Some(format!("{name}.evaluation")),
+        ))))
     }
 
     fn files(&self) -> Option<Arc<dyn Files>> {

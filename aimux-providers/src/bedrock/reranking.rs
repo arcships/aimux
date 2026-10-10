@@ -31,11 +31,20 @@ struct BedrockRerankingOptions {
 
 fn parse_bedrock_reranking_options(
     provider_options: Option<&SharedProviderOptions>,
-) -> BedrockRerankingOptions {
+) -> Result<BedrockRerankingOptions, AiMuxError> {
     let mut opts = BedrockRerankingOptions::default();
     if let Some(po) = provider_options {
         let bedrock = options::read(Some(po));
         if let Some(bedrock) = bedrock {
+            if bedrock.get("nextToken").is_some_and(|v| !v.is_string())
+                || bedrock
+                    .get("additionalModelRequestFields")
+                    .is_some_and(|v| !v.is_object())
+            {
+                return Err(AiMuxError::InvalidArgument(
+                    "invalid amazonBedrock provider options".into(),
+                ));
+            }
             if let Some(token) = bedrock.get("nextToken").and_then(|v| v.as_str()) {
                 opts.next_token = Some(token.to_string());
             }
@@ -44,7 +53,7 @@ fn parse_bedrock_reranking_options(
             }
         }
     }
-    opts
+    Ok(opts)
 }
 
 /// The response from the Bedrock `/rerank` endpoint.
@@ -94,7 +103,7 @@ impl RerankingModel for BedrockRerankingModel {
         &self,
         options: &RerankingCallOptions,
     ) -> Result<RerankingResult, AiMuxError> {
-        let bedrock_options = parse_bedrock_reranking_options(options.provider_options.as_ref());
+        let bedrock_options = parse_bedrock_reranking_options(options.provider_options.as_ref())?;
 
         let region = (self.region)()?;
         let model_arn = format!(
@@ -142,12 +151,16 @@ impl RerankingModel for BedrockRerankingModel {
                     "modelConfiguration": {
                         "modelArn": model_arn
                     },
-                    "numberOfResults": options.top_n
                 },
                 "type": "BEDROCK_RERANKING_MODEL"
             },
             "sources": sources
         });
+
+        if let Some(top_n) = options.top_n {
+            body["rerankingConfiguration"]["bedrockRerankingConfiguration"]["numberOfResults"] =
+                json!(top_n);
+        }
 
         if let Some(ref token) = bedrock_options.next_token {
             body["nextToken"] = json!(token);

@@ -166,3 +166,16 @@ impl OpenAIModelConfig {
         }
     }
 }
+
+/// Native language model URL patterns from the upstream model classes.
+pub(crate) fn supported_urls(method: &str) -> SupportedUrls {
+    let mut urls = HashMap::new();
+    if method.ends_with("chat") || method.ends_with("responses") {
+        let pattern = regex::Regex::new(r"^https?://.*$").expect("valid URL pattern");
+        urls.insert("image/*".to_string(), vec![pattern.clone()]);
+        if method.ends_with("responses") {
+            urls.insert("application/pdf".to_string(), vec![pattern]);
+        }
+    }
+    SupportedUrls(urls)
+}

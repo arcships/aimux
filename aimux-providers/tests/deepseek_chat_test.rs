@@ -13,19 +13,18 @@
 //! Left out: the `json response format with structured outputs` block (it needs
 //! a model built with `supportsStructuredOutputs`, which only the Azure wiring
 //! sets and this package does not expose), the tool-result `content` output
-//! cases,
-//! and the snapshot fixtures (the responses are inlined here).
+//! cases, and the snapshot fixtures (the responses are inlined here).
 //!
 //! HTTP is a local `wiremock` server; every model is built with
 //! `create_deepseek(..).chat(..)`.
 
+use aimux_core::error::AiMuxError;
 use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
@@ -47,20 +46,18 @@ use aimux_providers::deepseek::{
 // ---------------------------------------------------------------------------
 
 fn with_options(mut message: LanguageModelMessage, options: Value) -> LanguageModelMessage {
-    let provider_options = match &mut message {
-        LanguageModelMessage::System {
-            provider_options, ..
-        }
-        | LanguageModelMessage::User {
-            provider_options, ..
-        }
-        | LanguageModelMessage::Assistant {
-            provider_options, ..
-        }
-        | LanguageModelMessage::Tool {
-            provider_options, ..
-        } => provider_options,
-    };
+    let (LanguageModelMessage::System {
+        provider_options, ..
+    }
+    | LanguageModelMessage::User {
+        provider_options, ..
+    }
+    | LanguageModelMessage::Assistant {
+        provider_options, ..
+    }
+    | LanguageModelMessage::Tool {
+        provider_options, ..
+    }) = &mut message;
     *provider_options = Some(serde_json::from_value(options).unwrap());
     message
 }
@@ -204,7 +201,7 @@ async fn generate_body(model_id: &str, options: &CallOptions) -> Value {
         .await
         .unwrap()
         .request
-        .and_then(|request| request.body)
+        .and_then(|r| r.body)
         .unwrap()
 }
 
@@ -459,6 +456,17 @@ async fn text_should_preserve_supported_sampling_options_when_v4_thinking_is_dis
 }
 
 #[tokio::test]
+async fn text_should_send_max_tokens_and_stop_sequences() {
+    let mut options = options();
+    options.max_output_tokens = Some(64);
+    options.stop_sequences = Some(vec!["END".to_string()]);
+    let body = generate_body("deepseek-chat", &options).await;
+    assert_eq!(body["max_tokens"], 64);
+    assert_eq!(body["stop"], json!(["END"]));
+    assert!(body.get("max_completion_tokens").is_none());
+}
+
+#[tokio::test]
 async fn text_should_send_message_names() {
     let name = |value: &str| json!({ "deepseek": { "name": value } });
     let messages = wire_messages(
@@ -621,7 +629,7 @@ async fn text_should_send_all_strict_tools_on_the_beta_endpoint() {
         .await
         .unwrap()
         .request
-        .and_then(|request| request.body)
+        .and_then(|r| r.body)
         .unwrap();
     assert_eq!(body["tools"][0]["type"], "function");
     assert_eq!(body["tools"][0]["function"]["name"], "getWeather");
@@ -684,17 +692,11 @@ async fn text_should_extract_text_content() {
     assert_eq!(result.usage.input_tokens.total, Some(13));
     assert_eq!(result.usage.output_tokens.total, Some(300));
     assert_eq!(
-        result
-            .response
-            .as_ref()
-            .and_then(|response| response.id.as_deref()),
+        result.response.as_ref().and_then(|r| r.id.as_deref()),
         Some("00f10ecd-60b3-4707-b5db-e4bcadf7aea1")
     );
     assert_eq!(
-        result
-            .response
-            .as_ref()
-            .and_then(|response| response.model_id.as_deref()),
+        result.response.as_ref().and_then(|r| r.model_id.as_deref()),
         Some("deepseek-chat")
     );
 }
@@ -938,7 +940,7 @@ async fn top_level_reasoning_none_should_keep_the_temperature() {
     options.temperature = Some(0.4);
     let result = generate_result("deepseek-reasoner", &options).await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["temperature"],
+        result.request.and_then(|r| r.body).unwrap()["temperature"],
         0.4
     );
     assert!(result.warnings.is_empty());
@@ -952,7 +954,7 @@ async fn top_level_reasoning_xhigh_should_map_to_reasoning_effort_max() {
     )
     .await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["reasoning_effort"],
+        result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
         "max"
     );
     assert!(warning_values(&result.warnings).contains(&serde_json::to_value(compatibility(
@@ -971,7 +973,7 @@ async fn top_level_reasoning_low_should_map_to_reasoning_effort_low_without_a_co
     )
     .await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["reasoning_effort"],
+        result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
         "low"
     );
     assert!(
@@ -991,7 +993,7 @@ async fn top_level_reasoning_medium_should_map_to_reasoning_effort_high_with_a_c
     )
     .await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["reasoning_effort"],
+        result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
         "high"
     );
     assert_eq!(
@@ -1012,7 +1014,7 @@ async fn top_level_reasoning_minimal_should_map_to_reasoning_effort_low_with_com
     )
     .await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["reasoning_effort"],
+        result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
         "low"
     );
     assert_eq!(
@@ -1037,7 +1039,7 @@ async fn top_level_reasoning_should_map_provider_options_reasoning_effort() {
         );
         let result = generate_result("deepseek-reasoner", &options).await;
         assert_eq!(
-            result.request.and_then(|request| request.body).unwrap()["reasoning_effort"],
+            result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
             output
         );
         let expected = if warns {
@@ -1063,7 +1065,7 @@ async fn top_level_reasoning_should_map_legacy_thinking_type_adaptive_to_enabled
     );
     let result = generate_result("deepseek-reasoner", &options).await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["thinking"],
+        result.request.and_then(|r| r.body).unwrap()["thinking"],
         json!({ "type": "enabled" })
     );
     assert!(warning_values(&result.warnings).contains(&serde_json::to_value(compatibility(
@@ -1190,6 +1192,49 @@ async fn tool_call_should_send_correct_request_body() {
 }
 
 #[tokio::test]
+async fn tool_call_should_send_the_tool_choice() {
+    use aimux_core::options::ToolChoice;
+    let mut options = tool_options();
+    options.tool_choice = Some(ToolChoice::Tool {
+        tool_name: "weather".to_string(),
+    });
+    assert_eq!(
+        generate_body("deepseek-reasoner", &options).await["tool_choice"],
+        json!({ "type": "function", "function": { "name": "weather" } })
+    );
+    options.tool_choice = Some(ToolChoice::Required);
+    assert_eq!(
+        generate_body("deepseek-reasoner", &options).await["tool_choice"],
+        "required"
+    );
+}
+
+#[tokio::test]
+async fn tool_call_should_warn_about_provider_defined_tools() {
+    use aimux_core::tool::ProviderTool;
+    let mut options = options();
+    options.tools = Some(vec![Tool::Provider(ProviderTool {
+        id: "test.search".to_string(),
+        name: "search".to_string(),
+        args: serde_json::Map::new(),
+    })]);
+    let result = generate_result("deepseek-chat", &options).await;
+    assert_eq!(
+        warning_values(&result.warnings),
+        warning_values(&[Warning::Unsupported {
+            feature: "provider-defined tool test.search".to_string(),
+            details: None,
+        }])
+    );
+    assert!(
+        result.request.and_then(|r| r.body).unwrap()["tools"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn tool_call_should_extract_tool_call_content() {
     let server = json_server(tool_call_response()).await;
     let result = chat(&server, "deepseek-reasoner")
@@ -1269,7 +1314,7 @@ async fn json_response_format_should_send_correct_request_body_with_schema() {
         "$schema": "http://json-schema.org/draft-07/schema#"
     });
     let result = generate_result("deepseek-reasoner", &json_options(Some(schema.clone()))).await;
-    let body = result.request.and_then(|request| request.body).unwrap();
+    let body = result.request.and_then(|r| r.body).unwrap();
     assert_eq!(
         body["messages"][0],
         json!({
@@ -1335,7 +1380,7 @@ async fn prefix_should_send_name_and_prefix_on_the_final_assistant_message() {
         .await
         .unwrap()
         .request
-        .and_then(|request| request.body)
+        .and_then(|r| r.body)
         .unwrap();
     assert_eq!(
         body["messages"],
@@ -1371,17 +1416,14 @@ async fn prefix_should_reject_prefix_completion_with_the_default_base_url() {
     );
 }
 
-// ===========================================================================
-// describe('doStream')
-// ===========================================================================
-
+// Upstream emits provider error envelopes as error parts, including the first event.
 async fn stream_error(data: &Value) -> aimux_core::error::ApiCallError {
     let server = sse_server(vec![data_event(data)]).await;
-    let stream = chat(&server, "deepseek-chat")
+    let result = chat(&server, "deepseek-chat")
         .do_stream(&options())
         .await
         .unwrap();
-    collect(stream)
+    collect(result)
         .await
         .into_iter()
         .find_map(|part| match part {
@@ -1390,7 +1432,7 @@ async fn stream_error(data: &Value) -> aimux_core::error::ApiCallError {
             } => Some(*error),
             _ => None,
         })
-        .expect("an API call error part")
+        .expect("expected a provider error part")
 }
 
 #[tokio::test]
@@ -1430,8 +1472,6 @@ async fn stream_should_preserve_the_provider_type_when_code_is_an_http_status() 
     assert!(error.is_retryable);
 }
 
-// ---- describe('text') ------------------------------------------------------------
-
 async fn stream_parts(
     model_id: &str,
     options: &CallOptions,
@@ -1439,11 +1479,7 @@ async fn stream_parts(
 ) -> (Value, Vec<StreamPart>) {
     let server = sse_server(chunks).await;
     let result = chat(&server, model_id).do_stream(options).await.unwrap();
-    let body = result
-        .request
-        .clone()
-        .and_then(|request| request.body)
-        .unwrap();
+    let body = result.request.clone().and_then(|r| r.body).unwrap();
     (body, collect(result).await)
 }
 
@@ -1922,7 +1958,7 @@ async fn stream_prefix_should_send_prefix_true_on_the_final_assistant_message() 
         .do_stream(&options_for(prefix_prompt(json!({ "prefix": true }))))
         .await
         .unwrap();
-    let body = result.request.and_then(|request| request.body).unwrap();
+    let body = result.request.and_then(|r| r.body).unwrap();
     assert_eq!(
         body["messages"],
         json!([
@@ -1968,7 +2004,7 @@ async fn convert_should_ignore_a_name_on_a_tool_message_with_an_unsupported_warn
                     value: "sunny".into(),
                     provider_options: None,
                 },
-                tool_name: "getWeather".into(),
+                tool_name: "weather_tool".into(),
                 provider_options: None,
             })],
             provider_options: None,
@@ -1977,7 +2013,7 @@ async fn convert_should_ignore_a_name_on_a_tool_message_with_an_unsupported_warn
     )]);
     let result = generate_result("deepseek-chat", &options).await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["messages"],
+        result.request.and_then(|r| r.body).unwrap()["messages"],
         json!([{ "role": "tool", "tool_call_id": "call-1", "content": "sunny" }])
     );
     assert_eq!(
@@ -2154,7 +2190,7 @@ async fn convert_should_reject_image_urls_longer_than_8192_characters() {
         &options_for(vec![LanguageModelMessage::User {
             content: vec![UserPart::File(FilePart {
                 data: FileData::Url {
-                    url,
+                    url: (url),
                     original_url: None,
                 },
                 media_type: ("image/png").into(),
@@ -2273,7 +2309,7 @@ async fn convert_should_warn_about_unsupported_non_image_file_parts() {
     )
     .await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["messages"],
+        result.request.and_then(|r| r.body).unwrap()["messages"],
         json!([{ "role": "user", "content": "Hello" }])
     );
     assert_eq!(
@@ -2333,7 +2369,7 @@ fn wire_tool_call() -> Value {
 async fn convert_should_stringify_arguments_to_tool_calls() {
     let result = generate_result("deepseek-chat", &options_for(tool_turn(false))).await;
     assert_eq!(
-        result.request.and_then(|request| request.body).unwrap()["messages"],
+        result.request.and_then(|r| r.body).unwrap()["messages"],
         json!([
             // upstream sends the empty text as `content: ""`, not null.
             { "role": "assistant", "content": "", "tool_calls": wire_tool_call() },

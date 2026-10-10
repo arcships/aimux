@@ -6,7 +6,9 @@ use std::pin::Pin;
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::shared::{GeneratedFileData, RequestInfo, ResponseInfo, StreamResponseInfo};
+pub use crate::shared::GeneratedFileData;
+use crate::shared::{RequestInfo, ResponseInfo, StreamResponseInfo};
+
 use crate::stream_part::StreamPart;
 use crate::tool::{RawToolCall, ToolResult};
 use crate::types::{FinishReason, ProviderMetadata, Usage, Warning};

@@ -16,12 +16,12 @@ use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort, Warning};
 
-use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
+use aimux_provider_utils::get_top_level_media_type;
 use serde_json::{Value, json};
 
 use super::types::XaiResponsesUsage;
 use crate::xai::convert::{
-    remove_additional_properties_false, resolve_provider_reference, supports_reasoning_effort,
+    resolve_full_media_type, resolve_provider_reference, supports_reasoning_effort,
 };
 
 // ── Finish reason ────────────────────────────────────────────────────────────
@@ -33,7 +33,6 @@ pub fn map_xai_responses_finish_reason(s: &str) -> FinishReasonUnified {
         "length" | "max_output_tokens" => FinishReasonUnified::Length,
         "tool_calls" | "function_call" => FinishReasonUnified::ToolCalls,
         "content_filter" => FinishReasonUnified::ContentFilter,
-        "error" => FinishReasonUnified::Error,
         _ => FinishReasonUnified::Other,
     }
 }
@@ -95,12 +94,18 @@ pub struct PreparedResponsesTools {
     pub provider_tool_names: std::collections::HashMap<String, String>,
 }
 
-#[must_use]
+/// # Errors
+/// Rejects provider-tool arguments that do not match the upstream schemas.
 pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
     tool_choice: Option<&ToolChoice>,
-) -> PreparedResponsesTools {
+) -> Result<PreparedResponsesTools, AiMuxError> {
     let non_empty = tools.as_ref().filter(|t| !t.is_empty());
+    for tool in non_empty.into_iter().flatten() {
+        if let Tool::Provider(tool) = tool {
+            validate_provider_tool(tool)?;
+        }
+    }
     let mut tool_warnings: Vec<Warning> = Vec::new();
     let mut provider_tool_names: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
@@ -115,7 +120,7 @@ pub fn prepare_responses_tools(
                         let mut func = json!({
                             "type": "function",
                             "name": ft.name,
-                            "parameters": remove_additional_properties_false(&ft.input_schema),
+                            "parameters": ft.input_schema,
                         });
                         if let Some(ref desc) = ft.description {
                             func["description"] = json!(desc);
@@ -131,11 +136,7 @@ pub fn prepare_responses_tools(
                     }
                 })
                 .collect();
-            if xai_tools.is_empty() {
-                None
-            } else {
-                Some(xai_tools)
-            }
+            Some(xai_tools)
         }
     };
 
@@ -150,7 +151,7 @@ pub fn prepare_responses_tools(
                 ToolChoice::None => Some(json!("none")),
                 ToolChoice::Required => Some(json!("required")),
                 ToolChoice::Tool { tool_name } => {
-                    let selected = non_empty_tools.iter().find(|t| match t {
+                    let selected = non_empty_tools.iter().rev().find(|t| match t {
                         Tool::Function(ft) => ft.name == *tool_name,
                         Tool::Provider(pt) => pt.name == *tool_name,
                     });
@@ -174,12 +175,12 @@ pub fn prepare_responses_tools(
         }
     };
 
-    PreparedResponsesTools {
+    Ok(PreparedResponsesTools {
         tools: tools_opt,
         tool_choice: tool_choice_opt,
         tool_warnings,
         provider_tool_names,
-    }
+    })
 }
 
 fn prepare_provider_tool(
@@ -229,6 +230,13 @@ fn prepare_provider_tool(
         "xai.code_execution" => Some(json!({ "type": "code_interpreter" })),
         "xai.view_image" => Some(json!({ "type": "view_image" })),
         "xai.view_x_video" => Some(json!({ "type": "view_x_video" })),
+        "xai.image_generation" => {
+            let mut tool = json!({ "type": "image_generation" });
+            if let Some(action) = args.get("action") {
+                tool["action"] = action.clone();
+            }
+            Some(tool)
+        }
         "xai.file_search" => {
             let mut tool = json!({ "type": "file_search" });
             if let Some(v) = args.get("vectorStoreIds") {
@@ -279,6 +287,131 @@ fn xai_option(options: &Option<SharedProviderOptions>, key: &str) -> Option<Valu
         .and_then(|m| crate::xai::options::xai_options(Some(m)))
         .and_then(|o| o.get(key))
         .cloned()
+}
+
+fn validate_value(
+    key: &str,
+    value: &Value,
+    valid: impl FnOnce(&Value) -> bool,
+) -> Result<(), AiMuxError> {
+    if valid(value) {
+        Ok(())
+    } else {
+        Err(AiMuxError::InvalidArgument(format!(
+            "Invalid xai option {key}: {value}"
+        )))
+    }
+}
+
+fn string_array(value: &Value, maximum: usize) -> bool {
+    value
+        .as_array()
+        .is_some_and(|items| items.len() <= maximum && items.iter().all(Value::is_string))
+}
+
+fn validate_response_options(options: &Option<SharedProviderOptions>) -> Result<(), AiMuxError> {
+    for (key, value) in options
+        .as_ref()
+        .and_then(|options| crate::xai::options::xai_options(Some(options)))
+        .into_iter()
+        .flatten()
+    {
+        validate_value(key, value, |value| match key.as_str() {
+            "reasoningEffort" => value
+                .as_str()
+                .is_some_and(|v| ["none", "low", "medium", "high", "xhigh"].contains(&v)),
+            "reasoningSummary" => value
+                .as_str()
+                .is_some_and(|v| ["auto", "concise", "detailed"].contains(&v)),
+            "serviceTier" => value
+                .as_str()
+                .is_some_and(|v| ["default", "priority"].contains(&v)),
+            "topLogprobs" => value
+                .as_f64()
+                .is_some_and(|v| v.fract() == 0.0 && (0.0..=8.0).contains(&v)),
+            "minP" => value.as_f64().is_some_and(|v| (0.0..=1.0).contains(&v)),
+            "maxTurns" => value
+                .as_f64()
+                .is_some_and(|v| v.fract() == 0.0 && v.abs() <= 9_007_199_254_740_991.0),
+            "logprobs" | "store" | "parallelToolCalls" => value.is_boolean(),
+            "promptCacheKey" | "safetyIdentifier" | "user" | "previousResponseId" => {
+                value.is_string()
+            }
+            "include" => {
+                value.is_null()
+                    || value.as_array().is_some_and(|items| {
+                        items.iter().all(|item| {
+                            item.as_str().is_some_and(|v| {
+                                [
+                                    "file_search_call.results",
+                                    "web_search_call.action.sources",
+                                    "code_interpreter_call.outputs",
+                                    "reasoning.encrypted_content",
+                                    "no_inline_citations",
+                                ]
+                                .contains(&v)
+                            })
+                        })
+                    })
+            }
+            _ => true,
+        })?;
+    }
+    Ok(())
+}
+
+fn validate_provider_tool(tool: &aimux_core::tool::ProviderTool) -> Result<(), AiMuxError> {
+    let id = tool.id.as_str();
+    if ![
+        "xai.web_search",
+        "xai.x_search",
+        "xai.image_generation",
+        "xai.file_search",
+        "xai.mcp",
+    ]
+    .contains(&id)
+    {
+        return Ok(());
+    }
+    let args = &tool.args;
+    for (key, value) in args {
+        validate_value(key, value, |value| match (id, key.as_str()) {
+            ("xai.web_search", "allowedDomains" | "excludedDomains") => string_array(value, 5),
+            ("xai.x_search", "allowedXHandles" | "excludedXHandles") => string_array(value, 10),
+            ("xai.web_search", "enableImageSearch" | "enableImageUnderstanding")
+            | ("xai.x_search", "enableImageUnderstanding" | "enableVideoUnderstanding") => {
+                value.is_boolean()
+            }
+            ("xai.x_search", "fromDate" | "toDate") => value.is_string(),
+            ("xai.image_generation", "action") => value
+                .as_str()
+                .is_some_and(|v| ["auto", "generate", "edit"].contains(&v)),
+            ("xai.file_search", "vectorStoreIds") | ("xai.mcp", "allowedTools") => {
+                string_array(value, usize::MAX)
+            }
+            ("xai.file_search", "maxNumResults") => value.is_number(),
+            ("xai.mcp", "serverUrl" | "serverLabel" | "serverDescription" | "authorization") => {
+                value.is_string()
+            }
+            ("xai.mcp", "headers") => value
+                .as_object()
+                .is_some_and(|headers| headers.values().all(Value::is_string)),
+            _ => true,
+        })?;
+    }
+    for key in match id {
+        "xai.file_search" => &["vectorStoreIds"][..],
+        "xai.mcp" => &["serverUrl"][..],
+        _ => &[],
+    } {
+        if !args.contains_key(*key) {
+            return Err(AiMuxError::InvalidArgument(format!(
+                "Missing {key} for {}",
+                tool.name
+            )));
+        }
+    }
+    Ok(())
 }
 
 // ── Input conversion ─────────────────────────────────────────────────────────
@@ -383,16 +516,7 @@ pub fn convert_to_xai_responses_input(
                             ..
                         }) => {
                             // Skip provider-executed tool calls.
-                            // The standardized field is authoritative. Fall back
-                            // to the legacy provider option only when it is absent.
-                            let is_provider_executed = provider_executed.unwrap_or_else(|| {
-                                provider_options
-                                    .as_ref()
-                                    .and_then(|po| crate::xai::options::xai_options(Some(po)))
-                                    .and_then(|x| x.get("providerExecuted"))
-                                    .and_then(serde_json::Value::as_bool)
-                                    .unwrap_or(false)
-                            });
+                            let is_provider_executed = provider_executed.unwrap_or(false);
                             if is_provider_executed {
                                 continue;
                             }
@@ -454,13 +578,12 @@ pub fn convert_to_xai_responses_input(
                             }
                         }
                         AssistantPart::File(_)
-                        | AssistantPart::Custom(_)
-                        | AssistantPart::ReasoningFile(_) => {
+                        | AssistantPart::ReasoningFile(_)
+                        | AssistantPart::Custom(_) => {
                             let kind = match part {
                                 AssistantPart::File(_) => "file",
-                                AssistantPart::Custom(_) => "custom",
                                 AssistantPart::ReasoningFile(_) => "reasoning-file",
-                                _ => unreachable!(),
+                                _ => "custom",
                             };
                             warnings.push(Warning::Other {
                                 message: format!("xAI Responses API does not support {kind} in assistant messages"),
@@ -479,7 +602,7 @@ pub fn convert_to_xai_responses_input(
                     else {
                         continue;
                     };
-                    let output_value = convert_tool_result_output(output)?;
+                    let output_value = convert_tool_output(output)?;
                     input.push(json!({
                         "type": "function_call_output",
                         "call_id": tool_call_id,
@@ -493,10 +616,10 @@ pub fn convert_to_xai_responses_input(
     Ok((input, warnings))
 }
 
-fn convert_tool_result_output(output: &ToolResultOutput) -> Result<Value, AiMuxError> {
-    Ok(match output {
+fn convert_tool_output(output: &ToolResultOutput) -> Result<Value, AiMuxError> {
+    match output {
         ToolResultOutput::ExecutionDenied { reason, .. } => {
-            json!(reason.as_deref().unwrap_or("tool execution denied"))
+            Ok(json!(reason.as_deref().unwrap_or("tool execution denied")))
         }
         ToolResultOutput::Content { value } => {
             let mut parts = Vec::new();
@@ -506,31 +629,31 @@ fn convert_tool_result_output(output: &ToolResultOutput) -> Result<Value, AiMuxE
                         parts.push(json!({"type":"input_text", "text":part.text}))
                     }
                     ToolResultContent::File(part)
-                        if part.media_type.split('/').next() == Some("image") =>
+                        if get_top_level_media_type(&part.media_type) == "image" =>
                     {
-                        let url = match &part.data {
+                        let image_url = match &part.data {
                             FileData::Url { url, .. } => url.clone(),
                             FileData::Data { data } => {
                                 use base64::Engine;
-                                let b64 = match data {
+                                let encoded = match data {
+                                    FileBytes::Base64(data) => data.clone(),
                                     FileBytes::Binary(bytes) => {
                                         base64::engine::general_purpose::STANDARD.encode(bytes)
                                     }
-                                    FileBytes::Base64(data) => data.clone(),
                                 };
-                                format!("data:{};base64,{}", resolve_full_media_type(part)?, b64)
+                                format!("data:{};base64,{encoded}", resolve_full_media_type(part)?)
                             }
                             _ => continue,
                         };
-                        parts.push(json!({"type":"input_image", "image_url":url}));
+                        parts.push(json!({"type":"input_image", "image_url":image_url}));
                     }
                     _ => {}
                 }
             }
-            json!(parts)
+            Ok(json!(parts))
         }
-        _ => crate::openai::convert::tool_result_to_content(output),
-    })
+        _ => Ok(crate::openai::convert::tool_result_to_content(output)),
+    }
 }
 
 fn convert_image_part(
@@ -565,6 +688,11 @@ fn convert_image_part(
         .and_then(|po| crate::xai::options::xai_options(Some(po)))
         .and_then(|x| x.get("imageDetail"))
     {
+        validate_value("imageDetail", detail, |value| {
+            value
+                .as_str()
+                .is_some_and(|value| ["auto", "low", "high"].contains(&value))
+        })?;
         part["detail"] = detail.clone();
     }
 
@@ -592,64 +720,8 @@ pub fn build_responses_request_body(
     stream: bool,
 ) -> Result<ResponsesRequestBodyResult, AiMuxError> {
     let mut warnings: Vec<Warning> = Vec::new();
-    let parsed_options = options
-        .provider_options
-        .as_ref()
-        .map(|namespaces| {
-            let mut namespaces = namespaces.clone();
-            if let Some(raw) = namespaces.get(crate::xai::options::NAMESPACE) {
-                let parsed = crate::openai::convert::parse_option_fields(
-                    raw,
-                    crate::xai::options::NAMESPACE,
-                    |key, value| {
-                        let valid = match key {
-                            "reasoningEffort" => value.as_str().is_some_and(|s| {
-                                matches!(s, "none" | "low" | "medium" | "high" | "xhigh")
-                            }),
-                            "reasoningSummary" => value
-                                .as_str()
-                                .is_some_and(|s| matches!(s, "auto" | "concise" | "detailed")),
-                            "logprobs" | "parallelToolCalls" | "store" => value.is_boolean(),
-                            "topLogprobs" => value
-                                .as_f64()
-                                .is_some_and(|n| n.fract() == 0.0 && (0.0..=8.0).contains(&n)),
-                            "minP" => value.as_f64().is_some_and(|n| (0.0..=1.0).contains(&n)),
-                            "maxTurns" => value.as_f64().is_some_and(|n| {
-                                n.fract() == 0.0 && n.abs() <= 9_007_199_254_740_991.0
-                            }),
-                            "promptCacheKey" | "safetyIdentifier" | "previousResponseId"
-                            | "user" => value.is_string(),
-                            "serviceTier" => value
-                                .as_str()
-                                .is_some_and(|s| matches!(s, "default" | "priority")),
-                            "include" => {
-                                value.is_null()
-                                    || value.as_array().is_some_and(|items| {
-                                        items.iter().all(|item| {
-                                            item.as_str().is_some_and(|s| {
-                                                matches!(
-                                                    s,
-                                                    "file_search_call.results"
-                                                        | "web_search_call.action.sources"
-                                                        | "code_interpreter_call.outputs"
-                                                        | "reasoning.encrypted_content"
-                                                        | "no_inline_citations"
-                                                )
-                                            })
-                                        })
-                                    })
-                            }
-                            _ => return None,
-                        };
-                        Some(if valid { Ok(value.clone()) } else { Err(()) })
-                    },
-                )?;
-                namespaces.insert(crate::xai::options::NAMESPACE.to_string(), parsed);
-            }
-            Ok::<_, AiMuxError>(namespaces)
-        })
-        .transpose()?;
-    let xai_opts = &parsed_options;
+    let xai_opts = &options.provider_options;
+    validate_response_options(xai_opts)?;
 
     if options.frequency_penalty.is_some() {
         warnings.push(Warning::Unsupported {
@@ -675,7 +747,7 @@ pub fn build_responses_request_body(
     let (input, input_warnings) = convert_to_xai_responses_input(&options.prompt)?;
     warnings.extend(input_warnings);
 
-    let prepared = prepare_responses_tools(&options.tools, options.tool_choice.as_ref());
+    let prepared = prepare_responses_tools(&options.tools, options.tool_choice.as_ref())?;
     for tw in &prepared.tool_warnings {
         warnings.push(tw.clone());
     }
@@ -704,13 +776,21 @@ pub fn build_responses_request_body(
                 ReasoningEffort::Low => "low".to_string(),
                 ReasoningEffort::Medium => "medium".to_string(),
                 ReasoningEffort::High => "high".to_string(),
+                ReasoningEffort::Xhigh if model_id == "grok-4.6" => "xhigh".to_string(),
                 ReasoningEffort::Xhigh => "high".to_string(),
                 _ => reasoning.to_string(),
             });
+            if reasoning_effort.as_deref() != Some(reasoning.to_string().as_str()) {
+                warnings.push(Warning::Compatibility {
+                    feature: "reasoning".to_string(),
+                    details: Some(format!(
+                        "reasoning \"{reasoning}\" is not directly supported by this model. mapped to effort \"{}\".",
+                        reasoning_effort.as_deref().unwrap_or_default()
+                    )),
+                });
+            }
         }
     }
-
-    let reasoning_summary = xai_option(xai_opts, "reasoningSummary");
 
     // Store option.
     let store = xai_option(xai_opts, "store").and_then(|v| v.as_bool());
@@ -771,16 +851,21 @@ pub fn build_responses_request_body(
         body["top_logprobs"] = tlp;
     }
 
-    // Reasoning object.
-    if reasoning_effort.is_some() || reasoning_summary.is_some() {
-        let mut reasoning_obj = json!({});
-        if let Some(effort) = &reasoning_effort {
-            reasoning_obj["effort"] = json!(effort);
+    if let Some(effort) = &reasoning_effort {
+        body["reasoning"] = json!({ "effort": effort });
+    }
+    for (option, parameter) in [
+        ("minP", "min_p"),
+        ("maxTurns", "max_turns"),
+        ("parallelToolCalls", "parallel_tool_calls"),
+        ("promptCacheKey", "prompt_cache_key"),
+        ("safetyIdentifier", "safety_identifier"),
+        ("serviceTier", "service_tier"),
+        ("user", "user"),
+    ] {
+        if let Some(value) = xai_option(xai_opts, option) {
+            body[parameter] = value;
         }
-        if let Some(summary) = &reasoning_summary {
-            reasoning_obj["summary"] = json!(summary);
-        }
-        body["reasoning"] = reasoning_obj;
     }
 
     // Store.
@@ -871,18 +956,10 @@ pub fn resolve_tool_name(
         .get("xai.code_execution")
         .cloned()
         .unwrap_or_else(|| "code_execution".to_string());
-    let default_view_image = provider_tool_names
-        .get("xai.view_image")
-        .cloned()
-        .unwrap_or_else(|| "view_image".to_string());
-    let default_view_x_video = provider_tool_names
-        .get("xai.view_x_video")
-        .cloned()
-        .unwrap_or_else(|| "view_x_video".to_string());
     let default_mcp = provider_tool_names
         .get("xai.mcp")
         .cloned()
-        .unwrap_or_else(|| "mcp".to_string());
+        .unwrap_or_else(|| part_name.unwrap_or("mcp").to_string());
     let default_file_search = provider_tool_names
         .get("xai.file_search")
         .cloned()
@@ -897,14 +974,15 @@ pub fn resolve_tool_name(
         || part_type == "code_execution_call"
     {
         default_code
-    } else if name == "view_image" || part_type == "view_image_call" {
-        default_view_image
-    } else if name == "view_x_video" || part_type == "view_x_video_call" {
-        default_view_x_video
     } else if part_type == "mcp_call" {
         default_mcp
     } else if part_type == "file_search_call" {
         default_file_search
+    } else if part_type == "image_generation_call" {
+        provider_tool_names
+            .get("xai.image_generation")
+            .cloned()
+            .unwrap_or_else(|| "image_generation".to_string())
     } else if !name.is_empty() {
         name.to_string()
     } else {

@@ -198,5 +198,3 @@ async fn status_401_maps_to_auth_error() {
         "expected Auth error, got {result:?}"
     );
 }
-
-// -- Provider trait ----------------------------------------------------------

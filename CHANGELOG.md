@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `available_providers`. Node and Python OpenAI constructors use Responses
   by default.
 
+- Vendor packages follow their upstream counterparts more closely. Visible
+  changes: Bedrock percent-encodes the model id in request URLs and writes
+  provider metadata under both `amazonBedrock` and `bedrock`; OpenAI embeddings
+  request `encoding_format: "float"` and no longer decode base64 vectors; the
+  Google provider result no longer carries a model id unless the API returns
+  one; an Anthropic mid-stream `error` event is forwarded as an error part
+  without a synthetic finish; each package sends its own `user-agent` suffix;
+  Mistral has no `transform_request_body` setting; the deprecated
+  `text_embedding` and `text_embedding_model` provider methods are removed.
+
 - Public surface (`aimux-core`, `aimux-provider-utils`): removed
   `recording::init_recording_from_env`; made private the retry preparation
   helpers and default constants, `composite::{add_usage,

@@ -12,7 +12,9 @@
 //! `convert-to-groq-chat-messages.ts`, `prepare_tools.rs` is
 //! `groq-prepare-tools.ts`, `usage.rs` is `convert-groq-usage.ts`,
 //! `finish_reason.rs` is `map-groq-finish-reason.ts`, `options.rs` is
-//! `groq-chat-language-model-options.ts`, `error.rs` is `groq-error.ts` and
+//! `groq-chat-language-model-options.ts` and
+//! `groq-transcription-model-options.ts`, `transcription.rs` is
+//! `groq-transcription-model.ts`, `error.rs` is `groq-error.ts` and
 //! `browser_search_models.rs` is `groq-browser-search-models.ts`.
 
 mod browser_search_models;
@@ -22,10 +24,12 @@ mod finish_reason;
 mod model;
 mod options;
 mod prepare_tools;
+mod transcription;
 mod types;
 mod usage;
 
 pub use model::GroqChatLanguageModel;
+pub use transcription::GroqTranscriptionModel;
 
 use std::sync::{Arc, OnceLock};
 
@@ -37,6 +41,7 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
+use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
 use crate::shared::{Credential, EndpointConfig, provider_headers};
@@ -118,7 +123,7 @@ pub fn groq() -> &'static GroqProvider {
 }
 
 /// A Groq provider (the AI SDK's `GroqProvider`). Groq serves language models
-/// only here: embedding and image models are `NoSuchModel`.
+/// and transcription models: embedding and image models are `NoSuchModel`.
 pub struct GroqProvider {
     name: String,
     base_url: String,
@@ -143,6 +148,16 @@ impl GroqProvider {
         GroqChatLanguageModel::from_config(model_id.to_string(), self.model_config("chat"))
     }
 
+    /// A transcription model; `provider()` is `"{name}.transcription"`
+    /// (`"groq.transcription"`).
+    #[must_use]
+    pub fn transcription(&self, model_id: &str) -> GroqTranscriptionModel {
+        GroqTranscriptionModel::from_config(
+            model_id.to_string(),
+            self.model_config("transcription"),
+        )
+    }
+
     /// The provider as a function: the default language model, the chat model.
     #[must_use]
     pub fn call(&self, model_id: &str) -> Arc<dyn LanguageModel> {
@@ -161,6 +176,13 @@ impl Provider for GroqProvider {
 
     fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
         Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
+    }
+
+    fn transcription_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn TranscriptionModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.transcription(model_id))))
     }
 
     fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {

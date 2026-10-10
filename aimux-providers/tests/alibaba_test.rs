@@ -34,7 +34,10 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
+use aimux_core::language_model_message::{
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, ToolCallPart, ToolPart,
+    ToolResultOutput, ToolResultPart,
+};
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
@@ -298,12 +301,63 @@ async fn sends_correct_request_body() {
     assert_eq!(body["messages"][0]["content"], "Hello");
 }
 
+/// TS: a tool-call assistant message round-trips as `tool_calls` and a tool
+/// result as a `tool` role message (shared OpenAI conversion).
+#[tokio::test]
+async fn converts_tool_call_and_tool_result_messages() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
+        .mount(&server)
+        .await;
+
+    let model = make_provider(&server);
+
+    let prompt: LanguageModelPrompt = vec![
+        LanguageModelMessage::Assistant {
+            content: vec![AssistantPart::ToolCall(ToolCallPart {
+                tool_call_id: "call-1".to_string(),
+                tool_name: "get_weather".to_string(),
+                input: json!({"location": "SF"}),
+                provider_executed: None,
+                provider_options: None,
+            })],
+            provider_options: None,
+        },
+        LanguageModelMessage::Tool {
+            content: vec![ToolPart::ToolResult(ToolResultPart {
+                tool_call_id: "call-1".to_string(),
+                output: ToolResultOutput::Json {
+                    value: json!({"temp": 72}),
+                    provider_options: None,
+                },
+                tool_name: "get_weather".into(),
+                provider_options: None,
+            })],
+            provider_options: None,
+        },
+    ];
+    let _ = model.do_generate(&default_options(prompt)).await.unwrap();
+
+    let requests = server.received_requests().await.expect("requests recorded");
+    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    // Assistant tool-call message.
+    assert_eq!(body["messages"][0]["role"], "assistant");
+    assert_eq!(body["messages"][0]["tool_calls"][0]["id"], "call-1");
+    assert_eq!(
+        body["messages"][0]["tool_calls"][0]["function"]["name"],
+        "get_weather"
+    );
+    // Tool result message.
+    assert_eq!(body["messages"][1]["role"], "tool");
+    assert_eq!(body["messages"][1]["tool_call_id"], "call-1");
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // Usage conversion (convert-alibaba-usage.test.ts + chat model usage tests)
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS (convert-alibaba-usage): cache tokens distribute correctly �?/// `cached_tokens` �?cacheRead, `cache_creation_input_tokens` �?cacheWrite,
-/// and `noCache = prompt - cacheRead - cacheWrite`.
 #[tokio::test]
 async fn extracts_usage_with_cache_tokens() {
     let server = MockServer::start().await;

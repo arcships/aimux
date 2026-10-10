@@ -21,17 +21,18 @@ pub mod model;
 pub(crate) mod options;
 pub mod responses;
 pub mod speech;
+pub mod tools;
 pub mod transcription;
 mod types;
 
 pub use completion::OpenAICompletionModel;
-pub use config::TransformRequestBody;
 pub use embedding::OpenAIEmbeddingModel;
 pub use files::OpenAIFiles;
 pub use image::OpenAIImageModel;
 pub use model::OpenAIModel;
 pub use responses::OpenAIResponsesModel;
 pub use speech::OpenAISpeechModel;
+pub use tools::{OpenAIComputerAction, OpenAIComputerSafetyCheck};
 pub use transcription::OpenAITranscriptionModel;
 
 use std::sync::{Arc, OnceLock};
@@ -41,6 +42,7 @@ use serde_json::Value;
 
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
+use aimux_core::evaluation_model::EvaluationModel;
 use aimux_core::files_model::Files;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
@@ -49,7 +51,8 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, load_optional_setting, validate_base_url,
+    EvaluationLanguageModel, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable,
+    load_optional_setting, validate_base_url,
 };
 
 use crate::shared::{Credential, provider_headers};
@@ -84,33 +87,89 @@ pub(crate) fn openai_stream_error(
     request_body_values: Value,
     response_headers: std::collections::HashMap<String, String>,
 ) -> AiMuxError {
-    let message = error
+    let payload = if error.get("type").and_then(Value::as_str) == Some("response.failed") {
+        error
+            .get("response")
+            .and_then(|response| response.get("error"))
+            .unwrap_or(error)
+    } else {
+        error.get("error").unwrap_or(error)
+    };
+    let message = payload
         .get("message")
         .and_then(Value::as_str)
         .unwrap_or("OpenAI stream failed before any output was generated")
         .to_owned();
-    let code = error.get("code").or_else(|| error.get("type"));
-    let provider_code = code.and_then(|value| match value {
+    let provider_code = payload.get("code").and_then(|value| match value {
         Value::String(value) => Some(value.clone()),
         Value::Number(value) => Some(value.to_string()),
         _ => None,
     });
-    // Only a numeric HTTP status in the payload is a status; a string code
-    // ("invalid_api_key") must not be laundered into a retryable 500.
-    let status_code = code
-        .and_then(Value::as_u64)
-        .filter(|status| (400..=599).contains(status))
-        .map(|status| status as u16);
-
-    aimux_provider_utils::stream_error_api_call(
+    let error_type = payload
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let discriminator = format!(
+        "{} {error_type}",
+        provider_code.as_deref().unwrap_or_default()
+    )
+    .to_ascii_lowercase();
+    let explicit_status = payload
+        .get("code")
+        .and_then(|value| {
+            value
+                .as_u64()
+                .and_then(|value| u16::try_from(value).ok())
+                .or_else(|| {
+                    value
+                        .as_str()
+                        .filter(|value| {
+                            value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_digit())
+                        })
+                        .and_then(|value| value.parse::<u16>().ok())
+                })
+        })
+        .filter(|value| (400..=599).contains(value));
+    let status = explicit_status.unwrap_or_else(|| {
+        if ["insufficient_quota", "rate_limit"]
+            .iter()
+            .any(|term| discriminator.contains(term))
+        {
+            429
+        } else if discriminator.contains("authentication") {
+            401
+        } else if discriminator.contains("permission") {
+            403
+        } else if discriminator.contains("not_found") {
+            404
+        } else if ["invalid", "bad_request", "context_length"]
+            .iter()
+            .any(|term| discriminator.contains(term))
+        {
+            400
+        } else if discriminator.contains("overload") {
+            503
+        } else if discriminator.contains("timeout") {
+            504
+        } else {
+            500
+        }
+    });
+    let quota = provider_code.as_deref() == Some("insufficient_quota")
+        || error_type == "insufficient_quota";
+    let mut result = aimux_provider_utils::stream_error_api_call(
         message,
         provider_code,
-        status_code,
+        Some(status),
         error,
         url,
         request_body_values,
         response_headers,
-    )
+    );
+    if quota && let AiMuxError::ApiCall(details) = &mut result {
+        details.is_retryable = false;
+    }
+    result
 }
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -118,13 +177,13 @@ const API_KEY_ENV_VAR: &str = "OPENAI_API_KEY";
 
 /// Settings of [`create_openai`] (the AI SDK's `OpenAIProviderSettings`).
 ///
-/// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are evaluated
+/// Every field is optional. The base URL (including `OPENAI_BASE_URL`) and
+/// name are resolved when the provider is created; `api_key` and `headers` are evaluated
 /// on every request.
 #[derive(Clone, Default)]
 pub struct OpenAIProviderSettings {
-    /// Base URL for the API calls. Default `https://api.openai.com/v1`; a
-    /// trailing slash is removed.
+    /// Base URL for API calls. Reads `OPENAI_BASE_URL` when absent, then
+    /// defaults to `https://api.openai.com/v1`. A trailing slash is removed.
     pub base_url: Option<String>,
     /// The API key. `None` loads `OPENAI_API_KEY` when a request is made and
     /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
@@ -175,8 +234,9 @@ impl std::fmt::Debug for OpenAIProviderSettings {
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider, AiMuxError> {
-    let base_url = match load_optional_setting(settings.base_url.as_deref(), "OPENAI_BASE_URL") {
-        Some(url) => validate_base_url(&url)?,
+    let configured_url = load_optional_setting(settings.base_url.as_deref(), "OPENAI_BASE_URL");
+    let base_url = match configured_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
         None => DEFAULT_BASE_URL.to_string(),
     };
     let name = settings.name.unwrap_or_else(|| "openai".to_string());
@@ -208,12 +268,13 @@ pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider,
     })
 }
 
-/// The default provider: `create_openai` with default settings, created on
-/// first use. The base URL is loaded at creation; the key is loaded per request.
+/// The default provider, created on first use. The base URL is read then;
+/// a missing API key surfaces from the first request.
 pub fn openai() -> &'static OpenAIProvider {
     static DEFAULT: OnceLock<OpenAIProvider> = OnceLock::new();
     DEFAULT.get_or_init(|| {
-        create_openai(OpenAIProviderSettings::default()).expect("invalid OPENAI_BASE_URL")
+        create_openai(OpenAIProviderSettings::default())
+            .expect("default OpenAI base URL must be valid")
     })
 }
 
@@ -230,13 +291,18 @@ pub struct OpenAIProvider {
 
 impl OpenAIProvider {
     fn model_config(&self, method: &str) -> OpenAIModelConfig {
-        OpenAIModelConfig::fixed(
+        let mut config = OpenAIModelConfig::fixed(
             format!("{}.{method}", self.name),
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
             None,
-        )
+        );
+        config.supported_urls = config::supported_urls(method);
+        if method == "responses" {
+            config.responses.file_id_prefixes = vec!["file-"];
+        }
+        config
     }
 
     /// A chat-completions model; `provider()` is `"{name}.chat"`.
@@ -334,6 +400,16 @@ impl Provider for OpenAIProvider {
 
     fn speech_model(&self, model_id: &str) -> Option<Result<Arc<dyn SpeechModel>, AiMuxError>> {
         Some(Ok(Arc::new(self.speech(model_id))))
+    }
+
+    fn evaluation_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn EvaluationModel>, AiMuxError>> {
+        Some(Ok(Arc::new(EvaluationLanguageModel::new(
+            Arc::new(self.responses(model_id)),
+            Some(format!("{}.evaluation", self.name)),
+        ))))
     }
 
     fn files(&self) -> Option<Arc<dyn Files>> {

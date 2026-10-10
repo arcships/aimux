@@ -6,11 +6,14 @@
 //! and hands the result to the shared [`super::stream`] core, which sends it
 //! and parses the response or the SSE stream.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
+use aimux_core::language_model_message::{LanguageModelMessage, UserPart};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_core::types::Warning;
@@ -18,7 +21,8 @@ use aimux_provider_utils::HttpRequest;
 
 use super::config::AnthropicModelConfig;
 use super::convert::build_request_body_for;
-use super::stream::{anthropic_generate_core, anthropic_stream_core};
+use super::options::CANONICAL;
+use super::stream::{CitationDocument, anthropic_generate_core, anthropic_stream_core};
 use super::tool_name_mapping::ToolNameMapping;
 
 /// One call, ready to send.
@@ -26,6 +30,7 @@ struct PreparedCall {
     http: HttpRequest,
     body: Value,
     warnings: Vec<Warning>,
+    uses_json_response_tool: bool,
 }
 
 /// An Anthropic Messages model (e.g. `claude-sonnet-4-20250514`), created by
@@ -33,7 +38,7 @@ struct PreparedCall {
 pub struct AnthropicMessagesModel {
     model_id: String,
     config: AnthropicModelConfig,
-    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
+    generate_id: Arc<dyn Fn() -> String + Send + Sync>,
 }
 
 impl AnthropicMessagesModel {
@@ -42,18 +47,62 @@ impl AnthropicMessagesModel {
         Self {
             model_id,
             config,
-            generate_id: std::sync::Arc::new(aimux_provider_utils::generate_id),
+            generate_id: Arc::new(aimux_provider_utils::generate_id),
         }
     }
 
+    #[must_use]
     pub(crate) fn with_generate_id(
         mut self,
-        generate_id: Option<std::sync::Arc<dyn Fn() -> String + Send + Sync>>,
+        generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
     ) -> Self {
         if let Some(generate_id) = generate_id {
             self.generate_id = generate_id;
         }
         self
+    }
+
+    fn citation_documents(options: &CallOptions) -> Vec<CitationDocument> {
+        options
+            .prompt
+            .iter()
+            .filter_map(|message| match message {
+                LanguageModelMessage::User { content, .. } => Some(content),
+                _ => None,
+            })
+            .flatten()
+            .filter_map(|part| match part {
+                UserPart::File(file)
+                    if matches!(file.media_type.as_str(), "application/pdf" | "text/plain")
+                        && file
+                            .provider_options
+                            .as_ref()
+                            .and_then(|options| options.get(CANONICAL))
+                            .and_then(|options| options.get("citations"))
+                            .and_then(|citations| citations.get("enabled"))
+                            .and_then(Value::as_bool)
+                            == Some(true) =>
+                {
+                    Some(CitationDocument {
+                        title: file
+                            .filename
+                            .clone()
+                            .unwrap_or_else(|| "Untitled Document".to_string()),
+                        filename: file.filename.clone(),
+                        media_type: file.media_type.clone(),
+                    })
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn uses_custom_options(&self, options: &CallOptions) -> bool {
+        self.config.provider_options_name != CANONICAL
+            && options
+                .provider_options
+                .as_ref()
+                .is_some_and(|value| value.contains_key(&self.config.provider_options_name))
     }
 
     /// Build the request for one call: the body (host preparation and the
@@ -80,6 +129,7 @@ impl AnthropicMessagesModel {
             http,
             body,
             warnings: built.warnings,
+            uses_json_response_tool: built.uses_json_response_tool,
         })
     }
 }
@@ -106,12 +156,11 @@ impl LanguageModel for AnthropicMessagesModel {
             call.body,
             call.warnings,
             &self.config,
-            options
-                .provider_options
-                .as_ref()
-                .is_some_and(|options| options.contains_key(&self.config.provider_options_name)),
             &ToolNameMapping::new(options.tools.as_deref()),
-            self.generate_id.as_ref(),
+            self.uses_custom_options(options),
+            call.uses_json_response_tool,
+            Self::citation_documents(options),
+            self.generate_id.clone(),
         )
         .await
     }
@@ -123,11 +172,10 @@ impl LanguageModel for AnthropicMessagesModel {
             call.body,
             call.warnings,
             &self.config,
-            options
-                .provider_options
-                .as_ref()
-                .is_some_and(|options| options.contains_key(&self.config.provider_options_name)),
             ToolNameMapping::new(options.tools.as_deref()),
+            self.uses_custom_options(options),
+            call.uses_json_response_tool,
+            Self::citation_documents(options),
             self.generate_id.clone(),
         )
         .await

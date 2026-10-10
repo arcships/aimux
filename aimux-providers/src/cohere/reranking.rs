@@ -20,26 +20,27 @@ use crate::shared::EndpointConfig;
 /// Cohere provider-specific reranking options.
 #[derive(Debug, Clone, Default)]
 struct CohereRerankingOptions {
-    max_tokens_per_doc: Option<u64>,
-    priority: Option<u64>,
+    max_tokens_per_doc: Option<serde_json::Number>,
+    priority: Option<serde_json::Number>,
 }
 
 fn parse_cohere_reranking_options(
     provider_options: Option<&SharedProviderOptions>,
-) -> CohereRerankingOptions {
-    let mut opts = CohereRerankingOptions::default();
-    if let Some(cohere) = super::options::cohere_options(provider_options) {
-        if let Some(v) = cohere
-            .get("maxTokensPerDoc")
-            .and_then(serde_json::Value::as_u64)
-        {
-            opts.max_tokens_per_doc = Some(v);
-        }
-        if let Some(v) = cohere.get("priority").and_then(serde_json::Value::as_u64) {
-            opts.priority = Some(v);
-        }
-    }
-    opts
+) -> Result<CohereRerankingOptions, AiMuxError> {
+    let cohere = super::options::cohere_options(provider_options);
+    let number_option = |key: &str| -> Result<Option<serde_json::Number>, AiMuxError> {
+        cohere
+            .and_then(|options| options.get(key))
+            .map(|value| match value {
+                Value::Number(number) => Ok(number.clone()),
+                _ => Err(AiMuxError::InvalidArgument(format!("Invalid cohere.{key}"))),
+            })
+            .transpose()
+    };
+    Ok(CohereRerankingOptions {
+        max_tokens_per_doc: number_option("maxTokensPerDoc")?,
+        priority: number_option("priority")?,
+    })
 }
 
 /// The response from the Cohere `/rerank` endpoint.
@@ -82,7 +83,7 @@ impl RerankingModel for CohereRerankingModel {
         &self,
         options: &RerankingCallOptions,
     ) -> Result<RerankingResult, AiMuxError> {
-        let cohere_options = parse_cohere_reranking_options(options.provider_options.as_ref());
+        let cohere_options = parse_cohere_reranking_options(options.provider_options.as_ref())?;
 
         let mut warnings = Vec::new();
 
@@ -105,9 +106,11 @@ impl RerankingModel for CohereRerankingModel {
             "model": self.model_id,
             "query": options.query,
             "documents": documents,
-            "top_n": options.top_n,
         });
 
+        if let Some(top_n) = options.top_n {
+            body["top_n"] = json!(top_n);
+        }
         if let Some(max_tokens) = cohere_options.max_tokens_per_doc {
             body["max_tokens_per_doc"] = json!(max_tokens);
         }

@@ -30,13 +30,14 @@ use std::path::PathBuf;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
-use wiremock::matchers::{method, path as path_matcher};
+use wiremock::matchers::{method, path as path_matcher, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, ReasoningOutput, Source, StreamResult};
+use aimux_core::result::{GenerateContent, GeneratedFile, ReasoningOutput, Source, StreamResult};
+use aimux_core::shared::{FileBytes, GeneratedFileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{ProviderTool, Tool};
 use aimux_core::types::ProviderMetadata;
@@ -101,7 +102,12 @@ fn cassette(rel: &str) -> Cassette {
 /// Mount a cassette's response on `server` at its recorded path.
 async fn mount(server: &MockServer, c: &Cassette) {
     Mock::given(method("POST"))
-        .and(path_matcher(c.request_path.clone()))
+        .and({
+            // Model ids reach the wire percent-encoded; recordings differ in
+            // whether they kept the encoding.
+            let recorded = c.request_path.replace("%3A", ":");
+            move |req: &wiremock::Request| req.url.path().replace("%3A", ":") == recorded
+        })
         .respond_with(
             ResponseTemplate::new(c.status)
                 .insert_header("content-type", "application/json")
@@ -152,6 +158,26 @@ async fn collect(result: StreamResult) -> Vec<StreamPart> {
         parts.push(p.expect("stream part must be Ok"));
     }
     parts
+}
+
+fn file_base64(content: &GenerateContent) -> &str {
+    match content {
+        GenerateContent::File(GeneratedFile {
+            data:
+                GeneratedFileData::Data {
+                    data: FileBytes::Base64(data),
+                },
+            ..
+        }) => data,
+        other => panic!("expected File with base64 data, got {other:?}"),
+    }
+}
+
+fn files(content: &[GenerateContent]) -> Vec<&GenerateContent> {
+    content
+        .iter()
+        .filter(|part| matches!(part, GenerateContent::File(_)))
+        .collect()
 }
 
 fn texts(content: &[GenerateContent]) -> Vec<&str> {
@@ -302,6 +328,9 @@ fn sources(content: &[GenerateContent]) -> Vec<SourceView<'_>> {
 //            gemini/test_google_image_and_text_output.json
 // ═══════════════════════════════════════════════════════════════════════════
 
+const PNG_BASE64_PREFIX: &str = "iVBORw0KGgoAAAANSUhEUgAA";
+const NANO_BANANA_BASE64_LEN: usize = 258_820;
+
 fn google_at(uri: &str) -> GoogleProvider {
     create_google(GoogleProviderSettings {
         api_key: Some("test-api-key".to_string()),
@@ -309,6 +338,138 @@ fn google_at(uri: &str) -> GoogleProvider {
         ..Default::default()
     })
     .unwrap()
+}
+
+#[tokio::test]
+async fn finding_1_gemini_inline_data_surfaces_as_file() {
+    let c = cassette("gemini/nano_banana_image_generation_smoke.json");
+    let server = MockServer::start().await;
+    mount(&server, &c).await;
+
+    let result = google_at(&server.uri())
+        .chat("gemini-2.5-flash-image")
+        .do_generate(&opts())
+        .await
+        .expect("do_generate should succeed");
+
+    let f = files(&result.content);
+    assert_eq!(f.len(), 1, "exactly one inlineData part → one File");
+    match f[0] {
+        GenerateContent::File(GeneratedFile { media_type, .. }) => {
+            assert_eq!(media_type, "image/png");
+        }
+        other => panic!("expected File, got {other:?}"),
+    }
+    let b64 = file_base64(f[0]);
+    assert!(
+        b64.starts_with(PNG_BASE64_PREFIX),
+        "image bytes must be the recorded PNG, got prefix {:?}",
+        &b64[..b64.len().min(32)]
+    );
+    assert_eq!(
+        b64.len(),
+        NANO_BANANA_BASE64_LEN,
+        "the whole base64 payload must survive, not a truncated head"
+    );
+}
+
+#[tokio::test]
+async fn finding_1_gemini_image_and_text_output_both_survive() {
+    let c = cassette("gemini/test_google_image_and_text_output.json");
+    let server = MockServer::start().await;
+    mount(&server, &c).await;
+
+    let result = google_at(&server.uri())
+        .chat("gemini-2.5-flash-image")
+        .do_generate(&opts())
+        .await
+        .expect("do_generate should succeed");
+
+    // Text part first, then the inlineData part — order matters, upstream
+    // walks `parts` in order.
+    assert_eq!(result.content.len(), 2, "one text + one file");
+    assert!(
+        matches!(result.content[0], GenerateContent::Text { .. }),
+        "text part comes first"
+    );
+    assert!(
+        matches!(result.content[1], GenerateContent::File(_)),
+        "inlineData part comes second"
+    );
+
+    let t = texts(&result.content);
+    assert_eq!(t.len(), 1);
+    assert!(
+        t[0].starts_with("Once, in a hidden cenote, lived an axolotl named Pip"),
+        "recorded story text must survive verbatim, got {:?}",
+        &t[0][..t[0].len().min(60)]
+    );
+
+    let f = files(&result.content);
+    assert_eq!(f.len(), 1);
+    match f[0] {
+        GenerateContent::File(GeneratedFile { media_type, .. }) => {
+            assert_eq!(media_type, "image/png")
+        }
+        other => panic!("expected File, got {other:?}"),
+    }
+    let b64 = file_base64(f[0]);
+    assert!(b64.starts_with(PNG_BASE64_PREFIX));
+    assert_eq!(b64.len(), 2_580_504);
+}
+
+/// The streaming path had the same hole. The chunk is built from the cassette's
+/// own `parts` array so the bytes are the recorded ones.
+#[tokio::test]
+async fn finding_1_gemini_inline_data_streams_as_file_part() {
+    let body = cassette_json("gemini/nano_banana_image_generation_smoke.json");
+    let candidate = &body["candidates"][0];
+    let sse = format!(
+        "data: {}\n\n",
+        json!({ "candidates": [{ "content": candidate["content"].clone(), "finishReason": "STOP" }] })
+    );
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path_matcher(
+            "/v1beta/models/gemini-2.5-flash-image:streamGenerateContent",
+        ))
+        .and(query_param("alt", "sse"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(sse),
+        )
+        .mount(&server)
+        .await;
+
+    let parts = collect(
+        google_at(&server.uri())
+            .chat("gemini-2.5-flash-image")
+            .do_stream(&opts())
+            .await
+            .expect("do_stream should succeed"),
+    )
+    .await;
+
+    let file_parts: Vec<_> = parts
+        .iter()
+        .filter_map(|p| match p {
+            StreamPart::File(GeneratedFile {
+                data:
+                    GeneratedFileData::Data {
+                        data: FileBytes::Base64(b64),
+                    },
+                media_type,
+                ..
+            }) => Some((b64.as_str(), media_type.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(file_parts.len(), 1, "expected one StreamPart::File");
+    assert_eq!(file_parts[0].1, "image/png");
+    assert!(file_parts[0].0.starts_with(PNG_BASE64_PREFIX));
+    assert_eq!(file_parts[0].0.len(), NANO_BANANA_BASE64_LEN);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -638,6 +799,9 @@ async fn finding_2_anthropic_web_search_result_mapped_and_sources_emitted() {
     let by_url: BTreeMap<&str, &ProviderMetadata> = s
         .iter()
         .filter_map(|(_, _, url, _, m)| Some(((*url)?, (*m)?)))
+        // Citations of the same pages are sources too; they carry the cited
+        // text instead of a page age.
+        .filter(|(_, m)| m["anthropic"].contains_key("pageAge"))
         .collect();
     for (url, expected_page_age) in [
         (
@@ -1223,10 +1387,6 @@ async fn finding_10_bedrock_generate_reasoning_signature_in_provider_metadata() 
         &sig[..sig.len().min(24)]
     );
     assert_eq!(sig.len(), 496, "the signature must not be truncated");
-    assert!(
-        m.get("bedrock").is_none(),
-        "the legacy provider key is not written"
-    );
 
     // The visible answer is separate from the reasoning.
     let t = texts(&result.content);
@@ -1245,7 +1405,10 @@ fn encode_events(events: &[(&str, &str, Value)]) -> Vec<u8> {
 async fn bedrock_stream_parts(model: &str, events: &[(&str, &str, Value)]) -> Vec<StreamPart> {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path_matcher(format!("/model/{model}/converse-stream")))
+        .and(path_matcher(format!(
+            "/model/{}/converse-stream",
+            model.replace(':', "%3A")
+        )))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("content-type", "application/vnd.amazon.eventstream")
@@ -1309,15 +1472,14 @@ async fn finding_10_bedrock_stream_reasoning_signature_emitted_as_metadata_delta
     let end_meta = parts
         .iter()
         .find_map(|p| match p {
-            StreamPart::ReasoningEnd {
+            StreamPart::ReasoningDelta {
                 provider_metadata: Some(m),
                 ..
             } => Some(m),
             _ => None,
         })
-        .expect("the ReasoningEnd must carry the signature");
+        .expect("a reasoning delta must carry the signature");
     assert_eq!(end_meta["amazonBedrock"]["signature"], json!(signature));
-    assert!(end_meta.get("bedrock").is_none());
 }
 
 #[tokio::test]
@@ -1369,10 +1531,6 @@ async fn finding_27_bedrock_stream_performance_config_and_service_tier_reach_fin
     assert_eq!(
         meta["amazonBedrock"]["serviceTier"],
         json!({ "type": "flex" })
-    );
-    assert!(
-        meta.get("bedrock").is_none(),
-        "the legacy provider key is not written"
     );
 }
 
@@ -1430,7 +1588,6 @@ async fn finding_27_bedrock_stream_guardrail_trace_reaches_finish() {
         json!(397),
         "nested metrics must not be flattened away"
     );
-    assert!(meta.get("bedrock").is_none());
 }
 
 #[tokio::test]
@@ -1471,5 +1628,4 @@ async fn finding_26_bedrock_stream_stop_sequence_reaches_finish() {
         })
         .expect("Finish must carry provider_metadata");
     assert_eq!(meta["amazonBedrock"]["stopSequence"], json!("STOP"));
-    assert!(meta.get("bedrock").is_none());
 }

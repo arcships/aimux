@@ -38,14 +38,19 @@ fn resolve_deepseek_image_media_type(part: &FilePart) -> Result<String, AiMuxErr
 fn convert_image_part(
     part: &FilePart,
     provider_options_name: &str,
-    allow_file_data: bool,
+    tool_result: bool,
 ) -> Result<Value, AiMuxError> {
-    let mut options = if matches!(part.data, FileData::Reference { .. }) {
-        Default::default()
-    } else {
-        parse_file_part_options(part.provider_options.as_ref(), provider_options_name)?
-    };
-    if !allow_file_data {
+    if tool_result && let FileData::Reference { reference } = &part.data {
+        let file_id = reference.get("deepseek").ok_or_else(|| {
+            AiMuxError::InvalidArgument(
+                "No provider reference found for provider 'deepseek'.".into(),
+            )
+        })?;
+        return Ok(json!({ "type": "file", "file_id": file_id }));
+    }
+    let mut options =
+        parse_file_part_options(part.provider_options.as_ref(), provider_options_name)?;
+    if tool_result {
         options.file_data = None;
     }
     let image_url = |url: &str| {
@@ -80,14 +85,14 @@ fn convert_image_part(
         }
         FileData::Data { data } => {
             let media_type = resolve_deepseek_image_media_type(part)?;
+            let data = match data {
+                FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
+                FileBytes::Base64(data) => data.clone(),
+            };
             let media_type = if media_type == "image/jpg" {
                 "image/jpeg"
             } else {
                 &media_type
-            };
-            let data = match data {
-                FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
-                FileBytes::Base64(data) => data.clone(),
             };
             let data_url = format!("data:{media_type};base64,{data}");
             if options.file_data != Some(true) {
@@ -104,9 +109,7 @@ fn convert_image_part(
             }
             Ok(file)
         }
-        FileData::Text { .. } => Err(AiMuxError::UnsupportedFunctionality(
-            "text file parts".to_string(),
-        )),
+        FileData::Text { .. } => unreachable!("inline text is not an image input"),
     }
 }
 
@@ -114,16 +117,6 @@ fn convert_image_part(
 pub(crate) struct ConvertedMessages {
     pub messages: Vec<Value>,
     pub warnings: Vec<Warning>,
-}
-
-fn join_text(content: &[UserPart]) -> String {
-    content
-        .iter()
-        .filter_map(|part| match part {
-            UserPart::Text(TextPart { text, .. }) => Some(text.as_str()),
-            _ => None,
-        })
-        .collect()
 }
 
 /// The `messages` of the request body.
@@ -209,23 +202,25 @@ pub(crate) fn convert_to_deepseek_chat_messages(
             }
 
             LanguageModelMessage::User { content: parts, .. } => {
-                let has_image_part = parts.iter().any(|part| {
-                    matches!(part,
-                        UserPart::File(file) if file.media_type.split('/').next() == Some("image")
-                            && !matches!(file.data, FileData::Text { .. })
-                    )
-                });
+                let is_image = |file: &FilePart| {
+                    file.media_type.split('/').next() == Some("image")
+                        && !matches!(file.data, FileData::Text { .. })
+                };
+                let has_image_part = parts
+                    .iter()
+                    .any(|part| matches!(part, UserPart::File(file) if is_image(file)));
                 let mut content = Vec::new();
+                let mut text = String::new();
                 for part in parts {
                     match part {
-                        UserPart::Text(TextPart { text, .. }) => {
-                            content.push(json!({ "type": "text", "text": text }));
+                        UserPart::Text(TextPart {
+                            text: part_text, ..
+                        }) => {
+                            text.push_str(part_text);
+                            content.push(json!({ "type": "text", "text": part_text }));
                         }
-                        UserPart::File(file)
-                            if file.media_type.split('/').next() == Some("image")
-                                && !matches!(file.data, FileData::Text { .. }) =>
-                        {
-                            content.push(convert_image_part(file, provider_options_name, true)?);
+                        UserPart::File(file) if is_image(file) => {
+                            content.push(convert_image_part(file, provider_options_name, false)?);
                         }
                         UserPart::File(_) => warnings.push(Warning::Unsupported {
                             feature: "user message part type: file".to_string(),
@@ -240,7 +235,7 @@ pub(crate) fn convert_to_deepseek_chat_messages(
                     if has_image_part {
                         Value::Array(content)
                     } else {
-                        json!(join_text(parts))
+                        json!(text)
                     },
                 );
                 name(&mut wire);
@@ -332,7 +327,7 @@ pub(crate) fn convert_to_deepseek_chat_messages(
                     messages.push(json!({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
-                        "content": convert_tool_result(output, provider_options_name, &mut warnings)?,
+                        "content": convert_tool_result_content(output, provider_options_name, &mut warnings)?,
                     }));
                 }
             }
@@ -342,7 +337,7 @@ pub(crate) fn convert_to_deepseek_chat_messages(
     Ok(ConvertedMessages { messages, warnings })
 }
 
-fn convert_tool_result(
+fn convert_tool_result_content(
     output: &ToolResultOutput,
     provider_options_name: &str,
     warnings: &mut Vec<Warning>,
@@ -350,37 +345,35 @@ fn convert_tool_result(
     let ToolResultOutput::Content { value } = output else {
         return Ok(crate::openai::convert::tool_result_to_content(output));
     };
-    let is_image = |file: &FilePart| {
-        file.media_type.split('/').next() == Some("image")
-            && !matches!(file.data, FileData::Text { .. })
+    let is_image = |part: &ToolResultContent| {
+        matches!(part, ToolResultContent::File(file)
+            if file.media_type.split('/').next() == Some("image")
+                && !matches!(file.data, FileData::Text { .. }))
     };
-    if !value
-        .iter()
-        .any(|part| matches!(part, ToolResultContent::File(file) if is_image(file)))
-    {
+    if !value.iter().any(is_image) {
         return Ok(crate::openai::convert::tool_result_to_content(output));
     }
-    let mut parts = Vec::new();
+    let mut content = Vec::new();
     for part in value {
         match part {
             ToolResultContent::Text(text) => {
-                parts.push(json!({ "type": "text", "text": text.text }))
+                content.push(json!({ "type": "text", "text": text.text }));
             }
-            ToolResultContent::File(file) if is_image(file) => {
-                parts.push(convert_image_part(file, provider_options_name, false)?);
+            ToolResultContent::File(file) if is_image(part) => {
+                content.push(convert_image_part(file, provider_options_name, true)?);
             }
-            _ => warnings.push(Warning::Unsupported {
-                feature: format!(
-                    "tool result content part type: {}",
-                    match part {
-                        ToolResultContent::Text(_) => "text",
-                        ToolResultContent::File(_) => "file",
-                        ToolResultContent::Custom { .. } => "custom",
-                    }
-                ),
-                details: None,
-            }),
+            other => {
+                let kind = match other {
+                    ToolResultContent::File(_) => "file",
+                    ToolResultContent::Custom { .. } => "custom",
+                    ToolResultContent::Text(_) => unreachable!(),
+                };
+                warnings.push(Warning::Unsupported {
+                    feature: format!("tool result content part type: {kind}"),
+                    details: None,
+                });
+            }
         }
     }
-    Ok(Value::Array(parts))
+    Ok(Value::Array(content))
 }

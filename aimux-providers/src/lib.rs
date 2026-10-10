@@ -227,20 +227,22 @@ pub use cohere::{
 };
 pub use google::{
     GoogleEmbeddingModel, GoogleFiles, GoogleImageModel, GoogleImageSettings, GoogleModel,
-    GoogleProvider, GoogleProviderSettings, GoogleVideoModel, create_google, google,
+    GoogleProvider, GoogleProviderSettings, GoogleSpeechModel, GoogleTranscriptionModel,
+    GoogleVideoModel, create_google, google,
 };
 pub use mistral::{
-    MistralEmbeddingModel, MistralModel, MistralProvider, MistralProviderSettings, create_mistral,
-    mistral,
+    MistralEmbeddingModel, MistralModel, MistralProvider, MistralProviderSettings,
+    MistralSpeechModel, MistralTranscriptionModel, create_mistral, mistral,
 };
 pub use openai::{
     OpenAIEmbeddingModel, OpenAIImageModel, OpenAIProvider, OpenAIProviderSettings,
     OpenAIResponsesModel, OpenAISpeechModel, OpenAITranscriptionModel, create_openai,
 };
 pub use vertex::{
-    VertexAnthropicModel, VertexEmbeddingModel, VertexImageModel, VertexModel, VertexProvider,
-    VertexProviderSettings, VertexTranscriptionModel, VertexVideoModel, create_google_vertex,
-    google_vertex,
+    GoogleAuthOptions, GoogleAuthScopes, VertexAnthropicModel, VertexAnthropicProvider,
+    VertexAnthropicProviderSettings, VertexEmbeddingModel, VertexImageModel, VertexModel,
+    VertexProvider, VertexProviderSettings, VertexTranscriptionModel, VertexVideoModel,
+    create_google_vertex, create_google_vertex_anthropic, google_vertex, google_vertex_anthropic,
 };
 pub use voyage::{
     VoyageEmbeddingModel, VoyageProvider, VoyageProviderSettings, VoyageRerankingModel,
@@ -252,7 +254,10 @@ pub use codex::{
     CodexMode, CodexModel, CodexProvider, CodexProviderSettings, CodexTokens, codex, codex_refresh,
     codex_refresh_at, create_codex,
 };
-pub use xai::{XAIProvider, XAIProviderSettings, XaiResponsesModel, create_xai, xai};
+pub use xai::{
+    XAIProvider, XAIProviderSettings, XaiResponsesModel, XaiSpeechModel, XaiTranscriptionModel,
+    XaiVideoModel, create_xai, xai,
+};
 
 pub use cartesia::{
     CartesiaProvider, CartesiaProviderSettings, CartesiaSpeechModel, CartesiaTranscriptionModel,

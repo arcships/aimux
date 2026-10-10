@@ -74,6 +74,11 @@ const DEFAULT_NAME: &str = "anthropic.messages";
 /// The first-party URL without its version segment means the versioned one
 /// (`normalizeBaseURL` in `createAnthropic`); anything else is taken as given.
 fn normalize_base_url(url: &str) -> Result<String, AiMuxError> {
+    if url.trim().is_empty() {
+        return Err(AiMuxError::InvalidArgument(
+            "baseURL must be a non-empty string.".into(),
+        ));
+    }
     let url = validate_base_url(url)?;
     Ok(if url == API_ORIGIN {
         DEFAULT_BASE_URL.to_string()
@@ -103,7 +108,7 @@ fn supported_urls() -> SupportedUrls {
 #[derive(Clone, Default)]
 pub struct AnthropicProviderSettings {
     /// Base URL for the API calls, version segment included. Default
-    /// `https://api.anthropic.com/v1`; a trailing slash is removed. The bare
+    /// `ANTHROPIC_BASE_URL` or `https://api.anthropic.com/v1`; a trailing slash is removed. The bare
     /// `https://api.anthropic.com` means the default.
     pub base_url: Option<String>,
     /// The API key, sent as `x-api-key`. `None` (with no `auth_token`) loads
@@ -111,8 +116,9 @@ pub struct AnthropicProviderSettings {
     /// `AiMuxError::LoadApiKey` if it is unset. An explicit value is used as
     /// given, `""` included: it never falls back to the environment.
     pub api_key: Option<String>,
-    /// A non-empty bearer token is sent as `Authorization: Bearer` instead
-    /// of `x-api-key`. Giving non-empty values for both credentials is an error.
+    /// A bearer token, sent as `Authorization: Bearer`. When set, no
+    /// `x-api-key` header is sent. Giving it together with `api_key` is an
+    /// error.
     pub auth_token: Option<String>,
     /// Extra headers on every request. A `None` value removes the header,
     /// including one of the fixed ones. Per-call headers win over these.
@@ -125,7 +131,7 @@ pub struct AnthropicProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Generator for source IDs. Defaults to the provider utility generator.
+    /// Generates identifiers for returned sources.
     pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
@@ -151,8 +157,8 @@ impl std::fmt::Debug for AnthropicProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
-/// URL with a host, or when both `api_key` and `auth_token` are given. Those
+/// Returns `AiMuxError::InvalidArgument` when the configured base URL is not an
+/// `http(s)` URL with a host, or when both credentials are nonempty. Those
 /// are the only ways this fails: credentials are loaded per request, not here.
 pub fn create_anthropic(
     settings: AnthropicProviderSettings,
@@ -170,7 +176,8 @@ pub fn create_anthropic(
                 .to_string(),
         ));
     }
-    let (credential, scheme) = match settings.auth_token.filter(is_truthy) {
+    let auth_token = settings.auth_token.filter(is_truthy);
+    let (credential, scheme) = match auth_token {
         Some(token) => (
             Credential::Explicit(Resolvable::Value(token)),
             AuthScheme::Bearer,
@@ -194,21 +201,24 @@ pub fn create_anthropic(
                 vec![("anthropic-version".to_string(), API_VERSION.to_string())],
                 settings.headers,
             ),
-            crate::anthropic::options::CANONICAL,
+            options::CANONICAL,
             "4.0.68",
         ),
         fetch: settings.fetch,
-        generate_id: settings.generate_id,
         supported_urls: supported_urls(),
+        generate_id: settings.generate_id,
     })
 }
 
 /// The default provider: `create_anthropic` with default settings, created on
-/// first use. The base URL is loaded at creation; the key is loaded per request.
+/// first use. Creation reads `ANTHROPIC_BASE_URL`; a missing key surfaces
+/// from the first request instead.
 pub fn anthropic() -> &'static AnthropicProvider {
     static DEFAULT: OnceLock<AnthropicProvider> = OnceLock::new();
     DEFAULT.get_or_init(|| {
-        create_anthropic(AnthropicProviderSettings::default()).expect("invalid ANTHROPIC_BASE_URL")
+        // An invalid base URL environment setting fails at creation.
+        create_anthropic(AnthropicProviderSettings::default())
+            .expect("Anthropic base URL must be valid")
     })
 }
 
@@ -219,8 +229,8 @@ pub struct AnthropicProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
     supported_urls: SupportedUrls,
+    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 impl AnthropicProvider {
@@ -258,7 +268,13 @@ impl AnthropicProvider {
         .with_generate_id(self.generate_id.clone())
     }
 
-    /// The files interface; `provider()` is the provider name.
+    /// An alias for the Messages model.
+    #[must_use]
+    pub fn chat(&self, model_id: &str) -> AnthropicMessagesModel {
+        self.messages(model_id)
+    }
+
+    /// The files interface, retaining the configured provider name.
     #[must_use]
     pub fn files(&self) -> AnthropicFiles {
         AnthropicFiles::from_config(self.model_config(self.name.clone()))

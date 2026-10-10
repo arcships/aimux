@@ -174,8 +174,6 @@ async fn status_401_maps_to_auth_error() {
     );
 }
 
-// -- Provider trait ----------------------------------------------------------
-
 #[test]
 fn model_id_is_searxng_search() {
     let config = SearxngProviderSettings {
@@ -187,5 +185,3 @@ fn model_id_is_searxng_search() {
     assert_eq!(model.model_id(), "searxng-search");
     assert_eq!(model.provider(), "searxng.search");
 }
-
-// -- instance URL -----------------------------------------------------------

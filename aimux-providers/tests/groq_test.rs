@@ -1261,10 +1261,10 @@ mod do_generate {
 
         let model = make_provider(&server);
 
-        let provider_opts = provider_namespace("groq", json!({"reasoningEffort": "high"}));
+        let provider_opts = provider_namespace("groq", json!({"reasoningEffort": "high"})).unwrap();
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::Medium),
-            provider_options: Some(provider_opts.unwrap()),
+            provider_options: Some(provider_opts),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -1426,9 +1426,10 @@ mod do_generate {
                 "user": "test-user-id",
                 "parallelToolCalls": false
             }),
-        );
+        )
+        .unwrap();
         let options = CallOptions {
-            provider_options: Some(provider_opts.unwrap()),
+            provider_options: Some(provider_opts),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -1447,9 +1448,9 @@ mod do_generate {
 
         let model = make_provider(&server);
 
-        let provider_opts = provider_namespace("groq", json!({"serviceTier": "flex"}));
+        let provider_opts = provider_namespace("groq", json!({"serviceTier": "flex"})).unwrap();
         let options = CallOptions {
-            provider_options: Some(provider_opts.unwrap()),
+            provider_options: Some(provider_opts),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -1466,9 +1467,10 @@ mod do_generate {
 
         let model = make_provider(&server);
 
-        let provider_opts = provider_namespace("groq", json!({"serviceTier": "performance"}));
+        let provider_opts =
+            provider_namespace("groq", json!({"serviceTier": "performance"})).unwrap();
         let options = CallOptions {
-            provider_options: Some(provider_opts.unwrap()),
+            provider_options: Some(provider_opts),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -1550,9 +1552,10 @@ mod do_generate {
 
         let model = make_provider(&server);
 
-        let provider_opts = provider_namespace("groq", json!({"structuredOutputs": false}));
+        let provider_opts =
+            provider_namespace("groq", json!({"structuredOutputs": false})).unwrap();
         let options = CallOptions {
-            provider_options: Some(provider_opts.unwrap()),
+            provider_options: Some(provider_opts),
             response_format: Some(ResponseFormat::Json {
                 schema: Some(json!({
                     "type": "object",
@@ -1585,9 +1588,9 @@ mod do_generate {
 
         let model = make_provider(&server);
 
-        let provider_opts = provider_namespace("groq", json!({"strictJsonSchema": false}));
+        let provider_opts = provider_namespace("groq", json!({"strictJsonSchema": false})).unwrap();
         let options = CallOptions {
-            provider_options: Some(provider_opts.unwrap()),
+            provider_options: Some(provider_opts),
             response_format: Some(ResponseFormat::Json {
                 schema: Some(json!({
                     "type": "object",
@@ -1814,17 +1817,44 @@ mod do_stream {
     async fn handles_error_stream() {
         let server = MockServer::start().await;
         let body = sse_body(&[&sse_event(
-            r#"{"error":{"message":"The server had an error processing your request. Sorry about that!","type":"invalid_request_error"}}"#,
+            r#"{"error":{"message":"Rate limit reached","type":"rate_limit_error"}}"#,
         )]);
         mock_sse(&server, body).await;
 
         let model = make_provider(&server);
 
-        let result = model.do_stream(&default_options(test_prompt())).await;
-        // upstream emits an error part and finishes; this crate's convention
-        // (as in the Mistral, Cohere and OpenAI-compatible models) is to reject
-        // when the very first event is an error, inside Core's retry boundary.
-        assert!(result.is_err());
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let parts = collect_stream(result).await;
+        assert_eq!(parts.len(), 3);
+        assert!(matches!(&parts[0], StreamPart::StreamStart { warnings } if warnings.is_empty()));
+        match &parts[1] {
+            StreamPart::Error {
+                error: aimux_core::AiMuxError::ApiCall(error),
+            } => {
+                assert_eq!(error.message, "Rate limit reached");
+                assert_eq!(error.status_code, Some(429));
+                assert!(error.is_retryable);
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+        match &parts[2] {
+            StreamPart::Finish {
+                finish_reason,
+                usage,
+                ..
+            } => {
+                assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
+                assert_eq!(finish_reason.raw, None);
+                assert_eq!(
+                    serde_json::to_value(usage).unwrap(),
+                    serde_json::to_value(aimux_core::types::Usage::default()).unwrap()
+                );
+            }
+            other => panic!("expected Finish, got {other:?}"),
+        }
     }
 
     /// upstream: "should handle error stream parts" (an error chunk after the
@@ -2189,7 +2219,7 @@ mod package {
             .await
             .unwrap();
 
-        let body = result.request.and_then(|request| request.body).unwrap();
+        let body = result.request.and_then(|r| r.body).unwrap();
         assert_eq!(body["user"], "u1");
         assert_eq!(body["reasoning_format"], "parsed");
         assert_eq!(body["service_tier"], "flex");
@@ -2220,7 +2250,7 @@ mod package {
             result
                 .request
                 .as_ref()
-                .and_then(|request| request.body.as_ref())
+                .and_then(|r| r.body.as_ref())
                 .unwrap()
                 .get("stream_options")
                 .is_none()
@@ -2255,7 +2285,7 @@ mod package {
         options.max_output_tokens = Some(64);
         options.top_k = Some(40.0);
         let result = model.do_generate(&options).await.unwrap();
-        let body = result.request.and_then(|request| request.body).unwrap();
+        let body = result.request.and_then(|r| r.body).unwrap();
         // upstream: getArgs sends `max_tokens: maxOutputTokens`
         assert_eq!(body["max_tokens"], 64);
         assert!(body.get("max_completion_tokens").is_none());

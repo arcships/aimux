@@ -2,10 +2,9 @@
 //!
 //! `@ai-sdk/google` reads `providerOptions.google` and writes response
 //! metadata under `google`; the Vertex package reuses the same models and
-//! reads `googleVertex` (then `google`, because the shared Gemini model reads
-//! it) and writes `googleVertex`. Only these canonical keys exist: the SDK's
-//! historical `vertex` alias is not read and not written. This module is the
-//! one place that knows the keys, so the models never spell them.
+//! reads `googleVertex`, then legacy `vertex`, then `google`, and writes
+//! metadata under both Vertex keys. Part metadata additionally supports the
+//! cross-provider namespace fallback used by the upstream message converter.
 
 use aimux_core::shared::{JsonObject, SharedProviderOptions, provider_namespace};
 use aimux_core::types::ProviderMetadata;
@@ -25,7 +24,7 @@ pub(crate) const VERTEX_VIDEO_METADATA_KEYS: [&str; 3] = [GOOGLE_VERTEX, "google
 pub(crate) enum Namespace {
     /// The public Gemini API: reads and writes `google`.
     Google,
-    /// Vertex AI: reads `googleVertex`, then `google`; writes `googleVertex`.
+    /// Vertex AI: reads `googleVertex`, `vertex`, then `google`; writes both Vertex keys.
     Vertex,
 }
 
@@ -34,7 +33,7 @@ impl Namespace {
     pub(crate) fn read_keys(self) -> &'static [&'static str] {
         match self {
             Self::Google => &[GOOGLE],
-            Self::Vertex => &[GOOGLE_VERTEX, GOOGLE],
+            Self::Vertex => &[GOOGLE_VERTEX, "vertex", GOOGLE],
         }
     }
 
@@ -42,7 +41,7 @@ impl Namespace {
     pub(crate) fn write_keys(self) -> &'static [&'static str] {
         match self {
             Self::Google => &[GOOGLE],
-            Self::Vertex => &[GOOGLE_VERTEX],
+            Self::Vertex => &[GOOGLE_VERTEX, "vertex"],
         }
     }
 
@@ -57,6 +56,15 @@ impl Namespace {
             .find_map(|key| provider_options.get(*key))
     }
 
+    pub(crate) fn read_part(self, options: Option<&SharedProviderOptions>) -> Option<&JsonObject> {
+        let options = options?;
+        let keys: &[&str] = match self {
+            Self::Google => &[GOOGLE, GOOGLE_VERTEX, "vertex"],
+            Self::Vertex => &[GOOGLE_VERTEX, "vertex", GOOGLE],
+        };
+        keys.iter().find_map(|key| options.get(*key))
+    }
+
     /// [`read`](Self::read) for `CallOptions::provider_options`.
     pub(crate) fn read_in(
         self,
@@ -67,8 +75,15 @@ impl Namespace {
 
     /// Wrap `payload` as response metadata under every write key.
     pub(crate) fn metadata(self, payload: Value) -> ProviderMetadata {
-        provider_namespace(self.write_keys()[0], payload)
-            .expect("provider metadata must be an object")
+        let mut metadata = provider_namespace(self.write_keys()[0], payload.clone())
+            .expect("provider metadata must be an object");
+        for key in &self.write_keys()[1..] {
+            metadata.extend(
+                provider_namespace(key, payload.clone())
+                    .expect("provider metadata must be an object"),
+            );
+        }
+        metadata
     }
 }
 
@@ -86,15 +101,12 @@ pub(crate) fn google_metadata(payload: Value) -> ProviderMetadata {
     Namespace::Google.metadata(payload)
 }
 
-/// The options under the Vertex key only (`googleVertex`), for the Vertex
-/// surfaces that never fall back to `google`.
-pub(crate) fn vertex_options(
-    provider_options: Option<&SharedProviderOptions>,
-) -> Option<&JsonObject> {
-    provider_options?.get(GOOGLE_VERTEX)
-}
-
-/// Response metadata under the Vertex key, as a metadata map.
-pub(crate) fn vertex_metadata_map(payload: &Value) -> ProviderMetadata {
-    Namespace::Vertex.metadata(payload.clone())
+/// `deserialize_with` for a zod `.optional()` field: absence is `None`, an
+/// explicit `null` is an error.
+pub(crate) fn no_null<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }

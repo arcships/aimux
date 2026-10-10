@@ -19,7 +19,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart,
-    ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
+    ToolPart, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
 use aimux_core::result::{GenerateContent, ReasoningOutput};
@@ -205,7 +205,7 @@ fn openai_pdf_json() -> Value {
         "created_at": 1775566496,
         "status": "completed",
         "incomplete_details": null,
-        "model": "test-pdf-model",
+        "model": lmstudio_basic_json()["model"],
         "output": [
             {
                 "id": "msg_048edf44633e41ae0069d4fea0d1a08194af1e491c093df1d9",
@@ -446,8 +446,8 @@ mod convert_tests {
         let prompt = vec![LanguageModelMessage::User {
             content: vec![UserPart::File(FilePart {
                 data: FileData::Url {
-                    url: "https://example.com/image.png".into(),
                     original_url: None,
+                    url: "https://example.com/image.png".into(),
                 },
                 media_type: "image/png".into(),
                 filename: None,
@@ -505,8 +505,8 @@ mod convert_tests {
         let prompt = vec![LanguageModelMessage::User {
             content: vec![UserPart::File(FilePart {
                 data: FileData::Url {
-                    url: "https://example.com/document.pdf".into(),
                     original_url: None,
+                    url: "https://example.com/document.pdf".into(),
                 },
                 media_type: "application/pdf".into(),
                 filename: None,
@@ -740,12 +740,11 @@ mod convert_tests {
         let prompt = vec![LanguageModelMessage::Tool {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: "call_123".into(),
-                output: ToolResultOutput::Json {
-                    value: json!({"temperature": 72, "condition": "sunny"}),
-                    provider_options: None,
-                },
-                tool_name: "test".into(),
-
+                output: serde_json::from_value(
+                    json!({"type": "json", "value": {"temperature": 72, "condition": "sunny"}}),
+                )
+                .unwrap(),
+                tool_name: "get_weather".into(),
                 provider_options: None,
             })],
             provider_options: None,
@@ -766,12 +765,11 @@ mod convert_tests {
         let prompt = vec![LanguageModelMessage::Tool {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: "call_456".into(),
-                output: ToolResultOutput::Text {
-                    value: "Search results: Found 5 items".into(),
-                    provider_options: None,
-                },
-                tool_name: "test".into(),
-
+                output: serde_json::from_value(
+                    json!({"type": "text", "value": "Search results: Found 5 items"}),
+                )
+                .unwrap(),
+                tool_name: "get_weather".into(),
                 provider_options: None,
             })],
             provider_options: None,
@@ -792,12 +790,11 @@ mod convert_tests {
         let prompt = vec![LanguageModelMessage::Tool {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: "call_789".into(),
-                output: ToolResultOutput::ErrorText {
-                    value: "API request failed: timeout".into(),
-                    provider_options: None,
-                },
-                tool_name: "test".into(),
-
+                output: serde_json::from_value(
+                    json!({"type": "error-text", "value": "API request failed: timeout"}),
+                )
+                .unwrap(),
+                tool_name: "get_weather".into(),
                 provider_options: None,
             })],
             provider_options: None,
@@ -818,12 +815,11 @@ mod convert_tests {
         let prompt = vec![LanguageModelMessage::Tool {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: "call_denied".into(),
-                output: ToolResultOutput::ExecutionDenied {
-                    reason: Some("User declined the action".into()),
-                    provider_options: None,
-                },
-                tool_name: "test".into(),
-
+                output: serde_json::from_value(
+                    json!({"type": "execution-denied", "reason": "User declined the action"}),
+                )
+                .unwrap(),
+                tool_name: "get_weather".into(),
                 provider_options: None,
             })],
             provider_options: None,
@@ -844,20 +840,15 @@ mod convert_tests {
         let prompt = vec![LanguageModelMessage::Tool {
             content: vec![ToolPart::ToolResult(ToolResultPart {
                 tool_call_id: "call_content".into(),
-                output: ToolResultOutput::Content {
-                    value: vec![
-                        ToolResultContent::Text(TextPart {
-                            text: "First result".into(),
-                            provider_options: None,
-                        }),
-                        ToolResultContent::Text(TextPart {
-                            text: "Second result".into(),
-                            provider_options: None,
-                        }),
-                    ],
-                },
-                tool_name: "test".into(),
-
+                output: serde_json::from_value(json!({
+                    "type": "content",
+                    "value": [
+                        {"type": "text", "text": "First result"},
+                        {"type": "text", "text": "Second result"}
+                    ]
+                }))
+                .unwrap(),
+                tool_name: "get_weather".into(),
                 provider_options: None,
             })],
             provider_options: None,
@@ -882,22 +873,16 @@ mod convert_tests {
             content: vec![
                 ToolPart::ToolResult(ToolResultPart {
                     tool_call_id: "call_001".into(),
-                    output: ToolResultOutput::Json {
-                        value: json!({"temp": 72}),
-                        provider_options: None,
-                    },
-                    tool_name: "test".into(),
-
+                    output: serde_json::from_value(json!({"type": "json", "value": {"temp": 72}}))
+                        .unwrap(),
+                    tool_name: "get_weather".into(),
                     provider_options: None,
                 }),
                 ToolPart::ToolResult(ToolResultPart {
                     tool_call_id: "call_002".into(),
-                    output: ToolResultOutput::Text {
-                        value: "3:00 PM".into(),
-                        provider_options: None,
-                    },
-                    tool_name: "test".into(),
-
+                    output: serde_json::from_value(json!({"type": "text", "value": "3:00 PM"}))
+                        .unwrap(),
+                    tool_name: "get_weather".into(),
                     provider_options: None,
                 }),
             ],
@@ -964,12 +949,8 @@ mod convert_tests {
             LanguageModelMessage::Tool {
                 content: vec![ToolPart::ToolResult(ToolResultPart {
                     tool_call_id: "call_weather".into(),
-                    output: ToolResultOutput::Json {
-                        value: json!({"temperature": 25, "condition": "cloudy"}),
-                        provider_options: None,
-                    },
-                    tool_name: "test".into(),
-
+                    output: serde_json::from_value(json!({"type": "json", "value": {"temperature": 25, "condition": "cloudy"}})).unwrap(),
+                    tool_name: "get_weather".into(),
                     provider_options: None,
                 })],
                 provider_options: None,
@@ -1003,12 +984,8 @@ mod convert_tests {
             LanguageModelMessage::Tool {
                 content: vec![ToolPart::ToolResult(ToolResultPart {
                     tool_call_id: "call_weather".into(),
-                    output: ToolResultOutput::Json {
-                        value: json!({"temperature": 25, "condition": "cloudy"}),
-                        provider_options: None,
-                    },
-                    tool_name: "test".into(),
-
+                    output: serde_json::from_value(json!({"type": "json", "value": {"temperature": 25, "condition": "cloudy"}})).unwrap(),
+                    tool_name: "get_weather".into(),
                     provider_options: None,
                 })],
                 provider_options: None,
@@ -1423,12 +1400,10 @@ mod do_generate_tests {
     // -- ProviderOptions reasoning tests --
 
     fn lmstudio_opts(value: Value) -> Option<aimux_core::shared::SharedProviderOptions> {
-        Some(
-            aimux_core::shared::provider_namespace("lmstudio", value)
-                .expect("provider options object"),
-        )
+        Some(aimux_core::shared::provider_namespace("lmstudio", value).unwrap())
     }
 
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:594`
     #[tokio::test]
     async fn provider_options_reasoning_summary_detailed() {
         let server = MockServer::start().await;
@@ -1446,6 +1421,7 @@ mod do_generate_tests {
         assert_eq!(body["reasoning"], json!({"summary": "detailed"}));
     }
 
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:623`
     #[tokio::test]
     async fn provider_options_combines_effort_with_summary() {
         let server = MockServer::start().await;
@@ -1467,6 +1443,7 @@ mod do_generate_tests {
         );
     }
 
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:655`
     #[tokio::test]
     async fn provider_options_reasoning_summary_concise() {
         let server = MockServer::start().await;
@@ -1484,6 +1461,7 @@ mod do_generate_tests {
         assert_eq!(body["reasoning"], json!({"summary": "concise"}));
     }
 
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:685`
     #[tokio::test]
     async fn provider_options_no_reasoning_fields() {
         let server = MockServer::start().await;
@@ -1503,6 +1481,7 @@ mod do_generate_tests {
 
     // -- Tool call parsing tests --
 
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:742`
     #[tokio::test]
     async fn parse_tool_call_from_response() {
         let server = MockServer::start().await;
@@ -1547,6 +1526,7 @@ mod do_generate_tests {
         }
     }
 
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:746`
     #[tokio::test]
     async fn tool_call_finish_reason() {
         let server = MockServer::start().await;
@@ -1567,6 +1547,7 @@ mod do_generate_tests {
         assert_eq!(result.finish_reason.raw, None);
     }
 
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:753`
     #[tokio::test]
     async fn tool_call_usage() {
         let server = MockServer::start().await;
@@ -1607,6 +1588,7 @@ mod do_generate_tests {
         )
     }
 
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:772`
     #[tokio::test]
     async fn tool_choice_auto() {
         let server = MockServer::start().await;
@@ -1626,6 +1608,7 @@ mod do_generate_tests {
         assert!(body.get("tools").is_some());
     }
 
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:784`
     #[tokio::test]
     async fn tool_choice_none() {
         let server = MockServer::start().await;
@@ -1644,6 +1627,7 @@ mod do_generate_tests {
         assert_eq!(body["tool_choice"], json!("none"));
     }
 
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:796`
     #[tokio::test]
     async fn tool_choice_required() {
         let server = MockServer::start().await;
@@ -1662,6 +1646,7 @@ mod do_generate_tests {
         assert_eq!(body["tool_choice"], json!("required"));
     }
 
+    /// TS: `packages/open-responses/src/responses/open-responses-language-model.test.ts:808`
     #[tokio::test]
     async fn tool_choice_specific_tool() {
         let server = MockServer::start().await;
@@ -1757,12 +1742,12 @@ mod do_generate_tests {
             LanguageModelMessage::Tool {
                 content: vec![ToolPart::ToolResult(ToolResultPart {
                     tool_call_id: "call_weather_123".into(),
-                    output: ToolResultOutput::Json {
-                        value: json!({"temperature": 22, "condition": "sunny", "humidity": 65}),
-                        provider_options: None,
-                    },
-                    tool_name: "test".into(),
-
+                    output: serde_json::from_value(json!({
+                        "type": "json",
+                        "value": {"temperature": 22, "condition": "sunny", "humidity": 65}
+                    }))
+                    .unwrap(),
+                    tool_name: "get_weather".into(),
                     provider_options: None,
                 })],
                 provider_options: None,
@@ -1812,7 +1797,7 @@ mod do_generate_tests {
         let server = MockServer::start().await;
         mock_json(&server, openai_pdf_json()).await;
 
-        let model = make_model(&server, "test-pdf-model");
+        let model = make_model(&server, "gpt-4.1-nano");
         let prompt = vec![LanguageModelMessage::User {
             content: vec![
 UserPart::Text(TextPart {
@@ -1821,9 +1806,9 @@ provider_options: None
 }),
 UserPart::File(FilePart {
 data: FileData::Url {
-url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf".into(),
- original_url: None,
- },
+original_url: None,
+url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf".into()
+},
 media_type: "application/pdf".into(),
 filename: None,
 provider_options: None
@@ -1838,7 +1823,7 @@ provider_options: None
         assert_eq!(
             body,
             json!({
-                "model": "test-pdf-model",
+                "model": "gpt-4.1-nano",
                 "input": [{
                     "type": "message",
                     "role": "user",
@@ -1856,7 +1841,7 @@ provider_options: None
         let server = MockServer::start().await;
         mock_json(&server, openai_pdf_json()).await;
 
-        let model = make_model(&server, "test-pdf-model");
+        let model = make_model(&server, "gpt-4.1-nano");
         let prompt = vec![LanguageModelMessage::User {
             content: vec![
 UserPart::Text(TextPart {
@@ -1865,9 +1850,9 @@ provider_options: None
 }),
 UserPart::File(FilePart {
 data: FileData::Url {
-url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf".into(),
- original_url: None,
- },
+original_url: None,
+url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf".into()
+},
 media_type: "application/pdf".into(),
 filename: None,
 provider_options: None
@@ -1892,7 +1877,7 @@ provider_options: None
         let server = MockServer::start().await;
         mock_json(&server, openai_pdf_json()).await;
 
-        let model = make_model(&server, "test-pdf-model");
+        let model = make_model(&server, "gpt-4.1-nano");
         let prompt = vec![LanguageModelMessage::User {
             content: vec![
 UserPart::Text(TextPart {
@@ -1901,9 +1886,9 @@ provider_options: None
 }),
 UserPart::File(FilePart {
 data: FileData::Url {
-url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf".into(),
- original_url: None,
- },
+original_url: None,
+url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf".into()
+},
 media_type: "application/pdf".into(),
 filename: None,
 provider_options: None
@@ -2176,7 +2161,7 @@ mod do_stream_tests {
         );
         mock_sse(&server, body).await;
 
-        let model = make_model(&server, "test-pdf-model");
+        let model = make_model(&server, "gpt-4.1-nano");
         let prompt = vec![LanguageModelMessage::User {
             content: vec![
 UserPart::Text(TextPart {
@@ -2185,9 +2170,9 @@ provider_options: None
 }),
 UserPart::File(FilePart {
 data: FileData::Url {
-url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf".into(),
- original_url: None,
- },
+original_url: None,
+url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf".into()
+},
 media_type: "application/pdf".into(),
 filename: None,
 provider_options: None

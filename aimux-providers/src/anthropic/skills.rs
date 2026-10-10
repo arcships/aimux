@@ -124,9 +124,14 @@ impl Skills for AnthropicSkills {
         }
         body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
         let config = self.config.resolved().await?;
-        let headers = config
+        let mut headers = config
             .request_headers(None, &BTreeSet::from(["skills-2025-10-02".to_string()]))
             .await?;
+        headers.retain(|(name, _)| !name.eq_ignore_ascii_case("anthropic-beta"));
+        headers.push((
+            "anthropic-beta".to_string(),
+            "skills-2025-10-02".to_string(),
+        ));
         let response = aimux_provider_utils::post_to_api(
             config.with_transport(HttpRequest {
                 url: config.url("/skills"),

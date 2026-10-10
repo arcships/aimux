@@ -74,6 +74,7 @@ fn parse_duration_seconds(value: &Option<String>) -> Option<f64> {
     value
         .as_ref()
         .and_then(|s| s.trim_end_matches('s').parse::<f64>().ok())
+        .filter(|value| value.is_finite())
 }
 
 /// Convert a BCP 47 language tag (e.g. `"en-US"`) to an ISO 639-1 code
@@ -82,8 +83,15 @@ fn convert_bcp47_to_iso6391(value: &Option<String>) -> Option<String> {
     value
         .as_ref()
         .and_then(|s| s.split('-').next())
-        .filter(|s| s.len() == 2)
-        .map(std::string::ToString::to_string)
+        .map(str::to_ascii_lowercase)
+        .map(|s| match s.as_str() {
+            "cmn" => "zh".to_string(),
+            "iw" => "he".to_string(),
+            "in" => "id".to_string(),
+            "ji" => "yi".to_string(),
+            _ => s,
+        })
+        .filter(|s| s.len() == 2 && s.bytes().all(|b| b.is_ascii_alphabetic()))
 }
 
 fn audio_input_to_base64(audio: &AudioInput) -> Result<String, AiMuxError> {
@@ -205,8 +213,13 @@ impl TranscriptionModel for VertexTranscriptionModel {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let url = self.endpoint(exchange.base_url(), &target.project, &region);
 
+        // The recognizer lives on the Speech-to-Text host, not on the Vertex
+        // host the endpoint resolves to; it is the host these credentials
+        // are meant for.
+        let mut request = exchange.request(url.clone(), options);
+        request.credentialed_origin = Some(url);
         let resp = aimux_provider_utils::post_json_to_api(
-            exchange.request(url, options),
+            request,
             exchange.transform_body(request_body.clone()),
             aimux_provider_utils::create_json_response_handler::<GoogleVertexResponse>(),
             crate::google::google_failed_response_handler(),
@@ -223,11 +236,12 @@ impl TranscriptionModel for VertexTranscriptionModel {
         // Concatenate transcript from all results.
         let text: String = results
             .iter()
-            .filter_map(|r| {
+            .map(|r| {
                 r.alternatives
                     .as_ref()
                     .and_then(|a| a.first())
                     .and_then(|alt| alt.transcript.clone())
+                    .unwrap_or_default()
             })
             .collect::<Vec<_>>()
             .join(" ")
@@ -240,8 +254,8 @@ impl TranscriptionModel for VertexTranscriptionModel {
             .flat_map(|r| {
                 r.alternatives
                     .as_ref()
+                    .and_then(|alternatives| alternatives.first())
                     .into_iter()
-                    .flatten()
                     .flat_map(|alt| alt.words.as_deref().unwrap_or(&[]))
                     .filter_map(|w| {
                         let word = w.word.as_ref()?;

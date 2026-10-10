@@ -23,6 +23,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
+indexmap = { version = "2", features = ["serde"] }
 async-stream = { workspace = true }
 url = { workspace = true }
 chrono = "0.4"

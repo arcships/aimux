@@ -464,11 +464,10 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             },
             usage: convert_deepseek_usage(raw.get("usage")),
             warnings: built.warnings,
-            provider_metadata: Some(
-                provider_namespace(self.provider_options_name(), Value::Object(metadata))
-                    .expect("provider metadata must be an object"),
-            ),
-            request: Some(RequestInfo { body: Some(body) }),
+            provider_metadata: Some(provider_namespace(
+                self.provider_options_name(),
+                Value::Object(metadata),
+            )?),
             response: Some(ResponseInfo {
                 id: data.id,
                 timestamp: timestamp(data.created),
@@ -476,6 +475,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
                 headers: Some(response_headers),
                 body: Some(raw),
             }),
+            request: Some(RequestInfo { body: Some(body) }),
         })
     }
 
@@ -497,7 +497,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
         )
         .await?;
         let response_headers = resp.response_headers;
-        let mut sse_stream = resp.value;
+        let sse_stream = resp.value;
 
         let provider_options_name = self.provider_options_name().to_string();
         let emit_raw_chunks = options.include_raw_chunks == Some(true);
@@ -522,7 +522,8 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             let mut content_logprobs: Vec<Value> = Vec::new();
             let mut reasoning_logprobs: Vec<Value> = Vec::new();
 
-            while let Some(event) = sse_stream.next().await {
+            let mut events = sse_stream;
+            while let Some(event) = events.next().await {
                 let parsed = match event {
                     Ok(parsed) => parsed,
                     Err(error) => {
@@ -759,7 +760,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             yield Ok(StreamPart::Finish {
                 finish_reason,
                 usage: convert_deepseek_usage(usage.as_ref()),
-                provider_metadata: Some(provider_namespace(&provider_options_name, Value::Object(metadata)).expect("provider metadata must be an object")),
+                provider_metadata: Some(provider_namespace(&provider_options_name, Value::Object(metadata)).expect("metadata payload is an object")),
             });
         };
 

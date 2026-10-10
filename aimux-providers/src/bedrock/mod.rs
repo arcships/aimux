@@ -34,6 +34,7 @@ pub mod image;
 mod model;
 pub(crate) mod options;
 pub mod reranking;
+pub(crate) mod tools;
 mod types;
 
 use std::sync::{Arc, OnceLock};
@@ -76,6 +77,54 @@ const SESSION_TOKEN_ENV_VAR: &str = "AWS_SESSION_TOKEN";
 const RUNTIME_ENDPOINT_ENV_VAR: &str = "AWS_ENDPOINT_URL_BEDROCK_RUNTIME";
 const AGENT_RUNTIME_ENDPOINT_ENV_VAR: &str = "AWS_ENDPOINT_URL_BEDROCK_AGENT_RUNTIME";
 
+pub(crate) fn encode_model_id(model_id: &str) -> String {
+    const SAFE: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+        .remove(b'-')
+        .remove(b'_')
+        .remove(b'.')
+        .remove(b'!')
+        .remove(b'~')
+        .remove(b'*')
+        .remove(b'\'')
+        .remove(b'(')
+        .remove(b')');
+    percent_encoding::utf8_percent_encode(model_id, SAFE).to_string()
+}
+
+/// The chat family override supported by the upstream provider.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AmazonBedrockChatModelFamily {
+    Anthropic,
+}
+
+impl AmazonBedrockChatModelFamily {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+        }
+    }
+}
+
+/// The embedding families supported by the upstream provider.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AmazonBedrockEmbeddingModelFamily {
+    Titan,
+    Cohere,
+    Nova,
+}
+
+/// Optional family override for opaque inference-profile IDs.
+#[derive(Clone, Debug, Default)]
+pub struct AmazonBedrockChatModelSettings {
+    pub model_family: Option<AmazonBedrockChatModelFamily>,
+}
+
+/// Optional embedding family override for opaque inference-profile IDs.
+#[derive(Clone, Debug, Default)]
+pub struct AmazonBedrockEmbeddingModelSettings {
+    pub model_family: Option<AmazonBedrockEmbeddingModelFamily>,
+}
+
 pub(crate) fn bedrock_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -83,11 +132,17 @@ pub(crate) fn bedrock_failed_response_handler() -> aimux_provider_utils::Respons
         // as `{ "error": { ... } }` by compatible gateways.
         let error = data.get("error").unwrap_or(data);
         aimux_provider_utils::ProviderErrorParts {
-            message: error
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
+            message: {
+                let message = error
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
+                match error.get("type").and_then(Value::as_str) {
+                    Some(kind) => format!("{kind}: {message}"),
+                    None => message,
+                }
+            },
             provider_code: error
                 .get("type")
                 .or_else(|| error.get("__type"))
@@ -128,8 +183,8 @@ pub struct AmazonBedrockProviderSettings {
     pub session_token: Option<String>,
     /// Base URL for the Bedrock Runtime calls (and the Agent Runtime
     /// `rerank` calls). Default `https://bedrock-runtime.{region}.amazonaws.com`,
-    /// or the service endpoint environment variable, then `AWS_ENDPOINT_URL`;
-    /// a trailing slash is removed.
+    /// or `AWS_ENDPOINT_URL_BEDROCK_RUNTIME` when that is set; a trailing slash
+    /// is removed.
     pub base_url: Option<String>,
     /// Extra headers on every request. A `None` value removes the header.
     /// Per-call headers win over these.
@@ -289,9 +344,21 @@ impl Auth {
         if let Some(url) = load_optional_setting(None, endpoint_env_var)
             .or_else(|| load_optional_setting(None, "AWS_ENDPOINT_URL"))
         {
-            return Ok(without_trailing_slash(&url));
+            return validate_base_url(&url);
         }
-        Ok(format!("https://{service}.{}.amazonaws.com", region()?))
+        let region = region()?;
+        let suffix = [
+            ("cn-", "amazonaws.com.cn"),
+            ("us-iso-", "c2s.ic.gov"),
+            ("us-isob-", "sc2s.sgov.gov"),
+            ("eu-isoe-", "cloud.adc-e.uk"),
+            ("us-isof-", "csp.hci.ic.gov"),
+            ("eusc-", "amazonaws.eu"),
+        ]
+        .iter()
+        .find(|(prefix, _)| region.starts_with(prefix))
+        .map_or("amazonaws.com", |(_, suffix)| *suffix);
+        Ok(format!("https://{service}.{region}.{suffix}"))
     }
 }
 
@@ -341,7 +408,13 @@ pub fn create_amazon_bedrock(
     let header_auth = auth.clone();
     let headers: HeadersFn = Resolvable::from_async_fn(move || {
         let auth = header_auth.clone();
-        let user = user_headers.clone().unwrap_or_default();
+        let mut user = combine_headers(&[&user_headers.clone().unwrap_or_default()]);
+        let suffix = concat!("ai-sdk-amazon-bedrock/", env!("CARGO_PKG_VERSION"));
+        let agent = user
+            .get("user-agent")
+            .and_then(|value| value.as_deref())
+            .map_or_else(|| suffix.to_string(), |value| format!("{value} {suffix}"));
+        user.insert("user-agent".into(), Some(agent));
         async move {
             match auth.bearer().await? {
                 Some(key) => {
@@ -455,11 +528,43 @@ impl AmazonBedrockProvider {
         BedrockModel::from_config(model_id.to_string(), self.runtime_config())
     }
 
+    #[must_use]
+    pub fn chat_with_settings(
+        &self,
+        model_id: &str,
+        settings: &AmazonBedrockChatModelSettings,
+    ) -> BedrockModel {
+        self.chat(model_id).with_model_family(
+            settings
+                .model_family
+                .map(|family| family.as_str().to_owned()),
+        )
+    }
+
     /// An embedding model (e.g. `"amazon.titan-embed-text-v2:0"`);
     /// `provider()` is `"amazon-bedrock"`.
     #[must_use]
     pub fn embedding(&self, model_id: &str) -> BedrockEmbeddingModel {
         BedrockEmbeddingModel::from_config(model_id.to_string(), self.runtime_config())
+    }
+
+    #[must_use]
+    pub fn embedding_with_settings(
+        &self,
+        model_id: &str,
+        settings: &AmazonBedrockEmbeddingModelSettings,
+    ) -> BedrockEmbeddingModel {
+        self.embedding(model_id)
+            .with_model_family(settings.model_family)
+    }
+
+    #[must_use]
+    pub fn call_with_settings(
+        &self,
+        model_id: &str,
+        settings: &AmazonBedrockChatModelSettings,
+    ) -> Arc<dyn LanguageModel> {
+        Arc::new(self.chat_with_settings(model_id, settings))
     }
 
     /// An image generation model (e.g. `"amazon.titan-image-generator-v1"` or
@@ -536,12 +641,14 @@ impl ProviderDiscovery for AmazonBedrockProvider {
             let exchange = config.exchange(None).await?;
             let mut headers = exchange.headers();
             headers.push(("Accept".to_string(), "application/json".to_string()));
+            let mut request = exchange.with_transport(aimux_provider_utils::HttpRequest {
+                url,
+                headers,
+                ..Default::default()
+            });
+            request.credentialed_origin = Some(request.url.clone());
             let resp = aimux_provider_utils::get_from_api(
-                exchange.with_transport(aimux_provider_utils::HttpRequest {
-                    url,
-                    headers,
-                    ..Default::default()
-                }),
+                request,
                 aimux_provider_utils::create_json_response_handler(),
                 bedrock_failed_response_handler(),
             )

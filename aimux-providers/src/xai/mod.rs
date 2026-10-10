@@ -1,22 +1,32 @@
 //! xAI (Grok) provider.
 //!
 //! [`create_xai`] is the Rust form of the AI SDK's `createXai`: it takes
-//! [`XAIProviderSettings`], validates the base URL, fixes the provider name and
+//! [`XAIProviderSettings`], removes a trailing slash, fixes the provider name and
 //! returns an [`XAIProvider`]. The API key is not read there; it is loaded in
 //! the request headers of every call, from the setting or from
 //! `XAI_API_KEY`. [`xai()`] is the default instance.
 //!
-//! The AI SDK's xAI package serves the Responses API only
+//! The AI SDK's xAI package serves text through the Responses API only
 //! ([`XaiResponsesModel`], `provider()` = `xai.responses`), and
 //! [`language_model`](Provider::language_model) returns it. There is no Chat
 //! Completions model in this package; xAI's OpenAI-compatible endpoint is
 //! reachable through `create_openai_compatible` with `https://api.x.ai/v1`.
+//!
+//! The package also has speech ([`XaiSpeechModel`]), transcription
+//! ([`XaiTranscriptionModel`], HTTP and WebSocket streaming) and video
+//! ([`XaiVideoModel`]) models. Speech and transcription take no model id.
 
 pub mod convert;
 pub(crate) mod options;
 pub mod responses;
+mod speech;
+mod transcription;
+mod video;
 
 pub use responses::XaiResponsesModel;
+pub use speech::XaiSpeechModel;
+pub use transcription::XaiTranscriptionModel;
+pub use video::XaiVideoModel;
 
 use std::sync::{Arc, OnceLock};
 
@@ -30,13 +40,15 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_core::speech_model::SpeechModel;
+use aimux_core::transcription_model::TranscriptionModel;
+use aimux_core::video_model::VideoModel;
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable};
 
 use crate::shared::{Credential, EndpointConfig, provider_headers};
 
 const DEFAULT_BASE_URL: &str = "https://api.x.ai/v1";
 const API_KEY_ENV_VAR: &str = "XAI_API_KEY";
-const DEFAULT_NAME: &str = "xai";
 
 pub(crate) fn xai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -52,8 +64,8 @@ pub(crate) fn xai_failed_response_handler() -> aimux_provider_utils::ResponseHan
         let error = data.get("error").unwrap_or(data);
         aimux_provider_utils::ProviderErrorParts {
             message: error
-                .get("message")
-                .and_then(Value::as_str)
+                .as_str()
+                .or_else(|| error.get("message").and_then(Value::as_str))
                 .unwrap_or_default()
                 .to_owned(),
             provider_code: error
@@ -74,7 +86,14 @@ pub(crate) fn xai_stream_error(
     request_body_values: Value,
     response_headers: std::collections::HashMap<String, String>,
 ) -> AiMuxError {
-    let error = event.get("error").unwrap_or(event);
+    let error = event
+        .get("error")
+        .or_else(|| {
+            event
+                .get("response")
+                .and_then(|response| response.get("error"))
+        })
+        .unwrap_or(event);
     let message = error
         .as_str()
         .or_else(|| error.get("message").and_then(Value::as_str))
@@ -85,8 +104,15 @@ pub(crate) fn xai_stream_error(
         .or_else(|| event.get("code"))
         .or_else(|| error.get("status"))
         .or_else(|| error.get("code"))
-        .and_then(Value::as_u64)
-        .and_then(|status| u16::try_from(status).ok())
+        .and_then(|value| match value {
+            Value::String(value)
+                if value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_digit()) =>
+            {
+                value.parse::<u16>().ok()
+            }
+            Value::Number(value) => value.as_u64().and_then(|status| u16::try_from(status).ok()),
+            _ => None,
+        })
         .filter(|status| (400..=599).contains(status));
     let provider_code = event
         .get("code")
@@ -97,7 +123,19 @@ pub(crate) fn xai_stream_error(
             Value::Number(value) => Some(value.to_string()),
             _ => None,
         });
-    aimux_provider_utils::stream_error_api_call(
+    let status_code = status_code.or(match provider_code.as_deref() {
+        Some("rate_limit_exceeded" | "rate_limit_error" | "insufficient_quota") => Some(429),
+        Some("api_error" | "internal_server_error" | "server_error") => Some(500),
+        Some("overloaded_error" | "service_unavailable") => Some(503),
+        Some("timeout" | "timeout_error") => Some(504),
+        Some("authentication_error" | "invalid_api_key") => Some(401),
+        Some("permission_error") => Some(403),
+        Some("not_found_error" | "model_not_found") => Some(404),
+        Some("bad_request" | "context_length_exceeded" | "invalid_request_error") => Some(400),
+        _ => None,
+    });
+    let insufficient_quota = provider_code.as_deref() == Some("insufficient_quota");
+    let mut result = aimux_provider_utils::stream_error_api_call(
         message,
         provider_code,
         status_code,
@@ -105,7 +143,11 @@ pub(crate) fn xai_stream_error(
         url,
         request_body_values,
         response_headers,
-    )
+    );
+    if insufficient_quota && let AiMuxError::ApiCall(error) = &mut result {
+        error.is_retryable = false;
+    }
+    result
 }
 
 pub(crate) fn xai_successful_response_handler<T>() -> aimux_provider_utils::ResponseHandler<T>
@@ -244,20 +286,27 @@ pub struct XAIProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
+    /// Opens the WebSocket of streaming transcription (the AI SDK's
+    /// `webSocket`). `None` uses the built-in tungstenite connector.
+    #[cfg(feature = "realtime")]
+    pub web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
 }
 
 impl std::fmt::Debug for XAIProviderSettings {
     /// Never prints the key or header values.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("XAIProviderSettings")
+        let mut debug = f.debug_struct("XAIProviderSettings");
+        #[cfg(feature = "realtime")]
+        debug.field("web_socket", &self.web_socket.is_some());
+        debug
             .field("base_url", &self.base_url)
             .field("api_key", &self.api_key.is_some())
             .field(
                 "headers",
                 &self.headers.as_ref().map(std::collections::HashMap::len),
             )
-            .field("fetch", &self.fetch.is_some())
-            .finish()
+            .field("fetch", &self.fetch.is_some());
+        debug.finish()
     }
 }
 
@@ -265,16 +314,14 @@ impl std::fmt::Debug for XAIProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
-/// request, not here.
+/// Creation does not validate the URL or load the API key; request errors
+/// surface when the model is called.
 pub fn create_xai(settings: XAIProviderSettings) -> Result<XAIProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
-        None => DEFAULT_BASE_URL.to_string(),
-    };
+    let base_url = settings
+        .base_url
+        .unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
+    let base_url = base_url.strip_suffix('/').unwrap_or(&base_url).to_string();
     Ok(XAIProvider {
-        name: DEFAULT_NAME.to_string(),
         base_url,
         headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
             provider_headers(
@@ -290,6 +337,8 @@ pub fn create_xai(settings: XAIProviderSettings) -> Result<XAIProvider, AiMuxErr
             "5.0.12",
         ),
         fetch: settings.fetch,
+        #[cfg(feature = "realtime")]
+        web_socket: settings.web_socket,
     })
 }
 
@@ -306,16 +355,17 @@ pub fn xai() -> &'static XAIProvider {
 /// An xAI provider (the AI SDK's `XaiProvider`). Cheap to clone the models out
 /// of; it holds no HTTP client.
 pub struct XAIProvider {
-    name: String,
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
+    #[cfg(feature = "realtime")]
+    web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
 }
 
 impl XAIProvider {
     fn model_config(&self, method: &str) -> EndpointConfig {
         EndpointConfig::fixed(
-            format!("{}.{method}", self.name),
+            format!("xai.{method}"),
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
@@ -324,13 +374,38 @@ impl XAIProvider {
     }
 
     /// A Responses model (e.g. `"grok-4"`); `provider()` is
-    /// `"{name}.responses"`.
+    /// `"xai.responses"`.
     ///
     /// Uses the xAI `/responses` endpoint with the Responses API wire format
     /// (input items, reasoning objects, provider-executed tools, etc.).
     #[must_use]
     pub fn responses(&self, model_id: &str) -> XaiResponsesModel {
         XaiResponsesModel::from_config(model_id.to_string(), self.model_config("responses"))
+    }
+
+    /// A video model (e.g. `"grok-imagine-video"`); `provider()` is
+    /// `"xai.video"`.
+    #[must_use]
+    pub fn video(&self, model_id: &str) -> XaiVideoModel {
+        XaiVideoModel::from_config(model_id.to_string(), self.model_config("video"))
+    }
+
+    /// The speech (TTS) model; `provider()` is `"xai.speech"`. It has no
+    /// model id.
+    #[must_use]
+    pub fn speech(&self) -> XaiSpeechModel {
+        XaiSpeechModel::from_config(self.model_config("speech"))
+    }
+
+    /// The transcription (STT) model; `provider()` is `"xai.transcription"`.
+    /// It has no model id.
+    #[must_use]
+    pub fn transcription(&self) -> XaiTranscriptionModel {
+        XaiTranscriptionModel::from_config(
+            self.model_config("transcription"),
+            #[cfg(feature = "realtime")]
+            self.web_socket.clone(),
+        )
     }
 
     /// The provider as a function: the default language model for an id. The
@@ -358,6 +433,23 @@ impl Provider for XAIProvider {
 
     fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
         Err(AiMuxError::no_such_model(model_id, "imageModel"))
+    }
+
+    /// The model id is ignored: xAI has a single transcription model.
+    fn transcription_model(
+        &self,
+        _model_id: &str,
+    ) -> Option<Result<Arc<dyn TranscriptionModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.transcription())))
+    }
+
+    /// The model id is ignored: xAI has a single speech model.
+    fn speech_model(&self, _model_id: &str) -> Option<Result<Arc<dyn SpeechModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.speech())))
+    }
+
+    fn video_model(&self, model_id: &str) -> Option<Result<Arc<dyn VideoModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.video(model_id))))
     }
 }
 

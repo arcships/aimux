@@ -275,8 +275,8 @@ impl LanguageModel for OpenResponsesModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        validate_tool_output_media(&options.prompt)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        validate_tool_output_media(&options.prompt)?;
         let (body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
         let body = exchange.transform_body(body);
@@ -415,8 +415,8 @@ impl LanguageModel for OpenResponsesModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        validate_tool_output_media(&options.prompt)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        validate_tool_output_media(&options.prompt)?;
         let (body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
 

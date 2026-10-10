@@ -124,6 +124,7 @@ pub fn create_provider(
     macro_rules! package {
         ($module:ident, $create:ident, $settings:ident) => {
             Ok(Arc::new(crate::$module::$create(
+                #[allow(clippy::needless_update)]
                 crate::$module::$settings {
                     api_key,
                     base_url,
@@ -162,6 +163,7 @@ pub fn create_provider(
                 Some(_) => return unsupported("resolvable api_key"),
             };
             Ok(Arc::new(crate::$module::$create(
+                #[allow(clippy::needless_update)]
                 crate::$module::$settings {
                     api_key,
                     base_url,
@@ -186,7 +188,9 @@ pub fn create_provider(
                 Default::default()
             )
         }
-        "azure" => package!(azure, create_azure, AzureOpenAIProviderSettings),
+        "azure" => {
+            package_without_transform!(azure, create_azure, AzureOpenAIProviderSettings, api_key)
+        }
         "cohere" => package_with_string_key!(
             cohere,
             create_cohere,
@@ -203,20 +207,26 @@ pub fn create_provider(
         ),
         "groq" => package_with_string_key!(groq, create_groq, GroqProviderSettings),
         "huggingface" => package!(huggingface, create_huggingface, HuggingFaceProviderSettings),
-        "mistral" => package_with_string_key!(
-            mistral,
-            create_mistral,
-            MistralProviderSettings,
-            Default::default()
-        ),
-        "openai" => package_with_string_key!(
-            openai,
-            create_openai,
-            OpenAIProviderSettings,
-            Default::default()
-        ),
+        "mistral" => {
+            package_with_string_key!(
+                mistral,
+                create_mistral,
+                MistralProviderSettings,
+                Default::default()
+            )
+        }
+        "openai" => {
+            package_with_string_key!(
+                openai,
+                create_openai,
+                OpenAIProviderSettings,
+                Default::default()
+            )
+        }
         "voyage" => package!(voyage, create_voyage, VoyageProviderSettings),
-        "xai" => package_with_string_key!(xai, create_xai, XAIProviderSettings),
+        "xai" => {
+            package_with_string_key!(xai, create_xai, XAIProviderSettings, Default::default())
+        }
         "assemblyai" => package_without_transform!(
             assemblyai,
             create_assemblyai,

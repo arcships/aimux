@@ -12,6 +12,7 @@
 pub mod api_key;
 #[doc(hidden)]
 pub use aimux_core::download_guard;
+pub mod evaluation_language_model;
 pub mod extract_response_headers;
 pub mod fetch;
 pub mod generate_id;
@@ -37,6 +38,7 @@ pub mod ws;
 
 pub use api_key::{load_api_key, load_optional_setting, load_setting};
 pub use download_guard::same_origin;
+pub use evaluation_language_model::EvaluationLanguageModel;
 pub use fetch::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, ReqwestFetch,
     default_fetch,

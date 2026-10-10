@@ -755,8 +755,8 @@ pub fn convert_to_huggingface_responses_messages(
                         AssistantPart::ToolCall(_)
                         | AssistantPart::ToolResult(_)
                         | AssistantPart::File(_)
-                        | AssistantPart::Custom(_)
-                        | AssistantPart::ReasoningFile(_) => {}
+                        | AssistantPart::ReasoningFile(_)
+                        | AssistantPart::Custom(_) => {}
                     }
                 }
             }

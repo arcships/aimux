@@ -1,7 +1,7 @@
 //! Cohere provider.
 //!
 //! [`create_cohere`] is the Rust form of the AI SDK's `createCohere`: it takes
-//! [`CohereProviderSettings`], validates the base URL, fixes the provider name
+//! [`CohereProviderSettings`], normalizes the base URL, fixes the provider name
 //! and returns a [`CohereProvider`]. The API key is not read there; it is
 //! loaded in the request headers of every call, from the setting or from
 //! `COHERE_API_KEY`. [`cohere()`] is the default instance.
@@ -33,7 +33,9 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::reranking_model::RerankingModel;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{
+    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, without_trailing_slash,
+};
 
 use crate::shared::{Credential, EndpointConfig, provider_headers};
 
@@ -73,11 +75,11 @@ pub struct CohereProviderSettings {
     /// Extra headers on every request. A `None` value removes the header,
     /// including `Authorization`. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
+    /// Generates a unique identifier for each citation.
+    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Generates unique IDs for chat output.
-    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 impl std::fmt::Debug for CohereProviderSettings {
@@ -90,42 +92,44 @@ impl std::fmt::Debug for CohereProviderSettings {
                 "headers",
                 &self.headers.as_ref().map(std::collections::HashMap::len),
             )
-            .field("fetch", &self.fetch.is_some())
             .field("generate_id", &self.generate_id.is_some())
+            .field("fetch", &self.fetch.is_some())
             .finish()
     }
 }
 
 /// Create a Cohere provider.
 ///
+/// Only a trailing slash is removed from `base_url`. The API key is loaded
+/// per request, not here.
+///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
-/// request, not here.
+/// This factory does not fail; request validation happens when a model is called.
 pub fn create_cohere(settings: CohereProviderSettings) -> Result<CohereProvider, AiMuxError> {
     let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
+        Some(url) => without_trailing_slash(url),
         None => DEFAULT_BASE_URL.to_string(),
     };
-    Ok(CohereProvider {
-        name: DEFAULT_NAME.to_string(),
-        base_url,
-        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            provider_headers(
-                Credential::explicit_or_env(
-                    settings.api_key.map(Resolvable::Value),
-                    API_KEY_ENV_VAR,
-                    "Cohere",
-                ),
-                Vec::new(),
-                settings.headers,
-            ),
-            options::NAMESPACE,
-            "4.0.52",
+    let headers = provider_headers(
+        Credential::explicit_or_env(
+            settings.api_key.map(Resolvable::Value),
+            API_KEY_ENV_VAR,
+            "Cohere",
         ),
-        fetch: settings.fetch,
+        Vec::new(),
+        settings.headers,
+    );
+    let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
+        headers,
+        options::NAMESPACE,
+        "4.0.52",
+    );
+    Ok(CohereProvider {
         generate_id: settings.generate_id,
+        base_url,
+        headers,
+        fetch: settings.fetch,
     })
 }
 
@@ -143,17 +147,16 @@ pub fn cohere() -> &'static CohereProvider {
 /// A Cohere provider (the AI SDK's `CohereProvider`). Cheap to clone the
 /// models out of; it holds no HTTP client.
 pub struct CohereProvider {
-    name: String,
+    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 impl CohereProvider {
     fn model_config(&self, method: &str) -> EndpointConfig {
         EndpointConfig::fixed(
-            format!("{}.{method}", self.name),
+            format!("{DEFAULT_NAME}.{method}"),
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
@@ -161,7 +164,7 @@ impl CohereProvider {
         )
     }
 
-    /// A chat model; `provider()` is `"{name}.chat"`.
+    /// A chat model; `provider()` is `"cohere.chat"`.
     #[must_use]
     pub fn chat(&self, model_id: &str) -> CohereModel {
         CohereModel::from_config(model_id.to_string(), self.model_config("chat"))
@@ -169,14 +172,14 @@ impl CohereProvider {
     }
 
     /// An embedding model (e.g. `"embed-english-v3.0"`); `provider()` is
-    /// `"{name}.textEmbedding"`.
+    /// `"cohere.textEmbedding"`.
     #[must_use]
     pub fn embedding(&self, model_id: &str) -> CohereEmbeddingModel {
         CohereEmbeddingModel::from_config(model_id.to_string(), self.model_config("textEmbedding"))
     }
 
     /// A reranking model (e.g. `"rerank-english-v3.0"`); `provider()` is
-    /// `"{name}.reranking"`.
+    /// `"cohere.reranking"`.
     #[must_use]
     pub fn reranking(&self, model_id: &str) -> CohereRerankingModel {
         CohereRerankingModel::from_config(model_id.to_string(), self.model_config("reranking"))

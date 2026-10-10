@@ -10,9 +10,9 @@
 //! - `convert-openai-responses-usage.ts` -> [`convert_responses_usage`]
 //! - `map-openai-responses-finish-reason.ts` -> [`map_responses_finish_reason`]
 
+use aimux_core::AiMuxError;
 use serde_json::{Value, json};
 
-use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
@@ -21,8 +21,8 @@ use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, JsonObject, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Usage, Warning};
-use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 
+use super::tool_args::{validate_tool_args, validate_tool_call, validate_tool_result};
 use super::types::ResponsesUsage;
 
 // -- Model capabilities ------------------------------------------------------
@@ -95,6 +95,7 @@ pub(crate) struct ResponsesProfile {
     pub(crate) namespace: ResponsesNamespace,
     /// Empty: no file part is treated as a file id.
     pub(crate) file_id_prefixes: Vec<&'static str>,
+    pub(crate) explicit_message_item_type: bool,
 }
 
 /// Get a value from the host namespace's options (`openai.<key>` for OpenAI).
@@ -132,47 +133,86 @@ pub struct ResponsesInputResult {
 /// `has_previous_response_id` is true, assistant reasoning/function-call items
 /// that already carry an `itemId` are skipped (they live in the previous
 /// response chain).
-///
 /// # Errors
-/// Returns an error for text file parts or an unresolved inline image media type.
+/// Rejects unsupported file data and unresolved file references.
 pub fn convert_to_responses_input(
     ns: ResponsesNamespace,
     prompt: &LanguageModelPrompt,
     system_message_mode: SystemMessageMode,
     store: bool,
     has_previous_response_id: bool,
+) -> Result<ResponsesInputResult, AiMuxError> {
+    convert_responses_input_with_conversation(
+        ns,
+        prompt,
+        system_message_mode,
+        store,
+        has_previous_response_id,
+        false,
+        None,
+    )
+}
+
+fn convert_responses_input_with_conversation(
+    ns: ResponsesNamespace,
+    prompt: &LanguageModelPrompt,
+    system_message_mode: SystemMessageMode,
+    store: bool,
+    has_previous_response_id: bool,
     has_conversation: bool,
+    tools: Option<&[Tool]>,
 ) -> Result<ResponsesInputResult, AiMuxError> {
     let mut input: Vec<Value> = Vec::new();
     let mut warnings: Vec<Warning> = Vec::new();
 
     let mut processed_approval_ids = std::collections::HashSet::new();
+    let mut programmatic_tool_call_ids = std::collections::HashSet::new();
     for msg in prompt {
         match msg {
-            LanguageModelMessage::System { content, .. } => match system_message_mode {
-                SystemMessageMode::System => {
-                    input.push(json!({
-                        "role": "system",
-                        "content": content,
-                    }));
+            LanguageModelMessage::System {
+                content,
+                provider_options,
+            } => {
+                if let Some(effort) =
+                    openai_sub_option(ns, provider_options, "reasoningEffortUpdate")
+                {
+                    input.push(json!({ "type": "configuration_update", "reasoning": { "effort": effort } }));
+                    continue;
                 }
-                SystemMessageMode::Developer => {
-                    input.push(json!({
-                        "role": "developer",
-                        "content": content,
-                    }));
+                match system_message_mode {
+                    SystemMessageMode::System => {
+                        input.push(json!({
+                            "role": "system",
+                            "content": system_content(ns, content, provider_options),
+                        }));
+                    }
+                    SystemMessageMode::Developer => {
+                        input.push(json!({
+                            "role": "developer",
+                            "content": system_content(ns, content, provider_options),
+                        }));
+                    }
+                    SystemMessageMode::Remove => {
+                        warnings.push(Warning::Other {
+                            message: "system messages are removed for this model".to_string(),
+                        });
+                    }
                 }
-                SystemMessageMode::Remove => {
-                    warnings.push(Warning::Other {
-                        message: "system messages are removed for this model".to_string(),
-                    });
-                }
-            },
+            }
             LanguageModelMessage::User { content, .. } => {
                 let content: Vec<Value> = content
                     .iter()
-                    .map(|part| convert_user_part(ns, part))
-                    .collect::<Result<_, _>>()?;
+                    .enumerate()
+                    .map(|(index, part)| {
+                        let mut value = convert_user_part(ns, part, index)?;
+                        if let Some(breakpoint) =
+                            openai_sub_option(ns, user_part_options(part), "promptCacheBreakpoint")
+                        {
+                            value["prompt_cache_breakpoint"] = breakpoint;
+                        }
+                        Ok(value)
+                    })
+                    .collect::<Result<_, AiMuxError>>()?;
                 input.push(json!({ "role": "user", "content": content }));
             }
             LanguageModelMessage::Assistant { content, .. } => {
@@ -183,7 +223,7 @@ pub fn convert_to_responses_input(
                             provider_options,
                         }) => {
                             let id = item_id(ns, provider_options);
-                            if (has_previous_response_id || has_conversation) && id.is_some() {
+                            if has_conversation && id.is_some() {
                                 continue;
                             }
                             if store && let Some(ref id) = id {
@@ -193,11 +233,8 @@ pub fn convert_to_responses_input(
                             let phase = phase_from_provider_options(ns, provider_options);
                             let mut item = json!({
                                 "role": "assistant",
-                                "content": [{ "type": "output_text", "text": text }],
+                                "content": text,
                             });
-                            if let Some(ref id) = id {
-                                item["id"] = json!(id);
-                            }
                             if let Some(phase) = phase {
                                 item["phase"] = json!(phase);
                             }
@@ -208,11 +245,57 @@ pub fn convert_to_responses_input(
                             tool_name,
                             input: tool_input,
                             provider_options,
+                            provider_executed,
                             ..
                         }) => {
                             let id = item_id(ns, provider_options);
-                            if (has_previous_response_id || has_conversation) && id.is_some() {
+                            if openai_sub_option(ns, provider_options, "caller")
+                                .is_some_and(|caller| caller["type"] == "program")
+                            {
+                                programmatic_tool_call_ids.insert(tool_call_id.as_str());
+                            }
+                            if has_conversation && id.is_some() {
                                 continue;
+                            }
+                            let kind = provider_tool_kind(tools, tool_name);
+                            if provider_executed == &Some(true) {
+                                if store && let Some(id) = &id {
+                                    input.push(json!({"type":"item_reference", "id":id}));
+                                }
+                                if store || kind != Some("shell") {
+                                    continue;
+                                }
+                            }
+                            if let Some(kind) = kind {
+                                if store
+                                    && id.is_some()
+                                    && kind != "tool_search"
+                                    && kind != "programmatic_tool_calling"
+                                    && has_previous_response_id
+                                {
+                                    continue;
+                                }
+                                if store && let Some(id) = &id {
+                                    input.push(json!({"type":"item_reference", "id":id}));
+                                    continue;
+                                }
+                                if let Some(mut item) = provider_tool_call_input(
+                                    kind,
+                                    tool_name,
+                                    tool_call_id,
+                                    id.as_deref(),
+                                    tool_input,
+                                )? {
+                                    if kind == "custom"
+                                        && let Some(value) =
+                                            openai_sub_option(ns, provider_options, "async")
+                                                .filter(|value| !value.is_null())
+                                    {
+                                        item["async"] = value;
+                                    }
+                                    input.push(item);
+                                    continue;
+                                }
                             }
                             let namespace = namespace_from_provider_options(ns, provider_options);
                             let mut item = json!({
@@ -223,6 +306,22 @@ pub fn convert_to_responses_input(
                             });
                             if let Some(ref namespace) = namespace {
                                 item["namespace"] = json!(namespace);
+                            }
+                            if let Some(value) = openai_sub_option(ns, provider_options, "async") {
+                                item["async"] = value;
+                            }
+                            if let Some(caller) = openai_sub_option(ns, provider_options, "caller")
+                            {
+                                let mut caller = map_tool_fields(
+                                    &caller,
+                                    &[("type", "type"), ("callerId", "caller_id")],
+                                );
+                                if caller["type"] != "program"
+                                    && let Some(object) = caller.as_object_mut()
+                                {
+                                    object.remove("caller_id");
+                                }
+                                item["caller"] = caller;
                             }
                             input.push(item);
                         }
@@ -292,14 +391,24 @@ pub fn convert_to_responses_input(
                             {
                                 continue;
                             }
-                            if store {
-                                let id = item_id(ns, &part.provider_options)
-                                    .unwrap_or_else(|| part.tool_call_id.clone());
-                                input.push(json!({"type":"item_reference", "id":id}));
-                            } else {
-                                warnings.push(Warning::Other {
-                                    message:format!("Results for OpenAI tool {} are not sent to the API when store is false", part.tool_name),
-                                });
+                            let id = item_id(ns, &part.provider_options)
+                                .unwrap_or_else(|| part.tool_call_id.clone());
+                            let kind = provider_tool_kind(tools, &part.tool_name);
+                            match kind {
+                                Some("shell") => {
+                                    if let ToolResultOutput::Json { value, .. } = &part.output
+                                        && let Some(item) = provider_tool_result_input("shell", &part.tool_call_id, value)?
+                                    { input.push(item); }
+                                }
+                                _ if store => input.push(json!({"type":"item_reference", "id":id})),
+                                Some("tool_search" | "programmatic_tool_calling") => {
+                                    if let ToolResultOutput::Json { value, .. } = &part.output {
+                                        let kind = kind.unwrap_or_default();
+                                        validate_tool_result(kind, value)?;
+                                        input.push(if kind == "tool_search" { json!({"type":"tool_search_output", "id":id, "execution":"server", "call_id":null, "status":"completed", "tools":value["tools"]}) } else { json!({"type":"program_output", "id":id, "call_id":part.tool_call_id, "result":value["result"], "status":value["status"]}) });
+                                    }
+                                }
+                                _ => warnings.push(Warning::Other { message:format!("Results for OpenAI tool {} are not sent to the API when store is false", part.tool_name) }),
                             }
                         }
                         AssistantPart::Custom(part) if part.kind == "openai.compaction" => {
@@ -333,9 +442,9 @@ pub fn convert_to_responses_input(
                     }
                     let ToolPart::ToolResult(ToolResultPart {
                         tool_call_id,
+                        tool_name,
                         output,
                         provider_options,
-                        ..
                     }) = part
                     else {
                         continue;
@@ -344,39 +453,56 @@ pub fn convert_to_responses_input(
                         provider_options, ..
                     } = output
                         && openai_sub_option(ns, provider_options, "approvalId")
-                            .and_then(|value| value.as_str().map(|id| !id.is_empty()))
-                            == Some(true)
+                            .and_then(|id| id.as_str().map(|id| !id.is_empty()))
+                            .unwrap_or(false)
                     {
                         continue;
                     }
-                    let mut content_value = convert_tool_result_output(ns, output, &mut warnings)?;
+                    let kind = provider_tool_kind(tools, tool_name);
+                    if let Some(kind) = kind
+                        && kind != "custom"
+                        && let ToolResultOutput::Json { value, .. } = output
+                        && let Some(item) = provider_tool_result_input(kind, tool_call_id, value)?
+                    {
+                        input.push(item);
+                        continue;
+                    }
+                    let custom = kind == Some("custom");
+                    if !custom
+                        && matches!(output, ToolResultOutput::ExecutionDenied { .. })
+                        && (programmatic_tool_call_ids.contains(tool_call_id.as_str())
+                            || openai_sub_option(ns, provider_options, "caller")
+                                .is_some_and(|caller| caller["type"] == "program"))
+                    {
+                        return Err(AiMuxError::UnsupportedFunctionality(
+                            "execution-denied results for programmatic tool calls".into(),
+                        ));
+                    }
+                    let mut content_value =
+                        convert_tool_result_output(ns, output, custom, &mut warnings)?;
+                    let has_output_schema = tools.is_some_and(|tools| tools.iter().any(|tool| {
+                        matches!(tool, Tool::Function(tool) if tool.name == *tool_name && tool.provider_options.as_ref().and_then(|options| options.get("openai")).is_some_and(|options| options.contains_key("outputSchema")))
+                    }));
+                    if has_output_schema
+                        && matches!(
+                            output,
+                            ToolResultOutput::Text { .. }
+                                | ToolResultOutput::ErrorText { .. }
+                                | ToolResultOutput::ExecutionDenied { .. }
+                        )
+                    {
+                        content_value = json!(content_value.to_string());
+                    }
                     if !matches!(output, ToolResultOutput::Content { .. })
-                        && let Some(breakpoint) = match output {
-                            ToolResultOutput::Text {
-                                provider_options, ..
-                            }
-                            | ToolResultOutput::Json {
-                                provider_options, ..
-                            }
-                            | ToolResultOutput::ErrorText {
-                                provider_options, ..
-                            }
-                            | ToolResultOutput::ErrorJson {
-                                provider_options, ..
-                            }
-                            | ToolResultOutput::ExecutionDenied {
-                                provider_options, ..
-                            } => openai_sub_option(ns, provider_options, "promptCacheBreakpoint"),
-                            ToolResultOutput::Content { .. } => None,
-                        }
-                        .or_else(|| {
-                            openai_sub_option(ns, provider_options, "promptCacheBreakpoint")
-                        })
+                        && let Some(breakpoint) = scalar_tool_result_cache_breakpoint(ns, output)
+                            .or_else(|| {
+                                openai_sub_option(ns, provider_options, "promptCacheBreakpoint")
+                            })
                     {
                         content_value = json!([{"type":"input_text", "text":content_value, "prompt_cache_breakpoint":breakpoint}]);
                     }
                     input.push(json!({
-                        "type": "function_call_output",
+                        "type": if custom { "custom_tool_call_output" } else { "function_call_output" },
                         "call_id": tool_call_id,
                         "output": content_value,
                     }));
@@ -406,78 +532,260 @@ pub fn convert_to_responses_input(
     Ok(ResponsesInputResult { input, warnings })
 }
 
+fn provider_tool_kind<'a>(tools: Option<&'a [Tool]>, name: &str) -> Option<&'a str> {
+    tools?.iter().find_map(|tool| match tool {
+        Tool::Provider(tool) if tool.name == name => tool.id.strip_prefix("openai."),
+        _ => None,
+    })
+}
+
+fn provider_tool_call_input(
+    kind: &str,
+    name: &str,
+    call_id: &str,
+    id: Option<&str>,
+    args: &Value,
+) -> Result<Option<Value>, AiMuxError> {
+    let parsed;
+    let args = if kind != "custom" && args.is_string() {
+        parsed = serde_json::from_str(args.as_str().unwrap_or_default())
+            .map_err(|error| AiMuxError::InvalidArgument(error.to_string()))?;
+        &parsed
+    } else {
+        args
+    };
+    if kind != "custom" {
+        validate_tool_call(kind, args)?;
+    }
+    let mut value = match kind {
+        "custom" => {
+            json!({"type":"custom_tool_call", "call_id":call_id, "name":name, "input":args.as_str().map(str::to_owned).unwrap_or_else(|| args.to_string())})
+        }
+        "local_shell" => {
+            json!({"type":"local_shell_call", "call_id":call_id, "action": map_tool_fields(&args["action"], &[("command", "command"), ("timeoutMs", "timeout_ms"), ("user", "user"), ("workingDirectory", "working_directory"), ("env", "env")])})
+        }
+        "shell" => {
+            json!({"type":"shell_call", "call_id":call_id, "status":"completed", "action":map_tool_fields(&args["action"], &[("commands", "commands"), ("timeoutMs", "timeout_ms"), ("maxOutputLength", "max_output_length")])})
+        }
+        "apply_patch" => {
+            json!({"type":"apply_patch_call", "call_id":args["callId"], "status":"completed", "operation":args["operation"]})
+        }
+        "computer" => {
+            let mut actions = args
+                .get("actions")
+                .and_then(Value::as_array)
+                .cloned()
+                .ok_or_else(|| AiMuxError::InvalidArgument("computer actions".into()))?;
+            for action in &mut actions {
+                if action["type"] == "scroll"
+                    && let Some(object) = action.as_object_mut()
+                {
+                    for (key, wire) in [("scrollX", "scroll_x"), ("scrollY", "scroll_y")] {
+                        if let Some(v) = object.remove(key) {
+                            object.insert(wire.into(), v);
+                        }
+                    }
+                }
+            }
+            json!({"type":"computer_call", "call_id":call_id, "status":args["status"], "actions":actions, "pending_safety_checks":args["pendingSafetyChecks"]})
+        }
+        "programmatic_tool_calling" => {
+            json!({"type":"program", "call_id":call_id, "code":args["code"], "fingerprint":args["fingerprint"]})
+        }
+        "tool_search" => {
+            let args = if let Some(text) = args.as_str() {
+                serde_json::from_str(text)
+                    .map_err(|error| AiMuxError::InvalidArgument(error.to_string()))?
+            } else {
+                args.clone()
+            };
+            let mut value = map_tool_fields(&args, &[("arguments", "arguments")]);
+            value["type"] = json!("tool_search_call");
+            value["status"] = json!("completed");
+            value["execution"] = json!(if args.get("call_id").is_some_and(|id| !id.is_null()) {
+                "client"
+            } else {
+                "server"
+            });
+            value["call_id"] = args.get("call_id").cloned().unwrap_or(Value::Null);
+            value
+        }
+        _ => return Ok(None),
+    };
+    if kind == "local_shell" {
+        value["action"]["type"] = json!("exec");
+    }
+    if let Some(id) = id {
+        value["id"] = json!(id);
+    } else if ["tool_search", "programmatic_tool_calling"].contains(&kind) {
+        value["id"] = json!(call_id);
+    }
+    Ok(Some(value))
+}
+
+fn provider_tool_result_input(
+    kind: &str,
+    call_id: &str,
+    result: &Value,
+) -> Result<Option<Value>, AiMuxError> {
+    if !matches!(
+        kind,
+        "local_shell" | "shell" | "apply_patch" | "computer" | "tool_search" | "custom"
+    ) {
+        return Ok(None);
+    }
+    validate_tool_result(kind, result)?;
+    let mut value = match kind {
+        "local_shell" => json!({"type":"local_shell_call_output", "output":result["output"]}),
+        "shell" => {
+            let mut output = result
+                .get("output")
+                .and_then(Value::as_array)
+                .cloned()
+                .ok_or_else(|| AiMuxError::InvalidArgument("shell output".into()))?;
+            for item in &mut output {
+                if let Some(outcome) = item.get_mut("outcome").and_then(Value::as_object_mut)
+                    && let Some(code) = outcome.remove("exitCode")
+                {
+                    outcome.insert("exit_code".into(), code);
+                }
+            }
+            json!({"type":"shell_call_output", "output":output})
+        }
+        "apply_patch" => {
+            json!({"type":"apply_patch_call_output", "status":result["status"], "output":result["output"]})
+        }
+        "computer" => {
+            json!({"type":"computer_call_output", "output":map_tool_fields(&result["output"], &[("imageUrl", "image_url"), ("fileId", "file_id"), ("detail", "detail")])})
+        }
+        "tool_search" => {
+            json!({"type":"tool_search_output", "execution":"client", "status":"completed", "tools":result["tools"]})
+        }
+        "custom" => {
+            json!({"type":"custom_tool_call_output", "output":result.as_str().map(str::to_owned).unwrap_or_else(|| result.to_string())})
+        }
+        _ => return Ok(None),
+    };
+    if kind == "computer" {
+        value["output"]["type"] = json!("computer_screenshot");
+        if let Some(checks) = result.get("acknowledgedSafetyChecks") {
+            value["acknowledged_safety_checks"] = checks.clone();
+        }
+    }
+    value["call_id"] = json!(call_id);
+    Ok(Some(value))
+}
+
+fn user_part_options(part: &UserPart) -> &Option<SharedProviderOptions> {
+    match part {
+        UserPart::Text(part) => &part.provider_options,
+        UserPart::File(part) => &part.provider_options,
+    }
+}
+
+fn system_content(
+    ns: ResponsesNamespace,
+    text: &str,
+    provider_options: &Option<SharedProviderOptions>,
+) -> Value {
+    match openai_sub_option(ns, provider_options, "promptCacheBreakpoint") {
+        Some(value) => {
+            json!([{ "type": "input_text", "text": text, "prompt_cache_breakpoint": value }])
+        }
+        None => json!(text),
+    }
+}
+
 /// Convert a single user-message content part into the Responses input shape.
-fn convert_user_part(ns: ResponsesNamespace, part: &UserPart) -> Result<Value, AiMuxError> {
+fn convert_user_part(
+    ns: ResponsesNamespace,
+    part: &UserPart,
+    index: usize,
+) -> Result<Value, AiMuxError> {
     Ok(match part {
         UserPart::Text(part) => json!({ "type": "input_text", "text": part.text }),
-        UserPart::File(file) => {
-            let mut item = match &file.data {
-                FileData::Data { data } => {
-                    let b64 = match data {
-                        FileBytes::Binary(bytes) => {
-                            use base64::Engine;
-                            base64::engine::general_purpose::STANDARD.encode(bytes)
-                        }
-                        FileBytes::Base64(data) => data.clone(),
-                    };
-                    if get_top_level_media_type(&file.media_type) == "image" {
-                        let mut img = json!({
-                            "type": "input_image",
-                            "image_url": format!("data:{};base64,{}", resolve_full_media_type(file)?, b64),
-                        });
-                        if let Some(detail) =
-                            openai_sub_option(ns, &file.provider_options, "imageDetail")
-                        {
-                            img["detail"] = detail;
-                        }
-                        img
-                    } else {
-                        let fname = file
-                            .filename
-                            .clone()
-                            .unwrap_or_else(|| "part.pdf".to_string());
-                        json!({
-                            "type": "input_file",
-                            "filename": fname,
-                            "file_data": format!("data:{};base64,{}", file.media_type, b64),
-                        })
+        UserPart::File(file) => match &file.data {
+            FileData::Data { data } => {
+                use base64::Engine;
+                let b64 = match data {
+                    FileBytes::Binary(bytes) => {
+                        base64::engine::general_purpose::STANDARD.encode(bytes)
                     }
-                }
-                FileData::Url { url, .. } => {
-                    if get_top_level_media_type(&file.media_type) == "image" {
-                        json!({ "type": "input_image", "image_url": url })
-                    } else {
-                        json!({ "type": "input_file", "file_url": url })
-                    }
-                }
-                FileData::Text { .. } => {
-                    return Err(AiMuxError::UnsupportedFunctionality(
-                        "text file parts".into(),
-                    ));
-                }
-                FileData::Reference { reference } => {
-                    let file_id = reference.get(ns.write_key()).ok_or_else(|| {
-                        AiMuxError::InvalidArgument(format!(
-                            "missing file reference for provider {}",
-                            ns.write_key()
-                        ))
-                    })?;
-                    json!({ "type": if get_top_level_media_type(&file.media_type) == "image" { "input_image" } else { "input_file" }, "file_id": file_id })
-                }
-            };
-            if item["type"] == "input_image"
-                && let Some(detail) = openai_sub_option(ns, &file.provider_options, "imageDetail")
-            {
-                item["detail"] = detail;
+                    FileBytes::Base64(data) => data.clone(),
+                };
+                inline_file(
+                    ns,
+                    &aimux_provider_utils::resolve_full_media_type(file)?,
+                    file.filename.as_deref(),
+                    &b64,
+                    &file.provider_options,
+                    index,
+                )
             }
-            item
-        }
+            FileData::Reference { reference } => {
+                let file_id = reference.get(ns.write_key()).ok_or_else(|| {
+                    AiMuxError::InvalidArgument(format!("No file reference for {}", ns.write_key()))
+                })?;
+                let mut part = json!({ "type": if file.media_type.split('/').next() == Some("image") { "input_image" } else { "input_file" }, "file_id": file_id });
+                if part["type"] == "input_image"
+                    && let Some(detail) =
+                        openai_sub_option(ns, &file.provider_options, "imageDetail")
+                {
+                    part["detail"] = detail;
+                }
+                part
+            }
+            FileData::Url { url, .. } => {
+                if file.media_type.split('/').next() == Some("image") {
+                    let mut part = json!({ "type": "input_image", "image_url": url });
+                    if let Some(detail) =
+                        openai_sub_option(ns, &file.provider_options, "imageDetail")
+                    {
+                        part["detail"] = detail;
+                    }
+                    part
+                } else {
+                    json!({ "type": "input_file", "file_url": url })
+                }
+            }
+            FileData::Text { .. } => {
+                return Err(AiMuxError::UnsupportedFunctionality(
+                    "text file parts".into(),
+                ));
+            }
+        },
     })
+}
+
+fn scalar_tool_result_cache_breakpoint(
+    ns: ResponsesNamespace,
+    output: &ToolResultOutput,
+) -> Option<Value> {
+    let provider_options = match output {
+        ToolResultOutput::Text {
+            provider_options, ..
+        }
+        | ToolResultOutput::Json {
+            provider_options, ..
+        }
+        | ToolResultOutput::ErrorText {
+            provider_options, ..
+        }
+        | ToolResultOutput::ErrorJson {
+            provider_options, ..
+        }
+        | ToolResultOutput::ExecutionDenied {
+            provider_options, ..
+        } => provider_options,
+        ToolResultOutput::Content { .. } => return None,
+    };
+    openai_sub_option(ns, provider_options, "promptCacheBreakpoint")
 }
 
 fn convert_tool_result_output(
     ns: ResponsesNamespace,
     output: &ToolResultOutput,
+    custom: bool,
     warnings: &mut Vec<Warning>,
 ) -> Result<Value, AiMuxError> {
     let ToolResultOutput::Content { value } = output else {
@@ -491,14 +799,23 @@ fn convert_tool_result_output(
                 &part.provider_options,
             ),
             ToolResultContent::File(part) => {
-                if matches!(part.data, FileData::Text { .. }) {
+                if matches!(part.data, FileData::Text { .. })
+                    || (custom && matches!(part.data, FileData::Reference { .. }))
+                {
                     warnings.push(Warning::Other {
-                        message: "unsupported tool content part type: file with data type: text"
-                            .into(),
+                        message: format!(
+                            "unsupported {}tool content part type: file with data type: {}",
+                            if custom { "custom " } else { "" },
+                            if matches!(part.data, FileData::Reference { .. }) {
+                                "reference"
+                            } else {
+                                "text"
+                            }
+                        ),
                     });
                     continue;
                 }
-                let mut converted = convert_user_part(ns, &UserPart::File(part.clone()))?;
+                let mut converted = convert_user_part(ns, &UserPart::File(part.clone()), 0)?;
                 if converted["type"] == "input_file" && converted.get("file_data").is_some() {
                     converted["filename"] = json!(part.filename.as_deref().unwrap_or("data"));
                 }
@@ -512,7 +829,10 @@ fn convert_tool_result_output(
             }
             ToolResultContent::Custom { .. } => {
                 warnings.push(Warning::Other {
-                    message: "unsupported tool content part type: custom".into(),
+                    message: format!(
+                        "unsupported {}tool content part type: custom",
+                        if custom { "custom " } else { "" }
+                    ),
                 });
                 continue;
             }
@@ -525,7 +845,26 @@ fn convert_tool_result_output(
     Ok(json!(parts))
 }
 
-/// Serialize tool-call arguments as JSON, mirroring JSON.stringify.
+fn inline_file(
+    ns: ResponsesNamespace,
+    media_type: &str,
+    filename: Option<&str>,
+    data: &str,
+    provider_options: &Option<SharedProviderOptions>,
+    index: usize,
+) -> Value {
+    if media_type.split('/').next() == Some("image") {
+        let mut part = json!({ "type": "input_image", "image_url": format!("data:{media_type};base64,{data}") });
+        if let Some(detail) = openai_sub_option(ns, provider_options, "imageDetail") {
+            part["detail"] = detail;
+        }
+        part
+    } else {
+        json!({ "type": "input_file", "filename": filename.map(str::to_owned).unwrap_or_else(|| if media_type == "application/pdf" { format!("part-{index}.pdf") } else { format!("part-{index}") }), "file_data": format!("data:{media_type};base64,{data}") })
+    }
+}
+
+/// Serialize tool-call arguments as JSON, including null and string values.
 fn serialize_arguments(input: &Value) -> String {
     input.to_string()
 }
@@ -592,62 +931,495 @@ pub struct PreparedResponsesTools {
     pub tool_warnings: Vec<Warning>,
 }
 
-/// Prepare `FunctionTool`s into the Responses `tools` / `tool_choice` JSON shape.
+/// Prepare the upstream Responses function and provider tool family.
 ///
-/// Mirrors the function-tool path of TS `prepareResponsesTools`. Built-in
-/// provider tools (web_search, file_search, etc.) are out of scope for the
-/// core implementation and emit an `unsupported` warning.
-#[must_use]
+/// # Errors
+/// Returns an error for invalid provider tool arguments or conflicting namespaces.
 pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
     tool_choice: Option<&ToolChoice>,
-) -> PreparedResponsesTools {
-    let non_empty = tools.as_ref().filter(|t| !t.is_empty());
-    let mut tool_warnings: Vec<Warning> = Vec::new();
+) -> Result<PreparedResponsesTools, AiMuxError> {
+    prepare_responses_tools_for(tools, tool_choice, None, true)
+}
 
-    let tools_opt = match non_empty {
-        None => None,
-        Some(tools) => {
-            let mut openai_tools: Vec<Value> = Vec::new();
-            for t in tools {
-                match t {
-                    Tool::Function(ft) => {
-                        openai_tools.push(function_tool_to_json(ft));
+fn prepare_responses_tools_for(
+    tools: &Option<Vec<Tool>>,
+    tool_choice: Option<&ToolChoice>,
+    allowed_tools: Option<&Value>,
+    supports_async: bool,
+) -> Result<PreparedResponsesTools, AiMuxError> {
+    let Some(tools) = tools.as_ref().filter(|tools| !tools.is_empty()) else {
+        return Ok(PreparedResponsesTools {
+            tools: None,
+            tool_choice: None,
+            tool_warnings: Vec::new(),
+        });
+    };
+    let mut tool_warnings = Vec::new();
+    let mut prepared: Vec<Value> = Vec::new();
+    for tool in tools {
+        match tool {
+            Tool::Function(ft) => {
+                let mut value = function_tool_to_json(ft);
+                value["parameters"] = crate::openai::convert::normalize_json_schema(
+                    &ft.input_schema,
+                    &mut tool_warnings,
+                )?;
+                let opts = ft
+                    .provider_options
+                    .as_ref()
+                    .and_then(|options| options.get("openai"));
+                if let Some(opts) = opts {
+                    for (key, wire) in [
+                        ("async", "async"),
+                        ("deferLoading", "defer_loading"),
+                        ("allowedCallers", "allowed_callers"),
+                    ] {
+                        if let Some(v) = opts.get(key) {
+                            value[wire] = v.clone();
+                        }
                     }
-                    Tool::Provider(pt) => {
-                        tool_warnings.push(Warning::Unsupported {
-                            feature: format!("provider-defined tool {}", pt.id),
-                            details: None,
-                        });
+                    if let Some(schema) = opts.get("outputSchema") {
+                        value["output_schema"] = crate::openai::convert::normalize_json_schema(
+                            schema,
+                            &mut tool_warnings,
+                        )?;
+                    }
+                    resolve_async_tool_option(
+                        &mut value,
+                        supports_async,
+                        &ft.name,
+                        &mut tool_warnings,
+                    );
+                    if let Some(namespace) = opts.get("namespace") {
+                        let name =
+                            namespace
+                                .get("name")
+                                .and_then(Value::as_str)
+                                .ok_or_else(|| {
+                                    AiMuxError::InvalidArgument("tool namespace name".into())
+                                })?;
+                        let description = namespace
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| {
+                                AiMuxError::InvalidArgument("tool namespace description".into())
+                            })?;
+                        if let Some(group) = prepared
+                            .iter_mut()
+                            .find(|group| group["type"] == "namespace" && group["name"] == name)
+                        {
+                            if group["description"] != description {
+                                return Err(AiMuxError::UnsupportedFunctionality(format!(
+                                    "conflicting descriptions for OpenAI tool namespace {name}"
+                                )));
+                            }
+                            if let Some(items) = group["tools"].as_array_mut() {
+                                items.push(value);
+                            }
+                        } else {
+                            prepared.push(json!({"type":"namespace", "name":name, "description":description, "tools":[value]}));
+                        }
+                        continue;
                     }
                 }
+                prepared.push(value);
             }
-            if openai_tools.is_empty() {
-                None
-            } else {
-                Some(openai_tools)
+            Tool::Provider(tool) => {
+                if let Some(mut value) = provider_tool_to_json(tool)? {
+                    resolve_async_tool_option(
+                        &mut value,
+                        supports_async,
+                        &tool.name,
+                        &mut tool_warnings,
+                    );
+                    prepared.push(value);
+                }
             }
         }
-    };
-
-    let tool_choice_opt = match (&tools_opt, tool_choice) {
-        (None, _) => None,
-        (Some(_), None) => None,
-        (Some(_), Some(tc)) => match tc {
-            ToolChoice::Auto => Some(json!("auto")),
-            ToolChoice::None => Some(json!("none")),
-            ToolChoice::Required => Some(json!("required")),
-            ToolChoice::Tool { tool_name } => {
-                Some(json!({ "type": "function", "name": tool_name }))
-            }
-        },
-    };
-
-    PreparedResponsesTools {
-        tools: tools_opt,
-        tool_choice: tool_choice_opt,
-        tool_warnings,
     }
+    let mut tool_choice = tool_choice.map(|choice| match choice {
+        ToolChoice::Auto => json!("auto"),
+        ToolChoice::None => json!("none"),
+        ToolChoice::Required => json!("required"),
+        ToolChoice::Tool { tool_name } => {
+            let tool = tools.iter().find_map(|tool| match tool {
+                Tool::Provider(tool) if tool.name == *tool_name => Some(tool),
+                _ => None,
+            });
+            match tool.map(|tool| tool.id.as_str()) {
+                Some("openai.custom") => json!({"type":"custom", "name":tool_name}),
+                Some(id)
+                    if [
+                        "openai.code_interpreter",
+                        "openai.file_search",
+                        "openai.image_generation",
+                        "openai.web_search_preview",
+                        "openai.web_search",
+                        "openai.mcp",
+                        "openai.apply_patch",
+                        "openai.computer",
+                        "openai.programmatic_tool_calling",
+                    ]
+                    .contains(&id) =>
+                {
+                    json!({"type":id.trim_start_matches("openai.")})
+                }
+                _ => json!({"type":"function", "name":tool_name}),
+            }
+        }
+    });
+    if let Some(allowed) = allowed_tools {
+        tool_choice = Some(prepare_allowed_tools(allowed, tools, &mut tool_warnings)?);
+    }
+    Ok(PreparedResponsesTools {
+        tools: Some(prepared),
+        tool_choice,
+        tool_warnings,
+    })
+}
+
+fn resolve_async_tool_option(
+    value: &mut Value,
+    supported: bool,
+    name: &str,
+    warnings: &mut Vec<Warning>,
+) {
+    if !supported && value.get("async") == Some(&json!(true)) {
+        if let Some(object) = value.as_object_mut() {
+            object.remove("async");
+        }
+        warnings.push(Warning::Unsupported {
+            feature: format!("async tool calling for {name}"),
+            details: Some("Async tool calling is not supported by this model.".into()),
+        });
+    }
+}
+
+fn prepare_allowed_tools(
+    allowed: &Value,
+    tools: &[Tool],
+    warnings: &mut Vec<Warning>,
+) -> Result<Value, AiMuxError> {
+    let invalid = || AiMuxError::InvalidArgument("allowedTools".into());
+    let names = allowed
+        .get("toolNames")
+        .and_then(Value::as_array)
+        .filter(|names| !names.is_empty())
+        .ok_or_else(invalid)?;
+    let mode = allowed
+        .get("mode")
+        .map(|mode| {
+            mode.as_str()
+                .filter(|mode| ["auto", "required"].contains(mode))
+                .ok_or_else(invalid)
+        })
+        .transpose()?
+        .unwrap_or("auto");
+    let mut entries = Vec::new();
+    for name in names {
+        let name = name.as_str().ok_or_else(invalid)?;
+        let direct = tools.iter().find(|tool| match tool {
+            Tool::Function(tool) => tool.name == name,
+            Tool::Provider(tool) => tool.name == name,
+        });
+        let aliases: Vec<_> = tools.iter().filter(|tool| matches!(tool, Tool::Provider(tool) if tool.id.strip_prefix("openai.") == Some(name) && tool.name != name)).collect();
+        let tool = if let Some(tool) = direct {
+            if !aliases.is_empty() {
+                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("this name is both a tool name and the provider tool name of another tool in this request; the tool with this name is allowed".into()) });
+            }
+            Some(tool)
+        } else {
+            if aliases.len() > 1
+                && aliases.iter().any(|tool| match tool {
+                    Tool::Provider(tool) => tool.id == "openai.custom" || tool.id == "openai.mcp",
+                    _ => false,
+                })
+            {
+                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("several tools share this provider tool name; use the tool name from this request".into()) });
+                continue;
+            }
+            aliases.first().copied()
+        };
+        let entry = match tool {
+            Some(Tool::Function(tool)) => {
+                let opts = tool
+                    .provider_options
+                    .as_ref()
+                    .and_then(|options| options.get("openai"));
+                if opts.is_some_and(|opts| {
+                    opts.contains_key("namespace") || opts.get("deferLoading") == Some(&json!(true))
+                }) {
+                    warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("namespace and deferred tools are not visible to tool_choice.allowed_tools; the tool is removed from the allowed tools".into()) });
+                    continue;
+                }
+                json!({"type":"function", "name":tool.name})
+            }
+            Some(Tool::Provider(tool)) => {
+                let Some(value) = provider_tool_to_json(tool)? else {
+                    entries.push(json!({"type":"function", "name":name}));
+                    continue;
+                };
+                match value["type"].as_str() {
+                    Some("custom") => json!({"type":"custom", "name":tool.name}),
+                    Some("mcp") => json!({"type":"mcp", "server_label":value["server_label"]}),
+                    Some("tool_search") => {
+                        warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("tool_search is not visible to tool_choice.allowed_tools; the tool is removed from the allowed tools".into()) });
+                        continue;
+                    }
+                    Some(kind) => json!({"type":kind}),
+                    None => continue,
+                }
+            }
+            None => {
+                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("the tool is not part of the tools for this request and is sent as a function tool".into()) });
+                json!({"type":"function", "name":name})
+            }
+        };
+        entries.push(entry);
+    }
+    if entries.is_empty() {
+        return Err(AiMuxError::UnsupportedFunctionality(
+            "allowedTools with only tools that cannot be allow-listed".into(),
+        ));
+    }
+    Ok(json!({"type":"allowed_tools", "mode":mode, "tools":entries}))
+}
+
+// Only configured fields are sent: absent optional values are omitted, not null.
+fn map_tool_fields(value: &Value, fields: &[(&str, &str)]) -> Value {
+    let mut result = json!({});
+    for (name, wire) in fields {
+        if let Some(value) = value.get(*name) {
+            result[*wire] = value.clone();
+        }
+    }
+    result
+}
+
+fn provider_tool_to_json(
+    tool: &aimux_core::tool::ProviderTool,
+) -> Result<Option<Value>, AiMuxError> {
+    let kind = tool.id.strip_prefix("openai.").unwrap_or("");
+    if ![
+        "file_search",
+        "local_shell",
+        "shell",
+        "apply_patch",
+        "computer",
+        "web_search_preview",
+        "web_search",
+        "code_interpreter",
+        "image_generation",
+        "mcp",
+        "custom",
+        "programmatic_tool_calling",
+        "tool_search",
+    ]
+    .contains(&kind)
+    {
+        return Ok(None);
+    }
+    if [
+        "local_shell",
+        "apply_patch",
+        "computer",
+        "programmatic_tool_calling",
+    ]
+    .contains(&kind)
+    {
+        return Ok(Some(json!({"type":kind})));
+    }
+    let args = &Value::Object(tool.args.clone());
+    validate_tool_args(kind, args)?;
+    let fields: &[(&str, &str)] = match kind {
+        "file_search" => &[
+            ("vectorStoreIds", "vector_store_ids"),
+            ("maxNumResults", "max_num_results"),
+            ("filters", "filters"),
+        ],
+        "web_search_preview" | "web_search" => &[
+            ("searchContextSize", "search_context_size"),
+            ("userLocation", "user_location"),
+        ],
+        "image_generation" => &[
+            ("action", "action"),
+            ("background", "background"),
+            ("inputFidelity", "input_fidelity"),
+            ("model", "model"),
+            ("moderation", "moderation"),
+            ("partialImages", "partial_images"),
+            ("quality", "quality"),
+            ("outputCompression", "output_compression"),
+            ("outputFormat", "output_format"),
+            ("size", "size"),
+        ],
+        "mcp" => &[
+            ("serverLabel", "server_label"),
+            ("authorization", "authorization"),
+            ("connectorId", "connector_id"),
+            ("headers", "headers"),
+            ("serverDescription", "server_description"),
+            ("serverUrl", "server_url"),
+        ],
+        "custom" => &[
+            ("description", "description"),
+            ("format", "format"),
+            ("async", "async"),
+        ],
+        "tool_search" => &[
+            ("execution", "execution"),
+            ("description", "description"),
+            ("parameters", "parameters"),
+        ],
+        _ => &[],
+    };
+    let mut value = map_tool_fields(args, fields);
+    value["type"] = json!(kind);
+    if let Some(location) = args.get("userLocation") {
+        value["user_location"] = map_tool_fields(
+            location,
+            &[
+                ("type", "type"),
+                ("country", "country"),
+                ("city", "city"),
+                ("region", "region"),
+                ("timezone", "timezone"),
+            ],
+        );
+    }
+    match kind {
+        "file_search" => {
+            if let Some(ranking) = args.get("ranking") {
+                value["ranking_options"] = map_tool_fields(
+                    ranking,
+                    &[("ranker", "ranker"), ("scoreThreshold", "score_threshold")],
+                );
+            }
+        }
+        "web_search" => {
+            if let Some(filters) = args.get("filters") {
+                value["filters"] = map_tool_fields(
+                    filters,
+                    &[
+                        ("allowedDomains", "allowed_domains"),
+                        ("blockedDomains", "blocked_domains"),
+                    ],
+                );
+            }
+            if let Some(access) = args.get("externalWebAccess") {
+                value["external_web_access"] = access.clone();
+            }
+        }
+        "code_interpreter" => {
+            value["container"] = match args.get("container") {
+                Some(container) if container.is_string() => container.clone(),
+                container => {
+                    let mut value = container
+                        .map(|container| map_tool_fields(container, &[("fileIds", "file_ids")]))
+                        .unwrap_or_else(|| json!({}));
+                    value["type"] = json!("auto");
+                    value
+                }
+            }
+        }
+        "image_generation" => {
+            if let Some(mask) = args.get("inputImageMask") {
+                value["input_image_mask"] =
+                    map_tool_fields(mask, &[("fileId", "file_id"), ("imageUrl", "image_url")]);
+            }
+        }
+        "custom" => {
+            value["name"] = json!(tool.name);
+            if let Some(format) = args.get("format") {
+                value["format"] = map_tool_fields(
+                    format,
+                    &[
+                        ("type", "type"),
+                        ("syntax", "syntax"),
+                        ("definition", "definition"),
+                    ],
+                );
+            }
+        }
+        "mcp" => {
+            if let Some(allowed) = args.get("allowedTools") {
+                value["allowed_tools"] = if allowed.is_array() {
+                    allowed.clone()
+                } else {
+                    map_tool_fields(
+                        allowed,
+                        &[("readOnly", "read_only"), ("toolNames", "tool_names")],
+                    )
+                };
+            }
+            value["require_approval"] = args
+                .get("requireApproval")
+                .map(|approval| {
+                    if approval.is_string() {
+                        approval.clone()
+                    } else if let Some(never) = approval.get("never") {
+                        json!({"never":map_tool_fields(never, &[("toolNames", "tool_names")])})
+                    } else {
+                        json!("never")
+                    }
+                })
+                .unwrap_or_else(|| json!("never"));
+        }
+        "shell" => {
+            if let Some(environment) = args.get("environment") {
+                value["environment"] = map_shell_environment(environment)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(Some(value))
+}
+
+fn map_shell_environment(environment: &Value) -> Result<Value, AiMuxError> {
+    let kind = environment
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("local");
+    let mut value = match kind {
+        "containerReference" => map_tool_fields(environment, &[("containerId", "container_id")]),
+        "containerAuto" => map_tool_fields(
+            environment,
+            &[("fileIds", "file_ids"), ("memoryLimit", "memory_limit")],
+        ),
+        _ => map_tool_fields(environment, &[("skills", "skills")]),
+    };
+    value["type"] = json!(match kind {
+        "containerReference" => "container_reference",
+        "containerAuto" => "container_auto",
+        _ => "local",
+    });
+    if kind == "containerAuto" {
+        if let Some(policy) = environment.get("networkPolicy") {
+            value["network_policy"] = map_tool_fields(
+                policy,
+                &[
+                    ("type", "type"),
+                    ("allowedDomains", "allowed_domains"),
+                    ("domainSecrets", "domain_secrets"),
+                ],
+            );
+        }
+        if let Some(skills) = environment.get("skills").and_then(Value::as_array) {
+            value["skills"] = Value::Array(skills.iter().map(|skill| {
+                if skill["type"] == "skillReference" {
+                    let id = skill.get("providerReference").and_then(|reference| reference.get("openai")).and_then(Value::as_str).ok_or_else(|| AiMuxError::InvalidArgument("No skill reference for openai".into()))?;
+                    Ok(json!({"type":"skill_reference", "skill_id":id, "version":skill.get("version").cloned().unwrap_or_else(|| json!("latest"))}))
+                } else {
+                    let mut value = map_tool_fields(skill, &[("name", "name"), ("description", "description")]);
+                    value["type"] = json!("inline");
+                    value["source"] = map_tool_fields(&skill["source"], &[("type", "type"), ("mediaType", "media_type"), ("data", "data")]);
+                    Ok(value)
+                }
+            }).collect::<Result<Vec<_>, AiMuxError>>()?);
+        }
+    }
+    Ok(value)
 }
 
 /// Convert a `FunctionTool` into the Responses `function` tool JSON shape.
@@ -660,9 +1432,7 @@ fn function_tool_to_json(t: &FunctionTool) -> Value {
     if let Some(ref desc) = t.description {
         func["description"] = json!(desc);
     }
-    if let Some(strict) = t.strict {
-        func["strict"] = json!(strict);
-    }
+    func["strict"] = json!(t.strict.unwrap_or(false));
     func
 }
 
@@ -731,23 +1501,13 @@ fn resolve_responses_reasoning(
                 }
             });
 
-    let resolved_reasoning_summary: Option<String> =
-        openai_option(ns, provider_opts, "reasoningSummary")
-            .map(|v| {
-                v.as_str()
-                    .map(std::string::ToString::to_string)
-                    .unwrap_or_else(|| v.to_string())
-            })
-            .or_else(|| {
-                if resolved_reasoning_effort
-                    .as_deref()
-                    .is_some_and(|e| e != "none")
-                {
-                    Some("detailed".to_string())
-                } else {
-                    None
-                }
-            });
+    let resolved_reasoning_summary = match openai_option(ns, provider_opts, "reasoningSummary") {
+        Some(value) => value.as_str().map(str::to_owned),
+        None => resolved_reasoning_effort
+            .as_deref()
+            .filter(|effort| *effort != "none")
+            .map(|_| "detailed".to_string()),
+    };
 
     let is_reasoning_model = openai_option(ns, provider_opts, "forceReasoning")
         .map(|v| v.as_bool().unwrap_or(false))
@@ -861,6 +1621,7 @@ fn apply_responses_text_format(
     body: &mut Value,
     options: &CallOptions,
     provider_opts: &Option<SharedProviderOptions>,
+    warnings: &mut Vec<Warning>,
 ) {
     if let Some(ref rf) = options.response_format {
         match rf {
@@ -880,9 +1641,11 @@ fn apply_responses_text_format(
                             "type": "json_schema",
                             "strict": strict_json,
                             "name": name.clone().unwrap_or_else(|| "response".to_string()),
-                            "description": description,
-                            "schema": schema,
+                            "schema": crate::openai::convert::normalize_json_schema(schema, warnings).unwrap_or_else(|_| schema.clone()),
                         });
+                        if let Some(description) = description {
+                            text["format"]["description"] = json!(description);
+                        }
                     }
                     None => {
                         text["format"] = json!({ "type": "json_object" });
@@ -912,6 +1675,7 @@ fn resolve_responses_include(
     ns: ResponsesNamespace,
     provider_opts: &Option<SharedProviderOptions>,
     is_reasoning_model: bool,
+    tools: Option<&[Tool]>,
 ) -> Option<Vec<Value>> {
     let mut include: Option<Vec<Value>> =
         openai_option(ns, provider_opts, "include").and_then(|v| v.as_array().cloned());
@@ -934,6 +1698,27 @@ fn resolve_responses_include(
         add_include("reasoning.encrypted_content", &mut include);
     }
 
+    let top_logprobs = openai_option(ns, provider_opts, "logprobs")
+        .and_then(|v| if v == true { Some(20) } else { v.as_u64() });
+    if top_logprobs.is_some_and(|value| value > 0) {
+        add_include("message.output_text.logprobs", &mut include);
+    }
+    for tool in tools.into_iter().flatten() {
+        if let Tool::Provider(tool) = tool {
+            match tool.id.as_str() {
+                "openai.web_search" | "openai.web_search_preview"
+                    if openai_option(ns, provider_opts, "includeWebSearchSources")
+                        != Some(json!(false)) =>
+                {
+                    add_include("web_search_call.action.sources", &mut include)
+                }
+                "openai.code_interpreter" => {
+                    add_include("code_interpreter_call.outputs", &mut include)
+                }
+                _ => {}
+            }
+        }
+    }
     include
 }
 
@@ -968,6 +1753,31 @@ fn apply_responses_provider_options(
                 .collect(),
         );
     }
+    if let Some(value) = openai_option(ns, provider_opts, "logprobs").and_then(|v| {
+        if v == true {
+            Some(json!(20))
+        } else {
+            v.as_u64().map(|n| json!(n))
+        }
+    }) {
+        body["top_logprobs"] = value;
+    }
+    if let Some(values) =
+        openai_option(ns, provider_opts, "contextManagement").and_then(|v| v.as_array().cloned())
+    {
+        body["context_management"] = json!(
+            values
+                .into_iter()
+                .map(|v| {
+                    let mut entry = json!({ "type": v["type"] });
+                    if let Some(threshold) = v.get("compactThreshold") {
+                        entry["compact_threshold"] = threshold.clone();
+                    }
+                    entry
+                })
+                .collect::<Vec<_>>()
+        );
+    }
 }
 
 /// `service_tier` with model-capability validation.
@@ -991,7 +1801,7 @@ fn apply_responses_service_tier(
                     ),
                 });
             }
-            "priority" if !caps.supports_priority_processing => {
+            "priority" | "fast" if !caps.supports_priority_processing => {
                 warnings.push(Warning::Unsupported {
                     feature: "serviceTier".to_string(),
                     details: Some("priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported".to_string()),
@@ -1041,13 +1851,10 @@ fn apply_responses_reasoning_block(
     }
 }
 
-/// Build the OpenAI Responses API request body (without warnings).
-///
-/// Splits the original ~380-line function into focused helpers (issue M11);
-/// behavior is unchanged.
+/// Build the OpenAI Responses API request body and warnings.
 ///
 /// # Errors
-/// Returns an error for text file parts or an unresolved inline image media type.
+/// Rejects unsupported prompt parts and invalid tool arguments.
 pub fn build_responses_request_body(
     model_id: &str,
     options: &CallOptions,
@@ -1060,7 +1867,7 @@ pub fn build_responses_request_body(
 /// namespace.
 ///
 /// # Errors
-/// Returns an error for text file parts or an unresolved inline image media type.
+/// Rejects unsupported prompt parts and invalid tool arguments.
 pub fn build_responses_request_body_for(
     ns: ResponsesNamespace,
     model_id: &str,
@@ -1075,8 +1882,24 @@ pub fn build_responses_request_body_for(
     push_unsupported_call_option_warnings(options, &mut warnings);
 
     // -- Reasoning resolution --
-    let (resolved_reasoning_effort, resolved_reasoning_summary, is_reasoning_model) =
+    let (mut resolved_reasoning_effort, mut resolved_reasoning_summary, is_reasoning_model) =
         resolve_responses_reasoning(ns, provider_opts, options, &caps);
+    if let Some(efforts) = caps.supported_reasoning_efforts
+        && resolved_reasoning_effort
+            .as_deref()
+            .is_some_and(|effort| !efforts.contains(&effort))
+    {
+        warnings.push(Warning::Unsupported {
+            feature: "reasoningEffort".to_string(),
+            details: Some(format!(
+                "{model_id} only supports the following reasoning efforts: {}",
+                efforts.join(", ")
+            )),
+        });
+        resolved_reasoning_effort = None;
+        resolved_reasoning_summary = openai_option(ns, provider_opts, "reasoningSummary")
+            .and_then(|v| v.as_str().map(str::to_owned));
+    }
 
     // -- conversation + previousResponseId conflict --
     warn_conversation_conflict(ns, provider_opts, &mut warnings);
@@ -1090,15 +1913,54 @@ pub fn build_responses_request_body_for(
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
     let has_previous_response_id = openai_option(ns, provider_opts, "previousResponseId").is_some();
-    let has_conversation = openai_option(ns, provider_opts, "conversation").is_some();
-    let input_result = convert_to_responses_input(
+    let mut input_result = convert_responses_input_with_conversation(
         ns,
         &options.prompt,
         system_message_mode,
         store_bool,
         has_previous_response_id,
-        has_conversation,
+        openai_option(ns, provider_opts, "conversation").is_some(),
+        options.tools.as_deref(),
     )?;
+    if let Some(effort) = openai_option(ns, provider_opts, "reasoningEffortUpdate")
+        .and_then(|v| v.as_str().map(str::to_owned))
+    {
+        let reason = if !caps.supports_configuration_update {
+            Some("reasoningEffortUpdate is only supported by GPT-6 and later models".to_string())
+        } else if openai_option(ns, provider_opts, "reasoningMode") == Some(json!("pro"))
+            || openai_option(ns, provider_opts, "contextManagement").is_some()
+            || openai_option(ns, provider_opts, "truncation") == Some(json!("auto"))
+        {
+            Some("reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation".to_string())
+        } else if caps
+            .supported_reasoning_efforts
+            .is_some_and(|values| !values.contains(&effort.as_str()))
+        {
+            Some(format!(
+                "{model_id} does not support reasoning effort {effort}"
+            ))
+        } else {
+            None
+        };
+        if let Some(details) = reason {
+            warnings.push(Warning::Unsupported {
+                feature: "reasoningEffortUpdate".to_string(),
+                details: Some(details),
+            });
+        } else if input_result.input.first().is_none_or(|item| {
+            item["type"] != "configuration_update" || item["reasoning"]["effort"] != effort
+        }) {
+            input_result.input.insert(
+                0,
+                json!({ "type": "configuration_update", "reasoning": { "effort": effort } }),
+            );
+        }
+    }
+    if openai_option(ns, provider_opts, "compactionTrigger") == Some(json!(true)) {
+        input_result
+            .input
+            .push(json!({ "type": "compaction_trigger" }));
+    }
     warnings.extend(input_result.warnings);
 
     // -- Base body --
@@ -1127,10 +1989,15 @@ pub fn build_responses_request_body_for(
     );
 
     // -- Response format (text.format) + verbosity --
-    apply_responses_text_format(ns, &mut body, options, provider_opts);
+    apply_responses_text_format(ns, &mut body, options, provider_opts, &mut warnings);
 
     // -- include (computed) --
-    let include = resolve_responses_include(ns, provider_opts, is_reasoning_model);
+    let include = resolve_responses_include(
+        ns,
+        provider_opts,
+        is_reasoning_model,
+        options.tools.as_deref(),
+    );
     if let Some(inc) = include {
         body["include"] = json!(inc);
     }
@@ -1142,6 +2009,47 @@ pub fn build_responses_request_body_for(
 
     // -- Other provider options (only sent when set) --
     apply_responses_provider_options(ns, &mut body, provider_opts);
+    if caps.supports_configuration_update && body.get("prompt_cache_retention").is_some() {
+        body.as_object_mut()
+            .expect("request body is an object")
+            .remove("prompt_cache_retention");
+        warnings.push(Warning::Unsupported {
+            feature: "promptCacheRetention".to_string(),
+            details: Some("promptCacheRetention is not supported by GPT-6 and later models; use promptCacheOptions instead".to_string()),
+        });
+    }
+
+    if is_reasoning_model
+        && caps.supported_reasoning_efforts.is_some()
+        && !(resolved_reasoning_effort.as_deref() == Some("none")
+            && caps.supports_non_reasoning_parameters)
+    {
+        let mut removed = body
+            .as_object_mut()
+            .expect("request body is an object")
+            .remove("top_logprobs")
+            .is_some();
+        if let Some(include) = body.get_mut("include").and_then(Value::as_array_mut) {
+            let len = include.len();
+            include.retain(|value| value.as_str() != Some("message.output_text.logprobs"));
+            removed |= include.len() != len;
+        }
+        if body
+            .get("include")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
+        {
+            body.as_object_mut()
+                .expect("request body is an object")
+                .remove("include");
+        }
+        if removed {
+            warnings.push(Warning::Unsupported {
+                feature: "logprobs".to_string(),
+                details: Some("logprobs is not supported for reasoning models".to_string()),
+            });
+        }
+    }
 
     // -- service_tier (with capability validation) --
     apply_responses_service_tier(ns, &mut body, provider_opts, &caps, &mut warnings);
@@ -1157,7 +2065,13 @@ pub fn build_responses_request_body_for(
     );
 
     // -- Tools --
-    let prepared = prepare_responses_tools(&options.tools, options.tool_choice.as_ref());
+    let allowed_tools = openai_option(ns, provider_opts, "allowedTools");
+    let prepared = prepare_responses_tools_for(
+        &options.tools,
+        options.tool_choice.as_ref(),
+        allowed_tools.as_ref(),
+        caps.supports_configuration_update,
+    )?;
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);
         if let Some(tc) = prepared.tool_choice {
@@ -1232,7 +2146,7 @@ fn apply_prefix_to_part(part: &mut Value, prefixes: &[&str]) {
                 obj.remove("file_data");
                 obj.remove("filename");
                 obj.insert("file_id".to_string(), json!(data));
-                if get_top_level_media_type(media_type) == "image" {
+                if media_type.starts_with("image/") {
                     obj.insert("type".to_string(), json!("input_image"));
                 }
             }

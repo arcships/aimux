@@ -16,10 +16,14 @@ pub mod convert;
 pub mod embedding;
 mod model;
 pub(crate) mod options;
+mod speech;
+mod transcription;
 mod types;
 
 pub use embedding::MistralEmbeddingModel;
 pub use model::MistralModel;
+pub use speech::MistralSpeechModel;
+pub use transcription::MistralTranscriptionModel;
 
 use std::sync::{Arc, OnceLock};
 
@@ -32,6 +36,8 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
+use aimux_core::speech_model::SpeechModel;
+use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
 use crate::shared::{Credential, EndpointConfig, provider_headers};
@@ -94,7 +100,6 @@ pub(crate) fn mistral_stream_error(
 
 const DEFAULT_BASE_URL: &str = "https://api.mistral.ai/v1";
 const API_KEY_ENV_VAR: &str = "MISTRAL_API_KEY";
-const DEFAULT_NAME: &str = "mistral";
 
 /// The URL patterns the chat model fetches itself (`supportedUrls` of the AI
 /// SDK's `MistralChatLanguageModel`): `https` PDFs.
@@ -124,7 +129,7 @@ pub struct MistralProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Generates unique IDs for chat output.
+    /// Generates identifiers for reasoning and streamed tool calls.
     pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
@@ -156,22 +161,22 @@ pub fn create_mistral(settings: MistralProviderSettings) -> Result<MistralProvid
         Some(url) => validate_base_url(url)?,
         None => DEFAULT_BASE_URL.to_string(),
     };
-    Ok(MistralProvider {
-        name: DEFAULT_NAME.to_string(),
-        base_url,
-        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            provider_headers(
-                Credential::explicit_or_env(
-                    settings.api_key.map(Resolvable::Value),
-                    API_KEY_ENV_VAR,
-                    "Mistral",
-                ),
-                Vec::new(),
-                settings.headers,
+    let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
+        provider_headers(
+            Credential::explicit_or_env(
+                settings.api_key.map(Resolvable::Value),
+                API_KEY_ENV_VAR,
+                "Mistral",
             ),
-            options::NAMESPACE,
-            "4.0.54",
+            Vec::new(),
+            settings.headers,
         ),
+        options::NAMESPACE,
+        "4.0.54",
+    );
+    Ok(MistralProvider {
+        base_url,
+        headers,
         fetch: settings.fetch,
         generate_id: settings.generate_id,
     })
@@ -191,7 +196,6 @@ pub fn mistral() -> &'static MistralProvider {
 /// A Mistral provider (the AI SDK's `MistralProvider`). Cheap to clone the
 /// models out of; it holds no HTTP client.
 pub struct MistralProvider {
-    name: String,
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
@@ -201,7 +205,7 @@ pub struct MistralProvider {
 impl MistralProvider {
     fn model_config(&self, method: &str) -> EndpointConfig {
         EndpointConfig::fixed(
-            format!("{}.{method}", self.name),
+            format!("mistral.{method}"),
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
@@ -209,22 +213,39 @@ impl MistralProvider {
         )
     }
 
-    /// A chat model; `provider()` is `"{name}.chat"`.
+    /// A chat model; `provider()` is `"mistral.chat"`.
     #[must_use]
     pub fn chat(&self, model_id: &str) -> MistralModel {
         MistralModel::from_config(
             model_id.to_string(),
             self.model_config("chat")
                 .with_supported_urls(Arc::new(|_| chat_supported_urls())),
+            self.generate_id.clone(),
         )
-        .with_generate_id(self.generate_id.clone())
     }
 
     /// An embedding model (e.g. `"mistral-embed"`); `provider()` is
-    /// `"{name}.embedding"`.
+    /// `"mistral.embedding"`.
     #[must_use]
     pub fn embedding(&self, model_id: &str) -> MistralEmbeddingModel {
         MistralEmbeddingModel::from_config(model_id.to_string(), self.model_config("embedding"))
+    }
+
+    /// A speech (TTS) model (e.g. `"voxtral-mini-tts-2603"`); `provider()` is
+    /// `"mistral.speech"`.
+    #[must_use]
+    pub fn speech(&self, model_id: &str) -> MistralSpeechModel {
+        MistralSpeechModel::from_config(model_id.to_string(), self.model_config("speech"))
+    }
+
+    /// A transcription (STT) model (e.g. `"voxtral-mini-latest"`);
+    /// `provider()` is `"mistral.transcription"`.
+    #[must_use]
+    pub fn transcription(&self, model_id: &str) -> MistralTranscriptionModel {
+        MistralTranscriptionModel::from_config(
+            model_id.to_string(),
+            self.model_config("transcription"),
+        )
     }
 
     /// The provider as a function: the default language model for an id. The
@@ -251,6 +272,17 @@ impl Provider for MistralProvider {
 
     fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
         Err(AiMuxError::no_such_model(model_id, "imageModel"))
+    }
+
+    fn speech_model(&self, model_id: &str) -> Option<Result<Arc<dyn SpeechModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.speech(model_id))))
+    }
+
+    fn transcription_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn TranscriptionModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.transcription(model_id))))
     }
 }
 

@@ -11,7 +11,7 @@
 //! - the body drops `model` and gains `anthropic_version: "vertex-2023-10-16"`
 //!   (the version is not a header),
 //! - credentials and the base URL are the Vertex provider's, resolved on every
-//!   request (OAuth bearer token or Express API key; project and location),
+//!   request (OAuth bearer token; project and location),
 //! - errors are Google-shaped,
 //! - no URL sources, no structured-output beta and no `strict` tool
 //!   definitions.
@@ -29,7 +29,7 @@ use aimux_provider_utils::{FetchFunction, Resolvable};
 
 use crate::anthropic::AnthropicMessagesModel;
 use crate::anthropic::config::{AnthropicModelConfig, AnthropicModelHooks, TransformRequestBody};
-use crate::anthropic::options::CANONICAL;
+use crate::anthropic::options::options_name_of;
 use crate::shared::Endpoint;
 
 /// `anthropic_version` envelope value required by the Vertex AI `rawPredict` /
@@ -78,7 +78,7 @@ fn request_config(
         supported_urls: SupportedUrls::default(),
         transform_request_body,
         base_url,
-        provider_options_name: CANONICAL.to_string(),
+        provider_options_name: options_name_of(PROVIDER),
         hooks: AnthropicModelHooks {
             request_url: Some(Arc::new(move |model_id, stream| {
                 let method = if stream {
