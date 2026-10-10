@@ -48,7 +48,7 @@ use aimux_provider_utils::{
 
 use crate::shared::{AuthScheme, Credential, credential_headers};
 
-use config::{AnthropicModelConfig, AnthropicModelHooks};
+use config::{AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks};
 
 pub(crate) fn anthropic_failed_response_handler()
 -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -236,17 +236,15 @@ pub struct AnthropicProvider {
 impl AnthropicProvider {
     /// The model configuration reporting `provider` as its identity.
     fn model_config(&self, provider: String) -> AnthropicModelConfig {
-        let base = self.base_url.clone();
         AnthropicModelConfig {
             provider,
-            url: Arc::new(move |path| format!("{base}{path}")),
             headers: self.headers.clone(),
             fetch: self.fetch.clone(),
             supported_urls: self.supported_urls.clone(),
             base_url: self.base_url.clone(),
             provider_options_name: options::options_name_of(&self.name),
             hooks: AnthropicModelHooks::default(),
-            resolve: None,
+            endpoint: AnthropicEndpoint::Fixed,
         }
     }
 

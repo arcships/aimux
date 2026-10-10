@@ -82,13 +82,9 @@ pub struct VertexAnthropicProvider(VertexProvider);
 impl VertexAnthropicProvider {
     #[must_use]
     pub fn call(&self, model_id: &str) -> Arc<dyn LanguageModel> {
-        let resolver = self.0.resolver.clone();
         Arc::new(super::anthropic_model::model(
             model_id,
-            Arc::new(move || {
-                let resolver = resolver.clone();
-                Box::pin(async move { resolver.endpoint(super::Publisher::Anthropic).await })
-            }),
+            self.0.resolver.clone(),
             self.0.fetch.clone(),
         ))
     }

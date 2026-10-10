@@ -29,7 +29,7 @@ use aimux_provider_utils::{
 };
 
 use crate::anthropic::AnthropicMessagesModel;
-use crate::anthropic::config::{AnthropicModelConfig, AnthropicModelHooks};
+use crate::anthropic::config::{AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks};
 use crate::anthropic::options::{CANONICAL, options_name_of};
 
 /// The region used when the settings name none and SigV4 credentials do not
@@ -193,17 +193,15 @@ pub struct AnthropicAwsProvider {
 
 impl AnthropicAwsProvider {
     fn model_config(&self) -> AnthropicModelConfig {
-        let base = self.base_url.clone();
         AnthropicModelConfig {
             provider: self.name.clone(),
-            url: Arc::new(move |path| format!("{base}{path}")),
             headers: self.headers.clone(),
             fetch: self.fetch.clone(),
             supported_urls: SupportedUrls::default(),
             base_url: self.base_url.clone(),
             provider_options_name: self.provider_options_name.clone(),
             hooks: AnthropicModelHooks::default(),
-            resolve: None,
+            endpoint: AnthropicEndpoint::Fixed,
         }
     }
 
