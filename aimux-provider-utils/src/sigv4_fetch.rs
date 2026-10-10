@@ -97,8 +97,8 @@ fn sign_request_at(
         Some(port) => format!("{}:{}", parsed.host_str().unwrap_or(""), port),
         None => parsed.host_str().unwrap_or("").to_string(),
     };
-    let path = parsed.path();
-    let query = parsed.query().unwrap_or("");
+    let path = canonical_uri(parsed.path());
+    let query = canonical_query(parsed.query().unwrap_or(""));
 
     // Timestamp:yyyyMMddTHHmmssZ and date:yyyyMMdd
     let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
@@ -127,7 +127,7 @@ fn sign_request_at(
             && lower != "x-amz-content-sha256"
             && lower != "x-amz-security-token"
         {
-            canonical_headers.push((lower, v.trim().to_string()));
+            canonical_headers.push((lower, canonical_header_value(v)));
         }
     }
 
@@ -166,16 +166,17 @@ fn sign_request_at(
     let string_to_sign =
         format!("AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n{canonical_request_hash}");
 
-    // Signing key: derived through chained HMAC
+    // Signing key: derived through chained HMAC, each step keyed by the
+    // previous one and starting from "AWS4" + secret.
     let k_date = hmac_sha256(
+        format!("AWS4{}", credentials.secret_access_key).as_bytes(),
         date_stamp.as_bytes(),
-        credentials.secret_access_key.as_bytes(),
     );
-    let k_region = hmac_sha256(credentials.region.as_bytes(), &k_date);
-    let k_service = hmac_sha256(service.as_bytes(), &k_region);
-    let k_signing = hmac_sha256(b"aws4_request", &k_service);
+    let k_region = hmac_sha256(&k_date, credentials.region.as_bytes());
+    let k_service = hmac_sha256(&k_region, service.as_bytes());
+    let k_signing = hmac_sha256(&k_service, b"aws4_request");
 
-    let signature = hex::encode(hmac_sha256(string_to_sign.as_bytes(), &k_signing));
+    let signature = hex::encode(hmac_sha256(&k_signing, string_to_sign.as_bytes()));
 
     let authorization = format!(
         "AWS4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}",
@@ -190,6 +191,84 @@ fn sign_request_at(
     headers.push(("Authorization".to_string(), authorization));
 
     SignedRequest { headers }
+}
+
+/// SigV4 `UriEncode`: every byte except the unreserved set
+/// (`A-Z a-z 0-9 - _ . ~`) becomes `%XX` with uppercase hex.
+fn uri_encode(input: &[u8]) -> String {
+    let mut out = String::with_capacity(input.len());
+    for &byte in input {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+/// Canonical URI for every service but S3: each segment of the path as sent
+/// is URI-encoded again, so `:` signs as `%3A` and an already-escaped `%3A`
+/// signs as `%253A`.
+fn canonical_uri(path: &str) -> String {
+    if path.is_empty() {
+        return "/".to_string();
+    }
+    path.split('/')
+        .map(|segment| uri_encode(segment.as_bytes()))
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Canonical query string: each name and value percent-decoded, then
+/// URI-encoded, and the pairs sorted by name and then value.
+fn canonical_query(query: &str) -> String {
+    let mut pairs: Vec<(String, String)> = query
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+        .map(|pair| {
+            let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
+            (
+                uri_encode(&percent_decode(name)),
+                uri_encode(&percent_decode(value)),
+            )
+        })
+        .collect();
+    pairs.sort();
+    pairs
+        .iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+fn percent_decode(input: &str) -> Vec<u8> {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let escaped = (bytes[i] == b'%')
+            .then(|| bytes.get(i + 1..i + 3))
+            .flatten()
+            .and_then(|hex| std::str::from_utf8(hex).ok())
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match escaped {
+            Some(byte) => {
+                out.push(byte);
+                i += 3;
+            }
+            None => {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// Canonical header value: trimmed, with runs of spaces collapsed to one.
+fn canonical_header_value(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
@@ -376,11 +455,19 @@ mod tests {
         );
     }
 
-    /// Pins the signer byte-for-byte to the pre-move Bedrock signer
-    /// implementation: the expected values come from an independent
-    /// re-implementation of that exact algorithm run at the same fixed time.
+    fn signature(signed: &SignedRequest) -> String {
+        header(signed, "authorization")
+            .rsplit_once("Signature=")
+            .expect("authorization carries a signature")
+            .1
+            .to_string()
+    }
+
+    /// Expected values come from botocore 1.43's `SigV4Auth` (AWS's own
+    /// Python signer) for the same credentials, headers, body and fixed
+    /// time, not from this implementation.
     #[test]
-    fn signer_output_is_unchanged_by_the_move() {
+    fn signatures_match_botocore() {
         let signed = sign_request_at(
             &creds(),
             "bedrock",
@@ -394,7 +481,7 @@ mod tests {
             header(&signed, "authorization"),
             "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20240102/us-east-1/bedrock/aws4_request, \
              SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-custom, \
-             Signature=50198f4d3c821ae4aa0518965cd3ecaeb81e542a155dc57766e1e28a6ae696b8"
+             Signature=538444fb4b17f3cdd777bbd5f1cd4e3e1f53d6ac97167da96c81ec8d14d6468a"
         );
 
         let session = AwsCredentials {
@@ -414,9 +501,73 @@ mod tests {
             header(&signed, "authorization"),
             "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20240102/us-east-1/bedrock/aws4_request, \
              SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token, \
-             Signature=8421497f0591d30210a67833cdd30e0b8693f941ed28ecf4aff8751531cbf783"
+             Signature=dd6a2384cb9c8f0db8ea8ee383a61bf06dd85da679cec54d5c944b1b0cb8d9f6"
         );
         assert_eq!(header(&signed, "x-amz-security-token"), "SESSION");
+    }
+
+    /// An escaped path segment is encoded again, header whitespace collapses,
+    /// and query pairs are sorted (same botocore reference as above).
+    #[test]
+    fn canonicalization_matches_botocore() {
+        let signed = sign_request_at(
+            &creds(),
+            "bedrock",
+            "POST",
+            "https://bedrock-runtime.us-east-1.amazonaws.com/model/us.anthropic.claude-3-5-sonnet-20240620-v1%3A0/converse-stream",
+            b"{}",
+            &[
+                ("content-type".to_string(), "application/json".to_string()),
+                ("X-Multi".to_string(), "a   b  c".to_string()),
+            ],
+            fixed_time(),
+        );
+        assert_eq!(
+            signature(&signed),
+            "a6abc7f26ad04c0922b03e05c9184a20a8fcf4b68b7dfce358e9a6436c8a9489"
+        );
+
+        let signed = sign_request_at(
+            &creds(),
+            "bedrock",
+            "POST",
+            "https://polly.us-east-1.amazonaws.com/v1/speech?b=2&a=x%20y&a=1",
+            b"{}",
+            &[],
+            fixed_time(),
+        );
+        assert_eq!(
+            signature(&signed),
+            "70c6e5794c4f1456f33f2b41cebc483ee0d19c98b95660411f4b51ccac464006"
+        );
+
+        let signed = sign_request_at(
+            &creds(),
+            "bedrock",
+            "GET",
+            "https://h.example.com",
+            b"",
+            &[],
+            fixed_time(),
+        );
+        assert_eq!(
+            signature(&signed),
+            "4810ddfb5f22377b8c39477909c5abf54ea3c7e03f9db0f8ccb9377ed39ef26d"
+        );
+    }
+
+    #[test]
+    fn canonical_uri_and_query_follow_sigv4() {
+        assert_eq!(canonical_uri(""), "/");
+        assert_eq!(
+            canonical_uri("/model/a.b-v1:0/converse"),
+            "/model/a.b-v1%3A0/converse"
+        );
+        assert_eq!(canonical_uri("/a+b/c%2Fd"), "/a%2Bb/c%252Fd");
+        assert_eq!(
+            canonical_query("b=2&a=x%20y&a=1&e=&z"),
+            "a=1&a=x%20y&b=2&e=&z="
+        );
     }
 
     #[tokio::test]
