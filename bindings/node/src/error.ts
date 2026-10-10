@@ -102,6 +102,26 @@ export class ToolCallRepairError extends AimuxError {
 }
 export class InvalidArgumentError extends AimuxError {}
 export class InvalidPromptError extends AimuxError {}
+/**
+ * No API key was passed and the fallback environment variable is unset (AI SDK
+ * `LoadAPIKeyError`). Raised when the request is made, before any HTTP call.
+ */
+export class LoadAPIKeyError extends AimuxError {
+  /** The environment variable consulted as the fallback, e.g. `'OPENAI_API_KEY'`. */
+  declare readonly envVar: string
+  /** What the key is for, e.g. `'OpenAI'`. */
+  declare readonly description: string
+}
+/**
+ * A required provider setting was not passed and its fallback environment
+ * variable is unset (AI SDK `LoadSettingError`), e.g. the AWS region.
+ */
+export class LoadSettingError extends AimuxError {
+  /** The environment variable consulted as the fallback. */
+  declare readonly envVar: string
+  /** The setting's parameter name, e.g. `'region'`. */
+  declare readonly settingName: string
+}
 export class TokenExpiredError extends AimuxError {
   /** Token expiry is produced only from an observed 401 response. */
   declare readonly status: 401

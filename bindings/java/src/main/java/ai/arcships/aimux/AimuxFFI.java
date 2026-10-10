@@ -222,7 +222,10 @@ public interface AimuxFFI extends Library {
     /** AIMUX_E_API_CALL: rate-limit hint in ms, or -1. */
     long aimux_error_retry_ms(Pointer err);
 
-    /** AIMUX_E_API_CALL: owned string or NULL. */
+    /**
+     * AIMUX_E_API_CALL: owned string or NULL. AIMUX_E_LOAD_API_KEY /
+     * AIMUX_E_LOAD_SETTING: the environment variable that was consulted.
+     */
     Pointer aimux_error_provider_code(Pointer err);
 
     /** AIMUX_E_API_CALL: owned string or NULL. */

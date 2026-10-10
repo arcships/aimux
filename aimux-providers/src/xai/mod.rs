@@ -1,32 +1,42 @@
-//! xAI (Grok) provider — a thin wrapper with xAI-specific behaviour.
+//! xAI (Grok) provider.
 //!
-//! xAI exposes an OpenAI-compatible Chat Completions API at
-//! `https://api.x.ai/v1`. While the wire format is OpenAI-compatible, xAI has
-//! enough provider-specific behaviour (reasoning content extraction, citations,
-//! search parameters, xai-keyed provider options, non-inclusive cached tokens,
-//! reasoning-effort model gating, 200-status errors) to warrant its own model
-//! implementation ([`XaiModel`]) rather than reusing `OpenAIModel`.
+//! [`create_xai`] is the Rust form of the AI SDK's `createXai`: it takes
+//! [`XAIProviderSettings`], validates the base URL, fixes the provider name and
+//! returns an [`XAIProvider`]. The API key is not read there; it is loaded in
+//! the request headers of every call, from the setting or from
+//! `XAI_API_KEY`. [`xai()`] is the default instance.
+//!
+//! The AI SDK's xAI package serves the Responses API only
+//! ([`XaiResponsesModel`], `provider()` = `xai.responses`), and
+//! [`language_model`](Provider::language_model) returns it. There is no Chat
+//! Completions model in this package; xAI's OpenAI-compatible endpoint is
+//! reachable through `create_openai_compatible` with `https://api.x.ai/v1`.
 
 pub mod convert;
-mod model;
+pub(crate) mod options;
 pub mod responses;
-mod types;
 
-pub use model::XaiModel;
 pub use responses::XaiResponsesModel;
 
-use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
-use aimux_core::provider::Provider;
-use aimux_provider_utils::load_api_key;
+use std::sync::{Arc, OnceLock};
+
+use futures::future::BoxFuture;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::openai::OpenAIConfig;
+use aimux_core::embedding_model::EmbeddingModel;
+use aimux_core::error::AiMuxError;
+use aimux_core::image_model::ImageModel;
+use aimux_core::language_model::LanguageModel;
+use aimux_core::model_catalogue::RuntimeModel;
+use aimux_core::provider::{Provider, ProviderDiscovery};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+
+use crate::shared::{Credential, EndpointConfig, provider_headers};
 
 const DEFAULT_BASE_URL: &str = "https://api.x.ai/v1";
-const ENV_VAR: &str = "XAI_API_KEY";
-const PROVIDER_NAME: &str = "xai";
+const API_KEY_ENV_VAR: &str = "XAI_API_KEY";
+const DEFAULT_NAME: &str = "xai";
 
 pub(crate) fn xai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -213,122 +223,150 @@ where
     .streaming()
 }
 
-/// Configuration for the xAI provider (wraps [`OpenAIConfig`]).
-#[derive(Clone)]
-pub struct XAIConfig(OpenAIConfig);
+/// Settings of [`create_xai`] (the AI SDK's `XaiProviderSettings`).
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct XAIProviderSettings {
+    /// Base URL for the API calls. Default `https://api.x.ai/v1`; a trailing
+    /// slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `XAI_API_KEY` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment.
+    pub api_key: Option<String>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including `Authorization`. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
+}
 
-impl XAIConfig {
-    /// Create from an API key, using the default xAI base URL.
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self(OpenAIConfig::new(api_key).with_base_url(DEFAULT_BASE_URL))
-    }
-
-    /// Create from the `XAI_API_KEY` environment variable.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when `XAI_API_KEY` is not set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let key = load_api_key(None, ENV_VAR, "xAI")?;
-        Ok(Self::new(key).with_api_key_source(Some("env:XAI_API_KEY")))
-    }
-
-    /// 标注 api_key 来源(RFC-0023 回放重建用)。透传到内部 `OpenAIConfig`。
-    #[must_use]
-    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.0 = self.0.with_api_key_source(source);
-        self
-    }
-
-    /// 内部 `OpenAIConfig` 引用(config_snapshot 复用 OpenAI helper 用,M2b)。
-    pub(crate) fn openai_config(&self) -> &OpenAIConfig {
-        &self.0
-    }
-
-    /// Override the base URL (useful for tests / self-hosted endpoints).
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.0 = self.0.with_base_url(url);
-        self
-    }
-
-    /// Get the API key.
-    pub(crate) fn api_key(&self) -> &str {
-        &self.0.api_key
-    }
-
-    /// Get the base URL.
-    pub(crate) fn base_url(&self) -> &str {
-        &self.0.base_url
+impl std::fmt::Debug for XAIProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("XAIProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key.is_some())
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("fetch", &self.fetch.is_some())
+            .finish()
     }
 }
 
-/// xAI provider — creates [`XaiModel`] instances pointed at xAI.
+/// Create an xAI provider.
 ///
-/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
-/// process-wide shared `Client` internally (RFC-0009 §4.1).
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_xai(settings: XAIProviderSettings) -> Result<XAIProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(XAIProvider {
+        name: DEFAULT_NAME.to_string(),
+        base_url,
+        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
+            provider_headers(
+                Credential::explicit_or_env(
+                    settings.api_key.map(Resolvable::Value),
+                    API_KEY_ENV_VAR,
+                    "xAI API key",
+                ),
+                Vec::new(),
+                settings.headers,
+            ),
+            options::NAMESPACE,
+            "5.0.12",
+        ),
+        fetch: settings.fetch,
+    })
+}
+
+/// The default provider: `create_xai` with default settings, created on first
+/// use. Creating it reads nothing from the environment and cannot fail; a
+/// missing key surfaces from the first request instead.
+pub fn xai() -> &'static XAIProvider {
+    static DEFAULT: OnceLock<XAIProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_xai(XAIProviderSettings::default()).expect("default xAI settings are always valid")
+    })
+}
+
+/// An xAI provider (the AI SDK's `XaiProvider`). Cheap to clone the models out
+/// of; it holds no HTTP client.
 pub struct XAIProvider {
-    config: XAIConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
 }
 
 impl XAIProvider {
-    #[must_use]
-    pub fn new(config: XAIConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            None,
+        )
     }
 
-    /// Create a model instance for the given xAI model id (e.g. `"grok-2"`).
-    ///
-    /// Clones the provider config so the model inherits the same
-    /// `api_key_source` / `max_retries` (M2b: previously reconstructed with
-    /// `XAIConfig::new`, which dropped the credential source).
-    #[must_use]
-    pub fn model(&self, model_id: &str) -> XaiModel {
-        XaiModel::new(model_id.to_string(), self.config.clone())
-    }
-
-    /// Create a Responses API model instance for the given xAI model id.
+    /// A Responses model (e.g. `"grok-4"`); `provider()` is
+    /// `"{name}.responses"`.
     ///
     /// Uses the xAI `/responses` endpoint with the Responses API wire format
     /// (input items, reasoning objects, provider-executed tools, etc.).
     #[must_use]
-    pub fn responses_model(&self, model_id: &str) -> XaiResponsesModel {
-        XaiResponsesModel::new(model_id.to_string(), self.config.clone())
+    pub fn responses(&self, model_id: &str) -> XaiResponsesModel {
+        XaiResponsesModel::from_config(model_id.to_string(), self.model_config("responses"))
+    }
+
+    /// The provider as a function: the default language model for an id. The
+    /// AI SDK's callable provider; the same model as
+    /// [`responses`](Self::responses) and
+    /// [`language_model`](Provider::language_model).
+    #[must_use]
+    pub fn call(&self, model_id: &str) -> Arc<dyn LanguageModel> {
+        Arc::new(self.responses(model_id))
     }
 }
 
 impl Provider for XAIProvider {
-    fn name(&self) -> &str {
-        PROVIDER_NAME
+    fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
+        Some(self)
     }
 
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Ok(Box::new(self.model(model_id)))
+    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        Ok(self.call(model_id))
     }
 
-    /// List models via `GET {base_url}/models` (OpenAI-compatible, RFC-0027).
-    fn list_models(
-        &self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError>,
-                > + Send
-                + '_,
-        >,
-    > {
-        let config = OpenAIConfig::new(self.config.api_key())
-            .with_base_url(self.config.base_url())
-            .with_provider(PROVIDER_NAME);
-        // The freshly built OpenAIConfig carries the default retry settings —
-        // use the user's configured ones from the wrapped config instead.
-        let retry_config = self.config.0.retry_config;
+    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
+    }
+
+    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "imageModel"))
+    }
+}
+
+impl ProviderDiscovery for XAIProvider {
+    /// `GET {base_url}/models`: one exchange, no retry.
+    fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
+        let config = self.model_config("models");
         Box::pin(async move {
-            let headers = crate::openai::model::build_auth_headers(&config);
-            let runtime =
-                crate::openai::model::execute_list_models(&config.base_url, &headers, retry_config)
-                    .await?;
-            Ok(runtime)
+            crate::shared::list_data_models(&config, xai_failed_response_handler()).await
         })
     }
 }

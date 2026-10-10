@@ -69,7 +69,7 @@ test('trace() records calls and query API returns typed results', async (t) => {
   const statsJson = traced.traceAggregate()
   const stats = JSON.parse(statsJson) as any[]
   t.is(stats.length, 1)
-  t.is(stats[0].provider, 'openai')
+  t.is(stats[0].provider, 'openai.chat')
   t.is(stats[0].requests, 2)
   t.truthy(stats[0].reported_hit_rate)
   t.truthy(stats[0].client_upper_bound_hit_rate)

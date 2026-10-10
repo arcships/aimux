@@ -406,12 +406,6 @@ func TestMarshalledOptionsRejectRawPassThrough(t *testing.T) {
 			_, e := requiredOptsJSON("ImageModel.Generate", &ImageCallOptions{ProviderOptions: loneSurrogate})
 			return e
 		}, "opts: invalid JSON"},
-		{"provider config lone surrogate", func() error {
-			_, e := ProviderWithConfig("groq", "k", "m", &ProviderConfig{
-				BodyOverrides: map[string]any{"x": json.RawMessage(`"\udc00"`)},
-			})
-			return e
-		}, "config_json: invalid JSON: lone low surrogate \\uDC00"},
 		{"transcription session opts lone surrogate", func() error {
 			b, e := marshalJSON("opts", &TranscriptionSessionOpts{
 				ProviderOptions: map[string]json.RawMessage{"x": json.RawMessage(`"\ud800"`)},
@@ -472,7 +466,7 @@ func TestEmbedRejectsRawPassThroughOpts(t *testing.T) {
 
 func TestCodeFromCRejectsOutOfRange(t *testing.T) {
 	// 4 is retired; 14 is Retry; 15..17 are tool-call errors.
-	for _, bad := range []int{0, 4, 18, 999} {
+	for _, bad := range []int{0, 4, 20, 999} {
 		if _, ok := codeFromC(bad); ok {
 			t.Fatalf("%d is not an AiMuxError variant", bad)
 		}
@@ -486,6 +480,13 @@ func TestCodeFromCRejectsOutOfRange(t *testing.T) {
 	}
 	if c, ok := codeFromC(14); !ok || c != CodeRetry {
 		t.Fatalf("14 → %v, %v; want CodeRetry", c, ok)
+	}
+	// 18 / 19 are the missing-key / missing-setting codes.
+	if c, ok := codeFromC(18); !ok || c != CodeLoadAPIKey || c.String() != "LoadApiKey" {
+		t.Fatalf("18 → %v, %v; want CodeLoadAPIKey", c, ok)
+	}
+	if c, ok := codeFromC(19); !ok || c != CodeLoadSetting || c.String() != "LoadSetting" {
+		t.Fatalf("19 → %v, %v; want CodeLoadSetting", c, ok)
 	}
 }
 

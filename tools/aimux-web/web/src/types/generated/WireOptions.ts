@@ -6,4 +6,4 @@ export type WireOptions = { temperature?: number | null, max_output_tokens?: num
 /**
  * `"text"` or `{"json": …}` — passed through as `ResponseFormat`.
  */
-response_format?: JsonValue | null, headers?: { [key in string]: string } | null, body_overrides?: JsonValue | null, max_retries?: number | null, include_raw_chunks?: boolean | null, };
+response_format?: JsonValue | null, headers?: { [key in string]: string } | null, max_retries?: number | null, include_raw_chunks?: boolean | null, };

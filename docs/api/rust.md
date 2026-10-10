@@ -1,6 +1,6 @@
 # aimux · Rust API
 
-> Unified LLM service access layer — one API to access 325 AI providers
+> Unified LLM service access layer — one API to access AI providers
 
 This is the core implementation language. Shared reference — parameter tables,
 result shapes, factory functions, and the feature coverage matrix — lives in
@@ -10,12 +10,15 @@ the [API overview](../API.md).
 
 ```rust
 use aimux_core::prelude::*;
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::{OpenAIProviderSettings, create_openai};
 
 #[tokio::main]
 async fn main() -> Result<(), AiMuxError> {
-    let provider = OpenAIProvider::new(OpenAIConfig::new("sk-..."));
-    let model = provider.model("gpt-4o");
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("sk-...".to_string()),
+        ..Default::default()
+    })?;
+    let model = provider.chat("gpt-4o");
     let result = generate_text(&model, "What is Rust?", GenerateTextOptions::default()).await?;
     println!("{}", result.text);
     Ok(())
@@ -24,35 +27,93 @@ async fn main() -> Result<(), AiMuxError> {
 
 ## Providers
 
-All 251 built-in OpenAI-compatible providers are registry-backed: no per-provider
-`XxxConfig`/`XxxProvider` types. Look them up by string name:
-
-> **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
-> providers; Anthropic/Google/multimodal/local → typed factories
-> (`AnthropicProvider::new(..)`); custom endpoints →
-> `ProviderOptions.base_url` / `OpenAIConfig::with_base_url`.
-> Full list: [providers.md](providers.md).
+Provider packages follow the AI SDK shape: `XxxProviderSettings`,
+`create_xxx(settings)` and a default instance `xxx()` where the package
+provides one. Required fields follow the package: OpenAI-compatible settings
+require `name` and `base_url`. Models are taken from the provider (`provider.chat(id)`,
+`provider.language_model(id)?`, `provider.embedding_model(id)?`, …). Model
+identity follows the package (`openai.chat`, `anthropic.messages`); custom
+name handling is package-specific.
 
 ```rust
-use aimux_providers::{provider, provider_from_env, ProviderOptions};
+use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
+use aimux_providers::openai::openai;
 
-// Key from the provider's env var (GROQ_API_KEY etc.), base URL & profile from
-// the registry — replaces the retired `XxxConfig::from_env()`.
-let model = provider_from_env("groq", "llama-3.3-70b", None)?;
+// Default instance: OPENAI_API_KEY is read when a request is made; a missing
+// key fails that call with `AiMuxError::LoadApiKey`, not the constructor.
+let model = openai().chat("gpt-4o");
 
-// Explicit key + overrides — replaces the retired `XxxConfig::new().with_base_url(..)`.
-let model = provider(
-    "groq",
-    Some("sk-...".to_string()),
-    "llama-3.3-70b",
-    Some(ProviderOptions { base_url: Some("https://relay.example/v1".into()), ..Default::default() }),
-)?;
-
+// Explicit settings. `api_key: Some(..)` is used as given (`""` included).
+let anthropic = create_anthropic(AnthropicProviderSettings {
+    api_key: Some("sk-ant-...".to_string()),
+    base_url: Some("https://relay.example/v1".into()),
+    ..Default::default()
+})?;
+let model = anthropic.messages("claude-sonnet-4-5");
 ```
 
-Names come from `provider_registry.json`; the current list is in
-[providers.md](providers.md). Unknown names fail with
-`AiMuxError::NoSuchProvider { provider_id }`.
+Settings are package-specific. OpenAI, Anthropic and Google take
+`api_key: Option<String>` and `headers: Option<HeaderMapOpt>`; these are fixed
+values, not callbacks. `fetch: Option<FetchFunction>` supplies a custom
+transport. These packages have no `transform_request_body` setting;
+OpenAI-compatible settings expose that hook, plus `supported_urls` and
+`convert_usage` callbacks for chat models. Cohere and Mistral expose
+`generate_id` for generated ids. Settings only expose `name` where the upstream
+package does. Every request includes the package user-agent suffix
+`ai-sdk-<package>/<version>`.
+OpenAI defaults to Responses through `call` and `language_model`; `chat`
+selects Chat Completions explicitly.
+Retry is not a provider setting: `max_retries` on the call options (default
+2, 2000 ms initial delay, factor 2).
+
+The 281 OpenAI-compatible presets use a runtime table parsed once from
+`provider_registry.json`; there is no `family` field or generated presets source.
+Groq and DeepSeek are vendor packages with their own chat models. xAI and
+Hugging Face use the Responses API for language models, with no chat-completions
+accessor.
+
+By-name creation covers both vendor packages and preset rows:
+
+```rust
+use aimux_providers::{create_provider, default_providers, provider_names, PresetSettings};
+use aimux_core::provider_registry::create_provider_registry;
+
+// The vendor's environment key is read when a request is made.
+let provider = create_provider("groq", PresetSettings::default())?;
+let model = provider.language_model("model-id")?;
+
+// Explicit key and base URL override.
+let provider = create_provider("groq", PresetSettings {
+    api_key: Some("sk-...".to_string()),
+    base_url: Some("https://relay.example/v1".into()),
+    ..Default::default()
+})?;
+
+// Combined ids use "provider:model" (":" is the default separator).
+let registry = create_provider_registry(default_providers(), Default::default());
+let model = registry.language_model("groq:model-id")?;
+let names = provider_names();
+
+// Model listing is optional: providers without discovery return None.
+if let Some(discovery) = provider.discovery() {
+    let models = discovery.list_models().await?;
+}
+```
+
+Unknown names fail with `AiMuxError::NoSuchProvider { provider_id, model_id,
+model_type, available_providers }`.
+Custom endpoints use `PresetSettings::base_url` or the vendor's settings.
+The bindings retain their compatibility API in `aimux_providers::provider`;
+its helpers and option types are not re-exported from the Rust crate root.
+
+## Middleware
+
+`wrap_language_model(model, middleware, model_id, provider_id)` applies the
+first middleware as the outermost wrapper. Hooks can override provider id,
+model id and supported URLs, transform call parameters, and wrap generation
+or streaming with callbacks for both operations. Explicit id arguments take
+precedence over middleware overrides. `wrap_image_model` provides the image
+model hooks and the same explicit id overrides.
 
 ## Text Generation
 
@@ -95,7 +156,9 @@ let result = task.await.unwrap()?;
 
 ## Streaming Generation
 
-Returns generated content as a stream, output chunk by chunk.
+Returns generated content as `TextStreamPart` items, output chunk by chunk.
+Provider-layer `StreamPart::ResponseMetadata` events are consumed by the call
+layer; they are not emitted by `stream_text`.
 
 ```rust
 use futures::StreamExt;
@@ -104,8 +167,8 @@ let result = stream_text(&model, "Write a haiku.", GenerateTextOptions::default(
 let mut stream = result.stream;
 while let Some(part) = stream.next().await {
     match part? {
-        StreamPart::TextDelta { delta, .. } => print!("{}", delta),
-        StreamPart::Finish { .. } => println!("\n[done]"),
+        TextStreamPart::TextDelta { delta, .. } => print!("{}", delta),
+        TextStreamPart::Finish { .. } => println!("\n[done]"),
         _ => {}
     }
 }
@@ -115,7 +178,7 @@ Streaming honors the same `timeout` / `abort_signal` options as
 [text generation](#text-generation); streamed timeouts surface as an
 `Err(AiMuxError::Timeout(..))` stream item, and aborting the signal ends the
 stream with `Err(AiMuxError::Aborted(..))`. Provider-reported error events
-remain `Ok(StreamPart::Error { .. })` data.
+remain `Ok(TextStreamPart::Error { .. })` data.
 
 > Stream part variants are documented in the [API overview](../API.md#streaming-generation).
 
@@ -174,7 +237,7 @@ Converts text into a vector representation.
 ```rust
 use aimux_core::embedding_model::{EmbeddingCallOptions, embed};
 
-let model = provider.embedding_model("text-embedding-3-small");
+let model = provider.embedding("text-embedding-3-small");
 let opts = EmbeddingCallOptions::new("hello");
 let result = embed(&model, opts).await?;
 // result.embeddings[0] is Vec<f32>
@@ -240,7 +303,7 @@ Reorders a document list by relevance.
 ```rust
 use aimux_core::reranking_model::{RerankingCallOptions, RerankingDocuments, rerank};
 
-let model = provider.reranking_model("rerank-v3.0");
+let model = provider.reranking("rerank-v3.0");
 let opts = RerankingCallOptions::new("What is Rust?", docs);
 let result = rerank(&model, opts).await?;
 // result.ranking sorted by score
@@ -253,7 +316,7 @@ Calls a search provider to obtain results.
 ```rust
 use aimux_core::search_model::{SearchCallOptions, search};
 
-let model = provider.search_model("tavily-search");
+let model = aimux_providers::tavily().search_model();
 let opts = SearchCallOptions::new("What is Rust?");
 let result = search(&model, opts).await?;
 // result.results is Vec<SearchResultItem>
@@ -278,11 +341,12 @@ let result = files.upload_file(opts).await?;
 
 ## Core Traits
 
-The Rust core provides 10 traits/interfaces, implemented by each provider as needed:
+The Rust core provides these traits/interfaces, implemented by each provider as needed:
 
 | Trait | Method | Semantics |
 |-------|------|------|
-| `Provider` | `name`, `language_model` | Provider factory — holds API config, creates `LanguageModel` instances by model name |
+| `Provider` | `language_model`, `embedding_model`, `image_model`, `discovery` | Provider factory — holds API config, creates `LanguageModel` instances by model name |
+| `ProviderDiscovery` | `list_models` | Optional model listing through `Provider::discovery()` |
 | `LanguageModel` | `do_generate`, `do_stream` | Text generation |
 | `EmbeddingModel` | `do_embed` | Vector embedding |
 | `SpeechModel` | `do_generate` | Speech synthesis |
@@ -295,14 +359,11 @@ The Rust core provides 10 traits/interfaces, implemented by each provider as nee
 
 The user-facing API consists of the `generate_text()` / `stream_text()` free functions, which internally call the trait methods.
 
-> The multimodal accessors in the examples (`provider.embedding_model(...)`,
-> `provider.speech(...)`, `provider.image(...)`, `provider.transcription(...)`,
-> `provider.files()`, `provider.reranking_model(...)`,
-> `provider.search_model(...)`, `provider.video(...)`) are **inherent methods
-> on each provider struct**, not trait methods — they exist only on providers
-> that support the feature (e.g. `OpenAIProvider` has `embedding_model` /
-> `speech` / `image` / `transcription` / `files`; `CohereProvider` has
-> `embedding_model` / `reranking_model`; `BedrockProvider` has `image`).
+Concrete provider accessors such as `embedding`, `speech`, `image`,
+`transcription`, `reranking` and `video` are inherent methods on the vendors
+that offer them. Through `Provider`, required model methods return `Result`;
+optional model methods return `Option<Result<…>>`, and `files()` returns
+`Option<Arc<dyn Files>>`.
 
 ## Types
 
@@ -313,7 +374,7 @@ Rust types are the canonical definitions — one module per feature in
 |------|------|
 | `generate` | `generate_text` / `stream_text` functions, `GenerateResult` |
 | `language_model` | `LanguageModel`, `GenerateTextResult` |
-| `stream_part` | `StreamPart` (18 variants) |
+| `stream_part` | `StreamPart` (provider layer), `TextStreamPart` (call layer) |
 | `options` | `GenerateTextOptions`, `CallOptions`, `ResponseFormat`, `ToolChoice`, `ReasoningEffort` |
 | `message` / `language_model_message` | `ModelMessage`, `ModelPrompt`, `MessageContent`, `Role` |
 | `content` | `ContentPart` (Text / Image / File / Reasoning / ToolCall / ToolResult) |

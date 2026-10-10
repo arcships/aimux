@@ -27,12 +27,10 @@ bytes = { workspace = true }
 tracing = { workspace = true }
 async-stream = { workspace = true }
 base64 = "0.22"
-sha2 = "0.10"
-hmac = "0.12"
-hex = "0.4"
 chrono = "0.4"
 url = { workspace = true }
 percent-encoding = "2"
+regex = "1"
 
 [features]
 default = ["realtime"]
@@ -50,6 +48,9 @@ tokio = { workspace = true }
 wiremock = "0.6"
 futures = { workspace = true }
 serial_test = { workspace = true }
+# SigV4 payload-hash assertions in the Bedrock / Anthropic-on-AWS tests.
+sha2 = "0.10"
+hex = "0.4"
 
 [lints]
 workspace = true

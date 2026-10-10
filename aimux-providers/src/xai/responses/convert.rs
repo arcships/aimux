@@ -8,7 +8,7 @@
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
-    AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
@@ -16,12 +16,12 @@ use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort, Warning};
 
+use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Value, json};
 
 use super::types::XaiResponsesUsage;
 use crate::xai::convert::{
-    remove_additional_properties_false, resolve_full_media_type, resolve_provider_reference,
-    supports_reasoning_effort,
+    remove_additional_properties_false, resolve_provider_reference, supports_reasoning_effort,
 };
 
 // ── Finish reason ────────────────────────────────────────────────────────────
@@ -276,7 +276,7 @@ fn prepare_provider_tool(
 fn xai_option(options: &Option<SharedProviderOptions>, key: &str) -> Option<Value> {
     options
         .as_ref()
-        .and_then(|m| m.get("xai"))
+        .and_then(|m| crate::xai::options::xai_options(Some(m)))
         .and_then(|o| o.get(key))
         .cloned()
 }
@@ -323,37 +323,25 @@ pub fn convert_to_xai_responses_input(
                                     use base64::Engine;
                                     let b64 =
                                         base64::engine::general_purpose::STANDARD.encode(bytes);
-                                    convert_image_part(
-                                        &file.media_type,
-                                        Some(&b64),
-                                        None,
-                                        &file.provider_options,
-                                    )
+                                    convert_image_part(file, Some(&b64), None)?
                                 }
                                 FileData::Data {
                                     data: FileBytes::Base64(data),
-                                } => convert_image_part(
-                                    &file.media_type,
-                                    Some(data),
-                                    None,
-                                    &file.provider_options,
-                                ),
+                                } => convert_image_part(file, Some(data), None)?,
                                 FileData::Url { url, .. }
-                                    if file.media_type.split('/').next() == Some("image") =>
+                                    if get_top_level_media_type(&file.media_type) == "image" =>
                                 {
-                                    convert_image_part(
-                                        &file.media_type,
-                                        None,
-                                        Some(url),
-                                        &file.provider_options,
-                                    )
+                                    convert_image_part(file, None, Some(url))?
                                 }
                                 FileData::Url { url, .. } => {
                                     json!({ "type": "input_file", "file_url": url })
                                 }
                                 FileData::Reference { reference } => {
-                                    let file_id = resolve_provider_reference(reference, "xai")
-                                        .map_err(AiMuxError::InvalidArgument)?;
+                                    let file_id = resolve_provider_reference(
+                                        reference,
+                                        crate::xai::options::NAMESPACE,
+                                    )
+                                    .map_err(AiMuxError::InvalidArgument)?;
                                     json!({ "type": "input_file", "file_id": file_id })
                                 }
                                 FileData::Text { .. } => {
@@ -373,11 +361,10 @@ pub fn convert_to_xai_responses_input(
                         AssistantPart::Text(TextPart {
                             text,
                             provider_options,
-                            ..
                         }) => {
                             let id = provider_options
                                 .as_ref()
-                                .and_then(|po| po.get("xai"))
+                                .and_then(|po| crate::xai::options::xai_options(Some(po)))
                                 .and_then(|x| x.get("itemId"))
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
@@ -401,7 +388,7 @@ pub fn convert_to_xai_responses_input(
                             let is_provider_executed = provider_executed.unwrap_or_else(|| {
                                 provider_options
                                     .as_ref()
-                                    .and_then(|po| po.get("xai"))
+                                    .and_then(|po| crate::xai::options::xai_options(Some(po)))
                                     .and_then(|x| x.get("providerExecuted"))
                                     .and_then(serde_json::Value::as_bool)
                                     .unwrap_or(false)
@@ -411,7 +398,7 @@ pub fn convert_to_xai_responses_input(
                             }
                             let id = provider_options
                                 .as_ref()
-                                .and_then(|po| po.get("xai"))
+                                .and_then(|po| crate::xai::options::xai_options(Some(po)))
                                 .and_then(|x| x.get("itemId"))
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
@@ -434,13 +421,13 @@ pub fn convert_to_xai_responses_input(
                         }) => {
                             let item_id = provider_options
                                 .as_ref()
-                                .and_then(|po| po.get("xai"))
+                                .and_then(|po| crate::xai::options::xai_options(Some(po)))
                                 .and_then(|x| x.get("itemId"))
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
                             let encrypted_content = provider_options
                                 .as_ref()
-                                .and_then(|po| po.get("xai"))
+                                .and_then(|po| crate::xai::options::xai_options(Some(po)))
                                 .and_then(|x| x.get("reasoningEncryptedContent"))
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
@@ -466,9 +453,17 @@ pub fn convert_to_xai_responses_input(
                                 });
                             }
                         }
-                        _ => {
+                        AssistantPart::File(_)
+                        | AssistantPart::Custom(_)
+                        | AssistantPart::ReasoningFile(_) => {
+                            let kind = match part {
+                                AssistantPart::File(_) => "file",
+                                AssistantPart::Custom(_) => "custom",
+                                AssistantPart::ReasoningFile(_) => "reasoning-file",
+                                _ => unreachable!(),
+                            };
                             warnings.push(Warning::Other {
-                                message: "xAI Responses API does not support this content type in assistant messages".to_string(),
+                                message: format!("xAI Responses API does not support {kind} in assistant messages"),
                             });
                         }
                     }
@@ -484,7 +479,7 @@ pub fn convert_to_xai_responses_input(
                     else {
                         continue;
                     };
-                    let output_value = convert_tool_result_output(output);
+                    let output_value = convert_tool_result_output(output)?;
                     input.push(json!({
                         "type": "function_call_output",
                         "call_id": tool_call_id,
@@ -498,8 +493,8 @@ pub fn convert_to_xai_responses_input(
     Ok((input, warnings))
 }
 
-fn convert_tool_result_output(output: &ToolResultOutput) -> Value {
-    match output {
+fn convert_tool_result_output(output: &ToolResultOutput) -> Result<Value, AiMuxError> {
+    Ok(match output {
         ToolResultOutput::ExecutionDenied { reason, .. } => {
             json!(reason.as_deref().unwrap_or("tool execution denied"))
         }
@@ -523,11 +518,7 @@ fn convert_tool_result_output(output: &ToolResultOutput) -> Value {
                                     }
                                     FileBytes::Base64(data) => data.clone(),
                                 };
-                                format!(
-                                    "data:{};base64,{}",
-                                    resolve_full_media_type(&part.media_type, &b64),
-                                    b64
-                                )
+                                format!("data:{};base64,{}", resolve_full_media_type(part)?, b64)
                             }
                             _ => continue,
                         };
@@ -539,19 +530,24 @@ fn convert_tool_result_output(output: &ToolResultOutput) -> Value {
             json!(parts)
         }
         _ => crate::openai::convert::tool_result_to_content(output),
-    }
+    })
 }
 
 fn convert_image_part(
-    media_type: &str,
+    file_part: &FilePart,
     b64_data: Option<&str>,
     url: Option<&str>,
-    provider_options: &Option<SharedProviderOptions>,
-) -> Value {
+) -> Result<Value, AiMuxError> {
+    let media_type = &file_part.media_type;
+    if get_top_level_media_type(media_type) != "image" {
+        return Err(AiMuxError::UnsupportedFunctionality(format!(
+            "file part media type {media_type} as inline data (xAI Responses requires a URL or a Files API reference for non-image files)"
+        )));
+    }
     let image_url = if let Some(url_str) = url {
         url_str.to_string()
     } else if let Some(b64) = b64_data {
-        let full_mt = resolve_full_media_type(media_type, b64);
+        let full_mt = resolve_full_media_type(file_part)?;
         format!("data:{full_mt};base64,{b64}")
     } else {
         String::new()
@@ -563,15 +559,16 @@ fn convert_image_part(
     });
 
     // Image detail provider option.
-    if let Some(detail) = provider_options
+    if let Some(detail) = file_part
+        .provider_options
         .as_ref()
-        .and_then(|po| po.get("xai"))
+        .and_then(|po| crate::xai::options::xai_options(Some(po)))
         .and_then(|x| x.get("imageDetail"))
     {
         part["detail"] = detail.clone();
     }
 
-    part
+    Ok(part)
 }
 
 // ── Request body builder ─────────────────────────────────────────────────────
@@ -600,9 +597,11 @@ pub fn build_responses_request_body(
         .as_ref()
         .map(|namespaces| {
             let mut namespaces = namespaces.clone();
-            if let Some(raw) = namespaces.get("xai") {
-                let parsed =
-                    crate::openai::convert::parse_option_fields(raw, "xai", |key, value| {
+            if let Some(raw) = namespaces.get(crate::xai::options::NAMESPACE) {
+                let parsed = crate::openai::convert::parse_option_fields(
+                    raw,
+                    crate::xai::options::NAMESPACE,
+                    |key, value| {
                         let valid = match key {
                             "reasoningEffort" => value.as_str().is_some_and(|s| {
                                 matches!(s, "none" | "low" | "medium" | "high" | "xhigh")
@@ -643,13 +642,28 @@ pub fn build_responses_request_body(
                             _ => return None,
                         };
                         Some(if valid { Ok(value.clone()) } else { Err(()) })
-                    })?;
-                namespaces.insert("xai".to_string(), parsed);
+                    },
+                )?;
+                namespaces.insert(crate::xai::options::NAMESPACE.to_string(), parsed);
             }
             Ok::<_, AiMuxError>(namespaces)
         })
         .transpose()?;
     let xai_opts = &parsed_options;
+
+    if options.frequency_penalty.is_some() {
+        warnings.push(Warning::Unsupported {
+            feature: "frequencyPenalty".to_string(),
+            details: None,
+        });
+    }
+
+    if options.presence_penalty.is_some() {
+        warnings.push(Warning::Unsupported {
+            feature: "presencePenalty".to_string(),
+            details: None,
+        });
+    }
 
     if options.stop_sequences.is_some() {
         warnings.push(Warning::Unsupported {
@@ -743,6 +757,9 @@ pub fn build_responses_request_body(
     }
     if let Some(tp) = options.top_p {
         body["top_p"] = json!(tp);
+    }
+    if let Some(tk) = options.top_k {
+        body["top_k"] = json!(tk);
     }
     if let Some(seed) = options.seed {
         body["seed"] = json!(seed);

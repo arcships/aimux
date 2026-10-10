@@ -418,21 +418,9 @@ impl DecisionResult {
 
 #[async_trait]
 pub trait DecisionModel: Send + Sync {
-    fn specification_version(&self) -> &'static str {
-        "v4"
-    }
     fn provider(&self) -> &str;
     fn model_id(&self) -> &str;
     fn capabilities(&self) -> DecisionCapabilities;
-    fn config_snapshot(&self) -> crate::recording::ProviderRecord {
-        let mut snapshot =
-            crate::recording::ProviderRecord::minimal(self.provider(), self.model_id());
-        snapshot.profile = Some(serde_json::json!({"decision_capabilities": self.capabilities()}));
-        snapshot
-    }
-    fn retry_config(&self) -> crate::retry::RetryConfig {
-        crate::retry::RetryConfig::default()
-    }
     /// Perform one provider attempt.
     /// # Errors
     /// Returns provider, transport or invalid response errors.
@@ -496,11 +484,7 @@ pub async fn decide(
     }
     let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
     let abort_signal = options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
     let context = crate::recording::recorder().map(|recorder| {
         let ctx =
             crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);
@@ -510,9 +494,12 @@ pub async fn decide(
             &options,
             model.provider(),
             model.model_id(),
+            &capabilities,
         );
-        ctx.recorder
-            .record_provider(&ctx.call_id, &model.config_snapshot());
+        ctx.recorder.record_provider(
+            &ctx.call_id,
+            &crate::recording::ProviderRecord::from_model(model.provider(), model.model_id()),
+        );
         ctx
     });
     let result = timeout::run(

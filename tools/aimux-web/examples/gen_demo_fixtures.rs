@@ -45,18 +45,12 @@ fn recording(
         call_id: call_id.into(),
         recorded_at: recorded_at.into(),
         input: InputRecord {
+            decision_capabilities: None,
             operation: Default::default(),
             prompt: prompt.clone(),
             options: serde_json::to_value(&options).unwrap(),
         },
-        provider: ProviderRecord {
-            provider: provider.into(),
-            model_id: model_id.into(),
-            base_url: None,
-            api_key_source: "none".into(),
-            profile: None,
-            provider_options: None,
-        },
+        provider: ProviderRecord::from_model(provider, model_id),
         exchanges: vec![HttpExchange {
             step: None,
             attempt: 0,

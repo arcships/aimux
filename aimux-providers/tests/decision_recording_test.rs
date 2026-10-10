@@ -42,9 +42,8 @@ fn response() -> Value {
     example().outcome.decision_result.unwrap()["response"]["body"].clone()
 }
 fn model(server: &MockServer) -> Box<dyn DecisionModel> {
-    let mut config =
+    let config =
         JevConfig::new("live-key-secret").with_endpoint(format!("{}/v1/systemone", server.uri()));
-    config.retry_config.initial_delay = Duration::ZERO;
     JevProvider::new(config)
         .decision_model("jev-latest")
         .unwrap()
@@ -82,6 +81,13 @@ async fn ring_records_one_complete_call_and_replays_exact_inputs_with_redaction(
     assert!(records[0].complete && records[0].transport_closed);
     assert_eq!(records[0].input.operation, RecordingOperation::Decision);
     assert!(records[0].input.prompt.is_empty());
+    assert!(records[0].input.decision_capabilities.is_some());
+    assert_eq!(
+        serde_json::to_value(&records[0].provider).unwrap(),
+        json!({
+            "provider_id": "jev", "provider": "jev", "model_id": "jev-latest"
+        })
+    );
     assert_eq!(records[0].exchanges.len(), 1);
     assert_eq!(records[0].exchanges[0].attempt, 1);
     assert_eq!(records[0].exchanges[0].exchange_index, 1);
@@ -110,7 +116,14 @@ async fn ring_records_one_complete_call_and_replays_exact_inputs_with_redaction(
 #[tokio::test]
 #[serial]
 async fn jsonl_flush_has_no_duplicate_placeholders_and_supports_offline_replay() {
-    let directory = std::env::temp_dir().join(recording::new_call_id());
+    let directory = std::env::temp_dir().join(format!(
+        "aimux-decision-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     let recorder = Arc::new(JsonlRecorder::new(&directory));
     recording::init_recording(Some(recorder.clone()));
     let _stop = StopRecording;
@@ -224,7 +237,7 @@ async fn failed_response_and_timeout_have_complete_error_recordings() {
 
 #[tokio::test]
 #[serial]
-async fn recorded_native_calls_replay_offline_and_provider_rebuild_preserves_endpoint() {
+async fn recorded_native_calls_replay_offline_and_rebuild_uses_registered_endpoint() {
     recording::init_recording(None);
     let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/jev_systemone_live.jsonl");
@@ -238,12 +251,17 @@ async fn recorded_native_calls_replay_offline_and_provider_rebuild_preserves_end
         );
         let server = MockServer::start().await;
         common::replay::mount_recording(&server, &rec).await;
-        let mut snapshot = rec.provider.clone();
-        snapshot.base_url = Some(format!("{}/v1/systemone", server.uri()));
-        snapshot.provider_options =
-            Some(json!({"headers": {"X-Routing": "billing", "Authorization": "[REDACTED]"}}));
-        let model =
-            aimux_providers::rebuild_decision_provider(&snapshot, Some("test-key")).unwrap();
+        let mut config =
+            JevConfig::new("test-key").with_endpoint(format!("{}/v1/systemone", server.uri()));
+        config.headers.insert("X-Routing".into(), "billing".into());
+        let registry = aimux_core::create_provider_registry(
+            std::collections::BTreeMap::from([(
+                "jev".into(),
+                Arc::new(JevProvider::new(config)) as Arc<dyn Provider>,
+            )]),
+            Default::default(),
+        );
+        let model = aimux_providers::rebuild_decision_provider(&rec.provider, &registry).unwrap();
         replay_decision_with_model(&rec, model.as_ref())
             .await
             .unwrap();

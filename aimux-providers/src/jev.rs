@@ -22,7 +22,6 @@ pub struct JevConfig {
     /// Full POST URL for the official API, or an explicitly configured proxy.
     pub endpoint: String,
     pub headers: HashMap<String, String>,
-    pub retry_config: aimux_core::retry::RetryConfig,
     pub probability_source: DecisionProbabilitySource,
 }
 
@@ -33,7 +32,6 @@ impl JevConfig {
             api_key: api_key.into(),
             endpoint: "https://api.typesafe.ai/v1/systemone".into(),
             headers: HashMap::new(),
-            retry_config: Default::default(),
             probability_source: DecisionProbabilitySource::Native,
         }
     }
@@ -64,9 +62,9 @@ impl JevProvider {
 }
 
 impl Provider for JevProvider {
-    fn name(&self) -> &str {
-        "jev"
-    }
+    crate::__unsupported_required_model!(language_model, LanguageModel, "languageModel");
+    crate::__unsupported_required_model!(embedding_model, EmbeddingModel, "embeddingModel");
+    crate::__unsupported_required_model!(image_model, ImageModel, "imageModel");
 
     fn decision_model(&self, model_id: &str) -> Result<Box<dyn DecisionModel>, AiMuxError> {
         if model_id.trim().is_empty() {
@@ -303,23 +301,6 @@ impl DecisionModel for JevDecisionModel {
     }
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        let mut snapshot =
-            aimux_core::recording::ProviderRecord::minimal(self.provider(), self.model_id());
-        snapshot.base_url = Some(self.config.endpoint.clone());
-        snapshot.api_key_source = if self.config.api_key.is_empty() {
-            "none"
-        } else {
-            "explicit"
-        }
-        .into();
-        snapshot.profile = Some(json!({"decision_capabilities": self.capabilities()}));
-        snapshot.provider_options = Some(json!({"headers": self.config.headers}));
-        snapshot
-    }
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
     fn capabilities(&self) -> DecisionCapabilities {
         DecisionCapabilities {

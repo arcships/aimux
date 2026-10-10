@@ -34,6 +34,7 @@ use aimux_core::message::ModelPrompt;
 use aimux_core::openai_output::OpenAiStreamOptions;
 use aimux_core::parse_tool_call::{ToolCallRepairReply, tool_call_repair_inputs};
 use aimux_core::tool::ToolCall;
+use aimux_providers::provider as providers;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
@@ -569,8 +570,6 @@ impl Model {
     }
 }
 
-type StreamReceiver = tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>;
-
 /// AsyncGenerator that yields StreamPart JSON strings.
 ///
 /// The stream is started eagerly in `stream_text()` — a tokio task drives
@@ -578,8 +577,15 @@ type StreamReceiver = tokio::sync::mpsc::Receiver<std::result::Result<String, Ai
 /// receives from the channel.
 #[napi(async_iterator)]
 pub struct StreamTextGenerator {
-    rx: std::sync::Arc<tokio::sync::Mutex<Option<StreamReceiver>>>,
+    rx: SharedStreamReceiver,
 }
+
+/// The channel end `next()` drains; `None` once the stream is exhausted.
+type SharedStreamReceiver = std::sync::Arc<
+    tokio::sync::Mutex<
+        Option<tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>>,
+    >,
+>;
 
 #[napi]
 impl AsyncGenerator for StreamTextGenerator {
@@ -631,42 +637,81 @@ pub struct ProviderConfig {
     pub organization: Option<String>,
     /// OpenAI project ID (sent via `OpenAI-Project` header).
     pub project: Option<String>,
-    /// Override the provider's retry count. `0` disables retries.
+    /// Values of a preset's template parameters, named as the registry
+    /// declares them (e.g. `{ account_id: '…' }`), for providers created by
+    /// name (`provider()` / `createProvider()`). Only parameters the preset
+    /// declares are accepted.
+    pub params: Option<std::collections::HashMap<String, String>>,
+    /// Rejected with `InvalidArgumentError`: retry is a per-call setting
+    /// (`maxRetries` in the call options). The field exists only so passing it
+    /// is reported instead of ignored.
     pub max_retries: Option<u32>,
-    /// Provider-level request body overrides as a JSON string (deep-merged
-    /// into every request). Per-call `bodyOverrides` in GenerateTextOptions
-    /// takes precedence. Pass a JSON object string, e.g.
-    /// `'{"enable_thinking": false}'`.
+    /// Rejected with `InvalidArgumentError`: request-body overrides were
+    /// removed. The field exists only so passing it is reported instead of
+    /// ignored.
     pub body_overrides: Option<String>,
 }
 
-/// Convert a ProviderConfig (from JS) into OpenAIConfig builder steps.
-fn apply_provider_config_openai(
-    mut config: aimux_providers::openai::OpenAIConfig,
-    cfg: &ProviderConfig,
-) -> MResult<aimux_providers::openai::OpenAIConfig> {
-    if let Some(url) = &cfg.base_url {
-        config = config.with_base_url(url);
+impl ProviderConfig {
+    /// Fail on the two removed keys instead of dropping them silently.
+    fn reject_removed_keys(&self) -> MResult<()> {
+        providers::reject_removed_provider_options(
+            self.max_retries.is_some(),
+            self.body_overrides.is_some(),
+        )
+        .map_err(|e| AiMuxBindingError::from(&e))
     }
-    if let Some(ref json_str) = cfg.headers {
-        let h: std::collections::HashMap<String, String> =
-            parse_wire_json("config.headers", json_str)?;
-        config = config.with_headers(h);
+}
+
+/// What the native constructors take from their 3rd argument (a base URL
+/// string, or a [`ProviderConfig`]). Every native constructor goes through
+/// here, so `maxRetries` / `bodyOverrides` are rejected for all of them and
+/// none of them drops a key silently.
+struct NativeConfig {
+    base_url: Option<String>,
+    headers: Option<aimux_provider_utils::HeaderMapOpt>,
+    /// OpenAI only (`OpenAI-Organization` / `OpenAI-Project`).
+    organization: Option<String>,
+    project: Option<String>,
+}
+
+fn native_config(config: Option<Either<String, ProviderConfig>>) -> MResult<NativeConfig> {
+    let mut native = NativeConfig {
+        base_url: None,
+        headers: None,
+        organization: None,
+        project: None,
+    };
+    match config {
+        None => {}
+        Some(Either::A(url)) => native.base_url = Some(url),
+        Some(Either::B(cfg)) => {
+            cfg.reject_removed_keys()?;
+            native.base_url = cfg.base_url;
+            if let Some(json_str) = &cfg.headers {
+                let h: std::collections::HashMap<String, String> =
+                    parse_wire_json("config.headers", json_str)?;
+                native.headers = Some(h.into_iter().map(|(k, v)| (k, Some(v))).collect());
+            }
+            native.organization = cfg.organization;
+            native.project = cfg.project;
+        }
     }
-    if let Some(ref org) = cfg.organization {
-        config = config.with_org_id(org);
+    Ok(native)
+}
+
+/// OpenAI provider settings for an explicit key handed over by the host, with
+/// an optional base URL. The key is an explicit value (`""` included), so it
+/// never falls back to `OPENAI_API_KEY`.
+fn openai_settings(
+    api_key: String,
+    base_url: Option<String>,
+) -> aimux_providers::openai::OpenAIProviderSettings {
+    aimux_providers::openai::OpenAIProviderSettings {
+        api_key: Some(api_key),
+        base_url,
+        ..Default::default()
     }
-    if let Some(ref proj) = cfg.project {
-        config = config.with_project(proj);
-    }
-    if let Some(max) = cfg.max_retries {
-        config.retry_config.max_retries = max;
-    }
-    if let Some(ref json_str) = cfg.body_overrides {
-        let overrides: serde_json::Value = parse_wire_json("config.bodyOverrides", json_str)?;
-        config = config.with_body_overrides(overrides);
-    }
-    Ok(config)
 }
 
 /// 初始化全局日志（RFC-0014）。幂等：多次调用无副作用；宿主已自建
@@ -718,7 +763,7 @@ pub fn register_providers(config_json: String) -> error::AimuxResult<()> {
         // schema mismatch as `JsonParse`, which is core's InvalidArgument
         // here (the text already parsed) — JsonParse is for provider responses.
         let _: serde_json::Value = parse_wire_json("config_json", &config_json)?;
-        aimux_providers::load_providers_from_json(&config_json).map_err(|e| match e {
+        providers::load_providers_from_json(&config_json).map_err(|e| match e {
             AiMuxError::JsonParse(m) => crate::error::AiMuxBindingError::from(
                 &AiMuxError::InvalidArgument(format!("config_json: {m}")),
             ),
@@ -947,19 +992,15 @@ struct RouterFfiConfig {
 /// or no store is registered.
 #[napi]
 pub fn session_calls(session_id: String) -> AimuxResult<String> {
-    AimuxResult({
-        let calls = aimux_core::session::session_calls(&session_id);
-        serialize_result(&calls)
-    })
+    AimuxResult(serialize_result(&aimux_core::session::session_calls(
+        &session_id,
+    )))
 }
 
 /// Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`.
 #[napi]
 pub fn list_sessions() -> AimuxResult<String> {
-    AimuxResult({
-        let views = aimux_core::session::list_sessions();
-        serialize_result(&views)
-    })
+    AimuxResult(serialize_result(&aimux_core::session::list_sessions()))
 }
 
 /// Create an OpenAI model instance.
@@ -972,24 +1013,19 @@ pub async fn openai(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
+            use aimux_providers::openai::create_openai;
 
-            let mut cfg = OpenAIConfig::new(api_key);
-            match config {
-                Some(Either::A(url)) => {
-                    cfg = cfg.with_base_url(url);
-                }
-                Some(Either::B(opts)) => {
-                    cfg = apply_provider_config_openai(cfg, &opts)?;
-                }
-                None => {}
-            }
-            let provider = OpenAIProvider::new(cfg);
-            let model = provider
-                .language_model(&model_id)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
+            let mut settings = openai_settings(api_key, None);
+            let native = native_config(config)?;
+            settings.base_url = native.base_url;
+            settings.headers = native.headers;
+            settings.organization = native.organization;
+            settings.project = native.project;
+            let provider = create_openai(settings).map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
-                inner: Arc::from(model),
+                inner: provider
+                    .language_model(&model_id)
+                    .map_err(|e| AiMuxBindingError::from(&e))?,
                 trace_store: None,
             })
         }
@@ -1008,39 +1044,21 @@ pub async fn anthropic(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
+            use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 
-            let mut cfg = AnthropicConfig::new(api_key);
-            match config {
-                Some(Either::A(url)) => {
-                    cfg = cfg.with_base_url(url);
-                }
-                Some(Either::B(opts)) => {
-                    if let Some(url) = &opts.base_url {
-                        cfg = cfg.with_base_url(url);
-                    }
-                    if let Some(ref json_str) = opts.headers {
-                        let h: std::collections::HashMap<String, String> =
-                            parse_wire_json("config.headers", json_str)?;
-                        cfg = cfg.with_headers(h);
-                    }
-                    if let Some(max) = opts.max_retries {
-                        cfg.retry_config.max_retries = max;
-                    }
-                    if let Some(ref json_str) = opts.body_overrides {
-                        let overrides: serde_json::Value =
-                            parse_wire_json("config.bodyOverrides", json_str)?;
-                        cfg = cfg.with_body_overrides(overrides);
-                    }
-                }
-                None => {}
-            }
-            let provider = AnthropicProvider::new(cfg);
+            let mut settings = AnthropicProviderSettings {
+                api_key: Some(api_key),
+                ..Default::default()
+            };
+            let native = native_config(config)?;
+            settings.base_url = native.base_url;
+            settings.headers = native.headers;
+            let provider = create_anthropic(settings).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
-                inner: Arc::from(model),
+                inner: model,
                 trace_store: None,
             })
         }
@@ -1059,10 +1077,10 @@ pub async fn deepseek(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             let options = provider_options_from_config(config)?;
-            let model = aimux_providers::provider("deepseek", Some(api_key), &model_id, options)
+            let model = providers::provider("deepseek", Some(api_key), &model_id, options)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
-                inner: Arc::from(model),
+                inner: model,
                 trace_store: None,
             })
         }
@@ -1085,26 +1103,21 @@ pub async fn google(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::google::{GoogleConfig, GoogleProvider};
+            use aimux_providers::google::{GoogleProviderSettings, create_google};
 
-            let mut cfg = GoogleConfig::new(api_key);
-            match config {
-                Some(Either::A(url)) => {
-                    cfg = cfg.with_base_url(url);
-                }
-                Some(Either::B(opts)) => {
-                    if let Some(url) = &opts.base_url {
-                        cfg = cfg.with_base_url(url);
-                    }
-                }
-                None => {}
-            }
-            let provider = GoogleProvider::new(cfg);
+            let mut settings = GoogleProviderSettings {
+                api_key: Some(api_key),
+                ..Default::default()
+            };
+            let native = native_config(config)?;
+            settings.base_url = native.base_url;
+            settings.headers = native.headers;
+            let provider = create_google(settings).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
-                inner: Arc::from(model),
+                inner: model,
                 trace_store: None,
             })
         }
@@ -1123,26 +1136,21 @@ pub async fn cohere(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::cohere::{CohereConfig, CohereProvider};
+            use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
 
-            let mut cfg = CohereConfig::new(api_key);
-            match config {
-                Some(Either::A(url)) => {
-                    cfg = cfg.with_base_url(url);
-                }
-                Some(Either::B(opts)) => {
-                    if let Some(url) = &opts.base_url {
-                        cfg = cfg.with_base_url(url);
-                    }
-                }
-                None => {}
-            }
-            let provider = CohereProvider::new(cfg);
+            let mut cfg = CohereProviderSettings {
+                api_key: Some(api_key),
+                ..Default::default()
+            };
+            let native = native_config(config)?;
+            cfg.base_url = native.base_url;
+            cfg.headers = native.headers;
+            let provider = create_cohere(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
-                inner: Arc::from(model),
+                inner: model,
                 trace_store: None,
             })
         }
@@ -1161,26 +1169,21 @@ pub async fn mistral(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::mistral::{MistralConfig, MistralProvider};
+            use aimux_providers::mistral::{MistralProviderSettings, create_mistral};
 
-            let mut cfg = MistralConfig::new(api_key);
-            match config {
-                Some(Either::A(url)) => {
-                    cfg = cfg.with_base_url(url);
-                }
-                Some(Either::B(opts)) => {
-                    if let Some(url) = &opts.base_url {
-                        cfg = cfg.with_base_url(url);
-                    }
-                }
-                None => {}
-            }
-            let provider = MistralProvider::new(cfg);
+            let mut cfg = MistralProviderSettings {
+                api_key: Some(api_key),
+                ..Default::default()
+            };
+            let native = native_config(config)?;
+            cfg.base_url = native.base_url;
+            cfg.headers = native.headers;
+            let provider = create_mistral(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
-                inner: Arc::from(model),
+                inner: model,
                 trace_store: None,
             })
         }
@@ -1199,26 +1202,21 @@ pub async fn xai(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::xai::{XAIConfig, XAIProvider};
+            use aimux_providers::xai::{XAIProviderSettings, create_xai};
 
-            let mut cfg = XAIConfig::new(api_key);
-            match config {
-                Some(Either::A(url)) => {
-                    cfg = cfg.with_base_url(url);
-                }
-                Some(Either::B(opts)) => {
-                    if let Some(url) = &opts.base_url {
-                        cfg = cfg.with_base_url(url);
-                    }
-                }
-                None => {}
-            }
-            let provider = XAIProvider::new(cfg);
+            let mut cfg = XAIProviderSettings {
+                api_key: Some(api_key),
+                ..Default::default()
+            };
+            let native = native_config(config)?;
+            cfg.base_url = native.base_url;
+            cfg.headers = native.headers;
+            let provider = create_xai(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
-                inner: Arc::from(model),
+                inner: model,
                 trace_store: None,
             })
         }
@@ -1239,27 +1237,30 @@ pub async fn bedrock(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::bedrock::{BedrockProvider, BedrockProviderConfig};
+            use aimux_providers::bedrock::{AmazonBedrockProviderSettings, create_amazon_bedrock};
 
-            let mut cfg = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
-            if let Some(cfg_config) = config {
-                match cfg_config {
-                    Either::A(url) => {
-                        cfg = cfg.with_base_url(url);
-                    }
-                    Either::B(opts) => {
-                        if let Some(url) = &opts.base_url {
-                            cfg = cfg.with_base_url(url);
-                        }
-                    }
-                }
-            }
-            let provider = BedrockProvider::new(cfg);
+            let mut settings = AmazonBedrockProviderSettings {
+                credential_provider: Some(aimux_provider_utils::Resolvable::Value(
+                    aimux_provider_utils::AwsCredentials {
+                        access_key_id,
+                        secret_access_key,
+                        session_token: None,
+                        region: region.clone(),
+                    },
+                )),
+                region: Some(region),
+                ..Default::default()
+            };
+            let native = native_config(config)?;
+            settings.base_url = native.base_url;
+            settings.headers = native.headers;
+            let provider =
+                create_amazon_bedrock(settings).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
-                inner: Arc::from(model),
+                inner: model,
                 trace_store: None,
             })
         }
@@ -1280,27 +1281,24 @@ pub async fn vertex(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::vertex::{VertexProvider, VertexProviderConfig};
+            use aimux_providers::vertex::{VertexProviderSettings, create_google_vertex};
 
-            let mut cfg = VertexProviderConfig::new(access_token, project, location);
-            if let Some(cfg_config) = config {
-                match cfg_config {
-                    Either::A(url) => {
-                        cfg = cfg.with_base_url(url);
-                    }
-                    Either::B(opts) => {
-                        if let Some(url) = &opts.base_url {
-                            cfg = cfg.with_base_url(url);
-                        }
-                    }
-                }
-            }
-            let provider = VertexProvider::new(cfg);
+            let mut settings = VertexProviderSettings {
+                access_token: Some(aimux_provider_utils::Resolvable::Value(access_token)),
+                project: Some(project),
+                location: Some(location),
+                ..Default::default()
+            };
+            let native = native_config(config)?;
+            settings.base_url = native.base_url;
+            settings.headers = native.headers.map(aimux_provider_utils::Resolvable::Value);
+            let provider =
+                create_google_vertex(settings).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
-                inner: Arc::from(model),
+                inner: model,
                 trace_store: None,
             })
         }
@@ -1321,28 +1319,26 @@ pub async fn anthropic_aws(
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
             use aimux_providers::anthropic_aws::{
-                AnthropicAwsProvider, AnthropicAwsProviderConfig,
+                AnthropicAwsAuth, AnthropicAwsProviderSettings, create_anthropic_aws,
             };
 
-            let mut cfg = AnthropicAwsProviderConfig::with_api_key(api_key, region);
-            if let Some(cfg_config) = config {
-                match cfg_config {
-                    Either::A(url) => {
-                        cfg = cfg.with_base_url(url);
-                    }
-                    Either::B(opts) => {
-                        if let Some(url) = &opts.base_url {
-                            cfg = cfg.with_base_url(url);
-                        }
-                    }
-                }
-            }
-            let provider = AnthropicAwsProvider::new(cfg);
+            let mut settings = AnthropicAwsProviderSettings {
+                region: Some(region),
+                auth: Some(AnthropicAwsAuth::ApiKey(
+                    aimux_provider_utils::Resolvable::Value(api_key),
+                )),
+                ..Default::default()
+            };
+            let native = native_config(config)?;
+            settings.base_url = native.base_url;
+            settings.headers = native.headers;
+            let provider =
+                create_anthropic_aws(settings).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&model_id)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
-                inner: Arc::from(model),
+                inner: model,
                 trace_store: None,
             })
         }
@@ -1365,34 +1361,31 @@ pub async fn azure(
     AimuxResult({
         let __r: crate::error::MResult<Model> = async {
             use aimux_core::provider::Provider;
-            use aimux_providers::azure::{AzureConfig, AzureProvider};
+            use aimux_providers::azure::{AzureOpenAIProviderSettings, create_azure};
 
-            let mut cfg = AzureConfig::new().with_api_key(api_key);
-            match config {
-                Some(Either::A(url)) => {
-                    cfg = cfg.with_base_url(url);
-                }
-                Some(Either::B(opts)) => {
-                    if let Some(url) = &opts.base_url {
-                        cfg = cfg.with_base_url(url);
-                    }
-                }
-                None => {}
-            }
+            let mut cfg = AzureOpenAIProviderSettings {
+                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
+                ..Default::default()
+            };
+            let native = native_config(config)?;
+            cfg.base_url = native.base_url;
+            cfg.headers = native.headers;
+            // A dated `api_version` belongs to the deployment URL form.
             if let Some(version) = api_version
                 && !version.is_empty()
             {
-                cfg = cfg.with_api_version(version);
+                cfg.api_version = Some(version);
+                cfg.use_deployment_based_urls = true;
             }
             if !resource_name.is_empty() {
-                cfg = cfg.with_resource_name(resource_name);
+                cfg.resource_name = Some(resource_name);
             }
-            let provider = AzureProvider::new(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
+            let provider = create_azure(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&deployment)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
-                inner: Arc::from(model),
+                inner: model,
                 trace_store: None,
             })
         }
@@ -1417,10 +1410,10 @@ pub async fn provider(
                 Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
                 None => None,
             };
-            let model = aimux_providers::provider(&name, api_key, &model_id, options)
+            let model = providers::provider(&name, api_key, &model_id, options)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
-                inner: Arc::from(model),
+                inner: model,
                 trace_store: None,
             })
         }
@@ -1460,6 +1453,12 @@ impl ProviderHandle {
             let __r: crate::error::MResult<String> = async {
                 let models = self
                     .inner
+                    .discovery()
+                    .ok_or_else(|| {
+                        AiMuxBindingError::from(AiMuxError::UnsupportedFunctionality(
+                            "provider does not support listing models".into(),
+                        ))
+                    })?
                     .list_models()
                     .await
                     .map_err(|e| AiMuxBindingError::from(&e))?;
@@ -1481,7 +1480,7 @@ impl ProviderHandle {
                     .language_model(&model_id)
                     .map_err(|e| AiMuxBindingError::from(&e))?;
                 Ok(Model {
-                    inner: Arc::from(m),
+                    inner: m,
                     // A model built from a provider handle starts untraced; enable
                     // probing via `Model::trace()` (same as Python binding).
                     trace_store: None,
@@ -1512,11 +1511,9 @@ pub async fn create_provider(
                 Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
                 None => None,
             };
-            let p = aimux_providers::provider_handle(&name, api_key, options)
+            let inner = providers::provider_handle(&name, api_key, options)
                 .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(ProviderHandle {
-                inner: Arc::from(p),
-            })
+            Ok(ProviderHandle { inner })
         }
         .await;
         __r
@@ -1543,15 +1540,16 @@ pub async fn get_model_specs(source_url: Option<String>) -> AimuxResult<String> 
 /// Build `ProviderOptions` from a Node `ProviderConfig` (3rd factory arg).
 fn provider_options_from_config(
     config: Option<Either<String, ProviderConfig>>,
-) -> MResult<Option<aimux_providers::ProviderOptions>> {
+) -> MResult<Option<providers::ProviderOptions>> {
     let opts = match config {
         None => None,
-        Some(Either::A(url)) => Some(aimux_providers::ProviderOptions {
+        Some(Either::A(url)) => Some(providers::ProviderOptions {
             base_url: Some(url),
             ..Default::default()
         }),
         Some(Either::B(cfg)) => {
-            let mut o = aimux_providers::ProviderOptions::default();
+            cfg.reject_removed_keys()?;
+            let mut o = providers::ProviderOptions::default();
             if let Some(url) = cfg.base_url {
                 o.base_url = Some(url);
             }
@@ -1564,12 +1562,7 @@ fn provider_options_from_config(
             if let Some(proj) = cfg.project {
                 o.project = Some(proj);
             }
-            if let Some(max) = cfg.max_retries {
-                o.max_retries = Some(max);
-            }
-            if let Some(ref json_str) = cfg.body_overrides {
-                o.body_overrides = Some(parse_wire_json("config.bodyOverrides", json_str)?);
-            }
+            o.params = cfg.params;
             Some(o)
         }
     };

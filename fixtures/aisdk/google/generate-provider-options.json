@@ -1,0 +1,138 @@
+{
+  "case": "generate-provider-options",
+  "model": {
+    "modelId": "gemini-2.5-flash",
+    "provider": "google.generative-ai"
+  },
+  "package": "@ai-sdk/google",
+  "request": {
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Say hello."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "thinkingConfig": {
+          "includeThoughts": true,
+          "thinkingBudget": 1024
+        }
+      },
+      "safetySettings": [
+        {
+          "category": "HARM_CATEGORY_HATE_SPEECH",
+          "threshold": "BLOCK_ONLY_HIGH"
+        }
+      ]
+    },
+    "headers": {
+      "content-type": "application/json",
+      "user-agent": "ai/7.0.127 ai-sdk-provider-utils/5.0.53 node.js/22",
+      "x-goog-api-key": "<redacted>"
+    },
+    "method": "POST",
+    "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+  },
+  "response": {
+    "body": {
+      "candidates": [
+        {
+          "content": {
+            "parts": [
+              {
+                "text": "Hello! How can I help you today?"
+              }
+            ],
+            "role": "model"
+          },
+          "finishReason": "STOP",
+          "index": 0
+        }
+      ],
+      "modelVersion": "gemini-2.5-flash",
+      "responseId": "resp-fixture-1",
+      "usageMetadata": {
+        "candidatesTokenCount": 3,
+        "promptTokenCount": 4,
+        "totalTokenCount": 7
+      }
+    },
+    "headers": {
+      "content-type": "application/json"
+    },
+    "status": 200
+  },
+  "result": {
+    "content": [
+      {
+        "text": "Hello! How can I help you today?",
+        "type": "text"
+      }
+    ],
+    "finishReason": "stop",
+    "providerMetadata": {
+      "google": {
+        "finishMessage": null,
+        "groundingMetadata": null,
+        "promptFeedback": null,
+        "safetyRatings": null,
+        "serviceTier": null,
+        "urlContextMetadata": null,
+        "usageMetadata": {
+          "candidatesTokenCount": 3,
+          "promptTokenCount": 4,
+          "totalTokenCount": 7
+        }
+      }
+    },
+    "rawFinishReason": "STOP",
+    "response": {
+      "headers": {
+        "content-type": "application/json"
+      },
+      "id": "resp-fixture-1",
+      "modelId": "gemini-2.5-flash"
+    },
+    "text": "Hello! How can I help you today?",
+    "usage": {
+      "inputTokenDetails": {
+        "cacheReadTokens": 0,
+        "noCacheTokens": 4
+      },
+      "inputTokens": 4,
+      "outputTokenDetails": {
+        "reasoningTokens": 0,
+        "textTokens": 3
+      },
+      "outputTokens": 3,
+      "totalTokens": 7
+    },
+    "warnings": []
+  },
+  "sdk": {
+    "input": {
+      "prompt": "Say hello.",
+      "providerOptions": {
+        "google": {
+          "safetySettings": [
+            {
+              "category": "HARM_CATEGORY_HATE_SPEECH",
+              "threshold": "BLOCK_ONLY_HIGH"
+            }
+          ],
+          "thinkingConfig": {
+            "includeThoughts": true,
+            "thinkingBudget": 1024
+          }
+        }
+      }
+    },
+    "operation": "generateText"
+  },
+  "version": "4.0.87"
+}

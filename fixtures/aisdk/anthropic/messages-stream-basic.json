@@ -1,0 +1,166 @@
+{
+  "case": "messages-stream-basic",
+  "model": {
+    "modelId": "claude-sonnet-4-5",
+    "provider": "anthropic.messages"
+  },
+  "package": "@ai-sdk/anthropic",
+  "request": {
+    "body": {
+      "max_tokens": 64000,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Say hello.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "stream": true
+    },
+    "headers": {
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+      "user-agent": "ai-sdk-anthropic/4.0.71 ai-sdk-provider-utils/5.0.53 node.js/22",
+      "x-api-key": "<redacted>"
+    },
+    "method": "POST",
+    "url": "https://api.anthropic.com/v1/messages"
+  },
+  "response": {
+    "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_fixture_2\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":12,\"output_tokens\":1}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: ping\ndata: {\"type\":\"ping\"}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" world\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":2}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+    "headers": {
+      "cache-control": "no-cache",
+      "content-type": "text/event-stream"
+    },
+    "status": 200
+  },
+  "result": {
+    "finishReason": "stop",
+    "parts": [
+      {
+        "type": "start"
+      },
+      {
+        "request": {},
+        "type": "start-step",
+        "warnings": []
+      },
+      {
+        "id": "0",
+        "type": "text-start"
+      },
+      {
+        "id": "0",
+        "text": "Hello",
+        "type": "text-delta"
+      },
+      {
+        "id": "0",
+        "text": " world",
+        "type": "text-delta"
+      },
+      {
+        "id": "0",
+        "type": "text-end"
+      },
+      {
+        "finishReason": "stop",
+        "performance": {
+          "effectiveOutputTokensPerSecond": 0,
+          "effectiveTotalTokensPerSecond": 0,
+          "inputTokensPerSecond": 0,
+          "outputTokensPerSecond": 0,
+          "responseTimeMs": 0,
+          "stepTimeMs": 0,
+          "timeBetweenOutputChunksMs": {
+            "avg": 0,
+            "max": 0,
+            "median": 0,
+            "min": 0,
+            "p10": 0,
+            "p90": 0
+          },
+          "timeToFirstOutputMs": 0,
+          "toolExecutionMs": {}
+        },
+        "providerMetadata": {
+          "anthropic": {
+            "container": null,
+            "contextManagement": null,
+            "iterations": null,
+            "stopSequence": null,
+            "usage": {
+              "input_tokens": 12,
+              "output_tokens": 2
+            }
+          }
+        },
+        "rawFinishReason": "end_turn",
+        "response": {
+          "headers": {
+            "cache-control": "no-cache",
+            "content-type": "text/event-stream"
+          },
+          "id": "msg_fixture_2",
+          "modelId": "claude-sonnet-4-5",
+          "timestamp": "2025-01-01T00:00:00.000Z"
+        },
+        "type": "finish-step",
+        "usage": {
+          "inputTokenDetails": {
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "noCacheTokens": 12
+          },
+          "inputTokens": 12,
+          "outputTokenDetails": {},
+          "outputTokens": 2,
+          "raw": {
+            "input_tokens": 12,
+            "output_tokens": 2
+          },
+          "totalTokens": 14
+        }
+      },
+      {
+        "finishReason": "stop",
+        "rawFinishReason": "end_turn",
+        "totalUsage": {
+          "inputTokenDetails": {
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "noCacheTokens": 12
+          },
+          "inputTokens": 12,
+          "outputTokenDetails": {},
+          "outputTokens": 2,
+          "totalTokens": 14
+        },
+        "type": "finish"
+      }
+    ],
+    "usage": {
+      "inputTokenDetails": {
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "noCacheTokens": 12
+      },
+      "inputTokens": 12,
+      "outputTokenDetails": {},
+      "outputTokens": 2,
+      "totalTokens": 14
+    }
+  },
+  "sdk": {
+    "input": {
+      "prompt": "Say hello."
+    },
+    "operation": "streamText"
+  },
+  "version": "4.0.71"
+}

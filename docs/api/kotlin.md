@@ -1,6 +1,6 @@
 # aimux · Kotlin API
 
-> Unified LLM service access layer — one API to access 325 AI providers
+> Unified LLM service access layer — one API to access AI providers
 
 Kotlin wraps the Rust core through the `aimux-ffi` C ABI (via JNA).
 
@@ -27,11 +27,10 @@ Model.openai("sk-...", "gpt-4o", "http://localhost:3000").use { model ->
 
 ## Providers
 
-All 251 registry-backed OpenAI-compatible providers are reachable by string name:
+The vendor packages and 281 registry-backed OpenAI-compatible providers are reachable by string name:
 
-> **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
-> providers; Anthropic/Google/multimodal/local → typed factories
-> (`Model.anthropic(apiKey, modelId)`); custom endpoints → base-URL variant.
+> **Scope:** `provider(name)` reaches vendor packages and the 281 preset rows;
+> typed factories remain available. Custom endpoints use the base-URL variant.
 > Full list: [providers.md](providers.md).
 
 ```kotlin
@@ -53,7 +52,7 @@ Two aimux exception types, each mirroring its own Rust type — **AiMux**
 (`AimuxException`) and **recorder** (`RecordingException`). They share no base
 beyond `RuntimeException`; catch each on its own. Every fallible C call returns
 an `aimux_error_t *` (null = success, result in the out-parameter). The
-binding reads one unified code: 1..17 restores an `AimuxException` subclass,
+binding reads one unified code: 1..19 restores an `AimuxException` subclass,
 100..105 restores `RecordingException`, and 200..206 becomes
 `IllegalStateException("aimux ffi: …")`. Payload getters are read only under
 their owning AiMuxError code.
@@ -82,6 +81,8 @@ RuntimeException
       ├── NoSuchToolError            // toolName + availableTools (null = no tool set supplied)
       ├── InvalidToolInputError      // toolName + toolInput (the raw argument text)
       ├── ToolCallRepairError        // originalError (wire JSON, same encoding as ToolCall.error)
+      ├── LoadAPIKeyError            // code 18: no API key, fallback env var unset (envVar)
+      ├── LoadSettingError           // code 19: a required setting is missing (envVar)
       └── OtherError
 ```
 
@@ -104,7 +105,7 @@ try {
 
 | Field | Meaning |
 |-------|---------|
-| `code` | `AIMUX_E_*` matching C `aimux_error_code_t` (1..17; 1 is the catch-all `Other`; 4 is retired — the legacy `Tool` variant; 14 = `Retry`) |
+| `code` | `AIMUX_E_*` matching C `aimux_error_code_t` (1..19; 1 is the catch-all `Other`; 4 is retired — the legacy `Tool` variant; 14 = `Retry`) |
 | `status` | HTTP status when known; otherwise `-1` |
 | `retryMs` | Rate-limit hint in ms; `-1` if none; `0` = retry immediately |
 

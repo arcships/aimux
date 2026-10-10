@@ -1,6 +1,6 @@
 # aimux · Node.js API
 
-> Unified LLM service access layer — one API to access 325 AI providers
+> Unified LLM service access layer — one API to access AI providers
 
 Shared reference — parameter tables, result shapes, factory functions, and the
 feature coverage matrix — lives in the [API overview](../API.md).
@@ -21,9 +21,8 @@ console.log(result.text)
 
 ## Providers
 
-All 251 built-in OpenAI-compatible providers are registry-backed. Look them up
-by string name; the current list is generated from `provider_registry.json` in
-[providers.md](providers.md):
+The vendor packages and 281 registry-backed OpenAI-compatible providers are
+reachable by string name; see [providers.md](providers.md) for the provider list:
 
 ```typescript
 import { provider, generateText } from '@arcships/aimux'
@@ -31,18 +30,24 @@ import { provider, generateText } from '@arcships/aimux'
 const model = await provider('groq', undefined, 'llama-3.3-70b')
 const relay = await provider('groq', 'sk-...', 'llama-3.3-70b', {
   baseUrl: 'https://relay.example/v1',
-  maxRetries: 0,
 })
 const result = await generateText(model, 'Hello')
 ```
 
-`openai` / `anthropic` / `deepseek` factories remain (deepseek is now
-registry-backed). For custom providers not in the registry, build from the
-base classes with `createProvider`-style config via the base-URL override.
+`openai` / `anthropic` / `deepseek` factories remain; DeepSeek uses its own vendor
+chat model. Custom endpoints use a base-URL override with a compatible provider.
+`openai` and by-name `provider('openai', …)` select the Responses API.
 
-> **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
-> providers; Anthropic/Google/multimodal/local → typed factories
-> (`anthropic(apiKey, model)`); custom endpoints → `baseUrl` override.
+The 3rd argument of every constructor is a base URL string or a
+`ProviderConfig` (`baseUrl`, `headers` as a JSON string, `organization`,
+`project`, and `params` — a `Record<string, string>` filling a preset's template
+parameters, e.g. `{ account_id: '…' }` for `cloudflare_workers_ai`).
+`maxRetries` and `bodyOverrides` are kept in the type only so that passing them
+throws `InvalidArgumentError`; retry is a per-call option
+(`max_retries` in the call options).
+
+> **Scope:** `provider(name)` reaches vendor packages and the 281 preset rows;
+> typed factories remain available. Custom endpoints use the `baseUrl` override.
 > Full list: [providers.md](providers.md).
 
 ## Desktop and Electron compatibility
@@ -91,6 +96,7 @@ Error
       ├── JSONParseError / InvalidResponseDataError
       ├── NoSuchToolError / InvalidToolInputError / ToolCallRepairError  // tool-contract errors
       ├── InvalidArgumentError / InvalidPromptError
+      ├── LoadAPIKeyError / LoadSettingError   // no API key / required setting: envVar (+ description / settingName)
       ├── TokenExpiredError
       ├── UnsupportedFunctionalityError
       ├── NoSuchModelError / NoSuchProviderError
@@ -132,8 +138,9 @@ that carries them: `APICallError` adds `retryable` and optional `status` /
 error — or `'errorNotRetryable'` — a later attempt failed non-retryably),
 `errors` — the per-attempt history, oldest first, each itself an error from
 this hierarchy — and `lastError`; `TokenExpiredError` carries `status: 401`;
-`NoSuchModelError` adds `modelId` / `modelType`; and `NoSuchProviderError`
-adds `providerId`. Missing HTTP status and retry hints are absent rather than
+`NoSuchModelError` adds `modelId` / `modelType`; `NoSuchProviderError`
+adds `providerId`, `modelId`, `modelType` and `availableProviders`; and `LoadAPIKeyError` / `LoadSettingError` add `envVar`
+(the environment variable consulted) plus `description` / `settingName`. Missing HTTP status and retry hints are absent rather than
 represented by `-1`.
 
 ```typescript
@@ -160,7 +167,7 @@ try {
 ```
 
 The ts-rs wire type `AiMuxError` is only for payload unions inside
-`StreamPart`, not for throws.
+`TextStreamPart`, not for throws.
 
 ## Text Generation
 
@@ -509,7 +516,7 @@ The `@arcships/aimux` package has two layers:
 | `RerankingModel` | `cohereReranking` | `rerank(query, docsJson, optsJson?)` |
 | `SearchModel` | `tavilySearch` | `search(query, optsJson?)` |
 | `Files` | `openaiFiles(apiKey, baseUrl?)` | `uploadFile(dataBase64, mediaType, optsJson?)` |
-| `StreamTextGenerator` | returned by `Model.streamText` | async iterable of `StreamPart` JSON strings |
+| `StreamTextGenerator` | returned by `Model.streamText` | async iterable of `TextStreamPart` JSON strings |
 
 All factories return a `Promise` and accept an optional `baseUrl` as the last
 parameter. All native methods take and return JSON strings — the typed wrapper
@@ -524,7 +531,7 @@ them, not a local copy):
 
 ```typescript
 import type {
-  GenerateTextOptions, GenerateTextResult, StreamPart, ModelMessage,
+  GenerateTextOptions, GenerateTextResult, TextStreamPart, ModelMessage,
   Tool, ToolChoice, ToolCall, ToolResult, Usage, FinishReason, Warning,
   Role, MessageContent, ContentPart, ResponseFormat, ReasoningEffort,
   GenerateResult, FunctionTool,
@@ -547,24 +554,28 @@ export type GenerateTextResult = {
   response_messages: Array<ModelMessage>  // assistant messages ready for the next turn
   raw_finish_reason: string | null        // provider's own finish-reason string
   provider_metadata: JsonValue | null     // mirrored from raw.provider_metadata
-  response: ResponseMetadata              // mirrored from raw.response (id, timestamp, model_id)
+  request: RequestInfo                    // sent request body
+  response: ResponseInfo                  // id, timestamp, model_id, headers and body
   total_usage: Usage                      // usage across all steps (equals usage in single-step mode)
 }
 ```
 
-`StreamPart` is an external-tagged union of 18 variants (each is a one-key
+`streamText` emits `TextStreamPart`, an external-tagged union (each is a one-key
 object — type narrowing via `part.TextDelta` etc. works out of the box):
 
 ```typescript
-// bindings/node/src/types/StreamPart.ts (variants, abridged)
-export type StreamPart =
+// bindings/node/src/types/TextStreamPart.ts (variants, abridged)
+export type TextStreamPart =
   | { StreamStart: ... } | { TextStart: ... } | { TextDelta: ... } | { TextEnd: ... }
   | { ToolInputStart: ... } | { ToolInputDelta: ... } | { ToolInputEnd: ... }
   | { ToolCall: ... } | { ToolResult: ... }
   | { ReasoningStart: ... } | { ReasoningDelta: ... } | { ReasoningEnd: ... }
-  | { ResponseMetadata: ... } | { Source: ... } | { Finish: ... }
+  | { Source: ... } | { Finish: ... }
   | { Error: ... } | { Raw: ... } | { File: ... }
 ```
+
+Provider-layer `StreamPart` also has `ResponseMetadata`; the call layer
+consumes those events internally.
 
 The full declarations live in `bindings/node/src/types/` — `GenerateTextOptions.ts`,
 `ModelMessage.ts`, `Tool.ts`, `ToolChoice.ts`, `ContentPart.ts`,

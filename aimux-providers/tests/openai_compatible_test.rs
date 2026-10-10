@@ -1,7 +1,7 @@
 //! Wiremock tests for the OpenAI-compatible provider wrappers.
 //!
-//! Each of the 8 wrappers (groq, deepseek, togetherai, fireworks, perplexity,
-//! cerebras, xai, moonshotai) is a thin layer over [`OpenAIProvider`] that
+//! Each of the wrappers (groq, deepseek, togetherai, fireworks, perplexity,
+//! cerebras, moonshotai, ...) is a registry preset over the OpenAI-compatible package that
 //! only fixes the default base URL and the API-key environment variable. These
 //! tests verify, for every wrapper, the four behaviours that the wrapper is
 //! responsible for getting right:
@@ -18,6 +18,7 @@
 use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
+use std::sync::Arc;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -29,30 +30,25 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::{
-    ProviderOptions, bedrock_mantle::BedrockMantleConfig, bedrock_mantle::BedrockMantleProvider,
-    huggingface::HuggingFaceConfig, huggingface::HuggingFaceProvider, provider,
-    vertex_ai_ai21_models::VertexAiAi21ModelsConfig,
-    vertex_ai_ai21_models::VertexAiAi21ModelsProvider,
-    vertex_ai_anthropic_models::VertexAiAnthropicModelsConfig,
-    vertex_ai_anthropic_models::VertexAiAnthropicModelsProvider,
-    vertex_ai_deepseek_models::VertexAiDeepseekModelsConfig,
-    vertex_ai_deepseek_models::VertexAiDeepseekModelsProvider,
-    vertex_ai_llama_models::VertexAiLlamaModelsConfig,
-    vertex_ai_llama_models::VertexAiLlamaModelsProvider,
-    vertex_ai_minimax_models::VertexAiMinimaxModelsConfig,
-    vertex_ai_minimax_models::VertexAiMinimaxModelsProvider,
-    vertex_ai_mistral_models::VertexAiMistralModelsConfig,
-    vertex_ai_mistral_models::VertexAiMistralModelsProvider,
-    vertex_ai_moonshot_models::VertexAiMoonshotModelsConfig,
-    vertex_ai_moonshot_models::VertexAiMoonshotModelsProvider,
-    vertex_ai_openai_models::VertexAiOpenaiModelsConfig,
-    vertex_ai_openai_models::VertexAiOpenaiModelsProvider,
-    vertex_ai_qwen_models::VertexAiQwenModelsConfig,
-    vertex_ai_qwen_models::VertexAiQwenModelsProvider,
-    vertex_ai_zai_models::VertexAiZaiModelsConfig, vertex_ai_zai_models::VertexAiZaiModelsProvider,
-    xai::XAIConfig, xai::XAIProvider,
-};
+use aimux_providers::{PresetSettings, create_provider};
+
+/// A registry preset pointed at `base_url`, as a language model.
+fn registry_model(
+    name: &str,
+    api_key: String,
+    model_id: &str,
+    base_url: String,
+) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+    create_provider(
+        name,
+        PresetSettings {
+            api_key: Some(api_key.into()),
+            base_url: Some(base_url),
+            ..Default::default()
+        },
+    )?
+    .language_model(model_id)
+}
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -134,16 +130,14 @@ fn text_deltas(parts: &[StreamPart]) -> Vec<String> {
 macro_rules! openai_compatible_tests {
     (
         $mod_name:ident,
-        $config:ty,
-        $provider:ty,
+        $ctor:path,
         $model_id:literal
     ) => {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-                let config = <$config>::new("test-api-key").with_base_url(server.uri());
-                Box::new(<$provider>::new(config).model($model_id))
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+                $ctor(server.uri(), $model_id)
             }
         mod $mod_name {
             use super::*;
@@ -310,16 +304,8 @@ macro_rules! openai_compatible_tests {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-                provider(
-                    $provider_name,
-                    Some("test-api-key".to_string()),
-                    $model_id,
-                    Some(ProviderOptions {
-                        base_url: Some(server.uri()),
-                        ..Default::default()
-                    }),
-                )
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+                registry_model($provider_name, "test-api-key".to_string(), $model_id, server.uri())
                 .expect("provider construction")
             }
         mod $mod_name {
@@ -491,7 +477,6 @@ openai_compatible_tests!(
 );
 openai_compatible_tests!(perplexity, "perplexity", "sonar");
 openai_compatible_tests!(cerebras, "cerebras", "llama-3.3-70b");
-openai_compatible_tests!(xai, XAIConfig, XAIProvider, "grok-2");
 openai_compatible_tests!(moonshotai, "moonshotai", "moonshot-v1-8k");
 
 // Second batch of OpenAI-compatible thin wrappers.
@@ -501,12 +486,6 @@ openai_compatible_tests!(
     "meta-llama/Meta-Llama-3-70B-Instruct"
 );
 openai_compatible_tests!(baseten, "baseten", "deepseek-ai/DeepSeek-V3-0324");
-openai_compatible_tests!(
-    huggingface,
-    HuggingFaceConfig,
-    HuggingFaceProvider,
-    "meta-llama/Llama-3.3-70B-Instruct"
-);
 openai_compatible_tests!(alibaba, "alibaba", "qwen-max");
 openai_compatible_tests!(bytedance, "bytedance", "doubao-pro-32k");
 openai_compatible_tests!(vercel, "vercel", "v0-1.5-md");
@@ -551,16 +530,14 @@ fn tool_call_completion_body() -> Value {
 macro_rules! openai_compatible_tool_tests {
     (
         $mod_name:ident,
-        $config:ty,
-        $provider:ty,
+        $ctor:path,
         $model_id:literal
     ) => {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-                let config = <$config>::new("test-api-key").with_base_url(server.uri());
-                Box::new(<$provider>::new(config).model($model_id))
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+                $ctor(server.uri(), $model_id)
             }
         mod $mod_name {
             use super::*;
@@ -590,7 +567,7 @@ macro_rules! openai_compatible_tool_tests {
                     GenerateContent::ToolCall(RawToolCall { tool_call_id, tool_name, input, .. }) => {
                         assert_eq!(tool_call_id, "call_abc");
                         assert_eq!(tool_name, "get-weather");
-                        assert_eq!(input, r#"{"city":"SF"}"#);
+                        assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
                     }
                     other => panic!("expected ToolCall, got {:?}", other),
                 }
@@ -633,7 +610,7 @@ macro_rules! openai_compatible_tool_tests {
                 let (id, name, input) = tool_call.expect("should have ToolCall");
                 assert_eq!(id, "call_abc");
                 assert_eq!(name, "get-weather");
-                assert_eq!(input, r#"{"city":"SF"}"#);
+                assert_eq!(input, Value::String(r#"{"city":"SF"}"#.into()));
             }
         }
         }
@@ -646,16 +623,8 @@ macro_rules! openai_compatible_tool_tests {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-                provider(
-                    $provider_name,
-                    Some("test-api-key".to_string()),
-                    $model_id,
-                    Some(ProviderOptions {
-                        base_url: Some(server.uri()),
-                        ..Default::default()
-                    }),
-                )
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+                registry_model($provider_name, "test-api-key".to_string(), $model_id, server.uri())
                 .expect("provider construction")
             }
         mod $mod_name {
@@ -686,7 +655,7 @@ macro_rules! openai_compatible_tool_tests {
                     GenerateContent::ToolCall(RawToolCall { tool_call_id, tool_name, input, .. }) => {
                         assert_eq!(tool_call_id, "call_abc");
                         assert_eq!(tool_name, "get-weather");
-                        assert_eq!(input, r#"{"city":"SF"}"#);
+                        assert_eq!(input, &Value::String(r#"{"city":"SF"}"#.into()));
                     }
                     other => panic!("expected ToolCall, got {:?}", other),
                 }
@@ -729,7 +698,7 @@ macro_rules! openai_compatible_tool_tests {
                 let (id, name, input) = tool_call.expect("should have ToolCall");
                 assert_eq!(id, "call_abc");
                 assert_eq!(name, "get-weather");
-                assert_eq!(input, r#"{"city":"SF"}"#);
+                assert_eq!(input, Value::String(r#"{"city":"SF"}"#.into()));
             }
         }
         }
@@ -750,7 +719,6 @@ openai_compatible_tool_tests!(
 );
 openai_compatible_tool_tests!(perplexity_tools, "perplexity", "sonar");
 openai_compatible_tool_tests!(cerebras_tools, "cerebras", "llama-3.3-70b");
-openai_compatible_tool_tests!(xai_tools, XAIConfig, XAIProvider, "grok-2");
 openai_compatible_tool_tests!(moonshotai_tools, "moonshotai", "moonshot-v1-8k");
 openai_compatible_tool_tests!(
     deepinfra_tools,
@@ -758,12 +726,6 @@ openai_compatible_tool_tests!(
     "meta-llama/Meta-Llama-3-70B-Instruct"
 );
 openai_compatible_tool_tests!(baseten_tools, "baseten", "deepseek-ai/DeepSeek-V3-0324");
-openai_compatible_tool_tests!(
-    huggingface_tools,
-    HuggingFaceConfig,
-    HuggingFaceProvider,
-    "meta-llama/Llama-3.3-70B-Instruct"
-);
 openai_compatible_tool_tests!(alibaba_tools, "alibaba", "qwen-max");
 openai_compatible_tool_tests!(bytedance_tools, "bytedance", "doubao-pro-32k");
 openai_compatible_tool_tests!(vercel_tools, "vercel", "v0-1.5-md");
@@ -790,17 +752,14 @@ mod default_base_urls {
     /// a smoke test that the wrapper wires `with_base_url` through correctly.
     #[test]
     fn base_url_override_is_applied() {
-        // provider() options must override the registry default. Spot-check
+        // the base URL setting must override the registry default. Spot-check
         // groq here; the per-provider request tests above cover the remaining
         // providers end-to-end against a mock server.
-        let model = provider(
+        let model = registry_model(
             "groq",
-            Some("k".to_string()),
+            "k".to_string(),
             "llama-3.3-70b",
-            Some(ProviderOptions {
-                base_url: Some("https://example.test/v1".to_string()),
-                ..Default::default()
-            }),
+            "https://example.test/v1".to_string(),
         )
         .expect("provider construction should succeed");
         let _ = model;
@@ -823,14 +782,11 @@ mod default_base_urls {
         // important assertion is that WITHOUT the override the wrapper would
         // target api.groq.com (we can't mock that here), so this test merely
         // confirms the override mechanism the other tests depend on.
-        let model = provider(
+        let model = registry_model(
             "groq",
-            Some("test-api-key".to_string()),
+            "test-api-key".to_string(),
             "llama-3.3-70b-versatile",
-            Some(ProviderOptions {
-                base_url: Some(server.uri()),
-                ..Default::default()
-            }),
+            server.uri(),
         )
         .expect("provider construction");
         let _ = model
@@ -866,14 +822,11 @@ async fn groq_extracts_usage() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = registry_model(
         "groq",
-        Some("test-api-key".to_string()),
+        "test-api-key".to_string(),
         "llama-3.3-70b-versatile",
-        Some(ProviderOptions {
-            base_url: Some(server.uri()),
-            ..Default::default()
-        }),
+        server.uri(),
     )
     .expect("provider construction");
 
@@ -898,14 +851,11 @@ async fn deepseek_rate_limit_maps_to_rate_limited() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = registry_model(
         "deepseek",
-        Some("test-api-key".to_string()),
+        "test-api-key".to_string(),
         "deepseek-chat",
-        Some(ProviderOptions {
-            base_url: Some(server.uri()),
-            ..Default::default()
-        }),
+        server.uri(),
     )
     .expect("provider construction");
 
@@ -914,6 +864,41 @@ async fn deepseek_rate_limit_maps_to_rate_limited() {
         matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
+}
+
+/// TS: response headers are exposed on the generate result.
+#[tokio::test]
+async fn groq_exposes_response_headers() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("test-header", "test-value")
+                .set_body_json(text_completion_body()),
+        )
+        .mount(&server)
+        .await;
+
+    let model = registry_model(
+        "groq",
+        "test-api-key".to_string(),
+        "llama-3.3-70b-versatile",
+        server.uri(),
+    )
+    .expect("provider construction");
+
+    let result = model
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect("should succeed");
+
+    let headers = result
+        .response
+        .as_ref()
+        .and_then(|response| response.headers.as_ref())
+        .expect("response_headers should be Some");
+    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }
 
 // P1 thin-wrapper providers (provider-research batch).
@@ -1012,8 +997,7 @@ openai_compatible_tests!(
 );
 openai_compatible_tests!(
     bedrock_mantle,
-    BedrockMantleConfig,
-    BedrockMantleProvider,
+    "bedrock_mantle",
     "bedrock_mantle/openai.gpt-oss-120b"
 );
 openai_compatible_tests!(cherryin, "cherryin", "BAAI/bge-reranker-v2-m3(free)");
@@ -1114,64 +1098,55 @@ openai_compatible_tests!(zeldoc, "zeldoc", "z-code");
 openai_compatible_tests!(privatemode_ai, "privatemode_ai", "gpt-oss-120b");
 openai_compatible_tests!(snowflake, "snowflake", "claude-sonnet-4-5");
 
-// Vertex AI MaaS partner-model providers (OpenAI-compatible thin wrappers).
+// Vertex AI MaaS partner-model providers (registry presets with template parameters;
+// the tests override the whole base URL).
 openai_compatible_tests!(
     vertex_ai_ai21_models,
-    VertexAiAi21ModelsConfig,
-    VertexAiAi21ModelsProvider,
+    "vertex_ai_ai21_models",
     "ai21/jamba-1.5-large"
 );
 openai_compatible_tests!(
     vertex_ai_anthropic_models,
-    VertexAiAnthropicModelsConfig,
-    VertexAiAnthropicModelsProvider,
+    "vertex_ai_anthropic_models",
     "anthropic/claude-sonnet-4"
 );
 openai_compatible_tests!(
     vertex_ai_deepseek_models,
-    VertexAiDeepseekModelsConfig,
-    VertexAiDeepseekModelsProvider,
+    "vertex_ai_deepseek_models",
     "deepseek-ai/deepseek-v3.1-maas"
 );
 openai_compatible_tests!(
     vertex_ai_llama_models,
-    VertexAiLlamaModelsConfig,
-    VertexAiLlamaModelsProvider,
+    "vertex_ai_llama_models",
     "meta/llama-4-scout-17b-16e-instruct-maas"
 );
 openai_compatible_tests!(
     vertex_ai_minimax_models,
-    VertexAiMinimaxModelsConfig,
-    VertexAiMinimaxModelsProvider,
+    "vertex_ai_minimax_models",
     "minimax/minimax-m2-maas"
 );
 openai_compatible_tests!(
     vertex_ai_mistral_models,
-    VertexAiMistralModelsConfig,
-    VertexAiMistralModelsProvider,
+    "vertex_ai_mistral_models",
     "mistralai/mistral-large-2411"
 );
 openai_compatible_tests!(
     vertex_ai_moonshot_models,
-    VertexAiMoonshotModelsConfig,
-    VertexAiMoonshotModelsProvider,
+    "vertex_ai_moonshot_models",
     "moonshotai/kimi-k2-thinking-maas"
 );
 openai_compatible_tests!(
     vertex_ai_openai_models,
-    VertexAiOpenaiModelsConfig,
-    VertexAiOpenaiModelsProvider,
+    "vertex_ai_openai_models",
     "openai/gpt-oss-120b-maas"
 );
 openai_compatible_tests!(
     vertex_ai_qwen_models,
-    VertexAiQwenModelsConfig,
-    VertexAiQwenModelsProvider,
+    "vertex_ai_qwen_models",
     "qwen/qwen3-coder-480b-a35b-instruct-maas"
 );
 openai_compatible_tests!(
     vertex_ai_zai_models,
-    VertexAiZaiModelsConfig,
-    VertexAiZaiModelsProvider,
+    "vertex_ai_zai_models",
     "zai-org/glm-4.7-maas"
 );

@@ -22,8 +22,10 @@
 //!   rejected loudly rather than silently bypassed.
 
 use std::future::pending;
+use std::sync::Arc;
 
-use futures::{SinkExt, StreamExt};
+use async_trait::async_trait;
+use futures::{Sink, SinkExt, Stream, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
@@ -34,6 +36,7 @@ use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::options::TimeoutConfiguration;
 
 /// A request to open a WebSocket connection.
+#[derive(Debug)]
 pub struct WebSocketRequest {
     /// `wss://` or `ws://` URL.
     pub url: String,
@@ -48,6 +51,47 @@ pub struct WebSocketRequest {
     /// session establishment, `chunk_ms` bounds the gap between events,
     /// `total_ms` bounds the whole connection lifetime.
     pub timeout: Option<TimeoutConfiguration>,
+    /// Transport that performs the handshake. `None` uses the built-in
+    /// tungstenite connector (with the process-wide proxy tunnel). Injection
+    /// point for tests and for providers that bring their own socket.
+    pub connector: Option<Arc<dyn WsConnector>>,
+}
+
+/// Opens WebSocket connections. The built-in implementation is
+/// tungstenite plus the RFC-0034 proxy tunnel; a custom one returns a
+/// [`WsConnection`] built with [`WsConnection::from_transport`].
+#[async_trait]
+pub trait WsConnector: Send + Sync + 'static {
+    /// Establish the connection described by `request`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the connect failure, abort or timeout.
+    async fn connect(&self, request: &WebSocketRequest) -> Result<WsConnection, AiMuxError>;
+}
+
+impl std::fmt::Debug for dyn WsConnector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("dyn WsConnector")
+    }
+}
+
+/// The message transport behind a [`WsConnection`]: any tungstenite-message
+/// stream/sink pair.
+pub trait WsTransport:
+    Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
+    + Sink<Message, Error = tokio_tungstenite::tungstenite::Error>
+    + Send
+    + Unpin
+{
+}
+
+impl<T> WsTransport for T where
+    T: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
+        + Sink<Message, Error = tokio_tungstenite::tungstenite::Error>
+        + Send
+        + Unpin
+{
 }
 
 /// An inbound WebSocket message.
@@ -59,7 +103,7 @@ pub enum WsMessage {
 
 /// A connected WebSocket with abort/timeout enforcement built in.
 pub struct WsConnection {
-    stream: WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
+    stream: Box<dyn WsTransport>,
     url: String,
     abort: Option<AbortSignal>,
     /// Deadline for the first event (connect + session ack). Cleared after
@@ -398,8 +442,9 @@ async fn connect_through_proxy(
     Ok((websocket, response))
 }
 
-/// Open a WebSocket connection. The connect phase races abort and the
-/// `first_chunk_ms` timeout (which doubles as the connect timeout).
+/// Open a WebSocket connection through the request's [`WsConnector`], or the
+/// built-in one when none is set. The built-in connect phase races abort and
+/// the `first_chunk_ms` timeout (which doubles as the connect timeout).
 ///
 /// # Errors
 ///
@@ -407,6 +452,24 @@ async fn connect_through_proxy(
 /// cancellation wins the connect race, and `Timeout` when `first_chunk_ms`
 /// expires while connecting.
 pub async fn ws_connect(req: &WebSocketRequest) -> Result<WsConnection, AiMuxError> {
+    match &req.connector {
+        Some(connector) => connector.connect(req).await,
+        None => TungsteniteConnector.connect(req).await,
+    }
+}
+
+/// The built-in connector: tungstenite, with the process-wide proxy tunnel.
+#[derive(Debug, Clone, Copy, Default)]
+struct TungsteniteConnector;
+
+#[async_trait]
+impl WsConnector for TungsteniteConnector {
+    async fn connect(&self, request: &WebSocketRequest) -> Result<WsConnection, AiMuxError> {
+        connect_tungstenite(request).await
+    }
+}
+
+async fn connect_tungstenite(req: &WebSocketRequest) -> Result<WsConnection, AiMuxError> {
     let mut http_req = req
         .url
         .as_str()
@@ -517,27 +580,52 @@ pub async fn ws_connect(req: &WebSocketRequest) -> Result<WsConnection, AiMuxErr
         },
     };
 
-    Ok(WsConnection {
-        stream,
-        url: req.url.clone(),
-        abort: req.abort_signal.clone(),
-        // The REMAINING first-chunk budget (anchored before connect) — not a
-        // fresh full window, so connect+ack can never exceed first_chunk_ms.
+    // The REMAINING first-chunk budget (anchored before connect) — not a
+    // fresh full window, so connect+ack can never exceed first_chunk_ms.
+    Ok(WsConnection::with_deadline(
+        Box::new(stream),
+        req,
         first_chunk_deadline,
-        chunk_timeout: req
-            .timeout
-            .as_ref()
-            .and_then(|t| t.chunk_ms)
-            .map(tokio::time::Duration::from_millis),
-        total_deadline: req
-            .timeout
-            .as_ref()
-            .and_then(|t| t.total_ms)
-            .map(|ms| tokio::time::Instant::now() + tokio::time::Duration::from_millis(ms)),
-    })
+    ))
 }
 
 impl WsConnection {
+    /// Wrap an already-established transport, applying the request's abort
+    /// signal and timeouts. For custom [`WsConnector`]s; the `first_chunk_ms`
+    /// budget starts now.
+    #[must_use]
+    pub fn from_transport(transport: Box<dyn WsTransport>, req: &WebSocketRequest) -> Self {
+        let first_chunk_deadline = req
+            .timeout
+            .as_ref()
+            .and_then(|t| t.first_chunk_ms)
+            .map(|ms| tokio::time::Instant::now() + tokio::time::Duration::from_millis(ms));
+        Self::with_deadline(transport, req, first_chunk_deadline)
+    }
+
+    fn with_deadline(
+        stream: Box<dyn WsTransport>,
+        req: &WebSocketRequest,
+        first_chunk_deadline: Option<tokio::time::Instant>,
+    ) -> Self {
+        Self {
+            stream,
+            url: req.url.clone(),
+            abort: req.abort_signal.clone(),
+            first_chunk_deadline,
+            chunk_timeout: req
+                .timeout
+                .as_ref()
+                .and_then(|t| t.chunk_ms)
+                .map(tokio::time::Duration::from_millis),
+            total_deadline: req
+                .timeout
+                .as_ref()
+                .and_then(|t| t.total_ms)
+                .map(|ms| tokio::time::Instant::now() + tokio::time::Duration::from_millis(ms)),
+        }
+    }
+
     /// Send a text message. Aborted / timed out sends surface as errors; the
     /// pending-while-buffer-full behavior is the socket-level backpressure.
     ///
@@ -640,12 +728,14 @@ impl WsConnection {
     /// a close handshake against a dead peer must not hang the caller (the
     /// send pends while the socket buffer can't drain).
     pub async fn close(&mut self) {
-        let close_fut = self.stream.close(Some(
+        // What `WebSocketStream::close(Some(frame))` does, expressed through
+        // the transport trait so injected connectors close the same way.
+        let close_fut = self.stream.send(Message::Close(Some(
             tokio_tungstenite::tungstenite::protocol::frame::CloseFrame {
                 code: tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode::Normal,
                 reason: std::borrow::Cow::Borrowed("finished"),
             },
-        ));
+        )));
         tokio::select! {
             res = close_fut => {
                 let _ = res;

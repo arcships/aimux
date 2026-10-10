@@ -11,10 +11,10 @@ use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
-use aimux_providers::{DataforseoConfig, DataforseoProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{DataforseoProvider, DataforseoProviderSettings, create_dataforseo};
 
 const LOGIN: &str = "test-login";
 const PASSWORD: &str = "test-password";
@@ -62,8 +62,13 @@ fn search_response_body() -> Value {
 }
 
 fn provider(server: &MockServer) -> DataforseoProvider {
-    let config = DataforseoConfig::new(LOGIN, PASSWORD).with_base_url(server.uri());
-    DataforseoProvider::new(config)
+    let config = DataforseoProviderSettings {
+        login: Some(Resolvable::Value(LOGIN.to_string())),
+        password: Some(Resolvable::Value(PASSWORD.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_dataforseo(config).unwrap()
 }
 
 fn opts(query: &str, max_results: Option<u32>) -> SearchCallOptions {
@@ -219,25 +224,3 @@ async fn status_401_maps_to_auth_error() {
 }
 
 // -- Provider trait ----------------------------------------------------------
-
-#[tokio::test]
-async fn provider_name_is_dataforseo() {
-    let config = DataforseoConfig::new(LOGIN, PASSWORD);
-    let provider = DataforseoProvider::new(config);
-    assert_eq!(provider.name(), "dataforseo");
-}
-
-#[test]
-fn language_model_returns_unsupported_error() {
-    let config = DataforseoConfig::new(LOGIN, PASSWORD);
-    let provider = DataforseoProvider::new(config);
-    match provider.language_model("dataforseo-search") {
-        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
-            assert!(
-                msg.contains("provider 'dataforseo' does not provide language models"),
-                "unexpected message: {msg}"
-            );
-        }
-        _ => panic!("expected Unsupported error, got success or another error variant"),
-    }
-}

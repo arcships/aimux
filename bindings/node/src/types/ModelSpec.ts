@@ -12,8 +12,7 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * The full static portrait for a model, supplemented from community knowledge.
  *
  * All fields are advisory — aimux never auto-applies them in the request path.
- * The caller reads them to decide how to configure `GenerateTextOptions` /
- * `bodyOverrides`.
+ * The caller reads them to decide how to configure `GenerateTextOptions`.
  */
 export type ModelSpec = { display_name?: string | null, type: ModelType, limits: ModelLimits, modalities: ModelModalities, capabilities: ModelCapabilities, reasoning?: ReasoningSpec | null, cost?: ModelCost | null, source: CatalogueSource, 
 /**

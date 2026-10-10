@@ -7,7 +7,7 @@
 //!
 //! Cases the Rust data model cannot express are skipped with an inline
 //! comment. The main categories of skips:
-//! - **System-after-non-system throw**: the converter currently lifts
+//! - **System-after-non-system throw**: the Rust converter currently lifts
 //!   all system messages into the system array.
 //! - **S3 URLs / provider references**: `FileUrl` / `FileReference` are not
 //!   converted by the Rust Bedrock path.

@@ -10,11 +10,11 @@ use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs};
 use aimux_core::shared::Size;
-use aimux_providers::{RecraftConfig, RecraftProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{RecraftProviderSettings, create_recraft};
 
 const PROMPT: &str = "A cute baby sea otter";
 const API_KEY: &str = "test-recraft-key";
@@ -43,8 +43,12 @@ fn options(prompt: &str) -> ImageCallOptions {
 }
 
 fn make_model(server: &MockServer) -> impl ImageModel {
-    let config = RecraftConfig::new(API_KEY).with_base_url(server.uri());
-    RecraftProvider::new(config).image(MODEL)
+    let config = RecraftProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_recraft(config).unwrap().image(MODEL)
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -208,25 +212,6 @@ async fn status_500_maps_to_provider_error() {
 // ════════════════════════════════════════════════════════════════════════════
 // Provider trait
 // ════════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn provider_name_is_recraft() {
-    let server = MockServer::start().await;
-    let config = RecraftConfig::new(API_KEY).with_base_url(server.uri());
-    let provider = RecraftProvider::new(config);
-    assert_eq!(provider.name(), "recraft");
-}
-
-#[test]
-fn language_model_returns_unsupported_error() {
-    let config = RecraftConfig::new(API_KEY);
-    let provider = RecraftProvider::new(config);
-    let result = provider.language_model("recraftv3");
-    assert!(
-        matches!(result, Err(AiMuxError::UnsupportedFunctionality(_))),
-        "expected Unsupported error"
-    );
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Auth header matcher (verifies the header is sent on the wire)

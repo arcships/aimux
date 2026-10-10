@@ -102,20 +102,23 @@ pub struct Delta {
     /// Content can be null, a string, or an array of typed parts.
     #[serde(default)]
     pub content: Option<Value>,
-    /// Mistral streams a complete tool call in a single chunk (no index-based
-    /// incremental accumulation like OpenAI).
     #[serde(default)]
     pub tool_calls: Option<Vec<DeltaToolCall>>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct DeltaToolCall {
-    pub id: String,
+    #[serde(default)]
+    pub index: Option<usize>,
+    #[serde(default)]
+    pub id: Option<String>,
     pub function: DeltaFunction,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct DeltaFunction {
-    pub name: String,
-    pub arguments: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub arguments: Option<String>,
 }

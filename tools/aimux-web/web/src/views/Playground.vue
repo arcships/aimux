@@ -34,7 +34,6 @@ const maxTokens = ref(1024)
 const selectedTools = ref<string[]>([])
 const responseFormat = ref('text')
 const headersJson = ref('{}')
-const overridesJson = ref('{}')
 
 const suggested = computed(() => store.suggestedModels[provider.value] ?? [])
 const modelOptions = computed(() =>
@@ -134,7 +133,6 @@ async function send() {
       tools,
       response_format: responseFormat.value === 'json' ? { json: {} } : null,
       headers: safeJson(headersJson.value),
-      body_overrides: safeJson(overridesJson.value),
     },
     session_id: sessionId.value,
     messages: wireMessages.value,
@@ -326,10 +324,6 @@ function openTrace(item: ChatItem) {
         <div>
           <Label>Headers（JSON）</Label>
           <Textarea v-model="headersJson" :rows="2" class="mt-1" />
-        </div>
-        <div>
-          <Label>Body overrides（JSON）</Label>
-          <Textarea v-model="overridesJson" :rows="3" class="mt-1" />
         </div>
       </div>
     </aside>

@@ -138,21 +138,12 @@ pub struct SearchResponse {
 /// implement `do_search`; users never call it directly.
 #[async_trait]
 pub trait SearchModel: Send + Sync {
-    /// Specification version (always `"v4"`).
-    fn specification_version(&self) -> &'static str {
-        "v4"
-    }
-
     /// Provider name, e.g. `"tavily"`.
     fn provider(&self) -> &str;
 
     /// Provider-specific model ID (some providers use fixed IDs like
     /// `"tavily-search"`; others accept endpoint-specific names).
     fn model_id(&self) -> &str;
-
-    fn retry_config(&self) -> crate::retry::RetryConfig {
-        crate::retry::RetryConfig::default()
-    }
 
     /// Execute a search query and return results.
     ///
@@ -171,11 +162,7 @@ pub async fn search(
 ) -> Result<SearchResult, AiMuxError> {
     let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
     let abort_signal = options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
     timeout::run(
         retries.retry(|| model.do_search(&options)),
         abort_signal.as_ref(),

@@ -24,7 +24,9 @@ use serde_json::Value;
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
-use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::openai_compatible::{
+    OpenAICompatibleProviderSettings, create_openai_compatible,
+};
 
 const CASSETTE_DIR: &str = "tests/cassettes";
 
@@ -195,7 +197,7 @@ async fn replay_single_cassette(cass: &Cassette) -> Result<(), String> {
 
     let model_id = extract_model(cass).unwrap_or_else(|| "gpt-4o".to_string());
 
-    // Only test OpenAI-compatible providers via OpenAIProvider.
+    // Only test OpenAI-compatible providers via the OpenAI-compatible package.
     // Anthropic, Gemini, Cohere, Bedrock have their own providers but
     // most cassettes use /chat/completions path.
     let is_chat_completions = cass.req_path.ends_with("/chat/completions");
@@ -204,8 +206,14 @@ async fn replay_single_cassette(cass: &Cassette) -> Result<(), String> {
         return Ok(());
     }
 
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
-    let model = provider.model(&model_id);
+    let provider = create_openai_compatible(OpenAICompatibleProviderSettings {
+        name: "compat".to_string(),
+        base_url,
+        api_key: Some("test-key".to_string()),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.chat(&model_id);
 
     let prompt = extract_prompt(cass);
 
@@ -275,7 +283,7 @@ async fn replay_all_cassettes_exhaustive() {
     let total = cassettes.len();
     assert!(total > 2000, "expected 2000+ cassettes, got {total}");
 
-    // Filter to chat-completions cassettes (the only ones OpenAIProvider can handle)
+    // Filter to chat-completions cassettes (the only ones the compatible chat model handles)
     let chat_cassettes: Vec<&Cassette> = cassettes
         .iter()
         .filter(|c| c.req_path.ends_with("/chat/completions"))

@@ -10,8 +10,9 @@ import (
 )
 
 // Code is the machine-readable Aimux error code. Values match
-// aimux-ffi aimux_error_code_t (1..3, 5..18; 4 is retired). Retry is 14;
-// tool-call errors occupy 15..17. A code outside that set is a header/library
+// aimux-ffi aimux_error_code_t (1..3, 5..20; 4 is retired). Retry is 14;
+// tool-call errors occupy 15..17; a missing API key / provider setting are
+// 18 / 19. A code outside that set is a header/library
 // mismatch and expectAimuxError
 // panics rather than inventing an "unknown" variant. Recording failures are
 // a different type: see RecordingError.
@@ -41,7 +42,13 @@ const (
 	CodeNoSuchTool               Code = 15
 	CodeInvalidToolInput         Code = 16
 	CodeToolCallRepair           Code = 17
-	CodeNoOutputGenerated        Code = 18
+	// CodeLoadAPIKey: no API key was passed and the fallback environment
+	// variable is unset (the AI SDK's LoadAPIKeyError); no request was made.
+	CodeLoadAPIKey Code = 18
+	// CodeLoadSetting: a required provider setting was not passed and its
+	// fallback environment variable is unset (LoadSettingError).
+	CodeLoadSetting Code = 19
+	CodeNoOutputGenerated Code = 20
 )
 
 // String returns the core error_type name (e.g. "ApiCall", "TokenExpired").
@@ -76,10 +83,14 @@ func (c Code) String() string {
 		return "NoSuchTool"
 	case CodeInvalidToolInput:
 		return "InvalidToolInput"
-	case CodeToolCallRepair:
-		return "ToolCallRepair"
 	case CodeNoOutputGenerated:
 		return "NoOutputGenerated"
+	case CodeToolCallRepair:
+		return "ToolCallRepair"
+	case CodeLoadAPIKey:
+		return "LoadApiKey"
+	case CodeLoadSetting:
+		return "LoadSetting"
 	case CodeOther:
 		return "Other"
 	case CodeRetry:
@@ -89,7 +100,7 @@ func (c Code) String() string {
 	}
 }
 
-// codeFromC maps a C aimux_error_code_t (1..3, 5..18); false for any other
+// codeFromC maps a C aimux_error_code_t (1..3, 5..20); false for any other
 // value, including retired code 4.
 func codeFromC(code int) (Code, bool) {
 	if code >= int(CodeOther) && code <= int(CodeNoOutputGenerated) && code != 4 {
@@ -128,6 +139,8 @@ func codeFromC(code int) (Code, bool) {
 //     with CodeInvalidToolInput)
 //   - ToolInput: CodeInvalidToolInput payload
 //   - OriginalError: CodeToolCallRepair payload
+//   - EnvVar: CodeLoadAPIKey / CodeLoadSetting payload — the environment
+//     variable that was consulted
 type Error struct {
 	Code    Code
 	Message string
@@ -161,12 +174,13 @@ type Error struct {
 	// Reason says why retrying stopped; Errors preserves each attempt as a
 	// concrete *Error (oldest first; an attempt can itself be any Code,
 	// with the full per-code payload). CodeRetry only.
-	Reason RetryErrorReason
-	Errors []*Error
-	ToolName        string // CodeNoSuchTool / CodeInvalidToolInput: tool name
-	AvailableTools  []string
-	ToolInput       string // CodeInvalidToolInput: raw argument text
-	OriginalError   json.RawMessage // CodeToolCallRepair: unrepaired error
+	Reason         RetryErrorReason
+	Errors         []*Error
+	ToolName       string // CodeNoSuchTool / CodeInvalidToolInput: tool name
+	AvailableTools []string
+	ToolInput      string          // CodeInvalidToolInput: raw argument text
+	OriginalError  json.RawMessage // CodeToolCallRepair: unrepaired error
+	EnvVar         string          // CodeLoadAPIKey / CodeLoadSetting: the environment variable consulted, e.g. "OPENAI_API_KEY"
 }
 
 // RetryErrorReason explains why operation retry stopped. Values are the

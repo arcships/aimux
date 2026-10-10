@@ -4,43 +4,150 @@
 //!
 //! Each provider implements the `LanguageModel` trait from `aimux-core`.
 
-/// Delegate `Provider::list_models` to the inner `OpenAIProvider` (field `.0`).
-///
-/// Used by newtype providers that wrap `OpenAIProvider` (e.g. `OllamaProvider`,
-/// `VllmProvider`, `VertexAiOpenaiModelsProvider`, …). Inserts the full trait
-/// method signature so the wrapping provider needs no extra imports.
+/// One required `Provider` method that this vendor does not offer: returns
+/// `NoSuchModel` with the AI SDK `modelType`.
+#[doc(hidden)]
 #[macro_export]
-macro_rules! delegate_list_models {
-    () => {
-        fn list_models(
+macro_rules! __unsupported_required_model {
+    ($method:ident, $trait:ident, $model_type:literal) => {
+        fn $method(
             &self,
-        ) -> ::std::pin::Pin<
-            ::std::boxed::Box<
-                dyn ::std::future::Future<
-                        Output = ::std::result::Result<
-                            ::std::vec::Vec<aimux_core::model_catalogue::RuntimeModel>,
-                            aimux_core::AiMuxError,
-                        >,
-                    > + ::std::marker::Send
-                    + '_,
-            >,
+            id: &str,
+        ) -> ::std::result::Result<
+            ::std::sync::Arc<dyn ::aimux_core::$trait>,
+            ::aimux_core::AiMuxError,
         > {
-            self.0.list_models()
+            ::std::result::Result::Err(::aimux_core::AiMuxError::no_such_model(id, $model_type))
         }
     };
 }
 
-// Registry-backed provider construction (RFC-0017 phase 4): all built-in
-// OpenAI-compatible providers are looked up by name from `provider_registry.json`.
-// The 250 per-provider `XxxConfig`/`XxxProvider` shell types were retired in
-// phase 4 — use [`provider`] / [`provider_from_env`] instead.
+/// Emit `impl Provider for $ty` for a vendor that offers exactly one modality.
+///
+/// The first argument after the type names the `Provider` method to wire
+/// (`language_model`, `embedding_model`, `image_model`, `transcription_model`,
+/// `speech_model`, `reranking_model`, `video_model` or `search_model`); the
+/// closure-like tail binds the provider and the model id and evaluates to the
+/// (infallible) concrete model. The two other required methods return
+/// `NoSuchModel`; the other optional ones keep their `None` default.
+///
+/// ```ignore
+/// impl_single_modality_provider!(VllmProvider, language_model, |p, id| p.model(id));
+/// impl_single_modality_provider!(SerperProvider, search_model, |p, _id| p.search_model());
+/// ```
+#[macro_export]
+macro_rules! impl_single_modality_provider {
+    ($ty:ty, language_model, |$p:ident, $id:ident| $build:expr) => {
+        impl ::aimux_core::Provider for $ty {
+            fn language_model(
+                &self,
+                $id: &str,
+            ) -> ::std::result::Result<
+                ::std::sync::Arc<dyn ::aimux_core::LanguageModel>,
+                ::aimux_core::AiMuxError,
+            > {
+                let $p = self;
+                ::std::result::Result::Ok(::std::sync::Arc::new($build))
+            }
+            $crate::__unsupported_required_model!(
+                embedding_model,
+                EmbeddingModel,
+                "embeddingModel"
+            );
+            $crate::__unsupported_required_model!(image_model, ImageModel, "imageModel");
+        }
+    };
+    ($ty:ty, embedding_model, |$p:ident, $id:ident| $build:expr) => {
+        impl ::aimux_core::Provider for $ty {
+            $crate::__unsupported_required_model!(language_model, LanguageModel, "languageModel");
+            fn embedding_model(
+                &self,
+                $id: &str,
+            ) -> ::std::result::Result<
+                ::std::sync::Arc<dyn ::aimux_core::EmbeddingModel>,
+                ::aimux_core::AiMuxError,
+            > {
+                let $p = self;
+                ::std::result::Result::Ok(::std::sync::Arc::new($build))
+            }
+            $crate::__unsupported_required_model!(image_model, ImageModel, "imageModel");
+        }
+    };
+    ($ty:ty, image_model, |$p:ident, $id:ident| $build:expr) => {
+        impl ::aimux_core::Provider for $ty {
+            $crate::__unsupported_required_model!(language_model, LanguageModel, "languageModel");
+            $crate::__unsupported_required_model!(
+                embedding_model,
+                EmbeddingModel,
+                "embeddingModel"
+            );
+            fn image_model(
+                &self,
+                $id: &str,
+            ) -> ::std::result::Result<
+                ::std::sync::Arc<dyn ::aimux_core::ImageModel>,
+                ::aimux_core::AiMuxError,
+            > {
+                let $p = self;
+                ::std::result::Result::Ok(::std::sync::Arc::new($build))
+            }
+        }
+    };
+    ($ty:ty, $method:ident, |$p:ident, $id:ident| $build:expr) => {
+        impl ::aimux_core::Provider for $ty {
+            $crate::__unsupported_required_model!(language_model, LanguageModel, "languageModel");
+            $crate::__unsupported_required_model!(
+                embedding_model,
+                EmbeddingModel,
+                "embeddingModel"
+            );
+            $crate::__unsupported_required_model!(image_model, ImageModel, "imageModel");
+            $crate::__optional_model!($method, |$p, $id| $build);
+        }
+    };
+}
+
+/// One optional `Provider` method wired to a concrete model (see
+/// [`impl_single_modality_provider!`]).
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __optional_model {
+    (transcription_model, |$p:ident, $id:ident| $build:expr) => {
+        $crate::__optional_model!(@emit transcription_model, TranscriptionModel, |$p, $id| $build);
+    };
+    (speech_model, |$p:ident, $id:ident| $build:expr) => {
+        $crate::__optional_model!(@emit speech_model, SpeechModel, |$p, $id| $build);
+    };
+    (reranking_model, |$p:ident, $id:ident| $build:expr) => {
+        $crate::__optional_model!(@emit reranking_model, RerankingModel, |$p, $id| $build);
+    };
+    (video_model, |$p:ident, $id:ident| $build:expr) => {
+        $crate::__optional_model!(@emit video_model, VideoModel, |$p, $id| $build);
+    };
+    (search_model, |$p:ident, $id:ident| $build:expr) => {
+        $crate::__optional_model!(@emit search_model, SearchModel, |$p, $id| $build);
+    };
+    (@emit $method:ident, $trait:ident, |$p:ident, $id:ident| $build:expr) => {
+        fn $method(
+            &self,
+            $id: &str,
+        ) -> ::std::option::Option<
+            ::std::result::Result<
+                ::std::sync::Arc<dyn ::aimux_core::$trait>,
+                ::aimux_core::AiMuxError,
+            >,
+        > {
+            let $p = self;
+            ::std::option::Option::Some(::std::result::Result::Ok(::std::sync::Arc::new($build)))
+        }
+    };
+}
+
+// Registry-backed provider construction: the embedded `provider_registry.json`
+// is parsed once into `preset` descriptors and used by the by-name entry points.
 pub mod provider;
 pub mod replay;
-pub use provider::{
-    ExternalProviderEntry, ProviderOptions, ProviderProfile, is_external_provider,
-    load_providers_from_json, provider, provider_from_env, provider_handle, provider_names,
-    provider_registry_entry, register_provider,
-};
+pub use preset::{AuthMode, PresetDescriptor, PresetEntry, PresetSettings};
 pub use replay::{rebuild_decision_provider, rebuild_provider};
 
 pub mod catalogue;
@@ -51,23 +158,25 @@ pub mod anthropic_aws;
 pub mod azure;
 pub mod bedrock;
 pub mod cohere;
+pub mod deepseek;
+mod default_providers;
 pub mod google;
+pub mod groq;
 pub mod jev;
+pub use jev::{JevConfig, JevDecisionModel, JevProvider};
 pub mod mistral;
 pub mod openai;
+pub mod openai_compatible;
+pub use default_providers::{create_provider, default_providers, provider_names};
+pub mod preset;
+pub(crate) mod shared;
 pub mod vertex;
 pub mod voyage;
 
 pub mod codex;
-pub mod openrouter;
 pub mod xai;
 
-// OpenAI-compatible thin wrappers (second batch).
 pub mod huggingface;
-pub mod llamafile;
-pub mod lmstudio;
-pub mod mistralrs;
-pub mod ollama;
 
 // Speech-only providers (TTS).
 pub mod cartesia;
@@ -98,158 +207,138 @@ pub mod open_responses;
 // Rust consumers and the FFI layer share one implementation.
 pub use aimux_provider_utils::logging::init_logging;
 
-// Bulk-generated thin-wrapper providers.
-pub mod cybertron;
-pub mod docker_model_runner;
-pub mod gaudi;
-pub mod jlama;
-pub mod litellm_proxy;
-pub mod llamacpp;
-pub mod local;
-pub mod localai;
-pub mod mlx;
-pub mod omlx;
-pub mod onnx;
-pub mod oobabooba;
-pub mod openvino;
-pub mod sglang;
-pub mod vllm;
-pub mod xinference;
-
-pub use anthropic::{AnthropicConfig, AnthropicProvider};
-pub use anthropic_aws::{AnthropicAwsAuth, AnthropicAwsProvider, AnthropicAwsProviderConfig};
+pub use anthropic::{
+    AnthropicMessagesModel, AnthropicProvider, AnthropicProviderSettings, create_anthropic,
+};
+pub use anthropic_aws::{
+    AnthropicAwsAuth, AnthropicAwsProvider, AnthropicAwsProviderSettings, create_anthropic_aws,
+};
 pub use azure::{
-    AzureAuth, AzureConfig, AzureModel, AzureProvider, AzureResponsesModel, TokenProvider,
+    AzureChatModel, AzureOpenAIProvider, AzureOpenAIProviderSettings, AzureResponsesModel, azure,
+    create_azure,
 };
 pub use bedrock::{
-    BedrockAuth, BedrockEmbeddingModel, BedrockImageModel, BedrockProvider, BedrockProviderConfig,
+    AmazonBedrockProvider, AmazonBedrockProviderSettings, BedrockEmbeddingModel, BedrockImageModel,
+    BedrockModel, BedrockRerankingModel, amazon_bedrock, create_amazon_bedrock,
 };
-pub use cohere::{CohereConfig, CohereEmbeddingModel, CohereProvider};
+pub use cohere::{
+    CohereEmbeddingModel, CohereModel, CohereProvider, CohereProviderSettings,
+    CohereRerankingModel, cohere, create_cohere,
+};
 pub use google::{
-    GoogleConfig, GoogleEmbeddingModel, GoogleImageModel, GoogleImageSettings, GoogleProvider,
-    GoogleVideoModel,
+    GoogleEmbeddingModel, GoogleFiles, GoogleImageModel, GoogleImageSettings, GoogleModel,
+    GoogleProvider, GoogleProviderSettings, GoogleVideoModel, create_google, google,
 };
-pub use jev::{JevConfig, JevDecisionModel, JevProvider};
-pub use mistral::{MistralConfig, MistralEmbeddingModel, MistralProvider};
+pub use mistral::{
+    MistralEmbeddingModel, MistralModel, MistralProvider, MistralProviderSettings, create_mistral,
+    mistral,
+};
 pub use openai::{
-    OpenAIConfig, OpenAIEmbeddingModel, OpenAIImageModel, OpenAIProvider, OpenAIResponsesModel,
-    OpenAISpeechModel, OpenAITranscriptionModel,
+    OpenAIEmbeddingModel, OpenAIImageModel, OpenAIProvider, OpenAIProviderSettings,
+    OpenAIResponsesModel, OpenAISpeechModel, OpenAITranscriptionModel, create_openai,
 };
 pub use vertex::{
-    VertexAuth, VertexEmbeddingModel, VertexImageModel, VertexProvider, VertexProviderConfig,
-    VertexTranscriptionModel, VertexVideoModel,
+    VertexAnthropicModel, VertexEmbeddingModel, VertexImageModel, VertexModel, VertexProvider,
+    VertexProviderSettings, VertexTranscriptionModel, VertexVideoModel, create_google_vertex,
+    google_vertex,
 };
-pub use voyage::{VoyageConfig, VoyageEmbeddingModel, VoyageProvider};
+pub use voyage::{
+    VoyageEmbeddingModel, VoyageProvider, VoyageProviderSettings, VoyageRerankingModel,
+    create_voyage, voyage,
+};
 
 pub use codex::{
     CODEX_API_BASE_URL, CODEX_API_KEY_ENV_VAR, CODEX_OAUTH_TOKEN_URL, CODEX_SUBSCRIPTION_BASE_URL,
-    CodexConfig, CodexMode, CodexModel, CodexProvider, CodexTokens, codex_refresh,
-    codex_refresh_at,
+    CodexMode, CodexModel, CodexProvider, CodexProviderSettings, CodexTokens, codex, codex_refresh,
+    codex_refresh_at, create_codex,
 };
-pub use openrouter::{OpenRouterConfig, OpenRouterProvider};
-pub use xai::{XAIConfig, XAIProvider};
+pub use xai::{XAIProvider, XAIProviderSettings, XaiResponsesModel, create_xai, xai};
 
 pub use cartesia::{
-    CartesiaConfig, CartesiaProvider, CartesiaSpeechModel, CartesiaTranscriptionModel,
+    CartesiaProvider, CartesiaProviderSettings, CartesiaSpeechModel, CartesiaTranscriptionModel,
+    cartesia, create_cartesia,
 };
 pub use elevenlabs::{
-    ElevenLabsConfig, ElevenLabsProvider, ElevenLabsSpeechModel, ElevenLabsTranscriptionModel,
+    ElevenLabsProvider, ElevenLabsProviderSettings, ElevenLabsSpeechModel,
+    ElevenLabsTranscriptionModel, create_elevenlabs, elevenlabs,
 };
-pub use huggingface::{HuggingFaceConfig, HuggingFaceProvider};
-pub use hume::{HumeConfig, HumeProvider, HumeSpeechModel};
-pub use llamafile::{LlamafileConfig, LlamafileProvider};
-pub use lmnt::{LMNTConfig, LMNTProvider, LMNTSpeechModel};
-pub use mistralrs::{MistralrsConfig, MistralrsProvider};
+pub use huggingface::{
+    HuggingFaceProvider, HuggingFaceProviderSettings, HuggingFaceResponsesModel,
+    create_huggingface, huggingface,
+};
+pub use hume::{HumeProvider, HumeProviderSettings, HumeSpeechModel, create_hume, hume};
+pub use lmnt::{LMNTProvider, LMNTProviderSettings, LMNTSpeechModel, create_lmnt, lmnt};
 
-pub use lmstudio::{LmStudioConfig, LmStudioProvider};
-pub use ollama::{OllamaConfig, OllamaProvider};
-
-pub use assemblyai::{AssemblyAIConfig, AssemblyAIProvider, AssemblyAITranscriptionModel};
-pub use deepgram::{DeepgramConfig, DeepgramProvider, DeepgramTranscriptionModel};
-pub use fal::{FalConfig, FalImageModel, FalProvider, FalTranscriptionModel, FalVideoModel};
+pub use assemblyai::{
+    AssemblyAIProvider, AssemblyAIProviderSettings, AssemblyAITranscriptionModel, assemblyai,
+    create_assemblyai,
+};
+pub use deepgram::{
+    DeepgramProvider, DeepgramProviderSettings, DeepgramTranscriptionModel, create_deepgram,
+    deepgram,
+};
+pub use fal::{
+    FalImageModel, FalProvider, FalProviderSettings, FalTranscriptionModel, FalVideoModel,
+    create_fal, fal,
+};
 
 // Image-only provider re-exports.
 pub use black_forest_labs::{
-    BlackForestLabsConfig, BlackForestLabsImageModel, BlackForestLabsProvider,
+    BlackForestLabsImageModel, BlackForestLabsProvider, BlackForestLabsProviderSettings,
+    black_forest_labs, create_black_forest_labs,
 };
-pub use gladia::{GladiaConfig, GladiaProvider, GladiaTranscriptionModel};
-pub use klingai::{KlingAIConfig, KlingAIProvider, KlingAIVideoModel};
-pub use luma::{LumaConfig, LumaImageModel, LumaProvider};
-pub use prodia::{ProdiaConfig, ProdiaImageModel, ProdiaProvider, ProdiaVideoModel};
-pub use replicate::{ReplicateConfig, ReplicateImageModel, ReplicateProvider, ReplicateVideoModel};
-pub use revai::{RevaiConfig, RevaiProvider, RevaiTranscriptionModel};
+pub use gladia::{
+    GladiaProvider, GladiaProviderSettings, GladiaTranscriptionModel, create_gladia, gladia,
+};
+pub use klingai::{
+    KlingAIProvider, KlingAIProviderSettings, KlingAIVideoModel, create_klingai, klingai,
+};
+pub use luma::{LumaImageModel, LumaProvider, LumaProviderSettings, create_luma, luma};
+pub use prodia::{
+    ProdiaImageModel, ProdiaProvider, ProdiaProviderSettings, ProdiaVideoModel, create_prodia,
+    prodia,
+};
+pub use replicate::{
+    ReplicateImageModel, ReplicateProvider, ReplicateProviderSettings, ReplicateVideoModel,
+    create_replicate, replicate,
+};
+pub use revai::{
+    RevaiProvider, RevaiProviderSettings, RevaiTranscriptionModel, create_revai, revai,
+};
 
-pub use open_responses::{OpenResponsesConfig, OpenResponsesModel, OpenResponsesProvider};
-
-// Bulk-generated provider re-exports.
-pub use cybertron::{CybertronConfig, CybertronProvider};
-pub use docker_model_runner::{DockerModelRunnerConfig, DockerModelRunnerProvider};
-pub use gaudi::{GaudiConfig, GaudiProvider};
-pub use jlama::{JlamaConfig, JlamaProvider};
-pub use litellm_proxy::{LitellmProxyConfig, LitellmProxyProvider};
-pub use llamacpp::{LlamacppConfig, LlamacppProvider};
-pub use local::{LocalConfig, LocalProvider};
-pub use localai::{LocalaiConfig, LocalaiProvider};
-pub use mlx::{MlxConfig, MlxProvider};
-pub use omlx::{OmlxConfig, OmlxProvider};
-pub use onnx::{OnnxConfig, OnnxProvider};
-pub use oobabooba::{OobaboobaConfig, OobaboobaProvider};
-pub use openvino::{OpenvinoConfig, OpenvinoProvider};
-pub use sglang::{SglangConfig, SglangProvider};
-pub use vllm::{VllmConfig, VllmProvider};
-pub use xinference::{XinferenceConfig, XinferenceProvider};
+pub use open_responses::{
+    OpenResponsesModel, OpenResponsesProvider, OpenResponsesProviderSettings, create_open_responses,
+};
 
 // Modality-specific providers (non-language, e.g. rerank-only).
 pub mod jina_ai;
-pub use jina_ai::{JinaAiConfig, JinaAiProvider, JinaAiRerankingModel};
+pub use jina_ai::{
+    JinaAiProvider, JinaAiProviderSettings, JinaAiRerankingModel, create_jina_ai, jina_ai,
+};
 
 // AWS Polly speech (TTS) provider — SigV4 authenticated, speech modality only.
 pub mod aws_polly;
-pub use aws_polly::{AwsPollyConfig, AwsPollyProvider, AwsPollySpeechModel};
+pub use aws_polly::{
+    AwsPollyProvider, AwsPollyProviderSettings, AwsPollySpeechModel, aws_polly, create_aws_polly,
+};
 
 // Recraft image provider (OpenAI Images-compatible + Recraft extension fields).
 pub mod recraft;
-pub use recraft::{RecraftConfig, RecraftImageModel, RecraftProvider};
+pub use recraft::{
+    RecraftImageModel, RecraftProvider, RecraftProviderSettings, create_recraft, recraft,
+};
 
 // Stability image provider (image modality only).
 pub mod stability;
-pub use stability::{StabilityConfig, StabilityImageModel, StabilityProvider};
+pub use stability::{
+    StabilityImageModel, StabilityProvider, StabilityProviderSettings, create_stability, stability,
+};
 
 // Video-only provider (runwayml).
 pub mod runwayml;
-pub use runwayml::{RunwaymlConfig, RunwaymlProvider, RunwaymlVideoModel};
-
-// P1 thin-wrapper providers (provider-research batch).
-pub mod bedrock_mantle;
-
-pub use bedrock_mantle::{BedrockMantleConfig, BedrockMantleProvider};
-
-// Vertex AI MaaS partner-model providers (OpenAI-compatible thin wrappers).
-// Each wraps the shared OpenAIProvider against the Vertex AI MaaS OpenAPI
-// endpoint, authenticating with a Google Cloud Bearer token.
-pub mod vertex_ai_ai21_models;
-pub mod vertex_ai_anthropic_models;
-pub mod vertex_ai_deepseek_models;
-pub mod vertex_ai_llama_models;
-pub mod vertex_ai_minimax_models;
-pub mod vertex_ai_mistral_models;
-pub mod vertex_ai_moonshot_models;
-pub mod vertex_ai_openai_models;
-pub mod vertex_ai_qwen_models;
-pub mod vertex_ai_zai_models;
-
-pub use vertex_ai_ai21_models::{VertexAiAi21ModelsConfig, VertexAiAi21ModelsProvider};
-pub use vertex_ai_anthropic_models::{
-    VertexAiAnthropicModelsConfig, VertexAiAnthropicModelsProvider,
+pub use runwayml::{
+    RunwaymlProvider, RunwaymlProviderSettings, RunwaymlVideoModel, create_runwayml, runwayml,
 };
-pub use vertex_ai_deepseek_models::{VertexAiDeepseekModelsConfig, VertexAiDeepseekModelsProvider};
-pub use vertex_ai_llama_models::{VertexAiLlamaModelsConfig, VertexAiLlamaModelsProvider};
-pub use vertex_ai_minimax_models::{VertexAiMinimaxModelsConfig, VertexAiMinimaxModelsProvider};
-pub use vertex_ai_mistral_models::{VertexAiMistralModelsConfig, VertexAiMistralModelsProvider};
-pub use vertex_ai_moonshot_models::{VertexAiMoonshotModelsConfig, VertexAiMoonshotModelsProvider};
-pub use vertex_ai_openai_models::{VertexAiOpenaiModelsConfig, VertexAiOpenaiModelsProvider};
-pub use vertex_ai_qwen_models::{VertexAiQwenModelsConfig, VertexAiQwenModelsProvider};
-pub use vertex_ai_zai_models::{VertexAiZaiModelsConfig, VertexAiZaiModelsProvider};
 
 // Search-only providers (web search modality).
 pub mod dataforseo;
@@ -264,14 +353,37 @@ pub mod tavily;
 pub mod tinyfish;
 pub mod you_com;
 
-pub use dataforseo::{DataforseoConfig, DataforseoProvider, DataforseoSearchModel};
-pub use exa_ai::{ExaAiConfig, ExaAiProvider, ExaAiSearchModel};
-pub use firecrawl::{FirecrawlConfig, FirecrawlProvider, FirecrawlSearchModel};
-pub use google_pse::{GooglePseConfig, GooglePseProvider, GooglePseSearchModel};
-pub use linkup::{LinkupConfig, LinkupProvider, LinkupSearchModel};
-pub use parallel_ai::{ParallelAiConfig, ParallelAiProvider, ParallelAiSearchModel};
-pub use searxng::{SearxngConfig, SearxngProvider, SearxngSearchModel};
-pub use serper::{SerperConfig, SerperProvider, SerperSearchModel};
-pub use tavily::{TavilyConfig, TavilyProvider, TavilySearchModel};
-pub use tinyfish::{TinyfishConfig, TinyfishProvider, TinyfishSearchModel};
-pub use you_com::{YouComConfig, YouComProvider, YouComSearchModel};
+pub use dataforseo::{
+    DataforseoProvider, DataforseoProviderSettings, DataforseoSearchModel, create_dataforseo,
+    dataforseo,
+};
+pub use exa_ai::{ExaAiProvider, ExaAiProviderSettings, ExaAiSearchModel, create_exa_ai, exa_ai};
+pub use firecrawl::{
+    FirecrawlProvider, FirecrawlProviderSettings, FirecrawlSearchModel, create_firecrawl, firecrawl,
+};
+pub use google_pse::{
+    GooglePseProvider, GooglePseProviderSettings, GooglePseSearchModel, create_google_pse,
+    google_pse,
+};
+pub use linkup::{
+    LinkupProvider, LinkupProviderSettings, LinkupSearchModel, create_linkup, linkup,
+};
+pub use parallel_ai::{
+    ParallelAiProvider, ParallelAiProviderSettings, ParallelAiSearchModel, create_parallel_ai,
+    parallel_ai,
+};
+pub use searxng::{
+    SearxngProvider, SearxngProviderSettings, SearxngSearchModel, create_searxng, searxng,
+};
+pub use serper::{
+    SerperProvider, SerperProviderSettings, SerperSearchModel, create_serper, serper,
+};
+pub use tavily::{
+    TavilyProvider, TavilyProviderSettings, TavilySearchModel, create_tavily, tavily,
+};
+pub use tinyfish::{
+    TinyfishProvider, TinyfishProviderSettings, TinyfishSearchModel, create_tinyfish, tinyfish,
+};
+pub use you_com::{
+    YouComProvider, YouComProviderSettings, YouComSearchModel, create_you_com, you_com,
+};

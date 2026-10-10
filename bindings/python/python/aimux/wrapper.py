@@ -1027,7 +1027,6 @@ class GenerateTextOptions(BaseModel):
     provider_options: Optional[Dict[str, Any]] = None
     reasoning: Optional[ReasoningEffort] = None
     instructions: Optional[str] = None
-    body_overrides: Optional[Any] = None
     max_retries: Optional[int] = None
     session_id: Optional[str] = None
     """Session identifier (RFC-0024): groups consecutive calls into a session.
@@ -1058,8 +1057,6 @@ class GenerateTextOptions(BaseModel):
     Host-only: it is never serialized into the options sent across the
     boundary.
     """
-
-
 
 
 class RequestInfo(BaseModel):

@@ -20,7 +20,25 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
 
-use aimux_providers::{CODEX_OAUTH_TOKEN_URL, CodexConfig, CodexProvider, codex_refresh_at};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{
+    CODEX_OAUTH_TOKEN_URL, CodexMode, CodexProvider, CodexProviderSettings, codex_refresh_at,
+    create_codex,
+};
+
+fn codex_provider(
+    mode: CodexMode,
+    base_url: impl Into<String>,
+    originator: Option<&str>,
+) -> CodexProvider {
+    create_codex(CodexProviderSettings {
+        mode,
+        base_url: Some(base_url.into()),
+        originator: originator.map(str::to_string),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 // helpers
 
@@ -152,8 +170,12 @@ async fn api_key_generates_text() {
     let server = MockServer::start().await;
     mock_json_response(&server, text_response_body()).await;
 
-    let config = CodexConfig::new("test-key").with_base_url(server.uri());
-    let model = CodexProvider::new(config).model("gpt-5.2-codex");
+    let provider = codex_provider(
+        CodexMode::ApiKey(Some(Resolvable::Value("test-key".to_string()))),
+        server.uri(),
+        None,
+    );
+    let model = provider.responses("gpt-5.2-codex");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -166,7 +188,7 @@ async fn api_key_generates_text() {
         }
         other => panic!("expected Text, got {other:?}"),
     }
-    assert_eq!(model.provider(), "codex");
+    assert_eq!(model.provider(), "codex.responses");
     assert_eq!(model.model_id(), "gpt-5.2-codex");
 
     // Request shape: Responses endpoint, bearer auth, non-streaming body
@@ -186,8 +208,12 @@ async fn api_key_streams_text() {
     let server = MockServer::start().await;
     mock_sse_response(&server, &sse_body(TEXT_STREAM_EVENTS)).await;
 
-    let config = CodexConfig::new("test-key").with_base_url(server.uri());
-    let model = CodexProvider::new(config).model("gpt-5.2-codex");
+    let provider = codex_provider(
+        CodexMode::ApiKey(Some(Resolvable::Value("test-key".to_string()))),
+        server.uri(),
+        None,
+    );
+    let model = provider.responses("gpt-5.2-codex");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -228,11 +254,15 @@ async fn subscription_generate_forces_stream_and_assembles_result() {
         .collect();
     mock_sse_response(&server, &sse_body_strings(&events)).await;
 
-    let config = CodexConfig::subscription("account-token")
-        .with_base_url(server.uri())
-        .with_chatgpt_account_id("acct_123")
-        .with_originator("aimux-test");
-    let model = CodexProvider::new(config).model("gpt-5.2-codex");
+    let provider = codex_provider(
+        CodexMode::ChatGptAccount {
+            token: Resolvable::Value("account-token".to_string()),
+            account_id: Some("acct_123".to_string()),
+        },
+        server.uri(),
+        Some("aimux-test"),
+    );
+    let model = provider.responses("gpt-5.2-codex");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -283,9 +313,16 @@ async fn subscription_generate_continues_after_a_malformed_sse_frame() {
     ];
     mock_sse_response(&server, &sse_body_strings(&events)).await;
 
-    let config = CodexConfig::subscription("account-token").with_base_url(server.uri());
-    let result = CodexProvider::new(config)
-        .model("gpt-5.2-codex")
+    let provider = codex_provider(
+        CodexMode::ChatGptAccount {
+            token: Resolvable::Value("account-token".to_string()),
+            account_id: None,
+        },
+        server.uri(),
+        None,
+    );
+    let result = provider
+        .responses("gpt-5.2-codex")
         .do_generate(&default_options(test_prompt()))
         .await
         .expect("a later response.completed event should still be assembled");
@@ -301,9 +338,16 @@ async fn subscription_generate_returns_parse_error_without_a_completed_event() {
     let server = MockServer::start().await;
     mock_sse_response(&server, "data: {unparsable}\n\n").await;
 
-    let config = CodexConfig::subscription("account-token").with_base_url(server.uri());
-    let error = CodexProvider::new(config)
-        .model("gpt-5.2-codex")
+    let provider = codex_provider(
+        CodexMode::ChatGptAccount {
+            token: Resolvable::Value("account-token".to_string()),
+            account_id: None,
+        },
+        server.uri(),
+        None,
+    );
+    let error = provider
+        .responses("gpt-5.2-codex")
         .do_generate(&default_options(test_prompt()))
         .await
         .unwrap_err();
@@ -316,8 +360,15 @@ async fn subscription_stream_forces_store_false() {
     let server = MockServer::start().await;
     mock_sse_response(&server, &sse_body(TEXT_STREAM_EVENTS)).await;
 
-    let config = CodexConfig::subscription("account-token").with_base_url(server.uri());
-    let model = CodexProvider::new(config).model("gpt-5.2-codex");
+    let provider = codex_provider(
+        CodexMode::ChatGptAccount {
+            token: Resolvable::Value("account-token".to_string()),
+            account_id: None,
+        },
+        server.uri(),
+        None,
+    );
+    let model = provider.responses("gpt-5.2-codex");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -336,10 +387,15 @@ async fn subscription_user_headers_win_over_defaults() {
     let server = MockServer::start().await;
     mock_sse_response(&server, &sse_body(TEXT_STREAM_EVENTS)).await;
 
-    let config = CodexConfig::subscription("account-token")
-        .with_base_url(server.uri())
-        .with_originator("library-default");
-    let model = CodexProvider::new(config).model("gpt-5.2-codex");
+    let provider = codex_provider(
+        CodexMode::ChatGptAccount {
+            token: Resolvable::Value("account-token".to_string()),
+            account_id: None,
+        },
+        server.uri(),
+        Some("library-default"),
+    );
+    let model = provider.responses("gpt-5.2-codex");
 
     let options = CallOptions {
         headers: Some(
@@ -371,8 +427,15 @@ async fn subscription_401_maps_to_token_expired() {
         .mount(&server)
         .await;
 
-    let config = CodexConfig::subscription("expired-token").with_base_url(server.uri());
-    let model = CodexProvider::new(config).model("gpt-5.2-codex");
+    let provider = codex_provider(
+        CodexMode::ChatGptAccount {
+            token: Resolvable::Value("expired-token".to_string()),
+            account_id: None,
+        },
+        server.uri(),
+        None,
+    );
+    let model = provider.responses("gpt-5.2-codex");
     let options = default_options(test_prompt());
 
     let gen_err = model

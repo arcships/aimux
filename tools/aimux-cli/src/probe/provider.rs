@@ -7,7 +7,6 @@
 use std::sync::Arc;
 
 use aimux_core::trace::{RingTraceStore, TraceFilter, TraceLayer, VerdictKind};
-use aimux_providers::ProviderOptions;
 
 use crate::report;
 use crate::{Format, ProviderArgs};
@@ -81,44 +80,22 @@ condition under which provider-side prompt caching should activate; observe the
 usage fields to confirm the cache read tokens; compare with the client LCP bound;
 report any discrepancy as a suspect overclaim; the test sequence is complete."#;
 
-/// 构造 provider 模型:原生单 key provider(openai/anthropic/mistral/xai/cohere/
-/// google)直接构造;其余走注册表(compat,如 deepseek/groq/moonshotai 等)。
-/// azure/bedrock/vertex 需额外参数(资源名/region/凭证),CLI 第一版不直接
-/// 支持,可用其 OpenAI-compat 注册表镜像或后续扩展。
+/// 构造 provider 模型:名字可以是任一内置厂商(厂商包或注册表行)。
 fn build_model(
     provider: &str,
     api_key: String,
     model_id: &str,
     base_url: Option<&str>,
 ) -> anyhow::Result<Arc<dyn aimux_core::language_model::LanguageModel>> {
-    macro_rules! native {
-        ($provider_mod:ident, $config:ident, $provider_type:ident) => {{
-            let mut cfg = aimux_providers::$provider_mod::$config::new(api_key.clone());
-            if let Some(url) = base_url {
-                cfg = cfg.with_base_url(url);
-            }
-            let p = aimux_providers::$provider_mod::$provider_type::new(cfg);
-            Arc::from(p.model(model_id))
-        }};
-    }
-
-    match provider {
-        "openai" => Ok(native!(openai, OpenAIConfig, OpenAIProvider)),
-        "anthropic" => Ok(native!(anthropic, AnthropicConfig, AnthropicProvider)),
-        "mistral" => Ok(native!(mistral, MistralConfig, MistralProvider)),
-        "xai" => Ok(native!(xai, XAIConfig, XAIProvider)),
-        "cohere" => Ok(native!(cohere, CohereConfig, CohereProvider)),
-        "google" => Ok(native!(google, GoogleConfig, GoogleProvider)),
-        _ => {
-            let mut options = ProviderOptions::default();
-            if let Some(url) = base_url {
-                options.base_url = Some(url.to_string());
-            }
-            let model = aimux_providers::provider(provider, Some(api_key), model_id, Some(options))
-                .map_err(|e| anyhow::anyhow!("provider '{provider}': {e}"))?;
-            Ok(Arc::from(model))
-        }
-    }
+    let provider = aimux_providers::create_provider(
+        provider,
+        aimux_providers::PresetSettings {
+            api_key: Some(api_key.into()),
+            base_url: base_url.map(str::to_string),
+            ..Default::default()
+        },
+    )?;
+    Ok(provider.language_model(model_id)?)
 }
 
 /// 解析 `api_key` 参数:`env:VAR` 引用环境变量,否则按字面 key 使用。
@@ -223,8 +200,10 @@ pub async fn run(args: &ProviderArgs) -> anyhow::Result<Option<serde_json::Value
         );
     }
 
+    // Traces carry the model's own provider string (`openai.chat`, `groq`, ...),
+    // which is not the name the user typed on the command line.
     let stats = store.aggregate(&TraceFilter {
-        provider: Some(args.provider.clone()),
+        provider: Some(model.provider().to_string()),
         model: None,
         session_id: Some("aimux-cli-probe".to_string()),
         since_unix_ms: None,
@@ -305,7 +284,7 @@ pub async fn run(args: &ProviderArgs) -> anyhow::Result<Option<serde_json::Value
 mod tests {
     use super::*;
 
-    /// 本地 mock OpenAI chat completion 服务器:第一次请求报 0 命中,
+    /// 本地 mock OpenAI Responses 服务器:第一次请求报 0 命中,
     /// 之后请求报前缀命中(模拟真实缓存行为)。
     fn start_mock_server() -> (
         std::net::SocketAddr,
@@ -333,14 +312,13 @@ mod tests {
                 let cached = if n == 0 { 0 } else { 512 };
                 let body = format!(
                     r#"{{
-                        "id": "chatcmpl-mock",
-                        "model": "gpt-4o",
-                        "choices": [{{"message": {{"role": "assistant", "content": "ok"}}, "finish_reason": "stop"}}],
+                        "id": "resp-mock",
+                        "output": [{{"type": "message", "content": [{{"type": "output_text", "text": "ok"}}]}}],
                         "usage": {{
-                            "prompt_tokens": 2048,
-                            "completion_tokens": 5,
+                            "input_tokens": 2048,
+                            "output_tokens": 5,
                             "total_tokens": 2053,
-                            "prompt_tokens_details": {{"cached_tokens": {cached}}}
+                            "input_tokens_details": {{"cached_tokens": {cached}}}
                         }}
                     }}"#
                 );

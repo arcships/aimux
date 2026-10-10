@@ -58,13 +58,18 @@
 //! ```no_run
 //! # async fn example() {
 //! use wiremock::MockServer;
-//! use aimux_providers::anthropic::AnthropicConfig;
+//! use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 //! use reqwest::Client;
 //!
 //! let server = MockServer::start().await;
 //! common::replay::mount_cassettes(&server, "tests/cassettes/anthropic").await;
 //!
-//! let config = AnthropicConfig::new("test-key").with_base_url(server.uri());
+//! let provider = create_anthropic(AnthropicProviderSettings {
+//!     api_key: Some("test-key".to_string()),
+//!     base_url: Some(format!("{}/v1", server.uri())),
+//!     ..Default::default()
+//! })
+//! .unwrap();
 //! // ... build the model, call do_generate / do_stream, assert on the parsed
 //! // result. The provider sees the cassette's real recorded response.
 //! # }

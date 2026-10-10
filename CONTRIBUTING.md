@@ -9,8 +9,8 @@ to set up a development environment, run the tests, and submit changes.
 aimux/
 ├── aimux-core/            # Core abstractions: LanguageModel / Provider / Message / StreamPart
 ├── aimux-providers/       # provider implementations + cassettes (counts: docs/api/providers.md)
-├── aimux-stream/          # SSE stream parsing
-├── aimux-provider-utils/  # HTTP utilities: retry, backoff, error parsing, API-key loading, streamed tool-call tracking
+├── aimux-stream/          # SSE decoding
+├── aimux-provider-utils/  # HTTP utilities: Fetch transport, Resolvable settings, error parsing, API-key loading, streamed tool-call tracking
 ├── aimux-ffi/             # C ABI (opaque handle + JSON + push callback) for non-native bindings
 ├── bindings/              # Node, Python, Swift, Kotlin, Flutter, Go, C — share one Rust core
 ├── rfc/                   # Design docs (RFCs)
@@ -38,6 +38,20 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
+Provider changes also run the generator and boundary checks CI runs in the
+`contract-tests` job:
+
+```bash
+python3 scripts/gen_providers_doc.py --check  # docs/api/providers.md
+python3 scripts/gen_ts_types.py --check       # ts-rs types for the Node binding
+bash scripts/check_provider_boundaries.sh     # factory-shape rules for provider packages
+```
+
+The Node and Python bindings are separate workspaces: run `cargo fmt` and
+`cargo clippy -- -D warnings` inside each, then `npm ci && npm run build &&
+npm test` (Node) or `maturin build --release`, `pip install` the wheel and
+`python -m pytest tests/` (Python).
+
 ## Testing
 
 Tests run entirely on **cassette playback** — no network access and no API keys
@@ -62,10 +76,13 @@ aimux distinguishes three kinds of providers:
 1. **Native protocol** — providers with their own request/response model
    (OpenAI, Anthropic, Google, Bedrock, …). Implement the full `convert`/model
    path and handle provider-specific differences.
-2. **OpenAI-compatible thin wrapper** — the majority. Describe differences via
-   `OpenAICompatProfile` (top_k, tools, response_format, streaming usage,
-   request-body post-processing) so the thin wrapper does not erase
-   provider-specific behavior.
+2. **OpenAI-compatible preset** — the majority. One row of
+   `aimux-providers/src/provider_registry.json` (base URL, key variable or
+   `auth: none`, optional URL variable and template parameters) that
+   is embedded and parsed once into a runtime table. Create presets by name
+   through `provider(name, ...)`. Vendors with behavior of their own get a package on
+   the shared compatible chat model (`groq/`, `deepseek/`) instead of a
+   branch on their name.
 3. **Modality-specific** — speech, image, video, transcription, etc.
 
 Step-by-step checklists (with the generator and CI rules) live in

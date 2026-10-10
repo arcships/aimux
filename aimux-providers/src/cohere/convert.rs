@@ -12,6 +12,7 @@ use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
+use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Value, json};
 
 // ── Prepared tools ──────────────────────────────────────────────────────────
@@ -123,7 +124,7 @@ pub struct ConvertedPrompt {
 /// - Tool messages are flat `{role:"tool", content, tool_call_id}`.
 ///
 /// # Errors
-/// Returns an error for unsupported text file data.
+/// Returns an error for image text data or an unresolved inline image media type.
 pub fn convert_prompt_to_cohere(
     prompt: &LanguageModelPrompt,
 ) -> Result<ConvertedPrompt, AiMuxError> {
@@ -148,7 +149,7 @@ pub fn convert_prompt_to_cohere(
                         }
                         UserPart::File(file) => {
                             use base64::Engine;
-                            if file.media_type.split('/').next() == Some("image") {
+                            if get_top_level_media_type(&file.media_type) == "image" {
                                 let url = match &file.data {
                                     FileData::Data { data } => {
                                         let b64 = match data {
@@ -158,9 +159,11 @@ pub fn convert_prompt_to_cohere(
                                             }
                                             FileBytes::Base64(data) => data.clone(),
                                         };
-                                        let media_type =
-                                            crate::google::convert::tool_file_media_type(file)?;
-                                        format!("data:{media_type};base64,{b64}")
+                                        format!(
+                                            "data:{};base64,{}",
+                                            resolve_full_media_type(file)?,
+                                            b64
+                                        )
                                     }
                                     FileData::Url { url, .. } => url.clone(),
                                     FileData::Reference { .. } => {
@@ -170,7 +173,7 @@ pub fn convert_prompt_to_cohere(
                                     }
                                     FileData::Text { .. } => {
                                         return Err(AiMuxError::UnsupportedFunctionality(
-                                            "image file parts with text data".to_string(),
+                                            "image file parts with text data".into(),
                                         ));
                                     }
                                 };
@@ -319,7 +322,7 @@ pub struct RequestBodyResult {
 /// and the `thinking` config resolved from `reasoning` / provider options.
 ///
 /// # Errors
-/// Returns an error for unsupported text file data.
+/// Returns an error for image text data or an unresolved inline image media type.
 pub fn build_request_body(
     model_id: &str,
     options: &CallOptions,
@@ -432,15 +435,16 @@ pub fn resolve_cohere_thinking(
     provider_options: &Option<SharedProviderOptions>,
 ) -> Result<Option<Value>, AiMuxError> {
     // Provider options take precedence.
-    if let Some(po) = provider_options
-        && let Some(cohere) = po.get("cohere")
+    if let Some(cohere) = super::options::cohere_options(provider_options.as_ref())
         && let Some(thinking) = cohere.get("thinking")
     {
         let thinking = thinking.as_object().ok_or_else(|| {
             AiMuxError::InvalidArgument("invalid cohere provider options".to_string())
         })?;
-        let thinking =
-            crate::openai::convert::parse_option_fields(thinking, "cohere", |key, value| {
+        let thinking = crate::openai::convert::parse_option_fields(
+            thinking,
+            crate::cohere::options::NAMESPACE,
+            |key, value| {
                 let valid = match key {
                     "type" => value
                         .as_str()
@@ -449,7 +453,8 @@ pub fn resolve_cohere_thinking(
                     _ => return None,
                 };
                 Some(if valid { Ok(value.clone()) } else { Err(()) })
-            })?;
+            },
+        )?;
         let t_type = thinking
             .get("type")
             .and_then(|v| v.as_str())

@@ -401,13 +401,8 @@ pub fn openai_embedding(
     model_id: &str,
     base_url: Option<&str>,
 ) -> PyResult<EmbeddingModel> {
-    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = OpenAIProvider::new(config);
-    let model = provider.embedding_model(model_id);
+    let provider = crate::openai_provider(api_key, base_url)?;
+    let model = provider.embedding(model_id);
     Ok(EmbeddingModel {
         inner: Arc::new(model),
     })
@@ -421,12 +416,7 @@ pub fn openai_speech(
     model_id: &str,
     base_url: Option<&str>,
 ) -> PyResult<SpeechModel> {
-    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = OpenAIProvider::new(config);
+    let provider = crate::openai_provider(api_key, base_url)?;
     let model = provider.speech(model_id);
     Ok(SpeechModel {
         inner: Arc::new(model),
@@ -437,12 +427,7 @@ pub fn openai_speech(
 #[pyfunction]
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 pub fn openai_image(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<ImageModel> {
-    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = OpenAIProvider::new(config);
+    let provider = crate::openai_provider(api_key, base_url)?;
     let model = provider.image(model_id);
     Ok(ImageModel {
         inner: Arc::new(model),
@@ -457,12 +442,7 @@ pub fn openai_transcription(
     model_id: &str,
     base_url: Option<&str>,
 ) -> PyResult<TranscriptionModel> {
-    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = OpenAIProvider::new(config);
+    let provider = crate::openai_provider(api_key, base_url)?;
     let model = provider.transcription(model_id);
     Ok(TranscriptionModel {
         inner: Arc::new(model),
@@ -473,12 +453,7 @@ pub fn openai_transcription(
 #[pyfunction]
 #[pyo3(signature = (api_key, base_url=None))]
 pub fn openai_files(api_key: &str, base_url: Option<&str>) -> PyResult<Files> {
-    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = OpenAIProvider::new(config);
+    let provider = crate::openai_provider(api_key, base_url)?;
     let files = provider.files();
     Ok(Files {
         inner: Arc::new(files),
@@ -497,13 +472,14 @@ pub fn cohere_embedding(
     model_id: &str,
     base_url: Option<&str>,
 ) -> PyResult<EmbeddingModel> {
-    use aimux_providers::cohere::{CohereConfig, CohereProvider};
-    let mut config = CohereConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = CohereProvider::new(config);
-    let model = provider.embedding_model(model_id);
+    use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some(api_key.to_string()),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
+    let model = provider.embedding(model_id);
     Ok(EmbeddingModel {
         inner: Arc::new(model),
     })
@@ -517,13 +493,14 @@ pub fn cohere_reranking(
     model_id: &str,
     base_url: Option<&str>,
 ) -> PyResult<RerankingModel> {
-    use aimux_providers::cohere::{CohereConfig, CohereProvider};
-    let mut config = CohereConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = CohereProvider::new(config);
-    let model = provider.reranking_model(model_id);
+    use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some(api_key.to_string()),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
+    let model = provider.reranking(model_id);
     Ok(RerankingModel {
         inner: Arc::new(model),
     })
@@ -541,13 +518,14 @@ pub fn google_embedding(
     model_id: &str,
     base_url: Option<&str>,
 ) -> PyResult<EmbeddingModel> {
-    use aimux_providers::google::{GoogleConfig, GoogleProvider};
-    let mut config = GoogleConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = GoogleProvider::new(config);
-    let model = provider.embedding_model(model_id);
+    use aimux_providers::google::{GoogleProviderSettings, create_google};
+    let provider = create_google(GoogleProviderSettings {
+        api_key: Some(api_key.to_string()),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
+    let model = provider.embedding(model_id);
     Ok(EmbeddingModel {
         inner: Arc::new(model),
     })
@@ -557,12 +535,13 @@ pub fn google_embedding(
 #[pyfunction]
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 pub fn google_image(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<ImageModel> {
-    use aimux_providers::google::{GoogleConfig, GoogleProvider};
-    let mut config = GoogleConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = GoogleProvider::new(config);
+    use aimux_providers::google::{GoogleProviderSettings, create_google};
+    let provider = create_google(GoogleProviderSettings {
+        api_key: Some(api_key.to_string()),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider.image(model_id);
     Ok(ImageModel {
         inner: Arc::new(model),
@@ -573,12 +552,13 @@ pub fn google_image(api_key: &str, model_id: &str, base_url: Option<&str>) -> Py
 #[pyfunction]
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 pub fn google_video(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<VideoModel> {
-    use aimux_providers::google::{GoogleConfig, GoogleProvider};
-    let mut config = GoogleConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = GoogleProvider::new(config);
+    use aimux_providers::google::{GoogleProviderSettings, create_google};
+    let provider = create_google(GoogleProviderSettings {
+        api_key: Some(api_key.to_string()),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider.video(model_id);
     Ok(VideoModel {
         inner: Arc::new(model),
@@ -589,12 +569,13 @@ pub fn google_video(api_key: &str, model_id: &str, base_url: Option<&str>) -> Py
 #[pyfunction]
 #[pyo3(signature = (api_key, base_url=None))]
 pub fn tavily_search(api_key: &str, base_url: Option<&str>) -> PyResult<SearchModel> {
-    use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
-    let mut config = TavilyConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = TavilyProvider::new(config);
+    use aimux_providers::tavily::{TavilyProviderSettings, create_tavily};
+    let provider = create_tavily(TavilyProviderSettings {
+        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
+        base_url: base_url.map(str::to_string),
+        ..Default::default()
+    })
+    .map_err(|e| to_py_err(&e))?;
     let model = provider.search_model();
     Ok(SearchModel {
         inner: Arc::new(model),
@@ -735,13 +716,13 @@ pub fn start_transcription_session(
                     Ok(()) => {}
                     Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                         tokio::select! {
-                            _ = effective.cancelled() => return,
+                            _ = effective.cancelled() => {}
                             res = tx.send(Err(e.clone().into())) => {
-                                if res.is_err() { return; }
+                                let _ = res;
                             }
                         }
                     }
-                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => return,
+                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {}
                 }
             }
         }

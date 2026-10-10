@@ -10,8 +10,11 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
-use aimux_providers::{BedrockAuth, BedrockProvider, BedrockProviderConfig};
+use aimux_core::embedding_model::EmbeddingCallOptions;
+use aimux_core::provider::Provider;
+use aimux_providers::{
+    AmazonBedrockProvider, AmazonBedrockProviderSettings, create_amazon_bedrock,
+};
 
 const TEST_VALUES: &[&str] = &["sunny day at the beach", "rainy day in the city"];
 
@@ -22,15 +25,14 @@ fn mock_embeddings() -> Vec<Vec<f32>> {
     ]
 }
 
-fn test_provider(base_url: String) -> BedrockProvider {
-    let config = BedrockProviderConfig {
-        base_url,
-        auth: BedrockAuth::BearerToken("test-auth".to_string()),
-        region: "us-east-1".to_string(),
-        retry_config: aimux_provider_utils::RetryConfig::default(),
-        api_key_source: None,
-    };
-    BedrockProvider::new(config)
+fn test_provider(base_url: String) -> AmazonBedrockProvider {
+    create_amazon_bedrock(AmazonBedrockProviderSettings {
+        base_url: Some(base_url),
+        api_key: Some("test-auth".to_string().into()),
+        region: Some("us-east-1".to_string()),
+        ..Default::default()
+    })
+    .unwrap()
 }
 
 fn default_options(values: Vec<String>) -> EmbeddingCallOptions {
@@ -49,16 +51,20 @@ fn default_options(values: Vec<String>) -> EmbeddingCallOptions {
 fn should_expose_max_embeddings_per_call() {
     let provider = test_provider("https://example.com".to_string());
 
-    let titan_model = provider.embedding_model("amazon.titan-embed-text-v2:0");
+    let titan_model = provider
+        .embedding_model("amazon.titan-embed-text-v2:0")
+        .unwrap();
     assert_eq!(titan_model.max_embeddings_per_call(), Some(1));
 
-    let cohere_model = provider.embedding_model("cohere.embed-english-v3");
+    let cohere_model = provider.embedding_model("cohere.embed-english-v3").unwrap();
     assert_eq!(cohere_model.max_embeddings_per_call(), Some(96));
 
-    let cohere_v4_us_model = provider.embedding_model("us.cohere.embed-v4:0");
+    let cohere_v4_us_model = provider.embedding_model("us.cohere.embed-v4:0").unwrap();
     assert_eq!(cohere_v4_us_model.max_embeddings_per_call(), Some(96));
 
-    let nova_model = provider.embedding_model("amazon.nova-2-multimodal-embeddings-v1:0");
+    let nova_model = provider
+        .embedding_model("amazon.nova-2-multimodal-embeddings-v1:0")
+        .unwrap();
     assert_eq!(nova_model.max_embeddings_per_call(), Some(1));
 }
 
@@ -80,7 +86,9 @@ async fn should_handle_titan_single_input() {
         .await;
 
     let provider = test_provider(server.uri());
-    let model = provider.embedding_model("amazon.titan-embed-text-v2:0");
+    let model = provider
+        .embedding_model("amazon.titan-embed-text-v2:0")
+        .unwrap();
 
     let result = model
         .do_embed(&default_options(vec![TEST_VALUES[0].to_string()]))
@@ -109,7 +117,9 @@ async fn should_extract_titan_usage() {
         .await;
 
     let provider = test_provider(server.uri());
-    let model = provider.embedding_model("amazon.titan-embed-text-v2:0");
+    let model = provider
+        .embedding_model("amazon.titan-embed-text-v2:0")
+        .unwrap();
 
     let result = model
         .do_embed(&default_options(vec![TEST_VALUES[0].to_string()]))
@@ -137,7 +147,7 @@ async fn should_support_cohere_v3() {
         .await;
 
     let provider = test_provider(server.uri());
-    let model = provider.embedding_model("cohere.embed-english-v3");
+    let model = provider.embedding_model("cohere.embed-english-v3").unwrap();
 
     let result = model
         .do_embed(&default_options(vec![TEST_VALUES[0].to_string()]))
@@ -171,7 +181,7 @@ async fn should_support_cohere_v4() {
         .await;
 
     let provider = test_provider(server.uri());
-    let model = provider.embedding_model("cohere.embed-v4:0");
+    let model = provider.embedding_model("cohere.embed-v4:0").unwrap();
 
     let result = model
         .do_embed(&default_options(vec![TEST_VALUES[0].to_string()]))
@@ -200,7 +210,7 @@ async fn should_send_multiple_values_cohere_v4() {
         .await;
 
     let provider = test_provider(server.uri());
-    let model = provider.embedding_model("cohere.embed-v4:0");
+    let model = provider.embedding_model("cohere.embed-v4:0").unwrap();
 
     let result = model
         .do_embed(&default_options(
@@ -241,7 +251,7 @@ async fn should_support_cross_region_cohere() {
         .await;
 
     let provider = test_provider(server.uri());
-    let model = provider.embedding_model("us.cohere.embed-v4:0");
+    let model = provider.embedding_model("us.cohere.embed-v4:0").unwrap();
 
     let result = model
         .do_embed(&default_options(vec![TEST_VALUES[0].to_string()]))
@@ -269,7 +279,9 @@ async fn should_support_nova_embeddings() {
         .await;
 
     let provider = test_provider(server.uri());
-    let model = provider.embedding_model("amazon.nova-2-multimodal-embeddings-v1:0");
+    let model = provider
+        .embedding_model("amazon.nova-2-multimodal-embeddings-v1:0")
+        .unwrap();
 
     let result = model
         .do_embed(&default_options(vec![TEST_VALUES[0].to_string()]))

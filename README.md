@@ -4,12 +4,12 @@
   <img src="assets/aimux-banner.png" alt="aimux banner" width="100%">
 </p>
 
-> **A unified LLM access layer written in Rust. One API for [327 AI providers](docs/api/providers.md).**
+> **A unified LLM access layer written in Rust. One API for [326 provider names](docs/api/providers.md).**
 
 [![CI](https://github.com/arcships/aimux/actions/workflows/ci.yml/badge.svg)](https://github.com/arcships/aimux/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
-[![Providers](https://img.shields.io/badge/providers-327-green.svg)](docs/api/providers.md)
+[![Providers](https://img.shields.io/badge/providers-326-green.svg)](docs/api/providers.md)
 [![Bindings](https://img.shields.io/badge/bindings-8-9cf.svg)](bindings/)
 [![crates.io](https://img.shields.io/crates/v/aimux-core)](https://crates.io/crates/aimux-core)
 [![npm](https://img.shields.io/npm/v/@arcships/aimux)](https://www.npmjs.com/package/@arcships/aimux)
@@ -30,13 +30,10 @@ difference: aimux is an access layer, those are orchestration layers.
 
 ## Why aimux
 
-- **327 providers** (as of 2026-09-24) — 251 registry-backed OpenAI-compatible
-  (unified `provider(name, ...)` entry) + 76 typed providers (native protocol
-  implementations such as OpenAI/Anthropic/Google/Bedrock/Vertex, local
-  engines like Ollama/vLLM, and speech/image/video/search modality providers).
-  Counts by category and the full list live in
-  [docs/api/providers.md](docs/api/providers.md) — generated, and the single
-  source of truth for provider counts (only the badge above repeats the total).
+- **326 provider names** — 281 registry-backed OpenAI-compatible presets
+  + 45 vendor packages, covering text and other modalities. Local engines
+  such as Ollama/vLLM are presets. `provider_names()` lists the Rust names;
+  the generated catalogue lives in [docs/api/providers.md](docs/api/providers.md).
 - **Unified, object-safe interface** — the `LanguageModel` trait supports
   `Box<dyn>` so providers are interchangeable without changing call sites.
 - **Full multimodal** — text, streaming, tool calling, embeddings, image,
@@ -49,10 +46,12 @@ difference: aimux is an access layer, those are orchestration layers.
 - **Composite models** (new in 0.3.0) — `RouterModel` routes each call with
   fallback (RFC-0021); `MoaModel` aggregates parallel reference models
   mixture-of-agents style (RFC-0022). Both are plain `LanguageModel`s.
-- **Config-driven provider registry** — `provider-registry.json` describes
-  each registry-backed OpenAI-compatible provider (base URL, env var, profile
-  quirks: top_k, tools, response_format, streaming usage, max_tokens key);
-  one unified `provider(name, ...)` entry in every binding.
+- **Config-driven provider registry** — `provider_registry.json` describes
+  each registry-backed OpenAI-compatible provider (base URL, env var, auth
+  mode, template parameters); the embedded JSON is parsed once into a runtime
+  descriptor table. Rust uses `create_provider(name, PresetSettings)` for
+  presets and vendor packages; bindings retain `provider(name, ...)`.
+  Packages follow the AI SDK shape: `XxxProviderSettings` + `create_xxx()` + a default `xxx()`.
 - **Fast and small** — Rust core, release profile tuned for binary size
   (`lto`, `codegen-units=1`, `panic="abort"`, `strip`, `opt-level="z"`).
 - **8 language bindings** from one core: Node, Python, Swift, Kotlin, Flutter,
@@ -148,14 +147,12 @@ console.log(result.text)
 
 ```rust
 use aimux_core::prelude::*;
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::openai::openai;
 
 #[tokio::main]
 async fn main() -> Result<(), AiMuxError> {
-    let provider = OpenAIProvider::new(
-        OpenAIConfig::new(std::env::var("OPENAI_API_KEY")?)
-    );
-    let model = provider.model("gpt-4o");
+    // The default provider loads OPENAI_API_KEY when a request is made.
+    let model = openai().chat("gpt-4o");
 
     let result = generate_text(
         &model,
@@ -182,8 +179,8 @@ let result = stream_text(
 let mut stream = result.stream;
 while let Some(part) = stream.next().await {
     match part? {
-        StreamPart::TextDelta { delta, .. } => print!("{}", delta),
-        StreamPart::Finish { .. } => println!("\n[done]"),
+        TextStreamPart::TextDelta { delta, .. } => print!("{}", delta),
+        TextStreamPart::Finish { .. } => println!("\n[done]"),
         _ => {}
     }
 }
@@ -220,9 +217,10 @@ use aimux_core::moa::{MoaConfig, MoaModel};
 use aimux_core::router::{FallbackPolicy, RouterConfig, RouterModel, RuleRouter};
 
 // Router: pick one model per call, fall back on failure (RFC-0021).
+let provider = aimux_providers::openai::openai();
 let children: Vec<ChildModel> = vec![
-    Arc::new(provider.model("gpt-4o")) as ChildModel,
-    Arc::new(provider.model("gpt-4o-mini")) as ChildModel,
+    Arc::new(provider.chat("primary-model-id")) as ChildModel,
+    Arc::new(provider.chat("secondary-model-id")) as ChildModel,
 ];
 let routed = RouterModel::new(
     children.clone(),
@@ -234,7 +232,7 @@ let routed = RouterModel::new(
 // MoA: fan out to references, aggregate their answers (RFC-0022).
 let moa = MoaModel::new(
     children,
-    Arc::new(provider.model("gpt-4o")) as ChildModel,
+    Arc::new(provider.chat("primary-model-id")) as ChildModel,
     MoaConfig::default(),
 );
 
@@ -273,35 +271,36 @@ session.close()
 ## Switch providers
 
 ```rust
-// OpenAI → DeepSeek: only the provider name changes (registry-backed;
-// key read from the provider's env var)
-use aimux_providers::{provider, provider_from_env};
+use aimux_core::provider_registry::create_provider_registry;
+use aimux_providers::{create_provider, default_providers, provider_names, PresetSettings};
 
-let model = provider("deepseek", None, "deepseek-chat", None)?;
-let model = provider_from_env("deepseek", "deepseek-chat", None)?;
+// Keys are loaded when a request is made.
+let provider = create_provider("deepseek", PresetSettings::default())?;
+let model = provider.language_model("deepseek-chat")?;
+
+// Or assemble the built-in providers and resolve a provider:model id.
+let registry = create_provider_registry(default_providers(), Default::default());
+let model = registry.language_model("deepseek:deepseek-chat")?;
+let names = provider_names();
 // model usage is identical — it's all dyn LanguageModel
 ```
 
-All registry-backed OpenAI-compatible providers share one entry:
-`provider(name, ...)` in every binding. Provider names are runtime strings;
-the generated provider list is the discovery surface.
-The retired per-provider shell types (`XxxConfig`/`XxxProvider`) are gone —
-see [docs/API.md](docs/API.md#providers).
-
-> **Scope:** OpenAI-compatible → `provider(name, ...)`; others (Anthropic,
-> multimodal, local…) → their constructors. List:
-> [docs/api/providers.md](docs/api/providers.md).
+Rust by-name creation covers vendor packages and all 281 presets. Each vendor
+also has `create_xxx(XxxProviderSettings {..})` and a default instance `xxx()`.
+Bindings keep their own `provider(name, ...)` API. Runtime model listing uses
+`Provider::discovery()` and then `ProviderDiscovery::list_models()` — see
+[docs/api/rust.md](docs/api/rust.md#providers).
 
 ## Provider coverage
 
-Counts by category live in
-[docs/api/providers.md](docs/api/providers.md#totals) — generated from the
-registry and `lib.rs`, and the single source of truth. The rough shape of
+The generated catalogue is [docs/api/providers.md](docs/api/providers.md).
+The accepted Rust names come from `provider_names()`. The rough shape of
 the roster:
 
-- **Native protocol** — OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI, Anthropic-AWS, Voyage, Codex, OpenRouter
-- **OpenAI-compatible (registry-backed)** — Groq, Fireworks, Together, Perplexity, Ollama Cloud, DeepSeek, Alibaba Tongyi, Zhipu, Baidu, Tencent, Moonshot, SiliconFlow…
-- **OpenAI-compatible (standalone + Vertex-hosted)** — Hugging Face, Ollama, vLLM, SGLang, Llama.cpp, LiteLLM Proxy, Vertex-hosted DeepSeek/Qwen/Llama…
+- **Native protocol** — OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, Groq, DeepSeek, xAI, Anthropic-AWS, Voyage
+- **OpenAI-compatible (registry-backed)** — Fireworks, Together, Perplexity, OpenRouter, Ollama Cloud, Alibaba Tongyi, Zhipu, Baidu, Tencent, Moonshot, SiliconFlow…
+- **Local and Vertex-hosted presets** — Ollama, vLLM, SGLang, Llama.cpp, LiteLLM Proxy, Vertex-hosted DeepSeek/Qwen/Llama…
+- **Responses API for text** — xAI and Hugging Face (no chat-completions entry)
 - **Speech / transcription** — ElevenLabs, Deepgram, AssemblyAI, AWS Polly, Cartesia, Hume, Gladia, RevAI, LMNT, Fal
 - **Image / video** — Black Forest Labs, Replicate, Luma, Prodia, KlingAI, Recraft, Stability, RunwayML
 - **Embeddings / rerank / search** — Voyage, Jina, Tavily, Exa, Firecrawl, Serper, SearXNG, You.com…

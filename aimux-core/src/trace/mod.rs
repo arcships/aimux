@@ -25,5 +25,5 @@ pub use store::{
 };
 pub use verdict::{
     JudgmentInput, LcpInput, ProviderAuditSpec, ProviderFamily, SessionStats, Verdict,
-    VerdictConfidence, VerdictKind, judge, matrix, quantize_down,
+    VerdictConfidence, VerdictKind, judge, matrix,
 };

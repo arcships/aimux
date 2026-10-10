@@ -491,13 +491,23 @@ export interface ProviderConfig {
   organization?: string
   /** OpenAI project ID (sent via `OpenAI-Project` header). */
   project?: string
-  /** Override the provider's retry count. `0` disables retries. */
+  /**
+   * Values of a preset's template parameters, named as the registry
+   * declares them (e.g. `{ account_id: '…' }`), for providers created by
+   * name (`provider()` / `createProvider()`). Only parameters the preset
+   * declares are accepted.
+   */
+  params?: Record<string, string>
+  /**
+   * Rejected with `InvalidArgumentError`: retry is a per-call setting
+   * (`maxRetries` in the call options). The field exists only so passing it
+   * is reported instead of ignored.
+   */
   maxRetries?: number
   /**
-   * Provider-level request body overrides as a JSON string (deep-merged
-   * into every request). Per-call `bodyOverrides` in GenerateTextOptions
-   * takes precedence. Pass a JSON object string, e.g.
-   * `'{"enable_thinking": false}'`.
+   * Rejected with `InvalidArgumentError`: request-body overrides were
+   * removed. The field exists only so passing it is reported instead of
+   * ignored.
    */
   bodyOverrides?: string
 }

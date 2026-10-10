@@ -1922,7 +1922,6 @@ public final class Types {
         @JsonProperty("provider_options") private Map<String, JsonNode> providerOptions;
         @JsonProperty("reasoning") private ReasoningEffort reasoning;
         @JsonProperty("instructions") private String instructions;
-        @JsonProperty("body_overrides") private JsonNode bodyOverrides;
         @JsonProperty("max_retries") private Long maxRetries;
         @JsonProperty("include_raw_chunks") private Boolean includeRawChunks;
         @JsonProperty("timeout") private TimeoutConfiguration timeout;
@@ -1939,7 +1938,7 @@ public final class Types {
                                     JsonNode responseFormat, Long seed, List<Tool> tools, ToolChoice toolChoice,
                                     Map<String, String> headers, Map<String, JsonNode> providerOptions,
                                     ReasoningEffort reasoning, String instructions,
-                                    JsonNode bodyOverrides, Long maxRetries, Boolean includeRawChunks,
+                                    Long maxRetries, Boolean includeRawChunks,
                                     TimeoutConfiguration timeout, String sessionId) {
             this.maxOutputTokens = maxOutputTokens;
             this.temperature = temperature;
@@ -1956,7 +1955,6 @@ public final class Types {
             this.providerOptions = providerOptions;
             this.reasoning = reasoning;
             this.instructions = instructions;
-            this.bodyOverrides = bodyOverrides;
             this.maxRetries = maxRetries;
             this.includeRawChunks = includeRawChunks;
             this.timeout = timeout;
@@ -1978,7 +1976,6 @@ public final class Types {
         public Map<String, JsonNode> getProviderOptions() { return providerOptions; }
         public ReasoningEffort getReasoning() { return reasoning; }
         public String getInstructions() { return instructions; }
-        public JsonNode getBodyOverrides() { return bodyOverrides; }
         public Long getMaxRetries() { return maxRetries; }
         public Boolean getIncludeRawChunks() { return includeRawChunks; }
         public TimeoutConfiguration getTimeout() { return timeout; }
@@ -2025,7 +2022,6 @@ public final class Types {
             private Map<String, JsonNode> providerOptions;
             private ReasoningEffort reasoning;
             private String instructions;
-            private JsonNode bodyOverrides;
             private Long maxRetries;
             private Boolean includeRawChunks;
             private TimeoutConfiguration timeout;
@@ -2047,7 +2043,6 @@ public final class Types {
             public Builder providerOptions(Map<String, JsonNode> v) { this.providerOptions = v; return this; }
             public Builder reasoning(ReasoningEffort v) { this.reasoning = v; return this; }
             public Builder instructions(String v) { this.instructions = v; return this; }
-            public Builder bodyOverrides(JsonNode v) { this.bodyOverrides = v; return this; }
             public Builder maxRetries(Long v) { this.maxRetries = v; return this; }
             public Builder includeRawChunks(Boolean v) { this.includeRawChunks = v; return this; }
             public Builder timeout(TimeoutConfiguration v) { this.timeout = v; return this; }
@@ -2058,7 +2053,7 @@ public final class Types {
             public GenerateTextOptions build() {
                 GenerateTextOptions options = new GenerateTextOptions(maxOutputTokens, temperature,
                     stopSequences, topP, topK, presencePenalty, frequencyPenalty, responseFormat, seed,
-                    tools, toolChoice, headers, providerOptions, reasoning, instructions, bodyOverrides,
+                    tools, toolChoice, headers, providerOptions, reasoning, instructions,
                     maxRetries, includeRawChunks, timeout, sessionId);
                 // Set outside the constructor: the hook is host-side state, not
                 // part of the serialized option set.
@@ -2087,7 +2082,6 @@ public final class Types {
                 && Objects.equals(providerOptions, that.providerOptions)
                 && Objects.equals(reasoning, that.reasoning)
                 && Objects.equals(instructions, that.instructions)
-                && Objects.equals(bodyOverrides, that.bodyOverrides)
                 && Objects.equals(maxRetries, that.maxRetries)
                 && Objects.equals(includeRawChunks, that.includeRawChunks)
                 && Objects.equals(timeout, that.timeout)
@@ -2098,7 +2092,7 @@ public final class Types {
         public int hashCode() {
             return Objects.hash(maxOutputTokens, temperature, stopSequences, topP, topK, presencePenalty,
                 frequencyPenalty, responseFormat, seed, tools, toolChoice, headers, providerOptions, reasoning,
-                instructions, bodyOverrides, maxRetries, includeRawChunks, timeout, sessionId);
+                instructions, maxRetries, includeRawChunks, timeout, sessionId);
         }
     }
 
@@ -3020,34 +3014,8 @@ public final class Types {
         }
     }
 
-    /** Provider HTTP request information. */
-    public static class GenerateRequest {
-        @JsonProperty("body") private JsonNode body;
-
-        @JsonCreator
-        GenerateRequest() {}
-
-        private GenerateRequest(JsonNode body) { this.body = body; }
-        public JsonNode getBody() { return body; }
-        public static Builder builder() { return new Builder(); }
-
-        public static class Builder {
-            private JsonNode body;
-            public Builder body(JsonNode v) { this.body = v; return this; }
-            public GenerateRequest build() { return new GenerateRequest(body); }
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            return o instanceof GenerateRequest && Objects.equals(body, ((GenerateRequest) o).body);
-        }
-
-        @Override
-        public int hashCode() { return Objects.hash(body); }
-    }
-
-    /** Provider response metadata, headers, and body. */
-    public static class GenerateResponse {
+    /** Response metadata, headers, and body returned by the provider. */
+    public static class ResponseInfo {
         @JsonProperty("id") private String id;
         @JsonProperty("timestamp") private String timestamp;
         @JsonProperty("model_id") private String modelId;
@@ -3055,10 +3023,9 @@ public final class Types {
         @JsonProperty("body") private JsonNode body;
 
         @JsonCreator
-        GenerateResponse() {}
+        ResponseInfo() {}
 
-        private GenerateResponse(String id, String timestamp, String modelId,
-                                 Map<String, String> headers, JsonNode body) {
+        private ResponseInfo(String id, String timestamp, String modelId, Map<String, String> headers, JsonNode body) {
             this.id = id;
             this.timestamp = timestamp;
             this.modelId = modelId;
@@ -3071,6 +3038,7 @@ public final class Types {
         public String getModelId() { return modelId; }
         public Map<String, String> getHeaders() { return headers; }
         public JsonNode getBody() { return body; }
+
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
@@ -3079,25 +3047,64 @@ public final class Types {
             private String modelId;
             private Map<String, String> headers;
             private JsonNode body;
+
             public Builder id(String v) { this.id = v; return this; }
             public Builder timestamp(String v) { this.timestamp = v; return this; }
             public Builder modelId(String v) { this.modelId = v; return this; }
             public Builder headers(Map<String, String> v) { this.headers = v; return this; }
             public Builder body(JsonNode v) { this.body = v; return this; }
-            public GenerateResponse build() { return new GenerateResponse(id, timestamp, modelId, headers, body); }
+
+            public ResponseInfo build() { return new ResponseInfo(id, timestamp, modelId, headers, body); }
         }
 
         @Override
         public boolean equals(Object o) {
-            if (!(o instanceof GenerateResponse)) return false;
-            GenerateResponse that = (GenerateResponse) o;
-            return Objects.equals(id, that.id) && Objects.equals(timestamp, that.timestamp)
-                && Objects.equals(modelId, that.modelId) && Objects.equals(headers, that.headers)
+            if (this == o) return true;
+            if (!(o instanceof ResponseInfo)) return false;
+            ResponseInfo that = (ResponseInfo) o;
+            return Objects.equals(id, that.id)
+                && Objects.equals(timestamp, that.timestamp)
+                && Objects.equals(modelId, that.modelId)
+                && Objects.equals(headers, that.headers)
                 && Objects.equals(body, that.body);
         }
 
         @Override
         public int hashCode() { return Objects.hash(id, timestamp, modelId, headers, body); }
+    }
+
+    public static class RequestInfo {
+        @JsonProperty("body") private JsonNode body;
+
+        @JsonCreator
+        RequestInfo() {}
+
+        private RequestInfo(JsonNode body) {
+            this.body = body;
+        }
+
+        public JsonNode getBody() { return body; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private JsonNode body;
+
+            public Builder body(JsonNode v) { this.body = v; return this; }
+
+            public RequestInfo build() { return new RequestInfo(body); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof RequestInfo)) return false;
+            RequestInfo that = (RequestInfo) o;
+            return Objects.equals(body, that.body);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(body); }
     }
 
     /**
@@ -3113,15 +3120,15 @@ public final class Types {
         @JsonProperty("usage") private Usage usage = new Usage();
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
         @JsonProperty("provider_metadata") private JsonNode providerMetadata;
-        @JsonProperty("response") private GenerateResponse response;
-        @JsonProperty("request") private GenerateRequest request;
+        @JsonProperty("response") private ResponseInfo response;
+        @JsonProperty("request") private RequestInfo request;
 
         @JsonCreator
         GenerateResult() {}
 
         private GenerateResult(List<GenerateContent> content, FinishReason finishReason, Usage usage,
-                               List<JsonNode> warnings, JsonNode providerMetadata, GenerateResponse response,
-                               GenerateRequest request) {
+                               List<JsonNode> warnings, JsonNode providerMetadata, ResponseInfo response,
+                               RequestInfo request) {
             this.content = content;
             this.finishReason = finishReason;
             this.usage = usage;
@@ -3136,8 +3143,8 @@ public final class Types {
         public Usage getUsage() { return usage; }
         public List<JsonNode> getWarnings() { return warnings; }
         public JsonNode getProviderMetadata() { return providerMetadata; }
-        public GenerateResponse getResponse() { return response; }
-        public GenerateRequest getRequest() { return request; }
+        public ResponseInfo getResponse() { return response; }
+        public RequestInfo getRequest() { return request; }
 
         /** Names of the variant tags present in {@link #getContent()} (e.g. "Text", "ToolCall"). */
         public List<String> getContentVariantTags() {
@@ -3164,16 +3171,16 @@ public final class Types {
             private Usage usage = new Usage();
             private List<JsonNode> warnings = new ArrayList<>();
             private JsonNode providerMetadata;
-            private GenerateResponse response;
-            private GenerateRequest request;
+            private ResponseInfo response;
+            private RequestInfo request;
 
             public Builder content(List<GenerateContent> v) { this.content = v; return this; }
             public Builder finishReason(FinishReason v) { this.finishReason = v; return this; }
             public Builder usage(Usage v) { this.usage = v; return this; }
             public Builder warnings(List<JsonNode> v) { this.warnings = v; return this; }
             public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
-            public Builder response(GenerateResponse v) { this.response = v; return this; }
-            public Builder request(GenerateRequest v) { this.request = v; return this; }
+            public Builder response(ResponseInfo v) { this.response = v; return this; }
+            public Builder request(RequestInfo v) { this.request = v; return this; }
 
             public GenerateResult build() {
                 return new GenerateResult(content, finishReason, usage, warnings, providerMetadata, response,

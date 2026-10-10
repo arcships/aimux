@@ -14,6 +14,8 @@ import {
   APICallError,
   RetryError,
   InvalidArgumentError,
+  LoadAPIKeyError,
+  LoadSettingError,
   NoSuchProviderError,
   RecordingError,
   initRecording,
@@ -62,10 +64,9 @@ test('stream error path yields a typed AimuxError', async (t) => {
   // Unreachable port: connection is refused immediately; no retries.
   const model = await openai('test-key', 'gpt-4o', {
     baseUrl: 'http://127.0.0.1:1',
-    maxRetries: 0,
   })
   const err = (await t.throwsAsync(async () => {
-    for await (const _part of streamText(model, 'hello')) {
+    for await (const _part of streamText(model, 'hello', { max_retries: 0 })) {
       // never yields
     }
   })) as AimuxError
@@ -116,9 +117,9 @@ test('APICallError carries every field the response produced', async (t) => {
     res.end(body)
   })
   try {
-    const model = await native.openai('test-key', 'gpt-4o', { baseUrl: url, maxRetries: 0 })
+    const model = await native.openai('test-key', 'gpt-4o', { baseUrl: url })
     const err = (await t.throwsAsync(() =>
-      model.generateText(JSON.stringify('hi')),
+      model.generateText(JSON.stringify('hi'), JSON.stringify({ max_retries: 0 })),
     )) as APICallError
     t.true(err instanceof APICallError)
     t.true(err instanceof native.APICallError)
@@ -153,9 +154,9 @@ test('exhausted retries throw RetryError with the per-attempt history', async (t
     res.end(body)
   })
   try {
-    const model = await native.openai('test-key', 'gpt-4o', { baseUrl: url, maxRetries: 1 })
+    const model = await native.openai('test-key', 'gpt-4o', { baseUrl: url })
     const err = (await t.throwsAsync(() =>
-      model.generateText(JSON.stringify('hi')),
+      model.generateText(JSON.stringify('hi'), JSON.stringify({ max_retries: 1 })),
     )) as RetryError
     t.true(err instanceof RetryError)
     t.true(err instanceof AimuxError)
@@ -209,7 +210,7 @@ test('typed initRecordingRing keeps core errors in the AimuxError hierarchy', (t
 })
 
 test('malformed prompt JSON is a plain napi InvalidArg error, not a core error', async (t) => {
-  const model = await openai('test-key', 'gpt-4o', { baseUrl: 'http://127.0.0.1:1', maxRetries: 0 })
+  const model = await openai('test-key', 'gpt-4o', { baseUrl: 'http://127.0.0.1:1' })
   // The typed generateText() always stringifies; hit the raw JSON-text path.
   const err = (await t.throwsAsync(() => model.generateText('{not json'))) as Error & {
     code?: string
@@ -228,4 +229,52 @@ test('sync wire-JSON failure is napi InvalidArg; business validation stays core-
   t.false(err instanceof AimuxError)
   // Well-formed JSON that fails the schema is what the core would reject.
   t.true(t.throws(() => mockReplay('{}')) instanceof InvalidArgumentError)
+})
+
+// ── LoadAPIKeyError / LoadSettingError ───────────────────────────────────────
+
+test.serial('a missing API key is a LoadAPIKeyError carrying the environment variable', async (t) => {
+  const saved = process.env.GROQ_API_KEY
+  delete process.env.GROQ_API_KEY
+  try {
+    const err = (await t.throwsAsync(() => provider('groq', null, 'some-model'))) as LoadAPIKeyError
+    t.true(err instanceof LoadAPIKeyError)
+    t.true(err instanceof AimuxError)
+    t.false(err instanceof InvalidArgumentError)
+    t.is(err.constructor, LoadAPIKeyError)
+    t.is(err.name, 'LoadAPIKeyError')
+    t.is(err.envVar, 'GROQ_API_KEY')
+    t.is(err.description, 'Groq')
+    t.regex(err.message, /GROQ_API_KEY/)
+    // Pre-HTTP: none of the ApiCall-only fields exist.
+    t.false('status' in err)
+    t.false('retryable' in err)
+  } finally {
+    if (saved !== undefined) process.env.GROQ_API_KEY = saved
+  }
+})
+
+test.serial('an explicit empty API key is not a LoadAPIKeyError', async (t) => {
+  // The AI SDK sends an explicit empty key verbatim; only `null` consults the env.
+  const model = await provider('groq', '', 'some-model')
+  t.truthy(model)
+})
+
+test.serial('a missing provider setting is a LoadSettingError at call time', async (t) => {
+  const saved = process.env.AZURE_RESOURCE_NAME
+  delete process.env.AZURE_RESOURCE_NAME
+  try {
+    const model = await native.azure('test-key', '', 'some-deployment')
+    const err = (await t.throwsAsync(() =>
+      model.generateText(JSON.stringify('hi'), JSON.stringify({ max_retries: 0 })),
+    )) as LoadSettingError
+    t.true(err instanceof LoadSettingError)
+    t.true(err instanceof AimuxError)
+    t.is(err.constructor, LoadSettingError)
+    t.is(err.envVar, 'AZURE_RESOURCE_NAME')
+    t.is(err.settingName, 'resourceName')
+    t.false('status' in err)
+  } finally {
+    if (saved !== undefined) process.env.AZURE_RESOURCE_NAME = saved
+  }
 })

@@ -4,7 +4,7 @@
 //! - `packages/moonshotai/src/moonshotai-provider.test.ts`
 //! - `packages/moonshotai/src/convert-moonshotai-chat-usage.test.ts`
 //!
-//! Moonshot AI is a thin OpenAI-compatible wrapper over [`OpenAIProvider`].
+//! Moonshot AI is a registry preset of the OpenAI-compatible package.
 //! The TS suite has a custom usage converter that recognises a **top-level**
 //! `cached_tokens` field (Moonshot's wire format) and prioritises it over the
 //! nested `prompt_tokens_details.cached_tokens`. The shared OpenAI
@@ -20,6 +20,7 @@
 use futures::StreamExt;
 use serde_json::{Value, json};
 use serial_test::serial;
+use std::sync::Arc;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -30,7 +31,7 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::{ProviderOptions, provider, provider_from_env};
+use aimux_providers::{PresetSettings, create_provider};
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -83,16 +84,17 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     parts
 }
 
-fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-    provider(
+fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+    create_provider(
         "moonshotai",
-        Some("test-api-key".to_string()),
-        "moonshot-v1-8k",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("test-api-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("moonshot-v1-8k")
     .expect("moonshotai provider should build")
 }
 
@@ -121,12 +123,15 @@ async fn usage_for(usage: Value) -> aimux_core::types::Usage {
 /// TS: `createMoonshotAI()` produces a provider whose name is "moonshotai".
 #[test]
 fn provider_builds_moonshotai_model() {
-    let model = provider(
+    let model = create_provider(
         "moonshotai",
-        Some("test-key".to_string()),
-        "moonshot-v1-8k",
-        None,
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
+            ..Default::default()
+        },
     )
+    .expect("provider should build")
+    .language_model("moonshot-v1-8k")
     .expect("moonshotai provider should build");
     assert_eq!(model.model_id(), "moonshot-v1-8k");
 }
@@ -146,15 +151,16 @@ async fn custom_api_key_used_in_auth_header() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = create_provider(
         "moonshotai",
-        Some("my-custom-key".to_string()),
-        "moonshot-v1-8k",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("my-custom-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("moonshot-v1-8k")
     .expect("moonshotai provider should build");
 
     model
@@ -178,15 +184,16 @@ async fn custom_headers_forwarded() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = create_provider(
         "moonshotai",
-        Some("test-key".to_string()),
-        "moonshot-v1-8k",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("moonshot-v1-8k")
     .expect("moonshotai provider should build");
 
     let mut options = default_options(test_prompt());
@@ -216,15 +223,16 @@ async fn language_model_via_trait() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = create_provider(
         "moonshotai",
-        Some("test-key".to_string()),
-        "moonshot-v1-8k",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("moonshot-v1-8k")
     .expect("provider should build a model");
 
     model
@@ -242,7 +250,9 @@ fn from_env_loads_moonshot_api_key() {
         std::env::set_var("MOONSHOT_API_KEY", "env-test-key");
     }
 
-    let model = provider_from_env("moonshotai", "moonshot-v1-8k", None);
+    let model = create_provider("moonshotai", PresetSettings::default())
+        .expect("provider should build")
+        .language_model("moonshot-v1-8k");
     assert!(model.is_ok(), "from_env should succeed with env var set");
 
     unsafe {
@@ -255,15 +265,19 @@ fn from_env_loads_moonshot_api_key() {
 
 /// TS: without the env var, `createMoonshotAI()` fails.
 #[serial]
-#[test]
-fn from_env_fails_without_env_var() {
+#[tokio::test]
+async fn from_env_fails_without_env_var() {
     let saved = std::env::var("MOONSHOT_API_KEY").ok();
     unsafe {
         std::env::remove_var("MOONSHOT_API_KEY");
     }
 
-    let model = provider_from_env("moonshotai", "moonshot-v1-8k", None);
-    assert!(model.is_err(), "from_env should fail without env var");
+    let model = create_provider("moonshotai", PresetSettings::default())
+        .expect("provider should build")
+        .language_model("moonshot-v1-8k")
+        .expect("provider should build a model");
+    let result = model.do_generate(&default_options(test_prompt())).await;
+    assert!(result.is_err(), "from_env should fail without env var");
 
     unsafe {
         if let Some(v) = saved {

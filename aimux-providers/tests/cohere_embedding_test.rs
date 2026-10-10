@@ -9,8 +9,9 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
-use aimux_providers::{CohereConfig, CohereProvider};
+use aimux_core::embedding_model::EmbeddingCallOptions;
+use aimux_core::provider::Provider;
+use aimux_providers::{CohereProviderSettings, create_cohere};
 
 const TEST_VALUES: &[&str] = &["sunny day at the beach", "rainy day in the city"];
 
@@ -58,9 +59,13 @@ async fn should_extract_embedding() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.embedding_model("embed-english-v3.0");
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some("test-api-key".to_string()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.embedding_model("embed-english-v3.0").unwrap();
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -97,9 +102,13 @@ async fn should_expose_raw_response() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.embedding_model("embed-english-v3.0");
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some("test-api-key".to_string()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.embedding_model("embed-english-v3.0").unwrap();
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -114,6 +123,10 @@ async fn should_expose_raw_response() {
         headers.get("test-header").map(std::string::String::as_str),
         Some("test-value")
     );
+    assert_eq!(
+        result.response.unwrap().body,
+        Some(embedding_response_body())
+    );
 }
 
 /// TS: "should extract usage"
@@ -126,9 +139,13 @@ async fn should_extract_usage() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.embedding_model("embed-english-v3.0");
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some("test-api-key".to_string()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.embedding_model("embed-english-v3.0").unwrap();
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -148,9 +165,13 @@ async fn should_pass_model_and_values() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.embedding_model("embed-english-v3.0");
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some("test-api-key".to_string()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.embedding_model("embed-english-v3.0").unwrap();
 
     let _ = model
         .do_embed(&default_options(test_values()))
@@ -179,9 +200,17 @@ async fn should_pass_headers() {
         .mount(&server)
         .await;
 
-    let config = CohereConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = CohereProvider::new(config);
-    let model = provider.embedding_model("embed-english-v3.0");
+    let provider = create_cohere(CohereProviderSettings {
+        api_key: Some("test-api-key".to_string()),
+        base_url: Some(server.uri()),
+        headers: Some(HashMap::from([(
+            "Custom-Provider-Header".to_string(),
+            Some("provider-header-value".to_string()),
+        )])),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.embedding_model("embed-english-v3.0").unwrap();
 
     let mut request_headers = HashMap::new();
     request_headers.insert(
@@ -203,6 +232,11 @@ async fn should_pass_headers() {
     let requests = server.received_requests().await.expect("requests recorded");
     assert_eq!(requests.len(), 1);
     let h = &requests[0].headers;
+    assert_eq!(
+        h.get("custom-provider-header")
+            .and_then(|v| v.to_str().ok()),
+        Some("provider-header-value")
+    );
     assert_eq!(
         h.get("authorization").and_then(|v| v.to_str().ok()),
         Some("Bearer test-api-key")

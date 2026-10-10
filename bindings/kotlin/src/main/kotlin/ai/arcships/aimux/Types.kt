@@ -146,18 +146,16 @@ data class ResponseMetadata(
 )
 
 @Serializable
-data class GenerateRequest(
-    val body: JsonElement? = null,
-)
-
-@Serializable
-data class GenerateResponse(
+data class ResponseInfo(
     val id: String? = null,
     val timestamp: String? = null,
     @SerialName("model_id") val modelId: String? = null,
     val headers: Map<String, String>? = null,
     val body: JsonElement? = null,
 )
+
+@Serializable
+data class RequestInfo(val body: JsonElement? = null)
 
 /**
  * A tool call requested by the model.
@@ -635,8 +633,6 @@ data class GenerateTextOptions(
     @SerialName("provider_options") val providerOptions: Map<String, JsonElement>? = null,
     val reasoning: ReasoningEffort? = null,
     val instructions: String? = null,
-    /** Per-call JSON deep-merge overrides for the request body. Untyped ([JsonElement]). */
-    @SerialName("body_overrides") val bodyOverrides: JsonElement? = null,
     /** Per-call retry count (0 = disable retries). */
     @SerialName("max_retries") val maxRetries: Long? = null,
     /** Emit raw provider stream chunks as `StreamPart.Raw` (debugging; OpenAI-compatible family only). */
@@ -1055,8 +1051,8 @@ data class GenerateResult(
     val usage: Usage = Usage(),
     val warnings: List<JsonElement> = emptyList(),
     @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    val response: GenerateResponse? = null,
-    val request: GenerateRequest? = null,
+    val response: ResponseInfo? = null,
+    val request: RequestInfo? = null,
 ) {
     /** Names of the variant tags present in [content] (e.g. "Text", "ToolCall"). */
     val contentVariantTags: List<String>

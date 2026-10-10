@@ -8,20 +8,26 @@
 //! key (`GOOGLE_API_KEY`) and a search-engine ID / `cx` (`GOOGLE_CSE_ID`),
 //! both passed as query parameters. The `cx` may also be supplied at call
 //! time via `provider_options["google_pse"]["cx"]`.
+//!
+//! [`create_google_pse`] takes [`GooglePseProviderSettings`], validates the base URL, fixes
+//! the provider name and returns a [`GooglePseProvider`]. The credential is not read
+//! there: it is loaded for every request, from the setting or from `GOOGLE_API_KEY`.
+//! [`google_pse()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
 use aimux_core::shared::SharedProviderOptions;
-use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+
+use crate::shared::{AuthScheme, Credential, EndpointConfig, credential_headers};
 
 /// Fixed model ID for the Google PSE search model.
 const MODEL_ID: &str = "google-pse-search";
@@ -47,102 +53,149 @@ fn google_pse_failed_response_handler() -> aimux_provider_utils::ResponseHandler
     })
 }
 
-/// Configuration for the Google PSE provider.
-#[derive(Debug, Clone)]
-pub struct GooglePseConfig {
-    pub api_key: String,
-    /// Search-engine ID (`cx`). May be `None` here and supplied per-call via
-    /// `provider_options["google_pse"]["cx"]`.
-    pub cx: Option<String>,
-    pub base_url: String,
-}
+pub(crate) mod options;
 
-impl GooglePseConfig {
-    /// Create from an API key (uses the default Google Custom Search base URL).
-    /// `cx` defaults to `None`.
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            cx: None,
-            base_url: "https://www.googleapis.com/customsearch/v1".to_string(),
-        }
-    }
+const DEFAULT_BASE_URL: &str = "https://www.googleapis.com/customsearch/v1";
+const API_KEY_ENV_VAR: &str = "GOOGLE_API_KEY";
+const CX_ENV_VAR: &str = "GOOGLE_CSE_ID";
+const DEFAULT_NAME: &str = "google_pse";
 
-    /// Set the search-engine ID (`cx`).
-    #[must_use]
-    pub fn with_cx(mut self, cx: impl Into<String>) -> Self {
-        self.cx = Some(cx.into());
-        self
-    }
-
-    /// Use a custom base URL.
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-
-    /// Create from the `GOOGLE_API_KEY` and (optional) `GOOGLE_CSE_ID`
-    /// environment variables. `GOOGLE_API_KEY` is required; `GOOGLE_CSE_ID`
-    /// may be omitted if `cx` is supplied per-call via `provider_options`.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when `GOOGLE_API_KEY` is not set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "GOOGLE_API_KEY", "Google PSE")?;
-        let cx = std::env::var("GOOGLE_CSE_ID").ok();
-        Ok(Self::new(api_key).with_maybe_cx(cx))
-    }
-
-    fn with_maybe_cx(mut self, cx: Option<String>) -> Self {
-        self.cx = cx;
-        self
-    }
-}
-
-/// Google PSE provider — creates `GooglePseSearchModel` instances.
+/// Settings of [`create_google_pse`].
 ///
-/// Google PSE is a search-only provider; it does not support language models.
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct GooglePseProviderSettings {
+    /// The endpoint URL, query parameters excluded. Default
+    /// `https://www.googleapis.com/customsearch/v1`; a trailing slash is
+    /// removed.
+    pub base_url: Option<String>,
+    /// The API key, sent as the `key` query parameter. `None` loads
+    /// `GOOGLE_API_KEY` when a request is made and fails that request with
+    /// `AiMuxError::LoadApiKey` if it is unset. An explicit value is used as
+    /// given, `""` included: it never falls back to the environment.
+    pub api_key: Option<Resolvable<String>>,
+    /// The search-engine ID (`cx`). `None` uses
+    /// `providerOptions.google_pse.cx` of the call, then `GOOGLE_CSE_ID`;
+    /// a call with none of them fails with `AiMuxError::InvalidArgument`.
+    pub cx: Option<String>,
+    /// Extra headers on every request. A `None` value removes the header.
+    /// Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` string
+    /// (`"{name}.search"`). Default `"google_pse"`. The providerOptions key
+    /// stays `google_pse`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
+}
+
+impl std::fmt::Debug for GooglePseProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GooglePseProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field("cx", &self.cx)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .finish()
+    }
+}
+
+/// Create a Google PSE provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_google_pse(
+    settings: GooglePseProviderSettings,
+) -> Result<GooglePseProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(GooglePseProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        credential: Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Google PSE"),
+        cx: settings.cx,
+        // The key travels in the query string, so the headers carry none.
+        headers: credential_headers(
+            Credential::None,
+            AuthScheme::Bearer,
+            Vec::new(),
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+    })
+}
+
+/// The default provider: `create_google_pse` with default settings, created
+/// on first use. Creating it reads nothing from the environment and cannot
+/// fail; a missing key surfaces from the first request instead.
+pub fn google_pse() -> &'static GooglePseProvider {
+    static DEFAULT: OnceLock<GooglePseProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_google_pse(GooglePseProviderSettings::default())
+            .expect("default Google PSE settings are always valid")
+    })
+}
+
+/// A Google PSE provider. Search only; it holds no HTTP client.
 pub struct GooglePseProvider {
-    config: GooglePseConfig,
+    name: String,
+    base_url: String,
+    credential: Credential,
+    cx: Option<String>,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
 }
 
 impl GooglePseProvider {
-    #[must_use]
-    pub fn new(config: GooglePseConfig) -> Self {
-        Self { config }
-    }
-
-    /// Create a search model instance.
+    /// The search model; `provider()` is `"{name}.search"`.
     #[must_use]
     pub fn search_model(&self) -> GooglePseSearchModel {
-        GooglePseSearchModel::new(self.config.clone())
+        GooglePseSearchModel::from_config(
+            EndpointConfig::fixed(
+                format!("{}.search", self.name),
+                self.base_url.clone(),
+                self.headers.clone(),
+                self.fetch.clone(),
+                None,
+            ),
+            self.credential.clone(),
+            self.cx.clone(),
+        )
     }
 }
 
-impl Provider for GooglePseProvider {
-    fn name(&self) -> &str {
-        "google_pse"
-    }
-}
+crate::impl_single_modality_provider!(GooglePseProvider, search_model, |p, _id| p.search_model());
 
-/// Resolve the `cx` (search-engine ID): prefer the config value, then
-/// `provider_options["google_pse"]["cx"]`.
+/// Resolve the `cx` (search-engine ID): the `cx` setting, then
+/// `provider_options["google_pse"]["cx"]`, then `GOOGLE_CSE_ID`.
 fn resolve_cx(
-    config_cx: Option<&str>,
+    setting_cx: Option<&str>,
     provider_options: Option<&SharedProviderOptions>,
 ) -> Option<String> {
-    if let Some(cx) = config_cx {
+    if let Some(cx) = setting_cx {
         return Some(cx.to_string());
     }
-    if let Some(po) = provider_options
-        && let Some(google_pse) = po.get("google_pse")
-        && let Some(cx) = google_pse.get("cx").and_then(|v| v.as_str())
+    if let Some(cx) = options::google_pse_options(provider_options)
+        .and_then(|options| options.get("cx"))
+        .and_then(Value::as_str)
     {
         return Some(cx.to_string());
     }
-    None
+    std::env::var(CX_ENV_VAR).ok()
 }
 
 /// A single Google PSE result item. All fields are optional so unknown-but-
@@ -180,26 +233,29 @@ fn map_results(entries: Vec<GooglePseItem>) -> Vec<SearchResultItem> {
 
 /// A Google PSE search model.
 pub struct GooglePseSearchModel {
-    config: GooglePseConfig,
+    config: EndpointConfig,
+    credential: Credential,
+    cx: Option<String>,
 }
 
 impl GooglePseSearchModel {
-    #[must_use]
-    pub fn new(config: GooglePseConfig) -> Self {
-        Self { config }
-    }
-
-    fn endpoint(&self) -> String {
-        // The base URL already includes the `/customsearch/v1` path; query
-        // parameters (key, cx, q, num) are appended by the caller.
-        self.config.base_url.clone()
+    pub(crate) fn from_config(
+        config: EndpointConfig,
+        credential: Credential,
+        cx: Option<String>,
+    ) -> Self {
+        Self {
+            config,
+            credential,
+            cx,
+        }
     }
 }
 
 #[async_trait]
 impl SearchModel for GooglePseSearchModel {
     fn provider(&self) -> &str {
-        "google_pse"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -207,31 +263,26 @@ impl SearchModel for GooglePseSearchModel {
     }
 
     async fn do_search(&self, options: &SearchCallOptions) -> Result<SearchResult, AiMuxError> {
-        let cx = resolve_cx(self.config.cx.as_deref(), options.provider_options.as_ref())
+        let cx = resolve_cx(self.cx.as_deref(), options.provider_options.as_ref())
             .ok_or_else(|| {
                 AiMuxError::InvalidArgument(
-                    "Google PSE requires a `cx` (search-engine ID). Set the `GOOGLE_CSE_ID` \
+                    "Google PSE requires a `cx` (search-engine ID). Set the `cx` setting, the `GOOGLE_CSE_ID` \
                      environment variable or pass it via `provider_options[\"google_pse\"][\"cx\"]`."
                         .to_string(),
                 )
             })?;
 
-        // Google PSE authenticates via query parameters; only forward
-        // user-supplied extra headers.
-        let headers: Vec<(String, String)> = options
-            .headers
-            .as_ref()
-            .map(|extra: &HashMap<String, String>| {
-                extra.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-            })
-            .unwrap_or_default();
+        // Google PSE authenticates via query parameters, so the provider headers
+        // carry no credential.
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let api_key = self.credential.secret().await?.unwrap_or_default();
 
-        let mut url = url::Url::parse(&self.endpoint()).map_err(|e| {
+        let mut url = url::Url::parse(exchange.base_url()).map_err(|e| {
             AiMuxError::InvalidArgument(format!("invalid google_pse endpoint: {e}"))
         })?;
         {
             let mut qp = url.query_pairs_mut();
-            qp.append_pair("key", &self.config.api_key)
+            qp.append_pair("key", &api_key)
                 .append_pair("cx", &cx)
                 .append_pair("q", &options.query);
             if let Some(num) = options.max_results {
@@ -240,15 +291,7 @@ impl SearchModel for GooglePseSearchModel {
         }
 
         let resp = aimux_provider_utils::get_from_api(
-            HttpRequest {
-                url: url.to_string(),
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                ..Default::default()
-            },
+            exchange.request(url.to_string(), options),
             aimux_provider_utils::create_json_response_handler::<GooglePseResponse>(),
             google_pse_failed_response_handler(),
         )
