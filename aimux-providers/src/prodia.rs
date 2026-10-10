@@ -169,7 +169,6 @@ impl ProdiaProvider {
                 ),
             },
             self.fetch.clone(),
-            None,
         )
     }
 

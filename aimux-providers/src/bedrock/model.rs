@@ -148,7 +148,6 @@ impl LanguageModel for BedrockModel {
         let (body, warnings, uses_json_instruction, uses_json_tool) =
             build_request_body_checked(&self.model_id, options, self.model_family.as_deref())?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(body);
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = exchange.url(&self.path(false));
         let resp = aimux_provider_utils::post_to_api(
@@ -253,7 +252,6 @@ impl LanguageModel for BedrockModel {
         let (body, warnings, uses_json_instruction, uses_json_tool) =
             build_request_body_checked(&self.model_id, options, self.model_family.as_deref())?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(body);
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = exchange.url(&self.path(true));
         let error_url = url.clone();

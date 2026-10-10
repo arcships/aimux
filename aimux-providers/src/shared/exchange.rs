@@ -12,7 +12,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
-use serde_json::Value;
 
 use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
@@ -20,8 +19,6 @@ use aimux_provider_utils::{
     ExchangeContext, FetchFunction, HeaderMapOpt, HeadersFn, HttpRequest, combine_headers,
     normalize_headers,
 };
-
-use super::TransformRequestBody;
 
 /// What one request is addressed to: the base URL and the provider headers,
 /// both resolved for this request.
@@ -50,8 +47,6 @@ pub(crate) struct EndpointConfig {
     /// URLs the model fetches itself, by model id. Empty: the caller
     /// downloads them.
     pub(crate) supported_urls: SupportedUrlsFn,
-    /// Provider-level request-body rewrite.
-    pub(crate) transform_request_body: Option<TransformRequestBody>,
 }
 
 impl EndpointConfig {
@@ -62,7 +57,6 @@ impl EndpointConfig {
         base_url: String,
         headers: HeadersFn,
         fetch: Option<FetchFunction>,
-        transform_request_body: Option<TransformRequestBody>,
     ) -> Self {
         Self {
             provider,
@@ -78,7 +72,6 @@ impl EndpointConfig {
             }),
             fetch,
             supported_urls: Arc::new(|_| SupportedUrls::default()),
-            transform_request_body,
         }
     }
 
@@ -94,7 +87,6 @@ impl EndpointConfig {
             endpoint,
             fetch,
             supported_urls: Arc::new(|_| SupportedUrls::default()),
-            transform_request_body: None,
         }
     }
 
@@ -130,7 +122,6 @@ impl EndpointConfig {
             base_url: endpoint.base_url,
             headers: normalize_headers(combine_headers(&[&endpoint.headers, &call])),
             fetch: self.fetch.clone(),
-            transform_request_body: self.transform_request_body.clone(),
         })
     }
 }
@@ -140,7 +131,6 @@ pub(crate) struct Exchange {
     base_url: String,
     headers: Vec<(String, String)>,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl Exchange {
@@ -171,13 +161,5 @@ impl Exchange {
         request.fetch = self.fetch.clone();
         request.credentialed_origin = Some(self.base_url.clone());
         request
-    }
-
-    /// Run the provider-level body rewrite, when there is one.
-    pub(crate) fn transform_body(&self, body: Value) -> Value {
-        match &self.transform_request_body {
-            Some(transform) => transform(body),
-            None => body,
-        }
     }
 }

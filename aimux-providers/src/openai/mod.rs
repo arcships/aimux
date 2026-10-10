@@ -296,7 +296,6 @@ impl OpenAIProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            None,
         );
         config.supported_urls = config::supported_urls(method);
         if method == "responses" {

@@ -307,7 +307,6 @@ impl GoogleProvider {
             }),
             fetch: self.fetch.clone(),
             supported_urls: Arc::new(move |model_id| supported_urls(&urls_base, Some(model_id))),
-            transform_request_body: None,
         }
     }
 

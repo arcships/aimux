@@ -234,7 +234,6 @@ impl OpenAIResponsesModel {
                 "Adjacent reasoning effort configuration updates".into(),
             ));
         }
-        result.body = self.config.transform_body(result.body);
         Ok(result)
     }
 

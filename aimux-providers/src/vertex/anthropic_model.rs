@@ -28,7 +28,7 @@ use aimux_core::language_model::SupportedUrls;
 use aimux_provider_utils::{FetchFunction, Resolvable};
 
 use crate::anthropic::AnthropicMessagesModel;
-use crate::anthropic::config::{AnthropicModelConfig, AnthropicModelHooks, TransformRequestBody};
+use crate::anthropic::config::{AnthropicModelConfig, AnthropicModelHooks};
 use crate::anthropic::options::options_name_of;
 use crate::shared::Endpoint;
 
@@ -62,11 +62,7 @@ fn raw_predict_envelope(body: Value) -> Value {
 }
 
 /// The configuration of one request against `endpoint`.
-fn request_config(
-    endpoint: Endpoint,
-    fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
-) -> AnthropicModelConfig {
+fn request_config(endpoint: Endpoint, fetch: Option<FetchFunction>) -> AnthropicModelConfig {
     let Endpoint { base_url, headers } = endpoint;
     let models = base_url.clone();
     let url_base = base_url.clone();
@@ -76,7 +72,6 @@ fn request_config(
         headers: Resolvable::Value(headers),
         fetch,
         supported_urls: SupportedUrls::default(),
-        transform_request_body,
         base_url,
         provider_options_name: options_name_of(PROVIDER),
         hooks: AnthropicModelHooks {
@@ -103,25 +98,21 @@ pub(super) fn model(
     model_id: &str,
     endpoint: EndpointFn,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 ) -> VertexAnthropicModel {
     let resolve_fetch = fetch.clone();
-    let resolve_transform = transform_request_body.clone();
     let mut config = request_config(
         Endpoint {
             base_url: String::new(),
             headers: Default::default(),
         },
         fetch,
-        transform_request_body,
     );
     // The model's own fields only describe its identity; every request is
     // built from the endpoint resolved for it.
     config.resolve = Some(Arc::new(move || {
         let endpoint = endpoint.clone();
         let fetch = resolve_fetch.clone();
-        let transform = resolve_transform.clone();
-        Box::pin(async move { Ok(request_config(endpoint().await?, fetch, transform)) })
+        Box::pin(async move { Ok(request_config(endpoint().await?, fetch)) })
     }));
     AnthropicMessagesModel::with_config(model_id.to_string(), config)
 }

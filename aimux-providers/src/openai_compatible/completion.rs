@@ -184,16 +184,6 @@ impl OpenAICompatibleCompletionModel {
         }
     }
 
-    fn transform_body(&self, body: Value) -> Value {
-        match &self.config {
-            CompletionConfig::Compatible(_) => body,
-            CompletionConfig::Native(config) => match &config.transform_request_body {
-                Some(transform) => transform(body),
-                None => body,
-            },
-        }
-    }
-
     fn failed_response_handler(&self) -> aimux_provider_utils::ResponseHandler<AiMuxError> {
         match &self.config {
             CompletionConfig::Compatible(config) => config.failed_response_handler(),
@@ -394,7 +384,6 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let (body, warnings) = self.arguments(options)?;
-        let body = self.transform_body(body);
         let response = aimux_provider_utils::post_json_to_api(
             self.request(options).await?,
             body.clone(),
@@ -461,7 +450,6 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
         if include_usage {
             body["stream_options"] = json!({ "include_usage": true });
         }
-        let body = self.transform_body(body);
         let request = self.request(options).await?;
         let error_url = request.url.clone();
         let response = aimux_provider_utils::post_json_to_api(

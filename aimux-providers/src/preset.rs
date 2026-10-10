@@ -34,9 +34,7 @@ use aimux_core::error::AiMuxError;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::openai_compatible::config::{BaseUrl, ChatSettings};
-use crate::openai_compatible::{
-    Assembly, ConvertUsage, OpenAICompatibleProvider, TransformRequestBody,
-};
+use crate::openai_compatible::{Assembly, ConvertUsage, OpenAICompatibleProvider};
 use crate::shared::Credential;
 
 /// How a preset authenticates.
@@ -109,8 +107,6 @@ pub struct PresetSettings {
     /// non-derived parameters are accepted; a value must be a plain segment
     /// (`A-Z a-z 0-9 . _ -`).
     pub params: HashMap<String, String>,
-    /// Rewrites every JSON request body once, before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for PresetSettings {
@@ -125,10 +121,6 @@ impl std::fmt::Debug for PresetSettings {
             )
             .field("fetch", &self.fetch.is_some())
             .field("params", &self.params)
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -406,7 +398,6 @@ fn assemble(
         headers: settings.headers,
         query_params: None,
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
         chat,
     })
 }

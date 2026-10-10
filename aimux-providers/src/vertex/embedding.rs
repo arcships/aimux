@@ -121,7 +121,7 @@ impl EmbeddingModel for VertexEmbeddingModel {
 
             let resp = aimux_provider_utils::post_json_to_api(
                 exchange.request(url, options),
-                exchange.transform_body(Value::Object(body)),
+                Value::Object(body),
                 aimux_provider_utils::create_json_response_handler(),
                 google_failed_response_handler(),
             )
@@ -195,7 +195,7 @@ impl EmbeddingModel for VertexEmbeddingModel {
 
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(url, options),
-            exchange.transform_body(Value::Object(body)),
+            Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             crate::google::google_failed_response_handler(),
         )

@@ -184,7 +184,7 @@ impl VideoModel for VertexVideoModel {
 
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(url, options),
-            exchange.transform_body(body),
+            body,
             aimux_provider_utils::create_json_response_handler(),
             crate::google::google_failed_response_handler(),
         )
@@ -231,7 +231,7 @@ impl VideoModel for VertexVideoModel {
         let poll_url = exchange.url(&format!("/models/{}:fetchPredictOperation", self.model_id));
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(poll_url.clone(), options),
-            exchange.transform_body(json!({"operationName": operation_name})),
+            json!({"operationName": operation_name}),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             crate::google::google_failed_response_handler(),
         )

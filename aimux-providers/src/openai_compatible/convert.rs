@@ -119,7 +119,7 @@ pub(crate) struct ChatBodySpec<'a> {
 /// A request body and what building it produced.
 #[derive(Debug, Clone)]
 pub(crate) struct RequestBodyResult {
-    /// The JSON body, before the provider's `transform_request_body`.
+    /// The JSON body.
     pub body: Value,
     /// Warnings raised while building it.
     pub warnings: Vec<Warning>,

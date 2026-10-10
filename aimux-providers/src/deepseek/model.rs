@@ -46,7 +46,7 @@ pub struct DeepSeekChatLanguageModel {
 
 /// A request body and the warnings raised while building it.
 struct RequestBodyResult {
-    /// The JSON body, before the provider's `transform_request_body`.
+    /// The JSON body.
     body: Value,
     /// Warnings raised while building it.
     warnings: Vec<Warning>,
@@ -149,9 +149,8 @@ impl DeepSeekChatLanguageModel {
             .trim()
     }
 
-    /// The JSON body a call would send, before the provider's
-    /// `transform_request_body`, with the warnings raised while building it
-    /// (`getArgs`, plus the stream fields).
+    /// The JSON body a call would send, with the warnings raised while
+    /// building it (`getArgs`, plus the stream fields).
     fn request_body(
         &self,
         options: &CallOptions,
@@ -369,7 +368,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             .exchange(options.headers.as_ref())
             .await?;
         let built = self.request_body(options, false)?;
-        let body = exchange.transform_body(built.body);
+        let body = built.body;
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(exchange.url("/chat/completions"), options),
             body.clone(),
@@ -487,7 +486,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             .await?;
         let built = self.request_body(options, true)?;
         let warnings = built.warnings;
-        let body = exchange.transform_body(built.body);
+        let body = built.body;
         let endpoint = exchange.url("/chat/completions");
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(endpoint.clone(), options),

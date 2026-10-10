@@ -122,7 +122,7 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
                 exchange.url(&format!("/models/{}:generateContent", self.model_id)),
                 options,
             ),
-            exchange.transform_body(body),
+            body,
             aimux_provider_utils::create_json_response_handler::<Response>(),
             crate::google::google_failed_response_handler(),
         )

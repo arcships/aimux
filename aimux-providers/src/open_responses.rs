@@ -37,7 +37,7 @@ use aimux_provider_utils::{
     FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, validate_base_url,
 };
 
-use crate::shared::{Credential, EndpointConfig, TransformRequestBody, provider_headers};
+use crate::shared::{Credential, EndpointConfig, provider_headers};
 
 fn open_responses_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -114,9 +114,6 @@ pub struct OpenResponsesProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl OpenResponsesProviderSettings {
@@ -129,7 +126,6 @@ impl OpenResponsesProviderSettings {
             api_key: None,
             headers: None,
             fetch: None,
-            transform_request_body: None,
         }
     }
 }
@@ -143,10 +139,6 @@ impl std::fmt::Debug for OpenResponsesProviderSettings {
             .field("api_key", &self.api_key)
             .field("headers", &self.headers.is_some())
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -199,7 +191,6 @@ pub fn create_open_responses(
         base_url,
         headers,
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -211,7 +202,6 @@ pub struct OpenResponsesProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl OpenResponsesProvider {
@@ -226,7 +216,6 @@ impl OpenResponsesProvider {
                 self.base_url.clone(),
                 self.headers.clone(),
                 self.fetch.clone(),
-                self.transform_request_body.clone(),
             ),
         }
     }
@@ -279,7 +268,6 @@ impl LanguageModel for OpenResponsesModel {
         validate_tool_output_media(&options.prompt)?;
         let (body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
-        let body = exchange.transform_body(body);
 
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(exchange.url("/responses"), options),
@@ -425,7 +413,7 @@ impl LanguageModel for OpenResponsesModel {
             if let Some(obj) = b.as_object_mut() {
                 obj.insert("stream".to_string(), json!(true));
             }
-            exchange.transform_body(b)
+            b
         };
         let endpoint = exchange.url("/responses");
 

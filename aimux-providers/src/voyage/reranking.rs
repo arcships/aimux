@@ -119,7 +119,6 @@ impl RerankingModel for VoyageRerankingModel {
         }
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(body);
 
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(exchange.url("/rerank"), options),

@@ -90,7 +90,6 @@ impl VertexAnthropicProvider {
                 Box::pin(async move { resolver.endpoint(super::Publisher::Anthropic).await })
             }),
             self.0.fetch.clone(),
-            self.0.transform_request_body.clone(),
         ))
     }
 }

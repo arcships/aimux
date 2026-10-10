@@ -81,7 +81,7 @@ impl EmbeddingModel for VoyageEmbeddingModel {
         // error internally using the shared error structure.
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(exchange.url("/embeddings"), options),
-            exchange.transform_body(Value::Object(body)),
+            Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             voyage_failed_response_handler(),
         )

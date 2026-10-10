@@ -76,7 +76,7 @@ impl EmbeddingModel for OpenAIEmbeddingModel {
             .config
             .request_headers(options.headers.as_ref())
             .await?;
-        let body = self.config.transform_body(Value::Object(body));
+        let body = Value::Object(body);
 
         let resp = aimux_provider_utils::post_json_to_api(
             self.config

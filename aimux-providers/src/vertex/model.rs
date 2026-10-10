@@ -90,7 +90,6 @@ impl LanguageModel for VertexModel {
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let (body, warnings) = vertex_request_body(&self.model_id, options, false)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(body);
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(self.generate_endpoint(exchange.base_url()), options),
             body.clone(),
@@ -173,7 +172,6 @@ impl LanguageModel for VertexModel {
         let (body, warnings) = vertex_request_body(&self.model_id, options, true)?;
         let include_raw_chunks = options.include_raw_chunks == Some(true);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(body);
         let endpoint = self.stream_endpoint(exchange.base_url());
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(endpoint.clone(), options),

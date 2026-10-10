@@ -220,7 +220,7 @@ impl TranscriptionModel for VertexTranscriptionModel {
         request.credentialed_origin = Some(url);
         let resp = aimux_provider_utils::post_json_to_api(
             request,
-            exchange.transform_body(request_body.clone()),
+            request_body.clone(),
             aimux_provider_utils::create_json_response_handler::<GoogleVertexResponse>(),
             crate::google::google_failed_response_handler(),
         )

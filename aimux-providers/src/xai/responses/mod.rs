@@ -200,7 +200,7 @@ impl LanguageModel for XaiResponsesModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let request_result = build_responses_request_body(&self.model_id, options, false)?;
-        let body = exchange.transform_body(request_result.body);
+        let body = request_result.body;
         let provider_tool_names = request_result.provider_tool_names;
 
         let resp = aimux_provider_utils::post_json_to_api(
@@ -490,7 +490,7 @@ impl LanguageModel for XaiResponsesModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let request_result = build_responses_request_body(&self.model_id, options, true)?;
-        let body = exchange.transform_body(request_result.body);
+        let body = request_result.body;
         let warnings = request_result.warnings;
         let provider_tool_names = request_result.provider_tool_names;
         let endpoint = exchange.url("/responses");

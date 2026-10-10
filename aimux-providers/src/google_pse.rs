@@ -170,7 +170,6 @@ impl GooglePseProvider {
                 self.base_url.clone(),
                 self.headers.clone(),
                 self.fetch.clone(),
-                None,
             ),
             self.credential.clone(),
             self.cx.clone(),

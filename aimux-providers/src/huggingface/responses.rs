@@ -152,7 +152,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let request = build_request_body_with_warnings(&self.model_id, options, false)?;
-        let body = exchange.transform_body(request.body);
+        let body = request.body;
 
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(exchange.url("/responses"), options),
@@ -205,7 +205,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let request = build_request_body_with_warnings(&self.model_id, options, true)?;
-        let body = exchange.transform_body(request.body);
+        let body = request.body;
         let endpoint = exchange.url("/responses");
 
         let resp = aimux_provider_utils::post_json_to_api(

@@ -458,7 +458,7 @@ impl SpeechModel for GoogleSpeechModel {
                 exchange.url(&format!("/models/{}:generateContent", self.model_id)),
                 options,
             ),
-            exchange.transform_body(body.clone()),
+            body.clone(),
             aimux_provider_utils::create_json_response_handler::<SpeechResponseBody>(),
             super::google_failed_response_handler(),
         )

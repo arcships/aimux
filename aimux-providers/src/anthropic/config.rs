@@ -23,7 +23,6 @@ use aimux_provider_utils::{
 };
 
 use super::convert::RequestProfile;
-pub use crate::shared::TransformRequestBody;
 
 /// Maps an endpoint path (`"/messages"`) to the full request URL.
 pub(crate) type UrlFn = Arc<dyn Fn(&str) -> String + Send + Sync>;
@@ -52,8 +51,7 @@ pub(crate) struct AnthropicModelHooks {
     /// The messages URL when it depends on the model and the mode. `None`:
     /// `url("/messages")`.
     pub(crate) request_url: Option<RequestUrlFn>,
-    /// Applied to the finished request body before the provider's own
-    /// `transform_request_body`.
+    /// Applied to the finished request body before it is sent.
     pub(crate) prepare_body: Option<BodyFn>,
     /// Parses a failed response.
     pub(crate) failed_response_handler: ErrorHandlerFn,
@@ -92,8 +90,6 @@ pub(crate) struct AnthropicModelConfig {
     pub(crate) fetch: Option<FetchFunction>,
     /// URLs the model fetches itself. Empty: the caller downloads them.
     pub(crate) supported_urls: SupportedUrls,
-    /// Provider-level request-body rewrite.
-    pub(crate) transform_request_body: Option<TransformRequestBody>,
     /// The origin credentialed headers may be sent to. Never read for URLs.
     pub(crate) base_url: String,
     /// The providerOptions key read in addition to `anthropic` and written
@@ -216,13 +212,10 @@ impl AnthropicModelConfig {
         request
     }
 
-    /// Run the host's body preparation, then the provider-level rewrite.
-    pub(crate) fn transform_body(&self, mut body: Value) -> Value {
-        if let Some(prepare) = &self.hooks.prepare_body {
-            body = prepare(body);
-        }
-        match &self.transform_request_body {
-            Some(transform) => transform(body),
+    /// Run the host's body preparation, when there is one.
+    pub(crate) fn prepare_body(&self, body: Value) -> Value {
+        match &self.hooks.prepare_body {
+            Some(prepare) => prepare(body),
             None => body,
         }
     }

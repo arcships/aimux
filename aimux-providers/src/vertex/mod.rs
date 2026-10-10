@@ -22,7 +22,7 @@ use aimux_provider_utils::{
 use std::sync::OnceLock;
 
 use crate::google::GoogleSpeechModel;
-use crate::shared::{Endpoint, EndpointConfig, TransformRequestBody};
+use crate::shared::{Endpoint, EndpointConfig};
 
 mod anthropic_model;
 mod anthropic_provider;
@@ -99,9 +99,6 @@ pub struct VertexProviderSettings {
     /// Custom WebSocket transport for Gemini live transcription.
     #[cfg(feature = "realtime")]
     pub web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for VertexProviderSettings {
@@ -116,10 +113,6 @@ impl std::fmt::Debug for VertexProviderSettings {
             .field("access_token", &self.access_token)
             .field("google_auth_options", &self.google_auth_options)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -303,7 +296,6 @@ pub fn create_google_vertex(
         fetch: settings.fetch,
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -326,7 +318,6 @@ pub struct VertexProvider {
     fetch: Option<FetchFunction>,
     #[cfg(feature = "realtime")]
     web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 /// The URL patterns the Vertex models fetch themselves
@@ -374,7 +365,6 @@ impl VertexProvider {
             }),
             fetch: self.fetch.clone(),
             supported_urls: Arc::new(|_| supported_urls()),
-            transform_request_body: self.transform_request_body.clone(),
         }
     }
 

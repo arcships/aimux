@@ -167,7 +167,6 @@ impl ReplicateProvider {
                 ),
             },
             self.fetch.clone(),
-            None,
         )
     }
 

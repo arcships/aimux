@@ -24,7 +24,7 @@ use aimux_provider_utils::{
     HttpRequest, StreamingToolCallDelta, StreamingToolCallTracker, TypeValidation, generate_id,
 };
 
-use super::config::{OpenAIModelConfig, TransformRequestBody};
+use super::config::OpenAIModelConfig;
 use super::convert::{
     RequestBodyResult, build_request_body_with_chat_options, parse_finish_reason,
 };
@@ -137,14 +137,7 @@ impl LanguageModel for OpenAIModel {
         let http =
             self.config
                 .http_request(self.config.url("/chat/completions")?, headers, options);
-        execute_generate(
-            http,
-            &self.model_id,
-            options,
-            self.config.transform_request_body.as_ref(),
-            self.config.chat_options,
-        )
-        .await
+        execute_generate(http, &self.model_id, options, self.config.chat_options).await
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
@@ -155,14 +148,7 @@ impl LanguageModel for OpenAIModel {
         let http =
             self.config
                 .http_request(self.config.url("/chat/completions")?, headers, options);
-        execute_stream(
-            http,
-            &self.model_id,
-            options,
-            self.config.transform_request_body.as_ref(),
-            self.config.chat_options,
-        )
-        .await
+        execute_stream(http, &self.model_id, options, self.config.chat_options).await
     }
 }
 
@@ -176,8 +162,7 @@ impl LanguageModel for OpenAIModel {
 ///
 /// `http` carries the full chat-completions URL, the auth and request headers
 /// and the transport; `model_id` is placed in the request body's `model`
-/// field. `transform_request_body`, when set, rewrites the finished body once
-/// before it is sent (and the rewritten body is what the result reports).
+/// field.
 ///
 /// # Errors
 ///
@@ -188,15 +173,11 @@ pub(crate) async fn execute_generate(
     http: HttpRequest,
     model_id: &str,
     options: &CallOptions,
-    transform_request_body: Option<&TransformRequestBody>,
     parse_chat_options: super::options::ChatOptionsParser,
 ) -> Result<GenerateResult, AiMuxError> {
     let request_result =
         build_request_body_with_chat_options(model_id, options, false, parse_chat_options)?;
-    let body = match transform_request_body {
-        Some(transform) => transform(request_result.body),
-        None => request_result.body,
-    };
+    let body = request_result.body;
 
     let resp = aimux_provider_utils::post_json_to_api(
         http,
@@ -339,7 +320,7 @@ pub(crate) async fn execute_generate(
 ///
 /// `http` carries the full chat-completions URL, the auth and request headers
 /// and the transport; `model_id` is placed in the request body's `model`
-/// field. `transform_request_body` is applied as in [`execute_generate`].
+/// field.
 ///
 /// # Errors
 ///
@@ -349,7 +330,6 @@ pub(crate) async fn execute_stream(
     http: HttpRequest,
     model_id: &str,
     options: &CallOptions,
-    transform_request_body: Option<&TransformRequestBody>,
     parse_chat_options: super::options::ChatOptionsParser,
 ) -> Result<StreamResult, AiMuxError> {
     let request_result =
@@ -357,10 +337,6 @@ pub(crate) async fn execute_stream(
     // M9 (RFC-0016): keep the warnings computed while building the body —
     // they are emitted in `StreamStart` below instead of being dropped.
     let RequestBodyResult { body, warnings } = request_result;
-    let body = match transform_request_body {
-        Some(transform) => transform(body),
-        None => body,
-    };
     let endpoint = http.url.clone();
 
     let resp = aimux_provider_utils::post_json_to_api(

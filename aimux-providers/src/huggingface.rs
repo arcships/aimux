@@ -17,7 +17,6 @@
 pub(crate) mod options;
 pub mod responses;
 
-pub use crate::shared::TransformRequestBody;
 pub use responses::HuggingFaceResponsesModel;
 
 use std::sync::{Arc, OnceLock};
@@ -66,9 +65,6 @@ pub struct HuggingFaceProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for HuggingFaceProviderSettings {
@@ -83,10 +79,6 @@ impl std::fmt::Debug for HuggingFaceProviderSettings {
             )
             .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -114,7 +106,6 @@ pub fn create_huggingface(
             settings.headers,
         ),
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -136,7 +127,6 @@ pub struct HuggingFaceProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl HuggingFaceProvider {
@@ -146,7 +136,6 @@ impl HuggingFaceProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            self.transform_request_body.clone(),
         )
     }
 
@@ -156,7 +145,6 @@ impl HuggingFaceProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            self.transform_request_body.clone(),
         )
     }
 

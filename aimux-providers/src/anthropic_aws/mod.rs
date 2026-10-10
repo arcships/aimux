@@ -32,8 +32,6 @@ use crate::anthropic::AnthropicMessagesModel;
 use crate::anthropic::config::{AnthropicModelConfig, AnthropicModelHooks};
 use crate::anthropic::options::{CANONICAL, options_name_of};
 
-pub use crate::shared::TransformRequestBody;
-
 /// The region used when the settings name none and SigV4 credentials do not
 /// carry one.
 const DEFAULT_REGION: &str = "us-east-1";
@@ -86,9 +84,6 @@ pub struct AnthropicAwsProviderSettings {
     /// The transport SigV4 signing (when used) wraps. `None` uses the process
     /// default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent (and before it is signed).
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for AnthropicAwsProviderSettings {
@@ -105,10 +100,6 @@ impl std::fmt::Debug for AnthropicAwsProviderSettings {
             )
             .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -176,7 +167,6 @@ pub fn create_anthropic_aws(
         base_url,
         headers,
         fetch,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -199,7 +189,6 @@ pub struct AnthropicAwsProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl AnthropicAwsProvider {
@@ -211,7 +200,6 @@ impl AnthropicAwsProvider {
             headers: self.headers.clone(),
             fetch: self.fetch.clone(),
             supported_urls: SupportedUrls::default(),
-            transform_request_body: self.transform_request_body.clone(),
             base_url: self.base_url.clone(),
             provider_options_name: self.provider_options_name.clone(),
             hooks: AnthropicModelHooks::default(),

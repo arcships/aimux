@@ -280,7 +280,7 @@ impl LanguageModel for GroqChatLanguageModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let (args, warnings) = self.get_args(options)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(Value::Object(args));
+        let body = Value::Object(args);
 
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(exchange.url("/chat/completions"), options),
@@ -352,7 +352,7 @@ impl LanguageModel for GroqChatLanguageModel {
         let (mut args, warnings) = self.get_args(options)?;
         args.insert("stream".into(), json!(true));
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(Value::Object(args));
+        let body = Value::Object(args);
         let endpoint = exchange.url("/chat/completions");
 
         let resp = aimux_provider_utils::post_json_to_api(

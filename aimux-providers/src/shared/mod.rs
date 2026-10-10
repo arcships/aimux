@@ -14,10 +14,6 @@ pub(crate) use poll::{
     poll_interval_ms, poll_until, retry_download,
 };
 
-use std::sync::Arc;
-
-use serde_json::Value;
-
 use aimux_core::AiMuxError;
 use aimux_provider_utils::{
     HeaderMapOpt, HeadersFn, Resolvable, combine_headers, load_api_key, normalize_headers,
@@ -36,10 +32,6 @@ pub(crate) fn is_valid_hostname_part(part: &str) -> bool {
         && bytes[0] != b'-'
         && bytes[bytes.len() - 1] != b'-'
 }
-
-/// A provider-level rewrite of every JSON request body, called once after the
-/// body is serialized and before it is sent.
-pub type TransformRequestBody = Arc<dyn Fn(Value) -> Value + Send + Sync>;
 
 /// Where the credential of a provider comes from.
 #[derive(Clone, Debug)]

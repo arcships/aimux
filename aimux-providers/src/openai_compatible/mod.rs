@@ -9,8 +9,7 @@
 //! What is fixed when the provider is created, and what is not:
 //!
 //! - The explicit settings (`name`, `base_url`, `headers`, `query_params`,
-//!   `fetch`, the capability flags, `transform_request_body`) are fixed in the
-//!   factory.
+//!   `fetch`, the capability flags) are fixed in the factory.
 //! - A non-empty `api_key` produces a bearer header. `None` or `""` sends
 //!   no `Authorization` header, which is what a local server wants.
 //!
@@ -35,7 +34,7 @@ mod types;
 
 pub use chat::OpenAICompatibleChatModel;
 pub use completion::OpenAICompatibleCompletionModel;
-pub use config::{ConvertUsage, TransformRequestBody};
+pub use config::ConvertUsage;
 pub use embedding::OpenAICompatibleEmbeddingModel;
 pub use image::OpenAICompatibleImageModel;
 
@@ -81,9 +80,6 @@ pub struct OpenAICompatibleProviderSettings {
     /// Whether the chat endpoint accepts `json_schema` response formats; when
     /// not, a schema degrades to `json_object` with a warning.
     pub supports_structured_outputs: Option<bool>,
-    /// Rewrites each chat JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
     /// URL patterns supported by chat models.
     pub supported_urls: Option<SupportedUrls>,
     /// How chat token usage is read; the generic OpenAI shape by default.
@@ -107,10 +103,6 @@ impl std::fmt::Debug for OpenAICompatibleProviderSettings {
             .field(
                 "supports_structured_outputs",
                 &self.supports_structured_outputs,
-            )
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
             )
             .field("supported_urls", &self.supported_urls.is_some())
             .field("convert_usage", &self.convert_usage)
@@ -144,7 +136,6 @@ pub fn create_openai_compatible(
         headers: settings.headers,
         query_params: settings.query_params,
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
         chat: ChatSettings {
             include_usage: settings.include_usage.unwrap_or(false),
             supports_structured_outputs: settings.supports_structured_outputs.unwrap_or(false),
@@ -166,7 +157,6 @@ pub(crate) struct Assembly {
     pub headers: Option<HeaderMapOpt>,
     pub query_params: Option<HashMap<String, String>>,
     pub fetch: Option<FetchFunction>,
-    pub transform_request_body: Option<TransformRequestBody>,
     pub chat: ChatSettings,
 }
 
@@ -178,7 +168,6 @@ pub struct OpenAICompatibleProvider {
     query_params: Option<Arc<Vec<(String, String)>>>,
     headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
     chat: ChatSettings,
 }
 
@@ -201,7 +190,6 @@ impl OpenAICompatibleProvider {
                 user_agent: Some(("openai-compatible", "3.0.59")),
             },
             fetch: assembly.fetch,
-            transform_request_body: assembly.transform_request_body,
             chat: assembly.chat,
         })
     }
@@ -213,11 +201,6 @@ impl OpenAICompatibleProvider {
             query_params: self.query_params.clone(),
             headers: self.headers.clone(),
             fetch: self.fetch.clone(),
-            transform_request_body: if method == "chat" {
-                self.transform_request_body.clone()
-            } else {
-                None
-            },
             chat: self.chat.clone(),
         }
     }

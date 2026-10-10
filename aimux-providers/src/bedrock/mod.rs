@@ -56,7 +56,7 @@ use aimux_provider_utils::{
     load_setting, validate_base_url, without_trailing_slash,
 };
 
-use crate::shared::{Endpoint, EndpointConfig, TransformRequestBody, is_valid_hostname_part};
+use crate::shared::{Endpoint, EndpointConfig, is_valid_hostname_part};
 
 pub use embedding::BedrockEmbeddingModel;
 pub use image::BedrockImageModel;
@@ -199,9 +199,6 @@ pub struct AmazonBedrockProviderSettings {
     /// credentials. Its `region` is used only when neither `region` nor
     /// `AWS_REGION` names one.
     pub credential_provider: Option<Resolvable<AwsCredentials>>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent (and before it is signed).
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for AmazonBedrockProviderSettings {
@@ -220,10 +217,6 @@ impl std::fmt::Debug for AmazonBedrockProviderSettings {
             )
             .field("fetch", &self.fetch.is_some())
             .field("credential_provider", &self.credential_provider.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -453,7 +446,6 @@ pub fn create_amazon_bedrock(
             "5.0.100",
         ),
         fetch,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -476,7 +468,6 @@ pub struct AmazonBedrockProvider {
     base_url: Option<String>,
     headers: HeadersFn,
     fetch: FetchFunction,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl AmazonBedrockProvider {
@@ -512,7 +503,6 @@ impl AmazonBedrockProvider {
             }),
             fetch: Some(self.fetch.clone()),
             supported_urls: Arc::new(|_| SupportedUrls::default()),
-            transform_request_body: self.transform_request_body.clone(),
         }
     }
 

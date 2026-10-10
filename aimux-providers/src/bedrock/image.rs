@@ -326,7 +326,7 @@ impl ImageModel for BedrockImageModel {
 
         let current_date = chrono::Utc::now().to_rfc3339();
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(Value::Object(args));
+        let body = Value::Object(args);
         let body_str =
             serde_json::to_string(&body).map_err(|e| AiMuxError::JsonParse(e.to_string()))?;
         let url = exchange.url(&format!(

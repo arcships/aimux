@@ -414,7 +414,6 @@ impl AzureOpenAIProvider {
             token_provider: None,
             fetch: self.fetch.clone(),
             supported_urls: crate::openai::config::supported_urls(provider),
-            transform_request_body: None,
             responses: ResponsesProfile::default(),
             chat_options: options::CHAT_OPTIONS,
         }

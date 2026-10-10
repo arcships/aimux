@@ -38,10 +38,9 @@ impl OpenAICompatibleChatModel {
         Self { model_id, config }
     }
 
-    /// The JSON body a call would send, before the provider's
-    /// `transform_request_body`, with the warnings raised while building it.
-    /// Nothing is read from the environment and nothing is sent: a key is not
-    /// resolved here.
+    /// The JSON body a call would send, with the warnings raised while
+    /// building it. Nothing is read from the environment and nothing is sent:
+    /// a key is not resolved here.
     ///
     /// # Errors
     ///
@@ -193,7 +192,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let built = self.request_body(options, false)?;
         let metadata_key = built.metadata_key;
-        let body = self.config.transform_body(built.body);
+        let body = built.body;
         let headers = self
             .config
             .request_headers(options.headers.as_ref())
@@ -312,7 +311,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
         let built = self.request_body(options, true)?;
         let metadata_key = built.metadata_key;
         let warnings = built.warnings;
-        let body = self.config.transform_body(built.body);
+        let body = built.body;
         let headers = self
             .config
             .request_headers(options.headers.as_ref())

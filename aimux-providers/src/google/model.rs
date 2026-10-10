@@ -92,7 +92,6 @@ impl LanguageModel for GoogleModel {
             }
         }
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(body);
         let url = exchange.url(&format!("/{}:generateContent", self.model_path()));
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(url, options),
@@ -174,7 +173,6 @@ impl LanguageModel for GoogleModel {
             }
         }
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(body);
         let endpoint = exchange.url(&format!(
             "/{}:streamGenerateContent?alt=sse",
             self.model_path()

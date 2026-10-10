@@ -141,7 +141,6 @@ impl ExaAiProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            None,
         )
     }
 

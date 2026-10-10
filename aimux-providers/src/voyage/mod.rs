@@ -14,7 +14,6 @@ pub mod embedding;
 pub(crate) mod options;
 pub mod reranking;
 
-pub use crate::shared::TransformRequestBody;
 pub use embedding::VoyageEmbeddingModel;
 pub use reranking::VoyageRerankingModel;
 
@@ -74,9 +73,6 @@ pub struct VoyageProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Rewrites every JSON request body once, after it is serialized and
-    /// before it is sent.
-    pub transform_request_body: Option<TransformRequestBody>,
 }
 
 impl std::fmt::Debug for VoyageProviderSettings {
@@ -91,10 +87,6 @@ impl std::fmt::Debug for VoyageProviderSettings {
             )
             .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
-            .field(
-                "transform_request_body",
-                &self.transform_request_body.is_some(),
-            )
             .finish()
     }
 }
@@ -120,7 +112,6 @@ pub fn create_voyage(settings: VoyageProviderSettings) -> Result<VoyageProvider,
             settings.headers,
         ),
         fetch: settings.fetch,
-        transform_request_body: settings.transform_request_body,
     })
 }
 
@@ -142,7 +133,6 @@ pub struct VoyageProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    transform_request_body: Option<TransformRequestBody>,
 }
 
 impl VoyageProvider {
@@ -152,7 +142,6 @@ impl VoyageProvider {
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
-            self.transform_request_body.clone(),
         )
     }
 

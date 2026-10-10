@@ -103,9 +103,8 @@ impl AnthropicMessagesModel {
                 .is_some_and(|value| value.contains_key(&self.config.provider_options_name))
     }
 
-    /// Build the request for one call: the body (host preparation and the
-    /// provider's `transform_request_body` applied), its warnings, and the
-    /// URL/headers/transport the exchange goes through.
+    /// Build the request for one call: the body (host preparation applied),
+    /// its warnings, and the URL/headers/transport the exchange goes through.
     async fn prepare(
         &self,
         options: &CallOptions,
@@ -114,7 +113,7 @@ impl AnthropicMessagesModel {
         let config = self.config.resolved().await?;
         let built =
             build_request_body_for(&self.model_id, options, stream, &config.request_profile())?;
-        let body = config.transform_body(built.body);
+        let body = config.prepare_body(built.body);
         let headers = config
             .request_headers(options.headers.as_ref(), &built.betas)
             .await?;

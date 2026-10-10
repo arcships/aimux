@@ -11,8 +11,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use serde_json::Value;
-
 use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
 use aimux_provider_utils::{
@@ -21,8 +19,6 @@ use aimux_provider_utils::{
 };
 
 use super::responses::ResponsesProfile;
-
-pub use crate::shared::TransformRequestBody;
 
 /// Maps an endpoint path (`"/chat/completions"`) to the full request URL. It
 /// can fail because a host may only know the address when a call is made (an
@@ -45,8 +41,6 @@ pub(crate) struct OpenAIModelConfig {
     pub(crate) fetch: Option<FetchFunction>,
     /// URLs the model fetches itself. Empty: the caller downloads them.
     pub(crate) supported_urls: SupportedUrls,
-    /// Provider-level request-body rewrite.
-    pub(crate) transform_request_body: Option<TransformRequestBody>,
     /// How the Responses API model reads and writes providerOptions and file
     /// ids for this host.
     pub(crate) responses: ResponsesProfile,
@@ -60,7 +54,6 @@ impl OpenAIModelConfig {
         base_url: String,
         headers: HeadersFn,
         fetch: Option<FetchFunction>,
-        transform_request_body: Option<TransformRequestBody>,
     ) -> Self {
         Self {
             provider,
@@ -69,7 +62,6 @@ impl OpenAIModelConfig {
             token_provider: None,
             fetch,
             supported_urls: SupportedUrls::default(),
-            transform_request_body,
             responses: ResponsesProfile::default(),
             chat_options: super::options::parse_chat_options,
         }
@@ -156,14 +148,6 @@ impl OpenAIModelConfig {
         request.fetch = self.fetch.clone();
         request.credentialed_origin = Some(request.url.clone());
         request
-    }
-
-    /// Run the provider-level body rewrite, when there is one.
-    pub(crate) fn transform_body(&self, body: Value) -> Value {
-        match &self.transform_request_body {
-            Some(transform) => transform(body),
-            None => body,
-        }
     }
 }
 

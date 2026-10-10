@@ -243,7 +243,6 @@ impl AnthropicProvider {
             headers: self.headers.clone(),
             fetch: self.fetch.clone(),
             supported_urls: self.supported_urls.clone(),
-            transform_request_body: None,
             base_url: self.base_url.clone(),
             provider_options_name: options::options_name_of(&self.name),
             hooks: AnthropicModelHooks::default(),

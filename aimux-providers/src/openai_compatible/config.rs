@@ -23,8 +23,6 @@ use aimux_provider_utils::{
 use crate::preset::PresetDescriptor;
 use crate::shared::ProviderHeaders;
 
-pub use crate::shared::TransformRequestBody;
-
 /// Where the base URL comes from.
 ///
 /// A plain provider has a [`Fixed`](Self::Fixed) URL. A preset whose URL is
@@ -173,7 +171,6 @@ pub(crate) struct CompatModelConfig {
     pub headers: ProviderHeaders,
     /// Transport; `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    pub transform_request_body: Option<TransformRequestBody>,
     pub chat: ChatSettings,
 }
 
@@ -240,14 +237,6 @@ impl CompatModelConfig {
         request.fetch = self.fetch.clone();
         request.credentialed_origin = Some(origin);
         request
-    }
-
-    /// Run the provider-level body rewrite, when there is one.
-    pub(crate) fn transform_body(&self, body: Value) -> Value {
-        match &self.transform_request_body {
-            Some(transform) => transform(body),
-            None => body,
-        }
     }
 
     /// The failed-response handler of the compatible error structure.
