@@ -1,5 +1,7 @@
 //! Google Gemini language model — implements `LanguageModel`.
 
+use std::collections::{HashMap, HashSet};
+
 use aimux_core::tool::RawToolCall;
 use aimux_core::tool::ToolResult;
 use async_trait::async_trait;
@@ -15,8 +17,9 @@ use aimux_core::result::{
 use aimux_core::shared::{FileBytes, GeneratedFileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage, Warning,
 };
+use aimux_provider_utils::{TransformStreamController, Transformer, pipe_through};
 
 use aimux_core::language_model::SupportedUrls;
 
@@ -25,7 +28,7 @@ use super::convert::{
     parse_finish_reason, validate_call_options,
 };
 use super::options::google_metadata;
-use super::types::{Candidate, GenerateContentResponse, GoogleStreamEvent};
+use super::types::{Candidate, GenerateContentResponse, GoogleStreamEvent, StreamChunk};
 use crate::shared::EndpointConfig;
 
 /// A Google Gemini language model.
@@ -198,436 +201,37 @@ impl LanguageModel for GoogleModel {
 
         let generate_id = self.generate_id;
         let include_raw_chunks = options.include_raw_chunks.unwrap_or(false);
-        let stream = async_stream::stream! {
-            yield Ok(StreamPart::StreamStart { warnings: tool_warnings });
-
-            let mut sse_stream = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
-            let mut text_id: Option<String> = None;
-            let mut reasoning_id: Option<String> = None;
-            let mut block_counter = 0usize;
-            let mut final_usage: Usage = Usage::default();
-            let mut final_finish_reason: Option<FinishReason> = None;
-            let mut has_tool_calls = false;
-            let mut response_metadata_emitted = false;
-            let mut stream_errored = false;
-            let mut prompt_blocked = false;
-
-            // Provider-metadata accumulators (mirrors TS `lastGroundingMetadata` /
-            // `lastUrlContextMetadata` + the finishReason-chunk snapshot).
-            let mut last_grounding_metadata: Option<Value> = None;
-            let mut last_url_context_metadata: Option<Value> = None;
-            let mut last_prompt_feedback: Option<Value> = None;
-            let mut last_safety_ratings: Option<Value> = None;
-            let mut last_finish_message: Option<Value> = None;
-            let mut last_usage_metadata_value: Option<Value> = None;
-
-            // Source dedup across chunks (url sources only).
-            let mut emitted_source_urls: std::collections::HashSet<String> =
-                std::collections::HashSet::new();
-            let mut source_id = 0usize;
-
-            // Associates code-execution results / server tool responses with
-            // their preceding call.
-            let mut last_code_execution_tool_call_id: Option<String> = None;
-            let mut last_server_tool_call_id: Option<String> = None;
-
-            while let Some(event) = sse_stream.next().await {
-                if stream_errored {
-                    break;
-                }
-                let event = match event {
-                    Ok(raw_value) => {
-                        if include_raw_chunks {
-                            yield Ok(StreamPart::Raw { raw_value: raw_value.clone() });
-                        }
-                        serde_json::from_value::<GoogleStreamEvent>(raw_value).map_err(AiMuxError::from)
-                    }
-                    Err(error) => Err(error),
-                };
-                match event {
-                    Ok(GoogleStreamEvent::Chunk(chunk)) => {
-
-                        // Emit ResponseMetadata from the first chunk that has
-                        // a responseId (matches TS behaviour).
-                        if !response_metadata_emitted
-                            && let Some(id) = &chunk.response_id {
-                                response_metadata_emitted = true;
-                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
-                                    id: Some(id.clone()),
-                                    timestamp: None,
-                                    model_id: None,
-                                }));
-                            }
-
-                        if let Some(usage) = &chunk.usage_metadata {
-                            final_usage = convert_usage(usage);
-                            last_usage_metadata_value =
-                                serde_json::to_value(usage).ok();
-                        }
-                        if let Some(pf) = &chunk.prompt_feedback
-                            && !prompt_blocked {
-                                last_prompt_feedback = Some(pf.clone());
-                                if let Some(reason) = confirmed_prompt_block_reason(Some(pf)) {
-                                    prompt_blocked = true;
-                                    final_finish_reason = Some(FinishReason {
-                                        unified: FinishReasonUnified::ContentFilter, raw: Some(reason),
-                                    });
-                                }
-                            }
-
-                        let Some(candidates) = chunk.candidates else {
-                            continue;
-                        };
-                        let Some(candidate) = candidates.into_iter().next() else {
-                            continue;
-                        };
-
-                        if let Some(gm) = &candidate.grounding_metadata {
-                            last_grounding_metadata = Some(gm.clone());
-                        }
-                        if let Some(ucm) = &candidate.url_context_metadata {
-                            last_url_context_metadata = Some(ucm.clone());
-                        }
-
-                        if let Some(sr) = &candidate.safety_ratings {
-                            last_safety_ratings = serde_json::to_value(sr).ok();
-                        }
-                        if let Some(fm) = &candidate.finish_message {
-                            last_finish_message = Some(json!(fm));
-                        }
-                        if prompt_blocked { continue; }
-
-                        // Extract url sources from this chunk's grounding metadata
-                        // (deduplicated across chunks; document sources are not
-                        // emitted in the stream, matching TS).
-                        let chunk_sources =
-                            extract_sources(candidate.grounding_metadata.as_ref(), &mut source_id);
-                        for src in chunk_sources {
-                            if let GenerateContent::Source(Source::Url {
-                                url,
-                                id: _,
-                                title,
-                                provider_metadata: None,
-                            }) = src
-                                && emitted_source_urls.insert(url.clone()) {
-                                    yield Ok(StreamPart::Source(Source::Url {
-                                        id: generate_id(),
-                                        url,
-                                        title,
-                                        provider_metadata: None,
-                                    }));
-                                }
-                        }
-
-                        if let Some(parts) =
-                            candidate.content.as_ref().and_then(|c| c.parts.as_ref())
-                        {
-                            for part in parts {
-                                // thoughtSignature → provider_metadata (upstream :778-782)
-                                let thought_sig_meta: Option<ProviderMetadata> = part
-                                    .get("thoughtSignature")
-                                    .and_then(|v| v.as_str())
-                                    .filter(|signature| !signature.is_empty())
-                                    .map(|s| google_metadata(json!({ "thoughtSignature": s })));
-
-                                // text part
-                                if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-                                    if text.is_empty() {
-                                        // Empty-text part may carry a thoughtSignature
-                                        // (upstream :784-794): emit as a zero-length
-                                        // delta with the signature metadata on
-                                        // whichever block is open — text or
-                                        // reasoning (mirrors the non-streaming
-                                        // path, which attaches to the last
-                                        // content item regardless of type).
-                                        if let Some(meta) = &thought_sig_meta
-                                            && let Some(id) = &text_id {
-                                                yield Ok(StreamPart::TextDelta {
-                                                    id: id.clone(),
-                                                    delta: String::new(),
-                                                    provider_metadata: Some(meta.clone()),
-                                                });
-
-                                            }
-                                    } else {
-                                        let is_thought = part.get("thought").and_then(serde_json::Value::as_bool).unwrap_or(false);
-                                        if is_thought {
-                                            // Close any open text block before starting reasoning
-                                            if let Some(id) = text_id.take() {
-                                                yield Ok(StreamPart::TextEnd { id, provider_metadata: None });
-                                            }
-                                            // Start a reasoning block if not already active
-                                            if reasoning_id.is_none() {
-                                                let id = format!("{block_counter}");
-                                                block_counter += 1;
-                                                reasoning_id = Some(id.clone());
-                                                yield Ok(StreamPart::ReasoningStart {
-                                                    id,
-                                                    provider_metadata: thought_sig_meta.clone(),
-                                                });
-                                            }
-                                            if let Some(id) = &reasoning_id {
-                                                yield Ok(StreamPart::ReasoningDelta {
-                                                    id: id.clone(),
-                                                    delta: text.to_string(),
-                                                    provider_metadata: thought_sig_meta.clone(),
-                                                });
-                                            }
-                                        } else {
-                                            // Close any open reasoning block before starting text
-                                            if let Some(id) = reasoning_id.take() {
-                                                yield Ok(StreamPart::ReasoningEnd { id, provider_metadata: None });
-                                            }
-                                            if text_id.is_none() {
-                                                let id = format!("{block_counter}");
-                                                block_counter += 1;
-                                                text_id = Some(id.clone());
-                                                yield Ok(StreamPart::TextStart { id, provider_metadata: thought_sig_meta.clone() });
-                                            }
-                                            if let Some(id) = &text_id {
-                                                yield Ok(StreamPart::TextDelta {
-                                                    id: id.clone(),
-                                                    delta: text.to_string(),
-                                                    provider_metadata: thought_sig_meta.clone(),
-                                                });
-                                            }
-                                        }
-                                    }
-                                } else if let Some(ec) = part.get("executableCode") {
-                                    // Provider-executed code execution.
-                                    let has_code = ec
-                                        .get("code")
-                                        .and_then(|v| v.as_str())
-                                        .map(|s| !s.is_empty())
-                                        .unwrap_or(false);
-                                    if has_code {
-                                        let id = generate_id();
-                                        last_code_execution_tool_call_id = Some(id.clone());
-                                        yield Ok(StreamPart::ToolCall(RawToolCall {
-                                            tool_call_id: id.clone(),
-                                            tool_name: code_execution_tool_name.clone(),
-                                            input: ec.to_string(),
-                                            provider_executed: Some(true),
-                                            dynamic: None,
-                                            provider_metadata: None,
-                                        }));
-                                        // provider-executed → does NOT set has_tool_calls
-                                    }
-                                } else if let Some(cer) = part.get("codeExecutionResult") {
-                                    // Result corresponds to the most recent
-                                    // executableCode part. Gemini may emit
-                                    // several results for that one call, so
-                                    // retain the association until a new call.
-                                    if let Some(call_id) =
-                                        last_code_execution_tool_call_id.as_ref()
-                                    {
-                                        let outcome =
-                                            cer.get("outcome").cloned().unwrap_or(json!(null));
-                                        let output = cer
-                                            .get("output")
-                                            .and_then(|v| v.as_str())
-                                            .map(std::string::ToString::to_string)
-                                            .unwrap_or_default();
-                                        yield Ok(StreamPart::ToolResult(ToolResult {
-                                            tool_call_id: call_id.clone(),
-                                            tool_name: code_execution_tool_name.clone(),
-                                            result: json!({ "outcome": outcome, "output": output }),
-                                            is_error: None,
-                                            preliminary: None,
-                                            dynamic: None,
-                                            provider_metadata: None,
-                                        }));
-                                    }
-                                } else if let Some(tc) = part.get("toolCall") {
-                                    // Server-side tool call (provider-executed).
-                                    let tool_type = tc
-                                        .get("toolType")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("");
-                                    let id = tc
-                                        .get("id")
-                                        .and_then(|v| v.as_str())
-                                        .filter(|id| !id.is_empty())
-                                        .map(std::string::ToString::to_string)
-                                        .unwrap_or_else(generate_id);
-                                    last_server_tool_call_id = Some(id.clone());
-                                    let args = tc.get("args").cloned().unwrap_or(json!({}));
-                                    let server_meta = server_tool_metadata(
-                                        &id,
-                                        tool_type,
-                                        part.get("thoughtSignature").and_then(|v| v.as_str()),
-                                    );
-                                    yield Ok(StreamPart::ToolCall(RawToolCall {
-                                        tool_call_id: id,
-                                        tool_name: format!("server:{tool_type}"),
-                                        input: args.to_string(),
-                                        provider_executed: Some(true),
-                                        dynamic: Some(true),
-                                        provider_metadata: Some(server_meta),
-                                    }));
-                                    // provider-executed → does NOT set has_tool_calls
-                                } else if let Some(tr) = part.get("toolResponse") {
-                                    // Server-side tool response.
-                                    let tool_type = tr.get("toolType").and_then(|v| v.as_str()).unwrap_or("");
-                                    let id = last_server_tool_call_id
-                                        .take()
-                                        .or_else(|| {
-                                            tr.get("id")
-                                                .and_then(|v| v.as_str())
-                                                .map(std::string::ToString::to_string)
-                                        })
-                                        .filter(|id| !id.is_empty())
-                                        .unwrap_or_else(generate_id);
-                                    let response =
-                                        tr.get("response").cloned().unwrap_or(json!({}));
-                                    let server_meta = server_tool_metadata(
-                                        &id,
-                                        tool_type,
-                                        part.get("thoughtSignature").and_then(|v| v.as_str()),
-                                    );
-                                    yield Ok(StreamPart::ToolResult(ToolResult {
-                                        tool_call_id: id,
-                                        tool_name: format!("server:{tool_type}"),
-                                        result: response,
-                                        is_error: None,
-                                        preliminary: None,
-                                        dynamic: None,
-                                        provider_metadata: Some(server_meta),
-                                    }));
-                                } else if let Some(inline) = part.get("inlineData") {
-                                    // File output — upstream :847-877.
-                                    // Close any open text/reasoning block before file.
-                                    if let Some(id) = text_id.take() {
-                                        yield Ok(StreamPart::TextEnd { id, provider_metadata: None });
-                                    }
-                                    if let Some(id) = reasoning_id.take() {
-                                        yield Ok(StreamPart::ReasoningEnd { id, provider_metadata: None });
-                                    }
-                                    if let (Some(data), Some(mime)) = (
-                                        inline.get("data").and_then(|v| v.as_str()),
-                                        inline.get("mimeType").and_then(|v| v.as_str()),
-                                    ) {
-                                        let file = GeneratedFile {
-                                            data: GeneratedFileData::Data { data: FileBytes::Base64(data.to_string()) },
-                                            media_type: mime.to_string(),
-                                            provider_metadata: thought_sig_meta.clone(),
-                                        };
-                                        yield Ok(if part.get("thought").and_then(serde_json::Value::as_bool).unwrap_or(false) { StreamPart::ReasoningFile(file) } else { StreamPart::File(file) });
-                                    }
-                                }
-                            }
-                            for part in parts {
-                                let thought_sig_meta = part.get("thoughtSignature").and_then(Value::as_str)
-                                    .filter(|signature| !signature.is_empty())
-                                    .map(|signature| google_metadata(json!({"thoughtSignature": signature})));
-                                if let Some(fc) = part.get("functionCall") {
-                                    // Single-chunk complete function call (the
-                                    // common case for the public Gemini API).
-                                    if fc.get("name").and_then(Value::as_str).is_none() || fc.get("partialArgs").is_some_and(|value| !value.is_null()) || fc.get("willContinue").and_then(Value::as_bool) == Some(true) { continue; }
-                                    let name = fc
-                                        .get("name")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("");
-                                    let id = fc
-                                        .get("id")
-                                        .and_then(|v| v.as_str())
-                                        .filter(|id| !id.is_empty())
-                                        .filter(|id| !id.is_empty())
-                                        .map(std::string::ToString::to_string)
-                                        .unwrap_or_else(generate_id);
-                                    let args = fc.get("args").filter(|value| !value.is_null()).cloned().unwrap_or(json!({}));
-
-                                    yield Ok(StreamPart::ToolInputStart {
-                                        id: id.clone(),
-                                        tool_name: name.to_string(),
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        title: None,
-                                        provider_metadata: thought_sig_meta.clone(),
-                                    });
-                                    let args_str = args.as_str().map(str::to_owned).unwrap_or_else(|| args.to_string());
-                                    if fc.get("args").is_some_and(|value| !value.is_null()) {
-                                    yield Ok(StreamPart::ToolInputDelta {
-                                        id: id.clone(),
-                                        delta: args_str.clone(),
-                                        provider_metadata: thought_sig_meta.clone(),
-                                    });
-                                    }
-                                    yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: thought_sig_meta.clone()});
-                                    yield Ok(StreamPart::ToolCall(RawToolCall {
-                                        tool_call_id: id,
-                                        tool_name: name.to_string(),
-                                        input: args_str,
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        provider_metadata: thought_sig_meta.clone(),
-                                    }));
-                                    has_tool_calls = true;
-                                }
-                            }
-                        }
-
-                        if let Some(reason) = candidate.finish_reason.as_deref() {
-                            final_finish_reason =
-                                Some(parse_finish_reason(reason, has_tool_calls));
-                        }
-                    }
-                    Ok(GoogleStreamEvent::Error(error)) => {
-                        yield Ok(StreamPart::Error {
-                            error: super::google_stream_error(
-                                &error.error,
-                                &stream_error_url,
-                                stream_request_body.clone(),
-                                stream_error_headers.clone(),
-                            ),
-                        });
-                        stream_errored = true;
-                        break;
-                    }
-                    Err(error) => {
-                        let recoverable = error.is_recoverable_stream_error();
-                        yield Ok(StreamPart::Error { error });
-                        if !recoverable {
-                            return;
-                        }
-                    }
-                }
-            }
-
-            // Close any remaining open text/reasoning segment.
-            if let Some(id) = text_id.take() {
-                yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
-            }
-            if let Some(id) = reasoning_id.take() {
-                yield Ok(StreamPart::ReasoningEnd { id, provider_metadata: None});
-            }
-
-            let provider_metadata = Some(google_metadata(serde_json::json!({
-                "promptFeedback": last_prompt_feedback,
-                "groundingMetadata": last_grounding_metadata,
-                "urlContextMetadata": last_url_context_metadata,
-                "safetyRatings": last_safety_ratings,
-                "usageMetadata": last_usage_metadata_value,
-                "finishMessage": last_finish_message,
-                "serviceTier": last_usage_metadata_value.as_ref().and_then(|usage| usage.get("serviceTier")),
-            })));
-
-            yield Ok(StreamPart::Finish {
-                finish_reason: if stream_errored {
-                    FinishReason {
-                        unified: FinishReasonUnified::Error,
-                        raw: None,
-                    }
-                } else {
-                    final_finish_reason.unwrap_or(FinishReason {
-                        unified: FinishReasonUnified::Other,
-                        raw: None,
-                    })
-                },
-                usage: if stream_errored { Usage::default() } else { final_usage },
-                provider_metadata,
-            });
-        };
+        let stream = pipe_through(
+            futures::stream::iter(first_event).chain(sse_stream),
+            GoogleLanguageModelStream {
+                warnings: tool_warnings,
+                include_raw_chunks,
+                code_execution_tool_name,
+                stream_error_url,
+                stream_request_body,
+                stream_error_headers,
+                generate_id,
+                text_id: None,
+                reasoning_id: None,
+                block_counter: 0,
+                final_usage: Usage::default(),
+                final_finish_reason: None,
+                has_tool_calls: false,
+                response_metadata_emitted: false,
+                stream_errored: false,
+                prompt_blocked: false,
+                last_grounding_metadata: None,
+                last_url_context_metadata: None,
+                last_prompt_feedback: None,
+                last_safety_ratings: None,
+                last_finish_message: None,
+                last_usage_metadata_value: None,
+                emitted_source_urls: HashSet::new(),
+                source_id: 0,
+                last_code_execution_tool_call_id: None,
+                last_server_tool_call_id: None,
+            },
+        );
 
         Ok(StreamResult {
             stream: Box::pin(stream),
@@ -636,6 +240,514 @@ impl LanguageModel for GoogleModel {
                 headers: Some(response_headers),
             }),
         })
+    }
+}
+
+/// The `TransformStream` of `GoogleLanguageModel.doStream`.
+struct GoogleLanguageModelStream {
+    warnings: Vec<Warning>,
+    include_raw_chunks: bool,
+    code_execution_tool_name: String,
+    stream_error_url: String,
+    stream_request_body: Value,
+    stream_error_headers: HashMap<String, String>,
+    generate_id: aimux_provider_utils::IdGenerator,
+    text_id: Option<String>,
+    reasoning_id: Option<String>,
+    block_counter: usize,
+    final_usage: Usage,
+    final_finish_reason: Option<FinishReason>,
+    has_tool_calls: bool,
+    response_metadata_emitted: bool,
+    stream_errored: bool,
+    prompt_blocked: bool,
+    // Provider-metadata accumulators (mirrors TS `lastGroundingMetadata` /
+    // `lastUrlContextMetadata` + the finishReason-chunk snapshot).
+    last_grounding_metadata: Option<Value>,
+    last_url_context_metadata: Option<Value>,
+    last_prompt_feedback: Option<Value>,
+    last_safety_ratings: Option<Value>,
+    last_finish_message: Option<Value>,
+    last_usage_metadata_value: Option<Value>,
+    // Source dedup across chunks (url sources only).
+    emitted_source_urls: HashSet<String>,
+    source_id: usize,
+    // Associates code-execution results / server tool responses with their
+    // preceding call.
+    last_code_execution_tool_call_id: Option<String>,
+    last_server_tool_call_id: Option<String>,
+}
+
+impl GoogleLanguageModelStream {
+    fn transform_chunk(
+        &mut self,
+        chunk: Box<StreamChunk>,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        // Emit ResponseMetadata from the first chunk that has
+        // a responseId (matches TS behaviour).
+        if !self.response_metadata_emitted
+            && let Some(id) = &chunk.response_id
+        {
+            self.response_metadata_emitted = true;
+            controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
+                id: Some(id.clone()),
+                timestamp: None,
+                model_id: None,
+            }));
+        }
+
+        if let Some(usage) = &chunk.usage_metadata {
+            self.final_usage = convert_usage(usage);
+            self.last_usage_metadata_value = serde_json::to_value(usage).ok();
+        }
+        if let Some(pf) = &chunk.prompt_feedback
+            && !self.prompt_blocked
+        {
+            self.last_prompt_feedback = Some(pf.clone());
+            if let Some(reason) = confirmed_prompt_block_reason(Some(pf)) {
+                self.prompt_blocked = true;
+                self.final_finish_reason = Some(FinishReason {
+                    unified: FinishReasonUnified::ContentFilter,
+                    raw: Some(reason),
+                });
+            }
+        }
+
+        let Some(candidates) = chunk.candidates else {
+            return;
+        };
+        let Some(candidate) = candidates.into_iter().next() else {
+            return;
+        };
+
+        if let Some(gm) = &candidate.grounding_metadata {
+            self.last_grounding_metadata = Some(gm.clone());
+        }
+        if let Some(ucm) = &candidate.url_context_metadata {
+            self.last_url_context_metadata = Some(ucm.clone());
+        }
+
+        if let Some(sr) = &candidate.safety_ratings {
+            self.last_safety_ratings = serde_json::to_value(sr).ok();
+        }
+        if let Some(fm) = &candidate.finish_message {
+            self.last_finish_message = Some(json!(fm));
+        }
+        if self.prompt_blocked {
+            return;
+        }
+
+        // Extract url sources from this chunk's grounding metadata
+        // (deduplicated across chunks; document sources are not
+        // emitted in the stream, matching TS).
+        let chunk_sources =
+            extract_sources(candidate.grounding_metadata.as_ref(), &mut self.source_id);
+        for src in chunk_sources {
+            if let GenerateContent::Source(Source::Url {
+                url,
+                id: _,
+                title,
+                provider_metadata: None,
+            }) = src
+                && self.emitted_source_urls.insert(url.clone())
+            {
+                controller.enqueue(StreamPart::Source(Source::Url {
+                    id: (self.generate_id)(),
+                    url,
+                    title,
+                    provider_metadata: None,
+                }));
+            }
+        }
+
+        if let Some(parts) = candidate.content.as_ref().and_then(|c| c.parts.as_ref()) {
+            for part in parts {
+                // thoughtSignature → provider_metadata (upstream :778-782)
+                let thought_sig_meta: Option<ProviderMetadata> = part
+                    .get("thoughtSignature")
+                    .and_then(|v| v.as_str())
+                    .filter(|signature| !signature.is_empty())
+                    .map(|s| google_metadata(json!({ "thoughtSignature": s })));
+
+                // text part
+                if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
+                    if text.is_empty() {
+                        // Empty-text part may carry a thoughtSignature
+                        // (upstream :784-794): emit as a zero-length
+                        // delta with the signature metadata on
+                        // whichever block is open — text or
+                        // reasoning (mirrors the non-streaming
+                        // path, which attaches to the last
+                        // content item regardless of type).
+                        if let Some(meta) = &thought_sig_meta
+                            && let Some(id) = &self.text_id
+                        {
+                            controller.enqueue(StreamPart::TextDelta {
+                                id: id.clone(),
+                                delta: String::new(),
+                                provider_metadata: Some(meta.clone()),
+                            });
+                        }
+                    } else {
+                        let is_thought = part
+                            .get("thought")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false);
+                        if is_thought {
+                            // Close any open text block before starting reasoning
+                            if let Some(id) = self.text_id.take() {
+                                controller.enqueue(StreamPart::TextEnd {
+                                    id,
+                                    provider_metadata: None,
+                                });
+                            }
+                            // Start a reasoning block if not already active
+                            if self.reasoning_id.is_none() {
+                                let id = format!("{}", self.block_counter);
+                                self.block_counter += 1;
+                                self.reasoning_id = Some(id.clone());
+                                controller.enqueue(StreamPart::ReasoningStart {
+                                    id,
+                                    provider_metadata: thought_sig_meta.clone(),
+                                });
+                            }
+                            if let Some(id) = &self.reasoning_id {
+                                controller.enqueue(StreamPart::ReasoningDelta {
+                                    id: id.clone(),
+                                    delta: text.to_string(),
+                                    provider_metadata: thought_sig_meta.clone(),
+                                });
+                            }
+                        } else {
+                            // Close any open reasoning block before starting text
+                            if let Some(id) = self.reasoning_id.take() {
+                                controller.enqueue(StreamPart::ReasoningEnd {
+                                    id,
+                                    provider_metadata: None,
+                                });
+                            }
+                            if self.text_id.is_none() {
+                                let id = format!("{}", self.block_counter);
+                                self.block_counter += 1;
+                                self.text_id = Some(id.clone());
+                                controller.enqueue(StreamPart::TextStart {
+                                    id,
+                                    provider_metadata: thought_sig_meta.clone(),
+                                });
+                            }
+                            if let Some(id) = &self.text_id {
+                                controller.enqueue(StreamPart::TextDelta {
+                                    id: id.clone(),
+                                    delta: text.to_string(),
+                                    provider_metadata: thought_sig_meta.clone(),
+                                });
+                            }
+                        }
+                    }
+                } else if let Some(ec) = part.get("executableCode") {
+                    // Provider-executed code execution.
+                    let has_code = ec
+                        .get("code")
+                        .and_then(|v| v.as_str())
+                        .map(|s| !s.is_empty())
+                        .unwrap_or(false);
+                    if has_code {
+                        let id = (self.generate_id)();
+                        self.last_code_execution_tool_call_id = Some(id.clone());
+                        controller.enqueue(StreamPart::ToolCall(RawToolCall {
+                            tool_call_id: id.clone(),
+                            tool_name: self.code_execution_tool_name.clone(),
+                            input: ec.to_string(),
+                            provider_executed: Some(true),
+                            dynamic: None,
+                            provider_metadata: None,
+                        }));
+                        // provider-executed → does NOT set has_tool_calls
+                    }
+                } else if let Some(cer) = part.get("codeExecutionResult") {
+                    // Result corresponds to the most recent
+                    // executableCode part. Gemini may emit
+                    // several results for that one call, so
+                    // retain the association until a new call.
+                    if let Some(call_id) = self.last_code_execution_tool_call_id.as_ref() {
+                        let outcome = cer.get("outcome").cloned().unwrap_or(json!(null));
+                        let output = cer
+                            .get("output")
+                            .and_then(|v| v.as_str())
+                            .map(std::string::ToString::to_string)
+                            .unwrap_or_default();
+                        controller.enqueue(StreamPart::ToolResult(ToolResult {
+                            tool_call_id: call_id.clone(),
+                            tool_name: self.code_execution_tool_name.clone(),
+                            result: json!({ "outcome": outcome, "output": output }),
+                            is_error: None,
+                            preliminary: None,
+                            dynamic: None,
+                            provider_metadata: None,
+                        }));
+                    }
+                } else if let Some(tc) = part.get("toolCall") {
+                    // Server-side tool call (provider-executed).
+                    let tool_type = tc.get("toolType").and_then(|v| v.as_str()).unwrap_or("");
+                    let id = tc
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .filter(|id| !id.is_empty())
+                        .map(std::string::ToString::to_string)
+                        .unwrap_or_else(self.generate_id);
+                    self.last_server_tool_call_id = Some(id.clone());
+                    let args = tc.get("args").cloned().unwrap_or(json!({}));
+                    let server_meta = server_tool_metadata(
+                        &id,
+                        tool_type,
+                        part.get("thoughtSignature").and_then(|v| v.as_str()),
+                    );
+                    controller.enqueue(StreamPart::ToolCall(RawToolCall {
+                        tool_call_id: id,
+                        tool_name: format!("server:{tool_type}"),
+                        input: args.to_string(),
+                        provider_executed: Some(true),
+                        dynamic: Some(true),
+                        provider_metadata: Some(server_meta),
+                    }));
+                    // provider-executed → does NOT set has_tool_calls
+                } else if let Some(tr) = part.get("toolResponse") {
+                    // Server-side tool response.
+                    let tool_type = tr.get("toolType").and_then(|v| v.as_str()).unwrap_or("");
+                    let id = self
+                        .last_server_tool_call_id
+                        .take()
+                        .or_else(|| {
+                            tr.get("id")
+                                .and_then(|v| v.as_str())
+                                .map(std::string::ToString::to_string)
+                        })
+                        .filter(|id| !id.is_empty())
+                        .unwrap_or_else(self.generate_id);
+                    let response = tr.get("response").cloned().unwrap_or(json!({}));
+                    let server_meta = server_tool_metadata(
+                        &id,
+                        tool_type,
+                        part.get("thoughtSignature").and_then(|v| v.as_str()),
+                    );
+                    controller.enqueue(StreamPart::ToolResult(ToolResult {
+                        tool_call_id: id,
+                        tool_name: format!("server:{tool_type}"),
+                        result: response,
+                        is_error: None,
+                        preliminary: None,
+                        dynamic: None,
+                        provider_metadata: Some(server_meta),
+                    }));
+                } else if let Some(inline) = part.get("inlineData") {
+                    // File output — upstream :847-877.
+                    // Close any open text/reasoning block before file.
+                    if let Some(id) = self.text_id.take() {
+                        controller.enqueue(StreamPart::TextEnd {
+                            id,
+                            provider_metadata: None,
+                        });
+                    }
+                    if let Some(id) = self.reasoning_id.take() {
+                        controller.enqueue(StreamPart::ReasoningEnd {
+                            id,
+                            provider_metadata: None,
+                        });
+                    }
+                    if let (Some(data), Some(mime)) = (
+                        inline.get("data").and_then(|v| v.as_str()),
+                        inline.get("mimeType").and_then(|v| v.as_str()),
+                    ) {
+                        let file = GeneratedFile {
+                            data: GeneratedFileData::Data {
+                                data: FileBytes::Base64(data.to_string()),
+                            },
+                            media_type: mime.to_string(),
+                            provider_metadata: thought_sig_meta.clone(),
+                        };
+                        controller.enqueue(
+                            if part
+                                .get("thought")
+                                .and_then(serde_json::Value::as_bool)
+                                .unwrap_or(false)
+                            {
+                                StreamPart::ReasoningFile(file)
+                            } else {
+                                StreamPart::File(file)
+                            },
+                        );
+                    }
+                }
+            }
+            for part in parts {
+                let thought_sig_meta = part
+                    .get("thoughtSignature")
+                    .and_then(Value::as_str)
+                    .filter(|signature| !signature.is_empty())
+                    .map(|signature| google_metadata(json!({"thoughtSignature": signature})));
+                if let Some(fc) = part.get("functionCall") {
+                    // Single-chunk complete function call (the
+                    // common case for the public Gemini API).
+                    if fc.get("name").and_then(Value::as_str).is_none()
+                        || fc.get("partialArgs").is_some_and(|value| !value.is_null())
+                        || fc.get("willContinue").and_then(Value::as_bool) == Some(true)
+                    {
+                        continue;
+                    }
+                    let name = fc.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let id = fc
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .filter(|id| !id.is_empty())
+                        .filter(|id| !id.is_empty())
+                        .map(std::string::ToString::to_string)
+                        .unwrap_or_else(self.generate_id);
+                    let args = fc
+                        .get("args")
+                        .filter(|value| !value.is_null())
+                        .cloned()
+                        .unwrap_or(json!({}));
+
+                    controller.enqueue(StreamPart::ToolInputStart {
+                        id: id.clone(),
+                        tool_name: name.to_string(),
+                        provider_executed: None,
+                        dynamic: None,
+                        title: None,
+                        provider_metadata: thought_sig_meta.clone(),
+                    });
+                    let args_str = args
+                        .as_str()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| args.to_string());
+                    if fc.get("args").is_some_and(|value| !value.is_null()) {
+                        controller.enqueue(StreamPart::ToolInputDelta {
+                            id: id.clone(),
+                            delta: args_str.clone(),
+                            provider_metadata: thought_sig_meta.clone(),
+                        });
+                    }
+                    controller.enqueue(StreamPart::ToolInputEnd {
+                        id: id.clone(),
+                        provider_metadata: thought_sig_meta.clone(),
+                    });
+                    controller.enqueue(StreamPart::ToolCall(RawToolCall {
+                        tool_call_id: id,
+                        tool_name: name.to_string(),
+                        input: args_str,
+                        provider_executed: None,
+                        dynamic: None,
+                        provider_metadata: thought_sig_meta.clone(),
+                    }));
+                    self.has_tool_calls = true;
+                }
+            }
+        }
+
+        if let Some(reason) = candidate.finish_reason.as_deref() {
+            self.final_finish_reason = Some(parse_finish_reason(reason, self.has_tool_calls));
+        }
+    }
+}
+
+impl Transformer for GoogleLanguageModelStream {
+    type Input = Result<Value, AiMuxError>;
+    type Output = StreamPart;
+
+    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+        controller.enqueue(StreamPart::StreamStart {
+            warnings: std::mem::take(&mut self.warnings),
+        });
+    }
+
+    fn transform(
+        &mut self,
+        event: Result<Value, AiMuxError>,
+        controller: &mut TransformStreamController<StreamPart>,
+    ) {
+        if self.stream_errored {
+            return;
+        }
+        let event = match event {
+            Ok(raw_value) => {
+                if self.include_raw_chunks {
+                    controller.enqueue(StreamPart::Raw {
+                        raw_value: raw_value.clone(),
+                    });
+                }
+                serde_json::from_value::<GoogleStreamEvent>(raw_value).map_err(AiMuxError::from)
+            }
+            Err(error) => Err(error),
+        };
+
+        match event {
+            Ok(GoogleStreamEvent::Chunk(chunk)) => self.transform_chunk(chunk, controller),
+            Ok(GoogleStreamEvent::Error(error)) => {
+                controller.enqueue(StreamPart::Error {
+                    error: super::google_stream_error(
+                        &error.error,
+                        &self.stream_error_url,
+                        self.stream_request_body.clone(),
+                        self.stream_error_headers.clone(),
+                    ),
+                });
+                self.stream_errored = true;
+            }
+            Err(error) => {
+                let recoverable = error.is_recoverable_stream_error();
+                controller.enqueue(StreamPart::Error { error });
+                if !recoverable {
+                    controller.terminate();
+                }
+            }
+        }
+    }
+
+    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+        // Close any remaining open text/reasoning segment.
+        if let Some(id) = self.text_id.take() {
+            controller.enqueue(StreamPart::TextEnd {
+                id,
+                provider_metadata: None,
+            });
+        }
+        if let Some(id) = self.reasoning_id.take() {
+            controller.enqueue(StreamPart::ReasoningEnd {
+                id,
+                provider_metadata: None,
+            });
+        }
+
+        let provider_metadata = Some(google_metadata(serde_json::json!({
+            "promptFeedback": self.last_prompt_feedback,
+            "groundingMetadata": self.last_grounding_metadata,
+            "urlContextMetadata": self.last_url_context_metadata,
+            "safetyRatings": self.last_safety_ratings,
+            "usageMetadata": self.last_usage_metadata_value,
+            "finishMessage": self.last_finish_message,
+            "serviceTier": self.last_usage_metadata_value.as_ref().and_then(|usage| usage.get("serviceTier")),
+        })));
+
+        controller.enqueue(StreamPart::Finish {
+            finish_reason: if self.stream_errored {
+                FinishReason {
+                    unified: FinishReasonUnified::Error,
+                    raw: None,
+                }
+            } else {
+                self.final_finish_reason.unwrap_or(FinishReason {
+                    unified: FinishReasonUnified::Other,
+                    raw: None,
+                })
+            },
+            usage: if self.stream_errored {
+                Usage::default()
+            } else {
+                self.final_usage
+            },
+            provider_metadata,
+        });
     }
 }
 
