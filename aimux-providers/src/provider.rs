@@ -595,7 +595,6 @@ pub fn provider_from_env(
 }
 
 /// Names of all built-in registry providers.
-#[must_use]
 pub fn provider_names() -> impl Iterator<Item = &'static str> {
     registry().iter().map(|entry| entry.name.as_str())
 }
