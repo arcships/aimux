@@ -19,7 +19,9 @@ use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
-use crate::fetch::{Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse};
+use crate::fetch::{
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, RequestCredentials,
+};
 use crate::resolvable::Resolvable;
 
 /// A set of AWS credentials for SigV4 signing.
@@ -281,7 +283,8 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
 type Clock = fn() -> DateTime<Utc>;
 
 /// A [`Fetch`] decorator that signs every request with SigV4 and forwards it
-/// to the wrapped transport.
+/// to the wrapped transport. A request marked [`RequestCredentials::Omit`] is
+/// forwarded unsigned.
 ///
 /// Credentials are resolved on each request, so a `Resolvable::AsyncFn` can
 /// hand out rotating STS credentials. The signature covers the request's
@@ -332,6 +335,11 @@ impl fmt::Debug for SigV4Fetch {
 #[async_trait]
 impl Fetch for SigV4Fetch {
     async fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
+        // A redirect hop off the credentialed origin: neither the signature
+        // nor `x-amz-security-token` may reach that host.
+        if request.credentials == RequestCredentials::Omit {
+            return self.inner.fetch(request).await;
+        }
         let credentials = self.credentials.resolve().await.map_err(|error| {
             FetchError::Other(format!("failed to resolve AWS credentials: {error}"))
         })?;
@@ -633,6 +641,31 @@ mod tests {
         assert!(authorization.contains("x-amz-security-token"));
         assert_eq!(sent.headers.get_all("authorization").iter().count(), 1);
         assert_eq!(sent.headers["x-amz-security-token"], "SESSION");
+    }
+
+    #[tokio::test]
+    async fn a_request_that_omits_credentials_is_forwarded_unsigned() {
+        let session = AwsCredentials {
+            session_token: Some("SESSION".to_string()),
+            ..creds()
+        };
+        let (fetch, capture) = decorated(session);
+        let mut request = FetchRequest::new(Method::POST, URL.parse().unwrap());
+        request.body = Bytes::from(BODY);
+        request.credentials = RequestCredentials::Omit;
+
+        fetch.fetch(request).await.unwrap();
+
+        let sent = capture.0.lock().unwrap().take().unwrap();
+        for name in [
+            "authorization",
+            "x-amz-date",
+            "x-amz-content-sha256",
+            "x-amz-security-token",
+        ] {
+            assert!(!sent.headers.contains_key(name), "{name}");
+        }
+        assert_eq!(sent.body, Bytes::from(BODY));
     }
 
     #[tokio::test]
