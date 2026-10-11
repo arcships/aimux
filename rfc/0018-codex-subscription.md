@@ -6,7 +6,7 @@
 > 本 RFC 基于 104 项目参考审计的发现,先给出动机与现状,再列出**必须核验的协议事实**,
 > 核验通过后按本 RFC 的设计草案实现;核验不通过则降级为 backlog。
 > **Related**: [RFC-0016](0016-align-with-aisdk.md) AISDK 对齐、[RFC-0006](0006-provider-development.md) provider 开发规范、
-> [provider-inventory/INTEGRATION-PRIORITY.md](../provider-inventory/INTEGRATION-PRIORITY.md)
+> [历史 provider inventory](https://github.com/arcships/aimux/tree/892a351fd85bf94986e9ba765dcd77c721474f31/provider-inventory)
 
 ---
 

@@ -7,7 +7,7 @@
 
 ## 1. 方法论
 
-1. **数据来源**：[provider-inventory/providers.json](../../provider-inventory/providers.json) 中 209 个未实现 provider，基础线索已导出至 `_research-input.json`。
+1. **数据来源**：历史 [`provider-inventory/providers.json`](https://github.com/arcships/aimux/blob/892a351fd85bf94986e9ba765dcd77c721474f31/provider-inventory/providers.json) 中当时的 209 个未实现 provider，基础线索已导出至 `_research-input.json`。该 inventory 是本轮调研的时间点输入，不是现行 provider 配置源。
 2. **分批**：按"分层把握度（L2→L3→unknown）+ 能力复杂度（纯 chat 优先）+ 字母序"排序后分 15 批，每批 13–14 个。批次输入见 `batches/batch-XX.json`，调研记录见 `batch-XX.md`。
 3. **每 provider 核验项**（见 `_template.md`）：官方协议证据、协议事实（base URL/鉴权/endpoint/协议类型/请求响应/流式/错误）、实现路径建议、风险与限制、优先级建议。
 4. **证据裁决顺序**（RFC-0006 §2.1）：官方文档/SDK > `reference/` 成熟实现 > 多来源一致 > 单一第三方。

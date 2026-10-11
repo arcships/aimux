@@ -3,7 +3,7 @@
 > **Status**: ACCEPTED (in force — required reading in CONTRIBUTING.md and applied by provider-research batches; 2026-07-28)  
 > **Date**: 2026-07-28  
 > **Scope**: Adding or redoing provider adapters in `aimux-providers`  
-> **Related**: [Provider Inventory and Extraction Results](../provider-inventory/README.md), [Provider Adapter Layer Improvements](0002-provider-improvements.md), [Cassette Test Plan](0003-test-cassette.md), [Protocol Conversion and Adapter Layer Design](0005-protocol-conversion.md)
+> **Related**: [Archived Provider Inventory](../provider-inventory/README.md), [Provider Adapter Layer Improvements](0002-provider-improvements.md), [Cassette Test Plan](0003-test-cassette.md), [Protocol Conversion and Adapter Layer Design](0005-protocol-conversion.md)
 
 ## 1. Positioning and Boundaries
 
@@ -39,7 +39,13 @@ Before starting implementation, only confirm information directly related to thi
 
 Capabilities not part of this delivery need not be investigated or filled in as "unknown". When extending capabilities later, re-verify the corresponding protocol.
 
-[`provider-inventory/providers.json`](../provider-inventory/providers.json) is used to discover candidates, canonical IDs, aliases, and source leads; it cannot serve as a basis for protocol implementation. When evidence conflicts, adjudicate in the following order:
+Use the current [`provider_registry.json`](../aimux-providers/src/provider_registry.json)
+to check existing OpenAI-compatible configurations. Historical candidate and
+source research remains available in
+[`docs/internal/provider-research/`](../docs/internal/provider-research/) and
+the [archived inventory snapshot](https://github.com/arcships/aimux/tree/892a351fd85bf94986e9ba765dcd77c721474f31/provider-inventory),
+but neither can serve as a basis for protocol implementation. When evidence
+conflicts, adjudicate in the following order:
 
 1. The provider's official API documentation, SDK, or OpenAPI;
 2. Mature and traceable current implementations in `reference/`;

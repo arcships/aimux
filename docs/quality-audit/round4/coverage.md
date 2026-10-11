@@ -1,13 +1,14 @@
 # 覆盖率审计（Round 4 Phase 2）
 
 > **基线**: master @ cf2cea5 · **日期**: 2026-08-14 · 对应审计计划目标 2
-> **工具**: cargo-llvm-cov（本轮首次为仓库建立覆盖率基础设施），产物 `lcov.info`
+> **工具**: cargo-llvm-cov（本轮首次为仓库建立覆盖率基础设施）
 
 ## 1. 基础设施（本轮新建，长期资产）
 
 ```bash
 cd <repo>
-cargo llvm-cov --workspace --ignore-run-fail --lcov --output-path lcov.info
+cargo llvm-cov --workspace --ignore-run-fail --lcov \
+  --output-path target/llvm-cov/lcov.info
 ```
 
 限制说明：不含 doctests；绑定语言测试（TS/Python/Go 等）不在 llvm-cov 统计内（见 §5 L4）；无 per-test 归因（文件级映射）。

@@ -7,7 +7,7 @@
 `cargo clippy --workspace --all-targets -- -W clippy::pedantic -W clippy::nursery`
 结果：**4,850 warning / 0 error**（独立校验修正：初报 4,979 含 129 行 cargo 汇总行）。默认 lint 基线（CI 强制）保持 0 warning。
 
-### 1.1 Top lint 频率（完整分布见 clippy-lint-frequency.txt）
+### 1.1 Top lint 频率
 
 | lint | 数量 | 建议 |
 |---|---|---|
@@ -50,7 +50,7 @@
 
 ## 6. 错误处理信号汇总（定性结论归口）
 
-机械清单见 baseline.md §3 与 signals-panic.txt。本轮最重要的定性结论：
+机械清单的凝练结果见 baseline.md §3。本轮最重要的定性结论：
 
 1. **panic 面总体受控**：无外部输入可触发的 unwrap/expect（4a/4b/4d 三路独立验证）；两个例外见 4d（registry mutex 中毒级联、http.rs:177 Client 构建 expect）。
 2. **真正的风险是静默吞信号**：recording.rs 磁盘 I/O 错误静默（4a-H1）、anthropic/google 流解析 5 处 `unwrap_or_default` 吞关键信号（4b）、非 JSON 帧静默丢弃（4e）。

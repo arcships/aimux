@@ -98,7 +98,10 @@
 | [p4c-comments.md](p4c-comments.md) | 注释质量专项（H1/M8/L6） |
 | [p4d-defensive-redundancy.md](p4d-defensive-redundancy.md) | 防御冗余专项（H2/M5/L4） |
 | [p4e-rfc0028-first-pass.md](p4e-rfc0028-first-pass.md) | RFC-0028 合入首审（H1/M7/L9） |
-| signals-*.txt / *.log / lcov.info | 原始数据 |
+
+原始日志、扫描输出与 `lcov.info` 不纳入版本控制；复现命令及凝练结果见
+[baseline.md](baseline.md)、[coverage.md](coverage.md) 与
+[p7-automated-audit.md](p7-automated-audit.md)。
 
 **执行偏差记录**：基线 worktree 位于 /tmp/aimux-audit-master（用后可删）；cargo doc 参数与 llvm-cov 参数各修正一次重跑；machete 需 --locked 安装（rustc 1.85 限制）；4 个测试二进制在插桩下失败已定位（SigV4 host 端口 + 环境代理，计入发现，未阻塞报告生成）。
 
