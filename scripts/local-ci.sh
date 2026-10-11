@@ -4,7 +4,6 @@
 # Mirrors .github/workflows/ci.yml (host jobs only; cross-platform matrix
 # targets and Flutter example builds stay in CI):
 #   rust      cargo fmt + clippy -D warnings + cargo test --workspace
-#   contract  Rust contract tests + Node run-node.ts
 #   python    maturin develop --release + pytest (bindings/python venv)
 #   node      npm ci + napi build + npm test + tsc typecheck
 #   go        go vet + go test (needs local-ci-setup.sh)
@@ -13,9 +12,9 @@
 #
 # Usage:
 #   scripts/local-ci.sh                 # everything installed
-#   scripts/local-ci.sh --only=rust,contract
+#   scripts/local-ci.sh --only=rust,python
 #   scripts/local-ci.sh --skip=node,flutter
-#   scripts/local-ci.sh --quick         # rust + contract only
+#   scripts/local-ci.sh --quick         # rust only
 #
 # Exit code 0 = all gates green. Stops at the first failing gate.
 
@@ -33,7 +32,7 @@ for arg in "$@"; do
     *) echo "unknown arg: $arg" >&2; exit 2 ;;
   esac
 done
-[ "$QUICK" -eq 1 ] && { ONLY="${ONLY:-rust,contract}"; }
+[ "$QUICK" -eq 1 ] && { ONLY="${ONLY:-rust}"; }
 
 want() { # want <stage>
   local stage="$1"
@@ -67,17 +66,6 @@ if want rust; then
     pass "rust"
   else
     fail "rust"
-  fi
-fi
-
-# ── contract ───────────────────────────────────────────────────────────────
-if want contract; then
-  section "contract: Rust/Node contract tests"
-  if cargo test --test contract_test -p aimux-core --quiet \
-     && node --experimental-strip-types contract-tests/run-node.ts | grep -q '0 failed'; then
-    pass "contract"
-  else
-    fail "contract"
   fi
 fi
 
