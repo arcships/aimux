@@ -20,7 +20,8 @@ use aimux_core::recording::{
 use aimux_core::{AiMuxError, ApiCallError};
 
 use crate::fetch::{
-    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, default_fetch,
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, RequestCredentials,
+    default_fetch,
 };
 use crate::handle_fetch_error::fetch_error_to_ai_mux_error;
 use crate::logging::{body_logging_enabled, redact_body};
@@ -228,6 +229,9 @@ pub(crate) struct PreparedRequest {
     pub(crate) max_json_response_bytes: Option<usize>,
     pub(crate) validation: Option<DownloadValidation>,
     pub(crate) fetch: Option<FetchFunction>,
+    /// [`RequestCredentials::Omit`] once the target is off the credentialed
+    /// origin; never switched back.
+    credentials: RequestCredentials,
 }
 
 impl HttpRequest {
@@ -236,10 +240,12 @@ impl HttpRequest {
         // when the target is off the credentialed origin they never leave,
         // whichever transport the exchange takes.
         let mut headers = self.headers;
+        let mut credentials = RequestCredentials::Include;
         if let Some(origin) = self.credentialed_origin.as_deref()
             && !crate::download_guard::same_origin(&self.url, origin)
         {
             crate::download_guard::retain_user_agent(&mut headers);
+            credentials = RequestCredentials::Omit;
         }
         PreparedRequest {
             method,
@@ -256,6 +262,7 @@ impl HttpRequest {
                 credentialed_origin: self.credentialed_origin,
             }),
             fetch: self.fetch,
+            credentials,
         }
     }
 }
@@ -495,9 +502,6 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
             ));
         }
         let next = next.to_string();
-        if pinned.is_none() && !crate::download_guard::same_origin(&next, &current.url) {
-            return Ok(response);
-        }
         if redirect_count == MAX_REDIRECTS {
             return Err(redirect_error(request, "too many redirects", status));
         }
@@ -509,11 +513,17 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
                 crate::download_guard::hop_trusted_origin(trusted_origin, &current.url);
             pinned =
                 Some(crate::download_guard::validate_download_target(&next, hop_trusted).await?);
-            // Credentials are scoped to the credential anchor, not the
-            // previous hop: once a redirect leaves it, headers cannot come back.
-            if !crate::download_guard::same_origin(&next, credential_anchor) {
-                crate::download_guard::retain_user_agent(&mut current.headers);
-            }
+        }
+        // Credentials are scoped to the credential anchor, not the previous
+        // hop: once a redirect leaves it, headers cannot come back. An API
+        // request follows every redirect, like the AI SDK's `postToApi` under
+        // fetch's default `redirect: "follow"`, but off the anchor it keeps
+        // only `User-Agent`, as `fetchWithValidatedRedirects` does: the fetch
+        // spec strips only `Authorization`, and provider keys also travel in
+        // custom headers. Signing decorators see `RequestCredentials::Omit`.
+        if !crate::download_guard::same_origin(&next, credential_anchor) {
+            crate::download_guard::retain_user_agent(&mut current.headers);
+            current.credentials = RequestCredentials::Omit;
         }
         if status == http::StatusCode::SEE_OTHER
             || (matches!(
@@ -593,6 +603,7 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
         body,
         signal: None,
         timeout: None,
+        credentials: request.credentials,
     })
 }
 

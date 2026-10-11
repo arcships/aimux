@@ -48,6 +48,24 @@ pub struct FetchRequest {
     /// enforce one. The helper layer enforces its own response deadline and
     /// leaves this `None`.
     pub timeout: Option<Duration>,
+    /// Whether credential decorators may authenticate this request.
+    pub credentials: RequestCredentials,
+}
+
+/// Whether a credential decorator may authenticate a request, after the
+/// `credentials` member of the WHATWG fetch `RequestInit`.
+///
+/// The helper layer sets [`RequestCredentials::Omit`] once a redirect leaves
+/// the origin the credentials belong to. Caller headers are already reduced
+/// to `User-Agent` by then; a decorator that adds credentials itself, such as
+/// [`crate::sigv4_fetch::SigV4Fetch`], must forward the request untouched.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RequestCredentials {
+    /// Decorators authenticate the request.
+    #[default]
+    Include,
+    /// Decorators add no credentials.
+    Omit,
 }
 
 impl FetchRequest {
@@ -61,6 +79,7 @@ impl FetchRequest {
             body: Bytes::new(),
             signal: None,
             timeout: None,
+            credentials: RequestCredentials::Include,
         }
     }
 }
