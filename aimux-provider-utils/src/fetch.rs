@@ -129,7 +129,6 @@ impl FetchResponse {
     }
 
     /// Consume the response into its body stream.
-    #[must_use]
     pub fn bytes_stream(self) -> BoxStream<'static, Result<Bytes, FetchError>> {
         self.body
     }
