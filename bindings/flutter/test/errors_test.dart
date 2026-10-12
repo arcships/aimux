@@ -75,6 +75,7 @@ void main() {
         AimuxErrorCode.noSuchTool: NoSuchToolError,
         AimuxErrorCode.invalidToolInput: InvalidToolInputError,
         AimuxErrorCode.toolCallRepair: ToolCallRepairError,
+        AimuxErrorCode.noOutputGenerated: NoOutputGeneratedError,
         AimuxErrorCode.loadApiKey: LoadAPIKeyError,
         AimuxErrorCode.loadSetting: LoadSettingError,
         AimuxErrorCode.other: OtherError,
@@ -90,10 +91,12 @@ void main() {
     test('unknown code is rejected with StateError', () {
       // A code outside the published table is an ABI mismatch, not an error
       // kind. 1 is AIMUX_E_OTHER now because Other inherited the old UNKNOWN
-      // slot, so it resolves; 4 is retired and 20 is the first unassigned value.
+      // slot, so it resolves; 4 is retired, 18 is NoOutputGenerated and 21 is
+      // the first unassigned value.
       expect(() => AimuxException.fromCode(999, 'future'), throwsStateError);
       expect(() => AimuxException.fromCode(4, 'retired'), throwsStateError);
-      expect(() => AimuxException.fromCode(20, 'unassigned'), throwsStateError);
+      expect(AimuxException.fromCode(18, 'no output'), isA<NoOutputGeneratedError>());
+      expect(() => AimuxException.fromCode(21, 'unassigned'), throwsStateError);
     });
 
     test('bare retry code synthesizes a single-attempt RetryError', () {
@@ -183,7 +186,7 @@ void main() {
       expect(AimuxErrorCode.retry, 14);
       expect(AimuxErrorCode.name(AimuxErrorCode.retry), 'Retry');
       // The AIMUX_E_UNKNOWN catch-all is gone and Other took its slot; the
-      // engine codes are 1–19 (4 retired).
+      // engine codes are 1–20 (4 retired).
       expect(AimuxErrorCode.other, 1);
       expect(AimuxErrorCode.aborted, 13);
       expect(AimuxErrorCode.noSuchTool, 15);
@@ -195,9 +198,12 @@ void main() {
       expect(AimuxErrorCode.name(AimuxErrorCode.toolCallRepair),
           'ToolCallRepair');
       // A missing API key / provider setting have their own codes.
-      expect(AimuxErrorCode.loadApiKey, 18);
+      expect(AimuxErrorCode.noOutputGenerated, 18);
+      expect(AimuxErrorCode.name(AimuxErrorCode.noOutputGenerated),
+          'NoOutputGenerated');
+      expect(AimuxErrorCode.loadApiKey, 19);
       expect(AimuxErrorCode.name(AimuxErrorCode.loadApiKey), 'LoadApiKey');
-      expect(AimuxErrorCode.loadSetting, 19);
+      expect(AimuxErrorCode.loadSetting, 20);
       expect(AimuxErrorCode.name(AimuxErrorCode.loadSetting), 'LoadSetting');
     });
   });

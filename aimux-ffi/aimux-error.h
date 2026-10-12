@@ -60,13 +60,13 @@ typedef enum aimux_error_code {
     AIMUX_E_NO_SUCH_TOOL = 15,
     AIMUX_E_INVALID_TOOL_INPUT = 16,
     AIMUX_E_TOOL_CALL_REPAIR = 17,
+    AIMUX_E_NO_OUTPUT_GENERATED = 18,
     /* No API key was passed and the fallback environment variable is unset
      * (the AI SDK's LoadAPIKeyError). Pre-HTTP: no request was made. */
-    AIMUX_E_LOAD_API_KEY = 18,
+    AIMUX_E_LOAD_API_KEY = 19,
     /* A required provider setting was not passed and its fallback environment
      * variable is unset (the AI SDK's LoadSettingError). */
-    AIMUX_E_LOAD_SETTING = 19,
-    AIMUX_E_NO_OUTPUT_GENERATED = 20,
+    AIMUX_E_LOAD_SETTING = 20,
 
     /* RecordingError: 100..105. */
     AIMUX_E_RECORDING_INIT = 100,

@@ -5,7 +5,7 @@ package aimux
 //   M10 Usage.raw preservation
 //   M9 StreamStart non-empty warnings
 //
-// Mirrors the Rust provider tests (openai_model_test.rs / groq_test.rs) at
+// Mirrors the Rust chat-provider tests at
 // the Go binding level, driving the real FFI path against a mock SSE server.
 
 import (
@@ -23,9 +23,12 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()
 	srv.SetContentType("text/event-stream")
-	srv.SetResponse(buildTextDeltaSSE())
+	srv.SetResponse(buildChatTextDeltaSSE())
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m, err := ProviderWithBase("deepseek", "sk-test-fake-key", "deepseek-chat", srv.URL)
+	if err != nil {
+		t.Fatalf("ProviderWithBase: %v", err)
+	}
 	defer m.Close()
 
 	stream := m.StreamText(`"Say hello"`, mustMarshalOptions(t, &GenerateTextOptions{
@@ -34,6 +37,7 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 
 	var raws []json.RawMessage
 	rawBeforeFirstDelta := false
+	sawDelta := false
 	var textBuilder strings.Builder
 	for part := range stream.Parts() {
 		sp, err := ParseStreamPart(part)
@@ -43,10 +47,14 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 		switch sp.Tag {
 		case "Raw":
 			raws = append(raws, sp.Payload)
-			if !rawBeforeFirstDelta {
+			if !sawDelta {
 				rawBeforeFirstDelta = true
 			}
 		case "TextDelta":
+			sawDelta = true
+			if !rawBeforeFirstDelta {
+				t.Error("Raw must precede the first parsed TextDelta")
+			}
 			var td TextDeltaPayload
 			json.Unmarshal(sp.Payload, &td)
 			textBuilder.WriteString(td.Delta)
@@ -56,7 +64,7 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 		t.Fatalf("stream error: %v", err)
 	}
 
-	// buildTextDeltaSSE has 3 JSON events (2 content + 1 usage chunk);
+	// buildChatTextDeltaSSE has 3 JSON events (2 content + 1 usage chunk);
 	// [DONE] emits no Raw.
 	if len(raws) != 3 {
 		t.Fatalf("expected 3 Raw parts, got %d", len(raws))
@@ -79,22 +87,20 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 	}
 }
 
-// RFC-0016 M10: streaming Finish carries the provider's raw usage object
-// (buildTextDeltaSSE usage has prompt_tokens=3).
-
 func TestE2E_StreamStartCarriesNonEmptyWarnings(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()
 	srv.SetContentType("text/event-stream")
-	srv.SetResponse(buildTextDeltaSSE())
+	srv.SetResponse(buildChatTextDeltaSSE())
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m, err := ProviderWithBase("deepseek", "sk-test-fake-key", "deepseek-chat", srv.URL)
+	if err != nil {
+		t.Fatalf("ProviderWithBase: %v", err)
+	}
 	defer m.Close()
 
-	// top_k on a provider that supports it produces no warning on the openai
-	// full profile; the Go assertion here is that a non-empty warnings array
-	// in StreamStart decodes without breaking the stream (the warning itself
-	// is produced by the groq profile — covered in groq_test.rs).
+	// DeepSeek does not support top_k, so it must surface the warning through
+	// the Go FFI stream while continuing to parse text normally.
 	stream := m.StreamText(`"Say hello"`, mustMarshalOptions(t, &GenerateTextOptions{
 		TopK: f64Ptr(0.5),
 	}))
@@ -113,9 +119,9 @@ func TestE2E_StreamStartCarriesNonEmptyWarnings(t *testing.T) {
 			if err := json.Unmarshal(sp.Payload, &start); err != nil {
 				t.Fatalf("failed to decode StreamStart payload: %v", err)
 			}
-			// warnings may be empty on the full profile; the point is that a
-			// non-empty array would decode here without error.
-			t.Logf("StreamStart warnings: %d", len(start.Warnings))
+			if len(start.Warnings) == 0 {
+				t.Error("expected an unsupported topK warning")
+			}
 		}
 	}
 	if err := stream.Err(); err != nil {

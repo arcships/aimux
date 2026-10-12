@@ -362,7 +362,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **C ABI**
 
-- New error codes `AIMUX_E_LOAD_API_KEY = 18` and `AIMUX_E_LOAD_SETTING = 19`
+- New error codes `AIMUX_E_LOAD_API_KEY = 19` and `AIMUX_E_LOAD_SETTING = 20`
   (appended; retired 4 is not reused). `aimux_error_provider_code` returns the
   environment variable that was consulted and `aimux_error_provider_message`
   the key's description (`"OpenAI"`) or the setting name (`"region"`); no new
@@ -397,7 +397,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Go / Java / Kotlin / Swift / Dart**
 
-- New error codes 18 / 19 (`CodeLoadAPIKey` / `CodeLoadSetting`,
+- New error codes 19 / 20 (`CodeLoadAPIKey` / `CodeLoadSetting`,
   `LoadAPIKeyError` / `LoadSettingError`, `.loadApiKey` / `.loadSetting`),
   with the consulted environment variable as `EnvVar` / `envVar`.
 - The call-level `body_overrides` / `bodyOverrides` field is deleted from

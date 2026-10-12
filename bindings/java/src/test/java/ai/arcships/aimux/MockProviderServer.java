@@ -28,6 +28,9 @@ public class MockProviderServer implements Closeable {
     /** Last received request method (e.g. "POST"). */
     private volatile String lastRequestMethod = "";
 
+    /** Last received request path, used to verify the selected API. */
+    private volatile String lastRequestPath = "";
+
     /** Status code to return. */
     private volatile int status = 200;
 
@@ -55,6 +58,7 @@ public class MockProviderServer implements Closeable {
         byte[] reqBytes = readAll(exchange.getRequestBody());
         lastRequestBody = new String(reqBytes, StandardCharsets.UTF_8);
         lastRequestMethod = exchange.getRequestMethod();
+        lastRequestPath = exchange.getRequestURI().getPath();
 
         // Pop the next queued response if any, otherwise fall back to the
         // single-response field (backward compatible with existing tests).
@@ -111,6 +115,10 @@ public class MockProviderServer implements Closeable {
 
     public String lastRequestMethod() {
         return lastRequestMethod;
+    }
+
+    public String lastRequestPath() {
+        return lastRequestPath;
     }
 
     public void setStatus(int status) {

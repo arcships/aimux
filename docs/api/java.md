@@ -74,8 +74,9 @@ RuntimeException
       ├── NoSuchToolError            // code 15: the tool the model called is not in the tool set
       ├── InvalidToolInputError      // code 16: the tool arguments failed to parse or validate
       ├── ToolCallRepairError        // code 17: tool-call repair itself failed
-      ├── LoadAPIKeyError            // code 18: no API key, fallback env var unset (getEnvVar())
-      ├── LoadSettingError           // code 19: a required setting is missing (getEnvVar())
+      ├── NoOutputGeneratedError     // code 18: no output was generated
+      ├── LoadAPIKeyError            // code 19: no API key, fallback env var unset (getEnvVar())
+      ├── LoadSettingError           // code 20: a required setting is missing (getEnvVar())
       └── OtherError
 ```
 
@@ -84,7 +85,7 @@ Every instance has:
 | Field | Meaning |
 |-------|---------|
 | `getMessage()` | human-readable text from C |
-| `getCode()` | `aimux_error_code_t` value 1–19 (4 retired, 14 = `Retry`; matches `aimux-error.h`) |
+| `getCode()` | `aimux_error_code_t` value 1–20 (4 retired, 14 = `Retry`; matches `aimux-error.h`) |
 | `getStatusCode()` | HTTP status, or `-1` |
 | `getRetryMs()` | rate-limit hint, or `-1` (`0` = retry now) |
 | `isRetryable()` | the `AiMuxError` retry verdict (not derivable from status) |
@@ -150,7 +151,7 @@ types and share no base beyond `RuntimeException`.
 Transport: every fallible C call returns an opaque `aimux_error_t *`
 (JNA `Pointer`) — `null` on success with the result in a trailing out-parameter
 (`LongByReference` handle / `PointerByReference` JSON), non-null on failure.
-`AimuxResult` reads one unified code: 1–19 restores the matching
+`AimuxResult` reads one unified code: 1–20 restores the matching
 `AimuxException` subclass, 100–105 restores `RecordingException`, and 200–206
 becomes `IllegalStateException("aimux ffi: …")`. Payload getters are read only
 under their owning AiMuxError code; a `RetryError`'s attempt errors are new
