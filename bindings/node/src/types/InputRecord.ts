@@ -10,7 +10,7 @@ export type InputRecord = { operation?: RecordingOperation,
 /**
  * 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
  */
-prompt: Array<LanguageModelMessage>,
+prompt: Array<LanguageModelMessage>, 
 /**
  * 序列化的 CallOptions(abort_signal/call_id 已 serde skip);
  * headers/provider_options/body_overrides 已递归脱敏。

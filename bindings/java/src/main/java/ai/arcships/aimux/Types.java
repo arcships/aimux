@@ -384,67 +384,6 @@ public final class Types {
         }
     }
 
-    /** Response metadata and HTTP details from a generation call. */
-    public static class GenerateResponse {
-        @JsonProperty("id") private String id;
-        @JsonProperty("timestamp") private String timestamp;
-        @JsonProperty("model_id") private String modelId;
-        @JsonProperty("headers") private Map<String, String> headers;
-        @JsonProperty("body") private JsonNode body;
-
-        @JsonCreator
-        GenerateResponse() {}
-
-        private GenerateResponse(String id, String timestamp, String modelId, Map<String, String> headers, JsonNode body) {
-            this.id = id;
-            this.timestamp = timestamp;
-            this.modelId = modelId;
-            this.headers = headers;
-            this.body = body;
-        }
-
-        public String getId() { return id; }
-        public String getTimestamp() { return timestamp; }
-        public String getModelId() { return modelId; }
-        public Map<String, String> getHeaders() { return headers; }
-        public JsonNode getBody() { return body; }
-
-        public static Builder builder() { return new Builder(); }
-
-        public static class Builder {
-            private String id;
-            private String timestamp;
-            private String modelId;
-            private Map<String, String> headers;
-            private JsonNode body;
-
-            public Builder id(String v) { this.id = v; return this; }
-            public Builder timestamp(String v) { this.timestamp = v; return this; }
-            public Builder modelId(String v) { this.modelId = v; return this; }
-            public Builder headers(Map<String, String> v) { this.headers = v; return this; }
-            public Builder body(JsonNode v) { this.body = v; return this; }
-
-            public GenerateResponse build() { return new GenerateResponse(id, timestamp, modelId, headers, body); }
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof GenerateResponse)) return false;
-            GenerateResponse that = (GenerateResponse) o;
-            return Objects.equals(id, that.id)
-                && Objects.equals(timestamp, that.timestamp)
-                && Objects.equals(modelId, that.modelId)
-                && Objects.equals(headers, that.headers)
-                && Objects.equals(body, that.body);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(id, timestamp, modelId, headers, body);
-        }
-    }
-
     /**
      * A tool call requested by the model.
      *
@@ -3081,6 +3020,86 @@ public final class Types {
         }
     }
 
+    /** Provider HTTP request information. */
+    public static class GenerateRequest {
+        @JsonProperty("body") private JsonNode body;
+
+        @JsonCreator
+        GenerateRequest() {}
+
+        private GenerateRequest(JsonNode body) { this.body = body; }
+        public JsonNode getBody() { return body; }
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private JsonNode body;
+            public Builder body(JsonNode v) { this.body = v; return this; }
+            public GenerateRequest build() { return new GenerateRequest(body); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof GenerateRequest && Objects.equals(body, ((GenerateRequest) o).body);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(body); }
+    }
+
+    /** Provider response metadata, headers, and body. */
+    public static class GenerateResponse {
+        @JsonProperty("id") private String id;
+        @JsonProperty("timestamp") private String timestamp;
+        @JsonProperty("model_id") private String modelId;
+        @JsonProperty("headers") private Map<String, String> headers;
+        @JsonProperty("body") private JsonNode body;
+
+        @JsonCreator
+        GenerateResponse() {}
+
+        private GenerateResponse(String id, String timestamp, String modelId,
+                                 Map<String, String> headers, JsonNode body) {
+            this.id = id;
+            this.timestamp = timestamp;
+            this.modelId = modelId;
+            this.headers = headers;
+            this.body = body;
+        }
+
+        public String getId() { return id; }
+        public String getTimestamp() { return timestamp; }
+        public String getModelId() { return modelId; }
+        public Map<String, String> getHeaders() { return headers; }
+        public JsonNode getBody() { return body; }
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String id;
+            private String timestamp;
+            private String modelId;
+            private Map<String, String> headers;
+            private JsonNode body;
+            public Builder id(String v) { this.id = v; return this; }
+            public Builder timestamp(String v) { this.timestamp = v; return this; }
+            public Builder modelId(String v) { this.modelId = v; return this; }
+            public Builder headers(Map<String, String> v) { this.headers = v; return this; }
+            public Builder body(JsonNode v) { this.body = v; return this; }
+            public GenerateResponse build() { return new GenerateResponse(id, timestamp, modelId, headers, body); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof GenerateResponse)) return false;
+            GenerateResponse that = (GenerateResponse) o;
+            return Objects.equals(id, that.id) && Objects.equals(timestamp, that.timestamp)
+                && Objects.equals(modelId, that.modelId) && Objects.equals(headers, that.headers)
+                && Objects.equals(body, that.body);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(id, timestamp, modelId, headers, body); }
+    }
+
     /**
      * Result of `LanguageModel::do_generate` (non-streaming) — the raw provider
      * result surfaced via {@link GenerateTextResult#getRaw()}.
@@ -3094,24 +3113,22 @@ public final class Types {
         @JsonProperty("usage") private Usage usage = new Usage();
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
         @JsonProperty("provider_metadata") private JsonNode providerMetadata;
-        @JsonProperty("response") private GenerateResponse response = new GenerateResponse();
-        @JsonProperty("request_body") private JsonNode requestBody;
-        @JsonProperty("response_headers") private Map<String, String> responseHeaders;
+        @JsonProperty("response") private GenerateResponse response;
+        @JsonProperty("request") private GenerateRequest request;
 
         @JsonCreator
         GenerateResult() {}
 
         private GenerateResult(List<GenerateContent> content, FinishReason finishReason, Usage usage,
                                List<JsonNode> warnings, JsonNode providerMetadata, GenerateResponse response,
-                               JsonNode requestBody, Map<String, String> responseHeaders) {
+                               GenerateRequest request) {
             this.content = content;
             this.finishReason = finishReason;
             this.usage = usage;
             this.warnings = warnings;
             this.providerMetadata = providerMetadata;
             this.response = response;
-            this.requestBody = requestBody;
-            this.responseHeaders = responseHeaders;
+            this.request = request;
         }
 
         public List<GenerateContent> getContent() { return content; }
@@ -3120,8 +3137,7 @@ public final class Types {
         public List<JsonNode> getWarnings() { return warnings; }
         public JsonNode getProviderMetadata() { return providerMetadata; }
         public GenerateResponse getResponse() { return response; }
-        public JsonNode getRequestBody() { return requestBody; }
-        public Map<String, String> getResponseHeaders() { return responseHeaders; }
+        public GenerateRequest getRequest() { return request; }
 
         /** Names of the variant tags present in {@link #getContent()} (e.g. "Text", "ToolCall"). */
         public List<String> getContentVariantTags() {
@@ -3148,9 +3164,8 @@ public final class Types {
             private Usage usage = new Usage();
             private List<JsonNode> warnings = new ArrayList<>();
             private JsonNode providerMetadata;
-            private GenerateResponse response = new GenerateResponse();
-            private JsonNode requestBody;
-            private Map<String, String> responseHeaders;
+            private GenerateResponse response;
+            private GenerateRequest request;
 
             public Builder content(List<GenerateContent> v) { this.content = v; return this; }
             public Builder finishReason(FinishReason v) { this.finishReason = v; return this; }
@@ -3158,12 +3173,11 @@ public final class Types {
             public Builder warnings(List<JsonNode> v) { this.warnings = v; return this; }
             public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
             public Builder response(GenerateResponse v) { this.response = v; return this; }
-            public Builder requestBody(JsonNode v) { this.requestBody = v; return this; }
-            public Builder responseHeaders(Map<String, String> v) { this.responseHeaders = v; return this; }
+            public Builder request(GenerateRequest v) { this.request = v; return this; }
 
             public GenerateResult build() {
                 return new GenerateResult(content, finishReason, usage, warnings, providerMetadata, response,
-                    requestBody, responseHeaders);
+                    request);
             }
         }
 
@@ -3178,14 +3192,12 @@ public final class Types {
                 && Objects.equals(warnings, that.warnings)
                 && Objects.equals(providerMetadata, that.providerMetadata)
                 && Objects.equals(response, that.response)
-                && Objects.equals(requestBody, that.requestBody)
-                && Objects.equals(responseHeaders, that.responseHeaders);
+                && Objects.equals(request, that.request);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(content, finishReason, usage, warnings, providerMetadata, response, requestBody,
-                responseHeaders);
+            return Objects.hash(content, finishReason, usage, warnings, providerMetadata, response, request);
         }
     }
 

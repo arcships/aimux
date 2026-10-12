@@ -4,7 +4,7 @@
 // Transport (aimux-error.h): every fallible C call returns
 // `aimux_error_t *` — NULL on success (the result is in the trailing
 // out-param), non-NULL on failure (out-param at its sentinel: 0 / NULL). The
-// unified code selects AiMuxError (1..17), RecordingError (100..105), or a
+// unified code selects AiMuxError (1..18), RecordingError (100..105), or a
 // C ABI failure (200..206). The last range maps to
 // StateError('aimux ffi: …'); Dart does not expose seven additional classes.
 // Every field is copied before the error is released with `aimux_error_free`
@@ -22,7 +22,7 @@ import 'package:ffi/ffi.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Machine-readable codes. Values match C `aimux_error_code_t` / Go `Code`.
-/// 16 variant codes: 1–17 (1 is the catch-all; 4 is retired). A code outside
+/// 17 variant codes: 1–18 (1 is the catch-all; 4 is retired). A code outside
 /// that set is a header/library mismatch and fails with [StateError], not an
 /// error type. Every HTTP-shaped failure
 /// arrives as [apiCall], classified
@@ -45,6 +45,7 @@ abstract final class AimuxErrorCode {
   static const int noSuchTool = 15;
   static const int invalidToolInput = 16;
   static const int toolCallRepair = 17;
+  static const int noOutputGenerated = 18;
   static const int other = 1;
   static const int retry = 14;
 
@@ -64,6 +65,7 @@ abstract final class AimuxErrorCode {
     noSuchTool: 'NoSuchTool',
     invalidToolInput: 'InvalidToolInput',
     toolCallRepair: 'ToolCallRepair',
+    noOutputGenerated: 'NoOutputGenerated',
     other: 'Other',
     retry: 'Retry',
   };
@@ -78,7 +80,7 @@ abstract final class AimuxErrorCode {
 
 /// Decode the `aimux_error_t *` [e] returned by a call that can fail in
 /// `AiMuxError` (`[AiMuxError]` in aimux-ffi.h). NULL → returns (success).
-/// Codes 1..17 become [AimuxException]; 200..206 become [StateError].
+/// Codes 1..18 become [AimuxException]; 200..206 become [StateError].
 /// The returned error is always freed.
 void expectAimuxError(Pointer<Void> e, String context) {
   if (e == nullptr) return;
@@ -513,7 +515,7 @@ class AimuxException implements Exception {
   /// Build the typed subclass from a returned `const aimux_error_t *` [error]
   /// via the `aimux_error_*` getters (payload getters only under the owning
   /// code; getter strings freed here). The caller ([expectAimuxError])
-  /// frees it. A code outside 1..17 is a
+  /// frees it. A code outside 1..18 is a
   /// contract violation and throws [StateError].
   factory AimuxException._decode(Pointer<Void> error, String context) {
     final code = _errorCode(error);
@@ -627,6 +629,8 @@ class AimuxException implements Exception {
         return InvalidToolInputError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.toolCallRepair:
         return ToolCallRepairError(message, status: status, retryMs: retryMs, retryable: retryable);
+      case AimuxErrorCode.noOutputGenerated:
+        return NoOutputGeneratedError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.other:
         return OtherError(message, status: status, retryMs: retryMs, retryable: retryable);
       default:
@@ -642,6 +646,11 @@ class AimuxException implements Exception {
 }
 
 // ── Concrete subclasses (one per live AimuxErrorCode) ───────────────────────
+
+class NoOutputGeneratedError extends AimuxException {
+  NoOutputGeneratedError(super.message, {super.status, super.retryMs, super.retryable})
+      : super(code: AimuxErrorCode.noOutputGenerated);
+}
 
 /// JSON parse / serialize failure.
 class JSONParseError extends AimuxException {

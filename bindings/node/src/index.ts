@@ -30,6 +30,7 @@ import type {
   GenerateTextOptions,
   GenerateTextResult,
   StreamPart,
+  TextStreamPart,
   ModelMessage,
   Tool,
   ToolChoice,
@@ -82,6 +83,7 @@ export {
   type RetryErrorReason,
   JSONParseError,
   InvalidResponseDataError,
+  NoOutputGeneratedError,
   NoSuchToolError,
   InvalidToolInputError,
   ToolCallRepairError,
@@ -146,6 +148,7 @@ export type {
   GenerateTextOptions,
   GenerateTextResult,
   StreamPart,
+  TextStreamPart,
   ModelMessage,
   Tool,
   ToolChoice,
@@ -386,7 +389,7 @@ export async function generateText(
 }
 
 /**
- * Stream text from a model. Yields typed {@link StreamPart}s.
+ * Stream text from a model. Yields typed {@link TextStreamPart}s.
  *
  * @param model   - A raw model instance from `openai()`, `anthropic()`, etc.
  * @param prompt  - A plain string or an array of typed chat messages.
@@ -395,7 +398,7 @@ export async function generateText(
  *
  * Internally drives the raw `model.streamText(JSON.stringify(prompt), …)`
  * async generator and `JSON.parse`s each JSON-string chunk before yielding it
- * as a typed `StreamPart`.
+ * as a typed `TextStreamPart`.
  *
  * @example
  * ```ts
@@ -411,14 +414,14 @@ export async function* streamText(
   prompt: string | ModelMessage[],
   options?: GenerateTextOptionsWithRepair,
   signal?: AbortSignal,
-): AsyncGenerator<StreamPart> {
+): AsyncGenerator<TextStreamPart> {
   const promptJson = JSON.stringify(prompt)
   const optsJson = options ? JSON.stringify(options) : undefined
   const bridge = signal ? new AbortBridge(signal) : undefined
   const repair = options?.repairToolCall
   const gen = await model.streamText(promptJson, optsJson, bridge)
   for await (const json of gen) {
-    const part = JSON.parse(json) as StreamPart
+    const part = JSON.parse(json) as TextStreamPart
     // Only the settled ToolCall part is repairable; ToolInputDelta parts are
     // the provider's raw text and pass through immediately (AI SDK behaviour).
     if (repair && 'ToolCall' in part && part.ToolCall.invalid === true) {
@@ -427,7 +430,7 @@ export async function* streamText(
         yield {
           ToolCall: JSON.parse(
             applyToolCallRepair(JSON.stringify(part.ToolCall), optsJson, reply),
-          ) as Extract<StreamPart, { ToolCall: unknown }>['ToolCall'],
+          ) as Extract<TextStreamPart, { ToolCall: unknown }>['ToolCall'],
         }
         continue
       }

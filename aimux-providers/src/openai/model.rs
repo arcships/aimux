@@ -386,19 +386,17 @@ pub async fn execute_generate(
         usage,
         warnings: request_result.warnings,
         provider_metadata,
-        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-        response: Some(aimux_core::result::GenerateResponse {
-            body: Some(response_value),
+        response: Some(aimux_core::shared::ResponseInfo {
+            id: Some(data.id),
+            timestamp: data
+                .created
+                .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
+                .map(|dt| dt.to_rfc3339()),
+            model_id: Some(data.model),
             headers: Some(response_headers),
-            ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
-                id: Some(data.id),
-                timestamp: data
-                    .created
-                    .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-                    .map(|dt| dt.to_rfc3339()),
-                model_id: Some(data.model),
-            })
+            body: Some(response_value),
         }),
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
     })
 }
 
@@ -782,7 +780,7 @@ pub async fn execute_stream(
     Ok(StreamResult {
         stream: Box::pin(stream),
         request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-        response: Some(aimux_core::result::StreamResponse {
+        response: Some(aimux_core::shared::StreamResponseInfo {
             headers: Some(response_headers),
         }),
     })

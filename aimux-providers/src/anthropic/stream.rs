@@ -875,6 +875,8 @@ pub(crate) async fn anthropic_generate_core(
     .await?;
 
     let response_body = resp.raw_value;
+    let response_headers = resp.response_headers;
+
     let data: AnthropicResponse = resp.value;
 
     let content = parse_anthropic_content(&data.content, tool_names, generate_id);
@@ -899,16 +901,14 @@ pub(crate) async fn anthropic_generate_core(
         usage,
         warnings,
         provider_metadata: None,
-        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-        response: Some(aimux_core::result::GenerateResponse {
+        response: Some(aimux_core::shared::ResponseInfo {
+            id: Some(data.id),
+            timestamp: None,
+            model_id: Some(data.model),
+            headers: Some(response_headers),
             body: response_body,
-            headers: None,
-            ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
-                id: Some(data.id),
-                timestamp: None,
-                model_id: Some(data.model),
-            })
         }),
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
     })
 }
 
@@ -1424,7 +1424,7 @@ pub(crate) async fn anthropic_stream_core(
     Ok(StreamResult {
         stream: Box::pin(stream),
         request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-        response: Some(aimux_core::result::StreamResponse {
+        response: Some(aimux_core::shared::StreamResponseInfo {
             headers: Some(response_headers),
         }),
     })

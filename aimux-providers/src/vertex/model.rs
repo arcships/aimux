@@ -16,10 +16,9 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{
-    GenerateContent, GenerateResult, GeneratedFile, GeneratedFileData, ReasoningOutput, Source,
-    StreamResult,
+    GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, StreamResult,
 };
-use aimux_core::shared::{FileBytes, provider_namespace};
+use aimux_core::shared::{FileBytes, GeneratedFileData, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
@@ -288,18 +287,16 @@ impl LanguageModel for VertexModel {
             usage,
             warnings: Vec::new(),
             provider_metadata,
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::result::GenerateResponse {
+            response: Some(aimux_core::shared::ResponseInfo {
+                id: data.response_id,
+                // Gemini responses carry no timestamp field; use the response
+                // `Date` header (RFC1123) like Bedrock does.
+                timestamp: response_headers.get("date").cloned(),
+                model_id: data.model_version,
+                headers: Some(response_headers),
                 body: response_body,
-                headers: Some(response_headers.clone()),
-                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
-                    id: data.response_id,
-                    // Gemini responses carry no timestamp field; use the response
-                    // `Date` header (RFC1123) like Bedrock does.
-                    timestamp: response_headers.get("date").cloned(),
-                    model_id: data.model_version,
-                })
             }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
@@ -838,7 +835,7 @@ impl LanguageModel for VertexModel {
         Ok(StreamResult {
             stream: Box::pin(stream),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::result::StreamResponse {
+            response: Some(aimux_core::shared::StreamResponseInfo {
                 headers: Some(response_headers),
             }),
         })

@@ -32,6 +32,25 @@ use crate::tool::Tool;
 use crate::types::{FinishReason, ProviderMetadata, ReasoningEffort, Usage, Warning};
 use crate::{AbortSignal, retry, timeout};
 
+fn response_metadata_defaults(
+    mut metadata: crate::types::ResponseMetadata,
+    model_id: &str,
+) -> crate::types::ResponseMetadata {
+    metadata.id.get_or_insert_with(|| {
+        use rand::Rng;
+        rand::thread_rng()
+            .sample_iter(rand::distributions::Alphanumeric)
+            .take(16)
+            .map(char::from)
+            .collect()
+    });
+    metadata
+        .timestamp
+        .get_or_insert_with(crate::util::rfc3339_now);
+    metadata.model_id.get_or_insert_with(|| model_id.to_owned());
+    metadata
+}
+
 /// Matches the AI SDK's `isOutputChunk`: only chunks containing model output
 /// start or reset the first/chunk output timers.
 fn is_output_chunk<C, A, R>(part: &StreamPart<C, A, R>) -> bool {
@@ -200,10 +219,12 @@ pub struct GenerateTextResult {
     /// `raw.provider_metadata` for top-level convenience.
     #[serde(default)]
     pub provider_metadata: Option<ProviderMetadata>,
-    /// Response metadata (id, timestamp, model_id). Mirrored from
-    /// `raw.response` for top-level convenience.
+    /// Request information from the provider.
     #[serde(default)]
-    pub response: crate::types::ResponseMetadata,
+    pub request: crate::shared::RequestInfo,
+    /// Response metadata, headers, and body from the provider.
+    #[serde(default)]
+    pub response: crate::shared::ResponseInfo,
     /// Total token usage across all steps. In single-step mode (aimux's
     /// default), `total_usage` equals `usage`. Provided for AI SDK parity.
     #[serde(default)]
@@ -287,19 +308,19 @@ impl StreamTextResult {
                 }
                 Err(error) => return Err(error),
             };
-            if is_output_chunk(&part) {
+            if part.is_output_chunk() {
                 saw_output = true;
             }
             match part {
-                StreamPart::TextDelta { delta, .. } => result.push_str(&delta),
-                StreamPart::Finish { .. } => {
+                TextStreamPart::TextDelta { delta, .. } => result.push_str(&delta),
+                TextStreamPart::Finish { .. } => {
                     saw_finish = true;
                     break;
                 }
                 // Keep consuming after a provider error event: a trailing
                 // Finish still carries usage for the recording layer. The
                 // error is returned once the stream reaches its end.
-                StreamPart::Error { error } if provider_error.is_none() => {
+                TextStreamPart::Error { error } if provider_error.is_none() => {
                     provider_error = Some(error);
                 }
                 _ => {}
@@ -312,7 +333,7 @@ impl StreamTextResult {
         // error; an incomplete stream with partial output retains the partial
         // result.
         if !saw_finish && !saw_output {
-            return Err(AiMuxError::InvalidResponseData(
+            return Err(AiMuxError::NoOutputGenerated(
                 "No output generated. The model stream ended without a finish chunk.".into(),
             ));
         }
@@ -342,7 +363,13 @@ impl StreamTextResult {
         let mut raw_finish_reason: Option<String> = None;
         let mut usage = Usage::default();
         let mut finish_provider_metadata: Option<ProviderMetadata> = None;
-        let mut response: Option<crate::types::ResponseMetadata> = None;
+        let mut response = crate::shared::ResponseInfo {
+            headers: self.response_headers,
+            ..Default::default()
+        };
+        let request = crate::shared::RequestInfo {
+            body: self.request_body,
+        };
         let mut rm = crate::response_messages::ResponseMessageBuilder::new();
 
         let mut saw_output = false;
@@ -364,15 +391,15 @@ impl StreamTextResult {
                 }
                 Err(error) => return Err(error),
             };
-            if is_output_chunk(&part) {
+            if part.is_output_chunk() {
                 saw_output = true;
             }
             match part {
-                StreamPart::TextStart {
+                TextStreamPart::TextStart {
                     id,
                     provider_metadata,
                 } => rm.text_start(id, provider_metadata),
-                StreamPart::TextDelta {
+                TextStreamPart::TextDelta {
                     id,
                     delta,
                     provider_metadata,
@@ -380,46 +407,46 @@ impl StreamTextResult {
                     text.push_str(&delta);
                     rm.text_delta(id, &delta, provider_metadata);
                 }
-                StreamPart::TextEnd {
+                TextStreamPart::TextEnd {
                     id,
                     provider_metadata,
                 } => rm.text_end(id, provider_metadata),
-                StreamPart::ReasoningStart {
+                TextStreamPart::ReasoningStart {
                     id,
                     provider_metadata,
                 } => rm.reasoning_start(id, provider_metadata),
-                StreamPart::ReasoningDelta {
+                TextStreamPart::ReasoningDelta {
                     id,
                     delta,
                     provider_metadata,
                 } => rm.reasoning_delta(id, &delta, provider_metadata),
-                StreamPart::ReasoningEnd {
+                TextStreamPart::ReasoningEnd {
                     id,
                     provider_metadata,
                 } => rm.reasoning_end(id, provider_metadata),
-                StreamPart::ToolCall(call) => {
+                TextStreamPart::ToolCall(call) => {
                     rm.tool_call(&call);
                     tool_calls.push(call);
                 }
-                StreamPart::ToolResult(result) => rm.tool_result(result),
-                StreamPart::Source(source) => {
+                TextStreamPart::ToolResult(result) => rm.tool_result(result),
+                TextStreamPart::Source(source) => {
                     rm.source(source.clone());
                     sources.push(source);
                 }
-                StreamPart::File(file) => {
+                TextStreamPart::File(file) => {
                     rm.file(&file, false);
                     files.push(file);
                 }
-                StreamPart::ReasoningFile(output) => rm.file(&output.file, true),
-                StreamPart::Custom {
+                TextStreamPart::ReasoningFile(output) => rm.file(&output.file, true),
+                TextStreamPart::Custom {
                     kind,
                     provider_metadata,
                 } => rm.custom(kind, provider_metadata),
-                StreamPart::ToolApprovalRequest(approval) => rm.approval(&approval),
-                StreamPart::StreamStart { warnings: w, .. } => {
+                TextStreamPart::ToolApprovalRequest(approval) => rm.approval(&approval),
+                TextStreamPart::StreamStart { warnings: w, .. } => {
                     warnings = w;
                 }
-                StreamPart::Finish {
+                TextStreamPart::Finish {
                     finish_reason: fr,
                     usage: u,
                     provider_metadata: pm,
@@ -434,10 +461,12 @@ impl StreamTextResult {
                 // Keep consuming after a provider error event: a trailing
                 // Finish still carries usage for the recording layer. The
                 // error is returned once the stream reaches its end.
-                StreamPart::Error { error } if provider_error.is_none() => {
+                TextStreamPart::Error { error } if provider_error.is_none() => {
                     provider_error = Some(error);
                 }
-                StreamPart::ResponseMetadata(meta) => response = Some(meta),
+                TextStreamPart::FinishStep {
+                    response: metadata, ..
+                } => response = metadata,
                 _ => {}
             }
         }
@@ -450,7 +479,7 @@ impl StreamTextResult {
             // an error; an incomplete stream with partial output retains the
             // partial result but must not claim a normal stop.
             if !saw_output {
-                return Err(AiMuxError::InvalidResponseData(
+                return Err(AiMuxError::NoOutputGenerated(
                     "No output generated. The model stream ended without a finish chunk.".into(),
                 ));
             }
@@ -489,6 +518,7 @@ impl StreamTextResult {
             usage,
             warnings,
             provider_metadata: finish_provider_metadata,
+            request,
             response,
             response_messages,
         })
@@ -617,7 +647,7 @@ pub(crate) async fn generate_text_from_language_model_prompt(
         }
         do_generate_with_logging(model, &call_options, span.clone(), started)
     });
-    let result = match timeout::run(operation, abort_signal.as_ref(), operation_timeout).await {
+    let mut result = match timeout::run(operation, abort_signal.as_ref(), operation_timeout).await {
         Ok(r) => r,
         Err(e) => {
             if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
@@ -626,6 +656,19 @@ pub(crate) async fn generate_text_from_language_model_prompt(
             return Err(e);
         }
     };
+    let response_info = result.response.get_or_insert_with(Default::default);
+    let response = response_metadata_defaults(
+        crate::types::ResponseMetadata {
+            id: response_info.id.take(),
+            timestamp: response_info.timestamp.take(),
+            model_id: response_info.model_id.take(),
+        },
+        model.model_id(),
+    );
+    response_info.id.clone_from(&response.id);
+    response_info.timestamp.clone_from(&response.timestamp);
+    response_info.model_id.clone_from(&response.model_id);
+
     // 4. Extract text, tool calls, reasoning, sources, files from content.
     let mut text = String::new();
     let mut tool_calls = Vec::new();
@@ -738,8 +781,9 @@ pub(crate) async fn generate_text_from_language_model_prompt(
     // Extract fields before moving `result` into `raw`.
     let raw_finish_reason = result.finish_reason.raw.clone();
     let provider_metadata = result.provider_metadata.clone();
-    let response = result.response.clone().map(Into::into).unwrap_or_default();
     let usage = result.usage.clone();
+    let request = result.request.take().unwrap_or_default();
+    let response = result.response.take().unwrap_or_default();
 
     Ok(GenerateTextResult {
         content,
@@ -756,6 +800,7 @@ pub(crate) async fn generate_text_from_language_model_prompt(
         response_messages,
         raw_finish_reason,
         provider_metadata,
+        request,
         response,
         total_usage: usage,
     })
@@ -822,12 +867,11 @@ pub async fn generate_object(
         Some(text_result.reasoning_text.clone())
     };
     let provider_metadata = text_result.raw.provider_metadata.clone();
-    let response = text_result
-        .raw
-        .response
-        .clone()
-        .map(Into::into)
-        .unwrap_or_default();
+    let response = crate::types::ResponseMetadata {
+        id: text_result.response.id.clone(),
+        timestamp: text_result.response.timestamp.clone(),
+        model_id: text_result.response.model_id.clone(),
+    };
     Ok(GenerateObjectResult {
         object,
         finish_reason,
@@ -841,8 +885,6 @@ pub async fn generate_object(
     })
 }
 
-/// Extract the reasoning signature from provider metadata, checking all known
-/// provider keys (Anthropic, Bedrock).
 /// Stream text from the model.
 ///
 /// # Example
@@ -860,7 +902,7 @@ pub async fn generate_object(
 ///
 /// let mut stream = result.stream;
 /// while let Some(part) = stream.next().await {
-///     if let StreamPart::TextDelta { delta, .. } = part? {
+///     if let TextStreamPart::TextDelta { delta, .. } = part? {
 ///         print!("{}", delta);
 ///     }
 /// }
@@ -1084,11 +1126,39 @@ pub async fn stream_text(
         })
     };
     let mut stream = stream;
+    let mut response_metadata =
+        response_metadata_defaults(crate::types::ResponseMetadata::default(), model.model_id());
+    let stream_response_headers = response_headers.clone();
     let stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>> = Box::pin(
         async_stream::stream! {
+            let mut saw_terminal = false;
+            let mut saw_output = false;
+            let mut finish_reason = FinishReason { unified: crate::types::FinishReasonUnified::Other, raw: None };
+            let mut usage = Usage::default();
+            let mut provider_metadata = None;
             let mut tool_calls = HashMap::new();
             while let Some(item) = stream.next().await {
+                if let Ok(part) = &item {
+                    saw_output |= is_output_chunk(part);
+                }
                 match item {
+                    Ok(StreamPart::ResponseMetadata(metadata)) => {
+                        if metadata.id.is_some() { response_metadata.id = metadata.id; }
+                        if metadata.timestamp.is_some() { response_metadata.timestamp = metadata.timestamp; }
+                        if metadata.model_id.is_some() { response_metadata.model_id = metadata.model_id; }
+
+                    }
+                    Ok(StreamPart::Finish { finish_reason: reason, usage: tokens, provider_metadata: metadata }) => {
+                        saw_terminal = true;
+                        finish_reason = reason;
+                        usage = tokens;
+                        provider_metadata = metadata;
+                    }
+                    Ok(StreamPart::Error { error }) => {
+                        saw_terminal = true;
+                        finish_reason = FinishReason { unified: crate::types::FinishReasonUnified::Error, raw: None };
+                        yield Ok(TextStreamPart::Error { error });
+                    }
                     Ok(StreamPart::ToolCall(raw)) => {
                         let parsed = parse_tool_call(
                             raw,
@@ -1098,42 +1168,60 @@ pub async fn stream_text(
                             operation_instructions.as_deref(),
                         ).await;
                         tool_calls.insert(parsed.tool_call_id.clone(), parsed.clone());
-                        yield Ok(StreamPart::ToolCall(parsed));
+                        yield Ok(TextStreamPart::ToolCall(parsed));
                     }
                     Ok(StreamPart::File(file)) => {
                         match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
-                            Ok(file) => yield Ok(StreamPart::File(file)),
-                            Err(error) => yield Ok(StreamPart::Error { error }),
+                            Ok(file) => yield Ok(TextStreamPart::File(file)),
+                            Err(error) => yield Ok(TextStreamPart::Error { error }),
                         }
                     }
                     Ok(StreamPart::ReasoningFile(file)) => {
                         match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
-                            Ok(file) => yield Ok(StreamPart::ReasoningFile(ReasoningFileOutput {
+                            Ok(file) => yield Ok(TextStreamPart::ReasoningFile(ReasoningFileOutput {
                                 provider_metadata: file.provider_metadata.clone(), file,
                             })),
-                            Err(error) => yield Ok(StreamPart::Error { error }),
+                            Err(error) => yield Ok(TextStreamPart::Error { error }),
                         }
                     }
                     Ok(StreamPart::ToolApprovalRequest(approval)) => {
                         if let Some(call) = tool_calls.get(&approval.tool_call_id) {
-                            yield Ok(StreamPart::ToolApprovalRequest(ToolApprovalRequestOutput {
+                            yield Ok(TextStreamPart::ToolApprovalRequest(ToolApprovalRequestOutput {
                                 approval_id: approval.approval_id, tool_call: call.clone(),
                                 reason: None, is_automatic: None, signature: None,
                             }));
                         } else {
-                            yield Ok(StreamPart::Error { error: AiMuxError::ToolCallNotFoundForApproval {
+                            yield Ok(TextStreamPart::Error { error: AiMuxError::ToolCallNotFoundForApproval {
                                 tool_call_id: approval.tool_call_id, approval_id: approval.approval_id,
                             }});
                         }
                     }
                     Ok(part) => yield Ok(part.map_payloads(|_| unreachable!("matched above"), |_| unreachable!("matched above"))
-                        .map_reasoning_file(|file| ReasoningFileOutput { provider_metadata: file.provider_metadata.clone(), file })),
-                    Err(error) => yield Err(error),
+                        .map_reasoning_file(|file| ReasoningFileOutput { provider_metadata: file.provider_metadata.clone(), file })
+                        .into_text_stream_part().expect("provider lifecycle parts handled above")),
+                    Err(error) => {
+                        let terminal = !error.is_recoverable_stream_error();
+                        yield Err(error);
+                        if terminal { return; }
+                    }
                 }
             }
+            if !saw_terminal && !saw_output {
+                yield Ok(TextStreamPart::Error { error: AiMuxError::NoOutputGenerated(
+                    "No output generated. The model stream ended without a finish chunk.".into(),
+                ) });
+                return;
+            }
+            let mut response = crate::shared::ResponseInfo::from(response_metadata);
+            response.headers = stream_response_headers;
+            yield Ok(TextStreamPart::FinishStep {
+                finish_reason: finish_reason.clone(), usage: usage.clone(),
+                provider_metadata: provider_metadata.clone(), response,
+            });
+            yield Ok(TextStreamPart::Finish { finish_reason, usage, provider_metadata });
         },
     );
-    // 录制开启时才包装(终结时写 outcome + 传输封闭);关闭时零成本透传。
+
     let stream = crate::recording::RecordingOutcomeStream::new(
         stream,
         recorder.clone(),
@@ -1273,6 +1361,12 @@ pub fn generate_text_result_to_chat_completion(
     model_id: &str,
 ) -> ChatCompletion {
     let mut completion = to_chat_completion(&result.raw, model_id);
+    if let Some(id) = &result.response.id {
+        completion.id.clone_from(id);
+    }
+    if let Some(model_id) = &result.response.model_id {
+        completion.model.clone_from(model_id);
+    }
     if let Some(choice) = completion.choices.first_mut() {
         choice.message.tool_calls = if result.tool_calls.is_empty() {
             None

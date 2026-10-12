@@ -4,6 +4,8 @@ import type { GenerateContent } from "./GenerateContent";
 import type { GeneratedFile } from "./GeneratedFile";
 import type { RawToolApprovalRequest } from "./RawToolApprovalRequest";
 import type { RawToolCall } from "./RawToolCall";
+import type { RequestInfo } from "./RequestInfo";
+import type { ResponseInfo } from "./ResponseInfo";
 import type { Usage } from "./Usage";
 import type { Warning } from "./Warning";
 import type { JsonValue } from "./serde_json/JsonValue";
@@ -11,4 +13,32 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * Result of `LanguageModel::do_generate` (non-streaming).
  */
-export type GenerateResult = { content: Array<GenerateContent<RawToolCall, RawToolApprovalRequest, GeneratedFile>>, finish_reason: FinishReason, usage: Usage, warnings: Array<Warning>, provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, response: { id: string | null, timestamp: string | null, model_id: string | null, body?: JsonValue | null, } | null, request_body: JsonValue | null, response_headers: { [key in string]: string } | null, };
+export type GenerateResult = { 
+/**
+ * Generated content items (text, tool calls, etc.).
+ */
+content: Array<GenerateContent<RawToolCall, RawToolApprovalRequest, GeneratedFile>>, 
+/**
+ * Why generation stopped.
+ */
+finish_reason: FinishReason, 
+/**
+ * Token usage.
+ */
+usage: Usage, 
+/**
+ * Warnings issued by the provider.
+ */
+warnings: Array<Warning>, 
+/**
+ * Provider-specific metadata.
+ */
+provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
+/**
+ * Optional request information for telemetry and debugging.
+ */
+request: RequestInfo | null, 
+/**
+ * Optional response metadata, headers, and body.
+ */
+response: ResponseInfo | null, };

@@ -354,16 +354,14 @@ pub fn build_responses_generate_result(
         usage,
         warnings: request_warnings,
         provider_metadata,
-        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-        response: Some(aimux_core::result::GenerateResponse {
-            body: Some(data.clone()),
+        response: Some(aimux_core::shared::ResponseInfo {
+            id: response_id,
+            timestamp,
+            model_id: model,
             headers: Some(response_headers),
-            ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
-                id: response_id,
-                timestamp,
-                model_id: model,
-            })
+            body: Some(data.clone()),
         }),
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
     })
 }
 
