@@ -6,7 +6,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::stream_part::StreamPart;
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::{OpenAIProviderSettings, create_openai};
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -29,9 +29,14 @@ async fn corrupted_stream(prefix: Value) -> Vec<Result<StreamPart, AiMuxError>> 
         )
         .mount(&server)
         .await;
-    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("test-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .unwrap();
     provider
-        .model("gpt-4o")
+        .chat("gpt-4o")
         .do_stream(&CallOptions::new(vec![]))
         .await
         .expect("the first event is valid")

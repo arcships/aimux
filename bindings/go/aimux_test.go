@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -205,14 +206,11 @@ func TestStreamTextContextDoesNotLoseRacingCancellation(t *testing.T) {
 }
 
 func TestProviderWithConfigFullOptions(t *testing.T) {
-	retries := uint32(0)
 	m, err := ProviderWithConfig("groq", "sk-test-fake-key", "llama-3.3-70b", &ProviderConfig{
-		BaseURL:       "https://example.com/v1",
-		Headers:       map[string]string{"X-Custom": "1"},
-		Organization:  "org-1",
-		Project:       "proj-1",
-		MaxRetries:    &retries,
-		BodyOverrides: map[string]any{"temperature": 0.1},
+		BaseURL:      "https://example.com/v1",
+		Headers:      map[string]string{"X-Custom": "1"},
+		Organization: "org-1",
+		Project:      "proj-1",
 	})
 	if err != nil {
 		t.Fatalf("expected success, got %v", err)
@@ -220,6 +218,43 @@ func TestProviderWithConfigFullOptions(t *testing.T) {
 	defer m.Close()
 	if m.id.Load() == 0 {
 		t.Fatal("expected non-zero handle")
+	}
+}
+
+// config_json is ProviderOptions: params fill a preset's template parameters.
+func TestProviderWithConfigParams(t *testing.T) {
+	m, err := ProviderWithConfig("cloudflare_workers_ai", "sk-test-fake-key", "m", &ProviderConfig{
+		Params: map[string]string{"account_id": "acct123"},
+	})
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	defer m.Close()
+
+	// A parameter the preset does not declare is an invalid argument.
+	_, err = ProviderWithConfig("groq", "sk-test-fake-key", "m", &ProviderConfig{
+		Params: map[string]string{"account_id": "acct123"},
+	})
+	var e *Error
+	if !errors.As(err, &e) || e.Code != CodeInvalidArgument {
+		t.Fatalf("want CodeInvalidArgument, got %v", err)
+	}
+}
+
+// A registry provider with no key and no env var fails with CodeLoadAPIKey and
+// names the variable it consulted.
+func TestMissingAPIKeyIsLoadAPIKey(t *testing.T) {
+	if old, ok := os.LookupEnv("GROQ_API_KEY"); ok {
+		os.Unsetenv("GROQ_API_KEY")
+		defer os.Setenv("GROQ_API_KEY", old)
+	}
+	_, err := Provider("groq", "", "llama-3.3-70b")
+	var e *Error
+	if !errors.As(err, &e) || e.Code != CodeLoadAPIKey {
+		t.Fatalf("want CodeLoadAPIKey, got %v", err)
+	}
+	if e.EnvVar != "GROQ_API_KEY" {
+		t.Fatalf("EnvVar = %q, want GROQ_API_KEY", e.EnvVar)
 	}
 }
 

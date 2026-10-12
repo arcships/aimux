@@ -3,92 +3,162 @@
 //! Implements the `SearchModel` trait against a self-hosted SearXNG instance
 //! (`GET {SEARXNG_URL}/search?q=...&format=json`).
 //!
-//! SearXNG is a modality-specific, unauthenticated provider: there is no API
-//! key. The instance URL is supplied via the `SEARXNG_URL` environment
-//! variable (required — there is no default). A `403` response typically
-//! indicates that the `json` output format is not enabled on the instance.
+//! SearXNG is a self-hosted, normally unauthenticated provider: there is no
+//! default instance. The instance URL is the `base_url` setting or the
+//! `SEARXNG_URL` environment variable, read when a request is made (a missing
+//! URL fails that request with `AiMuxError::LoadSetting`). A `403` response
+//! typically indicates that the `json` output format is not enabled on the
+//! instance.
+//!
+//! [`create_searxng`] takes [`SearxngProviderSettings`], validates the base URL, fixes
+//! the provider name and returns a [`SearxngProvider`]. The instance URL is not read
+//! there: the instance URL is resolved for every request.
+//! [`searxng()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::HttpRequest;
-use aimux_provider_utils::without_trailing_slash;
+use aimux_provider_utils::{
+    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, load_setting, validate_base_url,
+};
+
+use crate::shared::{Credential, Endpoint, EndpointConfig, provider_headers};
 
 /// Fixed model ID for the SearXNG search model.
 const MODEL_ID: &str = "searxng-search";
 
-/// Configuration for the SearXNG provider.
+const BASE_URL_ENV_VAR: &str = "SEARXNG_URL";
+const DEFAULT_NAME: &str = "searxng";
+
+/// Settings of [`create_searxng`].
 ///
-/// SearXNG is unauthenticated, so there is no API key — only the instance
-/// base URL.
-#[derive(Debug, Clone)]
-pub struct SearxngConfig {
-    pub base_url: String,
+/// Every field is optional. The instance URL is validated when the provider is
+/// created if it is given; `api_key` and `headers` are evaluated on every
+/// request.
+#[derive(Clone, Default)]
+pub struct SearxngProviderSettings {
+    /// The instance URL; a trailing slash is removed. `None` reads
+    /// `SEARXNG_URL` when a request is made and fails that request with
+    /// `AiMuxError::LoadSetting` if it is unset: there is no default instance.
+    pub base_url: Option<String>,
+    /// An optional bearer token for an instance behind an authenticating
+    /// proxy. `None` sends no `Authorization` header. A [`Resolvable::Future`]
+    /// is awaited once, an [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header.
+    /// Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` string
+    /// (`"{name}.search"`). Default `"searxng"`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
 }
 
-impl SearxngConfig {
-    /// Create from an explicit instance base URL.
-    pub fn new(base_url: impl Into<String>) -> Self {
-        Self {
-            base_url: without_trailing_slash(&base_url.into()),
-        }
-    }
-
-    /// Use a custom base URL.
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-
-    /// Create from the `SEARXNG_URL` environment variable (required).
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when `SEARXNG_URL` is not set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let base_url = std::env::var("SEARXNG_URL").map_err(|_| {
-            AiMuxError::InvalidArgument(
-                "SEARXNG_URL environment variable is required for SearXNG".to_string(),
+impl std::fmt::Debug for SearxngProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SearxngProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
             )
-        })?;
-        Ok(Self::new(base_url))
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .finish()
     }
 }
 
-/// SearXNG provider — creates `SearxngSearchModel` instances.
+/// Create a SearXNG provider.
 ///
-/// SearXNG is a search-only provider; it does not support language models.
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is given and is not
+/// an `http(s)` URL with a host. That is the only way this fails: a missing
+/// instance URL is reported by the first request.
+pub fn create_searxng(settings: SearxngProviderSettings) -> Result<SearxngProvider, AiMuxError> {
+    let base_url = settings
+        .base_url
+        .as_deref()
+        .map(validate_base_url)
+        .transpose()?;
+    let credential = match settings.api_key {
+        Some(key) => Credential::Explicit(key),
+        None => Credential::None,
+    };
+    Ok(SearxngProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: provider_headers(credential, Vec::new(), settings.headers),
+        fetch: settings.fetch,
+    })
+}
+
+/// The default provider: `create_searxng` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing instance URL surfaces from the first request instead.
+pub fn searxng() -> &'static SearxngProvider {
+    static DEFAULT: OnceLock<SearxngProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_searxng(SearxngProviderSettings::default())
+            .expect("default SearXNG settings are always valid")
+    })
+}
+
+/// A SearXNG provider. Search only; it holds no HTTP client.
 pub struct SearxngProvider {
-    config: SearxngConfig,
+    name: String,
+    base_url: Option<String>,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
 }
 
 impl SearxngProvider {
-    #[must_use]
-    pub fn new(config: SearxngConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        let base_url = self.base_url.clone();
+        let headers = self.headers.clone();
+        EndpointConfig::dynamic(
+            format!("{}.{method}", self.name),
+            Arc::new(move || {
+                let base_url = base_url.clone();
+                let headers = headers.clone();
+                Box::pin(async move {
+                    let base_url = match base_url {
+                        Some(url) => url,
+                        None => validate_base_url(&load_setting(
+                            None,
+                            BASE_URL_ENV_VAR,
+                            "SearXNG instance URL",
+                        )?)?,
+                    };
+                    Ok(Endpoint {
+                        base_url,
+                        headers: headers.resolve().await?,
+                    })
+                })
+            }),
+            self.fetch.clone(),
+        )
     }
 
-    /// Create a search model instance.
+    /// The search model; `provider()` is `"{name}.search"`.
     #[must_use]
     pub fn search_model(&self) -> SearxngSearchModel {
-        SearxngSearchModel::new(self.config.clone())
+        SearxngSearchModel::from_config(self.model_config("search"))
     }
 }
 
-impl Provider for SearxngProvider {
-    fn name(&self) -> &str {
-        "searxng"
-    }
-}
+crate::impl_single_modality_provider!(SearxngProvider, search_model, |p, _id| p.search_model());
 
 /// A single SearXNG result entry. All fields are optional so unknown-but-legal
 /// values degrade safely.
@@ -128,24 +198,19 @@ fn map_results(entries: Vec<SearxngResult>) -> Vec<SearchResultItem> {
 
 /// A SearXNG search model.
 pub struct SearxngSearchModel {
-    config: SearxngConfig,
+    config: EndpointConfig,
 }
 
 impl SearxngSearchModel {
-    #[must_use]
-    pub fn new(config: SearxngConfig) -> Self {
+    pub(crate) fn from_config(config: EndpointConfig) -> Self {
         Self { config }
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/search", self.config.base_url)
     }
 }
 
 #[async_trait]
 impl SearchModel for SearxngSearchModel {
     fn provider(&self) -> &str {
-        "searxng"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -153,31 +218,16 @@ impl SearchModel for SearxngSearchModel {
     }
 
     async fn do_search(&self, options: &SearchCallOptions) -> Result<SearchResult, AiMuxError> {
-        // SearXNG is unauthenticated; only forward user-supplied extra headers.
-        let headers: Vec<(String, String)> = options
-            .headers
-            .as_ref()
-            .map(|extra: &HashMap<String, String>| {
-                extra.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-            })
-            .unwrap_or_default();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
-        let mut url = url::Url::parse(&self.endpoint())
+        let mut url = url::Url::parse(&exchange.url("/search"))
             .map_err(|e| AiMuxError::InvalidArgument(format!("invalid searxng endpoint: {e}")))?;
         url.query_pairs_mut()
             .append_pair("q", &options.query)
             .append_pair("format", "json");
 
         let resp = aimux_provider_utils::get_from_api(
-            HttpRequest {
-                url: url.to_string(),
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                ..Default::default()
-            },
+            exchange.request(url.to_string(), options),
             aimux_provider_utils::create_json_response_handler::<SearxngResponse>(),
             aimux_provider_utils::create_status_code_error_response_handler(),
         )

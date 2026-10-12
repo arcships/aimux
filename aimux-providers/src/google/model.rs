@@ -2,8 +2,6 @@
 
 use aimux_core::tool::RawToolCall;
 use aimux_core::tool::ToolResult;
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -14,20 +12,21 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{
     GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, StreamResult,
 };
-use aimux_core::shared::{FileBytes, GeneratedFileData, provider_namespace};
+use aimux_core::shared::{FileBytes, GeneratedFileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
 };
 
-use aimux_provider_utils::HttpRequest;
+use aimux_core::language_model::SupportedUrls;
 
-use super::GoogleConfig;
 use super::convert::{
     build_request_body_with_warnings, code_execution_tool_name, convert_usage, extract_sources,
     parse_finish_reason,
 };
+use super::options::google_metadata;
 use super::types::{Candidate, GenerateContentResponse, GoogleStreamEvent};
+use crate::shared::EndpointConfig;
 
 /// A Google Gemini language model.
 ///
@@ -35,91 +34,37 @@ use super::types::{Candidate, GenerateContentResponse, GoogleStreamEvent};
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct GoogleModel {
     model_id: String,
-    config: GoogleConfig,
+    config: EndpointConfig,
 }
 
 impl GoogleModel {
-    pub fn new(model_id: String, config: GoogleConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
     }
 
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        // The TS SDK sends the API key via `x-goog-api-key`. The query-param
-        // form (`?key=…`) is also supported but the header form is preferred.
-        headers.insert("x-goog-api-key".to_string(), self.config.api_key.clone());
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
+    /// `models/{model}`, or the id itself when it already contains a `/`
+    /// (e.g. a fine-tuned path).
+    fn model_path(&self) -> String {
+        if self.model_id.contains('/') {
+            self.model_id.clone()
+        } else {
+            format!("models/{}", self.model_id)
         }
-        headers
     }
-
-    /// `…/models/{model}:generateContent` (or `{model}:generateContent` when
-    /// the model id already contains a `/`, e.g. a fine-tuned path).
-    fn generate_endpoint(&self) -> String {
-        let model_path = if self.model_id.contains('/') {
-            self.model_id.clone()
-        } else {
-            format!("models/{}", self.model_id)
-        };
-        format!("{}/{}:generateContent", self.config.base_url, model_path)
-    }
-
-    fn stream_endpoint(&self) -> String {
-        let model_path = if self.model_id.contains('/') {
-            self.model_id.clone()
-        } else {
-            format!("models/{}", self.model_id)
-        };
-        format!(
-            "{}/{}:streamGenerateContent?alt=sse",
-            self.config.base_url, model_path
-        )
-    }
-}
-
-/// Build the header list for a JSON POST: auth/extra headers + `Content-Type`.
-///
-/// Returns a `Vec<(String, String)>` for `HttpRequest` — no reqwest types.
-fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
-    let mut list: Vec<(String, String)> = headers
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-    list.push(("Content-Type".to_string(), "application/json".to_string()));
-    list
 }
 
 #[async_trait]
 impl LanguageModel for GoogleModel {
     fn provider(&self) -> &str {
-        "google.generative-ai"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
-
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        use aimux_core::recording::ProviderRecord;
-        ProviderRecord {
-            provider: self.provider().to_string(),
-            model_id: self.model_id.clone(),
-            base_url: Some(self.config.base_url.clone()),
-            api_key_source: self
-                .config
-                .api_key_source
-                .clone()
-                .unwrap_or_else(|| "explicit".to_string()),
-            profile: None,
-            provider_options: None,
-        }
+    fn supported_urls(&self) -> SupportedUrls {
+        (self.config.supported_urls)(&self.model_id)
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
@@ -158,13 +103,11 @@ impl LanguageModel for GoogleModel {
         crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options)?;
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(body);
+        let url = exchange.url(&format!("/{}:generateContent", self.model_path()));
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(
-                self.generate_endpoint(),
-                build_header_list(&headers),
-                options,
-            ),
+            exchange.request(url, options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler(),
             super::google_failed_response_handler(),
@@ -200,20 +143,14 @@ impl LanguageModel for GoogleModel {
 
         // Provider metadata: wrap the raw Google metadata under a `google`
         // key (matching the TS `wrapProviderMetadata`).
-        let provider_metadata = Some(
-            provider_namespace(
-                "google",
-                json!({
-                    "promptFeedback": data.prompt_feedback,
-                    "groundingMetadata": candidate.grounding_metadata,
-                    "urlContextMetadata": candidate.url_context_metadata,
-                    "safetyRatings": candidate.safety_ratings,
-                    "usageMetadata": data.usage_metadata,
-                    "finishMessage": candidate.finish_message,
-                }),
-            )
-            .expect("provider metadata must be an object"),
-        );
+        let provider_metadata = Some(google_metadata(serde_json::json!({
+            "promptFeedback": data.prompt_feedback,
+            "groundingMetadata": candidate.grounding_metadata,
+            "urlContextMetadata": candidate.url_context_metadata,
+            "safetyRatings": candidate.safety_ratings,
+            "usageMetadata": data.usage_metadata,
+            "finishMessage": candidate.finish_message,
+        })));
 
         Ok(GenerateResult {
             content,
@@ -224,7 +161,7 @@ impl LanguageModel for GoogleModel {
             response: Some(aimux_core::shared::ResponseInfo {
                 id: data.response_id,
                 timestamp: None,
-                model_id: None,
+                model_id: data.model_version,
                 headers: Some(response_headers),
                 body: response_body,
             }),
@@ -268,10 +205,14 @@ impl LanguageModel for GoogleModel {
         crate::google::convert::validate_tool_result_files(&options.prompt)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options)?;
-        let headers = self.build_headers(options.headers.as_ref());
-        let endpoint = self.stream_endpoint();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(body);
+        let endpoint = exchange.url(&format!(
+            "/{}:streamGenerateContent?alt=sse",
+            self.model_path()
+        ));
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(endpoint.clone(), build_header_list(&headers), options),
+            exchange.request(endpoint.clone(), options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<GoogleStreamEvent>(),
             super::google_failed_response_handler(),
@@ -401,7 +342,7 @@ impl LanguageModel for GoogleModel {
                                 let thought_sig_meta: Option<ProviderMetadata> = part
                                     .get("thoughtSignature")
                                     .and_then(|v| v.as_str())
-                                    .map(|s| provider_namespace("google", json!({ "thoughtSignature": s })).expect("provider metadata must be an object"));
+                                    .map(|s| google_metadata(json!({ "thoughtSignature": s })));
 
                                 // text part
                                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
@@ -695,14 +636,14 @@ impl LanguageModel for GoogleModel {
                 yield Ok(StreamPart::ReasoningEnd { id, provider_metadata: None});
             }
 
-            let provider_metadata = Some(provider_namespace("google", json!({
+            let provider_metadata = Some(google_metadata(serde_json::json!({
                 "promptFeedback": last_prompt_feedback,
                 "groundingMetadata": last_grounding_metadata,
                 "urlContextMetadata": last_url_context_metadata,
                 "safetyRatings": last_safety_ratings,
                 "usageMetadata": last_usage_metadata_value,
                 "finishMessage": last_finish_message,
-            })).expect("provider metadata must be an object"));
+            })));
 
             yield Ok(StreamPart::Finish {
                 finish_reason: if stream_errored {
@@ -745,7 +686,7 @@ fn server_tool_metadata(
     if let Some(signature) = thought_signature {
         payload["thoughtSignature"] = json!(signature);
     }
-    provider_namespace("google", payload).expect("provider metadata must be an object")
+    google_metadata(payload)
 }
 
 /// Extract `GenerateContent` items from a non-streaming candidate.
@@ -779,10 +720,7 @@ fn extract_content_from_candidate(
             let thought_sig_meta: Option<ProviderMetadata> = part
                 .get("thoughtSignature")
                 .and_then(|v| v.as_str())
-                .map(|s| {
-                    provider_namespace("google", json!({ "thoughtSignature": s }))
-                        .expect("provider metadata must be an object")
-                });
+                .map(|s| google_metadata(json!({ "thoughtSignature": s })));
 
             // Branch order matches upstream (google-language-model.ts:420-534):
             // executableCode → codeExecutionResult → text → functionCall
@@ -997,28 +935,5 @@ fn set_provider_metadata(item: &mut GenerateContent, meta: ProviderMetadata) {
         }) => {
             *provider_metadata = Some(meta);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::google::GoogleConfig;
-
-    #[test]
-    fn config_snapshot_records_provider_identity() {
-        let config = GoogleConfig::new("sk-test");
-        let model = GoogleModel::new("gemini-2.0-flash".to_string(), config);
-
-        let snap = model.config_snapshot();
-        assert_eq!(snap.provider, "google.generative-ai");
-        assert_eq!(snap.model_id, "gemini-2.0-flash");
-        assert_eq!(
-            snap.base_url.as_deref(),
-            Some("https://generativelanguage.googleapis.com/v1beta")
-        );
-        assert_eq!(snap.api_key_source, "explicit");
-        assert_eq!(snap.profile, None);
-        assert_eq!(snap.provider_options, None);
     }
 }

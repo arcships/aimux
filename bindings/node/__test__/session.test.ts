@@ -9,7 +9,7 @@ import test from 'ava'
 import { createServer, type Server } from 'node:http'
 
 import {
-  openai,
+  deepseek,
   generateText,
   initSessionStore,
   initSessionInfer,
@@ -54,7 +54,7 @@ test.serial('sessionId groups calls and query API returns typed results', async 
   initSessionStore()
   initSessionInfer(false) // explicit ids only
 
-  const model = await openai('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
+  const model = await deepseek('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
 
   // Two calls in the same session.
   await generateText(model, 'first', { session_id: 'sess-1' })
@@ -91,7 +91,7 @@ test.serial('opt-in inferer groups prefix continuations into auto sessions', asy
   initSessionStore()
   initSessionInfer(true)
 
-  const model = await openai('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
+  const model = await deepseek('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
 
   await generateText(model, 'u1')
   await generateText(model, [{ role: 'user', content: 'u1' }, { role: 'assistant', content: 'a1' }, { role: 'user', content: 'u2' }])

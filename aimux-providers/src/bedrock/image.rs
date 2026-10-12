@@ -5,8 +5,6 @@
 //!
 //! Endpoint: `POST {base_url}/model/{model_id}/invoke`
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -17,10 +15,10 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::Warning;
 
-use aimux_provider_utils::{HttpBody, HttpRequest};
+use aimux_provider_utils::HttpBody;
 
-use super::sigv4::sign_request;
-use super::{BedrockAuth, BedrockConfig};
+use super::options;
+use crate::shared::EndpointConfig;
 
 /// Returns the max images per call for the given model ID.
 fn get_max_images_per_call(model_id: &str) -> u32 {
@@ -37,46 +35,12 @@ fn get_max_images_per_call(model_id: &str) -> u32 {
 /// `Client` internally (RFC-0009 §4.1).
 pub struct BedrockImageModel {
     model_id: String,
-    config: BedrockConfig,
+    config: EndpointConfig,
 }
 
 impl BedrockImageModel {
-    #[must_use]
-    pub fn new(model_id: String, config: BedrockConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/model/{}/invoke", self.config.base_url, self.model_id)
-    }
-
-    fn build_headers(
-        &self,
-        body: &str,
-        url: &str,
-        extra: Option<&HashMap<String, String>>,
-    ) -> Result<Vec<(String, String)>, AiMuxError> {
-        let mut extra_headers: Vec<(String, String)> = Vec::new();
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                extra_headers.push((k.clone(), v.clone()));
-            }
-        }
-        match &self.config.auth {
-            BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![("Authorization".into(), format!("Bearer {token}"))];
-                headers.extend(extra_headers);
-                Ok(headers)
-            }
-            BedrockAuth::SigV4(creds) => {
-                let signed = sign_request(creds, "bedrock", "POST", url, body, &extra_headers);
-                let mut headers: Vec<(String, String)> = Vec::new();
-                for (k, v) in &signed.headers {
-                    headers.push((k.clone(), v.clone()));
-                }
-                Ok(headers)
-            }
-        }
     }
 
     fn get_base64_data(file: &ImageFile) -> Result<String, AiMuxError> {
@@ -98,13 +62,10 @@ impl BedrockImageModel {
 #[async_trait]
 impl ImageModel for BedrockImageModel {
     fn provider(&self) -> &str {
-        "amazon-bedrock"
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
     fn max_images_per_call(&self) -> Option<u32> {
         Some(get_max_images_per_call(&self.model_id))
@@ -118,11 +79,8 @@ impl ImageModel for BedrockImageModel {
             .unwrap_or((None, None));
         let has_files = options.files.as_ref().is_some_and(|f| !f.is_empty());
 
-        // Parse provider options (amazonBedrock or bedrock)
-        let ab_opts = options
-            .provider_options
-            .get("amazonBedrock")
-            .or_else(|| options.provider_options.get("bedrock"));
+        // Parse provider options (`amazonBedrock`)
+        let ab_opts = options::read(Some(&options.provider_options));
 
         // Build image generation config
         let mut image_gen_config = Map::new();
@@ -277,21 +235,14 @@ impl ImageModel for BedrockImageModel {
             });
         }
 
-        let body_str = serde_json::to_string(&Value::Object(args))
-            .map_err(|e| AiMuxError::JsonParse(e.to_string()))?;
-        let url = self.endpoint();
-        let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(Value::Object(args));
+        let body_str =
+            serde_json::to_string(&body).map_err(|e| AiMuxError::JsonParse(e.to_string()))?;
+        let url = exchange.url(&format!("/model/{}/invoke", self.model_id));
 
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url: url.clone(),
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                ..Default::default()
-            },
+            exchange.request(url.clone(), options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             super::bedrock_failed_response_handler(),

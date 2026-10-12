@@ -124,20 +124,11 @@ pub struct RerankingResponse {
 /// Aligned with V4 `RerankingModelV4`.
 #[async_trait]
 pub trait RerankingModel: Send + Sync {
-    /// Specification version (always `"v4"`).
-    fn specification_version(&self) -> &'static str {
-        "v4"
-    }
-
     /// Provider name, e.g. `"cohere"`.
     fn provider(&self) -> &str;
 
     /// Provider-specific model ID, e.g. `"rerank-english-v3.0"`.
     fn model_id(&self) -> &str;
-
-    fn retry_config(&self) -> crate::retry::RetryConfig {
-        crate::retry::RetryConfig::default()
-    }
 
     /// Rerank a list of documents using the query.
     ///
@@ -159,11 +150,7 @@ pub async fn rerank(
 ) -> Result<RerankingResult, AiMuxError> {
     let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
     let abort_signal = options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
     timeout::run(
         retries.retry(|| model.do_rerank(&options)),
         abort_signal.as_ref(),

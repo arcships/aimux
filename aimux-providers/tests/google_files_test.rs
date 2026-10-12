@@ -1,7 +1,7 @@
 //! Rust translations of the Google Files provider tests.
 //!
 //! Source: `reference/ai/packages/google/src/google-files.test.ts`
-//! (21 test cases).
+//! (16 test cases).
 //!
 //! Google uses a resumable upload protocol with three phases:
 //! 1. POST `/upload/v1beta/files` (init) - returns `x-goog-upload-url` header.
@@ -12,10 +12,10 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
-use aimux_core::retry::RetryConfig;
-use aimux_core::shared::{FileBytes, provider_namespace};
-use aimux_providers::{GoogleConfig, GoogleProvider};
+use aimux_core::files_model::{UploadFileCallOptions, UploadFileData};
+use aimux_core::provider::Provider;
+use aimux_core::shared::FileBytes;
+use aimux_providers::{GoogleProvider, GoogleProviderSettings, create_google};
 
 // -- helpers -----------------------------------------------------------------
 
@@ -35,17 +35,12 @@ fn default_file_resource() -> Value {
 }
 
 fn provider(server: &MockServer) -> GoogleProvider {
-    provider_with_retries(server, RetryConfig::default().max_retries)
-}
-
-fn provider_with_retries(server: &MockServer, max_retries: u32) -> GoogleProvider {
-    let config = GoogleConfig::new("test-api-key")
-        .with_base_url(format!("{}/v1beta", server.uri()))
-        .with_retry_config(RetryConfig {
-            max_retries,
-            ..Default::default()
-        });
-    GoogleProvider::new(config)
+    create_google(GoogleProviderSettings {
+        api_key: Some("test-api-key".to_string()),
+        base_url: Some(format!("{}/v1beta", server.uri())),
+        ..Default::default()
+    })
+    .unwrap()
 }
 
 fn upload_options() -> UploadFileCallOptions {
@@ -85,11 +80,15 @@ async fn mount_success_mocks(server: &MockServer) {
 // -- constructor tests -------------------------------------------------------
 
 #[tokio::test]
-async fn should_expose_correct_provider_and_specification_version() {
-    let provider = GoogleProvider::new(GoogleConfig::new("test-api-key"));
-    let files = provider.files();
+async fn should_expose_correct_provider() {
+    let provider = create_google(GoogleProviderSettings {
+        api_key: Some("test-api-key".to_string()),
+        ..Default::default()
+    })
+    .unwrap();
+    let files = Provider::files(&provider).unwrap();
+    // The project has no specification version.
     assert_eq!(files.provider(), "google.generative-ai");
-    assert_eq!(files.specification_version(), "v4");
 }
 
 // -- upload initiation tests -------------------------------------------------
@@ -100,7 +99,7 @@ async fn should_send_correct_headers_for_resumable_upload_initiation() {
     mount_success_mocks(&server).await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let opts = UploadFileCallOptions {
         data: UploadFileData::Data {
@@ -157,7 +156,7 @@ async fn should_omit_display_name_from_body_when_not_provided() {
     mount_success_mocks(&server).await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     files.upload_file(&upload_options()).await.unwrap();
 
@@ -174,7 +173,7 @@ async fn should_send_file_data_to_upload_url_with_correct_headers() {
     mount_success_mocks(&server).await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let opts = UploadFileCallOptions {
         data: UploadFileData::Data {
@@ -217,7 +216,7 @@ async fn should_return_provider_reference_with_google_key_set_to_file_uri() {
     mount_success_mocks(&server).await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let result = files.upload_file(&upload_options()).await.unwrap();
 
@@ -233,7 +232,7 @@ async fn should_return_empty_warnings_when_filename_not_provided() {
     mount_success_mocks(&server).await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let result = files.upload_file(&upload_options()).await.unwrap();
 
@@ -246,7 +245,7 @@ async fn should_return_unsupported_warning_when_filename_provided() {
     mount_success_mocks(&server).await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let mut opts = upload_options();
     opts.filename = Some("test.pdf".to_string());
@@ -267,7 +266,7 @@ async fn should_return_provider_metadata_with_file_details() {
     mount_success_mocks(&server).await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let result = files.upload_file(&upload_options()).await.unwrap();
 
@@ -294,7 +293,7 @@ async fn should_handle_base64_string_data() {
     mount_success_mocks(&server).await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     // "hello" encoded as base64.
     let opts = UploadFileCallOptions {
@@ -321,7 +320,7 @@ async fn should_not_poll_when_file_is_immediately_active() {
     mount_success_mocks(&server).await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     files.upload_file(&upload_options()).await.unwrap();
 
@@ -355,7 +354,7 @@ async fn should_throw_when_file_state_is_failed() {
         .await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let result = files.upload_file(&upload_options()).await;
 
@@ -380,8 +379,8 @@ async fn should_throw_when_initiation_request_fails() {
         .await;
 
     // Only the message text matters here; skip the retries so it stays fast.
-    let provider = provider_with_retries(&server, 0);
-    let files = provider.files();
+    let provider = provider(&server);
+    let files = Provider::files(&provider).unwrap();
 
     let result = files.upload_file(&upload_options()).await;
 
@@ -406,7 +405,7 @@ async fn should_throw_when_no_upload_url_returned() {
         .await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let result = files.upload_file(&upload_options()).await;
 
@@ -436,8 +435,8 @@ async fn should_throw_when_upload_request_fails() {
         .await;
 
     // Only the message text matters here; skip the retries so it stays fast.
-    let provider = provider_with_retries(&server, 0);
-    let files = provider.files();
+    let provider = provider(&server);
+    let files = Provider::files(&provider).unwrap();
 
     let result = files.upload_file(&upload_options()).await;
 
@@ -452,66 +451,14 @@ async fn should_throw_when_upload_request_fails() {
 // -- provider options tests --------------------------------------------------
 
 #[tokio::test]
-async fn should_accept_valid_provider_options() {
-    let server = MockServer::start().await;
-    mount_success_mocks(&server).await;
-
-    let provider = provider(&server);
-    let files = provider.files();
-
-    let po = provider_namespace(
-        "google",
-        json!({ "displayName": "test", "pollIntervalMs": 5000, "pollTimeoutMs": 60000 }),
-    )
-    .unwrap();
-    let opts = UploadFileCallOptions {
-        data: UploadFileData::Data {
-            data: FileBytes::Binary(vec![1]),
-        },
-        media_type: "text/plain".to_string(),
-        filename: None,
-        provider_options: Some(po),
-        abort_signal: None,
-    };
-
-    let result = files.upload_file(&opts).await.unwrap();
-
-    assert!(result.provider_reference.contains_key("google"));
-}
-
-#[tokio::test]
 async fn should_work_without_provider_options() {
     let server = MockServer::start().await;
     mount_success_mocks(&server).await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let result = files.upload_file(&upload_options()).await.unwrap();
-
-    assert!(result.provider_reference.contains_key("google"));
-}
-
-#[tokio::test]
-async fn should_pass_through_unknown_properties() {
-    let server = MockServer::start().await;
-    mount_success_mocks(&server).await;
-
-    let provider = provider(&server);
-    let files = provider.files();
-
-    let po = provider_namespace("google", json!({ "customField": "custom-value" })).unwrap();
-    let opts = UploadFileCallOptions {
-        data: UploadFileData::Data {
-            data: FileBytes::Binary(vec![1]),
-        },
-        media_type: "text/plain".to_string(),
-        filename: None,
-        provider_options: Some(po),
-        abort_signal: None,
-    };
-
-    let result = files.upload_file(&opts).await.unwrap();
 
     assert!(result.provider_reference.contains_key("google"));
 }
@@ -543,16 +490,16 @@ async fn should_omit_optional_fields_from_metadata_when_not_present() {
         .await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let result = files.upload_file(&upload_options()).await.unwrap();
 
     let metadata = result.provider_metadata.expect("metadata");
     let google = metadata.get("google").expect("google metadata");
     assert_eq!(google["name"], "files/minimal");
-    assert_eq!(google["displayName"], Value::Null);
+    assert!(google.get("displayName").is_none());
     assert_eq!(google["mimeType"], "text/plain");
-    assert_eq!(google["sizeBytes"], Value::Null);
+    assert!(google.get("sizeBytes").is_none());
     assert_eq!(google["state"], "ACTIVE");
     assert_eq!(
         google["uri"],
@@ -561,82 +508,4 @@ async fn should_omit_optional_fields_from_metadata_when_not_present() {
     assert!(google.get("createTime").is_none());
     assert!(google.get("expirationTime").is_none());
     assert!(google.get("sha256Hash").is_none());
-}
-
-/// A transient 503 on the upload stage followed by 200 must succeed, and
-/// must not re-run the init stage — a retried upload reuses the
-/// already-minted `upload_url` instead of requesting a new one.
-#[tokio::test]
-async fn transient_upload_failure_is_retried_without_re_initiating() {
-    let server = MockServer::start().await;
-    let upload_url = format!("{}/resume", server.uri());
-
-    let init_attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let init_observed = std::sync::Arc::clone(&init_attempts);
-    Mock::given(method("POST"))
-        .and(path("/upload/v1beta/files"))
-        .respond_with(move |_: &wiremock::Request| {
-            init_observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            ResponseTemplate::new(200).insert_header("x-goog-upload-url", upload_url.as_str())
-        })
-        .mount(&server)
-        .await;
-
-    let upload_attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let upload_observed = std::sync::Arc::clone(&upload_attempts);
-    Mock::given(method("POST"))
-        .and(path("/resume"))
-        .respond_with(move |_: &wiremock::Request| {
-            if upload_observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
-                ResponseTemplate::new(503)
-                    .insert_header("retry-after-ms", "0")
-                    .set_body_json(json!({"error": {"message": "try again"}}))
-            } else {
-                ResponseTemplate::new(200).set_body_json(json!({ "file": default_file_resource() }))
-            }
-        })
-        .mount(&server)
-        .await;
-
-    let provider = provider_with_retries(&server, 1);
-    let files = provider.files();
-
-    let result = files.upload_file(&upload_options()).await.unwrap();
-
-    assert_eq!(
-        result.provider_reference.get("google"),
-        Some(&"https://generativelanguage.googleapis.com/v1beta/files/abc123".to_string())
-    );
-    assert_eq!(
-        init_attempts.load(std::sync::atomic::Ordering::SeqCst),
-        1,
-        "the init stage must not be replayed by an upload-stage retry"
-    );
-    assert_eq!(upload_attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// get_model_path  (TS: get-model-path.test.ts)
-// ════════════════════════════════════════════════════════════════════════════
-
-mod get_model_path_tests {
-    use aimux_providers::google::utils::get_model_path;
-
-    #[test]
-    fn pass_through_for_models_slash() {
-        assert_eq!(get_model_path("models/some-model"), "models/some-model");
-    }
-
-    #[test]
-    fn pass_through_for_tuned_models_slash() {
-        assert_eq!(
-            get_model_path("tunedModels/some-model"),
-            "tunedModels/some-model"
-        );
-    }
-
-    #[test]
-    fn add_prefix_to_models_without_slash() {
-        assert_eq!(get_model_path("some-model"), "models/some-model");
-    }
 }

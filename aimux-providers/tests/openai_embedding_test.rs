@@ -13,8 +13,9 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_core::embedding_model::EmbeddingCallOptions;
+use aimux_core::provider::Provider;
+use aimux_providers::{OpenAIProviderSettings, create_openai};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -76,9 +77,13 @@ async fn should_extract_embedding() {
         .mount(&server)
         .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.embedding_model("text-embedding-3-large");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.embedding_model("text-embedding-3-large").unwrap();
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -122,9 +127,13 @@ async fn should_expose_raw_response_headers() {
         .mount(&server)
         .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.embedding_model("text-embedding-3-large");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.embedding_model("text-embedding-3-large").unwrap();
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -152,9 +161,13 @@ async fn should_expose_raw_response_body() {
         .mount(&server)
         .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.embedding_model("text-embedding-3-large");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.embedding_model("text-embedding-3-large").unwrap();
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -180,9 +193,13 @@ async fn should_extract_usage() {
         .mount(&server)
         .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.embedding_model("text-embedding-3-large");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.embedding_model("text-embedding-3-large").unwrap();
 
     let result = model
         .do_embed(&default_options(test_values()))
@@ -203,9 +220,13 @@ async fn should_pass_model_and_values() {
         .mount(&server)
         .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.embedding_model("text-embedding-3-large");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.embedding_model("text-embedding-3-large").unwrap();
 
     let _ = model
         .do_embed(&default_options(test_values()))
@@ -244,13 +265,21 @@ async fn should_pass_headers() {
         "provider-header-value".to_string(),
     );
 
-    let config = OpenAIConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_org_id("test-organization")
-        .with_project("test-project")
-        .with_headers(config_headers);
-    let provider = OpenAIProvider::new(config);
-    let model = provider.embedding_model("text-embedding-3-large");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        organization: Some("test-organization".into()),
+        project: Some("test-project".into()),
+        headers: Some(
+            config_headers
+                .into_iter()
+                .map(|(k, v)| (k, Some(v)))
+                .collect(),
+        ),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.embedding_model("text-embedding-3-large").unwrap();
 
     let mut request_headers = HashMap::new();
     request_headers.insert(

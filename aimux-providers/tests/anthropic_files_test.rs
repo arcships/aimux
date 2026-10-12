@@ -7,9 +7,10 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
+use aimux_core::files_model::{UploadFileCallOptions, UploadFileData};
+use aimux_core::provider::Provider;
 use aimux_core::shared::FileBytes;
-use aimux_providers::{AnthropicConfig, AnthropicProvider};
+use aimux_providers::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -28,8 +29,12 @@ fn file_response_body() -> Value {
 
 /// Build an `AnthropicProvider` pointing at the mock server.
 fn provider(server: &MockServer) -> AnthropicProvider {
-    let config = AnthropicConfig::new("test-api-key").with_base_url(server.uri());
-    AnthropicProvider::new(config)
+    create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap()
 }
 
 /// Build `UploadFileCallOptions` with binary data.
@@ -57,7 +62,7 @@ async fn sends_post_to_v1_files_with_beta_header() {
         .await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     files.upload_file(&upload_options()).await.unwrap();
 
@@ -83,7 +88,7 @@ async fn sends_x_api_key_header() {
         .await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     files.upload_file(&upload_options()).await.unwrap();
 
@@ -107,7 +112,7 @@ async fn sends_multipart_form_data_with_file() {
         .await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     files.upload_file(&upload_options()).await.unwrap();
 
@@ -129,7 +134,7 @@ async fn uses_default_filename_blob_when_not_specified() {
         .await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     files.upload_file(&upload_options()).await.unwrap();
 
@@ -151,7 +156,7 @@ async fn uses_custom_filename_from_options() {
         .await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let mut opts = upload_options();
     opts.filename = Some("custom-name.pdf".to_string());
@@ -175,7 +180,7 @@ async fn uses_media_type_from_options() {
         .await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let mut opts = upload_options();
     opts.media_type = "application/pdf".to_string();
@@ -199,7 +204,7 @@ async fn returns_provider_reference_with_anthropic_key() {
         .await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let result = files.upload_file(&upload_options()).await.unwrap();
 
@@ -219,7 +224,7 @@ async fn returns_provider_metadata_with_response_data() {
         .await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let result = files.upload_file(&upload_options()).await.unwrap();
 
@@ -251,7 +256,7 @@ async fn omits_downloadable_when_null() {
         .await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let result = files.upload_file(&upload_options()).await.unwrap();
 
@@ -273,7 +278,7 @@ async fn handles_base64_string_data() {
         .await;
 
     let provider = provider(&server);
-    let files = provider.files();
+    let files = Provider::files(&provider).unwrap();
 
     let opts = UploadFileCallOptions {
         data: UploadFileData::Data {
@@ -294,17 +299,15 @@ async fn handles_base64_string_data() {
 }
 
 #[tokio::test]
-async fn has_specification_version_v4() {
-    let provider = AnthropicProvider::new(AnthropicConfig::new("test-api-key"));
-    let files = provider.files();
-
-    assert_eq!(files.specification_version(), "v4");
-}
-
-#[tokio::test]
 async fn has_correct_provider_name() {
-    let provider = AnthropicProvider::new(AnthropicConfig::new("test-api-key"));
-    let files = provider.files();
+    let provider = create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-api-key".to_string()),
+        name: Some("anthropic.files".to_string()),
+        ..Default::default()
+    })
+    .unwrap();
+    let files = Provider::files(&provider).unwrap();
 
+    // The project has no specification version.
     assert_eq!(files.provider(), "anthropic.files");
 }

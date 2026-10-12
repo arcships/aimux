@@ -7,8 +7,10 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use aimux_core::AiMuxError;
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
-use aimux_providers::{AssemblyAIConfig, AssemblyAIProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{AssemblyAIProviderSettings, create_assemblyai};
 
 fn mock_audio() -> Vec<u8> {
     vec![1u8, 2, 3]
@@ -66,8 +68,12 @@ async fn should_extract_text() {
     let server = MockServer::start().await;
     mock_all(&server, &fixture_transcript(), &[]).await;
 
-    let config = AssemblyAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = AssemblyAIProvider::new(config);
+    let config = AssemblyAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_assemblyai(config).unwrap();
     let model = provider.transcription("universal-2");
 
     let result = model
@@ -89,8 +95,12 @@ async fn should_pass_model_as_speech_models() {
     let server = MockServer::start().await;
     mock_all(&server, &fixture_transcript(), &[]).await;
 
-    let config = AssemblyAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = AssemblyAIProvider::new(config);
+    let config = AssemblyAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_assemblyai(config).unwrap();
     let model = provider.transcription("universal-2");
 
     model
@@ -109,8 +119,12 @@ async fn should_use_speech_model_for_best() {
     let server = MockServer::start().await;
     mock_all(&server, &fixture_transcript(), &[]).await;
 
-    let config = AssemblyAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = AssemblyAIProvider::new(config);
+    let config = AssemblyAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_assemblyai(config).unwrap();
     let model = provider.transcription("best");
 
     let result = model
@@ -134,10 +148,13 @@ async fn should_pass_headers() {
         "Custom-Provider-Header".to_string(),
         "provider-header-value".to_string(),
     );
-    let config = AssemblyAIConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(ph);
-    let provider = AssemblyAIProvider::new(config);
+    let config = AssemblyAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        headers: Some((ph).into_iter().map(|(k, v)| (k, Some(v))).collect()),
+        ..Default::default()
+    };
+    let provider = create_assemblyai(config).unwrap();
     let model = provider.transcription("universal-2");
 
     let mut opts = options(mock_audio(), "audio/wav");
@@ -173,8 +190,12 @@ async fn should_include_response_data() {
     )
     .await;
 
-    let config = AssemblyAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = AssemblyAIProvider::new(config);
+    let config = AssemblyAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_assemblyai(config).unwrap();
     let model = provider.transcription("universal-2");
 
     let result = model
@@ -191,8 +212,12 @@ async fn should_use_real_date() {
     let server = MockServer::start().await;
     mock_all(&server, &fixture_transcript(), &[]).await;
 
-    let config = AssemblyAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = AssemblyAIProvider::new(config);
+    let config = AssemblyAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_assemblyai(config).unwrap();
     let model = provider.transcription("universal-2");
 
     let result = model
@@ -217,8 +242,12 @@ async fn should_include_provider_metadata_with_utterances() {
     });
     mock_all(&server, &transcript, &[]).await;
 
-    let config = AssemblyAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = AssemblyAIProvider::new(config);
+    let config = AssemblyAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_assemblyai(config).unwrap();
     let model = provider.transcription("universal-2");
 
     let result = model
@@ -232,14 +261,11 @@ async fn should_include_provider_metadata_with_utterances() {
     assert!(aai.get("utterances").is_some());
 }
 
-/// A transient 503 on the transcript-submit stage, followed by 200, must
-/// succeed without re-uploading the audio: the upload exchange is retried
-/// independently of the submit exchange, so Core's outer per-`do_generate`
-/// retry never needs to (and must not) replay the upload.
+/// A 503 on the transcript-submit stage is reported as it happened: the submit
+/// is not retried inside the provider, and the upload before it is not replayed.
 #[tokio::test]
-async fn transient_submit_failure_is_retried_without_re_uploading() {
+async fn a_failed_submit_is_not_retried_and_the_upload_is_not_replayed() {
     let server = MockServer::start().await;
-
     let upload_attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let upload_observed = std::sync::Arc::clone(&upload_attempts);
     Mock::given(method("POST"))
@@ -257,38 +283,29 @@ async fn transient_submit_failure_is_retried_without_re_uploading() {
     Mock::given(method("POST"))
         .and(path("/v2/transcript"))
         .respond_with(move |_: &wiremock::Request| {
-            if submit_observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
-                ResponseTemplate::new(503)
-                    .insert_header("retry-after-ms", "0")
-                    .set_body_json(json!({"error": "try again"}))
-            } else {
-                ResponseTemplate::new(200)
-                    .set_body_json(json!({"id": "test-id", "status": "queued"}))
-            }
+            submit_observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            ResponseTemplate::new(503)
+                .insert_header("retry-after-ms", "0")
+                .set_body_json(json!({"error": "try again"}))
         })
         .mount(&server)
         .await;
 
-    Mock::given(method("GET"))
-        .and(path("/v2/transcript/test-id"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(fixture_transcript()))
-        .mount(&server)
-        .await;
-
-    let config = AssemblyAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = AssemblyAIProvider::new(config);
-    let model = provider.transcription("universal-2");
-
-    let result = model
+    let provider = create_assemblyai(AssemblyAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap();
+    let error = provider
+        .transcription("universal-2")
         .do_generate(&options(mock_audio(), "audio/wav"))
         .await
-        .unwrap();
+        .unwrap_err();
 
-    assert_eq!(result.text, "Hello from AssemblyAI.");
-    assert_eq!(
-        upload_attempts.load(std::sync::atomic::Ordering::SeqCst),
-        1,
-        "the upload stage must not be replayed by a submit-stage retry"
-    );
-    assert_eq!(submit_attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
+    // Creating the transcript is the stage that bills: it is sent once and the
+    // failure is reported as it happened; the upload before it is not replayed.
+    assert!(matches!(error, AiMuxError::ApiCall(ref d) if d.status_code == Some(503)));
+    assert_eq!(upload_attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(submit_attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
 }

@@ -17,7 +17,26 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::shared::Warning;
 use aimux_core::speech_model::{SpeechCallOptions, SpeechModel};
-use aimux_providers::{ElevenLabsConfig, ElevenLabsProvider};
+use aimux_providers::{ElevenLabsProvider, ElevenLabsProviderSettings, create_elevenlabs};
+
+fn test_provider(
+    api_key: &str,
+    base_url: impl Into<String>,
+    headers: Option<HashMap<String, String>>,
+) -> ElevenLabsProvider {
+    create_elevenlabs(ElevenLabsProviderSettings {
+        api_key: Some(api_key.to_string().into()),
+        base_url: Some(base_url.into()),
+        headers: headers.map(|headers| {
+            headers
+                .into_iter()
+                .map(|(name, value)| (name, Some(value)))
+                .collect()
+        }),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 // 鈹€鈹€ helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
@@ -53,8 +72,7 @@ async fn should_generate_speech_with_required_parameters() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = ElevenLabsConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ElevenLabsProvider::new(config);
+    let provider = test_provider("test-api-key", server.uri(), None);
     let model = provider.speech("eleven_multilingual_v2");
 
     let mut options = speech_options("Hello, world!");
@@ -82,8 +100,7 @@ async fn should_handle_custom_output_format() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "pcm").await;
 
-    let config = ElevenLabsConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ElevenLabsProvider::new(config);
+    let provider = test_provider("test-api-key", server.uri(), None);
     let model = provider.speech("eleven_multilingual_v2");
 
     let mut options = speech_options("Hello, world!");
@@ -110,8 +127,7 @@ async fn should_handle_language_parameter() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = ElevenLabsConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ElevenLabsProvider::new(config);
+    let provider = test_provider("test-api-key", server.uri(), None);
     let model = provider.speech("eleven_multilingual_v2");
 
     let mut options = speech_options("Hola, mundo!");
@@ -139,8 +155,7 @@ async fn should_handle_speed_parameter_in_voice_settings() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = ElevenLabsConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ElevenLabsProvider::new(config);
+    let provider = test_provider("test-api-key", server.uri(), None);
     let model = provider.speech("eleven_multilingual_v2");
 
     let mut options = speech_options("Hello, world!");
@@ -162,8 +177,7 @@ async fn should_warn_about_unsupported_instructions_parameter() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = ElevenLabsConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ElevenLabsProvider::new(config);
+    let provider = test_provider("test-api-key", server.uri(), None);
     let model = provider.speech("eleven_multilingual_v2");
 
     let mut options = speech_options("Hello, world!");
@@ -193,8 +207,7 @@ async fn should_pass_provider_specific_options() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = ElevenLabsConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ElevenLabsProvider::new(config);
+    let provider = test_provider("test-api-key", server.uri(), None);
     let model = provider.speech("eleven_multilingual_v2");
 
     let mut options = speech_options("Hello, world!");
@@ -241,8 +254,7 @@ async fn should_include_api_key_header() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = ElevenLabsConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ElevenLabsProvider::new(config);
+    let provider = test_provider("test-api-key", server.uri(), None);
     let model = provider.speech("eleven_multilingual_v2");
 
     let mut options = speech_options("Hello, world!");

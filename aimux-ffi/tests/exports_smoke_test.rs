@@ -24,7 +24,7 @@
 //! - Every returned error and every returned JSON string is released
 //!   (`aimux_error_free` / `aimux_free_string`).
 //!
-//! Note: multimodal session smoke calls use the default RetryConfig
+//! Note: multimodal session smoke calls use the default retry settings
 //! (2 retries) against a refused port; under `--test-threads=1` this adds
 //! roughly a minute of backoff sleep — run the default parallel profile.
 //!
@@ -495,7 +495,7 @@ fn constructor_exports_build_and_release_handles() {
     );
 
     // Registry-backed constructors (RFC-0017 / RFC-0027).
-    let provider_opts = c(r#"{"base_url":"http://127.0.0.1:1","max_retries":0}"#);
+    let provider_opts = c(r#"{"base_url":"http://127.0.0.1:1"}"#);
     ctor!(
         "provider_new",
         aimux_provider_new(
@@ -569,23 +569,17 @@ fn constructor_exports_build_and_release_handles() {
     }
 }
 
-/// `provider_from_env` reads the provider's env var, which the harness cannot
-/// control: a live handle or a clean missing-key error are both correct.
+/// `provider_from_env` defers reading the key until request time.
 #[test]
-fn provider_from_env_handle_or_clean_failure() {
+fn provider_from_env_handle() {
     let mut h = 0;
     let e = aimux_provider_from_env(
         c("groq").as_ptr(),
         c("llama-3.3-70b-versatile").as_ptr(),
         &mut h,
     );
-    if e.is_null() {
-        assert_ne!(h, 0);
-        aimux_drop_handle(h);
-    } else {
-        assert_eq!(h, 0);
-        expect_aimux_error(e, "provider_from_env");
-    }
+    expect_handle(e, h, "provider_from_env");
+    aimux_drop_handle(h);
 }
 
 // ── session class: text generation (4 exports) ──────────────────────────────
@@ -900,12 +894,12 @@ fn transcription_session_reaches_clean_terminal_error() {
 
 #[test]
 fn provider_discovery_and_catalogue_exports_fail_cleanly() {
-    // Provider handle bound to the unreachable host with retries disabled.
+    // Provider handle bound to the unreachable host.
     let mut provider = 0;
     let e = aimux_provider_handle_new(
         c("groq").as_ptr(),
         c(FAKE_KEY).as_ptr(),
-        c(r#"{"base_url":"http://127.0.0.1:1","max_retries":0}"#).as_ptr(),
+        c(r#"{"base_url":"http://127.0.0.1:1"}"#).as_ptr(),
         &mut provider,
     );
     expect_handle(e, provider, "provider_handle_new");

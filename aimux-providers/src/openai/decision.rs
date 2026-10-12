@@ -3,36 +3,36 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use aimux_core::AiMuxError;
 use aimux_core::decision_model::*;
-use aimux_core::recording::ProviderRecord;
 use aimux_core::types::{InputTokenUsage, OutputTokenUsage, Usage};
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::OpenAIConfig;
+use super::config::OpenAIModelConfig;
+use crate::decision_support::DecisionConfig;
 
+/// Native OpenAI Decisions model; [`OpenAIProvider::decision`](super::OpenAIProvider::decision)
+/// creates it.
 pub struct OpenAIDecisionModel {
-    config: OpenAIConfig,
+    config: DecisionConfig,
     model_id: String,
 }
 
 impl OpenAIDecisionModel {
-    /// Create a native Decisions handle. The server validates model availability.
+    /// A native Decisions model. The server validates model availability.
     /// # Errors
-    /// Rejects an empty ID, another provider's config, and generation overrides.
-    pub fn new(model_id: &str, config: OpenAIConfig) -> Result<Self, AiMuxError> {
+    /// Rejects an empty ID.
+    pub(crate) fn from_config(
+        model_id: &str,
+        config: OpenAIModelConfig,
+    ) -> Result<Self, AiMuxError> {
         if model_id.trim().is_empty() {
             return Err(AiMuxError::InvalidArgument(
                 "decision model ID cannot be empty".into(),
             ));
         }
-        if config.provider != "openai" || config.body_overrides.is_some() {
-            return Err(AiMuxError::UnsupportedFunctionality(
-                "native OpenAI decisions require an OpenAI config without body_overrides".into(),
-            ));
-        }
         Ok(Self {
-            config,
+            config: DecisionConfig::OpenAI(config),
             model_id: model_id.into(),
         })
     }
@@ -396,9 +396,6 @@ impl DecisionModel for OpenAIDecisionModel {
     fn model_id(&self) -> &str {
         &self.model_id
     }
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
-    }
     fn capabilities(&self) -> DecisionCapabilities {
         DecisionCapabilities {
             supports_images: true,
@@ -416,17 +413,9 @@ impl DecisionModel for OpenAIDecisionModel {
             max_score_levels: None,
         }
     }
-    fn config_snapshot(&self) -> ProviderRecord {
-        let mut record =
-            super::config_snapshot_from_config(self.provider(), self.model_id(), &self.config);
-        record.profile = Some(
-            json!({"decision_protocol":"openai_decisions", "decision_capabilities":self.capabilities()}),
-        );
-        record
-    }
     async fn do_decide(&self, options: &DecisionCallOptions) -> Result<DecisionResult, AiMuxError> {
         let body = request_body(&self.model_id, options)?;
-        let url = format!("{}/decisions", self.config.base_url.trim_end_matches('/'));
+        let url = format!("{}/decisions", self.config.base_url()?);
         crate::decision_support::post(&self.config, options, &url, body, |raw, headers| {
             let data = serde_json::from_value(raw.clone())
                 .map_err(|e| crate::decision_support::invalid(format!("OpenAI decisions: {e}")))?;

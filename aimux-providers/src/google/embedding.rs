@@ -7,8 +7,6 @@
 //! - Single value: `POST {base_url}/models/{model}:embedContent`
 //! - Multiple values: `POST {base_url}/models/{model}:batchEmbedContents`
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -18,9 +16,8 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::HttpRequest;
-
-use super::GoogleConfig;
+use super::options::google_options;
+use crate::shared::EndpointConfig;
 
 /// A Google Gemini embedding model (e.g. `"gemini-embedding-001"`).
 ///
@@ -28,49 +25,23 @@ use super::GoogleConfig;
 /// `Client` internally (RFC-0009 §4.1).
 pub struct GoogleEmbeddingModel {
     model_id: String,
-    config: GoogleConfig,
+    config: EndpointConfig,
 }
 
 impl GoogleEmbeddingModel {
-    #[must_use]
-    pub fn new(model_id: String, config: GoogleConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
     }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert("x-goog-api-key".to_string(), self.config.api_key.clone());
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-}
-
-/// Build the header list for a JSON POST: auth/extra headers + `Content-Type`.
-fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
-    let mut list: Vec<(String, String)> = headers
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-    list.push(("Content-Type".to_string(), "application/json".to_string()));
-    list
 }
 
 #[async_trait]
 impl EmbeddingModel for GoogleEmbeddingModel {
     fn provider(&self) -> &str {
-        "google.generative-ai"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
 
     fn max_embeddings_per_call(&self) -> Option<u32> {
@@ -87,8 +58,7 @@ impl EmbeddingModel for GoogleEmbeddingModel {
     ) -> Result<EmbeddingResult, AiMuxError> {
         let google_options = parse_google_provider_options(options.provider_options.as_ref());
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list = build_header_list(&headers);
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         // For single embeddings, use the single endpoint.
         if options.values.len() == 1 {
@@ -115,22 +85,11 @@ impl EmbeddingModel for GoogleEmbeddingModel {
                 body.insert("taskType".to_string(), json!(task_type));
             }
 
-            let url = format!(
-                "{}/models/{}:embedContent",
-                self.config.base_url, self.model_id
-            );
+            let url = exchange.url(&format!("/models/{}:embedContent", self.model_id));
 
             let resp = aimux_provider_utils::post_json_to_api(
-                HttpRequest {
-                    url,
-                    headers: header_list,
-
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                    ..Default::default()
-                },
-                Value::Object(body),
+                exchange.request(url, options),
+                exchange.transform_body(Value::Object(body)),
                 aimux_provider_utils::create_json_response_handler(),
                 super::google_failed_response_handler(),
             )
@@ -198,22 +157,11 @@ impl EmbeddingModel for GoogleEmbeddingModel {
         let mut body = Map::new();
         body.insert("requests".to_string(), Value::Array(requests));
 
-        let url = format!(
-            "{}/models/{}:batchEmbedContents",
-            self.config.base_url, self.model_id
-        );
+        let url = exchange.url(&format!("/models/{}:batchEmbedContents", self.model_id));
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url,
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                ..Default::default()
-            },
-            Value::Object(body),
+            exchange.request(url, options),
+            exchange.transform_body(Value::Object(body)),
             aimux_provider_utils::create_json_response_handler(),
             super::google_failed_response_handler(),
         )
@@ -266,7 +214,7 @@ struct GoogleEmbeddingProviderOptions {
 fn parse_google_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> GoogleEmbeddingProviderOptions {
-    let provider_opts = options.and_then(|opts| opts.get("google"));
+    let provider_opts = google_options(options);
     GoogleEmbeddingProviderOptions {
         output_dimensionality: provider_opts
             .and_then(|o| o.get("outputDimensionality"))

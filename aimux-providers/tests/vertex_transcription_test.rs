@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Google Vertex transcription model tests.
+//! Rust translation of the Google Vertex transcription model tests.
 //! Source: `reference/ai/packages/google-vertex/src/google-vertex-transcription-model.test.ts`
 
 use std::collections::HashMap;
@@ -7,8 +7,9 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
-use aimux_providers::{VertexProvider, VertexProviderConfig};
+use aimux_core::Provider;
+use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions};
+use aimux_providers::{VertexProvider, VertexProviderSettings, create_google_vertex};
 
 fn mock_audio() -> Vec<u8> {
     vec![1u8, 2, 3, 4, 5, 6, 7, 8]
@@ -34,9 +35,14 @@ fn default_body() -> Value {
 }
 
 fn make_provider(server_uri: &str) -> VertexProvider {
-    let config = VertexProviderConfig::new("test-token", "test-project", "us-central1")
-        .with_base_url(server_uri);
-    VertexProvider::new(config)
+    create_google_vertex(VertexProviderSettings {
+        access_token: Some("test-token".to_string().into()),
+        project: Some("test-project".to_string()),
+        location: Some("us-central1".to_string()),
+        base_url: Some(server_uri.to_string()),
+        ..Default::default()
+    })
+    .unwrap()
 }
 
 async fn mock_response(server: &MockServer, body: &Value, headers: &[(&str, &str)]) {
@@ -60,7 +66,7 @@ async fn should_send_model_language_codes_features_and_base64() {
     mock_response(&server, &default_body(), &[]).await;
 
     let provider = make_provider(&server.uri());
-    let model = provider.transcription("chirp_2").unwrap();
+    let model = provider.transcription_model("chirp_2").unwrap().unwrap();
 
     model
         .do_generate(&options(mock_audio(), "audio/wav"))
@@ -86,7 +92,7 @@ async fn should_extract_text_segments_language_and_duration() {
     mock_response(&server, &default_body(), &[]).await;
 
     let provider = make_provider(&server.uri());
-    let model = provider.transcription("chirp_2").unwrap();
+    let model = provider.transcription_model("chirp_2").unwrap().unwrap();
 
     let result = model
         .do_generate(&options(mock_audio(), "audio/wav"))
@@ -110,10 +116,24 @@ async fn should_pass_headers() {
     let server = MockServer::start().await;
     mock_response(&server, &default_body(), &[]).await;
 
-    let config = VertexProviderConfig::new("test-token", "test-project", "us-central1")
-        .with_base_url(server.uri());
-    let provider = VertexProvider::new(config);
-    let model = provider.transcription("chirp_2").unwrap();
+    let provider = create_google_vertex(VertexProviderSettings {
+        access_token: Some("test-token".to_string().into()),
+        project: Some("test-project".to_string()),
+        location: Some("us-central1".to_string()),
+        base_url: Some(server.uri()),
+        headers: Some(
+            [(
+                "Custom-Provider-Header".to_string(),
+                Some("provider-header-value".to_string()),
+            )]
+            .into_iter()
+            .collect::<HashMap<_, _>>()
+            .into(),
+        ),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.transcription_model("chirp_2").unwrap().unwrap();
 
     let mut opts = options(mock_audio(), "audio/wav");
     let mut rh = HashMap::new();
@@ -129,6 +149,10 @@ async fn should_pass_headers() {
     let h = &requests[0].headers;
     assert_eq!(h.get("authorization").unwrap(), "Bearer test-token");
     assert_eq!(
+        h.get("custom-provider-header").unwrap(),
+        "provider-header-value"
+    );
+    assert_eq!(
         h.get("custom-request-header").unwrap(),
         "request-header-value"
     );
@@ -140,7 +164,7 @@ async fn should_include_response_data() {
     mock_response(&server, &default_body(), &[("x-request-id", "test-req")]).await;
 
     let provider = make_provider(&server.uri());
-    let model = provider.transcription("chirp_2").unwrap();
+    let model = provider.transcription_model("chirp_2").unwrap().unwrap();
 
     let result = model
         .do_generate(&options(mock_audio(), "audio/wav"))
@@ -149,23 +173,15 @@ async fn should_include_response_data() {
 
     assert!(result.response.timestamp.is_some());
     assert_eq!(result.response.model_id, Some("chirp_2".to_string()));
-}
-
-#[tokio::test]
-async fn should_use_real_date() {
-    let server = MockServer::start().await;
-    mock_response(&server, &default_body(), &[]).await;
-
-    let provider = make_provider(&server.uri());
-    let model = provider.transcription("chirp_2").unwrap();
-
-    let result = model
-        .do_generate(&options(mock_audio(), "audio/wav"))
-        .await
-        .unwrap();
-
-    assert!(result.response.timestamp.is_some());
-    assert_eq!(result.response.model_id, Some("chirp_2".to_string()));
+    assert_eq!(
+        result
+            .response
+            .headers
+            .unwrap()
+            .get("x-request-id")
+            .map(String::as_str),
+        Some("test-req")
+    );
 }
 
 #[tokio::test]
@@ -174,7 +190,7 @@ async fn should_handle_no_results() {
     mock_response(&server, &json!({}), &[]).await;
 
     let provider = make_provider(&server.uri());
-    let model = provider.transcription("chirp_2").unwrap();
+    let model = provider.transcription_model("chirp_2").unwrap().unwrap();
 
     let result = model
         .do_generate(&options(mock_audio(), "audio/wav"))

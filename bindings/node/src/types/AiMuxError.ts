@@ -14,9 +14,25 @@ export type AiMuxError = { "ApiCall": ApiCallError } | { "Retry": RetryError } |
  * Original argument text, when supplied by the provider. Absent in
  * older serialized errors and errors constructed without a call.
  */
-tool_input?: string | null, } } | { "InvalidToolInput": { tool_name: string, tool_input: string, cause: string, } } | { "ToolCallRepair": { original_error: AiMuxError, cause: AiMuxError, } } | { "InvalidArgument": string } | { "InvalidPrompt": string } | { "TokenExpired": string } | { "UnsupportedFunctionality": string } | { "NoSuchModel": { model_id: string,
+tool_input?: string | null, } } | { "InvalidToolInput": { tool_name: string, tool_input: string, cause: string, } } | { "ToolCallRepair": { original_error: AiMuxError, cause: AiMuxError, } } | { "InvalidArgument": string } | { "InvalidPrompt": string } | { "LoadApiKey": {
+/**
+ * The environment variable consulted as the fallback.
+ */
+env_var: string,
+/**
+ * What the key is for, e.g. `"OpenAI"`.
+ */
+description: string, } } | { "LoadSetting": {
+/**
+ * The environment variable consulted as the fallback.
+ */
+env_var: string,
+/**
+ * The setting's parameter name, e.g. `"region"`.
+ */
+name: string, } } | { "TokenExpired": string } | { "UnsupportedFunctionality": string } | { "NoSuchModel": { model_id: string,
 /**
  * What kind of model was requested (`"languageModel"`,
  * `"imageModel"`, …), the AI SDK's `modelType`.
  */
-model_type: string, } } | { "NoSuchProvider": { provider_id: string, } } | { "Timeout": string } | { "Aborted": string } | { "Other": string };
+model_type: string, } } | { "NoSuchProvider": { provider_id: string, model_id: string, model_type: string, available_providers: Array<string>, } } | { "Timeout": string } | { "Aborted": string } | { "Other": string };

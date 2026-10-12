@@ -12,6 +12,7 @@ use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified};
+use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Value, json};
 
 // ── Prepared tools ──────────────────────────────────────────────────────────
@@ -106,7 +107,7 @@ pub fn prepare_tools(
 ///   does not carry the tool name on `ToolResult` parts).
 ///
 /// # Errors
-/// Returns an error for unsupported text file data.
+/// Returns an error for text file parts or an unresolved inline file media type.
 pub fn convert_prompt_to_mistral_messages(
     prompt: &LanguageModelPrompt,
 ) -> Result<Vec<Value>, AiMuxError> {
@@ -229,21 +230,21 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
         UserPart::Text(TextPart { text, .. }) => json!({ "type": "text", "text": text }),
         UserPart::File(file) => {
             use base64::Engine;
-            let is_image = file.media_type.split('/').next() == Some("image");
+            let is_image = get_top_level_media_type(&file.media_type) == "image";
             let url = match &file.data {
                 FileData::Data { data } => {
+                    let media_type = resolve_full_media_type(file)?;
+                    if !is_image && media_type != "application/pdf" {
+                        return Err(AiMuxError::UnsupportedFunctionality(
+                            "Only images and PDF file parts are supported".to_string(),
+                        ));
+                    }
                     let b64 = match data {
                         FileBytes::Binary(bytes) => {
                             base64::engine::general_purpose::STANDARD.encode(bytes)
                         }
                         FileBytes::Base64(data) => data.clone(),
                     };
-                    let media_type = crate::google::convert::tool_file_media_type(file)?;
-                    if !is_image && media_type != "application/pdf" {
-                        return Err(AiMuxError::UnsupportedFunctionality(
-                            "Only images and PDF file parts are supported".to_string(),
-                        ));
-                    }
                     format!("data:{media_type};base64,{b64}")
                 }
                 FileData::Url { url, .. } => {
@@ -256,12 +257,12 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
                 }
                 FileData::Reference { .. } => {
                     return Err(AiMuxError::UnsupportedFunctionality(
-                        "file parts with provider references".to_string(),
+                        "file parts with provider references".into(),
                     ));
                 }
                 FileData::Text { .. } => {
                     return Err(AiMuxError::UnsupportedFunctionality(
-                        "text file parts".to_string(),
+                        "text file parts".into(),
                     ));
                 }
             };
@@ -279,7 +280,7 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
 /// Convert `CallOptions` to a Mistral request body.
 ///
 /// # Errors
-/// Returns an error for unsupported text file data.
+/// Returns an error for text file parts or an unresolved inline file media type.
 pub fn build_request_body(
     model_id: &str,
     options: &CallOptions,
@@ -288,21 +289,25 @@ pub fn build_request_body(
     let provider_options = options
         .provider_options
         .as_ref()
-        .and_then(|namespaces| namespaces.get("mistral"))
+        .and_then(|namespaces| namespaces.get(crate::mistral::options::NAMESPACE))
         .map(|namespace| {
-            crate::openai::convert::parse_option_fields(namespace, "mistral", |key, value| {
-                let valid = match key {
-                    "safePrompt" | "structuredOutputs" | "strictJsonSchema"
-                    | "parallelToolCalls" => value.is_boolean(),
-                    "documentImageLimit" | "documentPageLimit" => value.is_number(),
-                    "promptCacheKey" => value.is_string(),
-                    "reasoningEffort" => value
-                        .as_str()
-                        .is_some_and(|value| matches!(value, "high" | "none")),
-                    _ => return None,
-                };
-                Some(if valid { Ok(value.clone()) } else { Err(()) })
-            })
+            crate::openai::convert::parse_option_fields(
+                namespace,
+                crate::mistral::options::NAMESPACE,
+                |key, value| {
+                    let valid = match key {
+                        "safePrompt" | "structuredOutputs" | "strictJsonSchema"
+                        | "parallelToolCalls" => value.is_boolean(),
+                        "documentImageLimit" | "documentPageLimit" => value.is_number(),
+                        "promptCacheKey" => value.is_string(),
+                        "reasoningEffort" => value
+                            .as_str()
+                            .is_some_and(|value| matches!(value, "high" | "none")),
+                        _ => return None,
+                    };
+                    Some(if valid { Ok(value.clone()) } else { Err(()) })
+                },
+            )
         })
         .transpose()?
         .unwrap_or_default();

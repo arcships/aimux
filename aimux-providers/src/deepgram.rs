@@ -9,8 +9,13 @@
 //! `Content-Type` header set to the audio media type) and query parameters for
 //! model configuration. It returns a JSON body with `results.channels[0]`
 //! containing the transcript, words, and detected language.
+//!
+//! [`create_deepgram`] takes [`DeepgramProviderSettings`], validates the base URL, fixes
+//! the provider name and returns a [`DeepgramProvider`]. The credential is not read
+//! there: it is loaded for every request, from the setting or from `DEEPGRAM_API_KEY`.
+//! [`deepgram()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -22,7 +27,10 @@ use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::{HttpBody, HttpRequest, load_api_key, without_trailing_slash};
+use aimux_provider_utils::HttpBody;
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+
+use crate::shared::{AuthScheme, Credential, EndpointConfig, credential_headers};
 
 /// Deepgram errors: `{"err_code": "...", "err_msg": "...", "request_id": ...}`
 /// on most endpoints; some return `{"category": "...", "message": "...",
@@ -59,63 +67,123 @@ fn deepgram_failed_response_handler() -> aimux_provider_utils::ResponseHandler<A
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-/// Configuration for the Deepgram provider.
-#[derive(Debug, Clone)]
-pub struct DeepgramConfig {
-    pub api_key: String,
-    pub base_url: String,
-    pub headers: Option<HashMap<String, String>>,
+pub(crate) mod options;
+
+const DEFAULT_BASE_URL: &str = "https://api.deepgram.com";
+const API_KEY_ENV_VAR: &str = "DEEPGRAM_API_KEY";
+const DEFAULT_NAME: &str = "deepgram";
+
+/// Settings of [`create_deepgram`].
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct DeepgramProviderSettings {
+    /// Base URL for the API calls. Default `https://api.deepgram.com`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `DEEPGRAM_API_KEY` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including the credential. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` strings (`"{name}.transcription"`).
+    /// Default `"deepgram"`. The providerOptions key stays `deepgram`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
 }
 
-impl DeepgramConfig {
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: "https://api.deepgram.com".to_string(),
-            headers: None,
-        }
-    }
-
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-
-    #[must_use]
-    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = Some(headers);
-        self
-    }
-
-    /// Create from the `DEEPGRAM_API_KEY` environment variable.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
-    /// set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "DEEPGRAM_API_KEY", "Deepgram")?;
-        Ok(Self::new(api_key))
+impl std::fmt::Debug for DeepgramProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeepgramProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .finish()
     }
 }
 
-/// Deepgram provider — creates `DeepgramTranscriptionModel` instances.
+/// Create a Deepgram provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_deepgram(settings: DeepgramProviderSettings) -> Result<DeepgramProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(DeepgramProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: credential_headers(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Deepgram"),
+            AuthScheme::Scheme("Token"),
+            Vec::new(),
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+    })
+}
+
+/// The default provider: `create_deepgram` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn deepgram() -> &'static DeepgramProvider {
+    static DEFAULT: OnceLock<DeepgramProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_deepgram(DeepgramProviderSettings::default())
+            .expect("default Deepgram settings are always valid")
+    })
+}
+
+/// A Deepgram provider. Cheap to clone the models out of; it holds no HTTP
+/// client.
 pub struct DeepgramProvider {
-    config: DeepgramConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
 }
 
 impl DeepgramProvider {
-    #[must_use]
-    pub fn new(config: DeepgramConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            None,
+        )
     }
 
+    /// A transcription (STT) model (e.g. `"nova-3"`); `provider()` is `"{name}.transcription"`.
     #[must_use]
     pub fn transcription(&self, model_id: &str) -> DeepgramTranscriptionModel {
-        DeepgramTranscriptionModel::new(model_id.to_string(), self.config.clone())
+        DeepgramTranscriptionModel::from_config(
+            model_id.to_string(),
+            self.model_config("transcription"),
+        )
     }
 }
+
+crate::impl_single_modality_provider!(DeepgramProvider, transcription_model, |p, id| p
+    .transcription(id));
 
 // ── Provider options ────────────────────────────────────────────────────────
 
@@ -138,9 +206,7 @@ struct DeepgramOptions {
 
 fn parse_deepgram_options(provider_options: Option<&SharedProviderOptions>) -> DeepgramOptions {
     let mut opts = DeepgramOptions::default();
-    if let Some(po) = provider_options
-        && let Some(dg) = po.get("deepgram")
-    {
+    if let Some(dg) = options::deepgram_options(provider_options) {
         opts.detect_entities = dg
             .get("detectEntities")
             .and_then(serde_json::Value::as_bool);
@@ -222,39 +288,19 @@ fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
 
 pub struct DeepgramTranscriptionModel {
     model_id: String,
-    config: DeepgramConfig,
+    config: EndpointConfig,
 }
 
 impl DeepgramTranscriptionModel {
-    #[must_use]
-    pub fn new(model_id: String, config: DeepgramConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Token {}", self.config.api_key),
-        );
-        if let Some(ref config_headers) = self.config.headers {
-            for (k, v) in config_headers {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
     }
 }
 
 #[async_trait]
 impl TranscriptionModel for DeepgramTranscriptionModel {
     fn provider(&self) -> &str {
-        "deepgram"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -318,22 +364,13 @@ impl TranscriptionModel for DeepgramTranscriptionModel {
             .collect::<Vec<_>>()
             .join("&");
 
-        let url = format!("{}/v1/listen?{query_string}", self.config.base_url);
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let url = exchange.url(&format!("/v1/listen?{query_string}"));
 
         let audio_bytes = audio_input_to_bytes(&options.audio)?;
 
-        let headers = self.build_headers(options.headers.as_ref());
-
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url,
-                headers: headers.into_iter().collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                ..Default::default()
-            },
+            exchange.request(url, options),
             HttpBody::Bytes(audio_bytes, options.media_type.clone()),
             aimux_provider_utils::create_json_response_handler::<DeepgramResponse>(),
             deepgram_failed_response_handler(),

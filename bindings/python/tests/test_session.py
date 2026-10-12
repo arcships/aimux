@@ -8,7 +8,7 @@ the shared mock HTTP server — no real API calls.
 import pytest
 
 from aimux import (
-    openai,
+    deepseek,
     init_session_store,
     init_session_infer,
     session_calls,
@@ -27,7 +27,7 @@ class TestSessionGrouping:
         init_session_infer(False)
 
         with MockServer(OPENAI_CHAT) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
 
             generate_text(model, "first", GenerateTextOptions(session_id="sess-1"))
             generate_text(model, "second", GenerateTextOptions(session_id="sess-1"))
@@ -58,7 +58,7 @@ class TestSessionGrouping:
         init_session_infer(True)
 
         with MockServer(OPENAI_CHAT) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
 
             generate_text(model, "u1")
             generate_text(

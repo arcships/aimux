@@ -8,7 +8,47 @@ use aimux_provider_utils::HttpRequest;
 use base64::Engine;
 use serde_json::Value;
 
-use crate::openai::OpenAIConfig;
+use crate::openai::config::OpenAIModelConfig;
+use crate::openai_compatible::config::CompatModelConfig;
+
+/// The connection a decision adapter borrows from the provider that made it:
+/// native OpenAI, or an OpenAI-compatible preset (a local runtime,
+/// Cloudflare). Headers are resolved per request, like every other model of
+/// that provider.
+#[derive(Clone)]
+pub(crate) enum DecisionConfig {
+    OpenAI(OpenAIModelConfig),
+    Compatible(CompatModelConfig),
+}
+
+impl DecisionConfig {
+    /// The provider's base URL; adapters append their own endpoint paths.
+    pub(crate) fn base_url(&self) -> Result<String, AiMuxError> {
+        let base = match self {
+            Self::OpenAI(config) => config.url("")?,
+            Self::Compatible(config) => config.base_url.resolve()?,
+        };
+        Ok(base.trim_end_matches('/').to_string())
+    }
+
+    async fn request(
+        &self,
+        url: &str,
+        options: &DecisionCallOptions,
+    ) -> Result<HttpRequest, AiMuxError> {
+        Ok(match self {
+            Self::OpenAI(config) => {
+                let headers = config.request_headers(options.headers.as_ref()).await?;
+                config.http_request(url.to_string(), headers, options)
+            }
+            Self::Compatible(config) => {
+                let headers = config.request_headers(options.headers.as_ref()).await?;
+                let origin = config.base_url.resolve()?;
+                config.with_transport(HttpRequest::new(url, headers, options), origin)
+            }
+        })
+    }
+}
 
 pub(crate) struct InlineImage {
     pub data_url: String,
@@ -45,18 +85,14 @@ pub(crate) fn inline_image(image: &DecisionImage) -> Result<InlineImage, AiMuxEr
 }
 
 pub(crate) async fn post<T>(
-    config: &OpenAIConfig,
+    config: &DecisionConfig,
     options: &DecisionCallOptions,
     url: &str,
     body: Value,
     convert: impl FnOnce(Value, HashMap<String, String>) -> Result<T, AiMuxError>,
 ) -> Result<T, AiMuxError> {
-    let mut headers = crate::openai::model::build_auth_headers(config);
-    if let Some(extra) = &options.headers {
-        headers.extend(extra.clone());
-    }
     let response = aimux_provider_utils::post_json_to_api(
-        HttpRequest::new(url, headers.into_iter().collect(), options),
+        config.request(url, options).await?,
         body.clone(),
         aimux_provider_utils::create_json_response_handler::<Value>(),
         aimux_provider_utils::create_json_error_response_handler(|data| {

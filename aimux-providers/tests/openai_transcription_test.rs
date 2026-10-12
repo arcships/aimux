@@ -21,8 +21,9 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_core::provider::Provider;
+use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions};
+use aimux_providers::{OpenAIProviderSettings, create_openai};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -141,9 +142,16 @@ fn fixture_response() -> Value {
 #[tokio::test]
 async fn should_reject_gpt_realtime_whisper_for_non_streaming() {
     let server = MockServer::start().await;
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("gpt-realtime-whisper");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider
+        .transcription_model("gpt-realtime-whisper")
+        .unwrap()
+        .unwrap();
 
     let result = model
         .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
@@ -164,9 +172,13 @@ async fn should_pass_the_model() {
     let server = MockServer::start().await;
     mock_json_response(&server, &fixture_response()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("whisper-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
 
     model
         .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
@@ -185,9 +197,13 @@ async fn should_default_whisper_1_to_verbose_json() {
     let server = MockServer::start().await;
     mock_json_response(&server, &fixture_response()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("whisper-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
 
     let result = model
         .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
@@ -213,13 +229,21 @@ async fn should_pass_headers() {
         "Custom-Provider-Header".to_string(),
         "provider-header-value".to_string(),
     );
-    let config = OpenAIConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_org_id("test-organization")
-        .with_project("test-project")
-        .with_headers(provider_headers);
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("whisper-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        organization: Some("test-organization".into()),
+        project: Some("test-project".into()),
+        headers: Some(
+            provider_headers
+                .into_iter()
+                .map(|(k, v)| (k, Some(v)))
+                .collect(),
+        ),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
 
     let mut options = transcription_options(mock_audio_data(), "audio/wav");
     let mut request_headers = HashMap::new();
@@ -253,9 +277,13 @@ async fn should_extract_the_transcription_text() {
     let server = MockServer::start().await;
     mock_json_response(&server, &fixture_response()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("whisper-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
 
     let result = model
         .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
@@ -282,9 +310,13 @@ async fn should_include_response_data() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("whisper-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
 
     let result = model
         .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
@@ -305,9 +337,13 @@ async fn should_use_real_date() {
     let server = MockServer::start().await;
     mock_json_response(&server, &fixture_response()).await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("whisper-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
 
     let result = model
         .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
@@ -332,9 +368,13 @@ async fn should_work_without_optional_fields() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("whisper-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
 
     let result = model
         .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
@@ -369,9 +409,13 @@ async fn should_handle_empty_segments() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("whisper-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
 
     let result = model
         .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
@@ -404,9 +448,13 @@ async fn should_handle_segments_with_missing_optional_fields() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.transcription("whisper-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
 
     let result = model
         .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))

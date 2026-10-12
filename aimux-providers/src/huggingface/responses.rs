@@ -31,18 +31,16 @@ use aimux_core::language_model_message::{
 };
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
-use aimux_core::shared::provider_namespace;
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
 
-use aimux_provider_utils::HttpRequest;
+use aimux_provider_utils::{
+    MediaTypeData, detect_media_type, get_top_level_media_type, is_full_media_type,
+};
 
-use super::HuggingFaceConfig;
-use crate::openai::responses::responses_convert::build_header_list;
-
-const PROVIDER_NAME: &str = "huggingface";
+use crate::shared::EndpointConfig;
 
 fn huggingface_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -129,74 +127,41 @@ fn huggingface_stream_error(
 
 /// A Hugging Face Responses API language model.
 ///
-/// Created via [`super::HuggingFaceProvider::responses_model`].
+/// Created via [`super::HuggingFaceProvider::responses`].
 pub struct HuggingFaceResponsesModel {
     model_id: String,
-    config: HuggingFaceConfig,
+    config: EndpointConfig,
 }
 
 impl HuggingFaceResponsesModel {
-    #[must_use]
-    pub fn new(model_id: String, config: HuggingFaceConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/responses", self.config.0.base_url)
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.0.api_key),
-        );
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
     }
 }
 
 #[async_trait]
 impl LanguageModel for HuggingFaceResponsesModel {
     fn provider(&self) -> &str {
-        PROVIDER_NAME
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.openai_config().retry_config
-    }
-
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        // M2b: HuggingFace wraps OpenAIConfig — reuse the OpenAI snapshot helper.
-        crate::openai::config_snapshot_from_config(
-            self.provider(),
-            &self.model_id,
-            self.config.openai_config(),
-        )
-    }
-
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let request = build_request_body_with_warnings(&self.model_id, options, false)?;
-        let body = request.body;
-        let headers = self.build_headers(options.headers.as_ref());
+        let body = exchange.transform_body(request.body);
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), build_header_list(&headers), options),
+            exchange.request(exchange.url("/responses"), options),
             body.clone(),
             huggingface_successful_response_handler(),
             huggingface_failed_response_handler(),
         )
         .await?;
 
-        let response_body = resp.raw_value;
         let response_headers = resp.response_headers;
 
         let response: Value = resp.value;
@@ -223,28 +188,28 @@ impl LanguageModel for HuggingFaceResponsesModel {
             finish_reason,
             usage,
             warnings: request.warnings,
-            provider_metadata: Some(provider_namespace(
-                "huggingface",
+            provider_metadata: Some(super::options::huggingface_metadata(
                 json!({ "responseId": response_id }),
-            )?),
+            )),
             response: Some(aimux_core::shared::ResponseInfo {
                 id: response_id,
                 timestamp: format_timestamp(created_at),
                 model_id: model,
                 headers: Some(response_headers),
-                body: response_body,
+                body: Some(response),
             }),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let request = build_request_body_with_warnings(&self.model_id, options, true)?;
-        let body = request.body;
-        let headers = self.build_headers(options.headers.as_ref());
+        let body = exchange.transform_body(request.body);
+        let endpoint = exchange.url("/responses");
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), build_header_list(&headers), options),
+            exchange.request(endpoint.clone(), options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             huggingface_failed_response_handler(),
@@ -258,16 +223,12 @@ impl LanguageModel for HuggingFaceResponsesModel {
             first_event => first_event,
         };
         if let Some(Ok(event)) = first_event.as_ref()
-            && let Some(error) = huggingface_stream_error(
-                event,
-                &self.endpoint(),
-                body.clone(),
-                response_headers.clone(),
-            )
+            && let Some(error) =
+                huggingface_stream_error(event, &endpoint, body.clone(), response_headers.clone())
         {
             return Err(error);
         }
-        let stream_error_url = self.endpoint();
+        let stream_error_url = endpoint;
         let stream_request_body = body.clone();
         let stream_response_headers = response_headers.clone();
 
@@ -344,7 +305,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                     .to_string();
                                                 yield Ok(StreamPart::TextStart {
                                                     id: id.clone(),
-                                                    provider_metadata: Some(provider_namespace("huggingface", json!({ "itemId": id })).expect("provider metadata must be an object")),
+                                                    provider_metadata: Some(super::options::huggingface_metadata(json!({ "itemId": id }))),
                                                 });
                                             }
                                         }
@@ -376,7 +337,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 .to_string();
                                             yield Ok(StreamPart::ReasoningStart {
                                                 id: id.clone(),
-                                                provider_metadata: Some(provider_namespace("huggingface", json!({ "itemId": id })).expect("provider metadata must be an object")),
+                                                provider_metadata: Some(super::options::huggingface_metadata(json!({ "itemId": id }))),
                                             });
                                         }
                                         _ => {}
@@ -545,7 +506,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
             yield Ok(StreamPart::Finish {
                 finish_reason,
                 usage,
-                provider_metadata: Some(provider_namespace("huggingface", json!({ "responseId": response_id })).expect("provider metadata must be an object")),
+                provider_metadata: Some(super::options::huggingface_metadata(json!({ "responseId": response_id }))),
             });
         };
 
@@ -624,7 +585,7 @@ pub fn build_request_body_with_warnings(
     let hf_options = options
         .provider_options
         .as_ref()
-        .and_then(|m| m.get("huggingface"));
+        .and_then(|m| super::options::huggingface_options(Some(m)));
     let metadata = hf_options.and_then(|o| o.get("metadata")).cloned();
     let instructions = hf_options
         .and_then(|o| o.get("instructions"))
@@ -791,8 +752,11 @@ pub fn convert_to_huggingface_responses_messages(
                         }
                         // Tool calls and tool results are handled by the
                         // Responses API — skip (no warning, matching TS).
-                        AssistantPart::ToolCall(_) | AssistantPart::ToolResult(_) => {}
-                        _ => {}
+                        AssistantPart::ToolCall(_)
+                        | AssistantPart::ToolResult(_)
+                        | AssistantPart::File(_)
+                        | AssistantPart::Custom(_)
+                        | AssistantPart::ReasoningFile(_) => {}
                     }
                 }
             }
@@ -847,28 +811,6 @@ fn convert_file_part_url(media_type: &str, url: &str) -> Result<Value, AiMuxErro
 // Media type detection (top-level-only media type resolution)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Returns the top-level segment of a media type (the portion before `/`).
-///
-/// `"image/png"` → `"image"`, `"image/*"` → `"image"`, `"image"` → `"image"`.
-fn get_top_level_media_type(media_type: &str) -> &str {
-    match media_type.find('/') {
-        Some(idx) => &media_type[..idx],
-        None => media_type,
-    }
-}
-
-/// Returns `true` only when the media type has a non-empty, non-wildcard
-/// subtype (i.e. matches `type/subtype` where `subtype` is not `*`).
-fn is_full_media_type(media_type: &str) -> bool {
-    match media_type.find('/') {
-        Some(idx) => {
-            let subtype = &media_type[idx + 1..];
-            !subtype.is_empty() && subtype != "*"
-        }
-        None => false,
-    }
-}
-
 /// Resolve a media type to its full `type/subtype` form.
 ///
 /// - If already a full media type, return as-is.
@@ -879,115 +821,13 @@ fn resolve_full_media_type_base64(media_type: &str, data: &str) -> Result<String
     }
 
     let top_level = get_top_level_media_type(media_type);
-    if let Some(detected) = detect_media_type_from_base64(data, top_level) {
-        return Ok(detected);
+    if let Some(detected) = detect_media_type(MediaTypeData::Base64(data), Some(top_level))? {
+        return Ok(detected.to_string());
     }
 
     Err(AiMuxError::UnsupportedFunctionality(format!(
         "file of media type \"{media_type}\" must specify subtype since it could not be auto-detected"
     )))
-}
-
-/// Image media type signatures (magic-byte prefixes).
-///
-/// `None` in the prefix means "any byte" (wildcard), matching the TS signature
-/// table.
-const IMAGE_SIGNATURES: &[(&str, &[Option<u8>])] = &[
-    ("image/gif", &[Some(0x47), Some(0x49), Some(0x46)]),
-    (
-        "image/png",
-        &[Some(0x89), Some(0x50), Some(0x4E), Some(0x47)],
-    ),
-    ("image/jpeg", &[Some(0xFF), Some(0xD8)]),
-    (
-        "image/webp",
-        &[
-            Some(0x52),
-            Some(0x49),
-            Some(0x46),
-            Some(0x46), // RIFF
-            None,
-            None,
-            None,
-            None, // file size (variable)
-            Some(0x57),
-            Some(0x45),
-            Some(0x42),
-            Some(0x50), // WEBP
-        ],
-    ),
-    ("image/bmp", &[Some(0x42), Some(0x4D)]),
-    (
-        "image/tiff",
-        &[Some(0x49), Some(0x49), Some(0x2A), Some(0x00)],
-    ),
-    (
-        "image/tiff",
-        &[Some(0x4D), Some(0x4D), Some(0x00), Some(0x2A)],
-    ),
-    (
-        "image/avif",
-        &[
-            Some(0x00),
-            Some(0x00),
-            Some(0x00),
-            Some(0x20),
-            Some(0x66),
-            Some(0x74),
-            Some(0x79),
-            Some(0x70),
-            Some(0x61),
-            Some(0x76),
-            Some(0x69),
-            Some(0x66),
-        ],
-    ),
-    (
-        "image/heic",
-        &[
-            Some(0x00),
-            Some(0x00),
-            Some(0x00),
-            Some(0x20),
-            Some(0x66),
-            Some(0x74),
-            Some(0x79),
-            Some(0x70),
-            Some(0x68),
-            Some(0x65),
-            Some(0x69),
-            Some(0x63),
-        ],
-    ),
-];
-
-/// Detect the full media type from base64-encoded data, considering only
-/// signatures for the given top-level type.
-fn detect_media_type_from_base64(data: &str, top_level: &str) -> Option<String> {
-    let signatures = match top_level {
-        "image" => IMAGE_SIGNATURES,
-        _ => return None,
-    };
-
-    // Decode enough bytes to cover the longest signature (12 bytes).
-    // 4 base64 chars → 3 bytes; ceil(12 / 3) * 4 = 16 chars.
-    let max_chars = 16.min(data.len());
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(&data[..max_chars])
-        .ok()?;
-
-    for (media_type, prefix) in signatures {
-        if bytes.len() >= prefix.len()
-            && prefix
-                .iter()
-                .enumerate()
-                .all(|(i, &b)| b.is_none() || bytes[i] == b.unwrap())
-        {
-            return Some(media_type.to_string());
-        }
-    }
-
-    None
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1075,10 +915,9 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     content.push(GenerateContent::Text {
                         text: text.to_string(),
-                        provider_metadata: Some(
-                            provider_namespace("huggingface", json!({ "itemId": item_id }))
-                                .expect("provider metadata must be an object"),
-                        ),
+                        provider_metadata: Some(super::options::huggingface_metadata(
+                            json!({ "itemId": item_id }),
+                        )),
                     });
 
                     // Process annotations → source parts.
@@ -1108,10 +947,9 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     content.push(GenerateContent::Reasoning(ReasoningOutput {
                         text: text.to_string(),
-                        provider_metadata: Some(
-                            provider_namespace("huggingface", json!({ "itemId": item_id }))
-                                .expect("provider metadata must be an object"),
-                        ),
+                        provider_metadata: Some(super::options::huggingface_metadata(
+                            json!({ "itemId": item_id }),
+                        )),
                     }));
                 }
             }

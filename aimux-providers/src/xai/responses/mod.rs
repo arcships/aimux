@@ -28,14 +28,10 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
-use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::HttpRequest;
-
-use super::super::XAIConfig;
-use crate::openai::responses::responses_convert::build_header_list;
+use crate::shared::EndpointConfig;
 use convert::{
     build_responses_request_body, convert_xai_responses_usage, get_tool_input,
     map_xai_responses_finish_reason, resolve_tool_name,
@@ -54,65 +50,33 @@ fn generate_source_id() -> String {
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct XaiResponsesModel {
     model_id: String,
-    config: XAIConfig,
+    config: EndpointConfig,
 }
 
 impl XaiResponsesModel {
-    #[must_use]
-    pub fn new(model_id: String, config: XAIConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key()),
-        );
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/responses", self.config.base_url())
     }
 }
 
 #[async_trait]
 impl LanguageModel for XaiResponsesModel {
     fn provider(&self) -> &str {
-        "xai.responses"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
         &self.model_id
     }
 
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.openai_config().retry_config
-    }
-
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        // M2b: reuse the OpenAI snapshot helper with xAI's provider name.
-        crate::openai::config_snapshot_from_config(
-            self.provider(),
-            &self.model_id,
-            self.config.openai_config(),
-        )
-    }
-
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let request_result = build_responses_request_body(&self.model_id, options, false)?;
-        let body = request_result.body;
+        let body = exchange.transform_body(request_result.body);
         let provider_tool_names = request_result.provider_tool_names;
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), build_header_list(&headers), options),
+            exchange.request(exchange.url("/responses"), options),
             body.clone(),
             super::xai_successful_response_handler::<types::XaiResponsesResponse>(),
             super::xai_failed_response_handler(),
@@ -302,10 +266,7 @@ impl LanguageModel for XaiResponsesModel {
                         }
                         content.push(GenerateContent::Reasoning(ReasoningOutput {
                             text: reasoning_text,
-                            provider_metadata: Some(
-                                provider_namespace("xai", meta)
-                                    .expect("provider metadata must be an object"),
-                            ),
+                            provider_metadata: Some(crate::xai::options::xai_metadata(json!(meta))),
                         }));
                     }
                 }
@@ -327,10 +288,9 @@ impl LanguageModel for XaiResponsesModel {
 
         let (usage, provider_metadata) = if let Some(u) = &data.usage {
             let meta = if u.cost_in_usd_ticks.is_some() {
-                Some(
-                    provider_namespace("xai", json!({ "costInUsdTicks": u.cost_in_usd_ticks }))
-                        .expect("provider metadata must be an object"),
-                )
+                Some(crate::xai::options::xai_metadata(
+                    json!({ "costInUsdTicks": u.cost_in_usd_ticks }),
+                ))
             } else {
                 None
             };
@@ -361,15 +321,15 @@ impl LanguageModel for XaiResponsesModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let request_result = build_responses_request_body(&self.model_id, options, true)?;
-        let body = request_result.body;
+        let body = exchange.transform_body(request_result.body);
         let warnings = request_result.warnings;
         let provider_tool_names = request_result.provider_tool_names;
-        let endpoint = self.endpoint();
+        let endpoint = exchange.url("/responses");
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(endpoint.clone(), build_header_list(&headers), options),
+            exchange.request(endpoint.clone(), options),
             body.clone(),
             super::xai_event_source_response_handler::<Value>(),
             super::xai_failed_response_handler(),
@@ -448,7 +408,7 @@ impl LanguageModel for XaiResponsesModel {
                                 active_reasoning.insert(item_id.to_string(), ());
                                 yield Ok(StreamPart::ReasoningStart {
                                     id: block_id,
-                                    provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
+                                    provider_metadata: Some(crate::xai::options::xai_metadata(json!({ "itemId": item_id }))),
                                 });
                             }
                             continue;
@@ -462,7 +422,7 @@ impl LanguageModel for XaiResponsesModel {
                             yield Ok(StreamPart::ReasoningDelta {
                                 id: block_id,
                                 delta: delta.to_string(),
-                                provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
+                                provider_metadata: Some(crate::xai::options::xai_metadata(json!({ "itemId": item_id }))),
                             });
                             continue;
                         }
@@ -481,13 +441,13 @@ impl LanguageModel for XaiResponsesModel {
                                 active_reasoning.insert(item_id.to_string(), ());
                                 yield Ok(StreamPart::ReasoningStart {
                                     id: block_id.clone(),
-                                    provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
+                                    provider_metadata: Some(crate::xai::options::xai_metadata(json!({ "itemId": item_id }))),
                                 });
                             }
                             yield Ok(StreamPart::ReasoningDelta {
                                 id: block_id,
                                 delta: delta.to_string(),
-                                provider_metadata: Some(provider_namespace("xai", json!({ "itemId": item_id })).expect("provider metadata must be an object")),
+                                provider_metadata: Some(crate::xai::options::xai_metadata(json!({ "itemId": item_id }))),
                             });
                             continue;
                         }
@@ -670,7 +630,7 @@ impl LanguageModel for XaiResponsesModel {
                                         active_reasoning.insert(part_id.to_string(), ());
                                         yield Ok(StreamPart::ReasoningStart {
                                             id: block_id.clone(),
-                                            provider_metadata: Some(provider_namespace("xai", json!({ "itemId": part_id })).expect("provider metadata must be an object")),
+                                            provider_metadata: Some(crate::xai::options::xai_metadata(json!({ "itemId": part_id }))),
                                         });
                                     }
 
@@ -680,7 +640,7 @@ impl LanguageModel for XaiResponsesModel {
                                     }
                                     yield Ok(StreamPart::ReasoningEnd {
                                         id: block_id,
-                                        provider_metadata: Some(provider_namespace("xai", meta).expect("provider metadata must be an object")),
+                                        provider_metadata: Some(crate::xai::options::xai_metadata(json!(meta))),
                                     });
                                     active_reasoning.remove(part_id);
                                 }
@@ -903,7 +863,7 @@ impl LanguageModel for XaiResponsesModel {
             }
 
             // Final part: Finish.
-            let provider_meta = cost_in_usd_ticks.map(|cost| provider_namespace("xai", json!({ "costInUsdTicks": cost })).expect("provider metadata must be an object"));
+            let provider_meta = cost_in_usd_ticks.map(|cost| crate::xai::options::xai_metadata(json!({ "costInUsdTicks": cost })));
 
             yield Ok(StreamPart::Finish {
                 finish_reason: final_finish_reason,

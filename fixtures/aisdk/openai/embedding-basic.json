@@ -1,0 +1,86 @@
+{
+  "case": "embedding-basic",
+  "model": {
+    "modelId": "text-embedding-3-small",
+    "provider": "openai.embedding"
+  },
+  "package": "@ai-sdk/openai",
+  "request": {
+    "body": {
+      "encoding_format": "float",
+      "input": [
+        "sunny day at the beach",
+        "rainy day in the city"
+      ],
+      "model": "text-embedding-3-small"
+    },
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json",
+      "user-agent": "ai/7.0.127 ai-sdk-provider-utils/5.0.53 node.js/22"
+    },
+    "method": "POST",
+    "url": "https://api.openai.com/v1/embeddings"
+  },
+  "response": {
+    "body": {
+      "data": [
+        {
+          "embedding": [
+            0.125,
+            -0.25,
+            0.5
+          ],
+          "index": 0,
+          "object": "embedding"
+        },
+        {
+          "embedding": [
+            0.0625,
+            0.375,
+            -0.5
+          ],
+          "index": 1,
+          "object": "embedding"
+        }
+      ],
+      "model": "text-embedding-3-small",
+      "object": "list",
+      "usage": {
+        "prompt_tokens": 10,
+        "total_tokens": 10
+      }
+    },
+    "headers": {
+      "content-type": "application/json"
+    },
+    "status": 200
+  },
+  "result": {
+    "embeddings": [
+      [
+        0.125,
+        -0.25,
+        0.5
+      ],
+      [
+        0.0625,
+        0.375,
+        -0.5
+      ]
+    ],
+    "usage": {
+      "tokens": 10
+    }
+  },
+  "sdk": {
+    "input": {
+      "values": [
+        "sunny day at the beach",
+        "rainy day in the city"
+      ]
+    },
+    "operation": "embedMany"
+  },
+  "version": "4.0.83"
+}

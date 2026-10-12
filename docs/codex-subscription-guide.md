@@ -22,11 +22,17 @@
 ## 2. API key 模式（Rust）
 
 ```rust
-use aimux_providers::{CodexConfig, CodexProvider};
+use aimux_providers::{CodexMode, CodexProviderSettings, codex, create_codex};
 
-let config = CodexConfig::new("sk-..."); // 或 CodexConfig::from_env()（读 CODEX_API_KEY）
-let model = CodexProvider::new(config).model("gpt-5.2-codex");
-// 之后就是标准 LanguageModel 用法：generate_text / stream_text 均可
+// 显式 key（`Some("")` 原样发送，不回退环境变量）：
+let provider = create_codex(CodexProviderSettings {
+    mode: CodexMode::ApiKey(Some("sk-...".to_string().into())),
+    ..Default::default()
+})?;
+let model = provider.responses("gpt-5.2-codex");
+// 或默认实例：每次请求时读 CODEX_API_KEY，缺失则该次调用返回 `AiMuxError::LoadApiKey`
+let model = codex().responses("gpt-5.2-codex");
+// 之后就是标准 LanguageModel 用法：generate_text / stream_text 均可；model.provider() == "codex.responses"
 ```
 
 可用模型（2026-08 核验）：`gpt-5.2-codex`、`gpt-5.1-codex`、`gpt-5.1-codex-mini`、`gpt-5-codex`。
@@ -85,12 +91,17 @@ async fn device_login(client_id: &str) -> Tokens {
 ```rust
 use aimux_core::error::AiMuxError;
 use aimux_core::generate::{generate_text, GenerateTextOptions};
-use aimux_providers::{CodexConfig, CodexProvider};
+use aimux_providers::{CodexMode, CodexProviderSettings, create_codex};
 
-let config = CodexConfig::subscription(access_token) // OAuth 产物
-    .with_chatgpt_account_id("acct_...")            // 可选
-    .with_originator("my-client");                  // 可选，默认 "aimux"
-let model = CodexProvider::new(config).model("gpt-5.2-codex");
+let provider = create_codex(CodexProviderSettings {
+    mode: CodexMode::ChatGptAccount {
+        token: access_token.into(),                 // OAuth 产物；也可传 Resolvable::from_async_fn 每次请求取最新 token
+        account_id: Some("acct_...".to_string()),   // 可选
+    },
+    originator: Some("my-client".to_string()),      // 可选，默认 "aimux"
+    ..Default::default()                            // base_url 默认 https://chatgpt.com/backend-api/codex
+})?;
+let model = provider.responses("gpt-5.2-codex");
 
 let result = generate_text(model, "Hello", GenerateTextOptions::default()).await?;
 ```
@@ -98,12 +109,20 @@ let result = generate_text(model, "Hello", GenerateTextOptions::default()).await
 ### 4.3 刷新编排（集成方）
 
 ```rust
-use aimux_providers::{codex_refresh, CodexConfig, CodexProvider};
+use aimux_providers::{CodexMode, CodexProviderSettings, codex_refresh, create_codex};
+
+/// 订阅通道的 provider：token 由调用方给（刷新后重新创建，或用 Resolvable::from_async_fn 动态取）。
+fn subscription(token: impl Into<String>) -> Result<aimux_providers::CodexProvider, AiMuxError> {
+    create_codex(CodexProviderSettings {
+        mode: CodexMode::ChatGptAccount { token: token.into().into(), account_id: None },
+        ..Default::default()
+    })
+}
 
 const CLIENT_ID: &str = "your-oauth-client-id";
 
 async fn call_with_refresh(access: &str, refresh: &str, refresh_store: &mut String) -> Result<(), AiMuxError> {
-    let model = CodexProvider::new(CodexConfig::subscription(access)).model("gpt-5.2-codex");
+    let model = subscription(access)?.responses("gpt-5.2-codex");
     match generate_text(model, "Hello", Default::default()).await {
         Ok(_) => Ok(()),
         Err(AiMuxError::TokenExpired(_)) => {
@@ -114,8 +133,7 @@ async fn call_with_refresh(access: &str, refresh: &str, refresh_store: &mut Stri
                 *refresh_store = new_refresh.clone();
             }
             // 3. 用新 access token 重试一次
-            let model = CodexProvider::new(CodexConfig::subscription(tokens.access_token))
-                .model("gpt-5.2-codex");
+            let model = subscription(tokens.access_token)?.responses("gpt-5.2-codex");
             generate_text(model, "Hello", Default::default()).await?;
             Ok(())
         }

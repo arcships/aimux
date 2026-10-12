@@ -10,21 +10,20 @@
 //! features). It returns `results[]` with `alternatives[]` containing
 //! `transcript` and `words[]` with timing offsets.
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::google::options::Namespace;
+use crate::shared::EndpointConfig;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::Warning;
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::{HttpRequest, RetryConfig};
 
-use super::VertexAuth;
+use super::ProjectLocationFn;
 
 // ── Response schema ─────────────────────────────────────────────────────────
 
@@ -101,69 +100,30 @@ fn audio_input_to_base64(audio: &AudioInput) -> Result<String, AiMuxError> {
 
 pub struct VertexTranscriptionModel {
     model_id: String,
-    project: String,
-    location: String,
-    auth: VertexAuth,
-    base_url: String,
-    retry_config: RetryConfig,
+    config: EndpointConfig,
+    project_location: ProjectLocationFn,
 }
 
 impl VertexTranscriptionModel {
-    #[must_use]
-    pub fn new(
+    pub(crate) fn from_config(
         model_id: String,
-        project: String,
-        location: String,
-        auth: VertexAuth,
-        base_url: String,
+        config: EndpointConfig,
+        project_location: ProjectLocationFn,
     ) -> Self {
         Self {
             model_id,
-            project,
-            location,
-            auth,
-            base_url,
-            retry_config: RetryConfig::default(),
+            config,
+            project_location,
         }
     }
 
-    pub(crate) fn with_retry_config(mut self, retry_config: RetryConfig) -> Self {
-        self.retry_config = retry_config;
-        self
-    }
-
-    fn auth_header(&self) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        match &self.auth {
-            VertexAuth::BearerToken(token) => {
-                headers.insert("Authorization".to_string(), format!("Bearer {token}"));
-            }
-            VertexAuth::ApiKey(key) => {
-                headers.insert("x-goog-api-key".to_string(), key.clone());
-            }
-        }
-        headers
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = self.auth_header();
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self, region: &str) -> String {
-        // When base_url is a test server (localhost / 127.0.0.1), use it
-        // directly so wiremock can intercept the request.
-        if self.base_url.starts_with("http://127.0.0.1")
-            || self.base_url.starts_with("http://localhost")
-        {
+    /// The Speech-to-Text v2 recognizer endpoint. A local `base_url` (a test
+    /// server or a proxy on the loopback interface) is used directly; the
+    /// real service has its own regional host.
+    fn endpoint(&self, base_url: &str, project: &str, region: &str) -> String {
+        if base_url.starts_with("http://127.0.0.1") || base_url.starts_with("http://localhost") {
             return format!(
-                "{}/v2/projects/{}/locations/{}/recognizers/_:recognize",
-                self.base_url, self.project, region
+                "{base_url}/v2/projects/{project}/locations/{region}/recognizers/_:recognize"
             );
         }
         let host = if region == "global" {
@@ -171,25 +131,18 @@ impl VertexTranscriptionModel {
         } else {
             format!("{region}-speech.googleapis.com")
         };
-        format!(
-            "https://{host}/v2/projects/{}/locations/{}/recognizers/_:recognize",
-            self.project, region
-        )
+        format!("https://{host}/v2/projects/{project}/locations/{region}/recognizers/_:recognize")
     }
 }
 
 #[async_trait]
 impl TranscriptionModel for VertexTranscriptionModel {
     fn provider(&self) -> &str {
-        "google.vertex"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.retry_config
     }
 
     async fn do_generate(
@@ -198,14 +151,15 @@ impl TranscriptionModel for VertexTranscriptionModel {
     ) -> Result<TranscriptionResult, AiMuxError> {
         let warnings: Vec<Warning> = Vec::new();
 
-        // Parse provider options (may be under googleVertex, vertex, or google).
-        let mut region = self.location.clone();
+        // Parse provider options (`googleVertex`, then `google`).
+        let target = (self.project_location)().await?;
+        let mut region = target.location.clone();
         let mut language_codes: Vec<String> = vec!["auto".to_string()];
         let mut enable_word_time_offsets = true;
         let mut enable_automatic_punctuation = true;
 
         if let Some(ref po) = options.provider_options {
-            for key in &["googleVertex", "vertex", "google"] {
+            for key in Namespace::Vertex.read_keys() {
                 if let Some(gv) = po.get(*key) {
                     if let Some(r) = gv.get("region").and_then(|v| v.as_str()) {
                         region = r.to_string();
@@ -248,25 +202,12 @@ impl TranscriptionModel for VertexTranscriptionModel {
             "content": content,
         });
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let url = self.endpoint(&region);
-
-        let header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let url = self.endpoint(exchange.base_url(), &target.project, &region);
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url,
-                headers: header_list,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                ..Default::default()
-            },
-            request_body.clone(),
+            exchange.request(url, options),
+            exchange.transform_body(request_body.clone()),
             aimux_provider_utils::create_json_response_handler::<GoogleVertexResponse>(),
             crate::google::google_failed_response_handler(),
         )

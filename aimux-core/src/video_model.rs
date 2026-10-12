@@ -287,23 +287,17 @@ impl Default for VideoPollConfig {
 /// same operation reference.
 #[async_trait]
 pub trait VideoModel: Send + Sync {
-    /// Specification version (always `"v4"`).
-    fn specification_version(&self) -> &'static str {
-        "v4"
-    }
-
     /// Provider name, e.g. `"fal"`.
     fn provider(&self) -> &str;
 
     /// Provider-specific model ID, e.g. `"kling-video"`.
     fn model_id(&self) -> &str;
 
-    fn retry_config(&self) -> retry::RetryConfig {
-        retry::RetryConfig::default()
-    }
-
-    /// Poll pacing for this model. Defaults to the AI SDK values; providers
-    /// with configurable polling should surface their configuration here.
+    /// Poll pacing for this model: the package's own constants. Providers have
+    /// no poll settings (the AI SDK's `pollIntervalMs` / `pollTimeoutMs` are
+    /// per-call options, here [`VideoCallOptions::poll`], which overrides this
+    /// per field). Defaults to the AI SDK values; a package whose job runs
+    /// longer or shorter returns its own constants.
     fn poll_config(&self) -> VideoPollConfig {
         VideoPollConfig::default()
     }
@@ -381,11 +375,7 @@ async fn start_and_poll(
     }
 
     let abort_signal = options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
 
     let mut poll = model.poll_config();
     if let Some(overrides) = options.poll {
@@ -596,13 +586,6 @@ mod tests {
             "scripted"
         }
 
-        fn retry_config(&self) -> crate::retry::RetryConfig {
-            crate::retry::RetryConfig {
-                initial_delay: Duration::from_millis(1),
-                ..crate::retry::RetryConfig::default()
-            }
-        }
-
         fn max_videos_per_call(&self) -> Option<u32> {
             Some(1)
         }
@@ -717,7 +700,8 @@ mod tests {
         assert_eq!(result.videos.len(), 1);
     }
 
-    #[tokio::test]
+    // Paused time: the fixed 2s retry delay must not make the test wait.
+    #[tokio::test(start_paused = true)]
     async fn start_retry_reuses_one_idempotency_key() {
         let model = ScriptedVideoModel::new(vec![StatusStep::Complete]).with_start_failures(1);
         let mut options = fast_poll_options();
@@ -898,7 +882,7 @@ mod tests {
         assert_eq!(unique.len(), 3, "one key per batch: {keys:?}");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn caller_key_is_distinct_per_batch_and_stable_across_retries_and_replays() {
         let model = ScriptedVideoModel::new(vec![]).with_start_failures(1);
         let mut options = fast_poll_options();

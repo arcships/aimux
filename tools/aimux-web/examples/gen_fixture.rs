@@ -35,18 +35,12 @@ fn main() {
         call_id: "call-fixture-1".into(),
         recorded_at: "2026-08-14T00:00:00.000Z".into(),
         input: InputRecord {
+            decision_capabilities: None,
             operation: Default::default(),
             prompt: prompt.clone(),
             options: serde_json::to_value(&options).unwrap(),
         },
-        provider: ProviderRecord {
-            provider: "openai".into(),
-            model_id: "gpt-4o-mini".into(),
-            base_url: None,
-            api_key_source: "none".into(),
-            profile: None,
-            provider_options: None,
-        },
+        provider: ProviderRecord::new("openai", "openai.chat", "gpt-4o-mini"),
         exchanges: vec![HttpExchange {
             step: None,
             attempt: 0,

@@ -6,22 +6,25 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::provider::Provider;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
 
-use aimux_providers::{FirecrawlConfig, FirecrawlProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{FirecrawlProvider, FirecrawlProviderSettings, create_firecrawl};
 
 fn make_provider(server: &MockServer) -> FirecrawlProvider {
-    let config = FirecrawlConfig::new("test-api-key").with_base_url(server.uri());
-    FirecrawlProvider::new(config)
-}
-
-#[test]
-fn provider_name_is_firecrawl() {
-    let provider = FirecrawlProvider::new(FirecrawlConfig::new("test-key"));
-    assert_eq!(provider.name(), "firecrawl");
+    let config = FirecrawlProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_firecrawl(config).unwrap()
 }
 
 #[test]
 fn language_model_returns_unsupported() {
-    let provider = FirecrawlProvider::new(FirecrawlConfig::new("test-key"));
+    let provider = create_firecrawl(FirecrawlProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        ..Default::default()
+    })
+    .unwrap();
     assert!(provider.language_model("any").is_err());
 }
 
@@ -69,8 +72,12 @@ async fn uses_bearer_auth_header() {
         .mount(&server)
         .await;
 
-    let config = FirecrawlConfig::new("my-key").with_base_url(server.uri());
-    let provider = FirecrawlProvider::new(config);
+    let config = FirecrawlProviderSettings {
+        api_key: Some(Resolvable::Value("my-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_firecrawl(config).unwrap();
     let model = provider.search_model();
     model
         .do_search(&SearchCallOptions::new("test"))

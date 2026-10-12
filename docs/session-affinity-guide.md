@@ -106,7 +106,7 @@ A: 大概率不会(HTTP 语义下未知头被忽略,RFC 9110;OpenCode 对全部 
 A: 会话头是"你的网关"的属性,不是 provider 的属性。同一个 OpenAI 兼容 provider,直连官方、走 OpenRouter、走自建网关,要传的头完全不同;而大多数自建网关根本不在 registry 里。预置会误导,且与集成方的部署强耦合——所以 aimux 交付文档,不交付预置数据。
 
 **Q: 我的上游是 OpenRouter,`session_id` 传 body 还是 header?**
-A: OpenRouter 两者都接受,body 顶层 `session_id` 优先于 `x-session-id` 头。aimux 的 `body_overrides` 可传 body 字段,`headers` 可传头;二选一即可。
+A: OpenRouter 两者都接受,body 顶层 `session_id` 优先于 `x-session-id` 头。aimux 的 `provider_options.<provider>`(厂商命名空间下的未知字段原样进 body)可传 body 字段,`headers` 可传头;二选一即可。
 
 **Q: 会话 id 谁来生成?**
 A: 你。aimux 不做会话状态管理(生命周期由你持有);同一会话内保持值稳定即可获得粘性/缓存收益。

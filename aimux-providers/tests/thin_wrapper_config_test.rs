@@ -7,7 +7,7 @@
 //! suites verify:
 //!
 //! - `from_env()` loads the correct environment variable.
-//! - `Provider::name()` returns the documented provider string.
+//! - the provider's models report the documented provider string.
 //! - Custom headers are forwarded to the HTTP request.
 //! - The default base URL constant is wired correctly (verified via a mock
 //!   round-trip that relies on `with_base_url`).
@@ -21,13 +21,15 @@ use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::provider::Provider;
 
 use aimux_providers::{
-    HuggingFaceConfig, HuggingFaceProvider, ProviderOptions, provider, provider_from_env,
+    HuggingFaceProvider, HuggingFaceProviderSettings, PresetSettings, create_huggingface,
+    create_provider,
 };
 
 // ── shared helpers ───────────────────────────────────────────────────────────
@@ -38,6 +40,42 @@ fn test_prompt() -> LanguageModelPrompt {
 
 fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
     CallOptions::new(prompt)
+}
+
+/// A minimal Responses API body returning one text message.
+/// A registry preset as a language model.
+fn preset_model(
+    name: &str,
+    api_key: Option<&str>,
+    model_id: &str,
+    settings: PresetSettings,
+) -> Result<std::sync::Arc<dyn LanguageModel>, AiMuxError> {
+    create_provider(
+        name,
+        PresetSettings {
+            api_key: api_key.map(|key| key.to_string().into()),
+            ..settings
+        },
+    )?
+    .language_model(model_id)
+}
+
+fn responses_body() -> Value {
+    json!({
+        "id": "resp_test",
+        "model": "test-model",
+        "object": "response",
+        "created_at": 1741257730,
+        "status": "completed",
+        "usage": { "input_tokens": 12, "output_tokens": 25, "total_tokens": 37 },
+        "output": [{
+            "id": "msg_test",
+            "type": "message",
+            "role": "assistant",
+            "status": "completed",
+            "content": [{ "type": "output_text", "text": "Hello, World!" }]
+        }]
+    })
 }
 
 fn text_completion_body() -> Value {
@@ -62,14 +100,23 @@ fn text_completion_body() -> Value {
 mod huggingface_config {
     use super::*;
 
+    fn hf_provider(api_key: &str, base_url: Option<String>) -> HuggingFaceProvider {
+        create_huggingface(HuggingFaceProviderSettings {
+            api_key: Some(api_key.to_string().into()),
+            base_url,
+            ..Default::default()
+        })
+        .expect("valid settings")
+    }
+
     /// TS: `createHuggingFace()` should create a provider with default
-    /// configuration. In Rust we verify the provider name and that a model
-    /// can be created.
+    /// configuration. In Rust we verify that a model can be created.
     #[test]
-    fn provider_name_is_huggingface() {
-        let config = HuggingFaceConfig::new("test-key");
-        let provider = HuggingFaceProvider::new(config);
-        assert_eq!(provider.name(), "huggingface");
+    fn model_is_created_with_default_configuration() {
+        let provider = hf_provider("test-key", None);
+        let model = provider.responses("any");
+        assert_eq!(model.model_id(), "any");
+        assert_eq!(model.provider(), "huggingface.responses");
     }
 
     /// TS: `createHuggingFace({ apiKey: 'custom-key' })` �?custom API key
@@ -78,15 +125,14 @@ mod huggingface_config {
     async fn custom_api_key_used_in_auth_header() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/chat/completions"))
+            .and(path("/responses"))
             .and(header("authorization", "Bearer my-custom-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(responses_body()))
             .mount(&server)
             .await;
 
-        let config = HuggingFaceConfig::new("my-custom-key").with_base_url(server.uri());
-        let provider = HuggingFaceProvider::new(config);
-        let model = provider.model("meta-llama/Llama-3.3-70B-Instruct");
+        let provider = hf_provider("my-custom-key", Some(server.uri()));
+        let model = provider.responses("meta-llama/Llama-3.3-70B-Instruct");
 
         model
             .do_generate(&default_options(test_prompt()))
@@ -100,15 +146,14 @@ mod huggingface_config {
     async fn custom_headers_forwarded() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/chat/completions"))
+            .and(path("/responses"))
             .and(header("x-custom-header", "test-value"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(responses_body()))
             .mount(&server)
             .await;
 
-        let config = HuggingFaceConfig::new("test-key").with_base_url(server.uri());
-        let provider = HuggingFaceProvider::new(config);
-        let model = provider.model("meta-llama/Llama-3.3-70B-Instruct");
+        let provider = hf_provider("test-key", Some(server.uri()));
+        let model = provider.responses("meta-llama/Llama-3.3-70B-Instruct");
 
         let mut options = default_options(test_prompt());
         options.headers = Some(
@@ -123,64 +168,56 @@ mod huggingface_config {
             .expect("should succeed with custom headers");
     }
 
-    /// TS: `provider.languageModel(modelId)` �?the provider should create a
-    /// language model via the `Provider` trait.
-    #[tokio::test]
-    async fn language_model_via_trait() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(text_completion_body()))
-            .mount(&server)
-            .await;
-
-        let config = HuggingFaceConfig::new("test-key").with_base_url(server.uri());
-        let provider = HuggingFaceProvider::new(config);
+    /// TS: `provider.languageModel(modelId)` — the provider creates the
+    /// Responses model (the AI SDK package has no chat model) via the
+    /// `Provider` trait.
+    #[test]
+    fn language_model_via_trait_is_the_responses_model() {
+        let provider = hf_provider("test-key", Some("http://127.0.0.1:1".to_string()));
         let model = provider
             .language_model("meta-llama/Llama-3.3-70B-Instruct")
             .expect("language_model should succeed");
-
-        model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .expect("do_generate should succeed");
+        assert_eq!(model.provider(), "huggingface.responses");
     }
 
-    /// TS: `from_env` should load `HUGGINGFACE_API_KEY`.
-    #[test]
-    fn from_env_loads_correct_env_var() {
-        // Save and restore env var.
+    /// TS: the key is loaded from `HUGGINGFACE_API_KEY` when a request is
+    /// made, not when the provider is created.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn key_is_loaded_from_env_per_request() {
         let saved = std::env::var("HUGGINGFACE_API_KEY").ok();
+        unsafe { std::env::remove_var("HUGGINGFACE_API_KEY") };
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .and(header("authorization", "Bearer env-test-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(responses_body()))
+            .mount(&server)
+            .await;
+        let provider = create_huggingface(HuggingFaceProviderSettings {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        })
+        .expect("created without a key");
+        let model = provider.responses("any");
+
+        let err = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .expect_err("no key yet");
+        assert!(matches!(err, AiMuxError::LoadApiKey { .. }), "{err:?}");
+
         unsafe { std::env::set_var("HUGGINGFACE_API_KEY", "env-test-key") };
+        let result = model.do_generate(&default_options(test_prompt())).await;
 
-        let config = HuggingFaceConfig::from_env();
-        assert!(config.is_ok(), "from_env should succeed with env var set");
-
-        // Restore.
         unsafe {
             match saved {
                 Some(v) => std::env::set_var("HUGGINGFACE_API_KEY", v),
                 None => std::env::remove_var("HUGGINGFACE_API_KEY"),
             }
         }
-    }
-
-    /// TS: `from_env` should fail without the env var.
-    #[test]
-    #[ignore = "flaky: parallel test env var race"]
-    fn from_env_fails_without_env_var() {
-        let saved = std::env::var("HUGGINGFACE_API_KEY").ok();
-        unsafe { std::env::remove_var("HUGGINGFACE_API_KEY") };
-
-        let config = HuggingFaceConfig::from_env();
-        assert!(config.is_err(), "from_env should fail without env var");
-
-        // Restore.
-        unsafe {
-            if let Some(v) = saved {
-                std::env::set_var("HUGGINGFACE_API_KEY", v);
-            }
-        }
+        result.expect("the key set after creation is used");
     }
 }
 
@@ -196,12 +233,12 @@ mod togetherai_config {
     #[test]
     fn provider_name_is_togetherai() {
         // Phase 4: the shell TogetherAIConfig/TogetherAIProvider pair is
-        // retired — registry-backed provider() replaces it.
-        let model = provider(
+        // retired — registry-backed create_provider() replaces it.
+        let model = preset_model(
             "togetherai",
-            Some("test-key".to_string()),
+            Some("test-key"),
             "meta-llama/Llama-3-70b-chat-hf",
-            None,
+            PresetSettings::default(),
         )
         .expect("togetherai should construct from registry");
         assert_eq!(model.model_id(), "meta-llama/Llama-3-70b-chat-hf");
@@ -219,14 +256,14 @@ mod togetherai_config {
             .mount(&server)
             .await;
 
-        let model = provider(
+        let model = preset_model(
             "togetherai",
-            Some("my-custom-key".to_string()),
+            Some("my-custom-key"),
             "meta-llama/Llama-3-70b-chat-hf",
-            Some(ProviderOptions {
+            PresetSettings {
                 base_url: Some(server.uri()),
                 ..Default::default()
-            }),
+            },
         )
         .expect("togetherai should construct from registry");
 
@@ -247,19 +284,22 @@ mod togetherai_config {
             .mount(&server)
             .await;
 
-        let model = provider(
+        let model = preset_model(
             "togetherai",
-            Some("test-key".to_string()),
+            Some("test-key"),
             "meta-llama/Llama-3-70b-chat-hf",
-            Some(ProviderOptions {
+            PresetSettings {
                 base_url: Some(server.uri()),
                 headers: Some(
-                    vec![("x-custom-header".to_string(), "test-value".to_string())]
-                        .into_iter()
-                        .collect(),
+                    vec![(
+                        "x-custom-header".to_string(),
+                        Some("test-value".to_string()),
+                    )]
+                    .into_iter()
+                    .collect(),
                 ),
                 ..Default::default()
-            }),
+            },
         )
         .expect("togetherai should construct from registry");
 
@@ -275,36 +315,21 @@ mod togetherai_config {
         let saved = std::env::var("TOGETHER_API_KEY").ok();
         unsafe { std::env::set_var("TOGETHER_API_KEY", "env-test-key") };
 
-        let result = provider_from_env("togetherai", "meta-llama/Llama-3-70b-chat-hf", None);
+        let result = preset_model(
+            "togetherai",
+            None,
+            "meta-llama/Llama-3-70b-chat-hf",
+            PresetSettings::default(),
+        );
         assert!(
             result.is_ok(),
-            "provider_from_env should succeed with env var set"
+            "the registry preset should succeed with env var set"
         );
 
         unsafe {
             match saved {
                 Some(v) => std::env::set_var("TOGETHER_API_KEY", v),
                 None => std::env::remove_var("TOGETHER_API_KEY"),
-            }
-        }
-    }
-
-    /// TS: `from_env` should fail without the env var.
-    #[test]
-    #[ignore = "flaky: parallel test env var race"]
-    fn from_env_fails_without_env_var() {
-        let saved = std::env::var("TOGETHER_API_KEY").ok();
-        unsafe { std::env::remove_var("TOGETHER_API_KEY") };
-
-        let result = provider_from_env("togetherai", "meta-llama/Llama-3-70b-chat-hf", None);
-        assert!(
-            result.is_err(),
-            "provider_from_env should fail without env var"
-        );
-
-        unsafe {
-            if let Some(v) = saved {
-                std::env::set_var("TOGETHER_API_KEY", v);
             }
         }
     }
@@ -322,9 +347,14 @@ mod vercel_config {
     #[test]
     fn provider_name_is_vercel() {
         // Phase 4: the shell VercelConfig/VercelProvider pair is retired —
-        // registry-backed provider() replaces it.
-        let model = provider("vercel", Some("test-key".to_string()), "v0-1.5-md", None)
-            .expect("vercel should construct from registry");
+        // registry-backed create_provider() replaces it.
+        let model = preset_model(
+            "vercel",
+            Some("test-key"),
+            "v0-1.5-md",
+            PresetSettings::default(),
+        )
+        .expect("vercel should construct from registry");
         assert_eq!(model.model_id(), "v0-1.5-md");
     }
 
@@ -340,14 +370,14 @@ mod vercel_config {
             .mount(&server)
             .await;
 
-        let model = provider(
+        let model = preset_model(
             "vercel",
-            Some("my-custom-key".to_string()),
+            Some("my-custom-key"),
             "v0-1.5-md",
-            Some(ProviderOptions {
+            PresetSettings {
                 base_url: Some(server.uri()),
                 ..Default::default()
-            }),
+            },
         )
         .expect("vercel should construct from registry");
 
@@ -363,36 +393,16 @@ mod vercel_config {
         let saved = std::env::var("VERCEL_API_KEY").ok();
         unsafe { std::env::set_var("VERCEL_API_KEY", "env-test-key") };
 
-        let result = provider_from_env("vercel", "v0-1.5-md", None);
+        let result = preset_model("vercel", None, "v0-1.5-md", PresetSettings::default());
         assert!(
             result.is_ok(),
-            "provider_from_env should succeed with env var set"
+            "the registry preset should succeed with env var set"
         );
 
         unsafe {
             match saved {
                 Some(v) => std::env::set_var("VERCEL_API_KEY", v),
                 None => std::env::remove_var("VERCEL_API_KEY"),
-            }
-        }
-    }
-
-    /// TS: `from_env` should fail without the env var.
-    #[test]
-    #[ignore = "flaky: parallel test env var race"]
-    fn from_env_fails_without_env_var() {
-        let saved = std::env::var("VERCEL_API_KEY").ok();
-        unsafe { std::env::remove_var("VERCEL_API_KEY") };
-
-        let result = provider_from_env("vercel", "v0-1.5-md", None);
-        assert!(
-            result.is_err(),
-            "provider_from_env should fail without env var"
-        );
-
-        unsafe {
-            if let Some(v) = saved {
-                std::env::set_var("VERCEL_API_KEY", v);
             }
         }
     }

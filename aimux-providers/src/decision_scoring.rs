@@ -83,7 +83,8 @@ pub(crate) async fn score(
         }
         encoded.push(entry);
     }
-    let base = model.config.base_url.trim_end_matches('/');
+    let base = model.config.base_url()?;
+    let base = base.as_str();
     if model.provider() == "sglang" {
         let body = json!({"model":model.model_id,"query":[],"items":encoded.iter().map(|e| &e.prompt_token_ids).collect::<Vec<_>>(),"label_token_ids":encoded.iter().map(|e| &e.label_token_ids).collect::<Vec<_>>(),"apply_softmax":true,"temperature":temperature,"return_token_logprobs":true});
         return post(

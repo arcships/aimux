@@ -1,8 +1,9 @@
-﻿//! Rust translation of the Prodia video model tests.
+//! Rust translation of the Prodia video model tests.
 //! Source: `reference/ai/packages/prodia/src/prodia-video-model.test.ts`
 
 use aimux_core::video_model::{VideoCallOptions, generate_video};
-use aimux_providers::{ProdiaConfig, ProdiaProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{ProdiaProviderSettings, create_prodia};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use wiremock::matchers::{method, path};
@@ -42,8 +43,12 @@ async fn should_generate_video() {
         &json!({"status": "done", "videoUrl": "https://cdn.prodia.com/video.mp4"}),
     )
     .await;
-    let config = ProdiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ProdiaProvider::new(config);
+    let config = ProdiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_prodia(config).unwrap();
     let model = provider.video("svd-xt");
     let r = generate_video(&model, options("A cat")).await.unwrap();
     assert_eq!(r.videos.len(), 1);
@@ -57,8 +62,12 @@ async fn should_pass_model_type_and_prompt() {
         &json!({"status": "done", "videoUrl": "https://cdn.prodia.com/video.mp4"}),
     )
     .await;
-    let config = ProdiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ProdiaProvider::new(config);
+    let config = ProdiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_prodia(config).unwrap();
     let model = provider.video("svd-xt");
     generate_video(&model, options("A cat")).await.unwrap();
     let requests = server.received_requests().await.unwrap();
@@ -77,10 +86,13 @@ async fn should_pass_headers() {
     .await;
     let mut ph = HashMap::new();
     ph.insert("Custom-Header".to_string(), "val".to_string());
-    let config = ProdiaConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(ph);
-    let provider = ProdiaProvider::new(config);
+    let config = ProdiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        headers: Some((ph).into_iter().map(|(k, v)| (k, Some(v))).collect()),
+        ..Default::default()
+    };
+    let provider = create_prodia(config).unwrap();
     let model = provider.video("svd-xt");
     let mut opts = options("test");
     let mut rh = HashMap::new();
@@ -101,8 +113,12 @@ async fn should_include_response_data() {
         &json!({"status": "done", "videoUrl": "https://cdn.prodia.com/video.mp4"}),
     )
     .await;
-    let config = ProdiaConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ProdiaProvider::new(config);
+    let config = ProdiaProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_prodia(config).unwrap();
     let model = provider.video("svd-xt");
     let r = generate_video(&model, options("test")).await.unwrap();
     assert!(r.response.timestamp.is_some());

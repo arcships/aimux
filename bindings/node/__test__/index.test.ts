@@ -42,10 +42,13 @@ test('provider() creates a registry model instance (RFC-0017 phase 4)', async (t
 })
 
 test('provider() with undefined apiKey reads the registry env var', async (t) => {
-  // GROQ_API_KEY is unset in CI — the construction must fail with a clear
+  // ABACUS_API_KEY is unset in CI. As in the AI SDK, the key is loaded when a
+  // request is made, so construction succeeds and the call fails with a clear
   // error (missing env key), proving the env-var path is wired.
+  delete process.env.ABACUS_API_KEY
+  const model = await provider('abacus', undefined, 'm')
   await t.throwsAsync(
-    () => provider('abacus', undefined, 'm'),
+    () => model.generateText(JSON.stringify('hi')),
     { message: /api key/i },
   )
 })

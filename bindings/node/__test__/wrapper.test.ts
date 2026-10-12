@@ -9,9 +9,9 @@
 import test from 'ava'
 import { createServer, type Server } from 'node:http'
 
-// The wrapper under test. It re-exports the raw `openai`/`anthropic` factories
+// The wrapper under test. It re-exports the raw `deepseek`/`anthropic` factories
 // and the ts-rs types, so a consumer needs only this one import.
-import { openai, anthropic, generateText, streamText } from '../src/index.ts'
+import { deepseek, anthropic, generateText, streamText } from '../src/index.ts'
 import type {
   GenerateTextResult,
   StreamPart,
@@ -144,7 +144,7 @@ test('wrapper: generateText returns a typed object (.text / .usage / .finish_rea
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     // Typed input (string prompt) + typed output — no manual JSON.stringify/parse.
     const result: GenerateTextResult = await generateText(model, 'What is Rust?')
 
@@ -171,7 +171,7 @@ test('wrapper: generateText parses tool_calls + raw.content ToolCall', async (t)
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     // Typed options object: tools pass through to the provider.
     const result = await generateText(model, "What's the weather in Tokyo?", {
       tools: [weatherTool],
@@ -202,7 +202,7 @@ test('wrapper: generateText passes tool_choice through to the provider', async (
   const { server, url } = await startMockServer(cap.handler)
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     const toolChoice: ToolChoice = 'required'
     await generateText(model, 'Hello', {
       tools: [weatherTool],
@@ -221,7 +221,7 @@ test('wrapper: generateText accepts typed multi-role messages', async (t) => {
   const { server, url } = await startMockServer(cap.handler)
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     // Typed ModelMessage[] prompt — no manual JSON.stringify.
     const messages: ModelMessage[] = [
       { role: 'system', content: 'You are a helpful assistant.' },
@@ -267,7 +267,7 @@ test('wrapper: streamText yields typed TextDelta parts', async (t) => {
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     const parts: StreamPart[] = []
     // streamText is an async generator of typed StreamParts — no JSON.parse.
     for await (const part of streamText(model, 'Say hello')) {
@@ -295,7 +295,7 @@ test('wrapper: streamText emits Raw parts when include_raw_chunks set', async (t
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     const parts: StreamPart[] = []
     for await (const part of streamText(model, 'Say hello', {
       include_raw_chunks: true,
@@ -328,7 +328,7 @@ test('wrapper: no Raw parts by default', async (t) => {
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     const parts: StreamPart[] = []
     for await (const part of streamText(model, 'Say hello')) {
       parts.push(part)
@@ -346,7 +346,7 @@ test('wrapper: streamText yields typed ToolCall parts', async (t) => {
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     const parts: StreamPart[] = []
     for await (const part of streamText(model, "What's the weather?", {
       tools: [weatherTool],

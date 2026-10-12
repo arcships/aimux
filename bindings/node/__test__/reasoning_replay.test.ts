@@ -17,7 +17,7 @@
 
 import test from 'ava'
 import { createServer, type Server } from 'node:http'
-import { openai } from '../src/native.ts'
+import { deepseek } from '../src/native.ts'
 
 function startMockServer(handler: (req: any, res: any) => void): Promise<{ server: Server; url: string }> {
   return new Promise((resolve) => {
@@ -63,7 +63,7 @@ test('issue 1: tool_result with legacy `output` field is accepted and carries to
   })
 
   try {
-    const model = await openai('test-key', 'deepseek-v4-flash', url)
+    const model = await deepseek('test-key', 'deepseek-v4-flash', url)
 
     // The exact shape from the user's failing case: a tool message whose
     // ContentPart uses the legacy `output` field (Vercel AI SDK / 0.1.0 TS).
@@ -114,7 +114,7 @@ test('issue 2: assistant reasoning + tool_call lifts reasoning to reasoning_cont
   })
 
   try {
-    const model = await openai('test-key', 'deepseek-v4-flash', url)
+    const model = await deepseek('test-key', 'deepseek-v4-flash', url)
 
     // Reproduces the user's table row: assistant
     // [{reasoning},{tool_call}] + tool result. The first turn produced a
@@ -166,7 +166,7 @@ test('issue 2: assistant reasoning + text (no tool calls) emits reasoning_conten
   })
 
   try {
-    const model = await openai('test-key', 'deepseek-v4-flash', url)
+    const model = await deepseek('test-key', 'deepseek-v4-flash', url)
 
     const messages = [
       { role: 'user', content: 'What is 2+2?' },
@@ -201,7 +201,7 @@ test('issue 2: assistant without reasoning omits reasoning_content', async (t) =
   })
 
   try {
-    const model = await openai('test-key', 'deepseek-v4-flash', url)
+    const model = await deepseek('test-key', 'deepseek-v4-flash', url)
 
     const messages = [
       { role: 'user', content: 'hi' },

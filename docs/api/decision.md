@@ -24,9 +24,10 @@ console.log(result.answers.refund) // boolean 概率或 { type: 'refusal' }
 ```
 
 Python 对应 `create_provider('openai', key).decision_model('gpt-6-luna')`，随后
-调用下文的 `decide`。Rust 使用 `OpenAIProvider::new(OpenAIConfig::new(key))`
-和 `Provider::decision_model`。服务地址为 `{base_url}/decisions`，默认使用
-`https://api.openai.com/v1`；继承 provider 的认证、headers、organization/project 和重试配置。
+调用下文的 `decide`。Rust 使用 `create_openai(settings)` 返回的 provider 的
+`decision(model_id)` 或 `Provider::decision_model`。服务地址为 `{base_url}/decisions`，默认使用
+`https://api.openai.com/v1`；继承 provider 的认证、headers、organization/project 和传输，
+重试次数由调用的 `max_retries` 控制。
 
 文本 state 原样发送；JSON 对象／数组序列化为文本。Boolean 映射 predicate。
 Choice 支持 2–255 项，`label` 为规范化结果的 map key，可选 `value` 是原生 string
@@ -53,7 +54,7 @@ const result = await decide(model, {
 
 最多 128 张内嵌图，detail 支持 low/high/auto/original。也可使用
 `data: { Binary: [137, 80, ...] }`，与已有 FileBytes contract 一致。
-对象/数组 instructions、Boolean criteria 和生成接口 body overrides 返回 Unsupported。
+对象/数组 instructions 和 Boolean criteria 返回 Unsupported。
 `openai` options 仅接受可选 safety_identifier（最多 128 字符）。
 原生概率/confidence 保留原值，不套用 Jev 两位小数规则；usage 缺失或合计不一致
 不影响有效答案。本地 fixture 基于[官方 reference](https://developers.openai.com/api/reference/resources/decisions/methods/create)，并非新增服务的线上录制。
@@ -321,10 +322,11 @@ finally:
 ```
 
 标准 `recordings.jsonl` 每行记录一次逻辑调用：`input.operation = "decision"`，
-`input.options` 保留 state/questions/images 以及协议、编码 options；provider 快照含 endpoint 和 capabilities；
+`input.options` 保留 state/questions/images 以及协议、编码 options，`input.decision_capabilities` 保留能力声明；
+provider 只记录 provider_id/provider/model_id，endpoint 与凭证来自调用方配置；
 exchanges 记录各重试 attempt 的 HTTP 请求、响应和时延；
 `outcome.decision_result` 保存规范化结果。凭据沿用统一脱敏规则。
-旧语言录制缺少 operation 时仍按 language model 解析，schema 2 保持兼容。
+录制使用 schema 3；语言录制缺少 operation 时仍按 language model 解析。
 
 CLI 离线回放不需要 key：
 
@@ -337,7 +339,7 @@ Rust 可用 `aimux_core::replay::MockDecisionReplayModel::from_jsonl` 加载录�
 再通过 `decide` 或 `replay_decision_with_model` 离线回放。匹配 provider/model、
 state/questions/images、headers 和 provider_options；timeout/retry 控制不参与匹配。
 输入未命中或记录不完整时返回错误。请求回放可通过
-`aimux_providers::rebuild_decision_provider` 重建所有上述官方 provider，再调用
+`aimux_providers::rebuild_decision_provider` 从调用方 registry 重建上述任一官方 provider 的 decision model，再调用
 `replay_decision_with_model` 发出真实请求；CLI 不带 `--mock` 时也走这条路径。
 
 实测录制在 `aimux-providers/tests/fixtures/jev_systemone_live.jsonl`。
