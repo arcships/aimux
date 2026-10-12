@@ -50,7 +50,15 @@ impl EmbeddingModel for MistralEmbeddingModel {
         &self,
         options: &EmbeddingCallOptions,
     ) -> Result<EmbeddingResult, AiMuxError> {
-        let mistral_options = parse_mistral_provider_options(options.provider_options.as_ref());
+        if options.values.len() > 32 {
+            return Err(AiMuxError::InvalidArgument(format!(
+                "{} model {} supports at most 32 embeddings per call; received {}",
+                self.provider(),
+                self.model_id,
+                options.values.len()
+            )));
+        }
+        let mistral_options = parse_mistral_provider_options(options.provider_options.as_ref())?;
 
         let mut body = Map::new();
         body.insert("model".to_string(), json!(self.model_id));
@@ -123,23 +131,46 @@ impl EmbeddingModel for MistralEmbeddingModel {
 
 struct MistralEmbeddingProviderOptions {
     metadata: Option<Value>,
-    output_dimension: Option<u32>,
+    output_dimension: Option<Value>,
     output_dtype: Option<String>,
 }
 
 fn parse_mistral_provider_options(
     options: Option<&SharedProviderOptions>,
-) -> MistralEmbeddingProviderOptions {
+) -> Result<MistralEmbeddingProviderOptions, AiMuxError> {
     let provider_opts = super::options::mistral_options(options);
-    MistralEmbeddingProviderOptions {
-        metadata: provider_opts.and_then(|o| o.get("metadata")).cloned(),
-        output_dimension: provider_opts
-            .and_then(|o| o.get("outputDimension"))
-            .and_then(serde_json::Value::as_u64)
-            .map(|d| d as u32),
-        output_dtype: provider_opts
-            .and_then(|o| o.get("outputDtype"))
-            .and_then(|d| d.as_str())
-            .map(std::string::ToString::to_string),
+    let metadata = provider_opts.and_then(|o| o.get("metadata")).cloned();
+    let output_dimension = provider_opts
+        .and_then(|o| o.get("outputDimension"))
+        .cloned();
+    let output_dtype = provider_opts.and_then(|o| o.get("outputDtype"));
+    if metadata.as_ref().is_some_and(|value| !value.is_object()) {
+        return Err(AiMuxError::InvalidArgument(
+            "mistral.metadata must be a record".into(),
+        ));
     }
+    if output_dimension.as_ref().is_some_and(|value| {
+        !value.as_f64().is_some_and(|number| {
+            number > 0.0 && number.fract() == 0.0 && number <= 9_007_199_254_740_991.0
+        })
+    }) {
+        return Err(AiMuxError::InvalidArgument(
+            "mistral.outputDimension must be a positive integer".into(),
+        ));
+    }
+    if output_dtype.is_some_and(|value| {
+        !matches!(
+            value.as_str(),
+            Some("float" | "int8" | "uint8" | "binary" | "ubinary")
+        )
+    }) {
+        return Err(AiMuxError::InvalidArgument(
+            "mistral.outputDtype must be float, int8, uint8, binary, or ubinary".into(),
+        ));
+    }
+    Ok(MistralEmbeddingProviderOptions {
+        metadata,
+        output_dimension,
+        output_dtype: output_dtype.and_then(Value::as_str).map(str::to_owned),
+    })
 }

@@ -73,9 +73,6 @@ pub(crate) struct UsageResponse {
     pub completion_tokens: Option<u32>,
     #[serde(default)]
     pub total_tokens: Option<u32>,
-    /// Top-level `cached_tokens` (Moonshot); wins over the nested value.
-    #[serde(default)]
-    pub cached_tokens: Option<u32>,
     #[serde(default)]
     pub prompt_tokens_details: Option<PromptTokensDetails>,
     #[serde(default)]
@@ -86,9 +83,6 @@ pub(crate) struct UsageResponse {
 pub(crate) struct PromptTokensDetails {
     #[serde(default)]
     pub cached_tokens: Option<u32>,
-    /// Alibaba (DashScope) reports cache writes as `cache_creation_input_tokens`.
-    #[serde(default, alias = "cache_creation_input_tokens")]
-    pub cache_write_tokens: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
@@ -126,7 +120,7 @@ pub(crate) struct StreamChoice {
 #[derive(Debug, Deserialize, Default)]
 pub(crate) struct Delta {
     #[serde(default)]
-    pub content: Option<String>,
+    pub content: Option<Value>,
     #[serde(default)]
     pub reasoning: Option<String>,
     #[serde(default)]

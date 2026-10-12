@@ -184,12 +184,14 @@ pub struct GoogleProviderSettings {
     /// Extra headers on every request. A `None` value removes the header,
     /// including `x-goog-api-key`. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the `provider()` string of the language, embedding,
-    /// image, video and files models. Default `"google.generative-ai"`.
+    /// The provider name, the `provider()` string of the language, embedding
+    /// image, video and files interfaces. Default `"google.generative-ai"`.
     pub name: Option<String>,
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
+    /// Generates IDs for tool calls and sources that have no provider ID.
+    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 impl std::fmt::Debug for GoogleProviderSettings {
@@ -204,6 +206,7 @@ impl std::fmt::Debug for GoogleProviderSettings {
             )
             .field("name", &self.name)
             .field("fetch", &self.fetch.is_some())
+            .field("generate_id", &self.generate_id.is_some())
             .finish()
     }
 }
@@ -238,6 +241,7 @@ pub fn create_google(settings: GoogleProviderSettings) -> Result<GoogleProvider,
             "4.0.85",
         ),
         fetch: settings.fetch,
+        generate_id: settings.generate_id,
     })
 }
 
@@ -259,6 +263,7 @@ pub struct GoogleProvider {
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
+    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 impl GoogleProvider {
@@ -290,6 +295,13 @@ impl GoogleProvider {
     #[must_use]
     pub fn chat(&self, model_id: &str) -> GoogleModel {
         GoogleModel::from_config(model_id.to_string(), self.model_config(self.name.clone()))
+            .with_generate_id(self.generate_id.clone())
+    }
+
+    /// Alias of [`chat`](Self::chat), matching `generativeAI`.
+    #[must_use]
+    pub fn generative_ai(&self, model_id: &str) -> GoogleModel {
+        self.chat(model_id)
     }
 
     /// A text embedding model (e.g. `"gemini-embedding-001"`); `provider()` is
@@ -302,8 +314,7 @@ impl GoogleProvider {
         )
     }
 
-    /// An image generation model (e.g. `"imagen-3.0-generate-002"` or
-    /// `"gemini-2.5-flash-image"`); `provider()` is the provider name.
+    /// An image generation model (e.g. `"gemini-2.5-flash-image"`); `provider()` is the provider name.
     #[must_use]
     pub fn image(&self, model_id: &str) -> GoogleImageModel {
         self.image_with_settings(model_id, GoogleImageSettings::default())

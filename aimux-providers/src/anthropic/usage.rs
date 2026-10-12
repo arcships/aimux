@@ -147,11 +147,11 @@ pub fn convert_anthropic_usage(usage: &Value, raw_usage: Option<&Value>) -> Anth
 /// are re-keyed in camelCase; every absent piece is `null`.
 pub(crate) fn result_provider_metadata(
     options_name: &str,
-    used_custom_provider_key: bool,
     usage: &Value,
     stop_sequence: Option<&str>,
     container: Option<&Value>,
     context_management: Option<&Value>,
+    used_custom_options_key: bool,
 ) -> ProviderMetadata {
     let field = |value: &Value, key: &str| value.get(key).cloned().unwrap_or(Value::Null);
     let iterations =
@@ -168,17 +168,18 @@ pub(crate) fn result_provider_metadata(
                                 "inputTokens": field(i, "input_tokens"),
                                 "outputTokens": field(i, "output_tokens"),
                             });
-                            if let Some(model) = i.get("model").filter(|model| !model.is_null()) {
+                            if let Some(model) = i.get("model").filter(|value| !value.is_null()) {
                                 iteration["model"] = model.clone();
                             }
-                            for (source, target) in [
+                            for (wire, key) in [
                                 ("cache_creation_input_tokens", "cacheCreationInputTokens"),
                                 ("cache_read_input_tokens", "cacheReadInputTokens"),
                             ] {
-                                if let Some(tokens) = i.get(source).filter(|tokens| {
-                                    tokens.as_u64().is_some_and(|value| value != 0)
-                                }) {
-                                    iteration[target] = tokens.clone();
+                                if let Some(value) = i
+                                    .get(wire)
+                                    .filter(|value| value.as_u64().is_some_and(|value| value != 0))
+                                {
+                                    iteration[key] = value.clone();
                                 }
                             }
                             iteration
@@ -235,10 +236,39 @@ pub(crate) fn result_provider_metadata(
     });
     let mut result =
         provider_namespace(CANONICAL_KEY, metadata).expect("provider metadata must be an object");
-    if used_custom_provider_key && options_name != CANONICAL_KEY {
+    if used_custom_options_key && options_name != CANONICAL_KEY {
         result.insert(options_name.to_string(), result[CANONICAL_KEY].clone());
     }
     result
+}
+
+pub(crate) fn extend_result_metadata(
+    metadata: &mut ProviderMetadata,
+    stop_details: Option<&Value>,
+    input_transformations: Option<&Value>,
+    safeguard_results: Option<&Value>,
+) {
+    for namespace in metadata.values_mut() {
+        if let Some(details) = stop_details.filter(|details| !details.is_null()) {
+            let mut mapped = json!({ "type": details["type"] });
+            for (wire, key) in [
+                ("category", "category"),
+                ("explanation", "explanation"),
+                ("recommended_model", "recommendedModel"),
+            ] {
+                if let Some(value) = details.get(wire).filter(|value| !value.is_null()) {
+                    mapped[key] = value.clone();
+                }
+            }
+            namespace.insert("stopDetails".to_string(), mapped);
+        }
+        if let Some(value) = input_transformations.filter(|value| !value.is_null()) {
+            namespace.insert("inputTransformations".to_string(), value.clone());
+        }
+        if let Some(value) = safeguard_results.filter(|value| !value.is_null()) {
+            namespace.insert("safeguardResults".to_string(), value.clone());
+        }
+    }
 }
 
 /// `cleared_input_tokens` -> `clearedInputTokens`.

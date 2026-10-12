@@ -94,7 +94,6 @@ pub(crate) fn mistral_stream_error(
 
 const DEFAULT_BASE_URL: &str = "https://api.mistral.ai/v1";
 const API_KEY_ENV_VAR: &str = "MISTRAL_API_KEY";
-const DEFAULT_NAME: &str = "mistral";
 
 /// The URL patterns the chat model fetches itself (`supportedUrls` of the AI
 /// SDK's `MistralChatLanguageModel`): `https` PDFs.
@@ -124,7 +123,7 @@ pub struct MistralProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Generates unique IDs for chat output.
+    /// Generates identifiers for reasoning and streamed tool calls.
     pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
@@ -156,22 +155,22 @@ pub fn create_mistral(settings: MistralProviderSettings) -> Result<MistralProvid
         Some(url) => validate_base_url(url)?,
         None => DEFAULT_BASE_URL.to_string(),
     };
-    Ok(MistralProvider {
-        name: DEFAULT_NAME.to_string(),
-        base_url,
-        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            provider_headers(
-                Credential::explicit_or_env(
-                    settings.api_key.map(Resolvable::Value),
-                    API_KEY_ENV_VAR,
-                    "Mistral",
-                ),
-                Vec::new(),
-                settings.headers,
+    let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
+        provider_headers(
+            Credential::explicit_or_env(
+                settings.api_key.map(Resolvable::Value),
+                API_KEY_ENV_VAR,
+                "Mistral",
             ),
-            options::NAMESPACE,
-            "4.0.54",
+            Vec::new(),
+            settings.headers,
         ),
+        options::NAMESPACE,
+        "4.0.54",
+    );
+    Ok(MistralProvider {
+        base_url,
+        headers,
         fetch: settings.fetch,
         generate_id: settings.generate_id,
     })
@@ -191,7 +190,6 @@ pub fn mistral() -> &'static MistralProvider {
 /// A Mistral provider (the AI SDK's `MistralProvider`). Cheap to clone the
 /// models out of; it holds no HTTP client.
 pub struct MistralProvider {
-    name: String,
     base_url: String,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
@@ -201,7 +199,7 @@ pub struct MistralProvider {
 impl MistralProvider {
     fn model_config(&self, method: &str) -> EndpointConfig {
         EndpointConfig::fixed(
-            format!("{}.{method}", self.name),
+            format!("mistral.{method}"),
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
@@ -209,19 +207,19 @@ impl MistralProvider {
         )
     }
 
-    /// A chat model; `provider()` is `"{name}.chat"`.
+    /// A chat model; `provider()` is `"mistral.chat"`.
     #[must_use]
     pub fn chat(&self, model_id: &str) -> MistralModel {
         MistralModel::from_config(
             model_id.to_string(),
             self.model_config("chat")
                 .with_supported_urls(Arc::new(|_| chat_supported_urls())),
+            self.generate_id.clone(),
         )
-        .with_generate_id(self.generate_id.clone())
     }
 
     /// An embedding model (e.g. `"mistral-embed"`); `provider()` is
-    /// `"{name}.embedding"`.
+    /// `"mistral.embedding"`.
     #[must_use]
     pub fn embedding(&self, model_id: &str) -> MistralEmbeddingModel {
         MistralEmbeddingModel::from_config(model_id.to_string(), self.model_config("embedding"))

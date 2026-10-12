@@ -952,6 +952,7 @@ pub struct ReplayOverrides {
 ///   - `recording.input.options` 中的 headers/provider_options 已脱敏,
 ///     重发会用脱敏后的 `[REDACTED]` 值——需要真实头时用 `overrides` 或
 ///     重建 provider 时补充。
+///   - 逐消息和逐内容部分的 `provider_options` 原样保留。
 ///
 /// # Errors
 ///

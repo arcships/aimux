@@ -6,6 +6,7 @@
 //! Endpoint: `POST {base_url}/embed`
 
 use async_trait::async_trait;
+use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use aimux_core::embedding_model::{
@@ -50,7 +51,14 @@ impl EmbeddingModel for CohereEmbeddingModel {
         &self,
         options: &EmbeddingCallOptions,
     ) -> Result<EmbeddingResult, AiMuxError> {
-        let cohere_options = parse_cohere_provider_options(options.provider_options.as_ref());
+        let cohere_options = parse_cohere_provider_options(options.provider_options.as_ref())?;
+        if options.values.len() > 96 {
+            return Err(AiMuxError::InvalidArgument(format!(
+                "Too many values for a single embedding call: {} supports at most 96 values, received {}",
+                self.provider(),
+                options.values.len()
+            )));
+        }
 
         let mut body = Map::new();
         body.insert("model".to_string(), json!(self.model_id));
@@ -77,43 +85,19 @@ impl EmbeddingModel for CohereEmbeddingModel {
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(exchange.url("/embed"), options),
             exchange.transform_body(Value::Object(body)),
-            aimux_provider_utils::create_json_response_handler(),
+            aimux_provider_utils::create_json_response_handler::<CohereEmbeddingResponse>(),
             super::cohere_failed_response_handler(),
         )
         .await?;
 
         let response_headers = resp.response_headers;
 
-        let raw_value: Value = resp.value;
-
-        // Extract embeddings: response.embeddings.float
-        let embeddings: Vec<Vec<f32>> = raw_value
-            .get("embeddings")
-            .and_then(|e| e.get("float"))
-            .and_then(|f| f.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .map(|row| {
-                        row.as_array()
-                            .unwrap_or(&vec![])
-                            .iter()
-                            .filter_map(|v| v.as_f64().map(|f| f as f32))
-                            .collect()
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        // Extract usage: response.meta.billed_units.input_tokens
-        let usage = raw_value
-            .get("meta")
-            .and_then(|m| m.get("billed_units"))
-            .and_then(|b| b.get("input_tokens"))
-            .and_then(serde_json::Value::as_u64)
-            .map(|tokens| EmbeddingUsage {
-                tokens: tokens as u32,
-            })
-            .unwrap_or_default();
+        let raw_value = resp.raw_value;
+        let data = resp.value;
+        let embeddings = data.embeddings.float;
+        let usage = EmbeddingUsage {
+            tokens: data.meta.billed_units.input_tokens as u32,
+        };
 
         Ok(EmbeddingResult {
             embeddings,
@@ -121,7 +105,7 @@ impl EmbeddingModel for CohereEmbeddingModel {
             provider_metadata: None,
             response: Some(EmbeddingResponse {
                 headers: Some(response_headers),
-                body: Some(raw_value),
+                body: raw_value,
             }),
             warnings: Vec::new(),
         })
@@ -138,20 +122,62 @@ struct CohereEmbeddingProviderOptions {
 
 fn parse_cohere_provider_options(
     options: Option<&SharedProviderOptions>,
-) -> CohereEmbeddingProviderOptions {
+) -> Result<CohereEmbeddingProviderOptions, AiMuxError> {
     let provider_opts = super::options::cohere_options(options);
-    CohereEmbeddingProviderOptions {
-        input_type: provider_opts
-            .and_then(|o| o.get("inputType"))
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        truncate: provider_opts
-            .and_then(|o| o.get("truncate"))
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        output_dimension: provider_opts
-            .and_then(|o| o.get("outputDimension"))
-            .and_then(serde_json::Value::as_u64)
-            .map(|d| d as u32),
-    }
+    let string_option = |key: &str, allowed: &[&str]| -> Result<Option<String>, AiMuxError> {
+        provider_opts
+            .and_then(|o| o.get(key))
+            .map(|value| {
+                value
+                    .as_str()
+                    .filter(|value| allowed.contains(value))
+                    .map(str::to_owned)
+                    .ok_or_else(|| AiMuxError::InvalidArgument(format!("Invalid cohere.{key}")))
+            })
+            .transpose()
+    };
+    let output_dimension = provider_opts
+        .and_then(|o| o.get("outputDimension"))
+        .map(|value| {
+            value
+                .as_f64()
+                .filter(|value| [256.0, 512.0, 1024.0, 1536.0].contains(value))
+                .map(|value| value as u32)
+                .ok_or_else(|| AiMuxError::InvalidArgument("Invalid cohere.outputDimension".into()))
+        })
+        .transpose()?;
+    Ok(CohereEmbeddingProviderOptions {
+        input_type: string_option(
+            "inputType",
+            &[
+                "search_document",
+                "search_query",
+                "classification",
+                "clustering",
+            ],
+        )?,
+        truncate: string_option("truncate", &["NONE", "START", "END"])?,
+        output_dimension,
+    })
+}
+
+#[derive(Deserialize)]
+struct CohereEmbeddingResponse {
+    embeddings: CohereFloatEmbeddings,
+    meta: CohereEmbeddingMeta,
+}
+
+#[derive(Deserialize)]
+struct CohereFloatEmbeddings {
+    float: Vec<Vec<f32>>,
+}
+
+#[derive(Deserialize)]
+struct CohereEmbeddingMeta {
+    billed_units: CohereEmbeddingBilledUnits,
+}
+
+#[derive(Deserialize)]
+struct CohereEmbeddingBilledUnits {
+    input_tokens: f64,
 }

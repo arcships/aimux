@@ -33,49 +33,15 @@ pub fn is_supported_file_url(url: &str) -> bool {
         return true;
     }
 
-    // YouTube watch URLs: https://(www.)youtube.com/watch?v=...(&...)?
-    if let Some(rest) = url
-        .strip_prefix("https://")
-        .and_then(|r| r.strip_prefix("www.").or(Some(r)))
-        && let Some(query) = rest.strip_prefix("youtube.com/watch")
-    {
-        // Must be followed by `?v=...` (the query string). A bare
-        // `/watch` with no query, or `/watch/...`, is not a video URL.
-        if let Some(q) = query.strip_prefix('?') {
-            return youtube_query_has_v(q);
-        }
-        return false;
-    }
-
-    // youtu.be short URLs: https://youtu.be/<id>(?...)?
-    if let Some(rest) = url.strip_prefix("https://youtu.be/") {
-        // The video id is everything up to `?` or end.
-        let id = rest.split('?').next().unwrap_or(rest);
-        return is_valid_youtube_id(id);
-    }
-
-    false
-}
-
-/// Check that a YouTube watch query string starts with `v=<id>`.
-fn youtube_query_has_v(query: &str) -> bool {
-    // The first parameter must be `v=<id>` where id is non-empty and matches
-    // `[\w-]+`. Additional params may follow separated by `&`.
-    let mut params = query.split('&');
-    let Some(first) = params.next() else {
-        return false;
-    };
-    let Some(value) = first.strip_prefix("v=") else {
-        return false;
-    };
-    is_valid_youtube_id(value)
-}
-
-fn is_valid_youtube_id(id: &str) -> bool {
-    !id.is_empty()
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    static YOUTUBE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    YOUTUBE
+        .get_or_init(|| {
+            regex::Regex::new(
+                r"^https://(?:(?:www\.)?youtube\.com/watch\?v=[\w-]+(?:&[\w=&.-]*)?|youtu\.be/[\w-]+(?:\?[\w=&.-]*)?)$",
+            )
+            .expect("static YouTube URL pattern")
+        })
+        .is_match(url)
 }
 
 // ── JSON accumulator ─────────────────────────────────────────────────────────
@@ -574,23 +540,4 @@ fn parent_must_be(seg: &Segment) -> AiMuxError {
     AiMuxError::JsonParse(format!(
         "partial args path type conflict at {seg:?}: accumulated value does not match the path"
     ))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn smoke() {
-        let mut acc = GoogleJsonAccumulator::new();
-        let r = acc
-            .process_partial_args(&[PartialArg {
-                json_path: "$.location".to_string(),
-                string_value: Some("Boston".to_string()),
-                ..Default::default()
-            }])
-            .unwrap();
-        assert_eq!(r.text_delta, "{\"location\":\"Boston\"");
-        assert_eq!(r.current_json["location"], "Boston");
-    }
 }

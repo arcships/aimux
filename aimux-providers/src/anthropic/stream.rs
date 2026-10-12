@@ -29,6 +29,7 @@ use serde_json::{Value, json};
 
 use super::config::AnthropicModelConfig;
 use super::convert::parse_stop_reason;
+use super::options::CANONICAL;
 use super::tool_name_mapping::ToolNameMapping;
 use super::types::{AnthropicResponse, ContentBlock, StreamErrorData, StreamEvent, ToolCallCaller};
 
@@ -72,13 +73,16 @@ fn str_field(v: &Value, key: &str) -> Option<String> {
 
 /// `web_search_result` → the camel-cased shape upstream exposes (:1243-1249).
 fn map_web_search_result(result: &Value) -> Value {
-    json!({
-        "url": result.get("url").cloned().unwrap_or(Value::Null),
-        "title": result.get("title").cloned().unwrap_or(Value::Null),
+    let mut mapped = json!({
+        "url": result["url"],
         "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
-        "encryptedContent": result.get("encrypted_content").cloned().unwrap_or(Value::Null),
-        "type": result.get("type").cloned().unwrap_or(Value::Null),
-    })
+        "encryptedContent": result["encrypted_content"],
+        "type": result["type"],
+    });
+    if let Some(title) = result.get("title").filter(|title| !title.is_null()) {
+        mapped["title"] = title.clone();
+    }
+    mapped
 }
 
 /// `web_fetch_tool_result.content` → `(result, is_error)` (upstream :1196-1231).
@@ -301,6 +305,28 @@ pub(crate) fn tool_call_caller_metadata(
     )
 }
 
+fn toolset_member_input(member_name: &str, input: &Value) -> Value {
+    let mut value = json!({ "action": member_name });
+    if let Some(input) = input.as_object() {
+        value.as_object_mut().unwrap().extend(input.clone());
+    }
+    value
+}
+
+fn tool_call_metadata(
+    caller: Option<&ToolCallCaller>,
+    toolset_name: Option<&str>,
+    options_name: &str,
+) -> Option<ProviderMetadata> {
+    let mut metadata = tool_call_caller_metadata(caller, options_name);
+    if let Some(name) = toolset_name {
+        let metadata =
+            metadata.get_or_insert_with(|| provider_namespace(options_name, json!({})).unwrap());
+        metadata.get_mut(options_name).unwrap()["toolsetName"] = json!(name);
+    }
+    metadata
+}
+
 fn is_tool_search_provider_name(name: &str) -> bool {
     matches!(name, "tool_search_tool_regex" | "tool_search_tool_bm25")
 }
@@ -340,6 +366,11 @@ pub(crate) fn stream_parts_for_result_block(
     server_tool_calls: &HashMap<String, String>,
     generate_id: &(dyn Fn() -> String + Send + Sync),
 ) -> Vec<StreamPart> {
+    let caller = match block {
+        ContentBlock::WebSearchToolResult { caller, .. }
+        | ContentBlock::WebFetchToolResult { caller, .. } => caller.as_ref(),
+        _ => None,
+    };
     let tool_result =
         |tool_name: String, (result, is_error): (Value, Option<bool>), tool_use_id: &str| {
             StreamPart::ToolResult(ToolResult {
@@ -349,7 +380,7 @@ pub(crate) fn stream_parts_for_result_block(
                 is_error,
                 preliminary: None,
                 dynamic: None,
-                provider_metadata: None,
+                provider_metadata: tool_call_caller_metadata(caller, CANONICAL),
             })
         };
 
@@ -357,6 +388,7 @@ pub(crate) fn stream_parts_for_result_block(
         ContentBlock::WebSearchToolResult {
             tool_use_id,
             content,
+            ..
         } => {
             let name = names.to_custom_tool_name("web_search").to_string();
             let Some(results) = content.as_array() else {
@@ -370,7 +402,7 @@ pub(crate) fn stream_parts_for_result_block(
                     is_error: Some(true),
                     preliminary: None,
                     dynamic: None,
-                    provider_metadata: None,
+                    provider_metadata: tool_call_caller_metadata(caller, CANONICAL),
                 })];
             };
             // The tool result, then one Source per hit — the same pair the
@@ -404,6 +436,7 @@ pub(crate) fn stream_parts_for_result_block(
         ContentBlock::WebFetchToolResult {
             tool_use_id,
             content,
+            ..
         } => vec![tool_result(
             names.to_custom_tool_name("web_fetch").to_string(),
             map_web_fetch_result(content),
@@ -412,6 +445,7 @@ pub(crate) fn stream_parts_for_result_block(
         ContentBlock::CodeExecutionToolResult {
             tool_use_id,
             content,
+            ..
         } => vec![tool_result(
             names.to_custom_tool_name("code_execution").to_string(),
             map_code_execution_result(content),
@@ -424,6 +458,7 @@ pub(crate) fn stream_parts_for_result_block(
         | ContentBlock::TextEditorCodeExecutionToolResult {
             tool_use_id,
             content,
+            ..
         } => vec![tool_result(
             names.to_custom_tool_name("code_execution").to_string(),
             (content.clone(), None),
@@ -432,6 +467,7 @@ pub(crate) fn stream_parts_for_result_block(
         ContentBlock::ToolSearchToolResult {
             tool_use_id,
             content,
+            ..
         } => vec![tool_result(
             names
                 .to_custom_tool_name(tool_search_provider_name(
@@ -445,6 +481,7 @@ pub(crate) fn stream_parts_for_result_block(
         ContentBlock::AdvisorToolResult {
             tool_use_id,
             content,
+            ..
         } => vec![tool_result(
             names.to_custom_tool_name("advisor").to_string(),
             map_advisor_result(content),
@@ -476,6 +513,95 @@ pub(crate) fn stream_parts_for_result_block(
     }
 }
 
+fn citation_metadata(citations: &[Value]) -> Option<ProviderMetadata> {
+    let citations: Vec<_> = citations
+        .iter()
+        .filter(|citation| citation["type"] == "web_search_result_location")
+        .cloned()
+        .collect();
+    (!citations.is_empty()).then(|| {
+        provider_namespace(CANONICAL, json!({ "citations": citations }))
+            .expect("provider metadata must be an object")
+    })
+}
+
+pub(crate) struct CitationDocument {
+    pub title: String,
+    pub filename: Option<String>,
+    pub media_type: String,
+}
+
+fn citation_source(
+    citation: &Value,
+    documents: &[CitationDocument],
+    generate_id: &(dyn Fn() -> String + Send + Sync),
+) -> Option<Source> {
+    match citation["type"].as_str()? {
+        "web_search_result_location" => Some(Source::Url {
+            id: generate_id(),
+            url: str_field(citation, "url")?,
+            title: str_field(citation, "title"),
+            provider_metadata: Some(
+                provider_namespace(
+                    CANONICAL,
+                    json!({
+                        "citedText": citation["cited_text"],
+                        "encryptedIndex": citation["encrypted_index"],
+                    }),
+                )
+                .expect("provider metadata must be an object"),
+            ),
+        }),
+        kind @ ("page_location" | "char_location") => {
+            let index = usize::try_from(citation["document_index"].as_u64()?).ok()?;
+            let document = documents.get(index)?;
+            let metadata = if kind == "page_location" {
+                json!({
+                    "citedText": citation["cited_text"],
+                    "startPageNumber": citation["start_page_number"],
+                    "endPageNumber": citation["end_page_number"],
+                })
+            } else {
+                json!({
+                    "citedText": citation["cited_text"],
+                    "startCharIndex": citation["start_char_index"],
+                    "endCharIndex": citation["end_char_index"],
+                })
+            };
+            Some(Source::Document {
+                id: generate_id(),
+                media_type: document.media_type.clone(),
+                title: str_field(citation, "document_title")
+                    .unwrap_or_else(|| document.title.clone()),
+                filename: document.filename.clone(),
+                provider_metadata: Some(
+                    provider_namespace(CANONICAL, metadata)
+                        .expect("provider metadata must be an object"),
+                ),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn web_fetch_document(payload: &Value) -> Option<CitationDocument> {
+    (payload["type"] == "web_fetch_result").then(|| CitationDocument {
+        title: str_field(&payload["content"], "title")
+            .or_else(|| str_field(payload, "url"))
+            .unwrap_or_default(),
+        filename: None,
+        media_type: str_field(&payload["content"]["source"], "media_type").unwrap_or_default(),
+    })
+}
+
+fn compaction_metadata(signature: Option<&str>) -> ProviderMetadata {
+    let mut metadata = json!({ "type": "compaction" });
+    if let Some(signature) = signature {
+        metadata["signature"] = json!(signature);
+    }
+    provider_namespace(CANONICAL, metadata).expect("provider metadata must be an object")
+}
+
 /// Map Anthropic response content blocks into `GenerateContent` items.
 ///
 /// Text / tool_use / thinking / server_tool_use blocks are surfaced, and every
@@ -486,11 +612,14 @@ pub(crate) fn stream_parts_for_result_block(
 /// `names` maps Anthropic's wire tool names back to the names the caller used;
 /// pass the mapping built from `CallOptions.tools`.
 pub(crate) fn parse_anthropic_content(
-    options_name: &str,
+    _options_name: &str,
     blocks: &[ContentBlock],
     names: &ToolNameMapping,
+    uses_json_response_tool: bool,
+    mut citation_documents: Vec<CitationDocument>,
     generate_id: &(dyn Fn() -> String + Send + Sync),
 ) -> Vec<GenerateContent> {
+    let options_name = CANONICAL;
     let mut content = Vec::new();
     // Result blocks inherit information from their matching calls. Index the
     // complete response first so ordering does not affect non-stream parsing.
@@ -515,9 +644,44 @@ pub(crate) fn parse_anthropic_content(
 
     for block in blocks {
         match block {
-            ContentBlock::Text { text } => {
+            ContentBlock::ContainerUpload { file_id } => {
+                content.push(GenerateContent::Custom {
+                    kind: "anthropic.container_upload".to_string(),
+                    provider_metadata: Some(
+                        provider_namespace(CANONICAL, json!({ "fileId": file_id }))
+                            .expect("provider metadata must be an object"),
+                    ),
+                });
+            }
+            ContentBlock::Text { .. } if uses_json_response_tool => {}
+            ContentBlock::Text { text, citations } => {
                 content.push(GenerateContent::Text {
                     text: text.clone(),
+                    provider_metadata: citation_metadata(citations),
+                });
+                content.extend(
+                    citations
+                        .iter()
+                        .filter_map(|citation| {
+                            citation_source(citation, &citation_documents, generate_id)
+                        })
+                        .map(GenerateContent::Source),
+                );
+            }
+            ContentBlock::Compaction {
+                content: Some(text),
+                signature,
+            } if !text.is_empty() => {
+                content.push(GenerateContent::Text {
+                    text: text.clone(),
+                    provider_metadata: Some(compaction_metadata(signature.as_deref())),
+                });
+            }
+            ContentBlock::ToolUse { name, input, .. }
+                if uses_json_response_tool && name == "json" =>
+            {
+                content.push(GenerateContent::Text {
+                    text: input.to_string(),
                     provider_metadata: None,
                 });
             }
@@ -525,15 +689,26 @@ pub(crate) fn parse_anthropic_content(
                 id,
                 name,
                 input,
+                toolset_name,
                 caller,
             } => {
                 content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id.clone(),
-                    tool_name: names.to_custom_tool_name(name).to_string(),
-                    input: input.to_string(),
+                    tool_name: toolset_name.as_deref().map_or_else(
+                        || name.clone(),
+                        |name| names.to_custom_tool_name(name).to_string(),
+                    ),
+                    input: toolset_name.as_ref().map_or_else(
+                        || input.to_string(),
+                        |_| toolset_member_input(name, input).to_string(),
+                    ),
                     provider_executed: None,
                     dynamic: None,
-                    provider_metadata: tool_call_caller_metadata(caller.as_ref(), options_name),
+                    provider_metadata: tool_call_metadata(
+                        caller.as_ref(),
+                        toolset_name.as_deref(),
+                        options_name,
+                    ),
                 }));
             }
             ContentBlock::Thinking {
@@ -550,7 +725,12 @@ pub(crate) fn parse_anthropic_content(
             }
             // Provider-executed (server-side) tool calls are surfaced as tool
             // calls so they round-trip on follow-up turns.
-            ContentBlock::ServerToolUse { id, name, input } => {
+            ContentBlock::ServerToolUse {
+                id,
+                name,
+                input,
+                caller,
+            } => {
                 let provider_name = server_tool_provider_name(name);
                 content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id.clone(),
@@ -560,7 +740,7 @@ pub(crate) fn parse_anthropic_content(
                     dynamic: (provider_name == "code_execution"
                         && names.mark_code_execution_dynamic())
                     .then_some(true),
-                    provider_metadata: None,
+                    provider_metadata: tool_call_caller_metadata(caller.as_ref(), CANONICAL),
                 }));
             }
             // MCP tool use — provider-executed + dynamic (upstream :1166-1182).
@@ -603,6 +783,7 @@ pub(crate) fn parse_anthropic_content(
             ContentBlock::WebSearchToolResult {
                 tool_use_id,
                 content: payload,
+                caller,
             } => {
                 // Success is an array of results; anything else is the error
                 // object (upstream branches on `Array.isArray`).
@@ -617,7 +798,10 @@ pub(crate) fn parse_anthropic_content(
                             is_error: None,
                             preliminary: None,
                             dynamic: None,
-                            provider_metadata: None,
+                            provider_metadata: tool_call_caller_metadata(
+                                caller.as_ref(),
+                                CANONICAL,
+                            ),
                         }));
                         // Each result also becomes a `Source` — that is how the
                         // URLs and titles reach `result.sources`.
@@ -650,14 +834,18 @@ pub(crate) fn parse_anthropic_content(
                         is_error: Some(true),
                         preliminary: None,
                         dynamic: None,
-                        provider_metadata: None,
+                        provider_metadata: tool_call_caller_metadata(caller.as_ref(), CANONICAL),
                     })),
                 }
             }
             ContentBlock::WebFetchToolResult {
                 tool_use_id,
                 content: payload,
+                caller,
             } => {
+                if let Some(document) = web_fetch_document(payload) {
+                    citation_documents.push(document);
+                }
                 let (result, is_error) = map_web_fetch_result(payload);
                 content.push(GenerateContent::ToolResult(ToolResult {
                     tool_call_id: tool_use_id.clone(),
@@ -666,7 +854,7 @@ pub(crate) fn parse_anthropic_content(
                     is_error,
                     preliminary: None,
                     dynamic: None,
-                    provider_metadata: None,
+                    provider_metadata: tool_call_caller_metadata(caller.as_ref(), CANONICAL),
                 }));
             }
             ContentBlock::CodeExecutionToolResult {
@@ -778,14 +966,17 @@ pub(crate) fn parse_anthropic_content(
 /// full version, so every host reports the same detailed token accounting.
 /// `config` supplies the providerOptions key the metadata is written under and
 /// the host's error shape.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn anthropic_generate_core(
     request: HttpRequest,
     body: serde_json::Value,
     warnings: Vec<Warning>,
     config: &AnthropicModelConfig,
-    used_custom_provider_key: bool,
     tool_names: &ToolNameMapping,
-    generate_id: &(dyn Fn() -> String + Send + Sync),
+    used_custom_options_key: bool,
+    uses_json_response_tool: bool,
+    citation_documents: Vec<CitationDocument>,
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 ) -> Result<GenerateResult, AiMuxError> {
     let resp = aimux_provider_utils::post_json_to_api(
         request,
@@ -796,18 +987,23 @@ pub(crate) async fn anthropic_generate_core(
     .await?;
 
     let response_body = resp.raw_value;
-    let response_headers = resp.response_headers;
-
     let data: AnthropicResponse = resp.value;
 
+    let is_json_response_from_tool = uses_json_response_tool
+        && data
+            .content
+            .iter()
+            .any(|part| matches!(part, ContentBlock::ToolUse { name, .. } if name == "json"));
     let content = parse_anthropic_content(
         &config.provider_options_name,
         &data.content,
         tool_names,
-        generate_id,
+        uses_json_response_tool,
+        citation_documents,
+        generate_id.as_ref(),
     );
 
-    let finish_reason = data
+    let mut finish_reason = data
         .stop_reason
         .as_deref()
         .map(parse_stop_reason)
@@ -816,18 +1012,28 @@ pub(crate) async fn anthropic_generate_core(
             raw: None,
         });
 
+    if is_json_response_from_tool && finish_reason.unified == FinishReasonUnified::ToolCalls {
+        finish_reason.unified = FinishReasonUnified::Stop;
+    }
+
     // RFC-0015 P0-2: fill cache fields + raw; total = input + cache_read +
     // cache_creation (Anthropic's input_tokens excludes cache). Output side
     // breakdown (text/reasoning) comes from output_tokens_details.
     let usage = super::usage::usage_from_anthropic(&data.usage);
 
-    let provider_metadata = super::usage::result_provider_metadata(
+    let mut provider_metadata = super::usage::result_provider_metadata(
         &config.provider_options_name,
-        used_custom_provider_key,
         &serde_json::to_value(&data.usage).unwrap_or(Value::Null),
         data.stop_sequence.as_deref(),
         data.container.as_ref(),
         data.context_management.as_ref(),
+        used_custom_options_key,
+    );
+    super::usage::extend_result_metadata(
+        &mut provider_metadata,
+        data.stop_details.as_ref(),
+        data.input_transformations.as_ref(),
+        data.safeguard_results.as_ref(),
     );
 
     Ok(GenerateResult {
@@ -840,7 +1046,7 @@ pub(crate) async fn anthropic_generate_core(
             id: Some(data.id),
             timestamp: None,
             model_id: Some(data.model),
-            headers: Some(response_headers),
+            headers: Some(resp.response_headers),
             body: response_body,
         }),
         request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
@@ -849,13 +1055,12 @@ pub(crate) async fn anthropic_generate_core(
 
 /// Per-content-block state during streaming.
 ///
-/// Text blocks track whether a `TextStart` has been emitted; tool_use blocks
-/// accumulate the `input_json_delta` partial-json fragments so the final
-/// `ToolCall` can carry the parsed JSON object; thinking blocks track whether a
-/// `ReasoningStart` has been emitted.
+/// Text blocks collect web citations for `TextEnd`; tool-use blocks accumulate
+/// partial JSON for the final tool call. Every text/reasoning block starts as
+/// soon as its provider content-block-start event arrives.
 enum BlockState {
     Text {
-        started: bool,
+        citations: Vec<Value>,
     },
     ToolUse {
         id: String,
@@ -867,12 +1072,9 @@ enum BlockState {
         provider_tool_input_type: Option<String>,
         provider_metadata: Option<ProviderMetadata>,
         first_delta: bool,
+        toolset_member_name: Option<String>,
     },
-    Thinking {
-        started: bool,
-        /// Accumulated `signature_delta` pieces for the thinking block.
-        signature: Option<String>,
-    },
+    Thinking,
 }
 
 /// Shared Anthropic streaming core.
@@ -881,13 +1083,16 @@ enum BlockState {
 /// resolved by the model), then runs the Anthropic SSE event loop to produce a
 /// `StreamResult`. `config` supplies the providerOptions key the metadata is
 /// written under and the host's error shape.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn anthropic_stream_core(
     request: HttpRequest,
     body: serde_json::Value,
     warnings: Vec<Warning>,
     config: &AnthropicModelConfig,
-    used_custom_provider_key: bool,
     tool_names: ToolNameMapping,
+    used_custom_options_key: bool,
+    uses_json_response_tool: bool,
+    mut citation_documents: Vec<CitationDocument>,
     generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 ) -> Result<StreamResult, AiMuxError> {
     let endpoint = request.url.clone();
@@ -924,17 +1129,24 @@ pub(crate) async fn anthropic_stream_core(
 
         let mut sse = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
         let mut blocks: HashMap<usize, BlockState> = HashMap::new();
+        let mut is_json_response_from_tool = false;
         let mut final_usage = Usage::default();
         let mut final_finish_reason: Option<FinishReason> = None;
         // Result-level providerMetadata: the raw usage (`message_start`'s,
         // updated by every `message_delta`'s), the stop sequence, the
         // container and the context-management edits.
         let mut raw_usage = Value::Object(serde_json::Map::new());
+        let mut effective_usage = raw_usage.clone();
         let mut stop_sequence: Option<String> = None;
         let mut container: Option<Value> = None;
         let mut context_management: Option<Value> = None;
+        let mut stop_details: Option<Value> = None;
+        let mut input_transformations: Option<Value> = None;
+        let mut safeguard_results: Option<Value> = None;
         let mut response_meta_emitted = false;
-        let mut stream_errored = false;
+        let mut active_message_id: Option<String> = None;
+        let mut message_stopped = false;
+
         // id → (tool name, server name), so `mcp_tool_result` can inherit them
         // from the `mcp_tool_use` it answers.
         let mut mcp_tool_calls: HashMap<String, (String, String)> = HashMap::new();
@@ -947,12 +1159,31 @@ pub(crate) async fn anthropic_stream_core(
                 Ok(stream_event) => {
                     match stream_event {
                         StreamEvent::MessageStart { message } => {
+                            if let Some(active_id) = &active_message_id {
+                                if active_id == &message.id {
+                                    continue;
+                                }
+                                yield Ok(StreamPart::Error {
+                                    error: AiMuxError::InvalidResponseData(format!(
+                                        "Received message_start for message {:?} while message {:?} is still open.",
+                                        message.id, active_id,
+                                    )),
+                                });
+                                return;
+                            }
+                            active_message_id = Some(message.id.clone());
+                            input_transformations = message.input_transformations.or(input_transformations);
+                            container = message.container.or(container);
+                            if let Some(reason) = message.stop_reason.as_deref() {
+                                final_finish_reason = Some(parse_stop_reason(reason));
+                            }
                             if let Some(usage) = &message.usage {
                                 // RFC-0015 P0-2: full input side incl. cache
                                 // fields + raw (Anthropic reports cache only
                                 // in message_start).
                                 final_usage = super::usage::usage_from_anthropic(usage);
                                 raw_usage = serde_json::to_value(usage).unwrap_or(raw_usage);
+                                effective_usage = raw_usage.clone();
                             }
                             if !response_meta_emitted {
                                 yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
@@ -965,27 +1196,42 @@ pub(crate) async fn anthropic_stream_core(
                         }
                         StreamEvent::ContentBlockStart { index, content_block } => {
                             match content_block {
+                                ContentBlock::Text { .. } if uses_json_response_tool => {}
                                 ContentBlock::Text { .. } => {
-                                    blocks.insert(index, BlockState::Text { started: false });
+                                    blocks.insert(index, BlockState::Text { citations: Vec::new() });
+                                    yield Ok(StreamPart::TextStart { id: index.to_string(), provider_metadata: None });
+                                }
+                                ContentBlock::Compaction { content, signature } => {
+                                    blocks.insert(index, BlockState::Text { citations: Vec::new() });
+                                    yield Ok(StreamPart::TextStart { id: index.to_string(), provider_metadata: Some(compaction_metadata(signature.as_deref())) });
+                                    if signature.is_some()
+                                        && let Some(text) = content.filter(|text| !text.is_empty()) {
+                                            yield Ok(StreamPart::TextDelta { id: index.to_string(), delta: text, provider_metadata: None });
+                                        }
                                 }
                                 ContentBlock::Thinking { .. } => {
+                                    yield Ok(StreamPart::ReasoningStart { id: index.to_string(), provider_metadata: None });
                                     blocks.insert(
                                         index,
-                                        BlockState::Thinking {
-                                            started: false,
-                                            signature: None,
-                                        },
+                                        BlockState::Thinking,
                                     );
+                                }
+                                ContentBlock::ToolUse { name, .. } if uses_json_response_tool && name == "json" => {
+                                    is_json_response_from_tool = true;
+                                    blocks.insert(index, BlockState::Text { citations: Vec::new() });
+                                    yield Ok(StreamPart::TextStart { id: index.to_string(), provider_metadata: None });
                                 }
                                 ContentBlock::ToolUse {
                                     id,
                                     name,
                                     input,
+                                    toolset_name,
                                     caller,
                                 } => {
-                                    let custom_name = tool_names
-                                        .to_custom_tool_name(&name)
-                                        .to_string();
+                                    let custom_name = toolset_name.as_deref().map_or_else(
+                                        || name.clone(),
+                                        |name| tool_names.to_custom_tool_name(name).to_string(),
+                                    );
                                     let initial_input = initial_tool_input(&input);
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
@@ -1004,13 +1250,14 @@ pub(crate) async fn anthropic_stream_core(
                                         dynamic: None,
                                         provider_tool_name: None,
                                         provider_tool_input_type: None,
-                                        provider_metadata: tool_call_caller_metadata(caller.as_ref(), options_name.as_str()),
+                                        provider_metadata: tool_call_metadata(caller.as_ref(), toolset_name.as_deref(), CANONICAL),
+                                        toolset_member_name: toolset_name.map(|_| name),
                                     });
                                 }
                                 // Server-side tool use follows the same input
                                 // lifecycle as client tools because some code
                                 // execution inputs arrive entirely via deltas.
-                                ContentBlock::ServerToolUse { id, name, input } => {
+                                ContentBlock::ServerToolUse { id, name, input, caller } => {
                                     if is_tool_search_provider_name(&name) {
                                         server_tool_calls.insert(id.clone(), name.clone());
                                     }
@@ -1047,7 +1294,8 @@ pub(crate) async fn anthropic_stream_core(
                                             }
                                             _ => None,
                                         },
-                                        provider_metadata: None,
+                                        provider_metadata: tool_call_caller_metadata(caller.as_ref(), CANONICAL),
+                                        toolset_member_name: None,
                                     });
                                 }
                                 // MCP tool use — provider-executed + dynamic.
@@ -1060,7 +1308,7 @@ pub(crate) async fn anthropic_stream_core(
                                         input: input.to_string(),
                                         provider_executed: Some(true),
                                         dynamic: Some(true),
-                                        provider_metadata: Some(provider_namespace(options_name.as_str(), json!({
+                                        provider_metadata: Some(provider_namespace(CANONICAL, json!({
                                                 "type": "mcp-tool-use",
                                                 "serverName": server_name,
                                             })).expect("provider metadata must be an object")),
@@ -1071,14 +1319,11 @@ pub(crate) async fn anthropic_stream_core(
                                     let id = index.to_string();
                                     yield Ok(StreamPart::ReasoningStart {
                                         id: id.clone(),
-                                        provider_metadata: Some(provider_namespace(options_name.as_str(), json!({ "redactedData": data })).expect("provider metadata must be an object")),
+                                        provider_metadata: Some(provider_namespace(CANONICAL, json!({ "redactedData": data })).expect("provider metadata must be an object")),
                                     });
                                     blocks.insert(
                                         index,
-                                        BlockState::Thinking {
-                                            started: true,
-                                            signature: None,
-                                        },
+                                        BlockState::Thinking,
                                     );
                                 }
                                 // Server-tool result blocks arrive whole on
@@ -1087,8 +1332,12 @@ pub(crate) async fn anthropic_stream_core(
                                 // mirrors its `doGenerate` switch here too
                                 // (anthropic-language-model.ts:1901-2178).
                                 other => {
+                                    if let ContentBlock::WebFetchToolResult { content, .. } = &other
+                                        && let Some(document) = web_fetch_document(content) {
+                                        citation_documents.push(document);
+                                    }
                                     for part in stream_parts_for_result_block(
-                                        options_name.as_str(),
+                                        CANONICAL,
                                         &other,
                                         &tool_names,
                                         &mcp_tool_calls,
@@ -1101,32 +1350,23 @@ pub(crate) async fn anthropic_stream_core(
                             }
                         }
                         StreamEvent::ContentBlockDelta { index, delta } => {
-                            if let Some(text) = delta.text {
-                                // Start the text segment on the first delta. The
-                                // text id is the stringified content-block
-                                // index, matching the TS SDK.
-                                let start_id: Option<String> = match blocks.get_mut(&index) {
-                                    Some(BlockState::Text { started: false }) => {
-                                        if let Some(BlockState::Text { started }) =
-                                            blocks.get_mut(&index)
-                                        {
-                                            *started = true;
-                                        }
-                                        Some(index.to_string())
-                                    }
-                                    _ => None,
-                                };
-                                if let Some(id) = start_id {
-                                    yield Ok(StreamPart::TextStart {
-                                        id,
-                                        provider_metadata: None,
-                                    });
-                                }
+                            if !uses_json_response_tool && let Some(text) = delta.text {
                                 yield Ok(StreamPart::TextDelta {
                                     id: index.to_string(),
                                     delta: text,
                                     provider_metadata: None,
                                 });
+                            }
+                            if let Some(text) = delta.content {
+                                yield Ok(StreamPart::TextDelta { id: index.to_string(), delta: text, provider_metadata: None });
+                            }
+                            if let Some(citation) = delta.citation {
+                                if let Some(BlockState::Text { citations }) = blocks.get_mut(&index) {
+                                    citations.push(citation.clone());
+                                }
+                                if let Some(source) = citation_source(&citation, &citation_documents, generate_id.as_ref()) {
+                                    yield Ok(StreamPart::Source(source));
+                                }
                             }
                             if let Some(partial) = delta.partial_json {
                                 // Accumulate the partial JSON fragment and emit
@@ -1134,6 +1374,11 @@ pub(crate) async fn anthropic_stream_core(
                                 // leading `input_json_delta` with
                                 // `partial_json: ""`) are skipped, matching the
                                 // TS SDK.
+                                if is_json_response_from_tool && matches!(blocks.get(&index), Some(BlockState::Text { .. })) && !partial.is_empty() {
+                                    yield Ok(StreamPart::TextDelta { id: index.to_string(), delta: partial, provider_metadata: None });
+                                    continue;
+                                }
+                                if is_json_response_from_tool { continue; }
                                 let delta_event: Option<(String, String)> =
                                     match blocks.get_mut(&index) {
                                         Some(BlockState::ToolUse {
@@ -1141,6 +1386,7 @@ pub(crate) async fn anthropic_stream_core(
                                                 accumulated_json,
                                                 provider_tool_input_type,
                                                 first_delta,
+                                                toolset_member_name,
                                                 ..
                                             }) if !partial.is_empty() => {
                                             let emitted_delta = if *first_delta {
@@ -1157,7 +1403,7 @@ pub(crate) async fn anthropic_stream_core(
                                             };
                                             accumulated_json.push_str(&emitted_delta);
                                             *first_delta = false;
-                                            Some((id.clone(), emitted_delta))
+                                            toolset_member_name.is_none().then(|| (id.clone(), emitted_delta))
                                         }
                                         _ => None,
                                     };
@@ -1170,92 +1416,64 @@ pub(crate) async fn anthropic_stream_core(
                                 }
                             }
                             if let Some(thinking) = delta.thinking {
-                                // Start the reasoning segment on the first
-                                // thinking delta. The id is the stringified
-                                // content-block index, matching the TS SDK.
-                                let start_id: Option<String> = match blocks.get_mut(&index) {
-                                    Some(BlockState::Thinking { started: false, .. }) => {
-                                        if let Some(BlockState::Thinking { started, .. }) =
-                                            blocks.get_mut(&index)
-                                        {
-                                            *started = true;
-                                        }
-                                        Some(index.to_string())
-                                    }
-                                    _ => None,
-                                };
-                                if let Some(id) = start_id {
-                                    yield Ok(StreamPart::ReasoningStart {
-                                        id,
-                                        provider_metadata: None,
-                                    });
-                                }
                                 yield Ok(StreamPart::ReasoningDelta {
                                     id: index.to_string(),
                                     delta: thinking,
                                     provider_metadata: None,
                                 });
                             }
-                            if let Some(sig) = delta.signature {
-                                // `signature_delta`: incremental pieces of the
-                                // thinking-block signature. Accumulated on the
-                                // block state and attached to ReasoningEnd, so
-                                // the aggregated Reasoning part can echo it
-                                // back on extended-thinking multi-turn — same
-                                // shape as the non-streaming path.
-                                //
-                                // Edge: a thinking block carrying only a
-                                // signature (no text deltas) stays
-                                // `started: false` and emits nothing — the
-                                // protocol always sends text first, and the
-                                // core aggregator gates on non-empty text
-                                // anyway, so there is nothing to attach to.
-                                if let Some(BlockState::Thinking { signature, .. }) =
-                                    blocks.get_mut(&index)
-                                {
-                                    signature.get_or_insert_with(String::new).push_str(&sig);
+                            if let Some(sig) = delta.signature
+                                && let Some(BlockState::Thinking) = blocks.get(&index) {
+                                    yield Ok(StreamPart::ReasoningDelta {
+                                        id: index.to_string(), delta: String::new(),
+                                        provider_metadata: Some(provider_namespace(CANONICAL, json!({ "signature": sig })).expect("provider metadata must be an object")),
+                                    });
                                 }
-                            }
                         }
                         StreamEvent::ContentBlockStop { index } => {
                             // Removing the block releases the borrow before any
                             // yield.
                             if let Some(state) = blocks.remove(&index) {
                                 match state {
-                                    BlockState::Text { started: true } => {
+                                    BlockState::Text { citations } => {
                                         yield Ok(StreamPart::TextEnd {
+                                            id: index.to_string(),
+                                            provider_metadata: citation_metadata(&citations),
+                                        });
+                                    }
+                                    BlockState::Thinking => {
+                                        yield Ok(StreamPart::ReasoningEnd {
                                             id: index.to_string(),
                                             provider_metadata: None,
                                         });
                                     }
-                                    BlockState::Text { started: false } => {
-                                        // Text block with no deltas — nothing to emit.
-                                    }
-                                    BlockState::Thinking {
-                                        started: true,
-                                        signature,
-                                    } => {
-                                        yield Ok(StreamPart::ReasoningEnd {
-                                            id: index.to_string(),
-                                            provider_metadata: signature.map(|s| {
-                                                provider_namespace(options_name.as_str(), json!({ "signature": s })).expect("provider metadata must be an object")
-                                            }),
-                                        });
-                                    }
-                                    BlockState::Thinking { started: false, .. } => {
-                                        // Thinking block with no deltas — nothing to emit.
-                                    }
                                     BlockState::ToolUse {
                                         id,
                                         name,
-                                        accumulated_json,
+                                        mut accumulated_json,
                                         provider_executed,
                                         dynamic,
                                         provider_tool_name,
                                         provider_tool_input_type,
                                         provider_metadata,
+                                        toolset_member_name,
                                         ..
                                     } => {
+                                        if let Some(member_name) = toolset_member_name {
+                                            let parsed = if accumulated_json.is_empty() {
+                                                Ok(json!({}))
+                                            } else {
+                                                serde_json::from_str::<Value>(&accumulated_json)
+                                            };
+                                            if let Ok(input) = parsed {
+                                                accumulated_json = toolset_member_input(&member_name, &input).to_string();
+                                            }
+                                            yield Ok(StreamPart::ToolInputDelta {
+                                                id: id.clone(),
+                                                delta: accumulated_json.clone(),
+                                                provider_metadata: None,
+                                            });
+                                        }
                                         yield Ok(StreamPart::ToolInputEnd {
                                             id: id.clone(),
                                             provider_metadata: None,
@@ -1278,41 +1496,36 @@ pub(crate) async fn anthropic_stream_core(
                                 }
                             }
                         }
-                        StreamEvent::MessageDelta { delta, usage, context_management: edits } => {
+                        StreamEvent::MessageDelta { delta, usage, context_management: edits, input_transformations: transformations } => {
                             if let Some(reason) = delta.stop_reason {
                                 final_finish_reason = Some(parse_stop_reason(&reason));
                             }
-                            stop_sequence = delta.stop_sequence.or(stop_sequence);
-                            container = delta.container.or(container);
+                            stop_sequence = delta.stop_sequence;
+                            container = delta.container;
                             context_management = edits.or(context_management);
+                            stop_details = delta.stop_details;
+                            input_transformations = transformations.or(input_transformations);
+                            safeguard_results = delta.safeguard_results.or(safeguard_results);
                             if let Some(u) = usage {
                                 if let (Value::Object(raw), Ok(Value::Object(update))) =
                                     (&mut raw_usage, serde_json::to_value(&u))
                                 {
+                                    if let Value::Object(effective) = &mut effective_usage {
+                                        effective.extend(update.iter().filter(|(_, value)| !value.is_null()).map(|(key, value)| (key.clone(), value.clone())));
+                                    }
                                     raw.extend(update);
                                 }
-                                final_usage.raw = raw_usage.as_object().cloned();
-                                let reasoning_tokens = u
-                                    .output_tokens_details
-                                    .as_ref()
-                                    .and_then(|d| d.thinking_tokens);
-                                let output_total = u.output_tokens;
-                                let text_tokens = reasoning_tokens
-                                    .zip(output_total)
-                                    .map(|(r, t)| t.saturating_sub(r));
-                                final_usage.output_tokens = aimux_core::types::OutputTokenUsage {
-                                    total: output_total,
-                                    text: text_tokens,
-                                    reasoning: reasoning_tokens,
-                                };
+                                if let Ok(usage) = serde_json::from_value(effective_usage.clone()) {
+                                    final_usage = super::usage::usage_from_anthropic(&usage);
+                                    final_usage.raw = raw_usage.as_object().cloned();
+                                }
                             }
                         }
-                        StreamEvent::MessageStop => break,
+                        StreamEvent::MessageStop => {
+                            message_stopped = true;
+                            break;
+                        },
                         StreamEvent::Error { error } => {
-                            // Surface Anthropic in-stream errors (e.g.
-                            // overloaded_error) as a `StreamPart::Error` and
-                            // stop the stream, mirroring the TS "forward error
-                            // chunks" / "forward overloaded error" behaviour.
                             yield Ok(StreamPart::Error {
                                 error: anthropic_stream_error(
                                     &error,
@@ -1321,19 +1534,14 @@ pub(crate) async fn anthropic_stream_core(
                                     stream_response_headers.clone(),
                                 ),
                             });
-                            // Finish is the final-chunk contract: it must
-                            // still terminate the stream after an in-stream
-                            // error (openai and google do the same), so
-                            // downstream aggregators see a well-formed end.
-                            stream_errored = true;
-                            break;
+
                         }
                         _ => {}
                     }
                 }
                 Err(error) => {
                     let recoverable = error.is_recoverable_stream_error();
-                    yield Err(error);
+                    yield Ok(StreamPart::Error { error });
                     if !recoverable {
                         return;
                     }
@@ -1341,33 +1549,32 @@ pub(crate) async fn anthropic_stream_core(
             }
         }
 
-        // Final part: Finish.
+        // The provider completes a message explicitly; EOF after an error
+        // does not synthesize a finish event.
+        if !message_stopped {
+            return;
+        }
+        if is_json_response_from_tool && let Some(reason) = &mut final_finish_reason
+            && reason.unified == FinishReasonUnified::ToolCalls {
+            reason.unified = FinishReasonUnified::Stop;
+        }
         yield Ok(StreamPart::Finish {
-            finish_reason: if stream_errored {
-                FinishReason {
-                    unified: FinishReasonUnified::Error,
-                    raw: None,
-                }
-            } else {
-                final_finish_reason.unwrap_or(FinishReason {
-                    unified: FinishReasonUnified::Stop,
-                    raw: None,
-                })
-            },
-            usage: if stream_errored {
-                Usage::default()
-            } else {
-                final_usage
-            },
-            provider_metadata: (!stream_errored).then(|| {
-                super::usage::result_provider_metadata(
+            finish_reason: final_finish_reason.unwrap_or(FinishReason {
+                unified: FinishReasonUnified::Other,
+                raw: None,
+            }),
+            usage: final_usage,
+            provider_metadata: Some({
+                let mut metadata = super::usage::result_provider_metadata(
                     options_name.as_str(),
-                    used_custom_provider_key,
-                    &raw_usage,
+                                &raw_usage,
                     stop_sequence.as_deref(),
                     container.as_ref(),
                     context_management.as_ref(),
-                )
+                    used_custom_options_key,
+                );
+                super::usage::extend_result_metadata(&mut metadata, stop_details.as_ref(), input_transformations.as_ref(), safeguard_results.as_ref());
+                metadata
             }),
         });
     };

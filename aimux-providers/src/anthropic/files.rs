@@ -70,7 +70,7 @@ impl AnthropicFiles {
 
 #[async_trait]
 impl Files for AnthropicFiles {
-    /// `"{name}.files"` with the `.messages` suffix removed.
+    /// The configured provider name.
     fn provider(&self) -> &str {
         &self.config.provider
     }
@@ -96,7 +96,10 @@ impl Files for AnthropicFiles {
 
         let betas = std::collections::BTreeSet::from([FILES_BETA_HEADER.to_string()]);
         let config = self.config.resolved().await?;
-        let header_list = config.request_headers(None, &betas).await?;
+        let mut header_list = config.request_headers(None, &betas).await?;
+        // The Files endpoint replaces the provider beta header with its own.
+        header_list.retain(|(name, _)| !name.eq_ignore_ascii_case("anthropic-beta"));
+        header_list.push(("anthropic-beta".to_string(), FILES_BETA_HEADER.to_string()));
 
         // `send()` returns Ok only for 2xx; non-2xx responses are mapped to an
         // error internally using the shared error structure. The multipart body
@@ -148,9 +151,7 @@ impl Files for AnthropicFiles {
             provider_reference: provider_ref,
             media_type: Some(result_media_type),
             filename: result_filename,
-            provider_metadata: Some(
-                std::iter::once((self.config.provider_options_name.clone(), metadata)).collect(),
-            ),
+            provider_metadata: Some(std::iter::once((CANONICAL.to_string(), metadata)).collect()),
             warnings: Vec::new(),
         })
     }

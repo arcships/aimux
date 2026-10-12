@@ -1,11 +1,18 @@
 //! Helpers shared by the xAI Responses converter.
 //!
-//! Mirrors the TS xai package's `supports-reasoning-effort.ts` and
-//! `remove-additional-properties.ts`, plus the media-type and provider
-//! reference helpers its input conversion uses.
+//! Mirrors `supports-reasoning-effort.ts` and the provider-reference helper
+//! used by upstream input conversion.
 
-use aimux_core::shared::SharedProviderReference;
-use serde_json::Value;
+use std::collections::HashMap;
+
+use aimux_core::{
+    error::AiMuxError,
+    language_model_message::FilePart,
+    shared::{FileBytes, FileData},
+};
+use aimux_provider_utils::{
+    MediaTypeData, detect_media_type, get_top_level_media_type, is_full_media_type,
+};
 
 // ── Reasoning effort ─────────────────────────────────────────────────────────
 
@@ -33,27 +40,6 @@ pub fn supports_reasoning_effort(model_id: &str) -> bool {
     !is_model_without_reasoning_effort(model_id)
 }
 
-// ── JSON schema ──────────────────────────────────────────────────────────────
-
-pub fn remove_additional_properties_false(value: &Value) -> Value {
-    match value {
-        Value::Array(arr) => {
-            Value::Array(arr.iter().map(remove_additional_properties_false).collect())
-        }
-        Value::Object(obj) => {
-            let mut result = serde_json::Map::new();
-            for (key, val) in obj {
-                if key == "additionalProperties" && val == &Value::Bool(false) {
-                    continue;
-                }
-                result.insert(key.clone(), remove_additional_properties_false(val));
-            }
-            Value::Object(result)
-        }
-        other => other.clone(),
-    }
-}
-
 /// Resolve the provider-specific reference string from a file part's
 /// `provider` map.
 ///
@@ -62,7 +48,7 @@ pub fn remove_additional_properties_false(value: &Value) -> Value {
 /// Returns a `String` listing the available providers when the requested key
 /// is absent.
 pub fn resolve_provider_reference(
-    reference: &SharedProviderReference,
+    reference: &HashMap<String, String>,
     provider: &str,
 ) -> Result<String, String> {
     if let Some(value) = reference.get(provider) {
@@ -75,4 +61,32 @@ pub fn resolve_provider_reference(
         provider,
         available.join(", ")
     ))
+}
+
+pub(super) fn resolve_full_media_type(part: &FilePart) -> Result<String, AiMuxError> {
+    let media_type = &part.media_type;
+    if is_full_media_type(media_type) {
+        return Ok(media_type.clone());
+    }
+    let data = match &part.data {
+        FileData::Data {
+            data: FileBytes::Binary(bytes),
+        } => Some(MediaTypeData::Bytes(bytes)),
+        FileData::Data {
+            data: FileBytes::Base64(data),
+        } => Some(MediaTypeData::Base64(data)),
+        _ => None,
+    };
+    let reason = if let Some(data) = data {
+        if let Some(detected) = detect_media_type(data, Some(get_top_level_media_type(media_type)))?
+        {
+            return Ok(detected.into());
+        }
+        "it could not be auto-detected"
+    } else {
+        "it is not passed as inline bytes"
+    };
+    Err(AiMuxError::UnsupportedFunctionality(format!(
+        "file of media type \"{media_type}\" must specify subtype since {reason}"
+    )))
 }

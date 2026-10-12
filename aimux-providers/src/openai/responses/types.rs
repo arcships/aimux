@@ -12,8 +12,6 @@
 //! model code. Only [`ResponsesUsage`] — which has a stable, well-defined
 //! shape — gets a dedicated typed struct.
 
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 
 // ── Usage ────────────────────────────────────────────────────────────────────
