@@ -19,6 +19,7 @@ use aimux_core::reranking_model::{
     RerankingCallOptions, RerankingDocuments, RerankingModel, RerankingRank, RerankingResponse,
     RerankingResult,
 };
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
 use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
 
@@ -119,7 +120,7 @@ struct JinaRerankingOptions {
 }
 
 fn parse_jina_reranking_options(
-    provider_options: Option<&HashMap<String, Value>>,
+    provider_options: Option<&SharedProviderOptions>,
 ) -> JinaRerankingOptions {
     let mut opts = JinaRerankingOptions::default();
     if let Some(po) = provider_options

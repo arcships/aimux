@@ -7,12 +7,14 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::RawToolCall;
+use aimux_core::types::ProviderMetadata;
 use aimux_provider_utils::{
     StreamingToolCallDelta, StreamingToolCallTracker, TrackerError, TypeValidation,
 };
-use serde_json::{Value, json};
+use serde_json::json;
 
 /// The TS tracker's four events, projected out of [`StreamPart`] so the
 /// assertions below read like the upstream suite.
@@ -38,7 +40,7 @@ enum Part {
         tool_name: String,
         /// The raw argument text.
         input: String,
-        provider_metadata: Option<Value>,
+        provider_metadata: Option<ProviderMetadata>,
     },
 }
 
@@ -1043,7 +1045,9 @@ mod metadata {
         let mut h = Harness::new();
 
         h.delta(StreamingToolCallDelta {
-            provider_metadata: Some(json!({ "google": { "thoughtSignature": "sig123" } })),
+            provider_metadata: Some(
+                provider_namespace("google", json!({ "thoughtSignature": "sig123" })).unwrap(),
+            ),
             ..start(0, "call_1", "fn", "{\"incomplete")
         })
         .unwrap();
@@ -1055,7 +1059,9 @@ mod metadata {
                 tool_call_id: "call_1".into(),
                 tool_name: "fn".into(),
                 input: "{\"incomplete".into(),
-                provider_metadata: Some(json!({ "google": { "thoughtSignature": "sig123" } })),
+                provider_metadata: Some(
+                    provider_namespace("google", json!({ "thoughtSignature": "sig123" })).unwrap(),
+                ),
             })
         );
     }
@@ -1066,7 +1072,9 @@ mod metadata {
 
         h.delta(start(0, "call_1", "fn", "{")).unwrap();
         h.delta(StreamingToolCallDelta {
-            provider_metadata: Some(json!({ "custom": { "key": "value" } })),
+            provider_metadata: Some(
+                provider_namespace("custom", json!({ "key": "value" })).unwrap(),
+            ),
             ..cont(Some(0), "}")
         })
         .unwrap();

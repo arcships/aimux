@@ -178,6 +178,12 @@ pub enum AiMuxError {
     #[error("invalid response data: {0}")]
     InvalidResponseData(String),
 
+    #[error("Tool call \"{tool_call_id}\" not found for approval request \"{approval_id}\".")]
+    ToolCallNotFoundForApproval {
+        tool_call_id: String,
+        approval_id: String,
+    },
+
     /// A model requested a tool that was not present in the call's tool set.
     /// Message templates for the three tool variants match the AI SDK verbatim
     /// (`NoSuchToolError` / `InvalidToolInputError` / `ToolCallRepairError`):

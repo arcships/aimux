@@ -29,4 +29,4 @@ score: number | null,
 /**
  * Provider-specific metadata for this result.
  */
-provider_metadata: { [key in string]: JsonValue } | null, };
+provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, };

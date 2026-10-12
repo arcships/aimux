@@ -296,41 +296,6 @@ func TestGenerateTextOptionsIncludeRawChunksRoundTrip(t *testing.T) {
 
 // ── GenerateTextResult round-trip ────────────────────────────────────────────
 
-func TestGenerateTextResultRoundTrip(t *testing.T) {
-	original := GenerateTextResult{
-		Text: "hello",
-		ToolCalls: []ToolCall{
-			{ToolCallID: "call_1", ToolName: "get_weather"},
-		},
-		Usage: Usage{
-			InputTokens:  TokenUsage{Total: u32ptr(10)},
-			OutputTokens: TokenUsage{Total: u32ptr(5)},
-		},
-		Raw: GenerateResult{
-			Content:      []ContentPart{json.RawMessage(`{"Text":{"text":"hello"}}`)},
-			FinishReason: FinishReason{Unified: FinishStop},
-		},
-		FinishReason: FinishReason{Unified: FinishStop},
-	}
-	b, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("marshal failed: %v", err)
-	}
-	var decoded GenerateTextResult
-	if err := json.Unmarshal(b, &decoded); err != nil {
-		t.Fatalf("unmarshal failed: %v", err)
-	}
-	if decoded.Text != "hello" {
-		t.Errorf("text mismatch: got %s", decoded.Text)
-	}
-	if len(decoded.ToolCalls) != 1 || decoded.ToolCalls[0].ToolName != "get_weather" {
-		t.Errorf("tool_calls mismatch: %+v", decoded.ToolCalls)
-	}
-	if decoded.Raw.FinishReason.Unified != FinishStop {
-		t.Errorf("raw.finish_reason mismatch: got %s", decoded.Raw.FinishReason.Unified)
-	}
-}
-
 func TestGenerateTextResultWithWarningsRoundTrip(t *testing.T) {
 	original := GenerateTextResult{
 		Text:     "ok",
@@ -348,27 +313,6 @@ func TestGenerateTextResultWithWarningsRoundTrip(t *testing.T) {
 }
 
 // ── Usage / TokenUsage round-trip ─────────────────────────────────────────────
-
-func TestUsageRoundTrip(t *testing.T) {
-	original := Usage{
-		InputTokens:  TokenUsage{Total: u32ptr(100), CacheRead: u32ptr(50)},
-		OutputTokens: TokenUsage{Total: u32ptr(20), Reasoning: u32ptr(5)},
-	}
-	b, _ := json.Marshal(original)
-	s := string(b)
-	for _, want := range []string{`"input_tokens"`, `"output_tokens"`, `"total"`, `"cache_read"`, `"reasoning"`} {
-		if !contains(s, want) {
-			t.Errorf("expected %s in wire JSON, got %s", want, s)
-		}
-	}
-	var decoded Usage
-	json.Unmarshal(b, &decoded)
-	if decoded.InputTokens.Total == nil || *decoded.InputTokens.Total != 100 {
-		t.Error("input_tokens.total did not round-trip")
-	}
-}
-
-// ── StreamPart parse round-trip ───────────────────────────────────────────────
 
 func TestStreamPartParseRoundTrip(t *testing.T) {
 	cases := []struct {

@@ -6,4 +6,4 @@ import type { FileBytes } from "./FileBytes";
  *
  * Aligned with V4 `SharedV4FileData`.
  */
-export type FileData = { "Data": { data: FileBytes, } } | { "Url": { url: string, } } | { "Reference": { reference: { [key in string]: string }, } } | { "Text": { text: string, } };
+export type FileData = { "Data": { data: FileBytes, } } | { "Url": { url: string, original_url?: string | null, } } | { "Reference": { reference: { [key in string]: string }, } } | { "Text": { text: string, } };

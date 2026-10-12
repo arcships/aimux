@@ -22,6 +22,9 @@ pub mod composite;
 pub mod content;
 pub mod decision_model;
 mod decision_replay;
+pub(crate) mod download;
+#[doc(hidden)]
+pub mod download_guard;
 pub mod embedding_model;
 pub mod error;
 pub mod files_model;
@@ -103,7 +106,11 @@ pub mod prelude {
     pub use crate::reranking_model::{
         RerankingCallOptions, RerankingModel, RerankingResult, rerank,
     };
-    pub use crate::result::{GenerateResult, StreamResult};
+    pub use crate::result::{
+        GenerateResponse, GenerateResult, GeneratedFile, RawToolApprovalRequest, ReasoningOutput,
+        ReasoningPart, Source, StreamResponse, StreamResult, TextContent,
+        ToolApprovalRequestOutput,
+    };
     pub use crate::router::{
         FallbackPolicy, Router, RouterConfig, RouterModel, RuleRouter, WeightedRouter,
     };
@@ -115,8 +122,9 @@ pub mod prelude {
         init_session_store, list_sessions, session_calls,
     };
     pub use crate::shared::{
-        AspectRatio, FileBytes, FileData, SharedHeaders, SharedProviderMetadata,
-        SharedProviderOptions, SharedProviderReference, Size,
+        AspectRatio, FileBytes, FileData, GeneratedFileData, JsonObject, SharedHeaders,
+        SharedProviderMetadata, SharedProviderOptions, SharedProviderReference, Size,
+        provider_namespace,
     };
     pub use crate::speech_model::{SpeechCallOptions, SpeechModel, SpeechResult, generate_speech};
     pub use crate::stream_part::{StreamPart, TextStreamPart};
@@ -129,7 +137,10 @@ pub mod prelude {
         TranscriptionResult, TranscriptionStreamOptions, TranscriptionStreamPart,
         TranscriptionStreamResult, stream_transcribe, transcribe,
     };
-    pub use crate::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Usage, Warning};
+    pub use crate::types::{
+        FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, ReasoningEffort,
+        Usage, Warning,
+    };
     pub use crate::video_model::{
         VideoCallOptions, VideoModel, VideoOperationStart, VideoOperationStatus, VideoPollConfig,
         VideoPollOptions, VideoResult, generate_video,

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use aimux_core::AiMuxError;
 use aimux_core::decision_model::*;
 use aimux_core::recording::ProviderRecord;
-use aimux_core::types::{TokenUsage, Usage};
+use aimux_core::types::{InputTokenUsage, OutputTokenUsage, Usage};
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -182,9 +182,10 @@ fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Value, AiM
         .as_ref()
         .and_then(|p| p.get("openai"))
     {
-        let parsed: ProviderOptions = serde_json::from_value(openai.clone()).map_err(|error| {
-            AiMuxError::InvalidArgument(format!("OpenAI decision options: {error}"))
-        })?;
+        let parsed: ProviderOptions = serde_json::from_value(Value::Object(openai.clone()))
+            .map_err(|error| {
+                AiMuxError::InvalidArgument(format!("OpenAI decision options: {error}"))
+            })?;
         if let Some(identifier) = parsed.safety_identifier {
             if identifier.chars().count() > 128 {
                 return Err(AiMuxError::InvalidArgument(
@@ -349,7 +350,7 @@ fn convert_response(
         let written = count(&raw["input_tokens_details"]["cache_write_tokens"]);
         let reasoning = count(&raw["output_tokens_details"]["reasoning_tokens"]);
         Usage {
-            input_tokens: TokenUsage {
+            input_tokens: InputTokenUsage {
                 total: input,
                 no_cache: input
                     .zip(cached)
@@ -357,17 +358,15 @@ fn convert_response(
                     .and_then(|((total, read), write)| total.checked_sub(read)?.checked_sub(write)),
                 cache_read: cached,
                 cache_write: written,
-                ..Default::default()
             },
-            output_tokens: TokenUsage {
+            output_tokens: OutputTokenUsage {
                 total: output,
                 text: output
                     .zip(reasoning)
                     .and_then(|(total, reasoning)| total.checked_sub(reasoning)),
                 reasoning,
-                ..Default::default()
             },
-            raw: Some(raw),
+            raw: raw.as_object().cloned(),
         }
     });
     let result = DecisionResult {
@@ -379,7 +378,7 @@ fn convert_response(
         probability_source: DecisionProbabilitySource::Native,
         usage,
         latency_ms: None,
-        provider_metadata: Some(HashMap::from([("openai".into(), raw.clone())])),
+        provider_metadata: Some(crate::decision_support::response_metadata("openai", &raw)?),
         response: Some(DecisionResponse {
             headers: Some(headers),
             body: Some(raw),

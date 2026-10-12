@@ -298,8 +298,7 @@ struct LMNTSpeechProviderOptions {
 fn parse_lmnt_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Option<LMNTSpeechProviderOptions> {
-    let provider_opts = options.and_then(|opts| opts.get("lmnt"))?;
-    let opts = provider_opts.as_object()?;
+    let opts = options.and_then(|opts| opts.get("lmnt"))?;
 
     Some(LMNTSpeechProviderOptions {
         conversational: opts

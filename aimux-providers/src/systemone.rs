@@ -1,7 +1,7 @@
 //! Shared SystemOne wire codec. Provider policy stays in each adapter.
 use aimux_core::AiMuxError;
 use aimux_core::decision_model::*;
-use aimux_core::types::{TokenUsage, Usage};
+use aimux_core::types::{InputTokenUsage, OutputTokenUsage, Usage};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
@@ -166,15 +166,15 @@ pub(crate) fn convert_response(
         answers.insert(id, answer);
     }
     let usage = Some(Usage {
-        input_tokens: TokenUsage {
+        input_tokens: InputTokenUsage {
             total: data.usage.input_tokens,
             ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: OutputTokenUsage {
             total: data.usage.output_tokens,
             ..Default::default()
         },
-        raw: raw.get("usage").cloned(),
+        raw: raw.get("usage").and_then(Value::as_object).cloned(),
     });
     Ok(DecisionResult {
         rounding: profile.rounding,
@@ -185,7 +185,7 @@ pub(crate) fn convert_response(
         probability_source: profile.probability_source,
         usage,
         latency_ms: None,
-        provider_metadata: Some(HashMap::from([(provider.into(), raw.clone())])),
+        provider_metadata: Some(crate::decision_support::response_metadata(provider, &raw)?),
         response: Some(DecisionResponse {
             headers: Some(headers),
             body: Some(raw),

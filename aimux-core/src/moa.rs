@@ -151,8 +151,8 @@ impl MoaModel {
                     usage = add_usage(usage, &res.usage);
                     let mid = res
                         .response
-                        .model_id
-                        .clone()
+                        .as_ref()
+                        .and_then(|response| response.model_id.clone())
                         .unwrap_or_else(|| format!("ref-{i}"));
                     texts.push((mid, extract_text(&res.content)));
                 }
@@ -301,8 +301,8 @@ impl LanguageModel for MoaModel {
         // cache probing (RFC-0015 fingerprinting).
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: None,
-            response_headers: None,
+            request: None,
+            response: None,
         })
     }
 }

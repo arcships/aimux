@@ -14,6 +14,7 @@ use aimux_core::reranking_model::{
     RerankingCallOptions, RerankingDocuments, RerankingModel, RerankingRank, RerankingResponse,
     RerankingResult,
 };
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
 
 use aimux_provider_utils::HttpRequest;
@@ -28,7 +29,7 @@ struct CohereRerankingOptions {
 }
 
 fn parse_cohere_reranking_options(
-    provider_options: Option<&HashMap<String, Value>>,
+    provider_options: Option<&SharedProviderOptions>,
 ) -> CohereRerankingOptions {
     let mut opts = CohereRerankingOptions::default();
     if let Some(po) = provider_options

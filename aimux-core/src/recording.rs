@@ -1626,11 +1626,12 @@ impl<S> RecordingOutcomeStream<S> {
     }
 }
 
-impl<S, C> futures::Stream for RecordingOutcomeStream<S>
+impl<S, C, A, R> futures::Stream for RecordingOutcomeStream<S>
 where
-    S: futures::Stream<Item = Result<crate::stream_part::StreamPart<C>, crate::AiMuxError>> + Unpin,
+    S: futures::Stream<Item = Result<crate::stream_part::StreamPart<C, A, R>, crate::AiMuxError>>
+        + Unpin,
 {
-    type Item = Result<crate::stream_part::StreamPart<C>, crate::AiMuxError>;
+    type Item = Result<crate::stream_part::StreamPart<C, A, R>, crate::AiMuxError>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
@@ -1883,7 +1884,8 @@ mod tests {
             crate::language_model_message::convert_to_language_model_prompt(
                 &[crate::message::ModelMessage::user("ping")],
                 None,
-            ),
+            )
+            .unwrap(),
         )
     }
 

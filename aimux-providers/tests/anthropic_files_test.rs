@@ -259,7 +259,7 @@ async fn omits_downloadable_when_null() {
     let anthropic = metadata.get("anthropic").expect("anthropic metadata");
     assert!(
         anthropic.get("downloadable").is_none(),
-        "downloadable should be omitted when null: {anthropic}"
+        "downloadable should be omitted when null: {anthropic:?}"
     );
 }
 

@@ -20,6 +20,7 @@ use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
+use aimux_core::shared::SharedProviderOptions;
 use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
 
 /// Fixed model ID for the Google PSE search model.
@@ -130,7 +131,7 @@ impl Provider for GooglePseProvider {
 /// `provider_options["google_pse"]["cx"]`.
 fn resolve_cx(
     config_cx: Option<&str>,
-    provider_options: Option<&HashMap<String, Value>>,
+    provider_options: Option<&SharedProviderOptions>,
 ) -> Option<String> {
     if let Some(cx) = config_cx {
         return Some(cx.to_string());
