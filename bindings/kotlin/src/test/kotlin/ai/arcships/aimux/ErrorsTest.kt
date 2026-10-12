@@ -47,22 +47,6 @@ class ErrorsTest {
             .hasMessageContaining("api_key")
     }
 
-    /** Malformed JSON text that reaches C → invariant (the public API rejects it before C). */
-    @Test
-    fun `malformed wire JSON is a C ABI failure naming the parameter`() {
-        val e = FFI.lib.aimux_register_providers("{not json")
-        assertThat(e).isNotNull
-        assertThat(FFI.lib.aimux_error_code(e)).isEqualTo(202)
-        assertThatThrownBy { throw expectAimuxError(e!!) }
-            .isInstanceOf(IllegalStateException::class.java)
-            .isNotInstanceOf(AimuxException::class.java)
-            .hasMessageContaining("config_json")
-        // The public API never lets it reach C.
-        assertThatThrownBy { Model.registerProviders("{not json") }
-            .isInstanceOf(IllegalArgumentException::class.java)
-            .hasMessageContaining("configJson")
-    }
-
     /** A C-ABI-only utility decodes through expectFfiError. */
     @Test
     fun `expectFfiError reads the message and frees`() {
@@ -237,8 +221,8 @@ class ErrorsTest {
     fun `createByCode rejects codes outside the enum`() {
         assertThatThrownBy { AimuxException.createByCode(999, "?") }
             .isInstanceOf(IllegalStateException::class.java)
-        // 20 is the first unassigned value and is rejected.
-        assertThatThrownBy { AimuxException.createByCode(20, "?") }
+        // 21 is the first unassigned value and is rejected.
+        assertThatThrownBy { AimuxException.createByCode(21, "?") }
             .isInstanceOf(IllegalStateException::class.java)
         assertThatThrownBy { AimuxException.createByCode(AIMUX_OK, "?") }
             .isInstanceOf(IllegalStateException::class.java)

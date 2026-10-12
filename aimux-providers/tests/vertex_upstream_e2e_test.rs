@@ -289,8 +289,8 @@ async fn transcription_generate_request_and_result() {
     assert_eq!(
         serde_json::to_value(result.segments).unwrap(),
         json!([
-            {"text": "hello", "start_second": 0.0, "end_second": 0.5},
-            {"text": "world", "start_second": 0.5, "end_second": 1.0}
+            {"text": "hello", "startSecond": 0.0, "endSecond": 0.5},
+            {"text": "world", "startSecond": 0.5, "endSecond": 1.0}
         ])
     );
     assert_eq!(result.language.as_deref(), Some("en"));

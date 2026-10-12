@@ -5,8 +5,8 @@ import type { OutputTokenUsage } from "./OutputTokenUsage";
 /**
  * Token usage statistics.
  */
-export type Usage = { input_tokens: InputTokenUsage, output_tokens: OutputTokenUsage, 
+export type Usage = { inputTokens: InputTokenUsage, outputTokens: OutputTokenUsage, 
 /**
  * Raw usage information from the provider (opaque, provider-specific).
  */
-raw?: Record<string, unknown> | null, };
+raw?: Record<string, unknown>, };

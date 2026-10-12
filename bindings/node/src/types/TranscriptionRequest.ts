@@ -7,4 +7,4 @@ export type TranscriptionRequest = {
 /**
  * Raw request HTTP body that was sent (JSON stringified).
  */
-body: string | null, };
+body?: string, };

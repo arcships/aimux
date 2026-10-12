@@ -185,7 +185,7 @@ class TestTranscriptionSessionBehavior:
             try:
                 first = session.next_part(timeout_ms=3000)
                 assert first is not None
-                assert "StreamStart" in json.loads(first)
+                assert json.loads(first)["type"] == "stream-start"
 
                 with pytest.raises(APITimeoutError) as ei:
                     session.next_part(timeout_ms=250)
@@ -198,7 +198,7 @@ class TestTranscriptionSessionBehavior:
                 # The session stayed live across the timeout.
                 late = session.next_part(timeout_ms=5000)
                 assert late is not None
-                assert "TranscriptDelta" in json.loads(late)
+                assert json.loads(late)["type"] == "transcript-delta"
             finally:
                 session.close()
 
@@ -212,7 +212,7 @@ class TestTranscriptionSessionBehavior:
             try:
                 first = session.next_part(timeout_ms=5000)
                 assert first is not None
-                assert "StreamStart" in json.loads(first)
+                assert json.loads(first)["type"] == "stream-start"
 
                 with pytest.raises(APICallError) as ei:
                     session.next_part(timeout_ms=5000)

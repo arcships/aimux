@@ -56,6 +56,7 @@ impl EvaluationQuestionType {
 /// The optional descriptions of a Boolean question's outcomes. An absent key
 /// and an explicit `null` differ: `Some(None)` is `null` (no description).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct BooleanCriteria {
     #[serde(
@@ -86,7 +87,11 @@ where
 
 /// A judgment to make about the shared state (`EvaluationModelV4Question`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(
+    tag = "type",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export)]
 pub enum EvaluationQuestion {
     Choice {
@@ -103,6 +108,7 @@ pub enum EvaluationQuestion {
     },
     Boolean {
         instructions: EvaluationInput,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         criteria: Option<BooleanCriteria>,
     },
@@ -123,6 +129,7 @@ impl EvaluationQuestion {
 /// Options passed to [`EvaluationModel::do_evaluate`]
 /// (`EvaluationModelV4CallOptions`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct EvaluationCallOptions {
     /// One shared state, even when the value is an array.
@@ -134,13 +141,21 @@ pub struct EvaluationCallOptions {
     #[serde(skip)]
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// The answer to one question (`EvaluationModelV4Answer`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(
+    tag = "type",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export)]
 pub enum EvaluationAnswer {
     Choice {
@@ -148,6 +163,7 @@ pub enum EvaluationAnswer {
         /// exists.
         choice: String,
         /// Complete distribution over the question's options, when available.
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         probabilities: Option<HashMap<String, f64>>,
     },
@@ -156,6 +172,7 @@ pub enum EvaluationAnswer {
         score: f64,
         /// Complete distribution keyed by zero-based level indices as
         /// strings; when supplied, `score` is its probability-weighted mean.
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         probabilities: Option<HashMap<String, f64>>,
     },
@@ -168,31 +185,50 @@ pub enum EvaluationAnswer {
 
 /// Decimal places the provider rounded its output to; omit for full precision.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct EvaluationRounding {
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probability_decimals: Option<u32>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub score_decimals: Option<u32>,
 }
 
 /// Token usage of an evaluation.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct EvaluationUsage {
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u32>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u32>,
 }
 
 /// The result of [`EvaluationModel::do_evaluate`] (`EvaluationModelV4Result`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct EvaluationResult {
     /// Exactly one answer per question, under the original question ids.
     #[ts(as = "std::collections::HashMap<String, EvaluationAnswer>")]
     pub answers: IndexMap<String, EvaluationAnswer>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rounding: Option<EvaluationRounding>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<EvaluationUsage>,
     pub warnings: Vec<Warning>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<SharedProviderMetadata>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response: Option<ResponseInfo>,
 }
 

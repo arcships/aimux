@@ -1,5 +1,6 @@
-//! Golden snapshots of the `error_value` payload — the externally-tagged serde
-//! JSON that PR #91 ships across the FFI boundary to all eight languages.
+//! Golden snapshots of the `error_value` payload — the `name`-tagged serde
+//! JSON (the AI SDK's error names) that ships across the FFI boundary to all
+//! eight languages.
 //!
 //! These assert the *exact* JSON for every variant. The payload is a public
 //! cross-language contract: a field rename, a variant rename or a shape change
@@ -32,7 +33,7 @@ fn error_value_snapshots_api_call_shapes() {
             is_retryable: true,
             ..api_error("boom")
         })),
-        r#"{"ApiCall":{"url":"https://example.test/v1","request_body_values":{},"status_code":500,"provider_code":"server_error","message":"boom","response_body":null,"response_headers":null,"data":null,"is_retryable":true}}"#,
+        r#"{"name":"AI_APICallError","url":"https://example.test/v1","requestBodyValues":{},"statusCode":500,"providerCode":"server_error","message":"boom","isRetryable":true}"#,
     );
     golden(
         &AiMuxError::ApiCall(Box::new(ApiCallError {
@@ -42,7 +43,7 @@ fn error_value_snapshots_api_call_shapes() {
             is_retryable: true,
             ..api_error("boom")
         })),
-        r#"{"ApiCall":{"url":"https://example.test/v1","request_body_values":{},"status_code":500,"provider_code":"server_error","message":"boom","response_body":"{\"error\":{\"message\":\"boom\",\"type\":\"server_error\"}}","response_headers":null,"data":null,"is_retryable":true}}"#,
+        r#"{"name":"AI_APICallError","url":"https://example.test/v1","requestBodyValues":{},"statusCode":500,"providerCode":"server_error","message":"boom","responseBody":"{\"error\":{\"message\":\"boom\",\"type\":\"server_error\"}}","isRetryable":true}"#,
     );
     // A transport failure (no response arrived): no status, retryable —
     // exactly the AI SDK's handleFetchError shape.
@@ -51,7 +52,7 @@ fn error_value_snapshots_api_call_shapes() {
             is_retryable: true,
             ..api_error("connection reset")
         })),
-        r#"{"ApiCall":{"url":"https://example.test/v1","request_body_values":{},"status_code":null,"provider_code":null,"message":"connection reset","response_body":null,"response_headers":null,"data":null,"is_retryable":true}}"#,
+        r#"{"name":"AI_APICallError","url":"https://example.test/v1","requestBodyValues":{},"message":"connection reset","isRetryable":true}"#,
     );
     // A 429 is an ApiCall error whose classification is the status field —
     // there is no RateLimited variant; the hint remains in response headers.
@@ -66,11 +67,11 @@ fn error_value_snapshots_api_call_shapes() {
             is_retryable: true,
             ..api_error("slow down")
         })),
-        r#"{"ApiCall":{"url":"https://example.test/v1","request_body_values":{},"status_code":429,"provider_code":"rate_limit_exceeded","message":"slow down","response_body":null,"response_headers":{"retry-after-ms":"2500"},"data":null,"is_retryable":true}}"#,
+        r#"{"name":"AI_APICallError","url":"https://example.test/v1","requestBodyValues":{},"statusCode":429,"providerCode":"rate_limit_exceeded","message":"slow down","responseHeaders":{"retry-after-ms":"2500"},"isRetryable":true}"#,
     );
     golden(
         &AiMuxError::TokenExpired("expired".into()),
-        r#"{"TokenExpired":"expired"}"#,
+        r#"{"name":"AI_TokenExpiredError","message":"expired"}"#,
     );
 }
 
@@ -90,7 +91,7 @@ fn error_value_snapshot_retry_history() {
                 })),
             ],
         }),
-        r#"{"Retry":{"reason":"maxRetriesExceeded","errors":[{"ApiCall":{"url":"https://example.test/v1","request_body_values":{},"status_code":null,"provider_code":null,"message":"first","response_body":null,"response_headers":null,"data":null,"is_retryable":true}},{"ApiCall":{"url":"https://example.test/v1","request_body_values":{},"status_code":null,"provider_code":null,"message":"second","response_body":null,"response_headers":null,"data":null,"is_retryable":true}}]}}"#,
+        r#"{"name":"AI_RetryError","reason":"maxRetriesExceeded","errors":[{"name":"AI_APICallError","url":"https://example.test/v1","requestBodyValues":{},"message":"first","isRetryable":true},{"name":"AI_APICallError","url":"https://example.test/v1","requestBodyValues":{},"message":"second","isRetryable":true}]}"#,
     );
 }
 
@@ -99,11 +100,11 @@ fn error_value_snapshots_plain_variants() {
     for (err, expected) in [
         (
             AiMuxError::JsonParse("bad json".into()),
-            r#"{"JsonParse":"bad json"}"#,
+            r#"{"name":"AI_JSONParseError","message":"bad json"}"#,
         ),
         (
             AiMuxError::InvalidResponseData("eof".into()),
-            r#"{"InvalidResponseData":"eof"}"#,
+            r#"{"name":"AI_InvalidResponseDataError","message":"eof"}"#,
         ),
         // NoSuchTool is pinned in both shapes: `skip_serializing_if` makes
         // the wire payload vary with `available_tools`.
@@ -113,7 +114,7 @@ fn error_value_snapshots_plain_variants() {
                 available_tools: Some(vec!["weather".into(), "search".into()]),
                 tool_input: Some(r#""hello""#.into()),
             },
-            r#"{"NoSuchTool":{"tool_name":"weathr","available_tools":["weather","search"],"tool_input":"\"hello\""}}"#,
+            r#"{"name":"AI_NoSuchToolError","toolName":"weathr","availableTools":["weather","search"],"toolInput":"\"hello\""}"#,
         ),
         (
             AiMuxError::NoSuchTool {
@@ -121,7 +122,7 @@ fn error_value_snapshots_plain_variants() {
                 available_tools: None,
                 tool_input: None,
             },
-            r#"{"NoSuchTool":{"tool_name":"weathr"}}"#,
+            r#"{"name":"AI_NoSuchToolError","toolName":"weathr"}"#,
         ),
         (
             AiMuxError::InvalidToolInput {
@@ -129,7 +130,7 @@ fn error_value_snapshots_plain_variants() {
                 tool_input: "{".into(),
                 cause: "JSON parsing failed".into(),
             },
-            r#"{"InvalidToolInput":{"tool_name":"weather","tool_input":"{","cause":"JSON parsing failed"}}"#,
+            r#"{"name":"AI_InvalidToolInputError","toolName":"weather","toolInput":"{","cause":"JSON parsing failed"}"#,
         ),
         (
             AiMuxError::ToolCallRepair {
@@ -140,44 +141,44 @@ fn error_value_snapshots_plain_variants() {
                 }),
                 cause: Box::new(AiMuxError::Other("repair model failed".into())),
             },
-            r#"{"ToolCallRepair":{"original_error":{"NoSuchTool":{"tool_name":"weathr"}},"cause":{"Other":"repair model failed"}}}"#,
+            r#"{"name":"AI_ToolCallRepairError","originalError":{"name":"AI_NoSuchToolError","toolName":"weathr"},"cause":{"name":"AI_Error","message":"repair model failed"}}"#,
         ),
         (
             AiMuxError::InvalidArgument("bad arg".into()),
-            r#"{"InvalidArgument":"bad arg"}"#,
+            r#"{"name":"AI_InvalidArgumentError","message":"bad arg"}"#,
         ),
         (
             AiMuxError::InvalidPrompt("bad prompt".into()),
-            r#"{"InvalidPrompt":"bad prompt"}"#,
+            r#"{"name":"AI_InvalidPromptError","message":"bad prompt"}"#,
         ),
         (
             AiMuxError::TokenExpired("expired".into()),
-            r#"{"TokenExpired":"expired"}"#,
+            r#"{"name":"AI_TokenExpiredError","message":"expired"}"#,
         ),
         (
             AiMuxError::UnsupportedFunctionality("no audio".into()),
-            r#"{"UnsupportedFunctionality":"no audio"}"#,
+            r#"{"name":"AI_UnsupportedFunctionalityError","message":"no audio"}"#,
         ),
         (
             AiMuxError::LoadApiKey {
                 env_var: "OPENAI_API_KEY".into(),
                 description: "OpenAI".into(),
             },
-            r#"{"LoadApiKey":{"env_var":"OPENAI_API_KEY","description":"OpenAI"}}"#,
+            r#"{"name":"AI_LoadAPIKeyError","envVar":"OPENAI_API_KEY","description":"OpenAI"}"#,
         ),
         (
             AiMuxError::LoadSetting {
                 env_var: "AWS_REGION".into(),
                 name: "region".into(),
             },
-            r#"{"LoadSetting":{"env_var":"AWS_REGION","name":"region"}}"#,
+            r#"{"name":"AI_LoadSettingError","envVar":"AWS_REGION","settingName":"region"}"#,
         ),
         (
             AiMuxError::NoSuchModel {
                 model_id: "gpt-9".into(),
                 model_type: "languageModel".into(),
             },
-            r#"{"NoSuchModel":{"model_id":"gpt-9","model_type":"languageModel"}}"#,
+            r#"{"name":"AI_NoSuchModelError","modelId":"gpt-9","modelType":"languageModel"}"#,
         ),
         (
             AiMuxError::NoSuchProvider {
@@ -186,52 +187,31 @@ fn error_value_snapshots_plain_variants() {
                 model_type: "languageModel".into(),
                 available_providers: vec!["other".into()],
             },
-            r#"{"NoSuchProvider":{"provider_id":"acme","model_id":"acme","model_type":"languageModel","available_providers":["other"]}}"#,
+            r#"{"name":"AI_NoSuchProviderError","providerId":"acme","modelId":"acme","modelType":"languageModel","availableProviders":["other"]}"#,
         ),
         (
             AiMuxError::Timeout("total timeout".into()),
-            r#"{"Timeout":"total timeout"}"#,
+            r#"{"name":"TimeoutError","message":"total timeout"}"#,
         ),
         (
             AiMuxError::Aborted("request aborted".into()),
-            r#"{"Aborted":"request aborted"}"#,
+            r#"{"name":"AbortError","message":"request aborted"}"#,
         ),
-        (AiMuxError::Other("misc".into()), r#"{"Other":"misc"}"#),
+        (
+            AiMuxError::Other("misc".into()),
+            r#"{"name":"AI_Error","message":"misc"}"#,
+        ),
     ] {
         golden(&err, expected);
     }
 }
 
-/// Request context is required. Payloads from the pre-context schema are
-/// deliberately rejected instead of silently fabricating an empty URL/body.
+/// Request context is required: a payload without `url` / `requestBodyValues`
+/// is rejected instead of silently fabricating an empty URL/body.
 #[test]
 fn api_call_requires_request_context() {
-    let old = r#"{"ApiCall":{"message":"boom"}}"#;
-    assert!(serde_json::from_str::<AiMuxError>(old).is_err());
-
-    // The removed variants no longer deserialize — a deliberate breaking
-    // change pinned here so it cannot happen silently a second time.
-    assert!(
-        serde_json::from_str::<AiMuxError>(r#"{"RateLimited":{"retry_after_ms":5000}}"#).is_err()
-    );
-    assert!(serde_json::from_str::<AiMuxError>(r#"{"Auth":"bad key"}"#).is_err());
-    assert!(serde_json::from_str::<AiMuxError>(r#"{"Http":"connection reset"}"#).is_err());
-    assert!(serde_json::from_str::<AiMuxError>(r#"{"Provider":{"message":"boom"}}"#).is_err());
-    // NoSuchModel went from a plain string to a struct.
-    assert!(serde_json::from_str::<AiMuxError>(r#"{"NoSuchModel":"gpt-9"}"#).is_err());
-    // The renamed variants' OLD wire names no longer deserialize:
-    // Json/Stream/Unsupported/UnknownProvider became
-    // JsonParse/InvalidResponseData/UnsupportedFunctionality/NoSuchProvider.
-    assert!(serde_json::from_str::<AiMuxError>(r#"{"Json":"bad json"}"#).is_err());
-    assert!(serde_json::from_str::<AiMuxError>(r#"{"Stream":"eof"}"#).is_err());
-    assert!(serde_json::from_str::<AiMuxError>(r#"{"Unsupported":"no audio"}"#).is_err());
-    assert!(serde_json::from_str::<AiMuxError>(r#"{"UnknownProvider":"acme"}"#).is_err());
-    assert!(
-        serde_json::from_str::<AiMuxError>(
-            r#"{"UnknownProvider":{"provider_id":"acme","available":[]}}"#
-        )
-        .is_err()
-    );
+    let incomplete = r#"{"name":"AI_APICallError","message":"boom","isRetryable":false}"#;
+    assert!(serde_json::from_str::<AiMuxError>(incomplete).is_err());
 }
 
 /// The status lives in the field and *only* there. `Display` composes the

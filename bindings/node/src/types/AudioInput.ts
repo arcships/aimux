@@ -3,4 +3,4 @@
 /**
  * Audio input: raw bytes or a base64-encoded string.
  */
-export type AudioInput = { "Binary": Array<number> } | { "Base64": string };
+export type AudioInput = Array<number> | string;

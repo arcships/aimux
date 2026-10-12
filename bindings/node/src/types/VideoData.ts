@@ -6,4 +6,4 @@
  * Aligned with V4 `VideoModelV4VideoData`. Most providers return URLs due to
  * large file sizes.
  */
-export type VideoData = { "Url": { url: string, media_type: string, } } | { "Base64": { data: string, media_type: string, } } | { "Binary": { data: Array<number>, media_type: string, } };
+export type VideoData = { "type": "url", url: string, mediaType: string, } | { "type": "base64", data: string, mediaType: string, } | { "type": "binary", data: Array<number>, mediaType: string, };

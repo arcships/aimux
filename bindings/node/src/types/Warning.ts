@@ -3,4 +3,4 @@
 /**
  * A warning issued by the provider (e.g. unsupported parameter).
  */
-export type Warning = { "Unsupported": { feature: string, details: string | null, } } | { "Compatibility": { feature: string, details: string | null, } } | { "Deprecated": { setting: string, message: string, } } | { "Other": { message: string, } };
+export type Warning = { "type": "unsupported", feature: string, details?: string, } | { "type": "compatibility", feature: string, details?: string, } | { "type": "deprecated", setting: string, message: string, } | { "type": "other", message: string, };

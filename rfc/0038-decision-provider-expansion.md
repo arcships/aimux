@@ -53,7 +53,7 @@ projector、endpoint 是否可用由服务返回实际错误。vLLM 示例必须
 
 - `state` 是文本或 JSON 证据；`images` 是独立的内嵌图片列表，不从 state 猜媒体。
 - `DecisionImage` 为 `{data: FileBytes, media_type, detail?}`，复用已有
-  `FileBytes` 的 `{"Base64":"..."}` / `{"Binary":[...]}` 表达。
+  `FileBytes` 的表达：base64 字符串或字节数组。
 - Choice 的 `label` 始终是答案及概率 map 的稳定字符串键。新增可选 `value`，
   类型为 string / boolean；缺省使用 label。原生 boolean `true` 与字符串
   `"true"` 可同时出现，只需不同 label。响应保留 selected label 和显式 value。

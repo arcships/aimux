@@ -15,4 +15,4 @@ state: EvaluationInput,
 /**
  * Questions by id; insertion order is the question order.
  */
-questions: { [key in string]: EvaluationQuestion }, headers: { [key in string]: string } | null, provider_options: { [key in string]: { [key in string]: JsonValue } } | null, };
+questions: { [key in string]: EvaluationQuestion }, headers?: { [key in string]: string }, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

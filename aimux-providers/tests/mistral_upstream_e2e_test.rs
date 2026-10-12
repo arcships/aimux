@@ -86,8 +86,8 @@ async fn generate_preserves_complete_usage() {
     assert_eq!(
         serde_json::to_value(result.usage).unwrap(),
         json!({
-            "input_tokens": {"total": 20, "no_cache": 20},
-            "output_tokens": {"total": 2, "text": 2},
+            "inputTokens": {"total": 20, "noCache": 20},
+            "outputTokens": {"total": 2, "text": 2},
             "raw": body["usage"]
         })
     );
@@ -171,8 +171,8 @@ async fn stream_text_and_usage() {
             assert_eq!(
                 serde_json::to_value(usage).unwrap(),
                 json!({
-                    "input_tokens": {"total": 13, "no_cache": 13},
-                    "output_tokens": {"total": 8, "text": 8},
+                    "inputTokens": {"total": 13, "noCache": 13},
+                    "outputTokens": {"total": 8, "text": 8},
                     "raw": {"prompt_tokens": 13, "completion_tokens": 8, "total_tokens": 21}
                 })
             );

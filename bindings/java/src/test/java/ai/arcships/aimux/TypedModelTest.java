@@ -167,7 +167,7 @@ class TypedModelTest {
         String json = Types.AimuxJson.MAPPER.writeValueAsString(original);
         Types.ToolCall decoded = Types.AimuxJson.MAPPER.readValue(json, Types.ToolCall.class);
 
-        assertThat(json).contains("\"provider_metadata\"");
+        assertThat(json).contains("\"providerMetadata\"");
         assertThat(decoded.getProviderMetadata()).isEqualTo(metadata);
         assertThat(decoded).isEqualTo(original);
     }
@@ -177,7 +177,7 @@ class TypedModelTest {
         server.setResponseBody(plainOpenAiResponse());
 
         try (TypedModel model =
-                 TypedModel.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
+                 TypedModel.provider("deepseek", "sk-test-fake-key", "gpt-4o", server.chatConfig())) {
             Types.GenerateTextResult result = model.generateText("What is Rust?");
 
             // No manual parsing: the wrapper returned a typed object.
@@ -204,7 +204,7 @@ class TypedModelTest {
             .build();
 
         try (TypedModel model =
-                 TypedModel.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
+                 TypedModel.provider("deepseek", "sk-test-fake-key", "gpt-4o", server.chatConfig())) {
             Types.GenerateTextResult result =
                 model.generateText("What is the weather in Tokyo?", options);
 
@@ -216,8 +216,8 @@ class TypedModelTest {
             // input is a JsonNode (tool arguments); inspect it directly.
             assertThat(call.getInput().get("location").asText()).isEqualTo("Tokyo");
 
-            // .raw.content carries the ToolCall variant tag.
-            assertThat(result.getRaw().hasContentVariant("ToolCall")).isTrue();
+            // .raw.content carries the tool-call variant tag.
+            assertThat(result.getRaw().hasContentVariant("tool-call")).isTrue();
         }
     }
 
@@ -231,11 +231,11 @@ class TypedModelTest {
             .build();
 
         try (TypedModel model =
-                 TypedModel.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
+                 TypedModel.provider("deepseek", "sk-test-fake-key", "gpt-4o", server.chatConfig())) {
             model.generateText("What is the weather in Tokyo?", options);
 
             // The serialized options crossed the JSON boundary as the engine's
-            // snake_case shape with only the fields the caller set.
+            // camelCase shape with only the fields the caller set.
             JSONObject reqBody = new JSONObject(server.lastRequestBody());
             assertThat(reqBody.getString("tool_choice")).isEqualTo("required");
             assertThat(reqBody.has("tools")).isTrue();
@@ -260,7 +260,7 @@ class TypedModelTest {
             Types.ModelMessage.text(Types.Role.USER, "What is Rust?"));
 
         try (TypedModel model =
-                 TypedModel.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
+                 TypedModel.provider("deepseek", "sk-test-fake-key", "gpt-4o", server.chatConfig())) {
             Types.GenerateTextResult result = model.generateText(messages);
 
             assertThat(result.getText()).isEqualTo("Rust is a systems programming language.");
@@ -289,7 +289,7 @@ class TypedModelTest {
             .build();
 
         try (TypedModel model =
-                 TypedModel.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
+                 TypedModel.provider("deepseek", "sk-test-fake-key", "gpt-4o", server.chatConfig())) {
             List<Types.StreamPart> parts = assertTimeout(Duration.ofSeconds(30),
                 () -> model.streamTextStream("What is the weather in Tokyo?", options)
                     .collect(Collectors.toList()));
@@ -326,7 +326,7 @@ class TypedModelTest {
         java.util.concurrent.atomic.AtomicBoolean done = new java.util.concurrent.atomic.AtomicBoolean(false);
 
         try (TypedModel model =
-                 TypedModel.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
+                 TypedModel.provider("deepseek", "sk-test-fake-key", "gpt-4o", server.chatConfig())) {
             assertTimeout(Duration.ofSeconds(30), () ->
                 model.streamText("What is the weather in Tokyo?", options,
                     collected::add,           // onPart — typed StreamPart
@@ -346,7 +346,7 @@ class TypedModelTest {
     void ofModelDoesNotOwnHandle() {
         server.setResponseBody(plainOpenAiResponse());
 
-        Model raw = Model.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl());
+        Model raw = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o", server.chatConfig());
         // of() wraps without owning — closing the TypedModel must NOT close the raw Model.
         TypedModel typed = TypedModel.of(raw);
         typed.close();
@@ -370,7 +370,7 @@ class TypedModelTest {
             .build();
 
         try (TypedModel model =
-                 TypedModel.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
+                 TypedModel.provider("deepseek", "sk-test-fake-key", "gpt-4o", server.chatConfig())) {
             List<Types.StreamPart> parts = assertTimeout(Duration.ofSeconds(30),
                 () -> model.streamTextStream(messages, options).collect(Collectors.toList()));
 
@@ -386,7 +386,7 @@ class TypedModelTest {
         // The typed layer JSON-encodes the prompt, so any string is valid wire
         // JSON; the failure is the mock provider's response → AimuxException.
         try (TypedModel model =
-                 TypedModel.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
+                 TypedModel.provider("deepseek", "sk-test-fake-key", "gpt-4o", server.chatConfig())) {
             assertThatThrownBy(() -> model.generateText("not-valid-json"))
                 .isInstanceOf(AimuxException.class);
         }

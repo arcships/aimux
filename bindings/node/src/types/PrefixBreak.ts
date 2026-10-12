@@ -4,4 +4,4 @@ import type { BreakKind } from "./BreakKind";
 /**
  * A prefix break between two consecutive records of a session.
  */
-export type PrefixBreak = { at_record_id: string, prev_record_id: string, lcp_bytes: bigint, expected_break: boolean, kind: BreakKind, };
+export type PrefixBreak = { atRecordId: string, prevRecordId: string, lcpBytes: bigint, expectedBreak: boolean, kind: BreakKind, };

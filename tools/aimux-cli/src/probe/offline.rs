@@ -88,31 +88,29 @@ mod tests {
             r#"{{
                 "provider": "openai",
                 "model": "gpt-4o",
-                "session_id": "{session}",
-                "call_id": "t-{session}-{claimed}",
-                "sent_at_unix_ms": 1785900000000,
-                "monotonic_sent_ms": 0,
+                "sessionId": "{session}",
+                "callId": "t-{session}-{claimed}",
+                "sentAtUnixMs": 1785900000000,
                 "fingerprint": {{
-                    "body_hash": "",
-                    "len_bytes": 8192,
-                    "block_size": 4096,
-                    "block_hashes": [],
-                    "token_estimate": 2048
+                    "bodyHash": "",
+                    "lenBytes": 8192,
+                    "blockSize": 4096,
+                    "blockHashes": [],
+                    "tokenEstimate": 2048
                 }},
                 "usage": {{
-                    "input_total": 2048,
-                    "cache_read": {claimed}
+                    "inputTotal": 2048,
+                    "cacheRead": {claimed}
                 }},
                 "verdict": {{
                     "kind": "Trusted",
                     "confidence": "High",
                     "violated": [],
-                    "expected_max": 2048,
+                    "expectedMax": 2048,
                     "claimed": {claimed},
-                    "lcp_bytes": 8192,
+                    "lcpBytes": 8192,
                     "notes": []
-                }},
-                "scope_key": 1
+                }}
             }}"#
         ))
         .unwrap()
@@ -140,7 +138,7 @@ mod tests {
         // 捕获 stdout 断言 JSON 输出。
         let out = run_captured(&args);
         assert!(out.contains("\"requests\":2"), "aggregate count: {out}");
-        assert!(out.contains("\"claimed_cache_read_total\":1536"), "{out}");
+        assert!(out.contains("\"claimedCacheReadTotal\":1536"), "{out}");
         assert!(out.contains("\"provider\":\"openai\""), "{out}");
 
         // session 过滤。

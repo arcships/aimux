@@ -35,7 +35,8 @@ Desktop platforms resolve the library from the platform library path
 
 ```bash
 cargo build -p aimux-ffi --release
-LD_LIBRARY_PATH=../../target/release flutter test   # Linux/macOS
+LD_LIBRARY_PATH=../../target/release dart test       # Linux
+DYLD_LIBRARY_PATH=../../target/release dart test     # macOS
 ```
 
 ## License

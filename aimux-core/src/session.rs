@@ -44,6 +44,7 @@ pub enum SessionSource {
 /// A single call within a session (an index entry only — call content lives
 /// in Recording (RFC-0023) / TraceRecord (RFC-0015)).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SessionCall {
     /// Call-level unique id. This is the association key for the future
@@ -58,6 +59,7 @@ pub struct SessionCall {
 
 /// Aggregated view of one session (session_id → ordered calls).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SessionView {
     pub session_id: String,

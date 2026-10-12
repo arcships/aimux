@@ -474,7 +474,7 @@ async fn bad_media_and_duplicate_native_values_are_rejected_before_http() {
     .unwrap();
     let server = MockServer::start().await;
     for (pointer, value) in [
-        ("/images/0/data", json!({"Base64":"bad!"})),
+        ("/images/0/data", json!("bad!")),
         ("/images/0/detail", json!("unknown")),
         ("/images/0/media_type", json!("text/plain")),
         ("/questions/0/options/1/value", json!(true)),

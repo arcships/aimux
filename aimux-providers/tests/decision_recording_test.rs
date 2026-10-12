@@ -85,7 +85,7 @@ async fn ring_records_one_complete_call_and_replays_exact_inputs_with_redaction(
     assert_eq!(
         serde_json::to_value(&records[0].provider).unwrap(),
         json!({
-            "provider_id": "jev", "provider": "jev", "model_id": "jev-latest"
+            "providerId": "jev", "provider": "jev", "modelId": "jev-latest"
         })
     );
     assert_eq!(records[0].exchanges.len(), 1);

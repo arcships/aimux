@@ -13,40 +13,40 @@ query: string,
 /**
  * Maximum number of results to return.
  */
-max_results: number | null, 
+maxResults?: number, 
 /**
  * Whether to include raw page content in results.
  *
  * Provider support varies; providers that cannot honor this should
  * issue a warning rather than erroring.
  */
-include_raw_content: boolean | null, 
+includeRawContent?: boolean, 
 /**
  * Optional time range filter (e.g. `"day"`, `"week"`, `"month"`,
  * `"year"`). Provider support varies.
  */
-time_range: string | null, 
+timeRange?: string, 
 /**
  * Optional list of domains to include in results.
  */
-include_domains: Array<string> | null, 
+includeDomains?: Array<string>, 
 /**
  * Optional list of domains to exclude from results.
  */
-exclude_domains: Array<string> | null, 
+excludeDomains?: Array<string>, 
 /**
  * Per-call retry override. `None` uses the model default.
  */
-max_retries: number | null, 
+maxRetries?: number, 
 /**
  * Per-call operation timeout.
  */
-timeout: TimeoutConfiguration | null, 
+timeout?: TimeoutConfiguration, 
 /**
  * Additional provider-specific options, keyed by provider name.
  */
-provider_options: { [key in string]: { [key in string]: JsonValue } } | null, 
+providerOptions?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Additional HTTP headers to send with the request.
  */
-headers: { [key in string]: string } | null, };
+headers?: { [key in string]: string }, };

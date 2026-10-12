@@ -10,4 +10,4 @@ export type RequestInfo = {
 /**
  * The request body that was sent (opaque JSON).
  */
-body: JsonValue | null, };
+body?: JsonValue, };

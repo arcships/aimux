@@ -1,222 +1,144 @@
-import 'package:test/test.dart';
+// Round trips for the message-content types against the generated wire shape:
+// `bindings/node/src/types/{ContentPart,FileData,FileBytes,ToolResultOutput}.ts`.
 import 'package:aimux/types.dart';
+import 'package:test/test.dart';
 
 void main() {
-  group('FileBytes round-trip', () {
-    test('Binary variant', () {
-      final original = FileBytesBinary(data: [104, 105]);
-      final json = original.toJson();
-      expect(json, {'Binary': [104, 105]});
-      final decoded = FileBytes.fromJson(json);
-      expect(decoded, isA<FileBytesBinary>());
-      expect((decoded as FileBytesBinary).data, [104, 105]);
+  group('FileBytes (untagged: number[] | string)', () {
+    test('binary is a bare array', () {
+      expect(FileBytesBinary(data: [104, 105]).toJson(), [104, 105]);
+      expect(FileBytes.fromJson([104, 105]), isA<FileBytesBinary>());
     });
 
-    test('Base64 variant', () {
-      final original = FileBytesBase64(data: 'aGk=');
-      final json = original.toJson();
-      expect(json, {'Base64': 'aGk='});
-      final decoded = FileBytes.fromJson(json);
-      expect(decoded, isA<FileBytesBase64>());
-      expect((decoded as FileBytesBase64).data, 'aGk=');
+    test('base64 is a bare string', () {
+      expect(FileBytesBase64(data: 'aGk=').toJson(), 'aGk=');
+      expect((FileBytes.fromJson('aGk=') as FileBytesBase64).data, 'aGk=');
     });
   });
 
-  group('FileData round-trip', () {
-    test('Data variant', () {
-      final original = FileDataData(data: FileBytesBase64(data: 'aGk='));
-      final json = original.toJson();
-      expect(json, {
-        'Data': {'data': {'Base64': 'aGk='}}
-      });
-      final decoded = FileData.fromJson(json);
-      expect(decoded, isA<FileDataData>());
-      final d = decoded as FileDataData;
-      expect(d.data, isA<FileBytesBase64>());
-      expect((d.data as FileBytesBase64).data, 'aGk=');
-    });
-
-    test('Url variant', () {
-      final original = FileDataUrl(url: 'https://example.com/f.png');
-      final json = original.toJson();
-      expect(json, {
-        'Url': {'url': 'https://example.com/f.png'}
-      });
-      final decoded = FileData.fromJson(json);
-      expect(decoded, isA<FileDataUrl>());
-      expect((decoded as FileDataUrl).url, 'https://example.com/f.png');
-    });
-
-    test('Reference variant', () {
-      final original = FileDataReference(reference: {'openai': 'file-abc'});
-      final json = original.toJson();
-      expect(json, {
-        'Reference': {
-          'reference': {'openai': 'file-abc'}
-        }
-      });
-      final decoded = FileData.fromJson(json);
-      expect(decoded, isA<FileDataReference>());
-      expect((decoded as FileDataReference).reference, {'openai': 'file-abc'});
-    });
-
-    test('Text variant', () {
-      final original = FileDataText(text: 'hello world');
-      final json = original.toJson();
-      expect(json, {
-        'Text': {'text': 'hello world'}
-      });
-      final decoded = FileData.fromJson(json);
-      expect(decoded, isA<FileDataText>());
-      expect((decoded as FileDataText).text, 'hello world');
+  group('FileData ("type"-tagged)', () {
+    test('data / url / reference / text round-trip', () {
+      final cases = <Map<String, dynamic>>[
+        {'type': 'data', 'data': 'aGk='},
+        {'type': 'url', 'url': 'https://example.com/f.png', 'originalUrl': 'x'},
+        {'type': 'reference', 'reference': {'openai': 'file-abc'}},
+        {'type': 'text', 'text': 'hello world'},
+      ];
+      for (final json in cases) {
+        expect(FileData.fromJson(json).toJson(), json);
+      }
+      expect(FileData.fromJson(cases[0]), isA<FileDataData>());
+      expect(FileData.fromJson(cases[1]), isA<FileDataUrl>());
+      expect(FileData.fromJson(cases[2]), isA<FileDataReference>());
+      expect(FileData.fromJson(cases[3]), isA<FileDataText>());
     });
   });
 
   group('ContentPart round-trip', () {
-    test('Text variant', () {
-      final original = ContentPartText(text: 'hello');
-      final json = original.toJson();
-      expect(json['type'], 'text');
-      expect(json['text'], 'hello');
-      final decoded = ContentPart.fromJson(json);
-      expect(decoded, isA<ContentPartText>());
-      expect((decoded as ContentPartText).text, 'hello');
-    });
+    // One wire document per variant; optional fields are absent, not null.
+    final cases = <String, Map<String, dynamic>>{
+      'text': {'type': 'text', 'text': 'hello'},
+      'image': {'type': 'image', 'image': [1, 2, 3], 'mediaType': 'image/png'},
+      'file': {
+        'type': 'file',
+        'data': [104, 105],
+        'mediaType': 'application/pdf',
+        'filename': 'doc.pdf',
+      },
+      'file-base64': {
+        'type': 'file-base64',
+        'data': 'aGk=',
+        'mediaType': 'image/png',
+      },
+      'file-url': {
+        'type': 'file-url',
+        'url': 'https://example.com/f.png',
+        'mediaType': 'image/png',
+      },
+      'file-reference': {
+        'type': 'file-reference',
+        'mediaType': 'application/pdf',
+        'reference': {'openai': 'file-abc'},
+      },
+      'reasoning': {'type': 'reasoning', 'text': 'thinking...', 'signature': 'sig'},
+      'reasoning-file': {
+        'type': 'reasoning-file',
+        'data': {'type': 'data', 'data': 'aGk='},
+        'mediaType': 'image/png',
+      },
+      'custom': {
+        'type': 'custom',
+        'kind': 'k',
+        'providerOptions': {'a': {'b': 1}},
+      },
+      'tool-approval-request': {
+        'type': 'tool-approval-request',
+        'approvalId': 'ap1',
+        'toolCallId': 'call_1',
+        'isAutomatic': true,
+      },
+      'tool-call': {
+        'type': 'tool-call',
+        'toolCallId': 'call_1',
+        'toolName': 'get_weather',
+        'input': {'location': 'Tokyo'},
+        'providerExecuted': true,
+      },
+      'tool-result': {
+        'type': 'tool-result',
+        'toolCallId': 'call_1',
+        'toolName': 'get_weather',
+        'output': {
+          'type': 'json',
+          'value': {'temp': 22},
+        },
+      },
+    };
 
-    test('Image variant', () {
-      final original = ContentPartImage(image: [1, 2, 3], mediaType: 'image/png');
-      final json = original.toJson();
-      expect(json['type'], 'image');
-      expect(json['image'], [1, 2, 3]);
-      expect(json['media_type'], 'image/png');
-      final decoded = ContentPart.fromJson(json);
-      expect(decoded, isA<ContentPartImage>());
-      final d = decoded as ContentPartImage;
-      expect(d.image, [1, 2, 3]);
-      expect(d.mediaType, 'image/png');
-    });
+    for (final entry in cases.entries) {
+      test(entry.key, () {
+        final part = ContentPart.fromJson(entry.value);
+        expect(part, isNot(isA<ContentPartUnknown>()));
+        expect(part.toJson(), entry.value);
+      });
+    }
 
-    test('File variant — has filename', () {
-      final original = ContentPartFile(
-        data: [104, 105],
-        mediaType: 'application/pdf',
-        filename: 'doc.pdf',
-      );
-      final json = original.toJson();
-      expect(json['type'], 'file');
-      expect(json, contains('filename'));
-      expect(json['filename'], 'doc.pdf');
-      final decoded = ContentPart.fromJson(json);
-      expect(decoded, isA<ContentPartFile>());
-      final d = decoded as ContentPartFile;
-      expect(d.data, [104, 105]);
-      expect(d.mediaType, 'application/pdf');
-      expect(d.filename, 'doc.pdf');
-    });
-
-    test('FileBase64 variant', () {
-      final original = ContentPartFileBase64(
-        data: 'aGk=',
-        mediaType: 'image/png',
-        filename: 'img.png',
-      );
-      final json = original.toJson();
-      expect(json['type'], 'file_base64');
-      expect(json['data'], 'aGk=');
-      final decoded = ContentPart.fromJson(json);
-      expect(decoded, isA<ContentPartFileBase64>());
-      expect((decoded as ContentPartFileBase64).data, 'aGk=');
-    });
-
-    test('FileUrl variant', () {
-      final original = ContentPartFileUrl(
-        url: 'https://example.com/f.png',
-        mediaType: 'image/png',
-      );
-      final json = original.toJson();
-      expect(json['type'], 'file_url');
-      expect(json['url'], 'https://example.com/f.png');
-      final decoded = ContentPart.fromJson(json);
-      expect(decoded, isA<ContentPartFileUrl>());
-      expect((decoded as ContentPartFileUrl).url, 'https://example.com/f.png');
-    });
-
-    test('FileReference variant', () {
-      final original = ContentPartFileReference(
-        mediaType: 'application/pdf',
-        reference: {'openai': 'file-abc'},
-        filename: 'doc.pdf',
-      );
-      final json = original.toJson();
-      expect(json['type'], 'file_reference');
-      expect(json['reference'], {'openai': 'file-abc'});
-      final decoded = ContentPart.fromJson(json);
-      expect(decoded, isA<ContentPartFileReference>());
-      expect((decoded as ContentPartFileReference).reference, {'openai': 'file-abc'});
-    });
-
-    test('Reasoning variant', () {
-      final original = ContentPartReasoning(text: 'thinking...', signature: 'sig123');
-      final json = original.toJson();
-      expect(json['type'], 'reasoning');
-      expect(json['text'], 'thinking...');
-      expect(json['signature'], 'sig123');
-      final decoded = ContentPart.fromJson(json);
-      expect(decoded, isA<ContentPartReasoning>());
-      expect((decoded as ContentPartReasoning).signature, 'sig123');
-    });
-
-    test('ToolCall variant', () {
-      final original = ContentPartToolCall(
+    test('tool-result carries a typed output, not result/isError', () {
+      final part = ContentPartToolResult(
         toolCallId: 'call_1',
         toolName: 'get_weather',
-        input: {'location': 'Tokyo'},
-        providerExecuted: true,
+        output: ToolResultOutput.errorText('boom'),
       );
-      final json = original.toJson();
-      expect(json['type'], 'tool_call');
-      expect(json['tool_call_id'], 'call_1');
-      expect(json['tool_name'], 'get_weather');
-      expect(json['provider_executed'], true);
-      final decoded = ContentPart.fromJson(json);
-      expect(decoded, isA<ContentPartToolCall>());
-      final d = decoded as ContentPartToolCall;
-      expect(d.toolCallId, 'call_1');
-      expect(d.toolName, 'get_weather');
-      expect(d.input, {'location': 'Tokyo'});
-      expect(d.providerExecuted, true);
+      final json = part.toJson();
+      expect(json, isNot(contains('result')));
+      expect(json, isNot(contains('isError')));
+      expect(json['output'], {'type': 'error-text', 'value': 'boom'});
     });
 
-    test('ToolResult variant — uses result, not output', () {
-      final original = ContentPartToolResult(
-        toolCallId: 'call_1',
-        result: {'temp': 22},
-        toolName: 'get_weather',
-        isError: false,
-        preliminary: null,
-        isDynamic: null,
-      );
-      final json = original.toJson();
-      expect(json['type'], 'tool_result');
-      expect(json, contains('result'));
-      expect(json, isNot(contains('output')));
-      expect(json['tool_name'], 'get_weather');
-      expect(json['is_error'], false);
-      final decoded = ContentPart.fromJson(json);
-      expect(decoded, isA<ContentPartToolResult>());
-      final d = decoded as ContentPartToolResult;
-      expect(d.result, {'temp': 22});
-      expect(d.toolName, 'get_weather');
-      expect(d.isError, false);
+    test('ToolResultOutput variants', () {
+      for (final json in <Map<String, dynamic>>[
+        {'type': 'text', 'value': 'ok'},
+        {'type': 'json', 'value': {'a': 1}},
+        {'type': 'execution-denied', 'reason': 'no'},
+        {'type': 'execution-denied'},
+        {'type': 'error-text', 'value': 'e'},
+        {'type': 'error-json', 'value': [1]},
+        {
+          'type': 'content',
+          'value': [
+            {'type': 'text', 'text': 't'}
+          ]
+        },
+      ]) {
+        expect(ToolResultOutput.fromJson(json).toJson(), json);
+      }
     });
 
-    test('Unknown variant — forward compat', () {
-      final json = {'type': 'future_variant', 'data': 'something'};
-      final decoded = ContentPart.fromJson(json);
-      expect(decoded, isA<ContentPartUnknown>());
-      final unknown = decoded as ContentPartUnknown;
-      expect(unknown.tag, 'future_variant');
-      expect(unknown.data['data'], 'something');
+    test('unknown type passes through verbatim', () {
+      final json = {'type': 'future-variant', 'data': 'something'};
+      final part = ContentPart.fromJson(json);
+      expect(part, isA<ContentPartUnknown>());
+      expect(part.toJson(), json);
     });
   });
 }

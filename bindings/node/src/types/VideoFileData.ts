@@ -3,4 +3,4 @@
 /**
  * File payload for a [`VideoFile::File`]: base64 string or raw bytes.
  */
-export type VideoFileData = { "Base64": string } | { "Binary": Array<number> };
+export type VideoFileData = string | Array<number>;

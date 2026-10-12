@@ -118,7 +118,7 @@ Future<MockOpenAIServer> startMockServer(
 // the worker so the main isolate's event loop stays free to serve the mock.
 //
 // Call options that the Rust core deserializes (speech/image/rerank/search)
-// always carry `"provider_options":{}` — matching the Go wire format, where the
+// always carry `"providerOptions":{}` — matching the Go wire format, where the
 // SharedProviderOptions map must be present (not null). embed/transcription/
 // uploadFile pass no options (null pointer), matching the Go nil-opts path.
 
@@ -251,7 +251,7 @@ const String speechAudioBody = 'SGVsbG8gd29ybGQ=';
 
 /// Parsed-only fixture for the video result wire format.
 const String videoResultJson = r'''
-{"videos":[{"Url":{"url":"https://example.com/v.mp4","media_type":"video/mp4"}}]}
+{"videos":[{"type":"url","url":"https://example.com/v.mp4","mediaType":"video/mp4"}]}
 ''';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -293,8 +293,8 @@ void main() {
     final optsJson = jsonEncode({
       'text': 'Hi',
       'voice': 'alloy',
-      'output_format': 'mp3',
-      'provider_options': <String, dynamic>{},
+      'outputFormat': 'mp3',
+      'providerOptions': <String, dynamic>{},
     });
 
     final result =
@@ -302,9 +302,8 @@ void main() {
 
     final decoded = jsonDecode(result) as Map<String, dynamic>;
     expect(decoded, contains('audio'));
-    final audio = decoded['audio'] as Map<String, dynamic>;
-    expect(audio, contains('Binary'));
-    final binary = audio['Binary'] as List;
+    // AudioData is untagged: a base64 string or a byte array.
+    final binary = decoded['audio'] as List;
     expect(binary, isNotEmpty);
 
     expect(server.recorded, hasLength(1));
@@ -320,7 +319,7 @@ void main() {
     final optsJson = jsonEncode({
       'prompt': 'otter',
       'n': 1,
-      'provider_options': <String, dynamic>{},
+      'providerOptions': <String, dynamic>{},
     });
 
     final result =
@@ -328,9 +327,8 @@ void main() {
 
     final decoded = jsonDecode(result) as Map<String, dynamic>;
     expect(decoded, contains('images'));
-    final images = decoded['images'] as Map<String, dynamic>;
-    expect(images, contains('Base64'));
-    final base64List = images['Base64'] as List;
+    // ImageOutputs is untagged: an array of base64 strings or of byte arrays.
+    final base64List = decoded['images'] as List;
     expect(base64List, hasLength(1));
     expect(base64List[0], 'aW1hZ2Ux');
 
@@ -362,9 +360,9 @@ void main() {
 
     final optsJson = jsonEncode({
       'query': 'which?',
-      'documents': {'Text': {'values': ['doc1', 'doc2']}},
-      'top_n': 2,
-      'provider_options': <String, dynamic>{},
+      'documents': {'type': 'text', 'values': ['doc1', 'doc2']},
+      'topN': 2,
+      'providerOptions': <String, dynamic>{},
     });
 
     final result =
@@ -374,7 +372,7 @@ void main() {
     expect(decoded, contains('ranking'));
     final ranking = decoded['ranking'] as List;
     expect(ranking, hasLength(2));
-    expect((ranking[0] as Map)['relevance_score'], 0.95);
+    expect((ranking[0] as Map)['relevanceScore'], 0.95);
     expect((ranking[0] as Map)['index'], 1);
 
     expect(server.recorded, hasLength(1));
@@ -389,8 +387,8 @@ void main() {
 
     final optsJson = jsonEncode({
       'query': 'What is Rust?',
-      'max_results': 5,
-      'provider_options': <String, dynamic>{},
+      'maxResults': 5,
+      'providerOptions': <String, dynamic>{},
     });
 
     final result = await runSearch(server.baseUrl, apiKey, optsJson);
@@ -417,8 +415,8 @@ void main() {
         server.baseUrl, apiKey, 'dGVzdA==', 'application/pdf');
 
     final decoded = jsonDecode(result) as Map<String, dynamic>;
-    expect(decoded, contains('provider_reference'));
-    final providerRef = decoded['provider_reference'] as Map<String, dynamic>;
+    expect(decoded, contains('providerReference'));
+    final providerRef = decoded['providerReference'] as Map<String, dynamic>;
     expect(providerRef['openai'], 'file-abc');
 
     expect(server.recorded, hasLength(1));
@@ -435,8 +433,9 @@ void main() {
     expect(decoded, contains('videos'));
     final videos = decoded['videos'] as List;
     expect(videos, hasLength(1));
-    final urlData = (videos[0] as Map)['Url'] as Map<String, dynamic>;
-    expect(urlData['url'], 'https://example.com/v.mp4');
-    expect(urlData['media_type'], 'video/mp4');
+    final video = videos[0] as Map<String, dynamic>;
+    expect(video['type'], 'url');
+    expect(video['url'], 'https://example.com/v.mp4');
+    expect(video['mediaType'], 'video/mp4');
   });
 }

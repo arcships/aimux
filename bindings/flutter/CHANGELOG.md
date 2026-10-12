@@ -1,3 +1,21 @@
+## Unreleased
+
+- Breaking: the typed layer and the maps `Model` returns follow the AI SDK
+  JSON of the Rust core: camelCase fields, `type`-tagged unions with
+  kebab-case values (`text-delta`, `tool-call`, ...), optional fields absent
+  instead of `null`, `FileBytes` untagged, errors keyed by `name`.
+- Breaking: `ContentPartToolResult` carries `toolCallId`, `toolName` and a
+  typed `ToolResultOutput`; `result`, `isError`, `preliminary`, `dynamic` are
+  gone from the message part (provider-executed `ToolResult` keeps them).
+- Breaking: `StreamPart` models the stream's `TextStreamPart` (adds
+  `finish-step`; `StreamPartToolCall` / `StreamPartToolResult` / `StreamPartFile`
+  wrap `ToolCall` / `ToolResult` / `GeneratedFile`; no `response-metadata`).
+- Breaking: `registerProviders` is removed together with
+  `aimux_register_providers`; `config_json` keys are camelCase (`baseUrl`) and
+  unknown keys are rejected.
+- `types.dart` no longer uses `json_serializable` except for the OpenAI Chat
+  Completions family; `types.g.dart` is regenerated for it.
+
 ## 0.5.0
 
 - Breaking release aligning the whole aimux family — see the

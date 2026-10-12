@@ -265,7 +265,7 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
                     rawPartJson
                 }
                 try {
-                    onPart(AimuxJson.decodeFromString(StreamPartSerializer, partJson))
+                    onPart(AimuxJson.decodeFromString(StreamPart.serializer(), partJson))
                 } catch (error: Exception) {
                     onError(
                         "failed to decode StreamPart: ${error.message ?: error::class.simpleName}",

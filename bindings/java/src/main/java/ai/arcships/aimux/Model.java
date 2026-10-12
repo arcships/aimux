@@ -368,9 +368,9 @@ public class Model implements Closeable {
      *                   from the registry entry.
      * @param modelId    Model id.
      * @param configJson Optional JSON object of ProviderOptions
-     *                   ({@code {"base_url": "...", "headers": {...}, "organization": "...",
+     *                   ({@code {"baseUrl": "...", "headers": {...}, "organization": "...",
      *                   "project": "...", "params": {...}}}); {@code null} for defaults.
-     *                   {@code max_retries} (a per-call option) and {@code body_overrides}
+     *                   {@code maxRetries} (a per-call option) and {@code bodyOverrides}
      *                   (removed) are rejected as {@link AimuxException.InvalidArgumentError}.
      * @return A new {@link Model}.
      * @throws AimuxException if the provider could not be constructed
@@ -469,7 +469,7 @@ public class Model implements Closeable {
      * @param models     child models (must be non-empty; closed models throw).
      * @param configJson optional config: {@code {"router": "rule"|"weighted",
      *                   "weights": [...], "fallback": "on_error"|"none",
-     *                   "provider_name", "model_id"}} — all optional.
+     *                   "providerName", "modelId"}} — all optional.
      * @return a new RouterModel wrapping the children.
      */
     public static Model router(java.util.List<Model> models, String configJson) {
@@ -493,9 +493,9 @@ public class Model implements Closeable {
      *
      * @param references reference models (may be null/empty — runs aggregator only).
      * @param aggregator the aggregator model (must be non-null and open).
-     * @param configJson optional MoaConfig: {@code {"provider_name", "model_id",
-     *                   "aggregator_instructions", "strip_reference_tools",
-     *                   "fail_mode": "best_effort"|"fail_fast"}}.
+     * @param configJson optional MoaConfig: {@code {"providerName", "modelId",
+     *                   "aggregatorInstructions", "stripReferenceTools",
+     *                   "failMode": "best_effort"|"fail_fast"}}.
      * @return a new MoaModel.
      */
     public static Model moa(java.util.List<Model> references, Model aggregator, String configJson) {

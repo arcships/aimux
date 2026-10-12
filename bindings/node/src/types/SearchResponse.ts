@@ -8,8 +8,8 @@ export type SearchResponse = {
 /**
  * Response headers.
  */
-headers: { [key in string]: string } | null, 
+headers?: { [key in string]: string }, 
 /**
  * The response body (opaque JSON).
  */
-body: JsonValue | null, };
+body?: JsonValue, };

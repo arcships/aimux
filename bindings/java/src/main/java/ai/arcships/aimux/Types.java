@@ -39,8 +39,8 @@ import java.util.function.Supplier;
  * `bindings/kotlin` (which in turn mirrors the ts-rs output in
  * `bindings/node/src/types`).
  *
- * Field names are camelCase in Java and mapped to the wire format's snake_case
- * via {@link JsonProperty}. The raw JSON boundary is handled by
+ * Field names are camelCase in Java and on the wire (the AI SDK JSON), so
+ * {@link JsonProperty} only pins them. The raw JSON boundary is handled by
  * {@link TypedModel} — callers of this layer never parse JSON by hand.
  *
  * These types are intentionally lenient on decode (unknown keys ignored, every
@@ -69,7 +69,7 @@ public final class Types {
         public static final ObjectMapper MAPPER = createMapper();
 
         /**
-         * Inner mapper used by the externally-tagged polymorphic serializers
+         * Inner mapper used by the `type`-tagged polymorphic serializers
          * ({@link ContentPartSerializer}, {@link StreamPartSerializer},
          * {@link GenerateContentSerializer}) to serialize the concrete variant
          * as a plain POJO. It deliberately does NOT register those four
@@ -109,7 +109,7 @@ public final class Types {
             module.addDeserializer(FileData.class, new FileDataDeserializer());
             module.addSerializer(GeneratedFileData.class, new GeneratedFileDataSerializer());
             module.addDeserializer(GeneratedFileData.class, new GeneratedFileDataDeserializer());
-            // Externally-tagged polymorphic serializers — only on the public
+            // `type`-tagged polymorphic serializers — only on the public
             // mapper. They use INNER_MAPPER internally to avoid self-recursion.
             if (polymorphic) {
                 module.addSerializer(MessageContent.class, new MessageContentSerializer());
@@ -162,9 +162,9 @@ public final class Types {
 
     public static class InputTokenUsage {
         @JsonProperty("total") private Long total;
-        @JsonProperty("no_cache") private Long noCache;
-        @JsonProperty("cache_read") private Long cacheRead;
-        @JsonProperty("cache_write") private Long cacheWrite;
+        @JsonProperty("noCache") private Long noCache;
+        @JsonProperty("cacheRead") private Long cacheRead;
+        @JsonProperty("cacheWrite") private Long cacheWrite;
         @JsonCreator InputTokenUsage() {}
         public InputTokenUsage(Long total, Long noCache, Long cacheRead, Long cacheWrite) {
             this.total = total;
@@ -228,12 +228,12 @@ public final class Types {
     /**
      * Token usage statistics.
      *
-     * Mirrors `Usage.ts`: `{ input_tokens: InputTokenUsage, output_tokens: OutputTokenUsage,
-     * raw?: JSONObject | null }`.
+     * Mirrors `Usage.ts`: `{ inputTokens: InputTokenUsage, outputTokens: OutputTokenUsage,
+     * raw?: JSONObject }`.
      */
     public static class Usage {
-        @JsonProperty("input_tokens") private InputTokenUsage inputTokens = new InputTokenUsage();
-        @JsonProperty("output_tokens") private OutputTokenUsage outputTokens = new OutputTokenUsage();
+        @JsonProperty("inputTokens") private InputTokenUsage inputTokens = new InputTokenUsage();
+        @JsonProperty("outputTokens") private OutputTokenUsage outputTokens = new OutputTokenUsage();
         @JsonProperty("raw") private ObjectNode raw;
 
         @JsonCreator
@@ -334,12 +334,12 @@ public final class Types {
      * Metadata about the API response.
      *
      * Mirrors `ResponseMetadata.ts`: `{ id: string | null, timestamp: string | null,
-     * model_id: string | null }`.
+     * modelId: string | null }`.
      */
     public static class ResponseMetadata {
         @JsonProperty("id") private String id;
         @JsonProperty("timestamp") private String timestamp;
-        @JsonProperty("model_id") private String modelId;
+        @JsonProperty("modelId") private String modelId;
 
         @JsonCreator
         ResponseMetadata() {}
@@ -387,20 +387,20 @@ public final class Types {
     /**
      * A tool call requested by the model.
      *
-     * Mirrors `ToolCall.ts`: `{ tool_call_id, tool_name, input: JsonValue,
-     * provider_executed?: bool | null, dynamic?: bool | null,
-     * provider_metadata?: JsonValue | null }`.
+     * Mirrors `ToolCall.ts`: `{ toolCallId, toolName, input: JsonValue,
+     * providerExecuted?: bool, dynamic?: bool, providerMetadata?: JsonValue,
+     * invalid?: bool, error?: AiMuxError }`.
      *
      * `input` is a {@link JsonNode} because it is usually an arbitrary JSON object
      * (the tool arguments) whose shape is tool-specific.
      */
     public static class ToolCall {
-        @JsonProperty("tool_call_id") private String toolCallId = "";
-        @JsonProperty("tool_name") private String toolName = "";
+        @JsonProperty("toolCallId") private String toolCallId = "";
+        @JsonProperty("toolName") private String toolName = "";
         @JsonProperty("input") private JsonNode input = emptyObject();
-        @JsonProperty("provider_executed") private Boolean providerExecuted;
+        @JsonProperty("providerExecuted") private Boolean providerExecuted;
         @JsonProperty("dynamic") private Boolean dynamic;
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("providerMetadata") private JsonNode providerMetadata;
         @JsonProperty("invalid") private Boolean invalid;
         @JsonProperty("error") private JsonNode error;
 
@@ -507,15 +507,15 @@ public final class Types {
     /**
      * A user-defined function tool.
      *
-     * Mirrors `FunctionTool.ts`. `input_schema` is a {@link JsonNode} (a JSON Schema).
+     * Mirrors `FunctionTool.ts`. `inputSchema` is a {@link JsonNode} (a JSON Schema).
      */
     public static class FunctionTool {
         @JsonProperty("name") private String name = "";
         @JsonProperty("description") private String description;
-        @JsonProperty("input_schema") private JsonNode inputSchema = emptyObject();
+        @JsonProperty("inputSchema") private JsonNode inputSchema = emptyObject();
         @JsonProperty("strict") private Boolean strict;
-        @JsonProperty("provider_options") private Map<String, JsonNode> providerOptions;
-        @JsonProperty("input_examples") private List<FunctionToolInputExample> inputExamples;
+        @JsonProperty("providerOptions") private Map<String, JsonNode> providerOptions;
+        @JsonProperty("inputExamples") private List<FunctionToolInputExample> inputExamples;
 
         @JsonCreator
         FunctionTool() {}
@@ -649,10 +649,10 @@ public final class Types {
         public static class Function extends Tool {
             @JsonProperty("name") private String name = "";
             @JsonProperty("description") private String description;
-            @JsonProperty("input_schema") private JsonNode inputSchema = emptyObject();
+            @JsonProperty("inputSchema") private JsonNode inputSchema = emptyObject();
             @JsonProperty("strict") private Boolean strict;
-            @JsonProperty("provider_options") private Map<String, JsonNode> providerOptions;
-            @JsonProperty("input_examples") private List<FunctionToolInputExample> inputExamples;
+            @JsonProperty("providerOptions") private Map<String, JsonNode> providerOptions;
+            @JsonProperty("inputExamples") private List<FunctionToolInputExample> inputExamples;
 
             @JsonCreator
             Function() {}
@@ -917,6 +917,67 @@ public final class Types {
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
+    // ToolResultOutput (the `output` of a prompt-side tool-result part).
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Output of a tool call in a prompt message.
+     *
+     * Mirrors `ToolResultOutput.ts`, tagged on `type`: `text` / `error-text`
+     * carry a string `value`, `json` / `error-json` a JSON `value`, `content` an
+     * array of `{type:"text"|"file"|"custom",...}` items, and `execution-denied`
+     * an optional `reason`. `providerOptions` is absent on `content`.
+     */
+    public static class ToolResultOutput {
+        @JsonProperty("type") private String type = "text";
+        @JsonProperty("value") private JsonNode value;
+        @JsonProperty("reason") private String reason;
+        @JsonProperty("providerOptions") private JsonNode providerOptions;
+
+        @JsonCreator
+        ToolResultOutput() {}
+
+        private ToolResultOutput(String type, JsonNode value, String reason) {
+            this.type = type;
+            this.value = value;
+            this.reason = reason;
+        }
+
+        public static ToolResultOutput text(String value) { return new ToolResultOutput("text", TextNode.valueOf(value), null); }
+        public static ToolResultOutput json(JsonNode value) { return new ToolResultOutput("json", value, null); }
+        public static ToolResultOutput executionDenied(String reason) { return new ToolResultOutput("execution-denied", null, reason); }
+        public static ToolResultOutput errorText(String value) { return new ToolResultOutput("error-text", TextNode.valueOf(value), null); }
+        public static ToolResultOutput errorJson(JsonNode value) { return new ToolResultOutput("error-json", value, null); }
+        /** `items` is a JSON array of `text` / `file` / `custom` content items. */
+        public static ToolResultOutput content(ArrayNode items) { return new ToolResultOutput("content", items, null); }
+
+        /** One of `text`, `json`, `execution-denied`, `error-text`, `error-json`, `content`. */
+        public String getType() { return type; }
+        public JsonNode getValue() { return value; }
+        public String getReason() { return reason; }
+        public JsonNode getProviderOptions() { return providerOptions; }
+
+        /** Returns a copy carrying the given provider options (ignored by `content`). */
+        public ToolResultOutput withProviderOptions(JsonNode options) {
+            ToolResultOutput copy = new ToolResultOutput(type, value, reason);
+            copy.providerOptions = options;
+            return copy;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ToolResultOutput)) return false;
+            ToolResultOutput that = (ToolResultOutput) o;
+            return Objects.equals(type, that.type) && Objects.equals(value, that.value)
+                && Objects.equals(reason, that.reason) && Objects.equals(providerOptions, that.providerOptions);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(type, value, reason, providerOptions); }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
     // ContentPart (multi-part message content).
     //
     // `ContentPart` is internally tagged on `type` (`{"type": "text", ...}`,
@@ -930,7 +991,7 @@ public final class Types {
      * Mirrors `ContentPart.ts` (internally tagged on `type`). Shared between
      * {@link ModelMessage} (user-facing) and the provider-facing prompt. Every
      * field has a default and unknown keys are ignored on decode, so future part
-     * additions do not break existing clients. `provider_options` is a
+     * additions do not break existing clients. `providerOptions` is a
      * {@link JsonNode} because it is an opaque `Record<string, JSONObject>`.
      */
     public abstract static class ContentPart {
@@ -938,7 +999,7 @@ public final class Types {
 
         public static class Text extends ContentPart {
             @JsonProperty("text") private String text = "";
-            @JsonProperty("provider_options") private JsonNode providerOptions;
+            @JsonProperty("providerOptions") private JsonNode providerOptions;
 
             @JsonCreator
             Text() {}
@@ -977,8 +1038,8 @@ public final class Types {
 
         public static class Image extends ContentPart {
             @JsonProperty("image") private List<Integer> image = new ArrayList<>();
-            @JsonProperty("media_type") private String mediaType = "";
-            @JsonProperty("provider_options") private JsonNode providerOptions;
+            @JsonProperty("mediaType") private String mediaType = "";
+            @JsonProperty("providerOptions") private JsonNode providerOptions;
 
             @JsonCreator
             Image() {}
@@ -1023,9 +1084,9 @@ public final class Types {
 
         public static class File extends ContentPart {
             @JsonProperty("data") private List<Integer> data = new ArrayList<>();
-            @JsonProperty("media_type") private String mediaType = "";
+            @JsonProperty("mediaType") private String mediaType = "";
             @JsonProperty("filename") private String filename;
-            @JsonProperty("provider_options") private JsonNode providerOptions;
+            @JsonProperty("providerOptions") private JsonNode providerOptions;
 
             @JsonCreator
             File() {}
@@ -1075,9 +1136,9 @@ public final class Types {
 
         public static class FileBase64 extends ContentPart {
             @JsonProperty("data") private String data = "";
-            @JsonProperty("media_type") private String mediaType = "";
+            @JsonProperty("mediaType") private String mediaType = "";
             @JsonProperty("filename") private String filename;
-            @JsonProperty("provider_options") private JsonNode providerOptions;
+            @JsonProperty("providerOptions") private JsonNode providerOptions;
 
             @JsonCreator
             FileBase64() {}
@@ -1127,8 +1188,8 @@ public final class Types {
 
         public static class FileUrl extends ContentPart {
             @JsonProperty("url") private String url = "";
-            @JsonProperty("media_type") private String mediaType = "";
-            @JsonProperty("provider_options") private JsonNode providerOptions;
+            @JsonProperty("mediaType") private String mediaType = "";
+            @JsonProperty("providerOptions") private JsonNode providerOptions;
 
             @JsonCreator
             FileUrl() {}
@@ -1172,10 +1233,10 @@ public final class Types {
         }
 
         public static class FileReference extends ContentPart {
-            @JsonProperty("media_type") private String mediaType = "";
+            @JsonProperty("mediaType") private String mediaType = "";
             @JsonProperty("reference") private JsonNode reference = emptyObject();
             @JsonProperty("filename") private String filename;
-            @JsonProperty("provider_options") private JsonNode providerOptions;
+            @JsonProperty("providerOptions") private JsonNode providerOptions;
 
             @JsonCreator
             FileReference() {}
@@ -1228,7 +1289,7 @@ public final class Types {
         public static class Reasoning extends ContentPart {
             @JsonProperty("text") private String text = "";
             @JsonProperty("signature") private String signature;
-            @JsonProperty("provider_options") private JsonNode providerOptions;
+            @JsonProperty("providerOptions") private JsonNode providerOptions;
 
             @JsonCreator
             Reasoning() {}
@@ -1272,11 +1333,11 @@ public final class Types {
         }
 
         public static class ToolCall extends ContentPart {
-            @JsonProperty("tool_call_id") private String toolCallId = "";
-            @JsonProperty("tool_name") private String toolName = "";
+            @JsonProperty("toolCallId") private String toolCallId = "";
+            @JsonProperty("toolName") private String toolName = "";
             @JsonProperty("input") private JsonNode input = emptyObject();
-            @JsonProperty("provider_executed") private Boolean providerExecuted;
-            @JsonProperty("provider_options") private JsonNode providerOptions;
+            @JsonProperty("providerExecuted") private Boolean providerExecuted;
+            @JsonProperty("providerOptions") private JsonNode providerOptions;
 
             @JsonCreator
             ToolCall() {}
@@ -1335,58 +1396,40 @@ public final class Types {
         }
 
         public static class ToolResult extends ContentPart {
-            @JsonProperty("tool_call_id") private String toolCallId = "";
-            @JsonProperty("result") private JsonNode result = emptyObject();
-            @JsonProperty("tool_name") private String toolName;
-            @JsonProperty("is_error") private Boolean isError;
-            @JsonProperty("preliminary") private Boolean preliminary;
-            @JsonProperty("dynamic") private Boolean dynamic;
-            @JsonProperty("provider_options") private JsonNode providerOptions;
+            @JsonProperty("toolCallId") private String toolCallId = "";
+            @JsonProperty("toolName") private String toolName = "";
+            @JsonProperty("output") private ToolResultOutput output = ToolResultOutput.text("");
+            @JsonProperty("providerOptions") private JsonNode providerOptions;
 
             @JsonCreator
             ToolResult() {}
 
-            private ToolResult(String toolCallId, JsonNode result, String toolName, Boolean isError,
-                               Boolean preliminary, Boolean dynamic, JsonNode providerOptions) {
+            private ToolResult(String toolCallId, String toolName, ToolResultOutput output, JsonNode providerOptions) {
                 this.toolCallId = toolCallId;
-                this.result = result;
                 this.toolName = toolName;
-                this.isError = isError;
-                this.preliminary = preliminary;
-                this.dynamic = dynamic;
+                this.output = output;
                 this.providerOptions = providerOptions;
             }
 
             public String getToolCallId() { return toolCallId; }
-            public JsonNode getResult() { return result; }
             public String getToolName() { return toolName; }
-            public Boolean getIsError() { return isError; }
-            public Boolean getPreliminary() { return preliminary; }
-            public Boolean getDynamic() { return dynamic; }
+            public ToolResultOutput getOutput() { return output; }
             public JsonNode getProviderOptions() { return providerOptions; }
 
             public static Builder builder() { return new Builder(); }
 
             public static class Builder {
                 private String toolCallId = "";
-                private JsonNode result = emptyObject();
-                private String toolName;
-                private Boolean isError;
-                private Boolean preliminary;
-                private Boolean dynamic;
+                private String toolName = "";
+                private ToolResultOutput output = ToolResultOutput.text("");
                 private JsonNode providerOptions;
 
                 public Builder toolCallId(String v) { this.toolCallId = v; return this; }
-                public Builder result(JsonNode v) { this.result = v; return this; }
                 public Builder toolName(String v) { this.toolName = v; return this; }
-                public Builder isError(Boolean v) { this.isError = v; return this; }
-                public Builder preliminary(Boolean v) { this.preliminary = v; return this; }
-                public Builder dynamic(Boolean v) { this.dynamic = v; return this; }
+                public Builder output(ToolResultOutput v) { this.output = v; return this; }
                 public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
 
-                public ToolResult build() {
-                    return new ToolResult(toolCallId, result, toolName, isError, preliminary, dynamic, providerOptions);
-                }
+                public ToolResult build() { return new ToolResult(toolCallId, toolName, output, providerOptions); }
             }
 
             @Override
@@ -1395,22 +1438,17 @@ public final class Types {
                 if (!(o instanceof ToolResult)) return false;
                 ToolResult that = (ToolResult) o;
                 return Objects.equals(toolCallId, that.toolCallId)
-                    && Objects.equals(result, that.result)
                     && Objects.equals(toolName, that.toolName)
-                    && Objects.equals(isError, that.isError)
-                    && Objects.equals(preliminary, that.preliminary)
-                    && Objects.equals(dynamic, that.dynamic)
+                    && Objects.equals(output, that.output)
                     && Objects.equals(providerOptions, that.providerOptions);
             }
 
             @Override
-            public int hashCode() {
-                return Objects.hash(toolCallId, result, toolName, isError, preliminary, dynamic, providerOptions);
-            }
+            public int hashCode() { return Objects.hash(toolCallId, toolName, output, providerOptions); }
         }
         public static class Custom extends ContentPart {
             @JsonProperty("kind") private String kind;
-            @JsonProperty("provider_options") private JsonNode providerOptions;
+            @JsonProperty("providerOptions") private JsonNode providerOptions;
             @JsonCreator Custom() {}
             public Custom(String kind, JsonNode providerOptions) {
                 this.kind = kind;
@@ -1435,8 +1473,8 @@ public final class Types {
         }
         public static class ReasoningFile extends ContentPart {
             @JsonProperty("data") private GeneratedFileData data;
-            @JsonProperty("media_type") private String mediaType;
-            @JsonProperty("provider_options") private JsonNode providerOptions;
+            @JsonProperty("mediaType") private String mediaType;
+            @JsonProperty("providerOptions") private JsonNode providerOptions;
             @JsonCreator ReasoningFile() {}
             public ReasoningFile(GeneratedFileData data, String mediaType, JsonNode providerOptions) {
                 this.data = data;
@@ -1464,12 +1502,12 @@ public final class Types {
             @Override public int hashCode() { return Objects.hash(data, mediaType, providerOptions); }
         }
         public static class ToolApprovalRequest extends ContentPart {
-            @JsonProperty("approval_id") private String approvalId;
-            @JsonProperty("tool_call_id") private String toolCallId;
+            @JsonProperty("approvalId") private String approvalId;
+            @JsonProperty("toolCallId") private String toolCallId;
             @JsonProperty("reason") private String reason;
-            @JsonProperty("is_automatic") private Boolean isAutomatic;
+            @JsonProperty("isAutomatic") private Boolean isAutomatic;
             @JsonProperty("signature") private String signature;
-            @JsonProperty("input_schema_input") private JsonNode inputSchemaInput;
+            @JsonProperty("inputSchemaInput") private JsonNode inputSchemaInput;
             @JsonCreator ToolApprovalRequest() {}
             public ToolApprovalRequest(String approvalId, String toolCallId, String reason, Boolean isAutomatic, String signature, JsonNode inputSchemaInput) {
                 this.approvalId = approvalId;
@@ -1526,15 +1564,15 @@ public final class Types {
             if (value instanceof ContentPart.Text) return "text";
             if (value instanceof ContentPart.Image) return "image";
             if (value instanceof ContentPart.File) return "file";
-            if (value instanceof ContentPart.FileBase64) return "file_base64";
-            if (value instanceof ContentPart.FileUrl) return "file_url";
-            if (value instanceof ContentPart.FileReference) return "file_reference";
+            if (value instanceof ContentPart.FileBase64) return "file-base64";
+            if (value instanceof ContentPart.FileUrl) return "file-url";
+            if (value instanceof ContentPart.FileReference) return "file-reference";
             if (value instanceof ContentPart.Reasoning) return "reasoning";
-            if (value instanceof ContentPart.ToolCall) return "tool_call";
-            if (value instanceof ContentPart.ToolResult) return "tool_result";
+            if (value instanceof ContentPart.ToolCall) return "tool-call";
+            if (value instanceof ContentPart.ToolResult) return "tool-result";
             if (value instanceof ContentPart.Custom) return "custom";
-            if (value instanceof ContentPart.ReasoningFile) return "reasoning_file";
-            if (value instanceof ContentPart.ToolApprovalRequest) return "tool_approval_request";
+            if (value instanceof ContentPart.ReasoningFile) return "reasoning-file";
+            if (value instanceof ContentPart.ToolApprovalRequest) return "tool-approval-request";
             throw new IllegalArgumentException("Unknown ContentPart: " + value);
         }
     }
@@ -1552,15 +1590,15 @@ public final class Types {
                 case "text": return AimuxJson.MAPPER.treeToValue(node, ContentPart.Text.class);
                 case "image": return AimuxJson.MAPPER.treeToValue(node, ContentPart.Image.class);
                 case "file": return AimuxJson.MAPPER.treeToValue(node, ContentPart.File.class);
-                case "file_base64": return AimuxJson.MAPPER.treeToValue(node, ContentPart.FileBase64.class);
-                case "file_url": return AimuxJson.MAPPER.treeToValue(node, ContentPart.FileUrl.class);
-                case "file_reference": return AimuxJson.MAPPER.treeToValue(node, ContentPart.FileReference.class);
+                case "file-base64": return AimuxJson.MAPPER.treeToValue(node, ContentPart.FileBase64.class);
+                case "file-url": return AimuxJson.MAPPER.treeToValue(node, ContentPart.FileUrl.class);
+                case "file-reference": return AimuxJson.MAPPER.treeToValue(node, ContentPart.FileReference.class);
                 case "reasoning": return AimuxJson.MAPPER.treeToValue(node, ContentPart.Reasoning.class);
-                case "tool_call": return AimuxJson.MAPPER.treeToValue(node, ContentPart.ToolCall.class);
-                case "tool_result": return AimuxJson.MAPPER.treeToValue(node, ContentPart.ToolResult.class);
+                case "tool-call": return AimuxJson.MAPPER.treeToValue(node, ContentPart.ToolCall.class);
+                case "tool-result": return AimuxJson.MAPPER.treeToValue(node, ContentPart.ToolResult.class);
                 case "custom": return AimuxJson.MAPPER.treeToValue(node, ContentPart.Custom.class);
-                case "reasoning_file": return AimuxJson.MAPPER.treeToValue(node, ContentPart.ReasoningFile.class);
-                case "tool_approval_request": return AimuxJson.MAPPER.treeToValue(node, ContentPart.ToolApprovalRequest.class);
+                case "reasoning-file": return AimuxJson.MAPPER.treeToValue(node, ContentPart.ReasoningFile.class);
+                case "tool-approval-request": return AimuxJson.MAPPER.treeToValue(node, ContentPart.ToolApprovalRequest.class);
                 default:
                     throw new IOException("Unknown ContentPart type: '" + type + "'");
             }
@@ -1757,10 +1795,10 @@ public final class Types {
      * backoff and the whole streamed response.
      */
     public static class TimeoutConfiguration {
-        @JsonProperty("total_ms") private Long totalMs;
-        @JsonProperty("step_ms") private Long stepMs;
-        @JsonProperty("first_chunk_ms") private Long firstChunkMs;
-        @JsonProperty("chunk_ms") private Long chunkMs;
+        @JsonProperty("totalMs") private Long totalMs;
+        @JsonProperty("stepMs") private Long stepMs;
+        @JsonProperty("firstChunkMs") private Long firstChunkMs;
+        @JsonProperty("chunkMs") private Long chunkMs;
 
         @JsonCreator
         TimeoutConfiguration() {}
@@ -1827,12 +1865,12 @@ public final class Types {
      * inspects and what it returns as the replacement.
      */
     public static class RawToolCall {
-        @JsonProperty("tool_call_id") private String toolCallId = "";
-        @JsonProperty("tool_name") private String toolName = "";
+        @JsonProperty("toolCallId") private String toolCallId = "";
+        @JsonProperty("toolName") private String toolName = "";
         @JsonProperty("input") private String input = "";
-        @JsonProperty("provider_executed") private Boolean providerExecuted;
+        @JsonProperty("providerExecuted") private Boolean providerExecuted;
         @JsonProperty("dynamic") private Boolean dynamic;
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
         @JsonCreator
         RawToolCall() {}
@@ -1886,9 +1924,9 @@ public final class Types {
      * {@link #getMessages()} is the conversation the model actually saw.
      */
     public static class ToolCallRepairContext {
-        @JsonProperty("tool_call") private RawToolCall toolCall;
+        @JsonProperty("toolCall") private RawToolCall toolCall;
         @JsonProperty("error") private JsonNode error;
-        @JsonProperty("input_schema") private JsonNode inputSchema;
+        @JsonProperty("inputSchema") private JsonNode inputSchema;
         @JsonProperty("tools") private List<Tool> tools;
         @JsonProperty("messages") private List<ModelMessage> messages;
         @JsonProperty("instructions") private String instructions;
@@ -1907,25 +1945,25 @@ public final class Types {
     }
 
     public static class GenerateTextOptions {
-        @JsonProperty("max_output_tokens") private Long maxOutputTokens;
+        @JsonProperty("maxOutputTokens") private Long maxOutputTokens;
         @JsonProperty("temperature") private Double temperature;
-        @JsonProperty("stop_sequences") private List<String> stopSequences;
-        @JsonProperty("top_p") private Double topP;
-        @JsonProperty("top_k") private Double topK;
-        @JsonProperty("presence_penalty") private Double presencePenalty;
-        @JsonProperty("frequency_penalty") private Double frequencyPenalty;
-        @JsonProperty("response_format") private JsonNode responseFormat;
+        @JsonProperty("stopSequences") private List<String> stopSequences;
+        @JsonProperty("topP") private Double topP;
+        @JsonProperty("topK") private Double topK;
+        @JsonProperty("presencePenalty") private Double presencePenalty;
+        @JsonProperty("frequencyPenalty") private Double frequencyPenalty;
+        @JsonProperty("responseFormat") private JsonNode responseFormat;
         @JsonProperty("seed") private Long seed;
         @JsonProperty("tools") private List<Tool> tools;
-        @JsonProperty("tool_choice") private ToolChoice toolChoice;
+        @JsonProperty("toolChoice") private ToolChoice toolChoice;
         @JsonProperty("headers") private Map<String, String> headers;
-        @JsonProperty("provider_options") private Map<String, JsonNode> providerOptions;
+        @JsonProperty("providerOptions") private Map<String, JsonNode> providerOptions;
         @JsonProperty("reasoning") private ReasoningEffort reasoning;
         @JsonProperty("instructions") private String instructions;
-        @JsonProperty("max_retries") private Long maxRetries;
-        @JsonProperty("include_raw_chunks") private Boolean includeRawChunks;
+        @JsonProperty("maxRetries") private Long maxRetries;
+        @JsonProperty("includeRawChunks") private Boolean includeRawChunks;
         @JsonProperty("timeout") private TimeoutConfiguration timeout;
-        @JsonProperty("session_id") private String sessionId;
+        @JsonProperty("sessionId") private String sessionId;
         // Host-side only (RFC-0035): a function cannot cross the C ABI, and the
         // native layer must never see this key.
         @JsonIgnore private ToolCallRepair repairToolCall;
@@ -2099,15 +2137,15 @@ public final class Types {
     // ─────────────────────────────────────────────────────────────────────────────
     // File bytes / file data (shared V4 file types).
     //
-    // `FileBytes` and `GeneratedFileData` are externally-tagged enums
-    // (`{"Binary": [...]}`, `{"Data": {"data": ...}}`, ...). Each is modeled with a
-    // custom serializer that dispatches on the single tag key.
+    // `FileBytes` is untagged (an int array or a base64 string); `FileData` and
+    // `GeneratedFileData` are tagged on `type` (`{"type":"data","data":...}`, ...).
+    // Each is modeled with a custom serializer.
     // ─────────────────────────────────────────────────────────────────────────────
 
     /**
      * Either raw bytes or a base64-encoded string.
      *
-     * Mirrors `FileBytes.ts`: `{"Binary": Array<number>} | {"Base64": string}`.
+     * Mirrors `FileBytes.ts`: `Array<number> | string`.
      * The binary payload is a list of byte ints (0–255).
      */
     public abstract static class FileBytes {
@@ -2158,59 +2196,48 @@ public final class Types {
         }
     }
 
-    /** Custom (de)serializer for {@link FileBytes} — externally tagged. */
+    /** Serializes {@link FileBytes} untagged: a JSON int array (binary) or a string (base64). */
     public static class FileBytesSerializer extends JsonSerializer<FileBytes> {
         @Override
         public void serialize(FileBytes value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
-            gen.writeStartObject();
             if (value instanceof FileBytes.Binary) {
-                gen.writeArrayFieldStart("Binary");
+                gen.writeStartArray();
                 for (Integer b : ((FileBytes.Binary) value).getData()) {
                     gen.writeNumber(b);
                 }
                 gen.writeEndArray();
             } else if (value instanceof FileBytes.Base64) {
-                gen.writeStringField("Base64", ((FileBytes.Base64) value).getData());
+                gen.writeString(((FileBytes.Base64) value).getData());
             } else {
                 throw new IOException("Unknown FileBytes: " + value);
             }
-            gen.writeEndObject();
         }
     }
 
-    /** Custom (de)serializer for {@link FileBytes}. */
+    /** Deserializes {@link FileBytes}: a JSON array is binary, a JSON string is base64. */
     public static class FileBytesDeserializer extends JsonDeserializer<FileBytes> {
         @Override
         public FileBytes deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
             JsonNode node = p.getCodec().readTree(p);
-            if (!node.isObject() || node.size() != 1) {
-                throw new IOException("FileBytes must be a single-key externally-tagged object, got: " + node);
-            }
-            String tag = node.fieldNames().next();
-            JsonNode inner = node.get(tag);
-            switch (tag) {
-                case "Binary": {
-                    List<Integer> data = new ArrayList<>();
-                    if (inner.isArray()) {
-                        for (JsonNode item : inner) {
-                            data.add(item.asInt());
-                        }
-                    }
-                    return new FileBytes.Binary(data);
+            if (node.isArray()) {
+                List<Integer> data = new ArrayList<>();
+                for (JsonNode item : node) {
+                    data.add(item.asInt());
                 }
-                case "Base64":
-                    return new FileBytes.Base64(inner.asText());
-                default:
-                    throw new IOException("Unknown FileBytes tag: '" + tag + "'");
+                return new FileBytes.Binary(data);
             }
+            if (node.isTextual()) {
+                return new FileBytes.Base64(node.asText());
+            }
+            throw new IOException("FileBytes must be an int array or a base64 string, got: " + node);
         }
     }
 
     /**
      * File data as a tagged discriminated union.
      *
-     * Mirrors `FileData.ts`: `{"Data": {"data": FileBytes}} | {"Url": {"url": ...}}
-     * | {"Reference": {"reference": {...}}} | {"Text": {"text": ...}}`.
+     * Mirrors `FileData.ts`: `{"type":"data","data":FileBytes} | {"type":"url","url":...}
+     * | {"type":"reference","reference":{...}} | {"type":"text","text":...}`.
      */
     public abstract static class FileData {
         private FileData() {}
@@ -2238,7 +2265,7 @@ public final class Types {
 
         public static class Url extends FileData {
             @JsonProperty("url") private String url;
-            @JsonProperty("original_url") private String originalUrl;
+            @JsonProperty("originalUrl") private String originalUrl;
             @JsonCreator Url() {}
             public Url(String url, String originalUrl) {
                 this.url = url;
@@ -2304,30 +2331,26 @@ public final class Types {
         }
     }
 
-    /** Custom (de)serializer for {@link FileData} — externally tagged. */
+    /** Custom (de)serializer for {@link FileData} — internally tagged on `"type"`. */
     public static class FileDataSerializer extends JsonSerializer<FileData> {
         @Override
         public void serialize(FileData value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
             gen.writeStartObject();
             if (value instanceof FileData.Data) {
-                gen.writeObjectFieldStart("Data");
+                gen.writeStringField("type", "data");
                 gen.writeFieldName("data");
                 gen.writeTree(AimuxJson.MAPPER.valueToTree(((FileData.Data) value).getData()));
-                gen.writeEndObject();
             } else if (value instanceof FileData.Url) {
-                gen.writeObjectFieldStart("Url");
+                gen.writeStringField("type", "url");
                 gen.writeStringField("url", ((FileData.Url) value).getUrl());
                 if (((FileData.Url) value).getOriginalUrl() != null)
-                    gen.writeStringField("original_url", ((FileData.Url) value).getOriginalUrl());
-                gen.writeEndObject();
+                    gen.writeStringField("originalUrl", ((FileData.Url) value).getOriginalUrl());
             } else if (value instanceof FileData.Reference) {
-                gen.writeObjectFieldStart("Reference");
+                gen.writeStringField("type", "reference");
                 gen.writeObjectField("reference", ((FileData.Reference) value).getReference());
-                gen.writeEndObject();
             } else if (value instanceof FileData.Text) {
-                gen.writeObjectFieldStart("Text");
+                gen.writeStringField("type", "text");
                 gen.writeStringField("text", ((FileData.Text) value).getText());
-                gen.writeEndObject();
             } else {
                 throw new IOException("Unknown FileData: " + value);
             }
@@ -2340,23 +2363,18 @@ public final class Types {
         @Override
         public FileData deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
             JsonNode node = p.getCodec().readTree(p);
-            if (!node.isObject() || node.size() != 1) {
-                throw new IOException("FileData must be a single-key externally-tagged object, got: " + node);
-            }
-            String tag = node.fieldNames().next();
-            JsonNode inner = node.get(tag);
-            JsonNode innerObj = inner.isObject() ? inner : AimuxJson.MAPPER.createObjectNode();
+            String tag = node.path("type").asText();
             switch (tag) {
-                case "Data":
-                    return new FileData.Data(AimuxJson.MAPPER.treeToValue(innerObj.get("data"), FileBytes.class));
-                case "Url":
-                    return new FileData.Url(innerObj.path("url").asText(), innerObj.hasNonNull("original_url") ? innerObj.get("original_url").asText() : null);
-                case "Reference":
-                    return new FileData.Reference(innerObj.get("reference") == null ? emptyObject() : innerObj.get("reference"));
-                case "Text":
-                    return new FileData.Text(innerObj.path("text").asText());
+                case "data":
+                    return new FileData.Data(AimuxJson.MAPPER.treeToValue(node.get("data"), FileBytes.class));
+                case "url":
+                    return new FileData.Url(node.path("url").asText(), node.hasNonNull("originalUrl") ? node.get("originalUrl").asText() : null);
+                case "reference":
+                    return new FileData.Reference(node.get("reference") == null ? emptyObject() : node.get("reference"));
+                case "text":
+                    return new FileData.Text(node.path("text").asText());
                 default:
-                    throw new IOException("Unknown FileData tag: '" + tag + "'");
+                    throw new IOException("Unknown FileData type: '" + tag + "'");
             }
         }
     }
@@ -2364,7 +2382,7 @@ public final class Types {
     /**
      * File data as a tagged discriminated union.
      *
-     * Mirrors `GeneratedFileData.ts`: `{"Data": {"data": FileBytes}} | {"Url": {"url": ...}}
+     * Mirrors `GeneratedFileData.ts`: `{"type":"data","data":FileBytes} | {"type":"url","url":...}`.
      * Generated files contain only data or a URL.
      */
     public abstract static class GeneratedFileData {
@@ -2393,7 +2411,7 @@ public final class Types {
 
         public static class Url extends GeneratedFileData {
             @JsonProperty("url") private String url;
-            @JsonProperty("original_url") private String originalUrl;
+            @JsonProperty("originalUrl") private String originalUrl;
             @JsonCreator Url() {}
             public Url(String url, String originalUrl) {
                 this.url = url;
@@ -2419,22 +2437,20 @@ public final class Types {
 
     }
 
-    /** Custom (de)serializer for {@link GeneratedFileData} — externally tagged. */
+    /** Custom (de)serializer for {@link GeneratedFileData} — internally tagged on `"type"`. */
     public static class GeneratedFileDataSerializer extends JsonSerializer<GeneratedFileData> {
         @Override
         public void serialize(GeneratedFileData value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
             gen.writeStartObject();
             if (value instanceof GeneratedFileData.Data) {
-                gen.writeObjectFieldStart("Data");
+                gen.writeStringField("type", "data");
                 gen.writeFieldName("data");
                 gen.writeTree(AimuxJson.MAPPER.valueToTree(((GeneratedFileData.Data) value).getData()));
-                gen.writeEndObject();
             } else if (value instanceof GeneratedFileData.Url) {
-                gen.writeObjectFieldStart("Url");
+                gen.writeStringField("type", "url");
                 gen.writeStringField("url", ((GeneratedFileData.Url) value).getUrl());
                 if (((GeneratedFileData.Url) value).getOriginalUrl() != null)
-                    gen.writeStringField("original_url", ((GeneratedFileData.Url) value).getOriginalUrl());
-                gen.writeEndObject();
+                    gen.writeStringField("originalUrl", ((GeneratedFileData.Url) value).getOriginalUrl());
             } else {
                 throw new IOException("Unknown GeneratedFileData: " + value);
             }
@@ -2447,19 +2463,14 @@ public final class Types {
         @Override
         public GeneratedFileData deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
             JsonNode node = p.getCodec().readTree(p);
-            if (!node.isObject() || node.size() != 1) {
-                throw new IOException("GeneratedFileData must be a single-key externally-tagged object, got: " + node);
-            }
-            String tag = node.fieldNames().next();
-            JsonNode inner = node.get(tag);
-            JsonNode innerObj = inner.isObject() ? inner : AimuxJson.MAPPER.createObjectNode();
+            String tag = node.path("type").asText();
             switch (tag) {
-                case "Data":
-                    return new GeneratedFileData.Data(AimuxJson.MAPPER.treeToValue(innerObj.get("data"), FileBytes.class));
-                case "Url":
-                    return new GeneratedFileData.Url(innerObj.path("url").asText(), innerObj.hasNonNull("original_url") ? innerObj.get("original_url").asText() : null);
+                case "data":
+                    return new GeneratedFileData.Data(AimuxJson.MAPPER.treeToValue(node.get("data"), FileBytes.class));
+                case "url":
+                    return new GeneratedFileData.Url(node.path("url").asText(), node.hasNonNull("originalUrl") ? node.get("originalUrl").asText() : null);
                 default:
-                    throw new IOException("Unknown GeneratedFileData tag: '" + tag + "'");
+                    throw new IOException("Unknown GeneratedFileData type: '" + tag + "'");
             }
         }
     }
@@ -2467,20 +2478,20 @@ public final class Types {
     // ─────────────────────────────────────────────────────────────────────────────
     // GenerateContent / GenerateResult (the `raw` field of GenerateTextResult).
     //
-    // `GenerateContent` is externally tagged (`{"Text": {...}}`, `{"ToolCall":
-    // {...}}`, ...). Unrecognized variants fall back to GenerateContent.Unknown
+    // `GenerateContent` is internally tagged on `type` (`{"type":"text",...}`,
+    // `{"type":"tool-call",...}`, ...). Unrecognized variants fall back to GenerateContent.Unknown
     // for forward compatibility (mirroring StreamPart).
     // ─────────────────────────────────────────────────────────────────────────────
 
     /** A URL or document used as a source for the response. */
-    @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "source_type")
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "sourceType")
     @JsonSubTypes({
         @JsonSubTypes.Type(value = Source.Url.class, name = "url"),
         @JsonSubTypes.Type(value = Source.Document.class, name = "document")
     })
     public abstract static class Source {
         @JsonProperty("id") private final String id;
-        @JsonProperty("provider_metadata") private final JsonNode providerMetadata;
+        @JsonProperty("providerMetadata") private final JsonNode providerMetadata;
 
         protected Source(String id, JsonNode providerMetadata) {
             this.id = Objects.requireNonNull(id, "id");
@@ -2497,7 +2508,7 @@ public final class Types {
             @JsonCreator
             public Url(@JsonProperty("id") String id, @JsonProperty("url") String url,
                        @JsonProperty("title") String title,
-                       @JsonProperty("provider_metadata") JsonNode providerMetadata) {
+                       @JsonProperty("providerMetadata") JsonNode providerMetadata) {
                 super(id, providerMetadata);
                 this.url = Objects.requireNonNull(url, "url");
                 this.title = title;
@@ -2517,16 +2528,16 @@ public final class Types {
         }
 
         public static final class Document extends Source {
-            @JsonProperty("media_type") private final String mediaType;
+            @JsonProperty("mediaType") private final String mediaType;
             @JsonProperty("title") private final String title;
             @JsonProperty("filename") private final String filename;
 
             @JsonCreator
-            public Document(@JsonProperty("id") String id, @JsonProperty("media_type") String mediaType,
+            public Document(@JsonProperty("id") String id, @JsonProperty("mediaType") String mediaType,
                             @JsonProperty("title") String title, @JsonProperty("filename") String filename,
-                            @JsonProperty("provider_metadata") JsonNode providerMetadata) {
+                            @JsonProperty("providerMetadata") JsonNode providerMetadata) {
                 super(id, providerMetadata);
-                this.mediaType = Objects.requireNonNull(mediaType, "media_type");
+                this.mediaType = Objects.requireNonNull(mediaType, "mediaType");
                 this.title = Objects.requireNonNull(title, "title");
                 this.filename = filename;
             }
@@ -2551,7 +2562,7 @@ public final class Types {
     /**
      * A content item in the generation result.
      *
-     * Mirrors `GenerateContent.ts` (externally tagged). `provider_metadata` is a
+     * Mirrors `GenerateContent.ts` (tagged on `type`). `providerMetadata` is a
      * {@link JsonNode} (`ProviderMetadata = serde_json::Value`). Every field has a
      * default; the `File` variant has no `filename` (matching Rust).
      */
@@ -2560,7 +2571,7 @@ public final class Types {
 
         public static class Text extends GenerateContent {
             @JsonProperty("text") private String text = "";
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             Text() {}
@@ -2598,12 +2609,12 @@ public final class Types {
         }
 
         public static class ToolCall extends GenerateContent {
-            @JsonProperty("tool_call_id") private String toolCallId = "";
-            @JsonProperty("tool_name") private String toolName = "";
+            @JsonProperty("toolCallId") private String toolCallId = "";
+            @JsonProperty("toolName") private String toolName = "";
             @JsonProperty("input") private JsonNode input = emptyObject();
-            @JsonProperty("provider_executed") private Boolean providerExecuted;
+            @JsonProperty("providerExecuted") private Boolean providerExecuted;
             @JsonProperty("dynamic") private Boolean dynamic;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             ToolCall() {}
@@ -2682,7 +2693,7 @@ public final class Types {
 
         public static class Reasoning extends GenerateContent {
             @JsonProperty("text") private String text = "";
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             Reasoning() {}
@@ -2721,8 +2732,8 @@ public final class Types {
 
         public static class File extends GenerateContent {
             @JsonProperty("data") private GeneratedFileData data = new GeneratedFileData.Data(new FileBytes.Base64(""));
-            @JsonProperty("media_type") private String mediaType = "";
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("mediaType") private String mediaType = "";
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             File() {}
@@ -2766,13 +2777,13 @@ public final class Types {
         }
 
         public static class ToolResult extends GenerateContent {
-            @JsonProperty("tool_call_id") private String toolCallId = "";
-            @JsonProperty("tool_name") private String toolName = "";
+            @JsonProperty("toolCallId") private String toolCallId = "";
+            @JsonProperty("toolName") private String toolName = "";
             @JsonProperty("result") private JsonNode result = emptyObject();
-            @JsonProperty("is_error") private Boolean isError;
+            @JsonProperty("isError") private Boolean isError;
             @JsonProperty("preliminary") private Boolean preliminary;
             @JsonProperty("dynamic") private Boolean dynamic;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             ToolResult() {}
@@ -2842,7 +2853,7 @@ public final class Types {
 
         public static class Custom extends GenerateContent {
             @JsonProperty("kind") private String kind;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
             @JsonCreator Custom() {}
             public Custom(String kind, JsonNode providerMetadata) {
                 this.kind = kind;
@@ -2867,8 +2878,8 @@ public final class Types {
         }
         public static class ReasoningFile extends GenerateContent {
             @JsonProperty("data") private GeneratedFileData data;
-            @JsonProperty("media_type") private String mediaType;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("mediaType") private String mediaType;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
             @JsonCreator ReasoningFile() {}
             public ReasoningFile(GeneratedFileData data, String mediaType, JsonNode providerMetadata) {
                 this.data = data;
@@ -2896,9 +2907,9 @@ public final class Types {
             @Override public int hashCode() { return Objects.hash(data, mediaType, providerMetadata); }
         }
         public static class ToolApprovalRequest extends GenerateContent {
-            @JsonProperty("approval_id") private String approvalId;
-            @JsonProperty("tool_call_id") private String toolCallId;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("approvalId") private String approvalId;
+            @JsonProperty("toolCallId") private String toolCallId;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
             @JsonCreator ToolApprovalRequest() {}
             public ToolApprovalRequest(String approvalId, String toolCallId, JsonNode providerMetadata) {
                 this.approvalId = approvalId;
@@ -2954,36 +2965,34 @@ public final class Types {
         }
     }
 
-    /** The externally-tagged variant name for this {@link GenerateContent} (e.g. "Text", "ToolCall"). */
+    /** The wire `type` tag of this {@link GenerateContent} (e.g. "text", "tool-call"). */
     public static String variantTag(GenerateContent value) {
-        if (value instanceof GenerateContent.Text) return "Text";
-        if (value instanceof GenerateContent.ToolCall) return "ToolCall";
-        if (value instanceof GenerateContent.Source) return "Source";
-        if (value instanceof GenerateContent.Reasoning) return "Reasoning";
-        if (value instanceof GenerateContent.File) return "File";
-        if (value instanceof GenerateContent.ToolResult) return "ToolResult";
-        if (value instanceof GenerateContent.Custom) return "Custom";
-        if (value instanceof GenerateContent.ReasoningFile) return "ReasoningFile";
-        if (value instanceof GenerateContent.ToolApprovalRequest) return "ToolApprovalRequest";
+        if (value instanceof GenerateContent.Text) return "text";
+        if (value instanceof GenerateContent.ToolCall) return "tool-call";
+        if (value instanceof GenerateContent.Source) return "source";
+        if (value instanceof GenerateContent.Reasoning) return "reasoning";
+        if (value instanceof GenerateContent.File) return "file";
+        if (value instanceof GenerateContent.ToolResult) return "tool-result";
+        if (value instanceof GenerateContent.Custom) return "custom";
+        if (value instanceof GenerateContent.ReasoningFile) return "reasoning-file";
+        if (value instanceof GenerateContent.ToolApprovalRequest) return "tool-approval-request";
         if (value instanceof GenerateContent.Unknown) return ((GenerateContent.Unknown) value).getTag();
         throw new IllegalArgumentException("Unknown GenerateContent: " + value);
     }
 
-    /** Custom (de)serializer for {@link GenerateContent} — externally tagged. */
+    /** Custom (de)serializer for {@link GenerateContent} — internally tagged on `"type"`. */
     public static class GenerateContentSerializer extends JsonSerializer<GenerateContent> {
         @Override
         public void serialize(GenerateContent value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
-            String tag = variantTag(value);
             if (value instanceof GenerateContent.Unknown) {
-                ObjectNode out = JsonNodeFactory.instance.objectNode();
-                out.set(tag, ((GenerateContent.Unknown) value).getData());
-                gen.writeTree(out);
+                gen.writeTree(((GenerateContent.Unknown) value).getData());
                 return;
             }
             ObjectNode node = (ObjectNode) AimuxJson.INNER_MAPPER.valueToTree(
                 value instanceof GenerateContent.Source ? ((GenerateContent.Source) value).getSource() : value);
             ObjectNode out = JsonNodeFactory.instance.objectNode();
-            out.set(tag, node);
+            out.put("type", variantTag(value));
+            out.setAll(node);
             gen.writeTree(out);
         }
     }
@@ -2993,23 +3002,21 @@ public final class Types {
         @Override
         public GenerateContent deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
             JsonNode node = p.getCodec().readTree(p);
-            if (!node.isObject() || node.size() != 1) {
-                throw new IOException("GenerateContent must be a single-key externally-tagged object, got: " + node);
+            if (!node.isObject()) {
+                throw new IOException("GenerateContent must be a JSON object, got: " + node);
             }
-            String tag = node.fieldNames().next();
-            JsonNode inner = node.get(tag);
-            JsonNode innerObj = inner.isObject() ? inner : AimuxJson.MAPPER.createObjectNode();
+            String tag = node.path("type").asText();
             switch (tag) {
-                case "Text": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.Text.class);
-                case "ToolCall": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.ToolCall.class);
-                case "Source": return new GenerateContent.Source(AimuxJson.MAPPER.treeToValue(innerObj, Types.Source.class));
-                case "Reasoning": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.Reasoning.class);
-                case "File": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.File.class);
-                case "ToolResult": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.ToolResult.class);
-                case "Custom": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.Custom.class);
-                case "ReasoningFile": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.ReasoningFile.class);
-                case "ToolApprovalRequest": return AimuxJson.MAPPER.treeToValue(innerObj, GenerateContent.ToolApprovalRequest.class);
-                default: return new GenerateContent.Unknown(tag, inner);
+                case "text": return AimuxJson.MAPPER.treeToValue(node, GenerateContent.Text.class);
+                case "tool-call": return AimuxJson.MAPPER.treeToValue(node, GenerateContent.ToolCall.class);
+                case "source": return new GenerateContent.Source(AimuxJson.MAPPER.treeToValue(node, Types.Source.class));
+                case "reasoning": return AimuxJson.MAPPER.treeToValue(node, GenerateContent.Reasoning.class);
+                case "file": return AimuxJson.MAPPER.treeToValue(node, GenerateContent.File.class);
+                case "tool-result": return AimuxJson.MAPPER.treeToValue(node, GenerateContent.ToolResult.class);
+                case "custom": return AimuxJson.MAPPER.treeToValue(node, GenerateContent.Custom.class);
+                case "reasoning-file": return AimuxJson.MAPPER.treeToValue(node, GenerateContent.ReasoningFile.class);
+                case "tool-approval-request": return AimuxJson.MAPPER.treeToValue(node, GenerateContent.ToolApprovalRequest.class);
+                default: return new GenerateContent.Unknown(tag, node);
             }
         }
     }
@@ -3018,7 +3025,7 @@ public final class Types {
     public static class ResponseInfo {
         @JsonProperty("id") private String id;
         @JsonProperty("timestamp") private String timestamp;
-        @JsonProperty("model_id") private String modelId;
+        @JsonProperty("modelId") private String modelId;
         @JsonProperty("headers") private Map<String, String> headers;
         @JsonProperty("body") private JsonNode body;
 
@@ -3116,10 +3123,10 @@ public final class Types {
      */
     public static class GenerateResult {
         @JsonProperty("content") private List<GenerateContent> content = new ArrayList<>();
-        @JsonProperty("finish_reason") private FinishReason finishReason = new FinishReason();
+        @JsonProperty("finishReason") private FinishReason finishReason = new FinishReason();
         @JsonProperty("usage") private Usage usage = new Usage();
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("providerMetadata") private JsonNode providerMetadata;
         @JsonProperty("response") private ResponseInfo response;
         @JsonProperty("request") private RequestInfo request;
 
@@ -3146,7 +3153,7 @@ public final class Types {
         public ResponseInfo getResponse() { return response; }
         public RequestInfo getRequest() { return request; }
 
-        /** Names of the variant tags present in {@link #getContent()} (e.g. "Text", "ToolCall"). */
+        /** Wire `type` tags present in {@link #getContent()} (e.g. "text", "tool-call"). */
         public List<String> getContentVariantTags() {
             List<String> tags = new ArrayList<>();
             for (GenerateContent item : content) {
@@ -3155,7 +3162,7 @@ public final class Types {
             return tags;
         }
 
-        /** `true` if any content item carries the given externally-tagged variant. */
+        /** `true` if any content item carries the given `type` tag. */
         public boolean hasContentVariant(String tag) {
             for (GenerateContent item : content) {
                 if (variantTag(item).equals(tag)) return true;
@@ -3216,20 +3223,21 @@ public final class Types {
     public static class GenerateTextResult {
         @JsonProperty("content") private List<JsonNode> content = new ArrayList<>();
         @JsonProperty("text") private String text = "";
-        @JsonProperty("tool_calls") private List<ToolCall> toolCalls = new ArrayList<>();
-        @JsonProperty("finish_reason") private FinishReason finishReason = new FinishReason();
+        @JsonProperty("toolCalls") private List<ToolCall> toolCalls = new ArrayList<>();
+        @JsonProperty("finishReason") private FinishReason finishReason = new FinishReason();
         @JsonProperty("usage") private Usage usage = new Usage();
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
         @JsonProperty("raw") private GenerateResult raw = new GenerateResult();
         @JsonProperty("reasoning") private List<JsonNode> reasoning = new ArrayList<>();
-        @JsonProperty("reasoning_text") private String reasoningText = "";
+        @JsonProperty("reasoningText") private String reasoningText = "";
         @JsonProperty("sources") private List<Source> sources = new ArrayList<>();
         @JsonProperty("files") private List<JsonNode> files = new ArrayList<>();
-        @JsonProperty("response_messages") private List<ModelMessage> responseMessages = new ArrayList<>();
-        @JsonProperty("raw_finish_reason") private String rawFinishReason;
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
-        @JsonProperty("response") private ResponseMetadata response = new ResponseMetadata();
-        @JsonProperty("total_usage") private Usage totalUsage = new Usage();
+        @JsonProperty("responseMessages") private List<ModelMessage> responseMessages = new ArrayList<>();
+        @JsonProperty("rawFinishReason") private String rawFinishReason;
+        @JsonProperty("providerMetadata") private JsonNode providerMetadata;
+        @JsonProperty("request") private RequestInfo request = new RequestInfo();
+        @JsonProperty("response") private ResponseInfo response = new ResponseInfo();
+        @JsonProperty("totalUsage") private Usage totalUsage = new Usage();
 
         @JsonCreator
         GenerateTextResult() {}
@@ -3239,7 +3247,7 @@ public final class Types {
                                    List<JsonNode> reasoning, String reasoningText,
                                    List<Source> sources, List<JsonNode> files,
                                    List<ModelMessage> responseMessages, String rawFinishReason,
-                                   JsonNode providerMetadata, ResponseMetadata response, Usage totalUsage) {
+                                   JsonNode providerMetadata, ResponseInfo response, Usage totalUsage) {
             this.text = text;
             this.toolCalls = toolCalls;
             this.finishReason = finishReason;
@@ -3271,7 +3279,8 @@ public final class Types {
         public List<ModelMessage> getResponseMessages() { return responseMessages; }
         public String getRawFinishReason() { return rawFinishReason; }
         public JsonNode getProviderMetadata() { return providerMetadata; }
-        public ResponseMetadata getResponse() { return response; }
+        public RequestInfo getRequest() { return request; }
+        public ResponseInfo getResponse() { return response; }
         public Usage getTotalUsage() { return totalUsage; }
 
         public static Builder builder() { return new Builder(); }
@@ -3290,7 +3299,7 @@ public final class Types {
             private List<ModelMessage> responseMessages = new ArrayList<>();
             private String rawFinishReason;
             private JsonNode providerMetadata;
-            private ResponseMetadata response = new ResponseMetadata();
+            private ResponseInfo response = new ResponseInfo();
             private Usage totalUsage = new Usage();
 
             public Builder text(String v) { this.text = v; return this; }
@@ -3306,7 +3315,7 @@ public final class Types {
             public Builder responseMessages(List<ModelMessage> v) { this.responseMessages = v; return this; }
             public Builder rawFinishReason(String v) { this.rawFinishReason = v; return this; }
             public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
-            public Builder response(ResponseMetadata v) { this.response = v; return this; }
+            public Builder response(ResponseInfo v) { this.response = v; return this; }
             public Builder totalUsage(Usage v) { this.totalUsage = v; return this; }
 
             public GenerateTextResult build() {
@@ -3356,12 +3365,12 @@ public final class Types {
      */
     public static class GenerateObjectResult {
         @JsonProperty("object") private JsonNode object = emptyObject();
-        @JsonProperty("finish_reason") private FinishReason finishReason = new FinishReason();
-        @JsonProperty("raw_finish_reason") private String rawFinishReason;
+        @JsonProperty("finishReason") private FinishReason finishReason = new FinishReason();
+        @JsonProperty("rawFinishReason") private String rawFinishReason;
         @JsonProperty("usage") private Usage usage = new Usage();
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
         @JsonProperty("reasoning") private String reasoning;
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("providerMetadata") private JsonNode providerMetadata;
         @JsonProperty("response") private ResponseMetadata response = new ResponseMetadata();
         @JsonProperty("raw") private GenerateTextResult raw = new GenerateTextResult();
 
@@ -3457,18 +3466,19 @@ public final class Types {
         @JsonProperty("content") private List<JsonNode> content = new ArrayList<>();
         @JsonProperty("text") private String text = "";
         @JsonProperty("reasoning") private List<JsonNode> reasoning = new ArrayList<>();
-        @JsonProperty("reasoning_text") private String reasoningText = "";
-        @JsonProperty("tool_calls") private List<ToolCall> toolCalls = new ArrayList<>();
+        @JsonProperty("reasoningText") private String reasoningText = "";
+        @JsonProperty("toolCalls") private List<ToolCall> toolCalls = new ArrayList<>();
         @JsonProperty("sources") private List<Source> sources = new ArrayList<>();
         @JsonProperty("files") private List<JsonNode> files = new ArrayList<>();
-        @JsonProperty("finish_reason") private FinishReason finishReason = new FinishReason();
-        @JsonProperty("raw_finish_reason") private String rawFinishReason;
+        @JsonProperty("finishReason") private FinishReason finishReason = new FinishReason();
+        @JsonProperty("rawFinishReason") private String rawFinishReason;
         @JsonProperty("usage") private Usage usage = new Usage();
-        @JsonProperty("total_usage") private Usage totalUsage = new Usage();
+        @JsonProperty("totalUsage") private Usage totalUsage = new Usage();
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
-        @JsonProperty("response") private ResponseMetadata response;
-        @JsonProperty("response_messages") private List<ModelMessage> responseMessages = new ArrayList<>();
+        @JsonProperty("providerMetadata") private JsonNode providerMetadata;
+        @JsonProperty("request") private RequestInfo request = new RequestInfo();
+        @JsonProperty("response") private ResponseInfo response;
+        @JsonProperty("responseMessages") private List<ModelMessage> responseMessages = new ArrayList<>();
 
         @JsonCreator
         StreamTextResultAggregated() {}
@@ -3477,7 +3487,7 @@ public final class Types {
                                            List<ToolCall> toolCalls, List<Source> sources, List<JsonNode> files,
                                            FinishReason finishReason, String rawFinishReason, Usage usage,
                                            Usage totalUsage, List<JsonNode> warnings, JsonNode providerMetadata,
-                                           ResponseMetadata response, List<ModelMessage> responseMessages) {
+                                           ResponseInfo response, List<ModelMessage> responseMessages) {
             this.text = text;
             this.reasoning = reasoning;
             this.reasoningText = reasoningText;
@@ -3507,7 +3517,8 @@ public final class Types {
         public Usage getTotalUsage() { return totalUsage; }
         public List<JsonNode> getWarnings() { return warnings; }
         public JsonNode getProviderMetadata() { return providerMetadata; }
-        public ResponseMetadata getResponse() { return response; }
+        public RequestInfo getRequest() { return request; }
+        public ResponseInfo getResponse() { return response; }
         public List<ModelMessage> getResponseMessages() { return responseMessages; }
 
         public static Builder builder() { return new Builder(); }
@@ -3525,7 +3536,7 @@ public final class Types {
             private Usage totalUsage = new Usage();
             private List<JsonNode> warnings = new ArrayList<>();
             private JsonNode providerMetadata;
-            private ResponseMetadata response;
+            private ResponseInfo response;
             private List<ModelMessage> responseMessages = new ArrayList<>();
 
             public Builder text(String v) { this.text = v; return this; }
@@ -3540,7 +3551,7 @@ public final class Types {
             public Builder totalUsage(Usage v) { this.totalUsage = v; return this; }
             public Builder warnings(List<JsonNode> v) { this.warnings = v; return this; }
             public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
-            public Builder response(ResponseMetadata v) { this.response = v; return this; }
+            public Builder response(ResponseInfo v) { this.response = v; return this; }
             public Builder responseMessages(List<ModelMessage> v) { this.responseMessages = v; return this; }
 
             public StreamTextResultAggregated build() {
@@ -3582,22 +3593,23 @@ public final class Types {
     // ─────────────────────────────────────────────────────────────────────────────
     // StreamPart (the streaming chunk type).
     //
-    // `StreamPart` is externally tagged (`{"TextDelta": {...}}`, `{"ToolCall":
-    // {...}}`, ...). Unrecognized variants fall back to StreamPart.Unknown for
+    // `StreamPart` is tagged on `type` (`{"type":"text-delta",...}`,
+    // `{"type":"tool-call",...}`, ...). It mirrors the TextStreamPart that
+    // `aimux_stream_text` yields. Unrecognized variants fall back to StreamPart.Unknown for
     // forward compatibility.
     // ─────────────────────────────────────────────────────────────────────────────
 
     /**
      * A single streaming chunk.
      *
-     * Mirrors `StreamPart.ts` (externally tagged).
+     * Mirrors `TextStreamPart.ts` (tagged on `type`).
      */
     public abstract static class StreamPart {
         private StreamPart() {}
 
         public static class TextStart extends StreamPart {
             @JsonProperty("id") private String id = "";
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             TextStart() {}
@@ -3637,7 +3649,7 @@ public final class Types {
         public static class TextDelta extends StreamPart {
             @JsonProperty("id") private String id = "";
             @JsonProperty("delta") private String delta = "";
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             TextDelta() {}
@@ -3682,7 +3694,7 @@ public final class Types {
 
         public static class TextEnd extends StreamPart {
             @JsonProperty("id") private String id = "";
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             TextEnd() {}
@@ -3751,9 +3763,9 @@ public final class Types {
         }
 
         public static class Finish extends StreamPart {
-            @JsonProperty("finish_reason") private FinishReason finishReason = new FinishReason();
+            @JsonProperty("finishReason") private FinishReason finishReason = new FinishReason();
             @JsonProperty("usage") private Usage usage = new Usage();
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             Finish() {}
@@ -3796,13 +3808,43 @@ public final class Types {
             public int hashCode() { return Objects.hash(finishReason, usage, providerMetadata); }
         }
 
+        /** End of one step, carrying the step's response (`finish-step`). */
+        public static class FinishStep extends StreamPart {
+            @JsonProperty("finishReason") private FinishReason finishReason = new FinishReason();
+            @JsonProperty("usage") private Usage usage = new Usage();
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
+            @JsonProperty("response") private ResponseInfo response = new ResponseInfo();
+
+            @JsonCreator
+            FinishStep() {}
+
+            public FinishReason getFinishReason() { return finishReason; }
+            public Usage getUsage() { return usage; }
+            public JsonNode getProviderMetadata() { return providerMetadata; }
+            public ResponseInfo getResponse() { return response; }
+
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) return true;
+                if (!(o instanceof FinishStep)) return false;
+                FinishStep that = (FinishStep) o;
+                return Objects.equals(finishReason, that.finishReason)
+                    && Objects.equals(usage, that.usage)
+                    && Objects.equals(providerMetadata, that.providerMetadata)
+                    && Objects.equals(response, that.response);
+            }
+
+            @Override
+            public int hashCode() { return Objects.hash(finishReason, usage, providerMetadata, response); }
+        }
+
         public static class ToolInputStart extends StreamPart {
             @JsonProperty("id") private String id = "";
-            @JsonProperty("tool_name") private String toolName = "";
-            @JsonProperty("provider_executed") private Boolean providerExecuted;
+            @JsonProperty("toolName") private String toolName = "";
+            @JsonProperty("providerExecuted") private Boolean providerExecuted;
             @JsonProperty("dynamic") private Boolean dynamic;
             @JsonProperty("title") private String title;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             ToolInputStart() {}
@@ -3868,7 +3910,7 @@ public final class Types {
         public static class ToolInputDelta extends StreamPart {
             @JsonProperty("id") private String id = "";
             @JsonProperty("delta") private String delta = "";
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             ToolInputDelta() {}
@@ -3913,7 +3955,7 @@ public final class Types {
 
         public static class ToolInputEnd extends StreamPart {
             @JsonProperty("id") private String id = "";
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             ToolInputEnd() {}
@@ -3951,12 +3993,12 @@ public final class Types {
         }
 
         public static class ToolCall extends StreamPart {
-            @JsonProperty("tool_call_id") private String toolCallId = "";
-            @JsonProperty("tool_name") private String toolName = "";
+            @JsonProperty("toolCallId") private String toolCallId = "";
+            @JsonProperty("toolName") private String toolName = "";
             @JsonProperty("input") private JsonNode input = emptyObject();
-            @JsonProperty("provider_executed") private Boolean providerExecuted;
+            @JsonProperty("providerExecuted") private Boolean providerExecuted;
             @JsonProperty("dynamic") private Boolean dynamic;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
             @JsonProperty("invalid") private Boolean invalid;
             @JsonProperty("error") private JsonNode error;
 
@@ -4037,13 +4079,13 @@ public final class Types {
         }
 
         public static class ToolResult extends StreamPart {
-            @JsonProperty("tool_call_id") private String toolCallId = "";
-            @JsonProperty("tool_name") private String toolName = "";
+            @JsonProperty("toolCallId") private String toolCallId = "";
+            @JsonProperty("toolName") private String toolName = "";
             @JsonProperty("result") private JsonNode result = emptyObject();
-            @JsonProperty("is_error") private Boolean isError;
+            @JsonProperty("isError") private Boolean isError;
             @JsonProperty("preliminary") private Boolean preliminary;
             @JsonProperty("dynamic") private Boolean dynamic;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             ToolResult() {}
@@ -4114,8 +4156,8 @@ public final class Types {
         /** A file generated by the model (e.g. an image or document). */
         public static class File extends StreamPart {
             @JsonProperty("data") private GeneratedFileData data = new GeneratedFileData.Data(new FileBytes.Base64(""));
-            @JsonProperty("media_type") private String mediaType = "";
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("mediaType") private String mediaType = "";
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             File() {}
@@ -4160,7 +4202,7 @@ public final class Types {
 
         public static class ReasoningStart extends StreamPart {
             @JsonProperty("id") private String id = "";
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             ReasoningStart() {}
@@ -4200,7 +4242,7 @@ public final class Types {
         public static class ReasoningDelta extends StreamPart {
             @JsonProperty("id") private String id = "";
             @JsonProperty("delta") private String delta = "";
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             ReasoningDelta() {}
@@ -4245,7 +4287,7 @@ public final class Types {
 
         public static class ReasoningEnd extends StreamPart {
             @JsonProperty("id") private String id = "";
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             ReasoningEnd() {}
@@ -4285,7 +4327,7 @@ public final class Types {
         public static class ResponseMetadata extends StreamPart {
             @JsonProperty("id") private String id;
             @JsonProperty("timestamp") private String timestamp;
-            @JsonProperty("model_id") private String modelId;
+            @JsonProperty("modelId") private String modelId;
 
             @JsonCreator
             ResponseMetadata() {}
@@ -4341,7 +4383,7 @@ public final class Types {
         }
 
         public static class Raw extends StreamPart {
-            @JsonProperty("raw_value") private JsonNode rawValue = emptyObject();
+            @JsonProperty("rawValue") private JsonNode rawValue = emptyObject();
 
             @JsonCreator
             Raw() {}
@@ -4404,7 +4446,7 @@ public final class Types {
 
         public static class Custom extends StreamPart {
             @JsonProperty("kind") private String kind;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
             @JsonCreator Custom() {}
             public Custom(String kind, JsonNode providerMetadata) {
                 this.kind = kind;
@@ -4429,7 +4471,7 @@ public final class Types {
         }
         public static class ReasoningFile extends StreamPart {
             @JsonProperty("file") private GenerateContent.File file;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
             @JsonCreator ReasoningFile() {}
             public ReasoningFile(GenerateContent.File file, JsonNode providerMetadata) {
                 this.file = file;
@@ -4453,10 +4495,10 @@ public final class Types {
             @Override public int hashCode() { return Objects.hash(file, providerMetadata); }
         }
         public static class ToolApprovalRequest extends StreamPart {
-            @JsonProperty("approval_id") private String approvalId;
-            @JsonProperty("tool_call") private Types.ToolCall toolCall;
+            @JsonProperty("approvalId") private String approvalId;
+            @JsonProperty("toolCall") private Types.ToolCall toolCall;
             @JsonProperty("reason") private String reason;
-            @JsonProperty("is_automatic") private Boolean isAutomatic;
+            @JsonProperty("isAutomatic") private Boolean isAutomatic;
             @JsonProperty("signature") private String signature;
             @JsonCreator ToolApprovalRequest() {}
             public ToolApprovalRequest(String approvalId, Types.ToolCall toolCall, String reason, Boolean isAutomatic, String signature) {
@@ -4521,48 +4563,47 @@ public final class Types {
         }
     }
 
-    /** The externally-tagged variant name for this {@link StreamPart} (e.g. "TextDelta", "ToolCall"). */
+    /** The wire `type` tag of this {@link StreamPart} (e.g. "text-delta", "tool-call"). */
     public static String variantTag(StreamPart value) {
-        if (value instanceof StreamPart.TextStart) return "TextStart";
-        if (value instanceof StreamPart.TextDelta) return "TextDelta";
-        if (value instanceof StreamPart.TextEnd) return "TextEnd";
-        if (value instanceof StreamPart.StreamStart) return "StreamStart";
-        if (value instanceof StreamPart.Finish) return "Finish";
-        if (value instanceof StreamPart.ToolInputStart) return "ToolInputStart";
-        if (value instanceof StreamPart.ToolInputDelta) return "ToolInputDelta";
-        if (value instanceof StreamPart.ToolInputEnd) return "ToolInputEnd";
-        if (value instanceof StreamPart.ToolCall) return "ToolCall";
-        if (value instanceof StreamPart.ToolResult) return "ToolResult";
-        if (value instanceof StreamPart.File) return "File";
-        if (value instanceof StreamPart.ReasoningStart) return "ReasoningStart";
-        if (value instanceof StreamPart.ReasoningDelta) return "ReasoningDelta";
-        if (value instanceof StreamPart.ReasoningEnd) return "ReasoningEnd";
-        if (value instanceof StreamPart.ResponseMetadata) return "ResponseMetadata";
-        if (value instanceof StreamPart.Source) return "Source";
-        if (value instanceof StreamPart.Raw) return "Raw";
-        if (value instanceof StreamPart.Error) return "Error";
-        if (value instanceof StreamPart.Custom) return "Custom";
-        if (value instanceof StreamPart.ReasoningFile) return "ReasoningFile";
-        if (value instanceof StreamPart.ToolApprovalRequest) return "ToolApprovalRequest";
+        if (value instanceof StreamPart.TextStart) return "text-start";
+        if (value instanceof StreamPart.TextDelta) return "text-delta";
+        if (value instanceof StreamPart.TextEnd) return "text-end";
+        if (value instanceof StreamPart.StreamStart) return "stream-start";
+        if (value instanceof StreamPart.Finish) return "finish";
+        if (value instanceof StreamPart.FinishStep) return "finish-step";
+        if (value instanceof StreamPart.ToolInputStart) return "tool-input-start";
+        if (value instanceof StreamPart.ToolInputDelta) return "tool-input-delta";
+        if (value instanceof StreamPart.ToolInputEnd) return "tool-input-end";
+        if (value instanceof StreamPart.ToolCall) return "tool-call";
+        if (value instanceof StreamPart.ToolResult) return "tool-result";
+        if (value instanceof StreamPart.File) return "file";
+        if (value instanceof StreamPart.ReasoningStart) return "reasoning-start";
+        if (value instanceof StreamPart.ReasoningDelta) return "reasoning-delta";
+        if (value instanceof StreamPart.ReasoningEnd) return "reasoning-end";
+        if (value instanceof StreamPart.ResponseMetadata) return "response-metadata";
+        if (value instanceof StreamPart.Source) return "source";
+        if (value instanceof StreamPart.Raw) return "raw";
+        if (value instanceof StreamPart.Error) return "error";
+        if (value instanceof StreamPart.Custom) return "custom";
+        if (value instanceof StreamPart.ReasoningFile) return "reasoning-file";
+        if (value instanceof StreamPart.ToolApprovalRequest) return "tool-approval-request";
         if (value instanceof StreamPart.Unknown) return ((StreamPart.Unknown) value).getTag();
         throw new IllegalArgumentException("Unknown StreamPart: " + value);
     }
 
-    /** Custom (de)serializer for {@link StreamPart} — externally tagged. */
+    /** Custom (de)serializer for {@link StreamPart} — internally tagged on `"type"`. */
     public static class StreamPartSerializer extends JsonSerializer<StreamPart> {
         @Override
         public void serialize(StreamPart value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
-            String tag = variantTag(value);
             if (value instanceof StreamPart.Unknown) {
-                ObjectNode out = JsonNodeFactory.instance.objectNode();
-                out.set(tag, ((StreamPart.Unknown) value).getData());
-                gen.writeTree(out);
+                gen.writeTree(((StreamPart.Unknown) value).getData());
                 return;
             }
             ObjectNode node = (ObjectNode) AimuxJson.INNER_MAPPER.valueToTree(
                 value instanceof StreamPart.Source ? ((StreamPart.Source) value).getSource() : value);
             ObjectNode out = JsonNodeFactory.instance.objectNode();
-            out.set(tag, node);
+            out.put("type", variantTag(value));
+            out.setAll(node);
             gen.writeTree(out);
         }
     }
@@ -4572,35 +4613,34 @@ public final class Types {
         @Override
         public StreamPart deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
             JsonNode node = p.getCodec().readTree(p);
-            if (!node.isObject() || node.size() != 1) {
-                throw new IOException("StreamPart must be a single-key externally-tagged object, got: " + node);
+            if (!node.isObject()) {
+                throw new IOException("StreamPart must be a JSON object, got: " + node);
             }
-            String tag = node.fieldNames().next();
-            JsonNode inner = node.get(tag);
-            JsonNode innerObj = inner.isObject() ? inner : AimuxJson.MAPPER.createObjectNode();
+            String tag = node.path("type").asText();
             switch (tag) {
-                case "TextStart": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.TextStart.class);
-                case "TextDelta": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.TextDelta.class);
-                case "TextEnd": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.TextEnd.class);
-                case "StreamStart": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.StreamStart.class);
-                case "Finish": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Finish.class);
-                case "ToolInputStart": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolInputStart.class);
-                case "ToolInputDelta": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolInputDelta.class);
-                case "ToolInputEnd": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolInputEnd.class);
-                case "ToolCall": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolCall.class);
-                case "ToolResult": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolResult.class);
-                case "File": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.File.class);
-                case "ReasoningStart": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ReasoningStart.class);
-                case "ReasoningDelta": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ReasoningDelta.class);
-                case "ReasoningEnd": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ReasoningEnd.class);
-                case "ResponseMetadata": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ResponseMetadata.class);
-                case "Source": return new StreamPart.Source(AimuxJson.MAPPER.treeToValue(innerObj, Types.Source.class));
-                case "Raw": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Raw.class);
-                case "Error": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Error.class);
-                case "Custom": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Custom.class);
-                case "ReasoningFile": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ReasoningFile.class);
-                case "ToolApprovalRequest": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolApprovalRequest.class);
-                default: return new StreamPart.Unknown(tag, inner);
+                case "text-start": return AimuxJson.MAPPER.treeToValue(node, StreamPart.TextStart.class);
+                case "text-delta": return AimuxJson.MAPPER.treeToValue(node, StreamPart.TextDelta.class);
+                case "text-end": return AimuxJson.MAPPER.treeToValue(node, StreamPart.TextEnd.class);
+                case "stream-start": return AimuxJson.MAPPER.treeToValue(node, StreamPart.StreamStart.class);
+                case "finish": return AimuxJson.MAPPER.treeToValue(node, StreamPart.Finish.class);
+                case "finish-step": return AimuxJson.MAPPER.treeToValue(node, StreamPart.FinishStep.class);
+                case "tool-input-start": return AimuxJson.MAPPER.treeToValue(node, StreamPart.ToolInputStart.class);
+                case "tool-input-delta": return AimuxJson.MAPPER.treeToValue(node, StreamPart.ToolInputDelta.class);
+                case "tool-input-end": return AimuxJson.MAPPER.treeToValue(node, StreamPart.ToolInputEnd.class);
+                case "tool-call": return AimuxJson.MAPPER.treeToValue(node, StreamPart.ToolCall.class);
+                case "tool-result": return AimuxJson.MAPPER.treeToValue(node, StreamPart.ToolResult.class);
+                case "file": return AimuxJson.MAPPER.treeToValue(node, StreamPart.File.class);
+                case "reasoning-start": return AimuxJson.MAPPER.treeToValue(node, StreamPart.ReasoningStart.class);
+                case "reasoning-delta": return AimuxJson.MAPPER.treeToValue(node, StreamPart.ReasoningDelta.class);
+                case "reasoning-end": return AimuxJson.MAPPER.treeToValue(node, StreamPart.ReasoningEnd.class);
+                case "response-metadata": return AimuxJson.MAPPER.treeToValue(node, StreamPart.ResponseMetadata.class);
+                case "source": return new StreamPart.Source(AimuxJson.MAPPER.treeToValue(node, Types.Source.class));
+                case "raw": return AimuxJson.MAPPER.treeToValue(node, StreamPart.Raw.class);
+                case "error": return AimuxJson.MAPPER.treeToValue(node, StreamPart.Error.class);
+                case "custom": return AimuxJson.MAPPER.treeToValue(node, StreamPart.Custom.class);
+                case "reasoning-file": return AimuxJson.MAPPER.treeToValue(node, StreamPart.ReasoningFile.class);
+                case "tool-approval-request": return AimuxJson.MAPPER.treeToValue(node, StreamPart.ToolApprovalRequest.class);
+                default: return new StreamPart.Unknown(tag, node);
             }
         }
     }
@@ -4613,7 +4653,8 @@ public final class Types {
     // OpenAI Chat Completions output (RFC-0026).
     //
     // Mirrors `aimux-core::openai_output`. Field names are camelCase in Java and
-    // mapped to the wire's snake_case via @JsonProperty. The `type` field is JSON
+    // mapped to the OpenAI wire's snake_case via @JsonProperty (this vendor shape is
+    // not part of the AI SDK JSON). The `type` field is JSON
     // `"type"` (Rust `#[serde(rename = "type")]`) → `toolType`. Arbitrary-JSON
     // fields (`logprobs`, `annotations`) are JsonNode.
     // ─────────────────────────────────────────────────────────────────────────────

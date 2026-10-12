@@ -76,15 +76,13 @@ class MultimodalE2ETest {
             JSONObject opts = new JSONObject()
                 .put("text", "Hi")
                 .put("voice", "alloy")
-                .put("output_format", "mp3")
-                .put("provider_options", new JSONObject());
+                .put("outputFormat", "mp3")
+                .put("providerOptions", new JSONObject());
 
             JSONObject result = new JSONObject(model.generate(opts.toString()));
 
-            // Wire format: {"audio":{"Binary":[<bytes>]}, ...}
-            JSONObject audio = result.getJSONObject("audio");
-            assertThat(audio.has("Binary")).isTrue();
-            assertThat(audio.getJSONArray("Binary").length()).isGreaterThan(0);
+            // Wire format: {"audio":[<bytes>], ...} (untagged: int array = binary)
+            assertThat(result.getJSONArray("audio").length()).isGreaterThan(0);
         }
     }
 
@@ -99,12 +97,12 @@ class MultimodalE2ETest {
             JSONObject opts = new JSONObject()
                 .put("prompt", "otter")
                 .put("n", 1)
-                .put("provider_options", new JSONObject());
+                .put("providerOptions", new JSONObject());
 
             JSONObject result = new JSONObject(model.generate(opts.toString()));
 
-            // Wire format: {"images":{"Base64":["aW1hZ2Ux"]}, ...}
-            JSONArray base64 = result.getJSONObject("images").getJSONArray("Base64");
+            // Wire format: {"images":["aW1hZ2Ux"], ...} (untagged: strings = base64)
+            JSONArray base64 = result.getJSONArray("images");
             assertThat(base64.length()).isEqualTo(1);
             assertThat(base64.getString(0)).isEqualTo("aW1hZ2Ux");
         }
@@ -137,18 +135,18 @@ class MultimodalE2ETest {
                 "sk-test", "rerank-v3.0", server.baseUrl())) {
             JSONObject opts = new JSONObject()
                 .put("query", "which?")
-                .put("documents", new JSONObject("{\"Text\":{\"values\":[\"doc1\",\"doc2\"]}}"))
-                .put("top_n", 2)
-                .put("provider_options", new JSONObject());
+                .put("documents", new JSONObject("{\"type\":\"text\",\"values\":[\"doc1\",\"doc2\"]}"))
+                .put("topN", 2)
+                .put("providerOptions", new JSONObject());
 
             JSONObject result = new JSONObject(model.rerank(opts.toString()));
 
-            // Wire format: {"ranking":[{"index":1,"relevance_score":0.95}, ...], ...}
+            // Wire format: {"ranking":[{"index":1,"relevanceScore":0.95}, ...], ...}
             JSONArray ranking = result.getJSONArray("ranking");
             assertThat(ranking.length()).isEqualTo(2);
             JSONObject first = ranking.getJSONObject(0);
             assertThat(first.getInt("index")).isEqualTo(1);
-            assertThat(first.getDouble("relevance_score")).isEqualTo(0.95);
+            assertThat(first.getDouble("relevanceScore")).isEqualTo(0.95);
         }
     }
 
@@ -165,8 +163,8 @@ class MultimodalE2ETest {
                 "sk-test", server.baseUrl())) {
             JSONObject opts = new JSONObject()
                 .put("query", "What is Rust?")
-                .put("max_results", 5)
-                .put("provider_options", new JSONObject());
+                .put("maxResults", 5)
+                .put("providerOptions", new JSONObject());
 
             JSONObject result = new JSONObject(model.search(opts.toString()));
 
@@ -189,8 +187,8 @@ class MultimodalE2ETest {
         try (Files files = Files.openaiWithBase("sk-test", server.baseUrl())) {
             JSONObject result = new JSONObject(files.uploadFile("dGVzdA==", "application/pdf"));
 
-            // Wire format: {"provider_reference":{"openai":"file-abc"}, ...}
-            assertThat(result.getJSONObject("provider_reference").getString("openai"))
+            // Wire format: {"providerReference":{"openai":"file-abc"}, ...}
+            assertThat(result.getJSONObject("providerReference").getString("openai"))
                 .isEqualTo("file-abc");
         }
     }
@@ -211,13 +209,13 @@ class MultimodalE2ETest {
             assertThat(model).isNotNull();
         }
 
-        // Wire format: {"videos":[{"Url":{"url":"...","media_type":"..."}}], ...}
+        // Wire format: {"videos":[{"type":"url","url":"...","mediaType":"..."}], ...}
         JSONObject parsed = new JSONObject(
-            "{\"videos\":[{\"Url\":{\"url\":\"https://example.com/v.mp4\","
-                + "\"media_type\":\"video/mp4\"}}]}");
+            "{\"videos\":[{\"type\":\"url\",\"url\":\"https://example.com/v.mp4\","
+                + "\"mediaType\":\"video/mp4\"}]}");
         JSONArray videos = parsed.getJSONArray("videos");
         assertThat(videos.length()).isEqualTo(1);
-        assertThat(videos.getJSONObject(0).getJSONObject("Url").getString("url"))
+        assertThat(videos.getJSONObject(0).getString("url"))
             .isEqualTo("https://example.com/v.mp4");
     }
 }

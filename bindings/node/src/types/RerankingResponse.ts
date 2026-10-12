@@ -8,20 +8,20 @@ export type RerankingResponse = {
 /**
  * ID for the generated response, if the provider sends one.
  */
-id: string | null, 
+id?: string, 
 /**
  * Timestamp for the start of the generated response (ISO 8601 string).
  */
-timestamp: string | null, 
+timestamp?: string, 
 /**
  * The ID of the model that was used to generate the response.
  */
-model_id: string | null, 
+modelId?: string, 
 /**
  * Response headers.
  */
-headers: { [key in string]: string } | null, 
+headers?: { [key in string]: string }, 
 /**
  * Response body (opaque JSON).
  */
-body: JsonValue | null, };
+body?: JsonValue, };

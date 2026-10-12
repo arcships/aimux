@@ -8,4 +8,4 @@ import type { FileBytes } from "./FileBytes";
  * `SharedV4FileData` (URLs and provider references are not valid uploads), so
  * this is a dedicated two-variant enum rather than the full [`crate::shared::FileData`].
  */
-export type UploadFileData = { "Data": { data: FileBytes, } } | { "Text": { text: string, } };
+export type UploadFileData = { "type": "data", data: FileBytes, } | { "type": "text", text: string, };

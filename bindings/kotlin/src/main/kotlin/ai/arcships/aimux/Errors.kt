@@ -522,7 +522,7 @@ class ToolCallRepairError(
     cause: Throwable? = null,
     retryable: Boolean = false,
     /**
-     * The original lookup/parse/validation error as externally-tagged wire
+     * The original lookup/parse/validation error as name-tagged wire
      * JSON (the same encoding as [ToolCall.error]); null when synthesized
      * locally.
      */

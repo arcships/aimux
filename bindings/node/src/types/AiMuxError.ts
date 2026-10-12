@@ -9,30 +9,8 @@ import type { RetryError } from "./RetryError";
  * failure came from. `ApiCallError` is boxed only to keep the Rust enum
  * compact; serde and every binding still observe the same object shape.
  */
-export type AiMuxError = { "ApiCall": ApiCallError } | { "Retry": RetryError } | { "JsonParse": string } | { "NoOutputGenerated": string } | { "InvalidResponseData": string } | { "ToolCallNotFoundForApproval": { tool_call_id: string, approval_id: string, } } | { "NoSuchTool": { tool_name: string, available_tools?: Array<string> | null,
+export type AiMuxError = { "name": "AI_APICallError" } & ApiCallError | { "name": "AI_RetryError" } & RetryError | { "name": "AI_JSONParseError", message: string, } | { "name": "AI_NoOutputGeneratedError", message: string, } | { "name": "AI_InvalidResponseDataError", message: string, } | { "name": "AI_ToolCallNotFoundForApprovalError", toolCallId: string, approvalId: string, } | { "name": "AI_NoSuchToolError", toolName: string, availableTools?: Array<string>, toolInput?: string, } | { "name": "AI_InvalidToolInputError", toolName: string, toolInput: string, cause: string, } | { "name": "AI_ToolCallRepairError", originalError: AiMuxError, cause: AiMuxError, } | { "name": "AI_InvalidArgumentError", message: string, } | { "name": "AI_InvalidPromptError", message: string, } | { "name": "AI_LoadAPIKeyError", envVar: string, description: string, } | { "name": "AI_LoadSettingError", envVar: string, 
 /**
- * Original argument text, when supplied by the provider. Absent in
- * older serialized errors and errors constructed without a call.
+ * `name` is the union's tag key, so the setting's name is `settingName`.
  */
-tool_input?: string | null, } } | { "InvalidToolInput": { tool_name: string, tool_input: string, cause: string, } } | { "ToolCallRepair": { original_error: AiMuxError, cause: AiMuxError, } } | { "InvalidArgument": string } | { "InvalidPrompt": string } | { "LoadApiKey": {
-/**
- * The environment variable consulted as the fallback.
- */
-env_var: string,
-/**
- * What the key is for, e.g. `"OpenAI"`.
- */
-description: string, } } | { "LoadSetting": {
-/**
- * The environment variable consulted as the fallback.
- */
-env_var: string,
-/**
- * The setting's parameter name, e.g. `"region"`.
- */
-name: string, } } | { "TokenExpired": string } | { "UnsupportedFunctionality": string } | { "NoSuchModel": { model_id: string,
-/**
- * What kind of model was requested (`"languageModel"`,
- * `"imageModel"`, …), the AI SDK's `modelType`.
- */
-model_type: string, } } | { "NoSuchProvider": { provider_id: string, model_id: string, model_type: string, available_providers: Array<string>, } } | { "Timeout": string } | { "Aborted": string } | { "Other": string };
+settingName: string, } | { "name": "AI_TokenExpiredError", message: string, } | { "name": "AI_UnsupportedFunctionalityError", message: string, } | { "name": "AI_NoSuchModelError", modelId: string, modelType: string, } | { "name": "AI_NoSuchProviderError", providerId: string, modelId: string, modelType: string, availableProviders: Array<string>, } | { "name": "TimeoutError", message: string, } | { "name": "AbortError", message: string, } | { "name": "AI_Error", message: string, };

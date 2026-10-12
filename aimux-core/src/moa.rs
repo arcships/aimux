@@ -34,6 +34,7 @@ pub enum MoaFailMode {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MoaConfig {
     /// `provider()` value (default `"moa"`).
     #[serde(default = "default_moa_provider")]

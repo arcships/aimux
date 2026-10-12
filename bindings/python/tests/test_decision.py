@@ -62,7 +62,7 @@ def test_decision_uses_unified_runtime_recording(server, tmp_path):
     assert record['complete'] is True
     assert record['input']['operation'] == 'decision'
     assert record['input']['options']['questions'] == QUESTIONS
-    assert record['outcome']['decision_result']['answers'] == result['answers']
+    assert record['outcome']['decisionResult']['answers'] == result['answers']
     assert record['exchanges'][0]['attempt'] == 1
     assert 'test-key' not in json.dumps(record)
 
@@ -82,8 +82,8 @@ def test_optional_usage_counts_preserve_answers(server, monkeypatch, usage):
     result = decide(jev_decision('test-key', 'jev-latest', base + '/v1/systemone'),
                     {'message': 'Billed twice'}, QUESTIONS, max_retries=0)
     assert len(result['answers']) == 3
-    assert result['usage']['input_tokens']['total'] == usage.get('input_tokens')
-    assert result['usage']['output_tokens']['total'] == usage.get('output_tokens')
+    assert result['usage']['inputTokens'].get('total') == usage.get('input_tokens')
+    assert result['usage']['outputTokens'].get('total') == usage.get('output_tokens')
     assert result['usage']['raw'] == usage
 
 

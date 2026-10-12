@@ -65,7 +65,7 @@ class ModelTest {
     @Test
     void generateTextReturnsJsonString() {
         try (MockProviderServer server = new MockProviderServer();
-             Model model = Model.openaiWithBase("sk-test-fake-key", "gpt-4o-mini", server.baseUrl())) {
+             Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o-mini", server.chatConfig())) {
             server.setResponseBody(plainOpenAiResponse());
 
             String resultJson = model.generateText("\"Hello\"");
@@ -105,7 +105,7 @@ class ModelTest {
     @Test
     void streamTextInvokesOnDone() {
         try (MockProviderServer server = new MockProviderServer();
-             Model model = Model.openaiWithBase("sk-test-fake-key", "gpt-4o-mini", server.baseUrl())) {
+             Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o-mini", server.chatConfig())) {
             server.setContentType("text/event-stream");
             server.setResponseBody(openAiSseResponse());
 
@@ -146,7 +146,7 @@ class ModelTest {
     @Test
     void streamTextStreamIteratesParts() {
         try (MockProviderServer server = new MockProviderServer();
-             Model model = Model.openaiWithBase("sk-test-fake-key", "gpt-4o-mini", server.baseUrl())) {
+             Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o-mini", server.chatConfig())) {
             server.setContentType("text/event-stream");
             server.setResponseBody(openAiSseResponse());
 
@@ -184,7 +184,7 @@ class ModelTest {
     @Test
     void concurrentCloseAndGenerateDoesNotCrash() throws InterruptedException {
         try (MockProviderServer server = new MockProviderServer();
-             Model model = Model.openaiWithBase("sk-test-fake-key", "gpt-4o-mini", server.baseUrl())) {
+             Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o-mini", server.chatConfig())) {
             server.setResponseBody(plainOpenAiResponse());
 
             final int iterations = 300;

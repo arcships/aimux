@@ -82,7 +82,7 @@ test('e2e: OpenAI generateText via mock server', async (t) => {
 
     t.is(r.text, 'Rust is a systems programming language.')
     t.truthy(r.usage)
-    t.truthy(r.finish_reason)
+    t.truthy(r.finishReason)
   } finally {
     await closeServer(server)
   }
@@ -105,8 +105,8 @@ test('e2e: OpenAI streamText via mock server', async (t) => {
     t.true(parts.length > 0)
 
     const text = parts
-      .filter((p) => p.TextDelta)
-      .map((p) => p.TextDelta.delta)
+      .filter((p) => p.type === 'text-delta')
+      .map((p) => p.delta)
       .join('')
 
     t.is(text, 'Hello world')
@@ -149,8 +149,8 @@ test('e2e: Anthropic streamText via mock server', async (t) => {
     t.true(parts.length > 0)
 
     const text = parts
-      .filter((p) => p.TextDelta)
-      .map((p) => p.TextDelta.delta)
+      .filter((p) => p.type === 'text-delta')
+      .map((p) => p.delta)
       .join('')
 
     t.is(text, 'Hello from Claude')
@@ -159,7 +159,7 @@ test('e2e: Anthropic streamText via mock server', async (t) => {
   }
 })
 
-test('e2e: OpenAI generateText with options (max_tokens, temperature)', async (t) => {
+test('e2e: OpenAI generateText with options (maxOutputTokens, temperature)', async (t) => {
   let receivedBody: any = null
   const { server, url } = await startMockServer((req, res) => {
     let body = ''
@@ -173,7 +173,7 @@ test('e2e: OpenAI generateText with options (max_tokens, temperature)', async (t
 
   try {
     const model = await deepseek('test-key', 'gpt-4o', url)
-    const opts = JSON.stringify({ max_output_tokens: 100, temperature: 0.5 })
+    const opts = JSON.stringify({ maxOutputTokens: 100, temperature: 0.5 })
     await model.generateText(JSON.stringify('Hello'), opts)
 
     // Verify the options were passed through to the HTTP request
@@ -204,7 +204,7 @@ const OPENAI_TOOL_CALL_RESPONSE = JSON.stringify({
   usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 },
 })
 
-test('e2e: OpenAI generateText parses tool_calls (structured content)', async (t) => {
+test('e2e: OpenAI generateText parses toolCalls (structured content)', async (t) => {
   const { server, url } = await startMockServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(OPENAI_TOOL_CALL_RESPONSE)
@@ -217,7 +217,7 @@ test('e2e: OpenAI generateText parses tool_calls (structured content)', async (t
         type: 'function',
         name: 'get_weather',
         description: 'Get weather for a location',
-        input_schema: {
+        inputSchema: {
           type: 'object',
           properties: { location: { type: 'string' } },
           required: ['location'],
@@ -226,22 +226,22 @@ test('e2e: OpenAI generateText parses tool_calls (structured content)', async (t
     })
     const r = JSON.parse(await model.generateText(JSON.stringify("What's the weather in Tokyo?"), opts))
 
-    // Convenience field: tool_calls extracted
-    t.is(r.tool_calls.length, 1)
-    t.is(r.tool_calls[0].tool_name, 'get_weather')
-    t.is(r.tool_calls[0].tool_call_id, 'call_abc')
-    t.deepEqual(r.tool_calls[0].input, { location: 'Tokyo' })
+    // Convenience field: toolCalls extracted
+    t.is(r.toolCalls.length, 1)
+    t.is(r.toolCalls[0].toolName, 'get_weather')
+    t.is(r.toolCalls[0].toolCallId, 'call_abc')
+    t.deepEqual(r.toolCalls[0].input, { location: 'Tokyo' })
 
-    // Structured content: raw.content contains the ToolCall variant
+    // Structured content: raw.content contains the tool-call variant
     t.truthy(r.raw)
     t.true(Array.isArray(r.raw.content))
-    const tc = r.raw.content.find((c: any) => c.ToolCall)
-    t.truthy(tc, 'raw.content contains a ToolCall variant')
-    t.is(tc.ToolCall.tool_name, 'get_weather')
-    t.is(tc.ToolCall.tool_call_id, 'call_abc')
+    const tc = r.raw.content.find((c: any) => c.type === 'tool-call')
+    t.truthy(tc, 'raw.content contains a tool-call variant')
+    t.is(tc.toolName, 'get_weather')
+    t.is(tc.toolCallId, 'call_abc')
     // raw content keeps the provider's argument text; the parsed object
     // lives on the top-level toolCalls.
-    t.is(tc.ToolCall.input, '{"location":"Tokyo"}')
+    t.is(tc.input, '{"location":"Tokyo"}')
   } finally {
     await closeServer(server)
   }
@@ -284,7 +284,7 @@ test('e2e: OpenAI generateText with multi-role messages (system + user)', async 
 
 // ── ToolChoice ──────────────────────────────────────────────────────────────
 
-test('e2e: OpenAI generateText with tool_choice: required', async (t) => {
+test('e2e: OpenAI generateText with toolChoice: required', async (t) => {
   let receivedBody: any = null
   const { server, url } = await startMockServer((req, res) => {
     let body = ''
@@ -302,13 +302,13 @@ test('e2e: OpenAI generateText with tool_choice: required', async (t) => {
       tools: [{
         type: 'function',
         name: 'get_weather',
-        input_schema: { type: 'object', properties: { location: { type: 'string' } } },
+        inputSchema: { type: 'object', properties: { location: { type: 'string' } } },
       }],
-      tool_choice: 'required',
+      toolChoice: 'required',
     })
     await model.generateText(JSON.stringify('Hello'), opts)
 
-    // tool_choice reaches the provider request body as "required"
+    // toolChoice reaches the provider request body as "required"
     t.is(receivedBody.tool_choice, 'required')
   } finally {
     await closeServer(server)
@@ -336,7 +336,7 @@ test('e2e: OpenAI streamText parses tool-call stream parts', async (t) => {
       tools: [{
         type: 'function',
         name: 'get_weather',
-        input_schema: { type: 'object', properties: { location: { type: 'string' } } },
+        inputSchema: { type: 'object', properties: { location: { type: 'string' } } },
       }],
     })
     const parts: any[] = []
@@ -344,16 +344,16 @@ test('e2e: OpenAI streamText parses tool-call stream parts', async (t) => {
       parts.push(JSON.parse(json))
     }
 
-    // The stream must contain a ToolCall or ToolInputDelta part (not just TextDelta/Finish)
-    const hasToolPart = parts.some(
-      (p) => p.ToolCall || p.ToolInputDelta || p.ToolInputStart,
+    // The stream must contain a tool-call or tool-input part (not just text-delta/finish)
+    const hasToolPart = parts.some((p) =>
+      ['tool-call', 'tool-input-delta', 'tool-input-start'].includes(p.type),
     )
     t.true(hasToolPart, 'stream contained a tool-related StreamPart')
 
-    // A complete ToolCall part should carry the parsed tool name + input
-    const toolCall = parts.find((p) => p.ToolCall)
+    // A complete tool-call part should carry the parsed tool name + input
+    const toolCall = parts.find((p) => p.type === 'tool-call')
     if (toolCall) {
-      t.is(toolCall.ToolCall.tool_name, 'get_weather')
+      t.is(toolCall.toolName, 'get_weather')
     }
   } finally {
     await closeServer(server)
@@ -362,7 +362,7 @@ test('e2e: OpenAI streamText parses tool-call stream parts', async (t) => {
 
 // ── Tool-call full round-trip ───────────────────────────────────────────────
 
-test('e2e: OpenAI tool-call full round-trip (ToolCall → ToolResult → final text)', async (t) => {
+test('e2e: OpenAI tool-call full round-trip (tool-call → tool-result → final text)', async (t) => {
   // Two calls: the mock returns tool_calls on the first, final text on the second.
   let callCount = 0
   let secondRequestBody: any = null
@@ -385,7 +385,7 @@ test('e2e: OpenAI tool-call full round-trip (ToolCall → ToolResult → final t
         type: 'function',
         name: 'get_weather',
         description: 'Get weather for a location',
-        input_schema: {
+        inputSchema: {
           type: 'object',
           properties: { location: { type: 'string' } },
           required: ['location'],
@@ -395,30 +395,31 @@ test('e2e: OpenAI tool-call full round-trip (ToolCall → ToolResult → final t
 
     // Step 1: first call — model requests a tool call.
     const r1 = JSON.parse(await model.generateText(JSON.stringify("What's the weather in Tokyo?"), opts))
-    t.is(r1.tool_calls[0].tool_name, 'get_weather')
-    t.is(r1.tool_calls[0].tool_call_id, 'call_abc')
+    t.is(r1.toolCalls[0].toolName, 'get_weather')
+    t.is(r1.toolCalls[0].toolCallId, 'call_abc')
 
     // Step 2: user "executes" the tool, then builds the full conversation:
     //   user → assistant(tool_call) → tool(result)
-    // Input uses the engine's ContentPart variants (tool_call / tool_result);
+    // Input uses the engine's ContentPart variants (tool-call / tool-result);
     // the engine converts these to the OpenAI wire format on the outbound request.
     const messages = [
       { role: 'user', content: "What's the weather in Tokyo?" },
       {
         role: 'assistant',
         content: [{
-          type: 'tool_call',
-          tool_call_id: 'call_abc',
-          tool_name: 'get_weather',
+          type: 'tool-call',
+          toolCallId: 'call_abc',
+          toolName: 'get_weather',
           input: { location: 'Tokyo' },
         }],
       },
       {
         role: 'tool',
         content: [{
-          type: 'tool_result',
-          tool_call_id: 'call_abc',
-          result: { temperature: 22, condition: 'sunny' },
+          type: 'tool-result',
+          toolCallId: 'call_abc',
+          toolName: 'get_weather',
+          output: { type: 'json', value: { temperature: 22, condition: 'sunny' } },
         }],
       },
     ]

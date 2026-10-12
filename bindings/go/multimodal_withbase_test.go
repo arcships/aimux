@@ -166,8 +166,7 @@ func TestE2E_SpeechViaMock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Binary audio comes back as AudioData::Binary
-	if len(r.Audio.Binary) == 0 {
+	if len(r.Audio) == 0 {
 		t.Error("empty audio")
 	}
 }
@@ -185,12 +184,12 @@ func TestE2E_ImageViaMock(t *testing.T) {
 
 	prompt := "otter"
 	n := 1
-	r, err := ParseImageResult(must(m.Generate(&ImageCallOptions{Prompt: &prompt, N: &n})))
+	r, err := ParseImageResult(must(m.Generate(&ImageCallOptions{Prompt: &prompt, N: n})))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.Images.Base64) != 1 {
-		t.Fatalf("got %d images", len(r.Images.Base64))
+	if len(r.Images) != 1 {
+		t.Fatalf("got %d images", len(r.Images))
 	}
 }
 
@@ -269,7 +268,7 @@ func TestE2E_RerankingViaMock(t *testing.T) {
 	topN := 2
 	r, err := ParseRerankingResult(must(m.Rerank(&RerankingCallOptions{
 		Query:     "which?",
-		Documents: json.RawMessage(`{"Text":{"values":["doc1","doc2"]}}`),
+		Documents: json.RawMessage(`{"type":"text","values":["doc1","doc2"]}`),
 		TopN:      &topN,
 	})))
 	if err != nil {
@@ -290,11 +289,11 @@ func TestE2E_VideoViaMock(t *testing.T) {
 	}
 	defer m.Close()
 
-	r, err := ParseVideoResult(`{"videos":[{"Url":{"url":"https://example.com/v.mp4","media_type":"video/mp4"}}]}`)
+	r, err := ParseVideoResult(`{"videos":[{"type":"url","url":"https://example.com/v.mp4","mediaType":"video/mp4"}],"warnings":[],"response":{}}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.Videos) != 1 || r.Videos[0].Url == nil || r.Videos[0].Url.URL != "https://example.com/v.mp4" {
+	if len(r.Videos) != 1 || r.Videos[0].Type != "url" || r.Videos[0].URL != "https://example.com/v.mp4" {
 		t.Fatal("video result parse mismatch")
 	}
 }

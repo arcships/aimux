@@ -10,7 +10,7 @@ export type ProviderRecord = {
 /**
  * provider 名(registry 名),回放重建的查找键,如 "openai"、"deepseek"。
  */
-provider_id: string, 
+providerId: string, 
 /**
  * `model.provider()`,如 "openai.chat"。
  */
@@ -18,4 +18,4 @@ provider: string,
 /**
  * `model.model_id()`,如 "gpt-4o"。
  */
-model_id: string, };
+modelId: string, };

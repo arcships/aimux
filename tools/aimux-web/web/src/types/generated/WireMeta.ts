@@ -3,4 +3,4 @@
 /**
  * SSE `meta` event payload — the frontend trace anchor (RFC-0029 §5.2).
  */
-export type WireMeta = { call_id: string, session_id?: string | null, step?: number | null, outcome: string, };
+export type WireMeta = { callId: string, sessionId?: string, step?: number, outcome: string, };

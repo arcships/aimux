@@ -158,8 +158,8 @@ class MultimodalCoverageTest {
         try (SearchModel model = SearchModel.tavilyWithBase("sk-test", server.baseUrl())) {
             JSONObject opts = new JSONObject()
                 .put("query", "What is Rust?")
-                .put("max_results", 5)
-                .put("provider_options", new JSONObject());
+                .put("maxResults", 5)
+                .put("providerOptions", new JSONObject());
             JSONObject result = new JSONObject(model.search(opts.toString()));
 
             assertThat(result.getJSONArray("results").length()).isEqualTo(1);
@@ -176,7 +176,7 @@ class MultimodalCoverageTest {
                 + "\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Hi\"},\"finish_reason\":\"stop\"}],"
                 + "\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}");
 
-        try (Model model = Model.openaiWithBase("sk-test", "deepseek-chat", server.baseUrl())) {
+        try (Model model = Model.provider("deepseek", "sk-test-fake-key", "deepseek-chat", server.chatConfig())) {
             String result = model.generateText("\"Say hi\"");
             assertThat(new JSONObject(result).getString("text")).isEqualTo("Hi");
         }

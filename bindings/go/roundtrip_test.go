@@ -1,9 +1,9 @@
 // Round-trip (de)serialization tests for the typed wire-format types.
 //
-// Mirrors Kotlin TypedModelRoundTripTest.kt: build a typed value, marshal to
-// JSON, unmarshal back, assert equality. These pin down wire-format field
-// names and tag spellings the typed wrappers rely on — without them, a rename
-// in aimux-core could silently break Go clients.
+// Build a typed value, marshal to JSON, unmarshal back, assert equality. These
+// pin down wire-format field names and tag spellings the typed wrappers rely
+// on (camelCase, the AI SDK JSON) — without them, a rename in aimux-core could
+// silently break Go clients.
 //
 // Also includes regression tests for the two bugs found in code review:
 //   - ToolChoiceTool JSON injection (now uses json.Marshal)
@@ -122,9 +122,9 @@ func TestToolCallRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal failed: %v", err)
 	}
-	// Verify wire field names match Kotlin (snake_case).
+	// Verify wire field names (camelCase).
 	s := string(b)
-	for _, want := range []string{`"tool_call_id"`, `"tool_name"`, `"input"`, `"provider_executed"`, `"dynamic"`, `"provider_metadata"`} {
+	for _, want := range []string{`"toolCallId"`, `"toolName"`, `"input"`, `"providerExecuted"`, `"dynamic"`, `"providerMetadata"`} {
 		if !contains(s, want) {
 			t.Errorf("expected %s in wire JSON, got %s", want, s)
 		}
@@ -134,19 +134,19 @@ func TestToolCallRoundTrip(t *testing.T) {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
 	if decoded.ToolCallID != original.ToolCallID {
-		t.Errorf("tool_call_id mismatch: got %s, want %s", decoded.ToolCallID, original.ToolCallID)
+		t.Errorf("toolCallId mismatch: got %s, want %s", decoded.ToolCallID, original.ToolCallID)
 	}
 	if decoded.ToolName != original.ToolName {
-		t.Errorf("tool_name mismatch: got %s, want %s", decoded.ToolName, original.ToolName)
+		t.Errorf("toolName mismatch: got %s, want %s", decoded.ToolName, original.ToolName)
 	}
 	if decoded.ProviderExecuted == nil || *decoded.ProviderExecuted != true {
-		t.Error("provider_executed did not round-trip")
+		t.Error("providerExecuted did not round-trip")
 	}
 	if decoded.Dynamic == nil || *decoded.Dynamic != false {
 		t.Error("dynamic did not round-trip")
 	}
 	if string(decoded.ProviderMetadata) != string(original.ProviderMetadata) {
-		t.Errorf("provider_metadata mismatch: got %s, want %s", decoded.ProviderMetadata, original.ProviderMetadata)
+		t.Errorf("providerMetadata mismatch: got %s, want %s", decoded.ProviderMetadata, original.ProviderMetadata)
 	}
 }
 
@@ -179,9 +179,10 @@ func TestModelMessageMultiPartRoundTrip(t *testing.T) {
 		Role: RoleTool,
 		Content: []map[string]any{
 			{
-				"type":         "tool_result",
-				"tool_call_id": "call_1",
-				"result":       map[string]any{"temp": "20"},
+				"type":       "tool-result",
+				"toolCallId": "call_1",
+				"toolName":   "get_weather",
+				"output":     map[string]any{"type": "json", "value": map[string]any{"temp": "20"}},
 			},
 		},
 	}
@@ -203,14 +204,14 @@ func TestModelMessageMultiPartRoundTrip(t *testing.T) {
 	if len(raw.Content) != 1 {
 		t.Fatalf("expected 1 content part, got %d", len(raw.Content))
 	}
-	// Verify the tool_result structure.
+	// Verify the tool-result structure.
 	var part map[string]any
 	json.Unmarshal(raw.Content[0], &part)
-	if part["type"] != "tool_result" {
-		t.Errorf("expected type 'tool_result', got %v", part["type"])
+	if part["type"] != "tool-result" {
+		t.Errorf("expected type 'tool-result', got %v", part["type"])
 	}
-	if part["tool_call_id"] != "call_1" {
-		t.Errorf("expected tool_call_id 'call_1', got %v", part["tool_call_id"])
+	if part["toolCallId"] != "call_1" {
+		t.Errorf("expected toolCallId 'call_1', got %v", part["toolCallId"])
 	}
 }
 
@@ -239,11 +240,11 @@ func TestGenerateTextOptionsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal failed: %v", err)
 	}
-	// Verify snake_case wire fields present.
+	// Verify camelCase wire fields present.
 	s := string(b)
 	for _, want := range []string{
-		`"temperature"`, `"top_k"`, `"reasoning"`, `"instructions"`,
-		`"tool_choice"`, `"tools"`, `"input_schema"`,
+		`"temperature"`, `"topK"`, `"reasoning"`, `"instructions"`,
+		`"toolChoice"`, `"tools"`, `"inputSchema"`,
 	} {
 		if !contains(s, want) {
 			t.Errorf("expected %s in wire JSON, got %s", want, s)
@@ -275,22 +276,22 @@ func TestGenerateTextOptionsDefaultOmitsFields(t *testing.T) {
 	}
 }
 
-// RFC-0016 M2: include_raw_chunks round-trips through the typed options.
+// includeRawChunks round-trips through the typed options.
 func TestGenerateTextOptionsIncludeRawChunksRoundTrip(t *testing.T) {
 	original := GenerateTextOptions{IncludeRawChunks: boolPtr(true)}
 	b, err := json.Marshal(original)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if !strings.Contains(string(b), `"include_raw_chunks":true`) {
-		t.Errorf("expected include_raw_chunks:true in %s", b)
+	if !strings.Contains(string(b), `"includeRawChunks":true`) {
+		t.Errorf("expected includeRawChunks:true in %s", b)
 	}
 	var back GenerateTextOptions
 	if err := json.Unmarshal(b, &back); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if back.IncludeRawChunks == nil || *back.IncludeRawChunks != true {
-		t.Errorf("round-trip lost include_raw_chunks: %#v", back.IncludeRawChunks)
+		t.Errorf("round-trip lost includeRawChunks: %#v", back.IncludeRawChunks)
 	}
 }
 
@@ -318,11 +319,11 @@ func TestStreamPartParseRoundTrip(t *testing.T) {
 	cases := []struct {
 		name string
 		json string
-		tag  string
+		typ  string
 	}{
-		{"TextDelta", `{"TextDelta":{"id":"tx1","delta":"Hello"}}`, "TextDelta"},
-		{"Finish", `{"Finish":{"finish_reason":{"unified":{"stop":null}}}}`, "Finish"},
-		{"StreamStart", `{"StreamStart":{"warnings":[]}}`, "StreamStart"},
+		{"text-delta", `{"type":"text-delta","id":"tx1","delta":"Hello"}`, "text-delta"},
+		{"finish", `{"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`, "finish"},
+		{"stream-start", `{"type":"stream-start","warnings":[]}`, "stream-start"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -330,34 +331,40 @@ func TestStreamPartParseRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse failed: %v", err)
 			}
-			if sp.Tag != c.tag {
-				t.Errorf("tag mismatch: got %s, want %s", sp.Tag, c.tag)
+			if sp.Type != c.typ {
+				t.Errorf("type mismatch: got %s, want %s", sp.Type, c.typ)
 			}
-			if len(sp.Payload) == 0 {
-				t.Error("expected non-empty payload")
+			if string(sp.Raw) != c.json {
+				t.Errorf("raw mismatch: got %s", sp.Raw)
 			}
 		})
 	}
 }
 
 func TestParseTextDeltaPayload(t *testing.T) {
-	sp, _ := ParseStreamPart(`{"TextDelta":{"id":"tx1","delta":"Hello"}}`)
+	sp, _ := ParseStreamPart(`{"type":"text-delta","id":"tx1","delta":"Hello"}`)
 	var td TextDeltaPayload
-	json.Unmarshal(sp.Payload, &td)
+	json.Unmarshal(sp.Raw, &td)
 	if td.ID != "tx1" || td.Delta != "Hello" {
 		t.Errorf("got %+v", td)
 	}
 }
 
-// TestParseStreamPartRejectsInvalid validates the externally-tagged union
-// enforcement: zero keys or multiple keys must produce an error.
+func TestStreamPartSource(t *testing.T) {
+	sp, _ := ParseStreamPart(`{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"}`)
+	src, err := sp.Source()
+	if err != nil || src.URL == nil || src.URL.URL != "https://example.com" {
+		t.Fatalf("source: %+v, %v", src, err)
+	}
+}
+
+// TestParseStreamPartRejectsInvalid: a part without a "type" is an error.
 func TestParseStreamPartRejectsInvalid(t *testing.T) {
 	cases := []struct {
 		name string
 		json string
 	}{
 		{"empty_object", `{}`},
-		{"multiple_keys", `{"TextDelta":{"delta":"a"},"Finish":{}}`},
 		{"not_object", `[]`},
 		{"invalid_json", `{`},
 	}

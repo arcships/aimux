@@ -16,7 +16,7 @@ export type VideoCallOptions = {
 /**
  * Text prompt for the video generation. `None` when not required.
  */
-prompt: string | null, 
+prompt?: string, 
 /**
  * Number of videos to generate. Default `1`; most models only support
  * `n = 1` due to computational cost.
@@ -25,57 +25,57 @@ n: number,
 /**
  * Aspect ratio, in `{width}:{height}` format (e.g. `"16:9"`).
  */
-aspect_ratio: AspectRatio | null, 
+aspectRatio?: AspectRatio, 
 /**
  * Resolution, in `{width}x{height}` format (e.g. `"1280x720"`).
  */
-resolution: Size | null, 
+resolution?: Size, 
 /**
  * Duration of the video in seconds. Typically 3–10 seconds.
  */
-duration: number | null, 
+duration?: number, 
 /**
  * Frames per second. Common values: 24, 30, 60.
  */
-fps: number | null, 
+fps?: number, 
 /**
  * Seed for deterministic generation. `None` uses a random seed.
  */
-seed: number | null, 
+seed?: number, 
 /**
  * Input image for image-to-video generation (the starting frame).
  */
-image: VideoFile | null, 
+image?: VideoFile, 
 /**
  * Role-tagged image inputs for first-last-frame generation.
  */
-frame_images: Array<VideoFrameImage> | null, 
+frameImages?: Array<VideoFrameImage>, 
 /**
  * Reference inputs for reference-to-video generation (images or videos).
  */
-input_references: Array<VideoFile> | null, 
+inputReferences?: Array<VideoFile>, 
 /**
  * Whether the model should generate audio alongside the video.
  */
-generate_audio: boolean | null, 
+generateAudio?: boolean, 
 /**
  * Additional provider-specific options, keyed by provider name.
  */
-provider_options: { [key in string]: { [key in string]: JsonValue } }, 
+providerOptions: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Per-call retry override. `None` uses the model default.
  */
-max_retries: number | null, 
+maxRetries?: number, 
 /**
  * Per-call poll pacing override for the start/status flow. Unset fields
  * fall back to the model's [`VideoModel::poll_config`].
  */
-poll: VideoPollOptions | null, 
+poll?: VideoPollOptions, 
 /**
  * Per-call operation timeout.
  */
-timeout: TimeoutConfiguration | null, 
+timeout?: TimeoutConfiguration, 
 /**
  * Additional HTTP headers to send with the request.
  */
-headers: { [key in string]: string } | null, };
+headers?: { [key in string]: string }, };

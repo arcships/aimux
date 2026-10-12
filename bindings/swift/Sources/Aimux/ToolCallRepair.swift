@@ -33,20 +33,11 @@ public struct RawToolCall: Codable, Equatable {
     public var input: String
     public var providerExecuted: Bool?
     public var dynamic: Bool?
-    public var providerMetadata: JSONValue?
-
-    enum CodingKeys: String, CodingKey {
-        case toolCallId = "tool_call_id"
-        case toolName = "tool_name"
-        case input
-        case providerExecuted = "provider_executed"
-        case dynamic
-        case providerMetadata = "provider_metadata"
-    }
+    public var providerMetadata: ProviderMetadata?
 
     public init(toolCallId: String, toolName: String, input: String,
                 providerExecuted: Bool? = nil, dynamic: Bool? = nil,
-                providerMetadata: JSONValue? = nil) {
+                providerMetadata: ProviderMetadata? = nil) {
         self.toolCallId = toolCallId; self.toolName = toolName; self.input = input
         self.providerExecuted = providerExecuted; self.dynamic = dynamic
         self.providerMetadata = providerMetadata
@@ -58,9 +49,9 @@ public struct RawToolCall: Codable, Equatable {
 public struct ToolCallRepairContext: Codable, Equatable {
     /// The failing call, with the provider's raw argument text.
     public var toolCall: RawToolCall
-    /// The failure the call already carries, as externally-tagged wire JSON
-    /// (the same encoding as ``ToolCall/error``), e.g.
-    /// `{"InvalidToolInput":{"tool_name":…,"tool_input":…,"cause":…}}`.
+    /// The failure the call already carries: an `AiMuxError` object tagged by
+    /// `name` (the same encoding as ``ToolCall/error``), e.g.
+    /// `{"name":"AI_InvalidToolInputError","toolName":…,"toolInput":…,"cause":…}`.
     public var error: JSONValue
     /// JSON Schema of the named tool. A name that does not resolve to a
     /// function tool yields the AI SDK's default empty-object schema.
@@ -71,13 +62,6 @@ public struct ToolCallRepairContext: Codable, Equatable {
     public var messages: [ModelMessage]
     /// The instructions the call was generated with, if any.
     public var instructions: String?
-
-    enum CodingKeys: String, CodingKey {
-        case toolCall = "tool_call"
-        case error
-        case inputSchema = "input_schema"
-        case tools, messages, instructions
-    }
 
     public init(toolCall: RawToolCall, error: JSONValue, inputSchema: JSONValue,
                 tools: [Tool], messages: [ModelMessage], instructions: String? = nil) {
@@ -106,7 +90,7 @@ struct RepairToolCallBox: Equatable {
 /// Build the repair argument for one invalid tool call.
 ///
 /// - Parameters:
-///   - toolCall: One `GenerateTextResult.tool_calls` entry with `"invalid": true`.
+///   - toolCall: One `GenerateTextResult.toolCalls` entry with `"invalid": true`.
 ///   - prompt: The prompt JSON the call was generated with.
 ///   - options: The options JSON the call was generated with.
 /// - Returns: The serialized ``ToolCallRepairContext``, or the JSON literal
@@ -138,8 +122,8 @@ public func applyToolCallRepair(
 }
 
 /// Apply a repair reply to a serialized `GenerateTextResult` or
-/// `GenerateObjectResult`. Both `tool_calls` and the matching
-/// `response_messages` tool-call part are rewritten — the transcript must keep
+/// `GenerateObjectResult`. Both `toolCalls` and the matching
+/// `responseMessages` tool-call part are rewritten — the transcript must keep
 /// pointing at the same entry, or the next turn replays the unrepaired
 /// arguments.
 public func applyToolCallRepairToResult(
@@ -161,7 +145,7 @@ public func applyToolCallRepairToResult(
 /// the patched JSON (the input unchanged when no repair function is set).
 ///
 /// Handles `GenerateTextResult` and `StreamTextResultAggregated` (top-level
-/// `tool_calls`) as well as `GenerateObjectResult` (`raw.tool_calls`). Calls
+/// `toolCalls`) as well as `GenerateObjectResult` (`raw.toolCalls`). Calls
 /// are visited in document order and each gets at most one repair attempt, as
 /// in the AI SDK.
 func repairedResultJson(
@@ -172,12 +156,12 @@ func repairedResultJson(
     guard let document = (try? JSONSerialization.jsonObject(with: Data(resultJson.utf8)))
         as? [String: Any] else { return resultJson }
     // A GenerateObjectResult keeps the whole text result under `raw`.
-    let target = document["tool_calls"] != nil ? document : document["raw"] as? [String: Any]
-    guard let calls = target?["tool_calls"] as? [[String: Any]] else { return resultJson }
+    let target = document["toolCalls"] != nil ? document : document["raw"] as? [String: Any]
+    guard let calls = target?["toolCalls"] as? [[String: Any]] else { return resultJson }
 
     var patched = resultJson
     for call in calls where call["invalid"] as? Bool == true {
-        guard let id = call["tool_call_id"] as? String, let callJson = jsonString(call) else { continue }
+        guard let id = call["toolCallId"] as? String, let callJson = jsonString(call) else { continue }
         let contextJson = try toolCallRepairContext(
             toolCall: callJson, prompt: promptJson, options: optsJson
         )
@@ -190,9 +174,10 @@ func repairedResultJson(
     return patched
 }
 
-/// Repair a `{"ToolCall": …}` stream part, returning the replacement part JSON.
+/// Repair a `{"type":"tool-call", …}` stream part, returning the replacement
+/// part JSON.
 ///
-/// Any other part — `ToolInputDelta` above all — is returned untouched and
+/// Any other part — `tool-input-delta` above all — is returned untouched and
 /// immediately: the AI SDK forwards argument deltas verbatim even when a repair
 /// function is configured.
 func repairedStreamPartJson(
@@ -201,9 +186,9 @@ func repairedStreamPartJson(
 ) throws -> String {
     guard let repair = options?.repairToolCall,
           let part = (try? JSONSerialization.jsonObject(with: Data(partJson.utf8))) as? [String: Any],
-          let call = part["ToolCall"] as? [String: Any],
-          call["invalid"] as? Bool == true,
-          let callJson = jsonString(call)
+          part["type"] as? String == "tool-call",
+          part["invalid"] as? Bool == true,
+          let callJson = jsonString(part)
     else { return partJson }
 
     // The two library calls are pure — no runtime, no `ffi_block_on` — so they
@@ -217,8 +202,10 @@ func repairedStreamPartJson(
     let repairedJson = try applyToolCallRepair(
         toolCall: callJson, options: optsJson, reply: reply
     )
-    let repaired = try JSONSerialization.jsonObject(with: Data(repairedJson.utf8))
-    return jsonString(["ToolCall": repaired]) ?? partJson
+    guard var repaired = try JSONSerialization.jsonObject(with: Data(repairedJson.utf8)) as? [String: Any]
+    else { return partJson }
+    repaired["type"] = "tool-call"
+    return jsonString(repaired) ?? partJson
 }
 
 /// Run `body` on another thread and block until it answers.
@@ -263,7 +250,7 @@ private func repairReply(_ context: ToolCallRepairContext, _ repair: RepairToolC
     do {
         guard let replacement = try repair(context) else { return #"{"type":"unchanged"}"# }
         let encoded = try JSONEncoder().encode(replacement)
-        return #"{"type":"repaired","tool_call":"# + String(decoding: encoded, as: UTF8.self) + "}"
+        return #"{"type":"repaired","toolCall":"# + String(decoding: encoded, as: UTF8.self) + "}"
     } catch {
         let message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
         return jsonString(["type": "failed", "message": message])

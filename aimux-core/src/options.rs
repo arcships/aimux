@@ -16,14 +16,25 @@ use crate::types::ReasoningEffort;
 
 /// How the model should format its response.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export)]
 pub enum ResponseFormat {
     /// Plain text (default).
     Text,
     /// JSON output, optionally constrained to a schema.
     Json {
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         schema: Option<Value>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         description: Option<String>,
     },
 }
@@ -35,6 +46,7 @@ pub enum ResponseFormat {
 /// corresponding limit. A `total` timeout also covers retry backoff and the
 /// whole streamed response.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct TimeoutConfiguration {
     /// Overall timeout for the entire call (including retries and, for
@@ -42,21 +54,25 @@ pub struct TimeoutConfiguration {
     // `number`, not the `bigint` ts-rs infers from u64: the JS bindings pass
     // options through `JSON.stringify`, which throws on BigInt. Milliseconds
     // cannot reach 2^53 (~285k years), so precision is never at stake.
-    #[ts(type = "number | null")]
+    #[ts(optional, type = "number")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_ms: Option<u64>,
     /// Timeout for one generation step, including that step's attempts and
     /// retry backoff, in milliseconds. Aimux currently has one step.
-    #[ts(type = "number | null")]
+    #[ts(optional, type = "number")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step_ms: Option<u64>,
     /// Timeout waiting for the first stream chunk (streaming only).
     ///
     /// Counted from operation start, so it also bounds stream establishment
     /// and any retries before the first semantic output: it is the
     /// user-perceived time-to-first-output budget, not a per-attempt timer.
-    #[ts(type = "number | null")]
+    #[ts(optional, type = "number")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_chunk_ms: Option<u64>,
     /// Maximum idle time between consecutive stream chunks (streaming only).
-    #[ts(type = "number | null")]
+    #[ts(optional, type = "number")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chunk_ms: Option<u64>,
 }
 
@@ -66,61 +82,93 @@ pub struct TimeoutConfiguration {
 /// `GenerateTextOptions` (user-facing) which is converted to `CallOptions`
 /// by the `generate_text` / `stream_text` functions.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct CallOptions {
     /// The standardized prompt (message array). Required.
     pub prompt: LanguageModelPrompt,
 
     /// Maximum tokens to generate.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_output_tokens: Option<u32>,
 
     /// Sampling temperature.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
 
     /// Stop sequences.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stop_sequences: Option<Vec<String>>,
 
     /// Nucleus sampling `top_p`.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f64>,
 
     /// Top-k sampling.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_k: Option<f64>,
 
     /// Presence penalty.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub presence_penalty: Option<f64>,
 
     /// Frequency penalty.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frequency_penalty: Option<f64>,
 
     /// Response format (text or JSON).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_format: Option<ResponseFormat>,
 
     /// Seed for reproducibility.
-    #[ts(type = "number | null")]
+    #[ts(optional, type = "number")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
 
     /// Tools available to the model (function tools and/or provider-defined tools).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<Tool>>,
 
     /// How the model should choose tools.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
 
     /// Extra HTTP headers.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
 
     /// Provider-specific options (keyed by provider name).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 
     /// Top-level reasoning effort. Maps to OpenAI `reasoning_effort` and
     /// Anthropic `thinking` config.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<ReasoningEffort>,
 
     /// Per-call retry count override. `None` uses the provider's configured
     /// Core operation retry. `Some(0)` disables retries.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
 
     /// Per-call timeout configuration (total / first-chunk / chunk idle).
     /// `None` = no timeouts (provider defaults still apply at the HTTP layer).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<TimeoutConfiguration>,
 
     /// Session identifier, for grouping consecutive calls into a session
@@ -129,7 +177,8 @@ pub struct CallOptions {
     /// Orthogonal to RFC-0019 session-affinity headers: this field is for
     /// local grouping, while session headers in `headers` are for upstream
     /// routing — both may share an id value but travel different paths.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
 
     /// Abort signal for cancelling the call.
@@ -159,6 +208,8 @@ pub struct CallOptions {
     /// Currently honored by the OpenAI-compatible family (openai / azure /
     /// openai-compatible registry providers); other provider families ignore
     /// it for now (RFC-0016 M2).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_raw_chunks: Option<bool>,
 }
 

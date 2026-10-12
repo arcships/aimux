@@ -26,11 +26,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>Special attention is paid to the three hand-written
  * {@code JsonSerializer}/{@code JsonDeserializer} pairs —
- * {@link MultimodalTypes.AudioData} (Base64/Binary),
- * {@link MultimodalTypes.ImageOutputs} (Base64/Binary) and
- * {@link MultimodalTypes.VideoData} (Url/Base64/Binary) — which implement the
- * serde-style externally-tagged enum wire format ({@code {"Base64": ...}}) and
- * are the most bug-prone part of the file. Dedicated tests below exercise every
+ * {@link MultimodalTypes.AudioData} (Base64/Binary, untagged),
+ * {@link MultimodalTypes.ImageOutputs} (Base64/Binary, untagged) and
+ * {@link MultimodalTypes.VideoData} (Url/Base64/Binary, tagged on {@code type})
+ * — which are the most bug-prone part of the file. Dedicated tests below exercise every
  * variant of each union.
  *
  * <p>These are pure serialization tests: no native library is loaded — the
@@ -79,7 +78,7 @@ class MultimodalTypesTest {
     @Test
     void speechResultRoundTrip() throws Exception {
         // Same shape as Go ParseSpeechResult — exercises AudioData.Base64.
-        String json = "{\"audio\":{\"Base64\":\"aGVsbG8=\"},"
+        String json = "{\"audio\":\"aGVsbG8=\","
             + "\"warnings\":[],\"response\":{\"id\":\"resp-1\"}}";
 
         MultimodalTypes.SpeechResult result =
@@ -95,9 +94,9 @@ class MultimodalTypesTest {
             M.readValue(out, MultimodalTypes.SpeechResult.class);
         assertThat(rt).isEqualTo(result);
 
-        // The custom AudioData serializer re-emits the {"Base64": "..."} tag.
+        // The custom AudioData serializer re-emits the bare base64 string.
         assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
-            "{\"audio\":{\"Base64\":\"aGVsbG8=\"},\"warnings\":[],\"response\":{}}"));
+            "{\"audio\":\"aGVsbG8=\",\"warnings\":[],\"response\":{}}"));
     }
 
     // ── Image ──────────────────────────────────────────────────────────────
@@ -105,7 +104,7 @@ class MultimodalTypesTest {
     @Test
     void imageResultRoundTrip() throws Exception {
         // Same shape as Go ParseImageResult — exercises ImageOutputs.Base64.
-        String json = "{\"images\":{\"Base64\":[\"aW1hZ2Ux\"]},"
+        String json = "{\"images\":[\"aW1hZ2Ux\"],"
             + "\"warnings\":[],\"response\":{\"id\":\"resp-1\"}}";
 
         MultimodalTypes.ImageResult result =
@@ -123,9 +122,9 @@ class MultimodalTypesTest {
             M.readValue(out, MultimodalTypes.ImageResult.class);
         assertThat(rt).isEqualTo(result);
 
-        // The custom ImageOutputs serializer re-emits the {"Base64": [...]} tag.
+        // The custom ImageOutputs serializer re-emits the bare string array.
         assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
-            "{\"images\":{\"Base64\":[\"aW1hZ2Ux\"]},\"warnings\":[],\"response\":{}}"));
+            "{\"images\":[\"aW1hZ2Ux\"],\"warnings\":[],\"response\":{}}"));
     }
 
     // ── Transcription (STT) ────────────────────────────────────────────────
@@ -133,9 +132,9 @@ class MultimodalTypesTest {
     @Test
     void transcriptionResultRoundTrip() throws Exception {
         // Same shape as Go ParseTranscriptionResult.
-        // Timing keys are `start_second`/`end_second` — see TranscriptionSegment.ts.
+        // Timing keys are `startSecond`/`endSecond` — see TranscriptionSegment.ts.
         String json = "{\"text\":\"Hello world\","
-            + "\"segments\":[{\"text\":\"Hello\",\"start_second\":0.0,\"end_second\":1.0}],"
+            + "\"segments\":[{\"text\":\"Hello\",\"startSecond\":0.0,\"endSecond\":1.0}],"
             + "\"language\":\"en\",\"warnings\":[],\"response\":{\"id\":\"resp-1\"}}";
 
         MultimodalTypes.TranscriptionResult result =
@@ -161,11 +160,11 @@ class MultimodalTypesTest {
         assertThat(rt.getText()).isEqualTo("Hello world");
         assertThat(rt.getLanguage()).isEqualTo("en");
 
-        // Wire form retains start_second:0.0 and the empty `warnings` list
+        // Wire form retains startSecond:0.0 and the empty `warnings` list
         // (NON_NULL suppresses only null, not zero values or empty collections).
         assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
             "{\"text\":\"Hello world\",\"segments\":"
-                + "[{\"text\":\"Hello\",\"start_second\":0.0,\"end_second\":1.0}],"
+                + "[{\"text\":\"Hello\",\"startSecond\":0.0,\"endSecond\":1.0}],"
                 + "\"language\":\"en\",\"warnings\":[],\"response\":{}}"));
     }
 
@@ -175,8 +174,8 @@ class MultimodalTypesTest {
     void rerankingResultRoundTrip() throws Exception {
         // Same shape as Go ParseRerankingResult.
         String json = "{\"ranking\":["
-            + "{\"index\":1,\"relevance_score\":0.95},"
-            + "{\"index\":0,\"relevance_score\":0.30}"
+            + "{\"index\":1,\"relevanceScore\":0.95},"
+            + "{\"index\":0,\"relevanceScore\":0.30}"
             + "],\"warnings\":[]}";
 
         MultimodalTypes.RerankingResult result =
@@ -198,8 +197,8 @@ class MultimodalTypesTest {
         // int is never null, so it is not suppressed) and the empty `warnings`
         // list; it round-trips losslessly either way.
         assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
-            "{\"ranking\":[{\"index\":1,\"relevance_score\":0.95},"
-            + "{\"index\":0,\"relevance_score\":0.3}],\"warnings\":[]}"));
+            "{\"ranking\":[{\"index\":1,\"relevanceScore\":0.95},"
+            + "{\"index\":0,\"relevanceScore\":0.3}],\"warnings\":[]}"));
     }
 
     // ── Video ──────────────────────────────────────────────────────────────
@@ -207,8 +206,8 @@ class MultimodalTypesTest {
     @Test
     void videoResultRoundTrip() throws Exception {
         // Same shape as Go ParseVideoResult — exercises VideoData.Url.
-        String json = "{\"videos\":[{\"Url\":"
-            + "{\"url\":\"https://example.com/video.mp4\",\"media_type\":\"video/mp4\"}}],"
+        String json = "{\"videos\":[{\"type\":\"url\","
+            + "\"url\":\"https://example.com/video.mp4\",\"mediaType\":\"video/mp4\"}],"
             + "\"warnings\":[],\"response\":{\"id\":\"resp-1\"}}";
 
         MultimodalTypes.VideoResult result =
@@ -227,10 +226,10 @@ class MultimodalTypesTest {
             M.readValue(out, MultimodalTypes.VideoResult.class);
         assertThat(rt).isEqualTo(result);
 
-        // The custom VideoData serializer re-emits the {"Url": {...}} tag.
+        // The custom VideoData serializer re-emits the {"type":"url",...} tag.
         assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
-            "{\"videos\":[{\"Url\":{\"url\":\"https://example.com/video.mp4\","
-            + "\"media_type\":\"video/mp4\"}}],\"warnings\":[],\"response\":{}}"));
+            "{\"videos\":[{\"type\":\"url\",\"url\":\"https://example.com/video.mp4\","
+            + "\"mediaType\":\"video/mp4\"}],\"warnings\":[],\"response\":{}}"));
     }
 
     @Test
@@ -244,8 +243,8 @@ class MultimodalTypesTest {
             .build();
 
         String json = M.writeValueAsString(options);
-        assertThat(M.readTree(json).path("poll").path("interval_ms").asLong()).isEqualTo(1_000L);
-        assertThat(M.readTree(json).path("poll").path("timeout_ms").asLong()).isEqualTo(120_000L);
+        assertThat(M.readTree(json).path("poll").path("intervalMs").asLong()).isEqualTo(1_000L);
+        assertThat(M.readTree(json).path("poll").path("timeoutMs").asLong()).isEqualTo(120_000L);
 
         MultimodalTypes.VideoCallOptions decoded =
             M.readValue(json, MultimodalTypes.VideoCallOptions.class);
@@ -301,13 +300,13 @@ class MultimodalTypesTest {
     @Test
     void uploadFileResultRoundTrip() throws Exception {
         // Same shape as Go ParseUploadFileResult.
-        String json = "{\"provider_reference\":{\"openai\":\"file-abc123\"},"
-            + "\"media_type\":\"application/pdf\",\"filename\":\"doc.pdf\",\"warnings\":[]}";
+        String json = "{\"providerReference\":{\"openai\":\"file-abc123\"},"
+            + "\"mediaType\":\"application/pdf\",\"filename\":\"doc.pdf\",\"warnings\":[]}";
 
         MultimodalTypes.UploadFileResult result =
             M.readValue(json, MultimodalTypes.UploadFileResult.class);
 
-        // Decode (mirrors Go: provider_reference.openai, media_type).
+        // Decode (mirrors Go: providerReference.openai, mediaType).
         assertThat(result.getProviderReference()).containsEntry("openai", "file-abc123");
         assertThat(result.getMediaType()).isEqualTo("application/pdf");
         assertThat(result.getFilename()).isEqualTo("doc.pdf");
@@ -318,8 +317,8 @@ class MultimodalTypesTest {
         assertThat(rt).isEqualTo(result);
 
         assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
-            "{\"provider_reference\":{\"openai\":\"file-abc123\"},"
-            + "\"media_type\":\"application/pdf\",\"filename\":\"doc.pdf\",\"warnings\":[]}"));
+            "{\"providerReference\":{\"openai\":\"file-abc123\"},"
+            + "\"mediaType\":\"application/pdf\",\"filename\":\"doc.pdf\",\"warnings\":[]}"));
     }
 
     // ── Custom serializer focus: the three sealed unions ───────────────────
@@ -331,7 +330,7 @@ class MultimodalTypesTest {
         // Base64 variant.
         MultimodalTypes.AudioData base64 = new MultimodalTypes.AudioData.Base64("aGVsbG8=");
         String base64Json = M.writeValueAsString(base64);
-        assertThat(base64Json).isEqualTo("{\"Base64\":\"aGVsbG8=\"}");
+        assertThat(base64Json).isEqualTo("\"aGVsbG8=\"");
         MultimodalTypes.AudioData base64Back =
             M.readValue(base64Json, MultimodalTypes.AudioData.class);
         assertThat(base64Back).isInstanceOf(MultimodalTypes.AudioData.Base64.class);
@@ -342,14 +341,14 @@ class MultimodalTypesTest {
         MultimodalTypes.AudioData binary =
             new MultimodalTypes.AudioData.Binary(Arrays.asList(72, 101, 108, 108, 111));
         String binaryJson = M.writeValueAsString(binary);
-        assertThat(binaryJson).isEqualTo("{\"Binary\":[72,101,108,108,111]}");
+        assertThat(binaryJson).isEqualTo("[72,101,108,108,111]");
         MultimodalTypes.AudioData binaryBack =
             M.readValue(binaryJson, MultimodalTypes.AudioData.class);
         assertThat(binaryBack).isInstanceOf(MultimodalTypes.AudioData.Binary.class);
         assertThat(((MultimodalTypes.AudioData.Binary) binaryBack).getValue())
             .isEqualTo(Arrays.asList(72, 101, 108, 108, 111));
 
-        // Unknown tag → the deserializer rejects it.
+        // Neither a string nor an array → the deserializer rejects it.
         assertThatThrownBy(() -> M.readValue("{\"Quux\":\"x\"}", MultimodalTypes.AudioData.class))
             .isInstanceOf(IOException.class);
     }
@@ -360,7 +359,7 @@ class MultimodalTypesTest {
         MultimodalTypes.ImageOutputs base64 =
             new MultimodalTypes.ImageOutputs.Base64(Arrays.asList("aW1hZ2Ux", "aW1hZ2Uy"));
         String base64Json = M.writeValueAsString(base64);
-        assertThat(base64Json).isEqualTo("{\"Base64\":[\"aW1hZ2Ux\",\"aW1hZ2Uy\"]}");
+        assertThat(base64Json).isEqualTo("[\"aW1hZ2Ux\",\"aW1hZ2Uy\"]");
         MultimodalTypes.ImageOutputs base64Back =
             M.readValue(base64Json, MultimodalTypes.ImageOutputs.class);
         assertThat(base64Back).isInstanceOf(MultimodalTypes.ImageOutputs.Base64.class);
@@ -371,7 +370,7 @@ class MultimodalTypesTest {
         MultimodalTypes.ImageOutputs binary = new MultimodalTypes.ImageOutputs.Binary(
             Arrays.asList(Arrays.asList(1, 2, 3), Arrays.asList(4, 5, 6)));
         String binaryJson = M.writeValueAsString(binary);
-        assertThat(binaryJson).isEqualTo("{\"Binary\":[[1,2,3],[4,5,6]]}");
+        assertThat(binaryJson).isEqualTo("[[1,2,3],[4,5,6]]");
         MultimodalTypes.ImageOutputs binaryBack =
             M.readValue(binaryJson, MultimodalTypes.ImageOutputs.class);
         assertThat(binaryBack).isInstanceOf(MultimodalTypes.ImageOutputs.Binary.class);
@@ -389,7 +388,7 @@ class MultimodalTypesTest {
             MultimodalTypes.VideoUrlData.of("https://example.com/v.mp4", "video/mp4"));
         String urlJson = M.writeValueAsString(url);
         assertThat(urlJson).isEqualTo(
-            "{\"Url\":{\"url\":\"https://example.com/v.mp4\",\"media_type\":\"video/mp4\"}}");
+            "{\"type\":\"url\",\"url\":\"https://example.com/v.mp4\",\"mediaType\":\"video/mp4\"}");
         MultimodalTypes.VideoData urlBack = M.readValue(urlJson, MultimodalTypes.VideoData.class);
         assertThat(urlBack).isInstanceOf(MultimodalTypes.VideoData.Url.class);
         assertThat(((MultimodalTypes.VideoData.Url) urlBack).getValue().getUrl())
@@ -400,7 +399,7 @@ class MultimodalTypesTest {
             MultimodalTypes.VideoBase64Data.of("AAAA", "video/mp4"));
         String base64Json = M.writeValueAsString(base64);
         assertThat(base64Json).isEqualTo(
-            "{\"Base64\":{\"data\":\"AAAA\",\"media_type\":\"video/mp4\"}}");
+            "{\"type\":\"base64\",\"data\":\"AAAA\",\"mediaType\":\"video/mp4\"}");
         MultimodalTypes.VideoData base64Back =
             M.readValue(base64Json, MultimodalTypes.VideoData.class);
         assertThat(base64Back).isInstanceOf(MultimodalTypes.VideoData.Base64.class);
@@ -412,14 +411,14 @@ class MultimodalTypesTest {
             MultimodalTypes.VideoBinaryData.of(Arrays.asList(1, 2, 3), "video/mp4"));
         String binaryJson = M.writeValueAsString(binary);
         assertThat(binaryJson).isEqualTo(
-            "{\"Binary\":{\"data\":[1,2,3],\"media_type\":\"video/mp4\"}}");
+            "{\"type\":\"binary\",\"data\":[1,2,3],\"mediaType\":\"video/mp4\"}");
         MultimodalTypes.VideoData binaryBack =
             M.readValue(binaryJson, MultimodalTypes.VideoData.class);
         assertThat(binaryBack).isInstanceOf(MultimodalTypes.VideoData.Binary.class);
         assertThat(((MultimodalTypes.VideoData.Binary) binaryBack).getValue().getData())
             .isEqualTo(Arrays.asList(1, 2, 3));
 
-        assertThatThrownBy(() -> M.readValue("{\"Quux\":{}}", MultimodalTypes.VideoData.class))
+        assertThatThrownBy(() -> M.readValue("{\"type\":\"quux\"}", MultimodalTypes.VideoData.class))
             .isInstanceOf(IOException.class);
     }
 }

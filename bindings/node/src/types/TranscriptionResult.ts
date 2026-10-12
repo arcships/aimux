@@ -22,11 +22,11 @@ segments: Array<TranscriptionSegment>,
 /**
  * The detected language (ISO 639-1 code, e.g. `"en"`), if detected.
  */
-language: string | null, 
+language?: string, 
 /**
  * The total duration of the audio in seconds, if determined.
  */
-duration_in_seconds: number | null, 
+durationInSeconds?: number, 
 /**
  * Warnings for the call, e.g. unsupported settings.
  */
@@ -34,7 +34,7 @@ warnings: Array<Warning>,
 /**
  * Optional request information for telemetry and debugging.
  */
-request: TranscriptionRequest | null, 
+request?: TranscriptionRequest, 
 /**
  * Response information for telemetry and debugging.
  */
@@ -42,4 +42,4 @@ response: TranscriptionResponse,
 /**
  * Additional provider-specific metadata, keyed by provider name.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, };
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, };

@@ -379,9 +379,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let resultJson = try model.generateText(prompt: jsonEncodeString("What is Rust?"))
         let r = parseJSON(resultJson)
         XCTAssertEqual(r["text"] as? String, "Rust is a systems programming language.")
@@ -390,21 +388,19 @@ final class AimuxTests: XCTestCase {
     }
 
     /// Tool-call parsing: mock returns tool_calls; verify convenience field
-    /// `tool_calls` and the structured `raw.content` ToolCall variant.
+    /// `toolCalls` and the structured `raw.content` `tool-call` item.
     func testE2EOpenAIToolCallParsing() throws {
         let server = MockHTTPServer(response: .json(openaiToolCallResponse))
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let opts = jsonEncode([
             "tools": [[
                 "type": "function",
                 "name": "get_weather",
                 "description": "Get weather for a location",
-                "input_schema": [
+                "inputSchema": [
                     "type": "object",
                     "properties": ["location": ["type": "string"]],
                     "required": ["location"],
@@ -415,22 +411,21 @@ final class AimuxTests: XCTestCase {
             prompt: jsonEncodeString("What's the weather in Tokyo?"), options: opts
         ))
 
-        // Convenience field: tool_calls extracted
-        let toolCalls = (r["tool_calls"] as? [[String: Any]]) ?? []
+        // Convenience field: toolCalls extracted
+        let toolCalls = (r["toolCalls"] as? [[String: Any]]) ?? []
         XCTAssertEqual(toolCalls.count, 1)
-        XCTAssertEqual(toolCalls[0]["tool_name"] as? String, "get_weather")
-        XCTAssertEqual(toolCalls[0]["tool_call_id"] as? String, "call_abc")
+        XCTAssertEqual(toolCalls[0]["toolName"] as? String, "get_weather")
+        XCTAssertEqual(toolCalls[0]["toolCallId"] as? String, "call_abc")
         let input = toolCalls[0]["input"] as? [String: Any]
         XCTAssertEqual(input?["location"] as? String, "Tokyo")
 
-        // Structured content: raw.content contains a ToolCall variant
+        // Structured content: raw.content contains a tool-call item
         let raw = r["raw"] as? [String: Any]
         let content = (raw?["content"] as? [[String: Any]]) ?? []
-        let tcVariant = content.first(where: { $0["ToolCall"] != nil })
-        XCTAssertNotNil(tcVariant, "raw.content should contain a ToolCall variant")
-        let tc = tcVariant?["ToolCall"] as? [String: Any]
-        XCTAssertEqual(tc?["tool_name"] as? String, "get_weather")
-        XCTAssertEqual(tc?["tool_call_id"] as? String, "call_abc")
+        let tc = content.first(where: { $0["type"] as? String == "tool-call" })
+        XCTAssertNotNil(tc, "raw.content should contain a tool-call item")
+        XCTAssertEqual(tc?["toolName"] as? String, "get_weather")
+        XCTAssertEqual(tc?["toolCallId"] as? String, "call_abc")
     }
 
     /// Multi-role messages: a system+user array reaches the provider verbatim.
@@ -439,9 +434,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let prompt = jsonEncode([
             ["role": "system", "content": "You are a helpful assistant."],
             ["role": "user", "content": "What is Rust?"],
@@ -459,25 +452,23 @@ final class AimuxTests: XCTestCase {
         XCTAssertEqual(msgs[1]["content"] as? String, "What is Rust?")
     }
 
-    /// ToolChoice: passing `tool_choice: "required"` reaches the provider body.
+    /// ToolChoice: passing `toolChoice: "required"` reaches the provider body.
     func testE2EOpenAIToolChoiceRequired() throws {
         let server = MockHTTPServer(response: .json(openaiToolCallResponse))
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let opts = jsonEncode([
             "tools": [[
                 "type": "function",
                 "name": "get_weather",
-                "input_schema": [
+                "inputSchema": [
                     "type": "object",
                     "properties": ["location": ["type": "string"]],
                 ],
             ]],
-            "tool_choice": "required",
+            "toolChoice": "required",
         ])
         // Must not throw.
         _ = try model.generateText(prompt: jsonEncodeString("Hello"), options: opts)
@@ -493,9 +484,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         var parts: [String] = []
         var streamErr: (any Error)?
         model.streamText(
@@ -509,26 +498,24 @@ final class AimuxTests: XCTestCase {
 
         let parsed = parts.map { parseJSON($0) }
         let text = parsed
-            .compactMap { ($0["TextDelta"] as? [String: Any])?["delta"] as? String }
+            .compactMap { $0["type"] as? String == "text-delta" ? $0["delta"] as? String : nil }
             .joined()
         XCTAssertEqual(text, "Hello world")
     }
 
-    /// Streaming tool call: the stream emits a tool-related StreamPart
-    /// (ToolCall / ToolInputStart / ToolInputDelta).
+    /// Streaming tool call: the stream emits a tool-related part
+    /// (`tool-call` / `tool-input-start` / `tool-input-delta`).
     func testE2EOpenAIStreamToolCall() throws {
         let server = MockHTTPServer(response: .sse(sse(openaiStreamToolEvents)))
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let opts = jsonEncode([
             "tools": [[
                 "type": "function",
                 "name": "get_weather",
-                "input_schema": [
+                "inputSchema": [
                     "type": "object",
                     "properties": ["location": ["type": "string"]],
                 ],
@@ -548,14 +535,12 @@ final class AimuxTests: XCTestCase {
 
         let parsed = parts.map { parseJSON($0) }
         let hasToolPart = parsed.contains {
-            $0["ToolCall"] != nil
-                || $0["ToolInputDelta"] != nil
-                || $0["ToolInputStart"] != nil
+            ["tool-call", "tool-input-delta", "tool-input-start"].contains($0["type"] as? String ?? "")
         }
-        XCTAssertTrue(hasToolPart, "stream should contain a tool-related StreamPart")
+        XCTAssertTrue(hasToolPart, "stream should contain a tool-related part")
 
-        if let toolCall = parsed.first(where: { $0["ToolCall"] != nil })?["ToolCall"] as? [String: Any] {
-            XCTAssertEqual(toolCall["tool_name"] as? String, "get_weather")
+        if let toolCall = parsed.first(where: { $0["type"] as? String == "tool-call" }) {
+            XCTAssertEqual(toolCall["toolName"] as? String, "get_weather")
         }
     }
 
@@ -575,7 +560,7 @@ final class AimuxTests: XCTestCase {
 
         let model = try Model.anthropic(
             apiKey: "test-key", modelId: "claude-3-5-sonnet-20241022",
-            baseUrl: server.baseURL
+            baseUrl: server.baseURL + "/v1"
         )
         let r = parseJSON(try model.generateText(prompt: jsonEncodeString("Hello")))
         XCTAssertEqual(r["text"] as? String, "Hello from Claude!")
@@ -589,9 +574,10 @@ final class AimuxTests: XCTestCase {
     /// end-to-end (Swift → FFI → reqwest → mock) and that the second request
     /// body carries the tool-result message.
     ///
-    /// The replayed messages use the aimux content-part shape (type-tagged
-    /// `ToolCall` / `ToolResult`), which is what `generate_text` deserializes
-    /// and the OpenAI converter maps to the wire `tool_calls` / `tool` format.
+    /// The replayed messages use the content-part shape (`tool-call` /
+    /// `tool-result` with a typed `output`), which is what `generateText`
+    /// deserializes and the OpenAI converter maps to the wire `tool_calls` /
+    /// `tool` format.
     func testE2EToolCallRoundTrip() throws {
         let server = MockHTTPServer(responses: [
             .json(openaiToolCallResponse),
@@ -600,15 +586,13 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let opts = jsonEncode([
             "tools": [[
                 "type": "function",
                 "name": "get_weather",
                 "description": "Get weather for a location",
-                "input_schema": [
+                "inputSchema": [
                     "type": "object",
                     "properties": ["location": ["type": "string"]],
                     "required": ["location"],
@@ -620,24 +604,25 @@ final class AimuxTests: XCTestCase {
         let r1 = parseJSON(try model.generateText(
             prompt: jsonEncodeString("What's the weather in Tokyo?"), options: opts
         ))
-        let toolCalls = (r1["tool_calls"] as? [[String: Any]]) ?? []
+        let toolCalls = (r1["toolCalls"] as? [[String: Any]]) ?? []
         XCTAssertEqual(toolCalls.count, 1)
-        XCTAssertEqual(toolCalls[0]["tool_name"] as? String, "get_weather")
-        XCTAssertEqual(toolCalls[0]["tool_call_id"] as? String, "call_abc")
+        XCTAssertEqual(toolCalls[0]["toolName"] as? String, "get_weather")
+        XCTAssertEqual(toolCalls[0]["toolCallId"] as? String, "call_abc")
 
         // 2) Second call: replay the conversation with the ToolResult filled in.
         let secondPrompt = jsonEncode([
             ["role": "user", "content": "What's the weather in Tokyo?"],
             ["role": "assistant", "content": [[
-                "type": "tool_call",
-                "tool_call_id": "call_abc",
-                "tool_name": "get_weather",
+                "type": "tool-call",
+                "toolCallId": "call_abc",
+                "toolName": "get_weather",
                 "input": ["location": "Tokyo"],
             ]]],
             ["role": "tool", "content": [[
-                "type": "tool_result",
-                "tool_call_id": "call_abc",
-                "output": ["temperature": 22, "condition": "sunny"],
+                "type": "tool-result",
+                "toolCallId": "call_abc",
+                "toolName": "get_weather",
+                "output": ["type": "json", "value": ["temperature": 22, "condition": "sunny"]],
             ]]],
         ])
         let r2 = parseJSON(try model.generateText(prompt: secondPrompt, options: opts))

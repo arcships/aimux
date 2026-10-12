@@ -6,4 +6,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
  *
  * Aligned with V4 `RerankingModelV4CallOptions.documents`.
  */
-export type RerankingDocuments = { "Text": { values: Array<string>, } } | { "Object": { values: Array<JsonValue>, } };
+export type RerankingDocuments = { "type": "text", values: Array<string>, } | { "type": "object", values: Array<JsonValue>, };

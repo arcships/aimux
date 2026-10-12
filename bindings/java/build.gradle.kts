@@ -36,8 +36,12 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
-    // Point JNA at the freshly built native library (cargo build --release -p aimux-ffi).
-    systemProperty("jna.library.path", projectDir.resolve("../../target/release").canonicalPath)
+    // Point JNA at the freshly built native library (cargo build --release -p aimux-ffi),
+    // or at AIMUX_FFI_LIB_DIR when set (e.g. a debug build or a shared target dir).
+    systemProperty(
+        "jna.library.path",
+        System.getenv("AIMUX_FFI_LIB_DIR") ?: projectDir.resolve("../../target/release").canonicalPath
+    )
     testLogging {
         events("passed", "skipped", "failed")
     }

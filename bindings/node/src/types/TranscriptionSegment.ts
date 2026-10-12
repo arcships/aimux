@@ -11,8 +11,8 @@ text: string,
 /**
  * The start time of this segment in seconds.
  */
-start_second: number, 
+startSecond: number, 
 /**
  * The end time of this segment in seconds.
  */
-end_second: number, };
+endSecond: number, };

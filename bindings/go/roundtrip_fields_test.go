@@ -4,7 +4,7 @@
 // Go prompts are raw JSON, so the binding's job is to pass them through the
 // FFI into the Rust engine unchanged. This test proves the full pipe for the
 // extended-thinking input round-trip: an assistant reasoning part carrying a
-// `signature` is echoed as an Anthropic thinking block on the wire when
+// providerOptions.anthropic.signature is echoed as an Anthropic thinking block on the wire when
 // thinking is enabled.
 
 package aimux
@@ -30,12 +30,12 @@ func TestE2E_AnthropicEchoesReasoningSignature(t *testing.T) {
 	prompt := `[
 		{"role":"user","content":[{"type":"text","text":"hi"}]},
 		{"role":"assistant","content":[
-			{"type":"reasoning","text":"pondering","signature":"sig-go-1"},
+			{"type":"reasoning","text":"pondering","providerOptions":{"anthropic":{"signature":"sig-go-1"}}},
 			{"type":"text","text":"answer"}
 		]},
 		{"role":"user","content":[{"type":"text","text":"go on"}]}
 	]`
-	opts := `{"provider_options":{"anthropic":{"thinking":{"type":"enabled","budgetTokens":1024}}}}`
+	opts := `{"providerOptions":{"anthropic":{"thinking":{"type":"enabled","budgetTokens":1024}}}}`
 
 	if _, err := m.GenerateText(prompt, opts); err != nil {
 		t.Fatalf("GenerateText: %v", err)
