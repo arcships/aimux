@@ -28,8 +28,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:aimux/aimux.dart';
 import 'package:test/test.dart';
+
+import 'typed_model_test.dart' show mockChatModel;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock server
@@ -115,7 +116,7 @@ class _GenerateArgs {
 /// Run a non-streaming `generateText` in a worker isolate.
 Future<Map<String, dynamic>> runGenerateText(_GenerateArgs args) {
   return Isolate.run(() {
-    final model = Model.openai(args.apiKey, args.modelId, baseUrl: args.baseUrl);
+    final model = mockChatModel(args.baseUrl, args.apiKey, args.modelId);
     try {
       return model.generateText(args.prompt, args.options);
     } finally {
@@ -127,7 +128,7 @@ Future<Map<String, dynamic>> runGenerateText(_GenerateArgs args) {
 /// Run a streaming `streamText` in a worker isolate, returning all parts.
 Future<List<Map<String, dynamic>>> runStreamText(_GenerateArgs args) {
   return Isolate.run(() async {
-    final model = Model.openai(args.apiKey, args.modelId, baseUrl: args.baseUrl);
+    final model = mockChatModel(args.baseUrl, args.apiKey, args.modelId);
     try {
       // streamText blocks synchronously until the stream completes, then
       // returns an already-closed stream containing the buffered parts.
