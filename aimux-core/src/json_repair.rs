@@ -1,433 +1,342 @@
-//! JSON repair and partial-JSON parsing helpers.
+//! JSON repair and partial-JSON parsing.
 //!
-//! Ports of `fix-json.ts` and `parse-partial-json.ts` from the Vercel AI SDK
-//! `util` package.
+//! Port of `packages/ai/src/util/fix-json.ts` and
+//! `packages/ai/src/util/parse-partial-json.ts` from the Vercel AI SDK. The
+//! scanner states keep their upstream names in the variant docs so upstream
+//! changes can be located.
+//!
+//! Positions are counted in Unicode scalar values, where upstream counts
+//! UTF-16 code units. The two only disagree when a character outside the
+//! Basic Multilingual Plane (an emoji, say) directly ends a number or a
+//! literal inside an array: upstream keeps the character (`"[1😀"` becomes
+//! `"[1😀]"`), this port drops it (`"[1]"`).
+
+use std::ops::ControlFlow;
 
 use serde_json::Value;
 
-// ===========================================================================
-// fixJson  <- packages/ai/src/util/fix-json.ts
-// ===========================================================================
-
-/// Scanner state for [`fix_json`]. Mirrors the `State` union in `fix-json.ts`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum FixState {
-    Root,
-    Finish,
-    InsideString,
-    InsideStringEscape,
-    InsideStringUnicodeEscape,
-    InsideLiteral,
-    InsideNumber,
-    InsideObjectStart,
-    InsideObjectKey,
-    InsideObjectAfterKey,
-    InsideObjectBeforeValue,
-    InsideObjectAfterValue,
-    InsideObjectAfterComma,
-    InsideArrayStart,
-    InsideArrayAfterValue,
-    InsideArrayAfterComma,
-}
-
-/// Single-pass scanner/repairer for partial JSON, ported line-for-line from
-/// `fix-json.ts`.
+/// Repairs a possibly truncated JSON text into JSON a parser accepts.
 ///
-/// Given a (possibly truncated) piece of JSON, returns the longest prefix that
-/// can be closed into valid JSON by appending the minimal set of closing
-/// tokens (`"`, `}`, `]`, or the remainder of an in-progress literal).
-struct Fixer<'a> {
-    chars: &'a [char],
-    stack: Vec<FixState>,
-    last_valid_index: isize, // -1 == nothing valid yet
-    literal_start: Option<usize>,
-    unicode_escape_digits: usize,
-}
-
-impl<'a> Fixer<'a> {
-    fn new(chars: &'a [char]) -> Self {
-        Self {
-            chars,
-            stack: vec![FixState::Root],
-            last_valid_index: -1,
-            literal_start: None,
-            unicode_escape_digits: 0,
-        }
-    }
-
-    fn is_hex_digit(c: char) -> bool {
-        c.is_ascii_hexdigit()
-    }
-
-    /// Port of `processValueStart`.
-    fn process_value_start(&mut self, c: char, i: usize, swap_state: FixState) {
-        match c {
-            '"' => {
-                self.last_valid_index = i as isize;
-                self.stack.pop();
-                self.stack.push(swap_state);
-                self.stack.push(FixState::InsideString);
-            }
-            'f' | 't' | 'n' => {
-                self.last_valid_index = i as isize;
-                self.literal_start = Some(i);
-                self.stack.pop();
-                self.stack.push(swap_state);
-                self.stack.push(FixState::InsideLiteral);
-            }
-            '-' => {
-                self.stack.pop();
-                self.stack.push(swap_state);
-                self.stack.push(FixState::InsideNumber);
-            }
-            '0'..='9' => {
-                self.last_valid_index = i as isize;
-                self.stack.pop();
-                self.stack.push(swap_state);
-                self.stack.push(FixState::InsideNumber);
-            }
-            '{' => {
-                self.last_valid_index = i as isize;
-                self.stack.pop();
-                self.stack.push(swap_state);
-                self.stack.push(FixState::InsideObjectStart);
-            }
-            '[' => {
-                self.last_valid_index = i as isize;
-                self.stack.pop();
-                self.stack.push(swap_state);
-                self.stack.push(FixState::InsideArrayStart);
-            }
-            // Unmatched characters do nothing (matches the TS switch which has
-            // no default arm).
-            _ => {}
-        }
-    }
-
-    /// Port of `processAfterObjectValue`.
-    fn process_after_object_value(&mut self, c: char, i: usize) {
-        match c {
-            ',' => {
-                self.stack.pop();
-                self.stack.push(FixState::InsideObjectAfterComma);
-            }
-            '}' => {
-                self.last_valid_index = i as isize;
-                self.stack.pop();
-            }
-            _ => {}
-        }
-    }
-
-    /// Port of `processAfterArrayValue`.
-    fn process_after_array_value(&mut self, c: char, i: usize) {
-        match c {
-            ',' => {
-                self.stack.pop();
-                self.stack.push(FixState::InsideArrayAfterComma);
-            }
-            ']' => {
-                self.last_valid_index = i as isize;
-                self.stack.pop();
-            }
-            _ => {}
-        }
-    }
-
-    fn run(&mut self) {
-        for (i, &c) in self.chars.iter().enumerate() {
-            let current = *self
-                .stack
-                .last()
-                .expect("fix-json stack is never empty (seeded with Root)");
-
-            match current {
-                FixState::Root => self.process_value_start(c, i, FixState::Finish),
-
-                FixState::InsideObjectStart => match c {
-                    '"' => {
-                        self.stack.pop();
-                        self.stack.push(FixState::InsideObjectKey);
-                    }
-                    '}' => {
-                        self.last_valid_index = i as isize;
-                        self.stack.pop();
-                    }
-                    _ => {}
-                },
-
-                FixState::InsideObjectAfterComma => {
-                    if c == '"' {
-                        self.stack.pop();
-                        self.stack.push(FixState::InsideObjectKey);
-                    }
-                }
-
-                FixState::InsideObjectKey => {
-                    if c == '"' {
-                        self.stack.pop();
-                        self.stack.push(FixState::InsideObjectAfterKey);
-                    }
-                }
-
-                FixState::InsideObjectAfterKey => {
-                    if c == ':' {
-                        self.stack.pop();
-                        self.stack.push(FixState::InsideObjectBeforeValue);
-                    }
-                }
-
-                FixState::InsideObjectBeforeValue => {
-                    self.process_value_start(c, i, FixState::InsideObjectAfterValue);
-                }
-
-                FixState::InsideObjectAfterValue => {
-                    self.process_after_object_value(c, i);
-                }
-
-                FixState::InsideString => match c {
-                    '"' => {
-                        self.stack.pop();
-                        self.last_valid_index = i as isize;
-                    }
-                    '\\' => {
-                        self.stack.push(FixState::InsideStringEscape);
-                    }
-                    _ => {
-                        self.last_valid_index = i as isize;
-                    }
-                },
-
-                FixState::InsideArrayStart => match c {
-                    ']' => {
-                        self.last_valid_index = i as isize;
-                        self.stack.pop();
-                    }
-                    _ => {
-                        self.last_valid_index = i as isize;
-                        self.process_value_start(c, i, FixState::InsideArrayAfterValue);
-                    }
-                },
-
-                FixState::InsideArrayAfterValue => match c {
-                    ',' => {
-                        self.stack.pop();
-                        self.stack.push(FixState::InsideArrayAfterComma);
-                    }
-                    ']' => {
-                        self.last_valid_index = i as isize;
-                        self.stack.pop();
-                    }
-                    _ => {
-                        self.last_valid_index = i as isize;
-                    }
-                },
-
-                FixState::InsideArrayAfterComma => {
-                    self.process_value_start(c, i, FixState::InsideArrayAfterValue);
-                }
-
-                FixState::InsideStringEscape => {
-                    self.stack.pop();
-                    if c == 'u' {
-                        self.unicode_escape_digits = 0;
-                        self.stack.push(FixState::InsideStringUnicodeEscape);
-                    } else {
-                        self.last_valid_index = i as isize;
-                    }
-                }
-
-                FixState::InsideStringUnicodeEscape => {
-                    if Self::is_hex_digit(c) {
-                        self.unicode_escape_digits += 1;
-                        if self.unicode_escape_digits == 4 {
-                            self.stack.pop();
-                            self.last_valid_index = i as isize;
-                        }
-                    }
-                }
-
-                FixState::InsideNumber => match c {
-                    '0'..='9' => {
-                        self.last_valid_index = i as isize;
-                    }
-                    'e' | 'E' | '-' | '.' => {}
-                    ',' => {
-                        self.stack.pop();
-                        if self.stack.last() == Some(&FixState::InsideArrayAfterValue) {
-                            self.process_after_array_value(c, i);
-                        }
-                        if self.stack.last() == Some(&FixState::InsideObjectAfterValue) {
-                            self.process_after_object_value(c, i);
-                        }
-                    }
-                    '}' => {
-                        self.stack.pop();
-                        if self.stack.last() == Some(&FixState::InsideObjectAfterValue) {
-                            self.process_after_object_value(c, i);
-                        }
-                    }
-                    ']' => {
-                        self.stack.pop();
-                        if self.stack.last() == Some(&FixState::InsideArrayAfterValue) {
-                            self.process_after_array_value(c, i);
-                        }
-                    }
-                    _ => {
-                        self.stack.pop();
-                    }
-                },
-
-                FixState::InsideLiteral => {
-                    let start = self
-                        .literal_start
-                        .expect("literal_start is set whenever INSIDE_LITERAL is pushed");
-                    let partial: String = self.chars[start..=i].iter().collect();
-                    if !"false".starts_with(&partial)
-                        && !"true".starts_with(&partial)
-                        && !"null".starts_with(&partial)
-                    {
-                        self.stack.pop();
-                        match self.stack.last() {
-                            Some(FixState::InsideObjectAfterValue) => {
-                                self.process_after_object_value(c, i);
-                            }
-                            Some(FixState::InsideArrayAfterValue) => {
-                                self.process_after_array_value(c, i);
-                            }
-                            _ => {}
-                        }
-                    } else {
-                        self.last_valid_index = i as isize;
-                    }
-                }
-
-                // FINISH (and any unhandled state): the TS switch has no case
-                // for FINISH, so trailing characters after the top-level value
-                // completes are ignored.
-                FixState::Finish => {}
-            }
-        }
-    }
-
-    fn finish(self) -> String {
-        let mut result: String = if self.last_valid_index >= 0 {
-            self.chars[..=(self.last_valid_index as usize)]
-                .iter()
-                .collect()
-        } else {
-            String::new()
-        };
-
-        // Walk the stack top-to-bottom, appending the minimal closing tokens.
-        // Mirrors the second `for` loop in `fix-json.ts`.
-        for state in self.stack.iter().rev() {
-            match state {
-                FixState::InsideString => result.push('"'),
-                FixState::InsideObjectKey
-                | FixState::InsideObjectAfterKey
-                | FixState::InsideObjectAfterComma
-                | FixState::InsideObjectStart
-                | FixState::InsideObjectBeforeValue
-                | FixState::InsideObjectAfterValue => result.push('}'),
-                FixState::InsideArrayStart
-                | FixState::InsideArrayAfterComma
-                | FixState::InsideArrayAfterValue => result.push(']'),
-                FixState::InsideLiteral => {
-                    let start = self
-                        .literal_start
-                        .expect("literal_start is set whenever INSIDE_LITERAL is pushed");
-                    let partial: String = self.chars[start..].iter().collect();
-                    let plen = partial.chars().count();
-                    if "true".starts_with(&partial) {
-                        result.push_str(&"true"[plen..]);
-                    } else if "false".starts_with(&partial) {
-                        result.push_str(&"false"[plen..]);
-                    } else if "null".starts_with(&partial) {
-                        result.push_str(&"null"[plen..]);
-                    }
-                }
-                // ROOT / FINISH / INSIDE_NUMBER / *_ESCAPE / *_UNICODE_ESCAPE
-                // have no closing token in the TS source.
-                _ => {}
-            }
-        }
-
-        result
-    }
-}
-
-/// Repairs a (possibly partial) JSON string into valid JSON.
+/// Keeps the longest prefix that ends on a complete token and appends the
+/// closing tokens (`"`, `}`, `]`, or the rest of `true`/`false`/`null`) for
+/// every value still open. Text after the top-level value is dropped. The
+/// result is not validated: input that is invalid for other reasons stays
+/// invalid.
 ///
-/// Port of `fixJson` in `packages/ai/src/util/fix-json.ts`.
+/// ```
+/// use aimux_core::json_repair::fix_json;
+///
+/// assert_eq!(fix_json(r#"{"items": [1, 2, {"done": tr"#), r#"{"items": [1, 2, {"done": true}]}"#);
+/// assert_eq!(fix_json(r#"{"key": "val"#), r#"{"key": "val"}"#);
+/// assert_eq!(fix_json("[1, "), "[1]");
+/// ```
+#[doc(alias = "fixJson")]
 #[must_use]
 pub fn fix_json(input: &str) -> String {
-    let chars: Vec<char> = input.chars().collect();
-    let mut fixer = Fixer::new(&chars);
-    fixer.run();
-    fixer.finish()
+    let mut chars = input.char_indices();
+    let mut repair = Repair::default();
+
+    // Upstream `ROOT`: characters before the first value start are skipped.
+    if let Some((i, c, frame)) = chars
+        .by_ref()
+        .find_map(|(i, c)| Frame::opened_by(c).map(|frame| (i, c, frame)))
+    {
+        repair.open_value(i, c, frame);
+    }
+    for (i, c) in chars {
+        if repair.step(i, c).is_break() {
+            break;
+        }
+    }
+    repair.finish(input)
 }
 
-// ===========================================================================
-// parsePartialJson  <- packages/ai/src/util/parse-partial-json.ts
-// ===========================================================================
-
-/// Outcome category returned by [`parse_partial_json`]. Mirrors the `state`
-/// union in `parse-partial-json.ts`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParsePartialJsonState {
-    /// `undefined` was passed as input.
-    UndefinedInput,
-    /// The input parsed as-is, without repair.
-    SuccessfulParse,
-    /// The input only parsed after running [`fix_json`].
-    RepairedParse,
-    /// The input could not be parsed even after repair.
-    FailedParse,
+/// A value that is open at the current position, with where the scanner is
+/// inside it.
+#[derive(Clone, Copy)]
+enum Frame {
+    Object(ObjectPos),
+    Array(ArrayPos),
+    String(StringPos),
+    /// `INSIDE_NUMBER`.
+    Number,
+    /// `INSIDE_LITERAL`; holds the part of `true`/`false`/`null` not seen yet.
+    Literal(&'static str),
 }
 
-/// Result of [`parse_partial_json`].
+#[derive(Clone, Copy)]
+enum ObjectPos {
+    /// `INSIDE_OBJECT_START`: after `{`.
+    Start,
+    /// `INSIDE_OBJECT_KEY`: inside a key.
+    Key,
+    /// `INSIDE_OBJECT_AFTER_KEY`: after a key, before `:`.
+    AfterKey,
+    /// `INSIDE_OBJECT_BEFORE_VALUE`: after `:`.
+    BeforeValue,
+    /// `INSIDE_OBJECT_AFTER_VALUE`.
+    AfterValue,
+    /// `INSIDE_OBJECT_AFTER_COMMA`.
+    AfterComma,
+}
+
+#[derive(Clone, Copy)]
+enum ArrayPos {
+    /// `INSIDE_ARRAY_START`: after `[`.
+    Start,
+    /// `INSIDE_ARRAY_AFTER_VALUE`.
+    AfterValue,
+    /// `INSIDE_ARRAY_AFTER_COMMA`.
+    AfterComma,
+}
+
+#[derive(Clone, Copy)]
+enum StringPos {
+    /// `INSIDE_STRING`.
+    Plain,
+    /// `INSIDE_STRING_ESCAPE`: after `\`.
+    Escape,
+    /// `INSIDE_STRING_UNICODE_ESCAPE`: after `\u` and `digits` hex digits.
+    UnicodeEscape { digits: u8 },
+}
+
+impl Frame {
+    /// The frame a value starting with `c` opens (upstream `processValueStart`).
+    fn opened_by(c: char) -> Option<Self> {
+        match c {
+            '"' => Some(Self::String(StringPos::Plain)),
+            'f' => Some(Self::Literal("alse")),
+            't' => Some(Self::Literal("rue")),
+            'n' => Some(Self::Literal("ull")),
+            '-' | '0'..='9' => Some(Self::Number),
+            '{' => Some(Self::Object(ObjectPos::Start)),
+            '[' => Some(Self::Array(ArrayPos::Start)),
+            _ => None,
+        }
+    }
+
+    /// What closes this frame when the input ends inside it.
+    fn closing(self) -> &'static str {
+        match self {
+            Self::Object(_) => "}",
+            Self::Array(_) => "]",
+            Self::String(_) => "\"",
+            Self::Number => "",
+            Self::Literal(rest) => rest,
+        }
+    }
+}
+
+#[derive(Default)]
+struct Repair {
+    /// Open values, outermost first. Empty before the top-level value starts
+    /// (upstream `ROOT`) and after it closes (upstream `FINISH`).
+    open: Vec<Frame>,
+    /// Byte length of the longest prefix that ends on a complete token
+    /// (upstream `lastValidIndex + 1`, in bytes instead of code units).
+    valid_len: usize,
+}
+
+impl Repair {
+    /// Marks the input up to and including `c` (at byte `i`) as keepable.
+    fn mark(&mut self, i: usize, c: char) {
+        self.valid_len = i + c.len_utf8();
+    }
+
+    /// Marks `c` and closes the innermost value.
+    fn close(&mut self, i: usize, c: char) {
+        self.mark(i, c);
+        self.open.pop();
+    }
+
+    /// Pushes the value `c` starts. A lone `-` is not a number yet, so it is
+    /// not marked.
+    fn open_value(&mut self, i: usize, c: char, frame: Frame) {
+        if c != '-' {
+            self.mark(i, c);
+        }
+        self.open.push(frame);
+    }
+
+    /// Upstream `processAfterObjectValue` / `processAfterArrayValue`.
+    fn after_value(&mut self, i: usize, c: char) {
+        let Some(top) = self.open.last_mut() else {
+            return;
+        };
+        match (*top, c) {
+            (Frame::Object(ObjectPos::AfterValue), ',') => {
+                *top = Frame::Object(ObjectPos::AfterComma);
+            }
+            (Frame::Array(ArrayPos::AfterValue), ',') => *top = Frame::Array(ArrayPos::AfterComma),
+            (Frame::Object(ObjectPos::AfterValue), '}')
+            | (Frame::Array(ArrayPos::AfterValue), ']') => {
+                self.close(i, c);
+            }
+            _ => {}
+        }
+    }
+
+    /// Closes a number or literal at `c`, which then goes to the enclosing
+    /// container. `c` is not reprocessed in any other state.
+    fn end_scalar(&mut self, i: usize, c: char) {
+        self.open.pop();
+        self.after_value(i, c);
+    }
+
+    /// Feeds the character `c` at byte `i`. Breaks once the top-level value
+    /// has closed (upstream `FINISH`): the rest of the input is ignored.
+    fn step(&mut self, i: usize, c: char) -> ControlFlow<()> {
+        let Some(top) = self.open.last_mut() else {
+            return ControlFlow::Break(());
+        };
+        match *top {
+            Frame::Object(pos) => match (pos, c) {
+                (ObjectPos::Start | ObjectPos::AfterComma, '"') => {
+                    *top = Frame::Object(ObjectPos::Key);
+                }
+                (ObjectPos::Start, '}') => self.close(i, c),
+                (ObjectPos::Key, '"') => *top = Frame::Object(ObjectPos::AfterKey),
+                (ObjectPos::AfterKey, ':') => *top = Frame::Object(ObjectPos::BeforeValue),
+                (ObjectPos::BeforeValue, _) => {
+                    if let Some(value) = Frame::opened_by(c) {
+                        *top = Frame::Object(ObjectPos::AfterValue);
+                        self.open_value(i, c, value);
+                    }
+                }
+                (ObjectPos::AfterValue, _) => self.after_value(i, c),
+                _ => {}
+            },
+            Frame::Array(pos) => match (pos, c) {
+                (ArrayPos::Start | ArrayPos::AfterValue, ']') => self.close(i, c),
+                (ArrayPos::Start, _) => {
+                    if let Some(value) = Frame::opened_by(c) {
+                        *top = Frame::Array(ArrayPos::AfterValue);
+                        self.open_value(i, c, value);
+                    }
+                    // Upstream marks every character here, even one that
+                    // starts no value.
+                    self.mark(i, c);
+                }
+                (ArrayPos::AfterValue, ',') => *top = Frame::Array(ArrayPos::AfterComma),
+                (ArrayPos::AfterValue, _) => self.mark(i, c),
+                (ArrayPos::AfterComma, _) => {
+                    if let Some(value) = Frame::opened_by(c) {
+                        *top = Frame::Array(ArrayPos::AfterValue);
+                        self.open_value(i, c, value);
+                    }
+                }
+            },
+            Frame::String(pos) => match (pos, c) {
+                (StringPos::Plain, '"') => self.close(i, c),
+                (StringPos::Plain, '\\') => *top = Frame::String(StringPos::Escape),
+                (StringPos::Plain, _) => self.mark(i, c),
+                (StringPos::Escape, 'u') => {
+                    *top = Frame::String(StringPos::UnicodeEscape { digits: 0 });
+                }
+                (StringPos::Escape, _) => {
+                    *top = Frame::String(StringPos::Plain);
+                    self.mark(i, c);
+                }
+                (StringPos::UnicodeEscape { digits }, _) if c.is_ascii_hexdigit() => {
+                    if digits == 3 {
+                        *top = Frame::String(StringPos::Plain);
+                        self.mark(i, c);
+                    } else {
+                        *top = Frame::String(StringPos::UnicodeEscape { digits: digits + 1 });
+                    }
+                }
+                (StringPos::UnicodeEscape { .. }, _) => {}
+            },
+            Frame::Number => match c {
+                '0'..='9' => self.mark(i, c),
+                'e' | 'E' | '-' | '.' => {}
+                _ => self.end_scalar(i, c),
+            },
+            Frame::Literal(rest) => match rest.strip_prefix(c) {
+                Some(rest) => {
+                    *top = Frame::Literal(rest);
+                    self.mark(i, c);
+                }
+                None => self.end_scalar(i, c),
+            },
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn finish(self, input: &str) -> String {
+        let closing: usize = self.open.iter().map(|frame| frame.closing().len()).sum();
+        let mut out = String::with_capacity(self.valid_len + closing);
+        // `valid_len` only ever ends a character from `char_indices`, so it
+        // is a char boundary.
+        out.push_str(&input[..self.valid_len]);
+        for frame in self.open.iter().rev() {
+            out.push_str(frame.closing());
+        }
+        out
+    }
+}
+
+/// Outcome of [`PartialJson::parse`].
+///
+/// ```
+/// use aimux_core::json_repair::PartialJson;
+/// use serde_json::json;
+///
+/// // A streamed tool-call argument cut off mid-way.
+/// let args = PartialJson::parse(r#"{"city": "Par"#);
+/// assert_eq!(args, PartialJson::Repaired(json!({"city": "Par"})));
+/// assert_eq!(args.value(), Some(&json!({"city": "Par"})));
+///
+/// assert_eq!(PartialJson::parse("[1, 2]").into_value(), Some(json!([1, 2])));
+/// assert_eq!(PartialJson::parse("not json"), PartialJson::Failed);
+///
+/// // Upstream's `undefined-input` state is the caller's `Option`:
+/// let text: Option<&str> = None;
+/// assert_eq!(text.map(PartialJson::parse), None);
+/// ```
+#[doc(alias = "parsePartialJson")]
 #[derive(Debug, Clone, PartialEq)]
-pub struct ParsePartialJsonResult {
-    pub value: Option<Value>,
-    pub state: ParsePartialJsonState,
+#[non_exhaustive]
+pub enum PartialJson {
+    /// The text parsed as-is (upstream `successful-parse`).
+    Parsed(Value),
+    /// The text parsed only after [`fix_json`] (upstream `repaired-parse`).
+    Repaired(Value),
+    /// The text did not parse even after repair (upstream `failed-parse`).
+    Failed,
 }
 
-/// Best-effort parse of a (possibly partial) JSON string.
-///
-/// Port of `parsePartialJson` in `packages/ai/src/util/parse-partial-json.ts`.
-///
-/// The TS original is `async` only because its `safeParseJSON` helper is
-/// async; the Rust port is synchronous (it uses `serde_json::from_str` as the
-/// equivalent of `safeParseJSON`).
-#[must_use]
-pub fn parse_partial_json(json_text: Option<&str>) -> ParsePartialJsonResult {
-    let Some(text) = json_text else {
-        return ParsePartialJsonResult {
-            value: None,
-            state: ParsePartialJsonState::UndefinedInput,
-        };
-    };
-
-    // First try: parse the raw text (== `safeParseJSON({ text })`).
-    if let Ok(value) = serde_json::from_str::<Value>(text) {
-        return ParsePartialJsonResult {
-            value: Some(value),
-            state: ParsePartialJsonState::SuccessfulParse,
-        };
+impl PartialJson {
+    /// Parses `text`, retrying with [`fix_json`] if it does not parse as-is.
+    ///
+    /// Upstream's `parsePartialJson` is `async` only because its JSON parser
+    /// is; this is synchronous.
+    #[must_use]
+    pub fn parse(text: &str) -> Self {
+        if let Ok(value) = serde_json::from_str(text) {
+            return Self::Parsed(value);
+        }
+        match serde_json::from_str(&fix_json(text)) {
+            Ok(value) => Self::Repaired(value),
+            Err(_) => Self::Failed,
+        }
     }
 
-    // Second try: repair then parse (== `safeParseJSON({ text: fixJson(text) })`).
-    let fixed = fix_json(text);
-    if let Ok(value) = serde_json::from_str::<Value>(&fixed) {
-        return ParsePartialJsonResult {
-            value: Some(value),
-            state: ParsePartialJsonState::RepairedParse,
-        };
+    /// The parsed value, repaired or not.
+    #[must_use]
+    pub fn value(&self) -> Option<&Value> {
+        match self {
+            Self::Parsed(value) | Self::Repaired(value) => Some(value),
+            Self::Failed => None,
+        }
     }
 
-    ParsePartialJsonResult {
-        value: None,
-        state: ParsePartialJsonState::FailedParse,
+    /// Takes the parsed value, repaired or not.
+    #[must_use]
+    pub fn into_value(self) -> Option<Value> {
+        match self {
+            Self::Parsed(value) | Self::Repaired(value) => Some(value),
+            Self::Failed => None,
+        }
     }
 }
