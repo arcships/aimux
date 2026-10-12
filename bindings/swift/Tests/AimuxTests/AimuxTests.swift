@@ -382,9 +382,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let resultJson = try model.generateText(prompt: jsonEncodeString("What is Rust?"))
         let r = parseJSON(resultJson)
         XCTAssertEqual(r["text"] as? String, "Rust is a systems programming language.")
@@ -399,9 +397,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let opts = jsonEncode([
             "tools": [[
                 "type": "function",
@@ -442,9 +438,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let prompt = jsonEncode([
             ["role": "system", "content": "You are a helpful assistant."],
             ["role": "user", "content": "What is Rust?"],
@@ -468,9 +462,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let opts = jsonEncode([
             "tools": [[
                 "type": "function",
@@ -496,9 +488,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         var parts: [String] = []
         var streamErr: (any Error)?
         model.streamText(
@@ -524,9 +514,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let opts = jsonEncode([
             "tools": [[
                 "type": "function",
@@ -578,7 +566,7 @@ final class AimuxTests: XCTestCase {
 
         let model = try Model.anthropic(
             apiKey: "test-key", modelId: "claude-3-5-sonnet-20241022",
-            baseUrl: server.baseURL
+            baseUrl: server.baseURL + "/v1"
         )
         let r = parseJSON(try model.generateText(prompt: jsonEncodeString("Hello")))
         XCTAssertEqual(r["text"] as? String, "Hello from Claude!")
@@ -603,9 +591,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let opts = jsonEncode([
             "tools": [[
                 "type": "function",

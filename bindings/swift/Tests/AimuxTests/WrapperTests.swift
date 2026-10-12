@@ -21,9 +21,7 @@ final class WrapperTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let result = try model.generateText(prompt: .text("What is Rust?"))
 
         XCTAssertEqual(result.text, "Rust is a systems programming language.")
@@ -67,9 +65,7 @@ final class WrapperTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let options = GenerateTextOptions(tools: [
             .function(FunctionTool(
                 name: "get_weather",
@@ -111,9 +107,7 @@ final class WrapperTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let result = try model.generateText(prompt: .messages([
             .system("You are a helpful assistant."),
             .user("What is Rust?"),
@@ -139,9 +133,7 @@ final class WrapperTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let options = GenerateTextOptions(
             tools: [.function(FunctionTool(
                 name: "get_weather",
@@ -190,9 +182,7 @@ final class WrapperTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         var parts: [StreamPart] = []
         var streamErr: (any Error)?
         model.streamText(
@@ -221,9 +211,7 @@ final class WrapperTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let options = GenerateTextOptions(tools: [
             .function(FunctionTool(
                 name: "get_weather",
@@ -267,9 +255,7 @@ final class WrapperTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let parts = try await collect(model.streamTextAsync(prompt: .text("Say hello")))
         XCTAssertFalse(parts.isEmpty)
         let text = parts.reduce(into: "") { acc, part in
