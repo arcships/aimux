@@ -1393,6 +1393,9 @@ public enum StreamPart: Codable, Equatable {
     // P0: stream lifecycle
     case streamStart(warnings: [Warning])
     case finish(finishReason: FinishReason, usage: Usage, providerMetadata: JSONValue?)
+    /// A completed model call (step), with the response metadata of that call.
+    case finishStep(finishReason: FinishReason, usage: Usage, providerMetadata: JSONValue?,
+                    response: GenerateResponseMetadata)
     case error(error: JSONValue)
     // P1: tool calls
     case toolInputStart(id: String, toolName: String, providerExecuted: Bool?, dynamic: Bool?,
@@ -1424,7 +1427,7 @@ public enum StreamPart: Codable, Equatable {
         case file, kind, approvalId = "approval_id", toolCall = "tool_call", reason, isAutomatic = "is_automatic", signature
         case id, delta, warnings, usage, text
         case finishReason = "finish_reason", providerMetadata = "provider_metadata"
-        case error
+        case error, response
         case toolName = "tool_name", toolCallId = "tool_call_id", input, result
         case providerExecuted = "provider_executed", dynamic, invalid
         case isError = "is_error", preliminary
@@ -1459,6 +1462,11 @@ public enum StreamPart: Codable, Equatable {
             self = .finish(finishReason: try n.decode(FinishReason.self, forKey: .finishReason),
                            usage: try n.decode(Usage.self, forKey: .usage),
                            providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata))
+        case "FinishStep":
+            self = .finishStep(finishReason: try n.decode(FinishReason.self, forKey: .finishReason),
+                               usage: try n.decode(Usage.self, forKey: .usage),
+                               providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata),
+                               response: try n.decode(GenerateResponseMetadata.self, forKey: .response))
         case "Error":
             self = .error(error: try n.decode(JSONValue.self, forKey: .error))
         case "ToolInputStart":
@@ -1551,6 +1559,11 @@ public enum StreamPart: Codable, Equatable {
             var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("Finish"))
             try n.encode(fr, forKey: .finishReason); try n.encode(usage, forKey: .usage)
             try n.encodeIfPresent(pm, forKey: .providerMetadata)
+        case .finishStep(let fr, let usage, let pm, let response):
+            var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("FinishStep"))
+            try n.encode(fr, forKey: .finishReason); try n.encode(usage, forKey: .usage)
+            try n.encodeIfPresent(pm, forKey: .providerMetadata)
+            try n.encode(response, forKey: .response)
         case .error(let error):
             var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("Error"))
             try n.encode(error, forKey: .error)
