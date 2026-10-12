@@ -1,12 +1,13 @@
-// Typed data structures mirroring the aimux-core wire format (same shapes as
-// the Kotlin Types.kt and the generated TypeScript .d.ts types).
+// Typed data structures mirroring the aimux-core wire format: the JSON the
+// Rust engine reads and writes, which is the AI SDK JSON (camelCase field
+// names, unions tagged by a "type" key, absent rather than null for optional
+// fields). The generated TypeScript types in bindings/node/src/types are the
+// exact shape.
 //
-// Field names use JSON tags matching the wire format's snake_case. The raw JSON
-// boundary is handled by Model.GenerateText / Model.StreamText — this layer
-// only provides typed parsing so callers don't manually dig through JSON.
-//
-// These types are intentionally lenient on decode (unknown keys ignored, every
-// field optional) so future engine additions don't break existing clients.
+// The raw JSON boundary is handled by Model.GenerateText / Model.StreamText —
+// this layer only provides typed parsing so callers don't manually dig through
+// JSON. Decoding is lenient (unknown keys ignored) so future engine additions
+// don't break existing clients.
 
 package aimux
 
@@ -38,7 +39,6 @@ const (
 )
 
 // ReasoningEffort controls how much reasoning effort the model spends.
-// Mirrors Kotlin ReasoningEffort (Types.kt:72-81).
 type ReasoningEffort string
 
 const (
@@ -87,27 +87,27 @@ type URLSource struct {
 	ID               string          `json:"id"`
 	URL              string          `json:"url"`
 	Title            *string         `json:"title,omitempty"`
-	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
+	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`
 }
 
 type DocumentSource struct {
 	ID               string          `json:"id"`
-	MediaType        string          `json:"media_type"`
+	MediaType        string          `json:"mediaType"`
 	Title            string          `json:"title"`
 	Filename         *string         `json:"filename,omitempty"`
-	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
+	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`
 }
 
 func (s Source) MarshalJSON() ([]byte, error) {
 	if s.URL != nil && s.Document == nil {
 		return json.Marshal(struct {
-			SourceType string `json:"source_type"`
+			SourceType string `json:"sourceType"`
 			*URLSource
 		}{"url", s.URL})
 	}
 	if s.Document != nil && s.URL == nil {
 		return json.Marshal(struct {
-			SourceType string `json:"source_type"`
+			SourceType string `json:"sourceType"`
 			*DocumentSource
 		}{"document", s.Document})
 	}
@@ -120,17 +120,17 @@ func (s *Source) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	var sourceType string
-	if err := json.Unmarshal(fields["source_type"], &sourceType); err != nil {
-		return fmt.Errorf("aimux: invalid source_type: %w", err)
+	if err := json.Unmarshal(fields["sourceType"], &sourceType); err != nil {
+		return fmt.Errorf("aimux: invalid sourceType: %w", err)
 	}
 	required := []string{"id"}
 	switch sourceType {
 	case "url":
 		required = append(required, "url")
 	case "document":
-		required = append(required, "media_type", "title")
+		required = append(required, "mediaType", "title")
 	default:
-		return fmt.Errorf("aimux: unknown source_type %q", sourceType)
+		return fmt.Errorf("aimux: unknown sourceType %q", sourceType)
 	}
 	for _, name := range required {
 		var value *string
@@ -157,9 +157,9 @@ func (s *Source) UnmarshalJSON(data []byte) error {
 // InputTokenUsage is input token usage detail with cache breakdown.
 type InputTokenUsage struct {
 	Total      *uint32 `json:"total,omitempty"`
-	NoCache    *uint32 `json:"no_cache,omitempty"`
-	CacheRead  *uint32 `json:"cache_read,omitempty"`
-	CacheWrite *uint32 `json:"cache_write,omitempty"`
+	NoCache    *uint32 `json:"noCache,omitempty"`
+	CacheRead  *uint32 `json:"cacheRead,omitempty"`
+	CacheWrite *uint32 `json:"cacheWrite,omitempty"`
 }
 
 // OutputTokenUsage is output token usage detail.
@@ -171,8 +171,8 @@ type OutputTokenUsage struct {
 
 // Usage is token usage statistics.
 type Usage struct {
-	InputTokens  InputTokenUsage            `json:"input_tokens,omitempty"`
-	OutputTokens OutputTokenUsage           `json:"output_tokens,omitempty"`
+	InputTokens  InputTokenUsage            `json:"inputTokens,omitempty"`
+	OutputTokens OutputTokenUsage           `json:"outputTokens,omitempty"`
 	Raw          map[string]json.RawMessage `json:"raw,omitempty"`
 }
 
@@ -183,123 +183,120 @@ type FinishReason struct {
 }
 
 // ToolCall represents a tool call requested by the model.
-// Mirrors Kotlin ToolCall (Types.kt:157-164).
 type ToolCall struct {
-	ToolCallID       string          `json:"tool_call_id"`
-	ToolName         string          `json:"tool_name"`
+	ToolCallID       string          `json:"toolCallId"`
+	ToolName         string          `json:"toolName"`
 	Input            json.RawMessage `json:"input,omitempty"`
-	ProviderExecuted *bool           `json:"provider_executed,omitempty"`
+	ProviderExecuted *bool           `json:"providerExecuted,omitempty"`
 	Dynamic          *bool           `json:"dynamic,omitempty"`
 	// ProviderMetadata carries provider-specific data associated with this call.
-	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
+	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`
 	// Invalid is set by Core when the tool call stays invalid after optional repair.
 	Invalid *bool `json:"invalid,omitempty"`
 	// Error is the typed lookup, parse, schema, or repair failure for an invalid call.
 	Error json.RawMessage `json:"error,omitempty"`
 }
 
-// ContentPart is a single content part in the raw response.
-// The wire format uses internally-tagged unions; we keep it as raw JSON
-// for forward compatibility.
+// ContentPart is a single content part, in a prompt message or a result: an
+// object tagged by "type" ("text", "tool-call", "tool-result", "source", ...).
+// It is kept as raw JSON for forward compatibility. A tool-result part is
+// {"type":"tool-result","toolCallId":...,"toolName":...,"output":{...}} where
+// output is {"type":"text"|"json"|"error-text"|"error-json","value":...},
+// {"type":"execution-denied","reason":...} or {"type":"content","value":[...]}.
 type ContentPart = json.RawMessage
 
-// ResponseMetadata describes the provider HTTP response.
-// Mirrors Kotlin ResponseMetadata (Types.kt:141-146).
+// ResponseMetadata describes the provider response.
 type ResponseMetadata struct {
 	ID        *string `json:"id,omitempty"`
 	Timestamp *string `json:"timestamp,omitempty"`
-	ModelID   *string `json:"model_id,omitempty"`
+	ModelID   *string `json:"modelId,omitempty"`
 }
 
-// GenerateResponseMetadata is response metadata with optional HTTP headers and body.
-type GenerateResponseMetadata struct {
+// ResponseInfo is response metadata with optional HTTP headers and body.
+type ResponseInfo struct {
 	ResponseMetadata
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    json.RawMessage   `json:"body,omitempty"`
 }
 
-// GenerateRequest is provider request information with an optional HTTP body.
-type GenerateRequest struct {
+// RequestInfo is provider request information with an optional HTTP body.
+type RequestInfo struct {
 	Body json.RawMessage `json:"body,omitempty"`
 }
 
 // GenerateResult is the raw provider result.
-// Mirrors Kotlin GenerateResult (Types.kt:853-871).
 type GenerateResult struct {
-	Content          []ContentPart             `json:"content,omitempty"`
-	FinishReason     FinishReason              `json:"finish_reason,omitempty"`
-	Usage            Usage                     `json:"usage,omitempty"`
-	Warnings         []json.RawMessage         `json:"warnings,omitempty"`
-	ProviderMetadata json.RawMessage           `json:"provider_metadata,omitempty"`
-	Response         *GenerateResponseMetadata `json:"response,omitempty"`
-	Request          *GenerateRequest          `json:"request,omitempty"`
+	Content          []ContentPart     `json:"content,omitempty"`
+	FinishReason     FinishReason      `json:"finishReason,omitempty"`
+	Usage            Usage             `json:"usage,omitempty"`
+	Warnings         []json.RawMessage `json:"warnings,omitempty"`
+	ProviderMetadata json.RawMessage   `json:"providerMetadata,omitempty"`
+	Response         *ResponseInfo     `json:"response,omitempty"`
+	Request          *RequestInfo      `json:"request,omitempty"`
 }
 
 // GenerateTextResult is the typed result of a GenerateText call.
-// Mirrors Kotlin GenerateTextResult (Types.kt:878-886).
 type GenerateTextResult struct {
 	Content          []ContentPart     `json:"content,omitempty"`
 	Text             string            `json:"text"`
-	ToolCalls        []ToolCall        `json:"tool_calls,omitempty"`
-	FinishReason     FinishReason      `json:"finish_reason,omitempty"`
+	ToolCalls        []ToolCall        `json:"toolCalls,omitempty"`
+	FinishReason     FinishReason      `json:"finishReason,omitempty"`
 	Usage            Usage             `json:"usage,omitempty"`
 	Warnings         []json.RawMessage `json:"warnings,omitempty"`
 	Raw              GenerateResult    `json:"raw"`
 	Reasoning        []json.RawMessage `json:"reasoning,omitempty"`
-	ReasoningText    string            `json:"reasoning_text,omitempty"`
+	ReasoningText    string            `json:"reasoningText,omitempty"`
 	Sources          []Source          `json:"sources,omitempty"`
 	Files            []json.RawMessage `json:"files,omitempty"`
-	ResponseMessages []ModelMessage    `json:"response_messages,omitempty"`
-	// RawFinishReason is the raw provider-specific finish reason string (M12).
-	RawFinishReason *string `json:"raw_finish_reason,omitempty"`
+	ResponseMessages []ModelMessage    `json:"responseMessages,omitempty"`
+	// RawFinishReason is the raw provider-specific finish reason string.
+	RawFinishReason *string `json:"rawFinishReason,omitempty"`
 	// ProviderMetadata is provider-specific metadata (e.g. Anthropic cache info).
-	// Mirrored from raw.provider_metadata for top-level convenience. Weak type
-	// (json.RawMessage) — same strategy as GenerateResult.ProviderMetadata.
-	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
-	// Response is the response metadata (id, timestamp, model_id), mirrored from
-	// raw.response for top-level convenience.
-	Response ResponseMetadata `json:"response,omitempty"`
+	// Mirrored from raw.providerMetadata for top-level convenience.
+	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`
+	// Request is the request information (body) from the provider.
+	Request RequestInfo `json:"request"`
+	// Response is the response metadata, headers and body from the provider.
+	Response ResponseInfo `json:"response"`
 	// TotalUsage is total token usage across all steps. In single-step mode
 	// (aimux's default), equals Usage. Provided for AI SDK parity.
-	TotalUsage Usage `json:"total_usage,omitempty"`
+	TotalUsage Usage `json:"totalUsage,omitempty"`
 }
 
-// GenerateObjectResult is the typed result of a GenerateObject call (M12).
-// Mirrors Rust GenerateObjectResult. `object` is an arbitrary JSON value
-// (weak type — json.RawMessage) and `raw` is the full GenerateTextResult.
+// GenerateObjectResult is the typed result of a GenerateObject call.
+// `object` is an arbitrary JSON value and `raw` is the full GenerateTextResult.
 type GenerateObjectResult struct {
 	Object           json.RawMessage    `json:"object,omitempty"`
-	FinishReason     FinishReason       `json:"finish_reason,omitempty"`
-	RawFinishReason  *string            `json:"raw_finish_reason,omitempty"`
+	FinishReason     FinishReason       `json:"finishReason,omitempty"`
+	RawFinishReason  *string            `json:"rawFinishReason,omitempty"`
 	Usage            Usage              `json:"usage,omitempty"`
 	Warnings         []json.RawMessage  `json:"warnings,omitempty"`
 	Reasoning        *string            `json:"reasoning,omitempty"`
-	ProviderMetadata json.RawMessage    `json:"provider_metadata,omitempty"`
+	ProviderMetadata json.RawMessage    `json:"providerMetadata,omitempty"`
 	Response         ResponseMetadata   `json:"response,omitempty"`
 	Raw              GenerateTextResult `json:"raw"`
 }
 
-// StreamTextResultAggregated is the aggregated result of stream_text (M11).
-// Mirrors Rust StreamTextResultAggregated. reasoning/sources/files use weak
-// types (json.RawMessage) — same strategy as GenerateTextResult.
+// StreamTextResultAggregated is the aggregated result of a consumed stream.
 type StreamTextResultAggregated struct {
 	Content          []ContentPart     `json:"content,omitempty"`
 	Text             string            `json:"text"`
 	Reasoning        []json.RawMessage `json:"reasoning,omitempty"`
-	ReasoningText    string            `json:"reasoning_text,omitempty"`
-	ToolCalls        []ToolCall        `json:"tool_calls,omitempty"`
+	ReasoningText    string            `json:"reasoningText,omitempty"`
+	ToolCalls        []ToolCall        `json:"toolCalls,omitempty"`
 	Sources          []Source          `json:"sources,omitempty"`
 	Files            []json.RawMessage `json:"files,omitempty"`
-	FinishReason     FinishReason      `json:"finish_reason,omitempty"`
-	RawFinishReason  *string           `json:"raw_finish_reason,omitempty"`
+	FinishReason     FinishReason      `json:"finishReason,omitempty"`
+	RawFinishReason  *string           `json:"rawFinishReason,omitempty"`
 	Usage            Usage             `json:"usage,omitempty"`
-	TotalUsage       Usage             `json:"total_usage,omitempty"`
+	TotalUsage       Usage             `json:"totalUsage,omitempty"`
 	Warnings         []json.RawMessage `json:"warnings,omitempty"`
-	ProviderMetadata json.RawMessage   `json:"provider_metadata,omitempty"`
-	// Response is the response metadata (id, timestamp, model_id) if emitted by
-	// the stream. Nullable (streaming may have none).
-	Response         *ResponseMetadata `json:"response,omitempty"`
-	ResponseMessages []ModelMessage    `json:"response_messages,omitempty"`
+	ProviderMetadata json.RawMessage   `json:"providerMetadata,omitempty"`
+	// Request is the request information from the provider.
+	Request RequestInfo `json:"request"`
+	// Response is the response metadata and headers from the last step.
+	Response         ResponseInfo   `json:"response"`
+	ResponseMessages []ModelMessage `json:"responseMessages,omitempty"`
 }
 
 // ParseGenerateTextResult parses the JSON string returned by Model.GenerateText
@@ -313,7 +310,7 @@ func ParseGenerateTextResult(jsonStr string) (*GenerateTextResult, error) {
 }
 
 // ParseGenerateObjectResult parses the JSON string returned by
-// Model.GenerateObject into a typed GenerateObjectResult (M12).
+// Model.GenerateObject into a typed GenerateObjectResult.
 func ParseGenerateObjectResult(jsonStr string) (*GenerateObjectResult, error) {
 	var r GenerateObjectResult
 	if err := json.Unmarshal([]byte(jsonStr), &r); err != nil {
@@ -323,7 +320,7 @@ func ParseGenerateObjectResult(jsonStr string) (*GenerateObjectResult, error) {
 }
 
 // ParseStreamTextResultAggregated parses the JSON string returned by
-// Model.ConsumeStreamText into a typed StreamTextResultAggregated (M11).
+// Model.ConsumeStreamText into a typed StreamTextResultAggregated.
 func ParseStreamTextResultAggregated(jsonStr string) (*StreamTextResultAggregated, error) {
 	var r StreamTextResultAggregated
 	if err := json.Unmarshal([]byte(jsonStr), &r); err != nil {
@@ -336,8 +333,7 @@ func ParseStreamTextResultAggregated(jsonStr string) (*StreamTextResultAggregate
 
 // ModelMessage is a single message in a conversation.
 // Content is `any` so it can be a plain string (common case) or a slice of
-// typed ContentParts (multi-part content, e.g. tool results).
-// Mirrors Kotlin ModelMessage (Types.kt:523-548).
+// ContentParts (multi-part content, e.g. tool results).
 type ModelMessage struct {
 	Role    Role `json:"role"`
 	Content any  `json:"content"`
@@ -360,37 +356,35 @@ func MarshalMessages(msgs []ModelMessage) (string, error) {
 // ── GenerateTextOptions (for typed options building) ──────────────────────────
 
 // GenerateTextOptions is the typed options for text generation.
-// All fields are optional (pointer types) to match the engine's schema.
-// Mirrors Kotlin GenerateTextOptions (Types.kt:561-579).
-// TimeoutConfiguration sets per-call timeouts (RFC-0016 H3).
+// TimeoutConfiguration sets per-call timeouts.
 type TimeoutConfiguration struct {
-	TotalMs      *uint64 `json:"total_ms,omitempty"`
-	StepMs       *uint64 `json:"step_ms,omitempty"`
-	FirstChunkMs *uint64 `json:"first_chunk_ms,omitempty"`
-	ChunkMs      *uint64 `json:"chunk_ms,omitempty"`
+	TotalMs      *uint64 `json:"totalMs,omitempty"`
+	StepMs       *uint64 `json:"stepMs,omitempty"`
+	FirstChunkMs *uint64 `json:"firstChunkMs,omitempty"`
+	ChunkMs      *uint64 `json:"chunkMs,omitempty"`
 }
 
-// GenerateTextOptions mirrors the shared wire options.
+// GenerateTextOptions mirrors the shared wire options. All fields are optional.
 type GenerateTextOptions struct {
-	MaxOutputTokens  *uint32               `json:"max_output_tokens,omitempty"`
+	MaxOutputTokens  *uint32               `json:"maxOutputTokens,omitempty"`
 	Temperature      *float64              `json:"temperature,omitempty"`
-	StopSequences    []string              `json:"stop_sequences,omitempty"`
-	TopP             *float64              `json:"top_p,omitempty"`
-	TopK             *float64              `json:"top_k,omitempty"`
-	PresencePenalty  *float64              `json:"presence_penalty,omitempty"`
-	FrequencyPenalty *float64              `json:"frequency_penalty,omitempty"`
-	ResponseFormat   json.RawMessage       `json:"response_format,omitempty"`
+	StopSequences    []string              `json:"stopSequences,omitempty"`
+	TopP             *float64              `json:"topP,omitempty"`
+	TopK             *float64              `json:"topK,omitempty"`
+	PresencePenalty  *float64              `json:"presencePenalty,omitempty"`
+	FrequencyPenalty *float64              `json:"frequencyPenalty,omitempty"`
+	ResponseFormat   json.RawMessage       `json:"responseFormat,omitempty"`
 	Seed             *uint64               `json:"seed,omitempty"`
 	Tools            []Tool                `json:"tools,omitempty"`
-	ToolChoice       ToolChoice            `json:"tool_choice,omitempty"`
+	ToolChoice       ToolChoice            `json:"toolChoice,omitempty"`
 	Headers          map[string]string     `json:"headers,omitempty"`
-	ProviderOptions  json.RawMessage       `json:"provider_options,omitempty"`
+	ProviderOptions  json.RawMessage       `json:"providerOptions,omitempty"`
 	Reasoning        *ReasoningEffort      `json:"reasoning,omitempty"`
 	Instructions     *string               `json:"instructions,omitempty"`
-	MaxRetries       *uint32               `json:"max_retries,omitempty"`
+	MaxRetries       *uint32               `json:"maxRetries,omitempty"`
 	Timeout          *TimeoutConfiguration `json:"timeout,omitempty"`
-	IncludeRawChunks *bool                 `json:"include_raw_chunks,omitempty"`
-	SessionID        *string               `json:"session_id,omitempty"`
+	IncludeRawChunks *bool                 `json:"includeRawChunks,omitempty"`
+	SessionID        *string               `json:"sessionId,omitempty"`
 	// RepairToolCall repairs tool calls the model got wrong (RFC-0035). It
 	// runs in Go, after generation, on every call the engine marked invalid —
 	// never serialized into the options sent to the engine.
@@ -406,16 +400,19 @@ type FunctionToolInputExample struct {
 	Input map[string]json.RawMessage `json:"input"`
 }
 
-// Tool is a function tool definition (the "function" variant).
-// Mirrors Kotlin Tool.Function (Types.kt:209-230).
+// Tool is a tool definition: a function tool (Type "function": Name,
+// InputSchema, ...) or a provider-defined tool (Type "provider": ID, Name, Args).
 type Tool struct {
-	Type            string                     `json:"type"` // always "function"
+	Type            string                     `json:"type"` // "function" or "provider"
 	Name            string                     `json:"name"`
 	Description     *string                    `json:"description,omitempty"`
-	InputSchema     json.RawMessage            `json:"input_schema,omitempty"`
+	InputSchema     json.RawMessage            `json:"inputSchema,omitempty"`
 	Strict          *bool                      `json:"strict,omitempty"`
-	ProviderOptions map[string]json.RawMessage `json:"provider_options,omitempty"`
-	InputExamples   []FunctionToolInputExample `json:"input_examples,omitempty"`
+	ProviderOptions map[string]json.RawMessage `json:"providerOptions,omitempty"`
+	InputExamples   []FunctionToolInputExample `json:"inputExamples,omitempty"`
+	// ID and Args are the provider tool's id ("<provider>.<tool>") and arguments.
+	ID   string                     `json:"id,omitempty"`
+	Args map[string]json.RawMessage `json:"args,omitempty"`
 }
 
 // MarshalOptions serializes GenerateTextOptions to JSON. Returns "" for nil opts.
@@ -432,45 +429,43 @@ func MarshalOptions(opts *GenerateTextOptions) (string, error) {
 
 // ── StreamPart parsing ─────────────────────────────────────────────────────
 
-// StreamPart is a parsed stream part. The wire format uses externally-tagged
-// JSON (e.g. {"TextDelta":{"delta":"..."}}). We decode the tag and payload.
+// StreamPart is a parsed stream part. The wire format is an object tagged by
+// its "type" key (e.g. {"type":"text-delta","id":"...","delta":"..."}).
 type StreamPart struct {
-	Tag     string          `json:"-"`
-	Payload json.RawMessage `json:"-"`
+	// Type is the part's "type" (e.g. "text-delta", "tool-call", "finish").
+	Type string `json:"-"`
+	// Raw is the whole part object, "type" key included. Decode it into the
+	// struct of your choice, e.g. TextDeltaPayload.
+	Raw json.RawMessage `json:"-"`
 }
 
 // ParseStreamPart parses a StreamPart JSON string.
 func ParseStreamPart(jsonStr string) (*StreamPart, error) {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
+	var head struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal([]byte(jsonStr), &head); err != nil {
 		return nil, fmt.Errorf("aimux: failed to parse StreamPart: %w", err)
 	}
-	// Externally-tagged: the map must have exactly one key.
-	if len(raw) == 0 {
-		return nil, fmt.Errorf("aimux: StreamPart has no variant tag: %s", jsonStr)
+	if head.Type == "" {
+		return nil, fmt.Errorf("aimux: StreamPart has no type: %s", jsonStr)
 	}
-	if len(raw) > 1 {
-		return nil, fmt.Errorf("aimux: StreamPart has multiple variant tags (%d), expected 1: %s", len(raw), jsonStr)
-	}
-	for tag, payload := range raw {
-		return &StreamPart{Tag: tag, Payload: payload}, nil
-	}
-	return &StreamPart{}, nil
+	return &StreamPart{Type: head.Type, Raw: json.RawMessage(jsonStr)}, nil
 }
 
-// Source decodes the payload of a Source stream part.
+// Source decodes a "source" stream part.
 func (p *StreamPart) Source() (*Source, error) {
-	if p.Tag != "Source" {
-		return nil, fmt.Errorf("aimux: expected Source stream part, got %s", p.Tag)
+	if p.Type != "source" {
+		return nil, fmt.Errorf("aimux: expected source stream part, got %s", p.Type)
 	}
 	var source Source
-	if err := json.Unmarshal(p.Payload, &source); err != nil {
+	if err := json.Unmarshal(p.Raw, &source); err != nil {
 		return nil, err
 	}
 	return &source, nil
 }
 
-// TextDeltaPayload is the payload of a {"TextDelta":{...}} stream part.
+// TextDeltaPayload is a {"type":"text-delta",...} stream part.
 type TextDeltaPayload struct {
 	ID    string `json:"id,omitempty"`
 	Delta string `json:"delta"`
@@ -482,8 +477,8 @@ type TextDeltaPayload struct {
 type TraceFilter struct {
 	Provider    *string `json:"provider,omitempty"`
 	Model       *string `json:"model,omitempty"`
-	SessionID   *string `json:"session_id,omitempty"`
-	SinceUnixMs *int64  `json:"since_unix_ms,omitempty"`
+	SessionID   *string `json:"sessionId,omitempty"`
+	SinceUnixMs *int64  `json:"sinceUnixMs,omitempty"`
 }
 
 // TraceStats is one (provider, model) aggregation group.
@@ -491,14 +486,14 @@ type TraceStats struct {
 	Provider                string            `json:"provider"`
 	Model                   string            `json:"model"`
 	Requests                uint64            `json:"requests"`
-	InputTokensTotal        uint64            `json:"input_tokens_total"`
-	ClaimedCacheReadTotal   uint64            `json:"claimed_cache_read_total"`
-	ClaimedCacheWriteTotal  uint64            `json:"claimed_cache_write_total"`
-	ReportedHitRate         *float64          `json:"reported_hit_rate,omitempty"`
-	ClientUpperBoundHitRate *float64          `json:"client_upper_bound_hit_rate,omitempty"`
-	VerdictCounts           map[string]uint64 `json:"verdict_counts"`
-	TTFTP50Ms               *uint64           `json:"ttft_p50_ms,omitempty"`
-	TTFTP95Ms               *uint64           `json:"ttft_p95_ms,omitempty"`
+	InputTokensTotal        uint64            `json:"inputTokensTotal"`
+	ClaimedCacheReadTotal   uint64            `json:"claimedCacheReadTotal"`
+	ClaimedCacheWriteTotal  uint64            `json:"claimedCacheWriteTotal"`
+	ReportedHitRate         *float64          `json:"reportedHitRate,omitempty"`
+	ClientUpperBoundHitRate *float64          `json:"clientUpperBoundHitRate,omitempty"`
+	VerdictCounts           map[string]uint64 `json:"verdictCounts"`
+	TTFTP50Ms               *uint64           `json:"ttftP50Ms,omitempty"`
+	TTFTP95Ms               *uint64           `json:"ttftP95Ms,omitempty"`
 	Errors                  uint64            `json:"errors"`
 }
 
@@ -506,60 +501,60 @@ type TraceStats struct {
 type TraceRecord struct {
 	Provider             string             `json:"provider"`
 	Model                string             `json:"model"`
-	RequestID            *string            `json:"request_id,omitempty"`
-	SessionID            *string            `json:"session_id,omitempty"`
-	TraceID              string             `json:"call_id"`
-	SentAtUnixMs         int64              `json:"sent_at_unix_ms"`
-	LCPTokenUpper        *uint64            `json:"lcp_token_upper,omitempty"`
-	TTFTMs               *uint64            `json:"ttft_ms,omitempty"`
+	RequestID            *string            `json:"requestId,omitempty"`
+	SessionID            *string            `json:"sessionId,omitempty"`
+	TraceID              string             `json:"callId"`
+	SentAtUnixMs         int64              `json:"sentAtUnixMs"`
+	LCPTokenUpper        *uint64            `json:"lcpTokenUpper,omitempty"`
+	TTFTMs               *uint64            `json:"ttftMs,omitempty"`
 	Fingerprint          Fingerprint        `json:"fingerprint"`
 	Usage                UsageSnapshot      `json:"usage"`
-	ResponseCacheHeaders map[string]string  `json:"response_cache_headers,omitempty"`
-	RequestCacheHints    *RequestCacheHints `json:"request_cache_hints,omitempty"`
+	ResponseCacheHeaders map[string]string  `json:"responseCacheHeaders,omitempty"`
+	RequestCacheHints    *RequestCacheHints `json:"requestCacheHints,omitempty"`
 	Verdict              json.RawMessage    `json:"verdict,omitempty"`
 	Error                *string            `json:"error,omitempty"`
 }
 
 // RequestCacheHints is the best-effort request-side cache hint snapshot.
 type RequestCacheHints struct {
-	RequestedWrite bool `json:"requested_write"`
+	RequestedWrite bool `json:"requestedWrite"`
 }
 
 // Fingerprint is the block-hash chain of a denoised request body (hex).
 type Fingerprint struct {
-	BodyHash      string   `json:"body_hash"`
-	LenBytes      uint64   `json:"len_bytes"`
-	BlockSize     uint64   `json:"block_size"`
-	BlockHashes   []string `json:"block_hashes"`
-	TokenEstimate uint64   `json:"token_estimate"`
+	BodyHash      string   `json:"bodyHash"`
+	LenBytes      uint64   `json:"lenBytes"`
+	BlockSize     uint64   `json:"blockSize"`
+	BlockHashes   []string `json:"blockHashes"`
+	TokenEstimate uint64   `json:"tokenEstimate"`
 }
 
 // UsageSnapshot is the 7-field flat usage snapshot + raw passthrough.
 type UsageSnapshot struct {
-	InputTotal      *uint64         `json:"input_total,omitempty"`
-	InputNoCache    *uint64         `json:"input_no_cache,omitempty"`
-	CacheRead       *uint64         `json:"cache_read,omitempty"`
-	CacheWrite      *uint64         `json:"cache_write,omitempty"`
-	OutputTotal     *uint64         `json:"output_total,omitempty"`
-	OutputText      *uint64         `json:"output_text,omitempty"`
-	OutputReasoning *uint64         `json:"output_reasoning,omitempty"`
+	InputTotal      *uint64         `json:"inputTotal,omitempty"`
+	InputNoCache    *uint64         `json:"inputNoCache,omitempty"`
+	CacheRead       *uint64         `json:"cacheRead,omitempty"`
+	CacheWrite      *uint64         `json:"cacheWrite,omitempty"`
+	OutputTotal     *uint64         `json:"outputTotal,omitempty"`
+	OutputText      *uint64         `json:"outputText,omitempty"`
+	OutputReasoning *uint64         `json:"outputReasoning,omitempty"`
 	Raw             json.RawMessage `json:"raw,omitempty"`
 }
 
 // SessionChainView is the per-session ordered chain view.
 type SessionChainView struct {
-	SessionID       string        `json:"session_id"`
-	RecordIDs       []string      `json:"record_ids"`
-	PrefixStability float64       `json:"prefix_stability"`
+	SessionID       string        `json:"sessionId"`
+	RecordIDs       []string      `json:"recordIds"`
+	PrefixStability float64       `json:"prefixStability"`
 	Breaks          []PrefixBreak `json:"breaks"`
 }
 
 // PrefixBreak marks a prefix break between consecutive session records.
 type PrefixBreak struct {
-	AtRecordID    string `json:"at_record_id"`
-	PrevRecordID  string `json:"prev_record_id"`
-	LCPBytes      uint64 `json:"lcp_bytes"`
-	ExpectedBreak bool   `json:"expected_break"`
+	AtRecordID    string `json:"atRecordId"`
+	PrevRecordID  string `json:"prevRecordId"`
+	LCPBytes      uint64 `json:"lcpBytes"`
+	ExpectedBreak bool   `json:"expectedBreak"`
 	Kind          string `json:"kind"`
 }
 

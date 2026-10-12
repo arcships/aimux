@@ -3,4 +3,4 @@
 /**
  * Decimal places the provider rounded its output to; omit for full precision.
  */
-export type EvaluationRounding = { probability_decimals: number | null, score_decimals: number | null, };
+export type EvaluationRounding = { probabilityDecimals?: number, scoreDecimals?: number, };

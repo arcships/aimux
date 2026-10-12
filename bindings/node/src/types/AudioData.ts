@@ -6,4 +6,4 @@
  * The TS result type is `string | Uint8Array`. Providers should return data
  * without unnecessary conversion.
  */
-export type AudioData = { "Base64": string } | { "Binary": Array<number> };
+export type AudioData = string | Array<number>;

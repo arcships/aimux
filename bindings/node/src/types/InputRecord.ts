@@ -12,7 +12,7 @@ export type InputRecord = {
  * Decision contract used for validation and deterministic offline replay.
  * Connection settings remain outside the recording.
  */
-decision_capabilities?: DecisionCapabilities | null, operation?: RecordingOperation,
+decisionCapabilities?: DecisionCapabilities | null, operation?: RecordingOperation,
 /**
  * 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
  */

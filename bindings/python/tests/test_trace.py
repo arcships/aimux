@@ -40,18 +40,18 @@ class TestTraceProbe:
             assert len(stats) == 1
             assert stats[0]["requests"] == 2
             assert stats[0]["provider"] == "deepseek.chat"
-            assert "verdict_counts" in stats[0]
+            assert "verdictCounts" in stats[0]
 
             chain = json.loads(traced.trace_session_chain("sess-1"))
-            assert len(chain["record_ids"]) == 2
-            assert chain["prefix_stability"] > 0.5
+            assert len(chain["recordIds"]) == 2
+            assert chain["prefixStability"] > 0.5
 
             jsonl = traced.trace_export_jsonl()
             lines = [l for l in jsonl.strip().split("\n") if l]
             assert len(lines) == 2, "one TraceRecord per line"
             first = json.loads(lines[0])
-            assert first["fingerprint"]["body_hash"]
-            assert first["session_id"] == "sess-1"
+            assert first["fingerprint"]["bodyHash"]
+            assert first["sessionId"] == "sess-1"
 
             traced.trace_clear()
             assert traced.trace_export_jsonl().strip() == ""

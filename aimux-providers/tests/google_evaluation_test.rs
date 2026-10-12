@@ -58,9 +58,7 @@ fn options() -> EvaluationCallOptions {
                 "instructions": ["Rate severity."],
                 "criteria": ["Low", "Medium", "High"]
             }
-        },
-        "headers": null,
-        "provider_options": null
+        }
     }))
     .unwrap()
 }

@@ -37,7 +37,7 @@ Choice 支持 2–255 项，`label` 为规范化结果的 map key，可选 `valu
 ```ts
 const result = await decide(model, {
   state: 'Rate the picture',
-  images: [{ data: { Base64: imageBase64 }, media_type: 'image/png', detail: 'low' }],
+  images: [{ data: imageBase64, media_type: 'image/png', detail: 'low' }],
   questions: [
     { id: 'choice', type: 'choice', instructions: 'Pick a value', options: [
       { label: 'boolean_true', value: true },
@@ -52,8 +52,8 @@ const result = await decide(model, {
 // Choice: selected='boolean_true', value=true；两个原生值使用不同概率 map key。
 ```
 
-最多 128 张内嵌图，detail 支持 low/high/auto/original。也可使用
-`data: { Binary: [137, 80, ...] }`，与已有 FileBytes contract 一致。
+最多 128 张内嵌图，detail 支持 low/high/auto/original。`data` 也可以是字节数组
+`[137, 80, ...]`，与公共 JSON 的 FileBytes 形状一致（base64 字符串或字节数组）。
 对象/数组 instructions 和 Boolean criteria 返回 Unsupported。
 `openai` options 仅接受可选 safety_identifier（最多 128 字符）。
 原生概率/confidence 保留原值，不套用 Jev 两位小数规则；usage 缺失或合计不一致
@@ -322,10 +322,10 @@ finally:
 ```
 
 标准 `recordings.jsonl` 每行记录一次逻辑调用：`input.operation = "decision"`，
-`input.options` 保留 state/questions/images 以及协议、编码 options，`input.decision_capabilities` 保留能力声明；
-provider 只记录 provider_id/provider/model_id，endpoint 与凭证来自调用方配置；
+`input.options` 保留 state/questions/images 以及协议、编码 options，`input.decisionCapabilities` 保留能力声明；
+provider 只记录 providerId/provider/modelId，endpoint 与凭证来自调用方配置；
 exchanges 记录各重试 attempt 的 HTTP 请求、响应和时延；
-`outcome.decision_result` 保存规范化结果。凭据沿用统一脱敏规则。
+`outcome.decisionResult` 保存规范化结果。凭据沿用统一脱敏规则。
 录制使用 schema 3；语言录制缺少 operation 时仍按 language model 解析。
 
 CLI 离线回放不需要 key：

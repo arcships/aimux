@@ -82,35 +82,70 @@ async fn resolve_file(
 /// Unlike `CallOptions` (provider-facing), this does not include `prompt`
 /// (passed separately) and defaults are more ergonomic.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct GenerateTextOptions {
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_output_tokens: Option<u32>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stop_sequences: Option<Vec<String>>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f64>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_k: Option<f64>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub presence_penalty: Option<f64>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frequency_penalty: Option<f64>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_format: Option<ResponseFormat>,
-    #[ts(type = "number | null")]
+    #[ts(optional, type = "number")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<Tool>>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
     /// Top-level reasoning effort.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<ReasoningEffort>,
     /// System instructions prepended to the prompt.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
     /// Per-call retry count override. `None` = provider default, `Some(0)` = disable.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
     /// Per-call timeout configuration (total / first-chunk / chunk idle).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<crate::options::TimeoutConfiguration>,
     /// Session identifier, for grouping consecutive calls into a session
     /// (observability, see RFC-0024). Orthogonal to RFC-0019 session-affinity
     /// headers. When `None` and the optional session inferer is enabled, one
     /// may be inferred from prompt-prefix continuation.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     /// Abort signal for cancelling the call.
     ///
@@ -120,6 +155,8 @@ pub struct GenerateTextOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
     /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_raw_chunks: Option<bool>,
     /// Optional one-shot repair callback for unknown, malformed, or
     /// schema-invalid tool calls.
@@ -174,6 +211,7 @@ impl GenerateTextOptions {
 
 /// Result of `generate_text` (user-facing).
 #[derive(Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct GenerateTextResult {
     /// Ordered generated content with parsed tool calls.
@@ -210,11 +248,13 @@ pub struct GenerateTextResult {
     pub response_messages: Vec<ModelMessage>,
     /// The raw provider-specific finish reason string (e.g. "stop",
     /// "end_turn", "safety"). Useful when `finish_reason.unified` is `Other`.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_finish_reason: Option<String>,
     /// Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
     /// `raw.provider_metadata` for top-level convenience.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
     /// Request information from the provider.
     #[serde(default)]
@@ -231,6 +271,7 @@ pub struct GenerateTextResult {
 /// Result of `generate_object` (user-facing, M12). The parsed JSON object plus
 /// convenience fields from the underlying `generate_text` call.
 #[derive(Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct GenerateObjectResult {
     /// The parsed JSON object returned by the model.
@@ -238,17 +279,20 @@ pub struct GenerateObjectResult {
     /// Why generation stopped.
     pub finish_reason: FinishReason,
     /// Raw provider-specific finish reason string.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_finish_reason: Option<String>,
     /// Token usage.
     pub usage: Usage,
     /// Warnings from the provider.
     pub warnings: Vec<Warning>,
     /// Concatenated reasoning text (if the model produced reasoning/thinking).
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<String>,
     /// Provider-specific metadata (e.g. Anthropic cache info).
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
     /// Response metadata (id, timestamp, model_id).
     #[serde(default)]

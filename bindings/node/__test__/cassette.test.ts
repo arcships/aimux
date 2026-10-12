@@ -27,7 +27,7 @@ test('cassette: OpenAI generate', async (t) => {
     t.is(typeof result.text, 'string', 'should have text field')
     t.true(result.text.length > 0, 'text should be non-empty')
     t.truthy(result.usage, 'should have usage')
-    t.truthy(result.finish_reason, 'should have finish_reason')
+    t.truthy(result.finishReason, 'should have finishReason')
   } finally {
     await srv.stop()
   }
@@ -46,9 +46,9 @@ test('cassette: OpenAI stream', async (t) => {
     }
     t.true(parts.length > 0, 'should receive stream parts')
 
-    const types = parts.map((p) => Object.keys(p)[0])
-    t.true(types.includes('StreamStart'), 'should have StreamStart')
-    t.true(types.includes('Finish'), 'should have Finish')
+    const types = parts.map((p) => p.type)
+    t.true(types.includes('stream-start'), 'should have stream-start')
+    t.true(types.includes('finish'), 'should have finish')
   } finally {
     await srv.stop()
   }

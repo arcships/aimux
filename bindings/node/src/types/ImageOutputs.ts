@@ -9,4 +9,4 @@
  * upstream API returns base64, return [`ImageOutputs::Base64`]; if binary,
  * return [`ImageOutputs::Binary`].
  */
-export type ImageOutputs = { "Base64": Array<string> } | { "Binary": Array<Array<number>> };
+export type ImageOutputs = Array<string> | Array<Array<number>>;

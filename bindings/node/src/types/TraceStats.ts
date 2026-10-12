@@ -4,4 +4,4 @@
  * Aggregated statistics (RFC-0015 §5.2 — the two hit rates are reported
  * side by side, never merged into a single number).
  */
-export type TraceStats = { provider: string, model: string, requests: bigint, input_tokens_total: bigint, claimed_cache_read_total: bigint, claimed_cache_write_total: bigint, reported_hit_rate: number | null, client_upper_bound_hit_rate: number | null, verdict_counts: { [key in string]: bigint }, ttft_p50_ms: bigint | null, ttft_p95_ms: bigint | null, errors: bigint, };
+export type TraceStats = { provider: string, model: string, requests: bigint, inputTokensTotal: bigint, claimedCacheReadTotal: bigint, claimedCacheWriteTotal: bigint, reportedHitRate?: number, clientUpperBoundHitRate?: number, verdictCounts: { [key in string]: bigint }, ttftP50Ms?: bigint, ttftP95Ms?: bigint, errors: bigint, };

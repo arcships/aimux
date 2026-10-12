@@ -20,6 +20,7 @@ use crate::state::AppState;
 use crate::wire::{self, WireMessage};
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplayRequest {
     pub call_id: String,
     /// Fallback for recordings whose key source is `explicit`/`unknown`:
@@ -32,6 +33,7 @@ pub struct ReplayRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplayOverridesWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub messages: Option<Vec<WireMessage>>,
@@ -106,11 +108,11 @@ async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMu
 
     let result = replay_with_model(&recording, &*model, Some(&overrides)).await?;
     Ok(Json(json!({
-        "call_id": recording.call_id,
+        "callId": recording.call_id,
         "text": result.text,
-        "finish_reason": serde_json::to_value(result.finish_reason.unified).unwrap_or_default(),
+        "finishReason": serde_json::to_value(result.finish_reason.unified).unwrap_or_default(),
         "usage": serde_json::to_value(&result.usage).unwrap_or_default(),
-        "tool_calls": serde_json::to_value(&result.tool_calls).unwrap_or_default(),
+        "toolCalls": serde_json::to_value(&result.tool_calls).unwrap_or_default(),
         "meta": state.last_meta(recording.session_id.as_deref()),
     }))
     .into_response())

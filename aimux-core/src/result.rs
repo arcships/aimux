@@ -15,11 +15,17 @@ use crate::types::{FinishReason, ProviderMetadata, Usage, Warning};
 
 /// A content item in the generation result.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export)]
 pub enum GenerateContent<C = RawToolCall, A = RawToolApprovalRequest, R = GeneratedFile> {
     /// Generated text.
     Text {
         text: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -37,6 +43,7 @@ pub enum GenerateContent<C = RawToolCall, A = RawToolApprovalRequest, R = Genera
     /// Provider-specific content.
     Custom {
         kind: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -60,25 +67,31 @@ struct TextContentBinding;
 
 /// Provider approval request for a provider-executed call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct RawToolApprovalRequest {
     pub approval_id: String,
     pub tool_call_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub provider_metadata: Option<ProviderMetadata>,
 }
 
 /// Approval request exposed by text generation.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ToolApprovalRequestOutput {
     pub approval_id: String,
     pub tool_call: crate::tool::ToolCall,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub is_automatic: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub signature: Option<String>,
 }
 
@@ -86,15 +99,21 @@ pub struct ToolApprovalRequestOutput {
 /// payload of both `GenerateContent::Source` and `StreamPart::Source`, and the
 /// element of the text results' `sources`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "sourceType",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export)]
-#[serde(tag = "source_type", rename_all = "lowercase")]
 pub enum Source {
     Url {
         id: String,
         url: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         title: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         provider_metadata: Option<ProviderMetadata>,
     },
     Document {
@@ -102,8 +121,10 @@ pub enum Source {
         media_type: String,
         title: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         filename: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         provider_metadata: Option<ProviderMetadata>,
     },
 }
@@ -113,11 +134,13 @@ pub enum Source {
 /// or URL. The payload of both `GenerateContent::File` and
 /// `StreamPart::File`, and the element of the text results' `files`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct GeneratedFile {
     pub data: GeneratedFileData,
     pub media_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub provider_metadata: Option<ProviderMetadata>,
 }
 
@@ -127,26 +150,33 @@ pub struct GeneratedFile {
 /// (`providerMetadata.anthropic.signature`). The payload of
 /// `GenerateContent::Reasoning` and the element of the text results' `reasoning`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ReasoningOutput {
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub provider_metadata: Option<ProviderMetadata>,
 }
 
 /// Text or a generated file produced during reasoning.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(untagged)]
+#[serde(tag = "type")]
 #[ts(export)]
 pub enum ReasoningPart {
+    #[serde(rename = "reasoning")]
     Text(ReasoningOutput),
+    #[serde(rename = "reasoning-file")]
     File(ReasoningFileOutput),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ReasoningFileOutput {
     pub file: GeneratedFile,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub provider_metadata: Option<ProviderMetadata>,
 }
 
@@ -154,6 +184,7 @@ pub struct ReasoningFileOutput {
 /// `GenerateTextResult`'s user-facing fields (without `raw`, since streaming
 /// has no `GenerateResult` equivalent).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct StreamTextResultAggregated {
     /// Ordered content from the last generation step.
@@ -179,7 +210,8 @@ pub struct StreamTextResultAggregated {
     /// Why generation stopped.
     pub finish_reason: crate::types::FinishReason,
     /// Raw provider-specific finish reason string.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub raw_finish_reason: Option<String>,
     /// Token usage.
     #[serde(default)]
@@ -192,7 +224,8 @@ pub struct StreamTextResultAggregated {
     #[serde(default)]
     pub warnings: Vec<crate::types::Warning>,
     /// Provider-specific metadata from the Finish chunk.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub provider_metadata: Option<ProviderMetadata>,
     /// Request information from the provider.
     #[serde(default)]
@@ -207,6 +240,7 @@ pub struct StreamTextResultAggregated {
 
 /// Result of `LanguageModel::do_generate` (non-streaming).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct GenerateResult {
     /// Generated content items (text, tool calls, etc.).
@@ -218,10 +252,16 @@ pub struct GenerateResult {
     /// Warnings issued by the provider.
     pub warnings: Vec<Warning>,
     /// Provider-specific metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub provider_metadata: Option<ProviderMetadata>,
     /// Optional request information for telemetry and debugging.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub request: Option<RequestInfo>,
     /// Optional response metadata, headers, and body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub response: Option<ResponseInfo>,
 }
 

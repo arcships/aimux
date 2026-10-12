@@ -5,4 +5,4 @@
  *
  * Aligned with V4 `VideoModelV4FrameType`.
  */
-export type VideoFrameType = "FirstFrame" | "LastFrame";
+export type VideoFrameType = "first_frame" | "last_frame";

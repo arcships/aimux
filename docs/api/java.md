@@ -46,7 +46,7 @@ try (Model model = Model.providerFromEnv("groq", "llama-3.3-70b")) {
     String result = model.generateText("\"Hello\"");
 }
 
-// Optional config JSON ({"base_url": "..."}):
+// Optional config JSON ({"baseUrl": "..."}); an unknown key is InvalidArgumentError:
 try (Model model = Model.provider("groq", "sk-...", "llama-3.3-70b", null)) {
     String result = model.generateText("\"Hello\"");
 }
@@ -54,6 +54,9 @@ try (Model model = Model.provider("groq", "sk-...", "llama-3.3-70b", null)) {
 
 `deepseek(apiKey, modelId)` remains as a by-name shortcut to the vendor package.
 Unknown names throw `NoSuchProviderError` naming the requested provider.
+There is no provider-registration API: the provider set is the built-in
+registry, and a custom endpoint is a `baseUrl` in the `configJson` above (or a
+`...WithBase` factory).
 
 ## Errors
 
@@ -76,6 +79,7 @@ RuntimeException
       ├── ToolCallRepairError        // code 17: tool-call repair itself failed
       ├── LoadAPIKeyError            // code 18: no API key, fallback env var unset (getEnvVar())
       ├── LoadSettingError           // code 19: a required setting is missing (getEnvVar())
+      ├── NoOutputGeneratedError     // code 20: the call produced no output
       └── OtherError
 ```
 
@@ -84,7 +88,7 @@ Every instance has:
 | Field | Meaning |
 |-------|---------|
 | `getMessage()` | human-readable text from C |
-| `getCode()` | `aimux_error_code_t` value 1–19 (4 retired, 14 = `Retry`; matches `aimux-error.h`) |
+| `getCode()` | `aimux_error_code_t` value 1–20 (4 retired, 14 = `Retry`; matches `aimux-error.h`) |
 | `getStatusCode()` | HTTP status, or `-1` |
 | `getRetryMs()` | rate-limit hint, or `-1` (`0` = retry now) |
 | `isRetryable()` | the `AiMuxError` retry verdict (not derivable from status) |
@@ -343,7 +347,7 @@ try (SpeechModel model = SpeechModel.openai("sk-...", "tts-1")) {
     String opts = new JSONObject()
         .put("text", "Hello")
         .put("voice", "alloy")
-        .put("output_format", "mp3")
+        .put("outputFormat", "mp3")
         .toString();
     String result = model.generate(opts);
 }
@@ -388,7 +392,7 @@ Factories: `VideoModel.google` / `googleWithBase`.
 
 ```java
 try (RerankingModel model = RerankingModel.cohere("sk-...", "rerank-v3.0")) {
-    String result = model.rerank("{\"query\":\"...\",\"documents\":{...},\"top_n\":2}");
+    String result = model.rerank("{\"query\":\"...\",\"documents\":{\"type\":\"text\",\"values\":[...]},\"topN\":2}");
 }
 ```
 
@@ -398,7 +402,7 @@ Factories: `RerankingModel.cohere` / `cohereWithBase`.
 
 ```java
 try (SearchModel model = SearchModel.tavily("sk-...")) {
-    String result = model.search("{\"query\":\"What is Rust?\",\"max_results\":5}");
+    String result = model.search("{\"query\":\"What is Rust?\",\"maxResults\":5}");
 }
 // result: {"results":[{"title":"Rust",...}],"answer":"Rust is a systems language."}
 ```
@@ -411,7 +415,7 @@ Factories: `SearchModel.tavily` / `tavilyWithBase`.
 try (Files files = Files.openai("sk-...")) {
     String result = files.uploadFile(base64Data, "application/pdf");
 }
-// result: {"provider_reference":{"openai":"file-abc"}, ...}
+// result: {"providerReference":{"openai":"file-abc"}, ...}
 ```
 
 Factories: `Files.openai` / `openaiWithBase`.
@@ -426,8 +430,24 @@ Factories: `Files.openai` / `openaiWithBase`.
 custom serializer for the scalar-or-object wire form), `ContentPart` (sealed),
 `MessageContent` (sealed), `ModelMessage`, `GenerateTextOptions`,
 `FileBytes` / `FileData`, `GenerateContent`, `GenerateResult`,
-`GenerateTextResult`, `StreamPart` (sealed). All sealed hierarchies serialize
-in the wrapper-object wire form (e.g. `{"TextDelta":{...}}`).
+`GenerateTextResult`, `StreamPart` (sealed), `ToolResultOutput`. Field names
+are the AI SDK's camelCase (`toolCallId`, `providerOptions`, `finishReason`, ...)
+and optional fields are absent, never `null`. Sealed hierarchies are tagged on
+`type` with the upstream kebab-case names (e.g. `{"type":"text-delta",...}`,
+`{"type":"tool-call",...}`); `FileBytes` is untagged (an int array or a base64
+string).
+
+A `ContentPart.ToolResult` (`type: "tool-result"`) carries `toolCallId`,
+`toolName`, `output` and `providerOptions`; `output` is a `ToolResultOutput`
+built with `text` / `json` / `executionDenied` / `errorText` / `errorJson` /
+`content`. The stream-side `StreamPart.ToolResult` and
+`GenerateContent.ToolResult` are the executed-result shape and keep `result`,
+`isError`, `preliminary` and `dynamic`.
+
+`GenerateTextOptions.responseFormat` is a JSON node: `{"type":"text"}` or
+`{"type":"json","schema":{...},"name":"...","description":"..."}`.
+`ImageCallOptions` / `VideoCallOptions` take `size` / `resolution` as `"WxH"`
+strings (e.g. `"1024x1024"`) and `aspectRatio` as `"W:H"` (e.g. `"16:9"`).
 
 `RawToolCall` and `ToolCallRepairContext` serve
 [tool-call repair](#tool-call-repair); `ToolCallRepair` (the hook itself) is a
@@ -444,8 +464,9 @@ validation fails, even after repair) and `getError()` (the serialized
 `TranscriptionResult`, `RerankingCallOptions` / `RerankingResult`,
 `VideoCallOptions` / `VideoPollOptions` / `VideoResult`, `SearchCallOptions` / `SearchResult`,
 `UploadFileCallOptions` / `UploadFileResult`. Sealed unions (`AudioData`,
-`ImageOutputs`, `VideoData`) use custom Jackson serializers with the
-externally-tagged wire form. Response types (`EmbeddingResponse`, etc.) match
+`ImageOutputs`, `VideoFileData`) are untagged (a base64 string or an int array)
+and `VideoData` / `VideoFile` are tagged on `type`, all with custom Jackson
+serializers. Response types (`EmbeddingResponse`, etc.) match
 the `aimux-core` `.ts` wire definitions exactly (`{headers, body, ...}`).
 
 ## Error Handling
@@ -474,5 +495,7 @@ cargo build -p aimux-ffi --release
 cd bindings/java
 export JAVA_HOME=...   # JDK 9+ (bytecode targets Java 8 via --release 8)
 export LD_LIBRARY_PATH="$(pwd)/../../target/release:${LD_LIBRARY_PATH}"
+# or point the tests at another build (e.g. a debug build in a shared target dir):
+# export AIMUX_FFI_LIB_DIR=/path/to/target/debug
 gradle test
 ```

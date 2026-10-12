@@ -93,7 +93,7 @@ function exportDef() {
 }
 
 function openTrace(step: AgentStepView) {
-  if (step.meta?.call_id) router.push({ path: '/traces', query: { call: step.meta.call_id } })
+  if (step.meta?.callId) router.push({ path: '/traces', query: { call: step.meta.callId } })
 }
 
 type BadgeVariant = 'default' | 'secondary' | 'success' | 'warning' | 'destructive'

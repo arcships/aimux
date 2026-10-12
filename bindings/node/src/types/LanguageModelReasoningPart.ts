@@ -4,4 +4,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * Reasoning / thinking content part.
  */
-export type LanguageModelReasoningPart = { text: string, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type LanguageModelReasoningPart = { text: string, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

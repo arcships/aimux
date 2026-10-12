@@ -10,7 +10,7 @@ export type SessionCall = {
  * Recording / TraceRecord `call_id` (RFC-0015/0023): once those land,
  * this field carries their value.
  */
-call_id: string, 
+callId: string, 
 /**
  * Step within the session (0-based).
  */
@@ -18,4 +18,4 @@ step: number,
 /**
  * When the call was recorded (RFC 3339 UTC, millisecond precision).
  */
-recorded_at: string, };
+recordedAt: string, };

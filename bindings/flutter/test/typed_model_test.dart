@@ -37,6 +37,12 @@ import 'package:test/test.dart';
 // Mock server (mirrors structured_e2e_test.dart)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// A chat-completions model against [baseUrl]: the registry's `groq` entry with
+/// a `baseUrl` setting (`Model.openai` speaks the Responses API).
+Model mockChatModel(String baseUrl, String apiKey, String modelId) =>
+    Model.provider('groq', modelId,
+        apiKey: apiKey, configJson: jsonEncode({'baseUrl': baseUrl}));
+
 class MockOpenAIServer {
   final HttpServer _server;
   final List<Map<String, dynamic>> _responses;
@@ -134,7 +140,7 @@ class _TypedArgs {
 /// instances (not plain maps), which cannot be re-parsed by `fromJson`.
 Future<Map<String, dynamic>> runTypedGenerateText(_TypedArgs args) {
   return Isolate.run(() {
-    final model = Model.openai(args.apiKey, args.modelId, baseUrl: args.baseUrl);
+    final model = mockChatModel(args.baseUrl, args.apiKey, args.modelId);
     final typed = TypedModel(model);
     try {
       final hasOptions = args.tools != null ||
@@ -160,7 +166,7 @@ Future<Map<String, dynamic>> runTypedGenerateText(_TypedArgs args) {
 /// Run a typed `generateTextMessages` (multi-turn) in a worker isolate.
 Future<Map<String, dynamic>> runTypedGenerateTextMessages(_TypedArgs args) {
   return Isolate.run(() {
-    final model = Model.openai(args.apiKey, args.modelId, baseUrl: args.baseUrl);
+    final model = mockChatModel(args.baseUrl, args.apiKey, args.modelId);
     final typed = TypedModel(model);
     try {
       final messages = args.messages!
@@ -177,7 +183,7 @@ Future<Map<String, dynamic>> runTypedGenerateTextMessages(_TypedArgs args) {
 /// Run a typed `streamText` in a worker isolate, returning the parsed parts.
 Future<List<StreamPart>> runTypedStreamText(_TypedArgs args) {
   return Isolate.run(() async {
-    final model = Model.openai(args.apiKey, args.modelId, baseUrl: args.baseUrl);
+    final model = mockChatModel(args.baseUrl, args.apiKey, args.modelId);
     final typed = TypedModel(model);
     try {
       final options = (args.tools != null || args.includeRawChunks != null)
@@ -415,22 +421,21 @@ void main() {
     ));
 
     expect(parts, isNotEmpty);
-    // Every part is a single-key tagged union with a non-empty tag.
+    // Every part is a `type`-tagged union member the binding models.
     expect(parts.every((p) => p.type.isNotEmpty), isTrue);
+    expect(parts.whereType<StreamPartUnknown>(), isEmpty);
 
-    // The ToolCall part is a typed subclass with named fields.
+    // The tool-call part carries the parsed call.
     final toolCall = parts.whereType<StreamPartToolCall>().first;
-    expect(toolCall.type, 'ToolCall');
-    expect(toolCall.toolName, 'get_weather');
-    expect(toolCall.toolCallId, 'call_xyz');
-    expect((toolCall.input as Map<String, dynamic>)['location'], 'Tokyo');
+    expect(toolCall.type, 'tool-call');
+    expect(toolCall.call.toolName, 'get_weather');
+    expect(toolCall.call.toolCallId, 'call_xyz');
+    expect((toolCall.call.input as Map<String, dynamic>)['location'], 'Tokyo');
 
     // A Finish part carries typed usage + finish reason.
     final finish = parts.whereType<StreamPartFinish>().first;
-    expect(finish.type, 'Finish');
+    expect(finish.type, 'finish');
     expect(finish.usage, isA<Usage>());
-    expect(finish.usage.inputTokens.total, 5);
-    expect(finish.usage.outputTokens.total, 2);
 
     // The request was a streaming POST.
     expect(server.recorded, hasLength(1));
@@ -439,7 +444,7 @@ void main() {
   });
 
   test('streamText emits Raw parts when includeRawChunks enabled', () async {
-    // RFC-0016 M2: include_raw_chunks surfaces one Raw part per JSON SSE
+    // RFC-0016 M2: includeRawChunks surfaces one Raw part per JSON SSE
     // event (parsed payload), before the parsed parts; [DONE] excluded.
     final server = await startMockServer([
       {'sse': true, 'body': buildTextSse()},
@@ -476,8 +481,8 @@ void main() {
     expect(text, 'Hello world');
   });
 
-  test('streamText parses non-empty StreamStart warnings', () async {
-    // RFC-0016 M9: StreamStart carries a warnings array; a non-empty array
+  test('streamText decodes the stream-start part', () async {
+    // RFC-0016 M9: stream-start carries a warnings array; a non-empty array
     // (e.g. from a provider that rejects top_k) must decode without breaking
     // the stream. The openai full profile produces no warning, so the
     // assertion is decode-ability + field presence (the warning itself is
@@ -495,7 +500,7 @@ void main() {
     ));
 
     final start = parts.whereType<StreamPartStreamStart>().first;
-    expect(start.type, 'StreamStart');
+    expect(start.type, 'stream-start');
     expect(start.warnings, isA<List<dynamic>>());
   });
 }

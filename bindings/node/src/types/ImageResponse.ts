@@ -7,12 +7,12 @@ export type ImageResponse = {
 /**
  * Timestamp for the start of the generated response (ISO 8601 string).
  */
-timestamp: string | null, 
+timestamp?: string, 
 /**
  * The ID of the model that was used to generate the response.
  */
-model_id: string | null, 
+modelId?: string, 
 /**
  * Response headers.
  */
-headers: { [key in string]: string } | null, };
+headers?: { [key in string]: string }, };

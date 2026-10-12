@@ -105,6 +105,14 @@ public class MockProviderServer implements Closeable {
         return "http://127.0.0.1:" + port();
     }
 
+    /**
+     * Provider config for an OpenAI-compatible chat-completions model pointed
+     * at this server (the OpenAI factory itself speaks the Responses API).
+     */
+    public String chatConfig() {
+        return "{\"baseUrl\":\"" + baseUrl() + "\"}";
+    }
+
     public String lastRequestBody() {
         return lastRequestBody;
     }

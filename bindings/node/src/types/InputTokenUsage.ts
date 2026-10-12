@@ -7,16 +7,16 @@ export type InputTokenUsage = {
 /**
  * Total tokens.
  */
-total: number | null, 
+total?: number, 
 /**
  * Tokens that were not served from cache.
  */
-no_cache: number | null, 
+noCache?: number, 
 /**
  * Tokens served from cache (read).
  */
-cache_read: number | null, 
+cacheRead?: number, 
 /**
  * Tokens written to cache.
  */
-cache_write: number | null, };
+cacheWrite?: number, };

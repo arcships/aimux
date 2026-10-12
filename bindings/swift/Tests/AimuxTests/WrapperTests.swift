@@ -1,7 +1,7 @@
 // WrapperTests.swift — tests for the typed Codable wrapper layer (Types.swift).
 //
 // Exercises the `Model` extension methods that take `ModelPrompt` /
-// `GenerateTextOptions` and return `GenerateTextResult` / `StreamPart`,
+// `GenerateTextOptions` and return `GenerateTextResult` / `TextStreamPart`,
 // verifying the JSON↔Codable boundary is handled correctly end-to-end
 // (Swift typed API → FFI → reqwest → MockHTTPServer). The raw string-based
 // API is left untouched; these tests use only the typed layer.
@@ -21,9 +21,7 @@ final class WrapperTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let result = try model.generateText(prompt: .text("What is Rust?"))
 
         XCTAssertEqual(result.text, "Rust is a systems programming language.")
@@ -47,12 +45,12 @@ final class WrapperTests: XCTestCase {
             toolCallId: "call_1",
             toolName: "get_weather",
             input: jv(#"{"location":"Tokyo"}"#),
-            providerMetadata: jv(#"{"openai":{"item_id":"item_1"}}"#)
+            providerMetadata: ["openai": ["itemId": .string("item_1")]]
         )
 
         let encoded = try JSONEncoder().encode(original)
         let wire = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
-        let metadata = wire?["provider_metadata"] as? [String: Any]
+        let metadata = wire?["providerMetadata"] as? [String: Any]
         XCTAssertNotNil(metadata?["openai"])
 
         let decoded = try JSONDecoder().decode(ToolCall.self, from: encoded)
@@ -67,9 +65,7 @@ final class WrapperTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let options = GenerateTextOptions(tools: [
             .function(FunctionTool(
                 name: "get_weather",
@@ -87,11 +83,9 @@ final class WrapperTests: XCTestCase {
         XCTAssertEqual(result.toolCalls[0].toolCallId, "call_abc")
         XCTAssertEqual(result.toolCalls[0].input["location"]?.stringValue, "Tokyo")
 
-        // Structured raw.content contains a ToolCall variant mirroring the call.
-        let toolContents = result.raw.content.compactMap { part -> ToolCall? in
-            if case .toolCall(let id, let name, let input, _, _, _) = part {
-                return ToolCall(toolCallId: id, toolName: name, input: input)
-            }
+        // Structured raw.content contains a tool-call item mirroring the call.
+        let toolContents = result.raw.content.compactMap { part -> RawToolCall? in
+            if case .toolCall(let call) = part { return call }
             return nil
         }
         XCTAssertEqual(toolContents.count, 1)
@@ -99,7 +93,7 @@ final class WrapperTests: XCTestCase {
         XCTAssertEqual(toolContents[0].toolCallId, "call_abc")
         // Raw content keeps the provider's argument text; the parsed object
         // lives on the top-level toolCalls (asserted above).
-        XCTAssertEqual(toolContents[0].input.stringValue, "{\"location\":\"Tokyo\"}")
+        XCTAssertEqual(toolContents[0].input, "{\"location\":\"Tokyo\"}")
     }
 
     // MARK: - generateText: multi-role messages
@@ -111,9 +105,7 @@ final class WrapperTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let result = try model.generateText(prompt: .messages([
             .system("You are a helpful assistant."),
             .user("What is Rust?"),
@@ -139,9 +131,7 @@ final class WrapperTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let options = GenerateTextOptions(
             tools: [.function(FunctionTool(
                 name: "get_weather",
@@ -181,19 +171,17 @@ final class WrapperTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ToolChoice.self, from: data), tool)
     }
 
-    // MARK: - streamText: typed StreamPart
+    // MARK: - streamText: typed TextStreamPart
 
-    /// Streaming text deltas are delivered as typed `StreamPart.textDelta`
+    /// Streaming text deltas are delivered as typed `TextStreamPart.textDelta`
     /// values, reassembling into the full text.
     func testTypedStreamTextYieldsStreamParts() throws {
         let server = MockHTTPServer(response: .sse(sse(openaiStreamTextEvents)))
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
-        var parts: [StreamPart] = []
+        let model = try chatModel(server.baseURL)
+        var parts: [TextStreamPart] = []
         var streamErr: (any Error)?
         model.streamText(
             prompt: .text("Say hello"),
@@ -210,27 +198,25 @@ final class WrapperTests: XCTestCase {
         }
         XCTAssertEqual(text, "Hello world")
 
-        // Every emitted part decoded into a concrete StreamPart variant.
+        // Every emitted part decoded into a concrete TextStreamPart variant.
         XCTAssertTrue(parts.contains { if case .textDelta = $0 { true } else { false } })
     }
 
     /// Streaming tool-call fragments are delivered as typed tool-related
-    /// `StreamPart`s, including a final `.toolCall` carrying the tool name.
+    /// `TextStreamPart`s, including a final `.toolCall` carrying the tool name.
     func testTypedStreamTextToolCall() throws {
         let server = MockHTTPServer(response: .sse(sse(openaiStreamToolEvents)))
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let options = GenerateTextOptions(tools: [
             .function(FunctionTool(
                 name: "get_weather",
                 inputSchema: jv(#"{"type":"object","properties":{"location":{"type":"string"}}}"#)
             ))
         ])
-        var parts: [StreamPart] = []
+        var parts: [TextStreamPart] = []
         var streamErr: (any Error)?
         model.streamText(
             prompt: .text("What's the weather?"),
@@ -250,11 +236,11 @@ final class WrapperTests: XCTestCase {
             default: return false
             }
         }
-        XCTAssertTrue(hasToolPart, "stream should contain a tool-related StreamPart")
+        XCTAssertTrue(hasToolPart, "stream should contain a tool-related TextStreamPart")
 
         // The complete ToolCall part carries the tool name and structured input.
         let toolCall = parts.compactMap { part -> (String, JSONValue)? in
-            if case .toolCall(_, let name, let input, _, _, _, _, _) = part { return (name, input) }
+            if case .toolCall(let call) = part { return (call.toolName, call.input) }
             return nil
         }.first
         XCTAssertEqual(toolCall?.0, "get_weather")
@@ -267,9 +253,7 @@ final class WrapperTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let parts = try await collect(model.streamTextAsync(prompt: .text("Say hello")))
         XCTAssertFalse(parts.isEmpty)
         let text = parts.reduce(into: "") { acc, part in
@@ -286,33 +270,42 @@ final class WrapperTests: XCTestCase {
         let json = """
         {
           "text": "hello",
-          "tool_calls": [
-            {"tool_call_id":"call_1","tool_name":"get_weather","input":{"location":"Tokyo"}}
+          "toolCalls": [
+            {"toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
           ],
-          "finish_reason": {"unified":"stop","raw":"stop"},
-          "usage": {"input_tokens":{"total":3},"output_tokens":{"total":2}},
-          "warnings": [],
-          "reasoning": [],
-          "reasoning_text": "",
-          "sources": [],
+          "finishReason": {"unified":"stop","raw":"stop"},
+          "usage": {"inputTokens":{"total":3},"outputTokens":{"total":2}},
+          "warnings": [{"type":"other","message":"careful"}],
+          "reasoning": [{"type":"reasoning","text":"hmm"}],
+          "reasoningText": "hmm",
+          "sources": [{"sourceType":"url","id":"s1","url":"https://example.com"}],
           "files": [],
-          "response_messages": [],
-          "raw_finish_reason": "stop",
-          "provider_metadata": null,
-          "response": {"id":"resp_1","timestamp":null,"model_id":"gpt-4o"},
-          "total_usage": {"input_tokens":{"total":3},"output_tokens":{"total":2}},
+          "responseMessages": [
+            {"role":"assistant","content":[
+              {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
+            ]},
+            {"role":"tool","content":[
+              {"type":"tool-result","toolCallId":"call_1","toolName":"get_weather",
+               "output":{"type":"json","value":{"temp":22}}}
+            ]}
+          ],
+          "rawFinishReason": "stop",
+          "request": {},
+          "response": {"id":"resp_1","modelId":"gpt-4o"},
+          "totalUsage": {"inputTokens":{"total":3},"outputTokens":{"total":2}},
+          "content": [
+            {"type":"text","text":"hello"},
+            {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
+          ],
           "raw": {
             "content": [
-              {"Text":{"text":"hello"}},
-              {"ToolCall":{"tool_call_id":"call_1","tool_name":"get_weather","input":{"location":"Tokyo"}}}
+              {"type":"text","text":"hello"},
+              {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":"{\\"location\\":\\"Tokyo\\"}"}
             ],
-            "finish_reason": {"unified":"tool-calls","raw":"tool_calls"},
-            "usage": {"input_tokens":{"total":3},"output_tokens":{"total":2}},
+            "finishReason": {"unified":"tool-calls","raw":"tool_calls"},
+            "usage": {"inputTokens":{"total":3},"outputTokens":{"total":2}},
             "warnings": [],
-            "provider_metadata": null,
-            "response": {"id":"resp_1","timestamp":null,"model_id":"gpt-4o"},
-            "request_body": null,
-            "response_headers": null
+            "response": {"id":"resp_1","modelId":"gpt-4o"}
           }
         }
         """
@@ -321,9 +314,16 @@ final class WrapperTests: XCTestCase {
         XCTAssertEqual(original.text, "hello")
         XCTAssertEqual(original.toolCalls[0].toolName, "get_weather")
         XCTAssertEqual(original.finishReason.unified, .stop)
-        XCTAssertEqual(original.raw.finishReason?.unified, .toolCalls)
+        XCTAssertEqual(original.raw.finishReason.unified, .toolCalls)
         XCTAssertEqual(original.raw.response?.id, "resp_1")
         XCTAssertEqual(original.raw.response?.modelId, "gpt-4o")
+        XCTAssertEqual(original.warnings, [.other(message: "careful")])
+        XCTAssertEqual(original.reasoning, [.reasoning(ReasoningOutput(text: "hmm"))])
+        guard case .parts(let toolContent) = original.responseMessages[1].content,
+              case .toolResult(_, _, let output, _) = toolContent[0] else {
+            return XCTFail("expected a tool-result part, got \(original.responseMessages[1].content)")
+        }
+        XCTAssertEqual(output, .json(.object(["temp": .number(22)])))
 
         // Encode → decode yields an equal value.
         let reencoded = try JSONEncoder().encode(original)
@@ -334,10 +334,10 @@ final class WrapperTests: XCTestCase {
 
 // MARK: - Helpers
 
-/// Drain an `AsyncThrowingStream<StreamPart, Error>` into an array (the mock stream completes
+/// Drain an `AsyncThrowingStream<TextStreamPart, Error>` into an array (the mock stream completes
 /// synchronously inside `streamText`, so this returns promptly).
-private func collect(_ stream: AsyncThrowingStream<StreamPart, Error>) async throws -> [StreamPart] {
-    var parts: [StreamPart] = []
+private func collect(_ stream: AsyncThrowingStream<TextStreamPart, Error>) async throws -> [TextStreamPart] {
+    var parts: [TextStreamPart] = []
     for try await part in stream { parts.append(part) }
     return parts
 }

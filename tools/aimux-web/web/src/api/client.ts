@@ -5,7 +5,7 @@ import type { WireCallResponse } from '@/types/generated/WireCallResponse'
 import type { Recording } from '@aimux/types/Recording'
 import type { TraceRecord } from '@aimux/types/TraceRecord'
 import type { SessionView } from '@aimux/types/SessionView'
-import type { StreamPart } from '@aimux/types/StreamPart'
+import type { TextStreamPart } from '@aimux/types/TextStreamPart'
 
 const API = '/api'
 
@@ -179,15 +179,15 @@ export const api = {
     return fetch(`${API}/sessions`).then((r) => j<SessionView[]>(r))
   },
 
-  sessionDetail(id: string): Promise<{ session_id: string; calls: unknown[]; recordings: Recording[] }> {
+  sessionDetail(id: string): Promise<{ sessionId: string; calls: unknown[]; recordings: Recording[] }> {
     return fetch(`${API}/sessions/${encodeURIComponent(id)}`).then((r) => j(r))
   },
 
   replay(body: {
-    call_id: string
-    api_key?: string | null
-    overrides?: { messages?: unknown[]; temperature?: number | null; max_output_tokens?: number | null } | null
-  }): Promise<WireCallResponse & { call_id: string; tool_calls?: unknown; meta?: unknown }> {
+    callId: string
+    apiKey?: string | null
+    overrides?: { messages?: unknown[]; temperature?: number | null; maxOutputTokens?: number | null } | null
+  }): Promise<WireCallResponse & { callId: string; toolCalls?: unknown }> {
     return fetch(`${API}/replay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -220,7 +220,7 @@ export const api = {
   },
 }
 
-/** Parse a `stream_part` JSON payload into a StreamPart (best-effort). */
-export function parseStreamPart(json: string): StreamPart {
-  return JSON.parse(json) as StreamPart
+/** Parse a `stream_part` JSON payload into a TextStreamPart (best-effort). */
+export function parseStreamPart(json: string): TextStreamPart {
+  return JSON.parse(json) as TextStreamPart
 }

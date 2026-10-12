@@ -98,7 +98,7 @@ ToolCallRepairContext? _contextFor(
 
 Map<String, dynamic> _replyFor(RawToolCall? replacement) => replacement == null
     ? const {'type': 'unchanged'}
-    : {'type': 'repaired', 'tool_call': replacement.toJson()};
+    : {'type': 'repaired', 'toolCall': replacement.toJson()};
 
 /// A thrown object has no typed counterpart in the core, so it becomes
 /// `failed` — the core turns that into `ToolCallRepair{cause: Other(message)}`.
@@ -129,7 +129,7 @@ Never _asyncHookInSyncCall() => throw StateError(
 /// derives the tool set, messages and instructions from them.
 ///
 /// Call this on the raw result map *before* decoding it into typed classes —
-/// both `tool_calls` and the matching `response_messages` part are rewritten.
+/// both `toolCalls` and the matching `responseMessages` part are rewritten.
 Map<String, dynamic> repairResultToolCalls(
   Map<String, dynamic> result,
   Object prompt,
@@ -168,7 +168,7 @@ Map<String, dynamic> repairResultToolCalls(
         _applyRepairToResult,
         jsonEncode(current),
         optsJson,
-        call['tool_call_id'] as String,
+        call['toolCallId'] as String,
         encodeJson(reply, 'repairToolCall reply'),
         'apply_tool_call_repair_to_result')) as Map<String, dynamic>;
   }
@@ -178,8 +178,8 @@ Map<String, dynamic> repairResultToolCalls(
 /// The invalid calls of a result document. `generate_object` nests the
 /// `generate_text` result under `raw`.
 List<Map<String, dynamic>> _invalidToolCalls(Map<String, dynamic> result) {
-  final calls = result['tool_calls'] ??
-      (result['raw'] as Map<String, dynamic>?)?['tool_calls'];
+  final calls = result['toolCalls'] ??
+      (result['raw'] as Map<String, dynamic>?)?['toolCalls'];
   if (calls is! List) return const [];
   return calls
       .whereType<Map<String, dynamic>>()
@@ -191,7 +191,7 @@ List<Map<String, dynamic>> _invalidToolCalls(Map<String, dynamic> result) {
 // Streaming: patch the tool-call part in flight
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Replace every invalid `ToolCall` part of [parts] with its repaired version.
+/// Replace every invalid `tool-call` part of [parts] with its repaired version.
 ///
 /// Returns [parts] unchanged when `options.repairToolCall` is null. Every other
 /// part — tool-input deltas included — passes through untouched and in order
@@ -209,9 +209,9 @@ Stream<Map<String, dynamic>> repairStreamToolCalls(
   final optsJson = encodeJson(options!.toJson(), 'options');
 
   return parts.asyncMap((part) async {
-    // Externally tagged: {"ToolCall": {...}}.
-    final call = part['ToolCall'];
-    if (call is! Map<String, dynamic> || call['invalid'] != true) return part;
+    // `{"type": "tool-call", ...ToolCall}`: the call is the part minus its tag.
+    if (part['type'] != 'tool-call' || part['invalid'] != true) return part;
+    final call = {...part}..remove('type');
 
     final context = _contextFor(call, promptJson, optsJson);
     if (context == null) return part;
@@ -225,6 +225,6 @@ Stream<Map<String, dynamic>> repairStreamToolCalls(
 
     final patched = _call3(_applyRepair, jsonEncode(call), optsJson,
         encodeJson(reply, 'repairToolCall reply'), 'apply_tool_call_repair');
-    return {'ToolCall': jsonDecode(patched)};
+    return {'type': 'tool-call', ...jsonDecode(patched) as Map<String, dynamic>};
   });
 }

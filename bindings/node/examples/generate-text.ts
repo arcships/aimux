@@ -16,7 +16,7 @@ async function main() {
   const result = await generateText(model, 'Explain Rust ownership in one sentence.')
   console.log('Text:', result.text)
   console.log('Usage:', result.usage)
-  console.log('Finish reason:', result.finish_reason)
+  console.log('Finish reason:', result.finishReason)
 }
 
 main().catch(console.error)

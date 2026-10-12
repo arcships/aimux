@@ -2,4 +2,4 @@
 import type { Warning } from "./Warning";
 import type { JsonValue } from "./serde_json/JsonValue";
 
-export type UploadSkillResult = { provider_reference: { [key in string]: string }, display_title: string | null, name: string | null, description: string | null, latest_version: string | null, provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, warnings: Array<Warning>, };
+export type UploadSkillResult = { providerReference: { [key in string]: string }, displayTitle?: string, name?: string, description?: string, latestVersion?: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, warnings: Array<Warning>, };

@@ -50,7 +50,7 @@ def _reply(repair: RepairAdapter, context: Dict[str, Any]) -> str:
         return json.dumps({"type": "failed", "message": str(exc)})
     if replacement is None:
         return json.dumps({"type": "unchanged"})
-    return json.dumps({"type": "repaired", "tool_call": replacement})
+    return json.dumps({"type": "repaired", "toolCall": replacement})
 
 
 def _context(call: Dict[str, Any], prompt_json: str, opts_json: Optional[str]):
@@ -66,14 +66,14 @@ def repair_result(
 ) -> str:
     """Repair every invalid tool call of a serialized result, in order.
 
-    Handles ``generate_text`` / ``generate_object`` (``raw.tool_calls``) and the
+    Handles ``generate_text`` / ``generate_object`` (``raw.toolCalls``) and the
     aggregated stream result alike; one repair attempt per call, as in the
     AI SDK. Returns the patched result JSON.
     """
     result = json.loads(result_json)
-    calls = result.get("tool_calls")
+    calls = result.get("toolCalls")
     if calls is None:
-        calls = result.get("raw", {}).get("tool_calls") or []
+        calls = result.get("raw", {}).get("toolCalls") or []
     for call in calls:
         if not call.get("invalid"):
             continue
@@ -81,7 +81,7 @@ def repair_result(
         if context is None:
             continue
         result_json = apply_tool_call_repair_to_result(
-            result_json, opts_json, call["tool_call_id"], _reply(repair, context)
+            result_json, opts_json, call["toolCallId"], _reply(repair, context)
         )
     return result_json
 
@@ -110,14 +110,13 @@ def repair_stream_part(
     opts_json: Optional[str],
     repair: RepairAdapter,
 ) -> str:
-    """Replace an invalid ``ToolCall`` stream part with its repaired form.
+    """Replace an invalid ``tool-call`` stream part with its repaired form.
 
     Every other part — tool-input deltas included — is forwarded untouched, so
     repair never delays the stream.
     """
-    part = json.loads(part_json)
-    call = part.get("ToolCall") if isinstance(part, dict) else None
-    if call is None or not call.get("invalid"):
+    call = json.loads(part_json)
+    if call.get("type") != "tool-call" or not call.get("invalid"):
         return part_json
     context = _context(call, prompt_json, opts_json)
     if context is None:
@@ -125,4 +124,4 @@ def repair_stream_part(
     repaired = apply_tool_call_repair(
         json.dumps(call), opts_json, _reply(repair, context)
     )
-    return json.dumps({"ToolCall": json.loads(repaired)})
+    return json.dumps({"type": "tool-call", **json.loads(repaired)})

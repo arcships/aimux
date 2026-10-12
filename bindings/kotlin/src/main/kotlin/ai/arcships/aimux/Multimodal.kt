@@ -234,8 +234,8 @@ class TranscriptionModel private constructor(handle: Long) : Closeable {
      * Start a streaming transcription session (RFC-0028) on this model.
      * Requires a model that supports streaming (realtime models).
      *
-     * @param optsJson    optional session options JSON (`input_audio_format` /
-     *                    `provider_options` / `headers` / `include_raw_chunks`).
+     * @param optsJson    optional session options JSON (`inputAudioFormat` /
+     *                    `providerOptions` / `headers` / `includeRawChunks`).
      * @param abortHandle abort handle (from `Model.abortSignalNew()`), or 0.
      * @return a new live session.
      */

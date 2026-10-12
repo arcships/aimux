@@ -42,7 +42,7 @@ result = generate_text(model, "Hello")
 `ProviderOptions` shape (`base_url` / `headers` / `organization` / `project` /
 `params`); the `base_url` parameter wins over `config["base_url"]`.
 `max_retries` (a per-call option) and `body_overrides` (removed) in `config`
-raise `InvalidArgumentError`. A missing key or setting raises `LoadAPIKeyError`
+raise `InvalidArgumentError`. A missing key or setting raises (on the first call) `LoadAPIKeyError`
 (`env_var`, `description`) / `LoadSettingError` (`env_var`, `setting_name`). `openai` / `anthropic` / `deepseek` factories
 remain; DeepSeek now uses its own vendor chat model. `openai` and by-name
 `provider("openai", …)` select the Responses API.
@@ -60,13 +60,13 @@ from aimux import openai, generate_text
 
 model = openai("sk-...", "gpt-4o")
 result = generate_text(model, "Explain Rust ownership.", {
-    "max_output_tokens": 100,
+    "maxOutputTokens": 100,
     "temperature": 0.7,
 })
 
 print(result["text"])
 print(result["usage"])
-print(result["finish_reason"])
+print(result["finishReason"])
 ```
 
 > Parameters, return value, and the `raw.content` variants are documented in
@@ -81,9 +81,9 @@ from aimux import openai, stream_text
 
 model = openai("sk-...", "gpt-4o")
 for part in stream_text(model, "Write a haiku about Rust."):
-    if "TextDelta" in part:
-        print(part["TextDelta"]["delta"], end="")
-    if "Finish" in part:
+    if part["type"] == "text-delta":
+        print(part["delta"], end="")
+    if part["type"] == "finish":
         print("\n[done]")
 ```
 
@@ -101,7 +101,7 @@ tools = [{
     "type": "function",
     "name": "get_weather",
     "description": "Get current weather",
-    "input_schema": {
+    "inputSchema": {
         "type": "object",
         "properties": {"location": {"type": "string", "description": "City name"}},
         "required": ["location"]
@@ -109,30 +109,30 @@ tools = [{
 }]
 
 result = generate_text(model, "What's the weather in Tokyo?", {"tools": tools})
-if len(result["tool_calls"]) > 0:
-    call = result["tool_calls"][0]
-    print(call["tool_name"])      # get_weather
+if len(result["toolCalls"]) > 0:
+    call = result["toolCalls"][0]
+    print(call["toolName"])      # get_weather
     print(call["input"])          # {"location": "Tokyo"}
 ```
 
 ### Repairing Invalid Tool Calls
 
 A tool call the model got wrong never fails generation: it comes back with
-`invalid: true` and a typed `error`. Pass `repair_tool_call` to get one shot at
+`invalid: true` and a typed `error`. Pass `repairToolCall` to get one shot at
 fixing it (RFC-0035, the equivalent of the AI SDK `repairToolCall`):
 
 ```python
 def repair(ctx):
-    # ctx = {tool_call, error, input_schema, tools, messages, instructions};
-    # ctx["tool_call"]["input"] is the provider's raw argument text.
-    args = json.loads(ctx["tool_call"]["input"])
+    # ctx = {toolCall, error, inputSchema, tools, messages, instructions};
+    # ctx["toolCall"]["input"] is the provider's raw argument text.
+    args = json.loads(ctx["toolCall"]["input"])
     if "location" not in args:
         return None                      # None = leave the call invalid
-    return dict(ctx["tool_call"], input=json.dumps({"city": args["location"]}))
+    return dict(ctx["toolCall"], input=json.dumps({"city": args["location"]}))
 
 result = generate_text(model, "What's the weather in Tokyo?",
-                       {"tools": tools, "repair_tool_call": repair})
-print(result["tool_calls"][0]["input"])   # {"city": "Tokyo"}
+                       {"tools": tools, "repairToolCall": repair})
+print(result["toolCalls"][0]["input"])   # {"city": "Tokyo"}
 ```
 
 The function is called once per invalid call, after generation, and its result
@@ -140,13 +140,13 @@ is re-validated against the tool's schema: a call that is still wrong — and on
 whose repair raises — comes back invalid with a `ToolCallRepair` error carrying
 the original one. Returning `None` leaves the call untouched. It runs on the
 Python side, outside any native call, so it may itself call `generate_text` to
-ask a model for better arguments. Both `tool_calls` and `response_messages` are
+ask a model for better arguments. Both `toolCalls` and `responseMessages` are
 patched, so the next turn replays the repaired arguments.
 
-The same option exists on the typed wrapper's `GenerateTextOptions`, where it
+The same option exists on the typed wrapper's `GenerateTextOptions` (as `repair_tool_call`), where it
 takes a `ToolCallRepairContext` and returns a `RawToolCall`. It applies to
 `generate_text`, `generate_object`, `consume_stream_text` and `stream_text`
-(which yields the repaired `ToolCall` part; tool-input deltas are the
+(which yields the repaired `tool-call` part; tool-input deltas are the
 provider's own text and pass through untouched), and to
 `generate_text_as_openai`: a `chat.completion` carries no `invalid` marker, so
 it repairs the native result and converts it
@@ -159,12 +159,12 @@ returns something other than a `RawToolCall` or `None` — propagates as itself.
 
 ### Tool Selection Strategy
 
-Pass `tool_choice` through the options dict:
+Pass `toolChoice` through the options dict:
 
 ```python
 opts = {
     "tools": tools,
-    "tool_choice": "auto"   # "auto" | "none" | "required" | {"type": "tool", "toolName": "get_weather"}
+    "toolChoice": "auto"   # "auto" | "none" | "required" | {"type": "tool", "toolName": "get_weather"}
 }
 ```
 
@@ -207,11 +207,13 @@ speaker = openai_speech("sk-...", "tts-1")
 result = json.loads(speaker.generate(json.dumps({
     "text": "Hello world!",
     "voice": "alloy",
-    "output_format": "mp3",
+    "outputFormat": "mp3",
 })))
 
-if "Base64" in result["audio"]:
-    audio_bytes = base64.b64decode(result["audio"]["Base64"])
+# result["audio"] is a list of byte values, or a base64 string
+audio = result["audio"]
+audio_bytes = bytes(audio) if isinstance(audio, list) else base64.b64decode(audio)
+if audio_bytes:
     with open("out.mp3", "wb") as f:
         f.write(audio_bytes)
 ```
@@ -242,12 +244,13 @@ imager = openai_image("sk-...", "dall-e-3")
 result = json.loads(imager.generate(json.dumps({
     "prompt": "A cute baby sea otter",
     "n": 1,
-    "provider_options": {},
+    "providerOptions": {},
 })))
 
-if "Base64" in result["images"]:
-    with open("out.png", "wb") as f:
-        f.write(base64.b64decode(result["images"]["Base64"][0]))
+# result["images"] is a list of base64 strings, or a list of byte arrays
+image = result["images"][0]
+with open("out.png", "wb") as f:
+    f.write(base64.b64decode(image) if isinstance(image, str) else bytes(image))
 ```
 
 ## Video Generation
@@ -262,12 +265,12 @@ videor = google_video("sk-...", "veo-3.0")
 result = json.loads(videor.generate(json.dumps({
     "prompt": "A cat playing piano",
     "n": 1,
-    "provider_options": {},
+    "providerOptions": {},
 })))
 
-# result["videos"] is usually [{"Url": {"url": "...", "media_type": "..."}}]
-if "Url" in result["videos"][0]:
-    print(result["videos"][0]["Url"]["url"])
+# result["videos"] is usually [{"type": "url", "url": "...", "mediaType": "..."}]
+if result["videos"][0]["type"] == "url":
+    print(result["videos"][0]["url"])
 ```
 
 ## Reranking
@@ -279,23 +282,23 @@ from aimux import cohere_reranking
 import json
 
 reranker = cohere_reranking("sk-...", "rerank-v3.0")
-# docs_json is the externally-tagged `RerankingDocuments` enum —
-# {"Object": {"values": [...]}} for JSON documents, {"Text": {"values": [...]}} for strings
-docs = {"Object": {"values": [
+# docs_json is the `type`-tagged `RerankingDocuments` enum —
+# {"type": "object", "values": [...]} for JSON documents, {"type": "text", "values": [...]} for strings
+docs = {"type": "object", "values": [
     {"text": "Rust is a systems programming language."},
     {"text": "Rust is a chemical element."},
-]}}
+]}
 result = json.loads(reranker.rerank(
     "What is Rust?",
     json.dumps(docs),
-    # opts_json is a whole RerankingCallOptions: only top_n and provider_options
+    # opts_json is a whole RerankingCallOptions: only topN and providerOptions
     # are read from it, but query and documents must be present to deserialize
-    json.dumps({"query": "What is Rust?", "documents": docs, "top_n": 3}),
+    json.dumps({"query": "What is Rust?", "documents": docs, "topN": 3}),
 ))
 
-# result["ranking"] sorted by relevance_score
+# result["ranking"] sorted by relevanceScore
 for rank in result["ranking"]:
-    print(rank["index"], rank["relevance_score"])
+    print(rank["index"], rank["relevanceScore"])
 ```
 
 ## Search
@@ -323,7 +326,7 @@ files = openai_files("sk-...")
 file_b64 = base64.b64encode(open("doc.pdf", "rb").read()).decode()
 result = json.loads(files.upload_file(file_b64, "application/pdf"))
 
-print(result["provider_reference"])  # {"openai": "file-xxx"}
+print(result["providerReference"])  # {"openai": "file-xxx"}
 ```
 
 ## API Surface
@@ -354,7 +357,7 @@ Three module-level native functions back tool-call repair (all pure and
 synchronous, JSON in / JSON out): `tool_call_repair_context(tool_call_json,
 prompt_json, opts_json=None)`, `apply_tool_call_repair(tool_call_json,
 opts_json, reply_json)` and `apply_tool_call_repair_to_result(result_json,
-opts_json, tool_call_id, reply_json)`. The `repair_tool_call` option drives
+opts_json, tool_call_id, reply_json)`. The `repairToolCall` option drives
 them for you; call them directly only to build your own loop.
 
 All factories accept an optional `base_url` and return instances synchronously
@@ -375,7 +378,7 @@ from aimux.wrapper import (
     Tool, ToolChoice, ResponseFormat, StreamPart, GenerateContent,
     FileData, FileBytes, Warning, AiMuxErrorValue,
     # pydantic models
-    TokenUsage, Usage, FinishReason, ResponseMetadata, ToolCall,
+    InputTokenUsage, OutputTokenUsage, Usage, FinishReason, ResponseMetadata, ToolCall,
     ModelMessage, FunctionTool, ProviderTool, TextContentPart,
     GenerateTextOptions, GenerateTextResult, GenerateResult,
     RawToolCall, ToolCallRepairContext, RepairToolCall,
@@ -464,6 +467,12 @@ except AimuxError:
 (The pydantic wire type named `AiMuxErrorValue` in `aimux.wrapper` is only for
 stream/payload shapes, not the raised exception.)
 
+The wire format is the AI SDK's: JSON keys are camelCase and unions are tagged
+by `type`. The raw dict API exchanges that JSON as-is (`result["finishReason"]`,
+`{"type": "text-delta", ...}`). The typed wrapper's models keep `snake_case`
+Python attributes and map them to the camelCase keys through a pydantic alias
+generator (both spellings validate; serialization uses camelCase).
+
 Key shapes (mirroring the shared JSON schema):
 
 ```python
@@ -478,12 +487,11 @@ class GenerateTextResult(BaseModel):
     response: ResponseInfo
 ```
 
-`stream_text` emits the Rust call-layer `TextStreamPart` JSON. The Python
-wrapper calls its validating `RootModel` `StreamPart`, over the external-tagged
-union dict, e.g.
-`{"TextDelta": {"id": ..., "delta": ...}}`. Iterate dicts with
-`if "TextDelta" in part:` (as in [Streaming Generation](#streaming-generation))
-or validate them with `parse_stream_part(part)` for attribute access.
+`stream_text` emits the Rust call-layer `TextStreamPart` JSON: a dict tagged by
+`type`, e.g. `{"type": "text-delta", "id": ..., "delta": ...}`. Iterate dicts with
+`if part["type"] == "text-delta":` (as in [Streaming Generation](#streaming-generation))
+or validate them with `parse_stream_part(part)` for attribute access (the
+wrapper's `StreamPart` is a pydantic discriminated union on `type`).
 
 Provider-layer `StreamPart::ResponseMetadata` events are consumed internally
 and are not emitted by `stream_text`.

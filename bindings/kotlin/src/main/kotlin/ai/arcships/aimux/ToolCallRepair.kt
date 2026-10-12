@@ -12,7 +12,6 @@
 
 package ai.arcships.aimux
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -40,19 +39,19 @@ import java.util.concurrent.FutureTask
  */
 @Serializable
 data class RawToolCall(
-    @SerialName("tool_call_id") val toolCallId: String,
-    @SerialName("tool_name") val toolName: String,
+    val toolCallId: String,
+    val toolName: String,
     val input: String,
-    @SerialName("provider_executed") val providerExecuted: Boolean? = null,
+    val providerExecuted: Boolean? = null,
     val dynamic: Boolean? = null,
-    @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+    val providerMetadata: ProviderMetadata? = null,
 )
 
 /**
  * Everything a repair function is given about one invalid tool call.
  *
  * Mirrors the AI SDK `repairToolCall` argument. [error] is the serialized
- * `AiMuxError` that made the call invalid (e.g. `{"InvalidToolInput": …}`),
+ * `AiMuxError` that made the call invalid (e.g. `{"name":"AI_InvalidToolInputError",…}`),
  * carried verbatim from the call rather than re-derived. [inputSchema] is the
  * JSON Schema of the named function tool, or the AI SDK's empty-object schema
  * when the name resolves to no function tool. [messages] and [instructions]
@@ -60,9 +59,9 @@ data class RawToolCall(
  */
 @Serializable
 data class ToolCallRepairContext(
-    @SerialName("tool_call") val toolCall: RawToolCall,
+    val toolCall: RawToolCall,
     val error: JsonElement,
-    @SerialName("input_schema") val inputSchema: JsonElement,
+    val inputSchema: JsonElement,
     val tools: List<Tool> = emptyList(),
     val messages: List<ModelMessage> = emptyList(),
     val instructions: String? = null,
@@ -88,7 +87,7 @@ typealias RepairToolCall = (ToolCallRepairContext) -> RawToolCall?
 /**
  * Build the repair argument for one invalid tool call.
  *
- * @param toolCallJson One `tool_calls` entry with `"invalid": true`.
+ * @param toolCallJson One `toolCalls` entry with `"invalid": true`.
  * @param promptJson The prompt the call was generated with (the same string
  *   passed to `generate_text` / `stream_text`).
  * @param optsJson The options the call was generated with (same rule).
@@ -108,7 +107,7 @@ fun toolCallRepairContext(toolCallJson: String, promptJson: String, optsJson: St
  * Resolve one invalid tool call against a repair reply, returning the final
  * `ToolCall` JSON — valid, or invalid carrying a nested `ToolCallRepair` error.
  *
- * @param replyJson `{"type":"repaired","tool_call":…}` | `{"type":"unchanged"}`
+ * @param replyJson `{"type":"repaired","toolCall":…}` | `{"type":"unchanged"}`
  *   | `{"type":"failed","message":…}`.
  * @throws InvalidArgumentError when the options carry no tools, or the call is
  *   not an invalid one.
@@ -126,7 +125,7 @@ fun applyToolCallRepair(toolCallJson: String, optsJson: String?, replyJson: Stri
  * Apply a repair reply to a whole serialized result (`GenerateTextResult`,
  * `GenerateObjectResult` via its nested `raw`, or `StreamTextResultAggregated`).
  *
- * Rewrites both `tool_calls` and the matching `response_messages` tool-call
+ * Rewrites both `toolCalls` and the matching `responseMessages` tool-call
  * part — the transcript must agree with the repaired call, or the next turn
  * sends the model the unrepaired arguments again.
  *
@@ -167,7 +166,7 @@ private fun repairReply(repair: RepairToolCall, contextJson: String): String {
         val replacement = repair(context) ?: return REPLY_UNCHANGED
         buildJsonObject {
             put("type", "repaired")
-            put("tool_call", AimuxJson.encodeToJsonElement(RawToolCall.serializer(), replacement))
+            put("toolCall", AimuxJson.encodeToJsonElement(RawToolCall.serializer(), replacement))
         }.toString()
     } catch (e: Exception) {
         // A host exception has no typed counterpart in core; only its message
@@ -197,8 +196,8 @@ internal fun repairToolCallsInResult(
 ): String {
     val root = AimuxJson.parseToJsonElement(resultJson) as? JsonObject ?: return resultJson
     // GenerateObjectResult nests the text result under `raw`.
-    val target = if (root.containsKey("tool_calls")) root else root["raw"] as? JsonObject ?: return resultJson
-    val invalid = (target["tool_calls"] as? JsonArray)
+    val target = if (root.containsKey("toolCalls")) root else root["raw"] as? JsonObject ?: return resultJson
+    val invalid = (target["toolCalls"] as? JsonArray)
         ?.mapNotNull { it as? JsonObject }
         ?.filter(::isInvalid)
         ?: return resultJson
@@ -207,7 +206,7 @@ internal fun repairToolCallsInResult(
     for (call in invalid) {
         val contextJson = toolCallRepairContext(call.toString(), promptJson, optsJson)
         if (AimuxJson.parseToJsonElement(contextJson) is JsonNull) continue
-        val id = call["tool_call_id"]?.jsonPrimitive?.content ?: continue
+        val id = call["toolCallId"]?.jsonPrimitive?.content ?: continue
         patched = applyToolCallRepairToResult(patched, optsJson, id, repairReply(repair, contextJson))
     }
     return patched
@@ -250,7 +249,7 @@ internal fun offCallbackThread(model: Model, repair: RepairToolCall): RepairTool
 }
 
 /**
- * Repair an invalid `ToolCall` stream part, returning the replacement part
+ * Repair an invalid `tool-call` stream part, returning the replacement part
  * JSON. Any other part (tool-input deltas included) is returned untouched, so
  * deltas still reach the caller immediately — AI SDK behaviour.
  */
@@ -260,13 +259,12 @@ internal fun repairToolCallStreamPart(
     optsJson: String?,
     repair: RepairToolCall,
 ): String {
-    // StreamPart is externally tagged: {"ToolCall": {…}}.
+    // A tool-call part is the ToolCall itself plus `"type": "tool-call"`.
     val part = AimuxJson.parseToJsonElement(partJson) as? JsonObject ?: return partJson
-    val call = part["ToolCall"] as? JsonObject ?: return partJson
-    if (!isInvalid(call)) return partJson
+    if ((part["type"] as? JsonPrimitive)?.content != "tool-call" || !isInvalid(part)) return partJson
 
-    val contextJson = toolCallRepairContext(call.toString(), promptJson, optsJson)
+    val contextJson = toolCallRepairContext(part.toString(), promptJson, optsJson)
     if (AimuxJson.parseToJsonElement(contextJson) is JsonNull) return partJson
-    val repaired = applyToolCallRepair(call.toString(), optsJson, repairReply(repair, contextJson))
-    return JsonObject(part + ("ToolCall" to AimuxJson.parseToJsonElement(repaired))).toString()
+    val repaired = applyToolCallRepair(part.toString(), optsJson, repairReply(repair, contextJson))
+    return JsonObject(mapOf("type" to JsonPrimitive("tool-call")) + (AimuxJson.parseToJsonElement(repaired) as JsonObject)).toString()
 }

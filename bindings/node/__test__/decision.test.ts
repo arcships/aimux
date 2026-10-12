@@ -57,8 +57,8 @@ test('missing or null usage counts preserve valid decision answers', async t => 
     usage = counts
     const result = await decide(model, options)
     t.is(Object.keys(result.answers).length, 3)
-    t.is(result.usage?.input_tokens.total, counts.input_tokens ?? null)
-    t.is(result.usage?.output_tokens.total, counts.output_tokens ?? null)
+    t.is(result.usage?.inputTokens.total ?? null, counts.input_tokens ?? null)
+    t.is(result.usage?.outputTokens.total ?? null, counts.output_tokens ?? null)
     t.deepEqual(result.usage?.raw, counts)
   }
 })

@@ -4,4 +4,4 @@ import type { PrefixBreak } from "./PrefixBreak";
 /**
  * Session chain view (append-only order + prefix stability, RFC-0015 §5.3).
  */
-export type SessionChainView = { session_id: string, record_ids: Array<string>, prefix_stability: number, breaks: Array<PrefixBreak>, };
+export type SessionChainView = { sessionId: string, recordIds: Array<string>, prefixStability: number, breaks: Array<PrefixBreak>, };

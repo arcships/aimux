@@ -4,4 +4,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * Tool call content part.
  */
-export type ToolCallPart = { tool_call_id: string, tool_name: string, input: JsonValue, provider_executed?: boolean | null, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type ToolCallPart = { toolCallId: string, toolName: string, input: JsonValue, providerExecuted?: boolean, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

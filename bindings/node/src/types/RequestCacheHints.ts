@@ -7,4 +7,4 @@ export type RequestCacheHints = {
 /**
  * Whether any message requested `cache_control` (write) this call.
  */
-requested_write: boolean, };
+requestedWrite: boolean, };

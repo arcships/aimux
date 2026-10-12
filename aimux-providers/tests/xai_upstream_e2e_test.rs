@@ -89,8 +89,8 @@ async fn generate_converts_usage() {
     assert_eq!(
         serde_json::to_value(result.usage).unwrap(),
         json!({
-            "input_tokens": {"total": 345, "no_cache": 345, "cache_read": 0},
-            "output_tokens": {"total": 538, "text": 415, "reasoning": 123},
+            "inputTokens": {"total": 345, "noCache": 345, "cacheRead": 0},
+            "outputTokens": {"total": 538, "text": 415, "reasoning": 123},
             "raw": usage
         })
     );

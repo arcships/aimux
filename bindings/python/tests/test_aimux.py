@@ -101,7 +101,7 @@ def test_provider_invalid_config_raises():
 
     with pytest.raises(Exception, match="invalid config"):
         provider(
-            "groq",
+            "abacus",
             "sk-test-fake-key",
             "llama-3.3-70b",
             config={"headers": "not-a-map"},
@@ -109,14 +109,13 @@ def test_provider_invalid_config_raises():
 
 
 def test_provider_missing_env_key_raises(monkeypatch):
-    """provider() with api_key=None reads the env var when a request is made, and
-    fails clearly when it is unset (the AI SDK loads the key lazily)."""
+    """provider() with api_key=None reads the env var at call time and fails clearly when unset."""
     from aimux import LoadAPIKeyError, generate_text, provider
 
     monkeypatch.delenv("ABACUS_API_KEY", raising=False)
     model = provider("abacus", None, "m")
     with pytest.raises(LoadAPIKeyError, match="(?i)api key"):
-        generate_text(model, "hi")
+        generate_text(model, "hi", {"maxRetries": 0})
 
 
 def test_provider_params_fill_a_preset_template(monkeypatch):
@@ -127,7 +126,7 @@ def test_provider_params_fill_a_preset_template(monkeypatch):
     # Without the parameter the preset cannot build its base URL (reported at call time).
     unfilled = provider("cloudflare_workers_ai", "sk-test-fake-key", "m")
     with pytest.raises(InvalidArgumentError, match="account_id"):
-        generate_text(unfilled, "hi", {"max_retries": 0})
+        generate_text(unfilled, "hi", {"maxRetries": 0})
     model = provider(
         "cloudflare_workers_ai",
         "sk-test-fake-key",

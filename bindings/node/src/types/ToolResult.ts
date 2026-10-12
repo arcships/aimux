@@ -9,7 +9,7 @@ export type ToolResult = {
 /**
  * Must match the corresponding call's `tool_call_id`.
  */
-tool_call_id: string, tool_name: string, 
+toolCallId: string, toolName: string, 
 /**
  * The tool's output (usually a JSON-serializable value or plain text).
  */
@@ -17,16 +17,16 @@ result: JsonValue,
 /**
  * Whether the result is an error or error message.
  */
-is_error?: boolean | null, 
+isError?: boolean, 
 /**
  * Whether the result is preliminary (replaces prior, e.g. image previews).
  */
-preliminary?: boolean | null, 
+preliminary?: boolean, 
 /**
  * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
  */
-dynamic?: boolean | null, 
+dynamic?: boolean, 
 /**
  * Additional provider-specific metadata for the tool result.
  */
-provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, };
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, };

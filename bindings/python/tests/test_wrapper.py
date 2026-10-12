@@ -19,7 +19,6 @@ from aimux.wrapper import (
     TextContentPart,
     FunctionTool,
     ToolChoiceTool,
-    StreamPart,
     generate_text,
     stream_text,
     parse_stream_part,
@@ -81,12 +80,12 @@ class TestGenerateText:
 
         # raw.content carries the ToolCall variant as a typed GenerateContent.
         assert isinstance(result.raw.content, list)
-        tool_call_parts = [c for c in result.raw.content if c.root.type == "ToolCall"]
-        assert tool_call_parts, "raw.content must contain a ToolCall variant"
-        assert tool_call_parts[0].root.tool_name == "get_weather"
-        assert tool_call_parts[0].root.tool_call_id == "call_abc"
+        tool_call_parts = [c for c in result.raw.content if c.type == "tool-call"]
+        assert tool_call_parts, "raw.content must contain a tool-call variant"
+        assert tool_call_parts[0].tool_name == "get_weather"
+        assert tool_call_parts[0].tool_call_id == "call_abc"
         # raw content keeps the provider's argument text (see test_e2e).
-        assert tool_call_parts[0].root.input == '{"location":"Tokyo"}'
+        assert tool_call_parts[0].input == '{"location":"Tokyo"}'
 
     def test_raw_content_is_text_variant(self):
         with MockServer(OPENAI_CHAT) as mock:
@@ -95,8 +94,8 @@ class TestGenerateText:
 
         # raw.content[0] is a typed Text content part.
         first = result.raw.content[0]
-        assert first.root.type == "Text"
-        assert first.root.text == "Rust is a systems programming language."
+        assert first.type == "text"
+        assert first.text == "Rust is a systems programming language."
 
 
 # ── stream_text: typed-ish dicts ─────────────────────────────────────────────
@@ -109,7 +108,7 @@ class TestStreamText:
             parts = list(stream_text(model, "Say hello"))
 
         assert len(parts) > 0
-        text = "".join(p["TextDelta"]["delta"] for p in parts if "TextDelta" in p)
+        text = "".join(p["delta"] for p in parts if p["type"] == "text-delta")
         assert text == "Hello world"
 
     def test_stream_part_can_be_typed(self):
@@ -117,15 +116,14 @@ class TestStreamText:
         with MockServer(OPENAI_STREAM, content_type="text/event-stream") as mock:
             model = deepseek("test-key", "gpt-4o", mock.url)
             first_delta = next(
-                p for p in stream_text(model, "Say hello") if "TextDelta" in p
+                p for p in stream_text(model, "Say hello") if p["type"] == "text-delta"
             )
 
         sp = parse_stream_part(first_delta)
-        assert isinstance(sp, StreamPart)
-        assert sp.root.type == "TextDelta"
-        assert sp.root.delta == "Hello"
-        # Round-trips back to the external-tag dict form.
-        assert sp.model_dump(exclude_none=True) == first_delta
+        assert sp.type == "text-delta"
+        assert sp.delta == "Hello"
+        # Round-trips back to the wire dict form.
+        assert sp.model_dump(exclude_none=True, by_alias=True) == first_delta
 
     # ── RFC-0016 M2: include_raw_chunks ─────────────────────────────────────
 
@@ -139,19 +137,19 @@ class TestStreamText:
                             GenerateTextOptions(include_raw_chunks=True))
             )
 
-        raw_parts = [p for p in parts if "Raw" in p]
+        raw_parts = [p for p in parts if p["type"] == "raw"]
         # OPENAI_STREAM has 3 JSON events (2 content chunks + 1 usage chunk);
         # the [DONE] sentinel emits no Raw.
         assert len(raw_parts) == 3
         # Each Raw carries the parsed JSON payload of the SSE event.
         assert (
-            raw_parts[0]["Raw"]["raw_value"]["choices"][0]["delta"]["content"]
+            raw_parts[0]["rawValue"]["choices"][0]["delta"]["content"]
             == "Hello"
         )
         # Raw for the first event precedes its TextDelta.
         first_raw_idx = parts.index(raw_parts[0])
         first_text_idx = next(
-            i for i, p in enumerate(parts) if "TextDelta" in p
+            i for i, p in enumerate(parts) if p["type"] == "text-delta"
         )
         assert first_raw_idx < first_text_idx
 
@@ -161,13 +159,13 @@ class TestStreamText:
             model = deepseek("test-key", "gpt-4o", mock.url)
             parts = list(stream_text(model, "Say hello"))
 
-        assert all("Raw" not in p for p in parts)
+        assert all(p["type"] != "raw" for p in parts)
 
     def test_include_raw_chunks_option_roundtrip(self):
         """Pure model-layer round-trip of the include_raw_chunks option."""
         opts = GenerateTextOptions(include_raw_chunks=True)
-        dumped = opts.model_dump_json(exclude_none=True)
-        assert '"include_raw_chunks":true' in dumped
+        dumped = _opts_to_json(opts)
+        assert '"includeRawChunks":true' in dumped
         back = GenerateTextOptions.model_validate_json(dumped)
         assert back.include_raw_chunks is True
 
@@ -230,18 +228,18 @@ class TestOptionsReachProvider:
     def test_tool_choice_serializes_camel_case_tool_name(self):
         """At the wrapper→Rust JSON boundary, the ``tool`` tool-choice variant
         must serialize as ``{"type":"tool","toolName":"..."}`` (camelCase), the
-        hand-rolled serde wire format Rust expects. This is a deterministic
+        AI SDK shape Rust expects. This is a deterministic
         unit test of the boundary, independent of provider conversion."""
         opts = GenerateTextOptions(
             tools=[FunctionTool(name="get_weather", input_schema={"type": "object"})],
             tool_choice=ToolChoiceTool(tool_name="get_weather"),
         )
         wire = json.loads(_opts_to_json(opts))
-        assert wire["tool_choice"] == {"type": "tool", "toolName": "get_weather"}
+        assert wire["toolChoice"] == {"type": "tool", "toolName": "get_weather"}
 
         # And it round-trips back into the typed model.
         from aimux.wrapper import ToolChoiceTool as _TCT
-        back = _TCT.model_validate(wire["tool_choice"])
+        back = _TCT.model_validate(wire["toolChoice"])
         assert back.tool_name == "get_weather"
 
 
@@ -331,9 +329,9 @@ class TestToolCallRoundTrip:
                     role="assistant",
                     content=[
                         {
-                            "type": "tool_call",
-                            "tool_call_id": "call_abc",
-                            "tool_name": "get_weather",
+                            "type": "tool-call",
+                            "toolCallId": "call_abc",
+                            "toolName": "get_weather",
                             "input": {"location": "Tokyo"},
                         }
                     ],
@@ -342,9 +340,13 @@ class TestToolCallRoundTrip:
                     role="tool",
                     content=[
                         {
-                            "type": "tool_result",
-                            "tool_call_id": "call_abc",
-                            "result": {"temperature": 22, "condition": "sunny"},
+                            "type": "tool-result",
+                            "toolCallId": "call_abc",
+                            "toolName": "get_weather",
+                            "output": {
+                                "type": "json",
+                                "value": {"temperature": 22, "condition": "sunny"},
+                            },
                         }
                     ],
                 ),

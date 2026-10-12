@@ -307,21 +307,26 @@ fn done(text: &str, duration: f64) -> Value {
 }
 
 fn kinds(parts: &[Value]) -> Vec<&str> {
-    parts
-        .iter()
-        .map(|p| p.as_object().unwrap().keys().next().unwrap().as_str())
-        .collect()
+    parts.iter().map(|p| p["type"].as_str().unwrap()).collect()
 }
 
 fn of_kind(parts: &[Value], kind: &str) -> Vec<Value> {
-    parts.iter().filter_map(|p| p.get(kind).cloned()).collect()
+    parts
+        .iter()
+        .filter(|p| p["type"] == kind)
+        .cloned()
+        .collect()
 }
 
 fn finish(text: &str, language: Value, duration: Option<f64>) -> Value {
-    json!({"Finish": {
-        "text": text, "segments": [], "language": language,
-        "duration_in_seconds": duration, "provider_metadata": null
-    }})
+    let mut part = json!({"type": "finish", "text": text, "segments": []});
+    if !language.is_null() {
+        part["language"] = language;
+    }
+    if let Some(duration) = duration {
+        part["durationInSeconds"] = json!(duration);
+    }
+    part
 }
 
 // ── tests: model information ────────────────────────────────────────────────
@@ -579,15 +584,15 @@ async fn should_stream_xai_stt_over_websocket() {
     assert_eq!(
         run.values(),
         vec![
-            json!({"StreamStart": {"warnings": []}}),
-            json!({"TranscriptPartial": {
-                "id": null, "text": "Hel", "start_second": 0.0, "duration_in_seconds": 0.5,
-                "channel_index": null, "provider_metadata": null
-            }}),
-            json!({"TranscriptFinal": {
-                "id": null, "text": "Hello", "start_second": 0.0, "end_second": 1.0,
-                "channel_index": null, "provider_metadata": null
-            }}),
+            json!({"type": "stream-start", "warnings": []}),
+            json!({
+                "type": "transcript-partial", "text": "Hel", "startSecond": 0.0,
+                "durationInSeconds": 0.5
+            }),
+            json!({
+                "type": "transcript-final", "text": "Hello", "startSecond": 0.0,
+                "endSecond": 1.0
+            }),
             finish("Hello", json!("en"), Some(1.0)),
         ]
     );
@@ -628,14 +633,14 @@ async fn should_emit_one_final_per_utterance_and_reconstruct_finish_text() {
     let parts = run(None, events).await.values();
 
     assert_eq!(
-        of_kind(&parts, "TranscriptFinal"),
+        of_kind(&parts, "transcript-final"),
         vec![json!({
-            "id": null, "text": "Hello world.", "start_second": 0.0, "end_second": 1.0,
-            "channel_index": null, "provider_metadata": null
+            "type": "transcript-final", "text": "Hello world.", "startSecond": 0.0,
+            "endSecond": 1.0
         })]
     );
     // the speech_final:false re-send surfaces as a partial
-    assert_eq!(of_kind(&parts, "TranscriptPartial").len(), 2);
+    assert_eq!(of_kind(&parts, "transcript-partial").len(), 2);
     assert_eq!(
         parts.last().unwrap(),
         &finish("Hello world.", Value::Null, Some(1.0))
@@ -656,14 +661,14 @@ async fn should_treat_is_final_fragments_as_partials_and_use_speech_final_text()
     assert_eq!(
         kinds(&parts),
         [
-            "StreamStart",
-            "TranscriptPartial",
-            "TranscriptPartial",
-            "TranscriptFinal",
-            "Finish"
+            "stream-start",
+            "transcript-partial",
+            "transcript-partial",
+            "transcript-final",
+            "finish"
         ]
     );
-    assert_eq!(parts.last().unwrap()["Finish"]["text"], "No, I'm not.");
+    assert_eq!(parts.last().unwrap()["text"], "No, I'm not.");
 }
 
 /// TS: doStream > should fall back to the latest pending text when no speech_final arrived before transcript.done
@@ -677,8 +682,8 @@ async fn should_fall_back_to_latest_pending_text_without_speech_final() {
     let parts = run(None, events).await.values();
 
     let last = parts.last().unwrap();
-    assert_eq!(kinds(&parts).last(), Some(&"Finish"));
-    assert_eq!(last["Finish"]["text"], "Hello world");
+    assert_eq!(kinds(&parts).last(), Some(&"finish"));
+    assert_eq!(last["text"], "Hello world");
 }
 
 /// TS: doStream > should join finalized utterances per channel when transcript.done is empty
@@ -692,7 +697,7 @@ async fn should_join_finalized_utterances_when_transcript_done_is_empty() {
     let parts = run(None, events).await.values();
 
     assert_eq!(
-        parts.last().unwrap()["Finish"]["text"],
+        parts.last().unwrap()["text"],
         "First utterance. Second utterance."
     );
 }

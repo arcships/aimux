@@ -180,7 +180,7 @@ async fn media_is_native_per_runtime_and_recorded_for_replay() {
         let mut request = options();
         request.images = vec![serde_json::from_value(image.clone()).unwrap()];
         let mut expected = fixture()["request"].clone();
-        let encoded = image["data"]["Base64"].as_str().unwrap();
+        let encoded = image["data"].as_str().unwrap();
         let data_url = format!("data:image/png;base64,{encoded}");
         expected["images"] = match provider {
             "ollama" => json!([encoded]),

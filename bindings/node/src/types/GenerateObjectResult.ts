@@ -18,11 +18,11 @@ object: JsonValue,
 /**
  * Why generation stopped.
  */
-finish_reason: FinishReason, 
+finishReason: FinishReason, 
 /**
  * Raw provider-specific finish reason string.
  */
-raw_finish_reason: string | null, 
+rawFinishReason?: string, 
 /**
  * Token usage.
  */
@@ -34,11 +34,11 @@ warnings: Array<Warning>,
 /**
  * Concatenated reasoning text (if the model produced reasoning/thinking).
  */
-reasoning: string | null, 
+reasoning?: string, 
 /**
  * Provider-specific metadata (e.g. Anthropic cache info).
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Response metadata (id, timestamp, model_id).
  */

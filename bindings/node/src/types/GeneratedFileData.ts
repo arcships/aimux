@@ -4,4 +4,4 @@ import type { FileBytes } from "./FileBytes";
 /**
  * Data or a URL returned for a generated file.
  */
-export type GeneratedFileData = { "Data": { data: FileBytes, } } | { "Url": { url: string, original_url?: string | null, } };
+export type GeneratedFileData = { "type": "data", data: FileBytes, } | { "type": "url", url: string, originalUrl?: string, };

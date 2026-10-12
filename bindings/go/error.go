@@ -47,7 +47,7 @@ const (
 	CodeLoadAPIKey Code = 18
 	// CodeLoadSetting: a required provider setting was not passed and its
 	// fallback environment variable is unset (LoadSettingError).
-	CodeLoadSetting Code = 19
+	CodeLoadSetting       Code = 19
 	CodeNoOutputGenerated Code = 20
 )
 
