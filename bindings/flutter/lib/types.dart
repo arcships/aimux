@@ -932,6 +932,7 @@ class StreamTextResultAggregated {
 
   StreamTextResultAggregated({
     this.text = '',
+    this.content = const [],
     this.reasoning = const [],
     this.reasoningText = '',
     this.toolCalls = const [],
