@@ -2,7 +2,7 @@
 import type { WireTool } from "./WireTool";
 import type { JsonValue } from "./serde_json/JsonValue";
 
-export type WireOptions = { temperature?: number | null, max_output_tokens?: number | null, top_p?: number | null, stop_sequences?: Array<string> | null, tools?: Array<WireTool> | null, 
+export type WireOptions = { temperature?: number | null, max_output_tokens?: number | null, top_p?: number | null, stop_sequences?: Array<string> | null, tools?: Array<WireTool> | null,
 /**
  * `"text"` or `{"json": …}` — passed through as `ResponseFormat`.
  */
