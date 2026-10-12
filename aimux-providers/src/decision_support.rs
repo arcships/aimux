@@ -22,6 +22,18 @@ pub(crate) enum DecisionConfig {
 }
 
 impl DecisionConfig {
+    /// Resolve the full endpoint through the native model's URL callback.
+    pub(crate) fn url(&self, path: &str) -> Result<String, AiMuxError> {
+        match self {
+            Self::OpenAI(config) => config.url(path),
+            Self::Compatible(config) => Ok(format!(
+                "{}{}",
+                config.base_url.resolve()?.trim_end_matches('/'),
+                path
+            )),
+        }
+    }
+
     /// The provider's base URL; adapters append their own endpoint paths.
     pub(crate) fn base_url(&self) -> Result<String, AiMuxError> {
         let base = match self {
@@ -163,5 +175,33 @@ pub(crate) fn options(
     {
         None => Ok(serde_json::Map::new()),
         Some(options) => Ok(options.clone()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use aimux_provider_utils::Resolvable;
+
+    use super::*;
+
+    #[test]
+    fn native_decision_url_passes_endpoint_to_url_callback() {
+        let mut config = OpenAIModelConfig::fixed(
+            "openai".into(),
+            "https://example.com/v1".into(),
+            Resolvable::Value(HashMap::new()),
+            None,
+            None,
+        );
+        config.url = Arc::new(|path| {
+            assert_eq!(path, "/decisions");
+            Ok("https://example.com/decisions?version=1".into())
+        });
+        assert_eq!(
+            DecisionConfig::OpenAI(config).url("/decisions").unwrap(),
+            "https://example.com/decisions?version=1"
+        );
     }
 }

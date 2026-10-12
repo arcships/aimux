@@ -43,7 +43,7 @@ public class AimuxException extends RuntimeException {
 
     // ── aimux_error_code_t (aimux-error.h) ──────────────────────────────────
     // 19 variant codes (1–20; 1 is the catch-all OTHER; 4 is retired — the
-    // legacy Tool variant; 14 = RETRY; 18 / 19 = missing API key / setting);
+    // legacy Tool variant; 14 = RETRY; 19 / 20 = missing API key / setting);
     // every HTTP-shaped failure
     // arrives as AIMUX_E_API_CALL. A code outside that set is a header/library
     // mismatch and fails with IllegalStateException, never an AimuxException.
@@ -64,9 +64,9 @@ public class AimuxException extends RuntimeException {
     public static final int AIMUX_E_NO_SUCH_TOOL = 15;
     public static final int AIMUX_E_INVALID_TOOL_INPUT = 16;
     public static final int AIMUX_E_TOOL_CALL_REPAIR = 17;
-    public static final int AIMUX_E_LOAD_API_KEY = 18;
-    public static final int AIMUX_E_LOAD_SETTING = 19;
-    public static final int AIMUX_E_NO_OUTPUT_GENERATED = 20;
+    public static final int AIMUX_E_NO_OUTPUT_GENERATED = 18;
+    public static final int AIMUX_E_LOAD_API_KEY = 19;
+    public static final int AIMUX_E_LOAD_SETTING = 20;
     public static final int AIMUX_E_OTHER = 1;
     public static final int AIMUX_E_RETRY = 14;
 

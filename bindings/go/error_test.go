@@ -417,10 +417,19 @@ func TestMarshalledOptionsRejectRawPassThrough(t *testing.T) {
 		// invalid UTF-8 becomes U+FFFD, NUL becomes a \u0000 escape. No error here.
 		{"plain string field is sanitized, not rejected", func() error {
 			s, e := marshalJSON("opts", &SpeechCallOptions{Text: "hi\xffthere\x00"})
-			if e == nil && !strings.Contains(s, `"hi\ufffdthere\u0000"`) {
-				t.Errorf("expected U+FFFD / \\u0000 coercion, got %s", s)
+			if e != nil {
+				return e
 			}
-			return e
+			var decoded struct {
+				Text string `json:"text"`
+			}
+			if e := json.Unmarshal([]byte(s), &decoded); e != nil {
+				return e
+			}
+			if decoded.Text != "hi\ufffdthere\x00" || strings.ContainsRune(s, '\x00') {
+				t.Errorf("expected decoded U+FFFD / NUL without a raw NUL byte, got text %q from %s", decoded.Text, s)
+			}
+			return nil
 		}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -465,8 +474,9 @@ func TestEmbedRejectsRawPassThroughOpts(t *testing.T) {
 }
 
 func TestCodeFromCRejectsOutOfRange(t *testing.T) {
-	// 4 is retired; 14 is Retry; 15..17 are tool-call errors.
-	for _, bad := range []int{0, 4, 20, 999} {
+	// 4 is retired; 14 is Retry; 15..17 are tool-call errors; 18 is
+	// NoOutputGenerated; 19 / 20 are the missing-key / missing-setting codes.
+	for _, bad := range []int{0, 4, 21, 999} {
 		if _, ok := codeFromC(bad); ok {
 			t.Fatalf("%d is not an AiMuxError variant", bad)
 		}
@@ -481,12 +491,14 @@ func TestCodeFromCRejectsOutOfRange(t *testing.T) {
 	if c, ok := codeFromC(14); !ok || c != CodeRetry {
 		t.Fatalf("14 → %v, %v; want CodeRetry", c, ok)
 	}
-	// 18 / 19 are the missing-key / missing-setting codes.
-	if c, ok := codeFromC(18); !ok || c != CodeLoadAPIKey || c.String() != "LoadApiKey" {
-		t.Fatalf("18 → %v, %v; want CodeLoadAPIKey", c, ok)
+	if c, ok := codeFromC(18); !ok || c != CodeNoOutputGenerated || c.String() != "NoOutputGenerated" {
+		t.Fatalf("18 → %v, %v; want CodeNoOutputGenerated", c, ok)
 	}
-	if c, ok := codeFromC(19); !ok || c != CodeLoadSetting || c.String() != "LoadSetting" {
-		t.Fatalf("19 → %v, %v; want CodeLoadSetting", c, ok)
+	if c, ok := codeFromC(19); !ok || c != CodeLoadAPIKey || c.String() != "LoadApiKey" {
+		t.Fatalf("19 → %v, %v; want CodeLoadAPIKey", c, ok)
+	}
+	if c, ok := codeFromC(20); !ok || c != CodeLoadSetting || c.String() != "LoadSetting" {
+		t.Fatalf("20 → %v, %v; want CodeLoadSetting", c, ok)
 	}
 }
 

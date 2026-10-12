@@ -54,7 +54,7 @@ func TestTypedGenerateMessages(t *testing.T) {
 	// Verify the provider received both messages.
 	var reqBody map[string]any
 	json.Unmarshal([]byte(srv.LastRequestBody()), &reqBody)
-	messages := reqBody["messages"].([]any)
+	messages := reqBody["input"].([]any)
 	if len(messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(messages))
 	}

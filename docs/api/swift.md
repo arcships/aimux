@@ -149,7 +149,7 @@ have no Swift type — see "C ABI failures" below.
 Every fallible C function returns an opaque `aimux_error_t *`
 (`OpaquePointer?`): `NULL` = success (the result is in the trailing
 out-parameter), non-`NULL` = failure. One unified code selects `AimuxError`
-(1...19; 4 retired), `RecordingError` (100...105),
+(1...20; 4 retired), `RecordingError` (100...105),
 or a C ABI failure (200...206).
 The three decoders enforce the range expected by each call and restore the
 Swift error type; 200...206 collapses to `DecodingError.dataCorrupted`.
@@ -179,8 +179,9 @@ and yields the invariant `DecodingError.dataCorrupted("aimux ffi: <context>:
 | `.noSuchTool` | `AIMUX_E_NO_SUCH_TOOL` (15) | The model called a tool outside the supplied tool set; carries `toolName` and `availableTools` (`[String]?`, `nil` when no tool set was supplied) |
 | `.invalidToolInput` | `AIMUX_E_INVALID_TOOL_INPUT` (16) | Tool arguments failed to parse/validate; carries `toolName` and `toolInput` (the raw argument text) |
 | `.toolCallRepair` | `AIMUX_E_TOOL_CALL_REPAIR` (17) | A `repairToolCall` hook itself failed; carries `originalError` (the repaired-over error as wire JSON, the `ToolCall.error` encoding) |
-| `.loadApiKey` | `AIMUX_E_LOAD_API_KEY` (18) | No API key passed and the fallback environment variable is unset; carries `envVar` |
-| `.loadSetting` | `AIMUX_E_LOAD_SETTING` (19) | A required provider setting is missing; carries `envVar` |
+| `.noOutputGenerated` | `AIMUX_E_NO_OUTPUT_GENERATED` (18) | No output was generated |
+| `.loadApiKey` | `AIMUX_E_LOAD_API_KEY` (19) | No API key passed and the fallback environment variable is unset; carries `envVar` |
+| `.loadSetting` | `AIMUX_E_LOAD_SETTING` (20) | A required provider setting is missing; carries `envVar` |
 | `.other` | `AIMUX_E_OTHER` (1) | Unclassified core error |
 
 There are no binding-local cases: only aimux-core produces an `AimuxError`.
