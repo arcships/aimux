@@ -152,7 +152,7 @@ Tool-contract payloads have their own getters, mirroring the `NoSuchModel`
 ones: `aimux_error_tool_name` (codes 15/16), `aimux_error_available_tools`
 (15; a JSON string array, NULL when no tool set was supplied),
 `aimux_error_tool_input` (16), and `aimux_error_original_error` (17; the
-original failure as the same externally-tagged JSON used by
+original failure as the same name-tagged JSON used by
 `ToolCall.error`). All returned strings are caller-owned.
 
 `AIMUX_E_LOAD_API_KEY` (19) and `AIMUX_E_LOAD_SETTING` (20) are the AI SDK's
