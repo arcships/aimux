@@ -100,3 +100,13 @@ pub(crate) fn google_options(
 pub(crate) fn google_metadata(payload: Value) -> ProviderMetadata {
     Namespace::Google.metadata(payload)
 }
+
+/// `deserialize_with` for a zod `.optional()` field: absence is `None`, an
+/// explicit `null` is an error.
+pub(crate) fn no_null<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}

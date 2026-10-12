@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use crate::embedding_model::EmbeddingModel;
 use crate::error::AiMuxError;
+use crate::evaluation_model::EvaluationModel;
 use crate::files_model::Files;
 use crate::image_model::ImageModel;
 use crate::image_model_middleware::{ImageModelMiddleware, wrap_image_model};
@@ -181,6 +182,17 @@ impl ProviderRegistry {
     pub fn reranking_model(&self, id: &str) -> Result<Arc<dyn RerankingModel>, AiMuxError> {
         let (provider, model_id) = self.resolve(id, "rerankingModel")?;
         offered(provider.reranking_model(model_id), id, "rerankingModel")
+    }
+
+    /// The experimental evaluation model for a combined id. A provider that
+    /// offers none is [`AiMuxError::NoSuchModel`].
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::language_model`].
+    pub fn evaluation_model(&self, id: &str) -> Result<Arc<dyn EvaluationModel>, AiMuxError> {
+        let (provider, model_id) = self.resolve(id, "evaluationModel")?;
+        offered(provider.evaluation_model(model_id), id, "evaluationModel")
     }
 
     /// The video model for a combined id. A provider that offers none is
