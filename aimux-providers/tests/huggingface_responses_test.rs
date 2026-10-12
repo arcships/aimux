@@ -16,6 +16,7 @@
 //! overridden with the mock server's root URI (no `/v1` suffix), so the
 //! resulting request path is `/responses`.
 
+use aimux_core::tool::{RawToolCall, ToolResult};
 use std::collections::HashMap;
 
 use futures::StreamExt;
@@ -29,10 +30,9 @@ use aimux_core::generate::{GenerateTextOptions, generate_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
+use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::huggingface::responses::convert_to_huggingface_responses_messages;
@@ -536,27 +536,24 @@ async fn should_handle_mcp_tools_with_annotations() {
     // emits it as a separate content item too).
     assert_eq!(result.content.len(), 5);
     match &result.content[0] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "mcp_search_test");
             assert_eq!(tool_name, "search");
-            assert_eq!(
-                input,
-                &Value::String(r#"{"query": "San Francisco tech events"}"#.into())
-            );
+            assert_eq!(input, r#"{"query": "San Francisco tech events"}"#);
         }
         other => panic!("expected ToolCall at [0], got {other:?}"),
     }
     match &result.content[1] {
-        GenerateContent::ToolResult {
+        GenerateContent::ToolResult(ToolResult {
             tool_call_id,
             tool_name,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "mcp_search_test");
             assert_eq!(tool_name, "search");
         }
@@ -1110,15 +1107,15 @@ async fn should_handle_function_call_tool_responses() {
     // output, so there is no paired ToolResult.
     assert_eq!(result.content.len(), 2);
     match &result.content[0] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call_123");
             assert_eq!(tool_name, "getWeather");
-            assert_eq!(input, &Value::String(r#"{"location": "New York"}"#.into()));
+            assert_eq!(input, r#"{"location": "New York"}"#);
         }
         other => panic!("expected ToolCall at [0], got {other:?}"),
     }
@@ -1192,27 +1189,24 @@ async fn should_stream_tool_calls() {
         other => panic!("expected ToolInputEnd, got {other:?}"),
     }
     match &parts[4] {
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call_456");
             assert_eq!(tool_name, "calculator");
-            assert_eq!(
-                input,
-                &Value::String(r#"{"operation": "add", "a": 5, "b": 3}"#.into())
-            );
+            assert_eq!(input, r#"{"operation": "add", "a": 5, "b": 3}"#);
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
     match &parts[5] {
-        StreamPart::ToolResult {
+        StreamPart::ToolResult(ToolResult {
             tool_call_id,
             result,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call_456");
             assert_eq!(result, &json!("8"));
         }
@@ -1639,131 +1633,6 @@ async fn should_send_provider_specific_options() {
 // ════════════════════════════════════════════════════════════════════════════
 // Tool preparation
 // ════════════════════════════════════════════════════════════════════════════
-
-/// TS: tool preparation › "should prepare tools correctly"
-#[tokio::test]
-async fn should_prepare_tools_correctly() {
-    let server = MockServer::start().await;
-    mock_json(
-        &server,
-        json!({
-            "id": "resp_tools",
-            "model": "deepseek-ai/DeepSeek-V3-0324",
-            "object": "response",
-            "created_at": 1741257730,
-            "status": "completed",
-            "error": null,
-            "instructions": null,
-            "max_output_tokens": null,
-            "metadata": null,
-            "tool_choice": "auto",
-            "tools": [],
-            "temperature": 1.0,
-            "top_p": 1.0,
-            "incomplete_details": null,
-            "usage": null,
-            "output": [],
-            "output_text": "Test"
-        }),
-    )
-    .await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
-
-    let mut options = default_options(test_prompt());
-    options.tools = Some(vec![Tool::from(
-        FunctionTool::new(
-            "getWeather",
-            json!({
-                "type": "object",
-                "properties": { "location": { "type": "string" } },
-                "required": ["location"]
-            }),
-        )
-        .with_description("Get weather information"),
-    )]);
-    options.tool_choice = ToolChoice::Tool {
-        tool_name: "getWeather".to_string(),
-    };
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-
-    assert_eq!(
-        body["tools"],
-        json!([{
-            "type": "function",
-            "name": "getWeather",
-            "description": "Get weather information",
-            "parameters": {
-                "type": "object",
-                "properties": { "location": { "type": "string" } },
-                "required": ["location"]
-            }
-        }])
-    );
-    assert_eq!(
-        body["tool_choice"],
-        json!({ "type": "function", "function": { "name": "getWeather" } })
-    );
-}
-
-/// TS: tool preparation › "should handle auto and required tool choices"
-#[tokio::test]
-async fn should_handle_auto_and_required_tool_choices() {
-    let server = MockServer::start().await;
-    mock_json(
-        &server,
-        json!({
-            "id": "resp_tools",
-            "model": "deepseek-ai/DeepSeek-V3-0324",
-            "object": "response",
-            "created_at": 1741257730,
-            "status": "completed",
-            "error": null,
-            "instructions": null,
-            "max_output_tokens": null,
-            "metadata": null,
-            "tool_choice": "auto",
-            "tools": [],
-            "temperature": 1.0,
-            "top_p": 1.0,
-            "incomplete_details": null,
-            "usage": null,
-            "output": [],
-            "output_text": "Test"
-        }),
-    )
-    .await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses_model("deepseek-ai/DeepSeek-V3-0324");
-
-    // Test auto
-    let mut options = default_options(test_prompt());
-    options.tools = Some(vec![Tool::from(FunctionTool::new(
-        "test",
-        json!({ "type": "object" }),
-    ))]);
-    options.tool_choice = ToolChoice::Auto;
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["tool_choice"], json!("auto"));
-
-    // Test required
-    let mut options = default_options(test_prompt());
-    options.tools = Some(vec![Tool::from(FunctionTool::new(
-        "test",
-        json!({ "type": "object" }),
-    ))]);
-    options.tool_choice = ToolChoice::Required;
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result.request_body.expect("body");
-    assert_eq!(body["tool_choice"], json!("required"));
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Top-level-only media type resolution

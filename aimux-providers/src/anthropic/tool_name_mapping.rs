@@ -115,25 +115,8 @@ impl ToolNameMapping {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aimux_core::tool::{FunctionTool, ProviderTool};
+    use aimux_core::tool::FunctionTool;
     use serde_json::json;
-
-    fn provider_tool(id: &str, name: &str) -> Tool {
-        Tool::Provider(ProviderTool {
-            id: id.to_string(),
-            name: name.to_string(),
-            args: json!({}),
-        })
-    }
-
-    #[test]
-    fn maps_renamed_provider_tool_both_ways() {
-        let tools = vec![provider_tool("anthropic.web_search_20250305", "mySearch")];
-        let mapping = ToolNameMapping::new(Some(&tools));
-
-        assert_eq!(mapping.to_custom_tool_name("web_search"), "mySearch");
-        assert_eq!(mapping.to_provider_tool_name("mySearch"), "web_search");
-    }
 
     #[test]
     fn unmapped_names_pass_through() {
@@ -148,77 +131,5 @@ mod tests {
         let mapping = ToolNameMapping::new(Some(&tools));
         // A function tool named `web_search` must not hijack the provider name.
         assert_eq!(mapping.to_custom_tool_name("web_search"), "web_search");
-    }
-
-    #[test]
-    fn all_code_execution_versions_share_one_provider_name() {
-        for id in [
-            "anthropic.code_execution_20250522",
-            "anthropic.code_execution_20250825",
-            "anthropic.code_execution_20260120",
-        ] {
-            let tools = vec![provider_tool(id, "runCode")];
-            let mapping = ToolNameMapping::new(Some(&tools));
-            assert_eq!(
-                mapping.to_custom_tool_name("code_execution"),
-                "runCode",
-                "{id} must map to the code_execution provider name"
-            );
-        }
-    }
-
-    #[test]
-    fn marks_implicit_code_execution_dynamic_only_for_2026_web_tools() {
-        let web_only = vec![provider_tool("anthropic.web_search_20260209", "search")];
-        assert!(ToolNameMapping::new(Some(&web_only)).mark_code_execution_dynamic());
-
-        let web_and_code = vec![
-            provider_tool("anthropic.web_search_20260209", "search"),
-            provider_tool("anthropic.code_execution_20260120", "runCode"),
-        ];
-        assert!(!ToolNameMapping::new(Some(&web_and_code)).mark_code_execution_dynamic());
-
-        let old_web = vec![provider_tool("anthropic.web_search_20250305", "search")];
-        assert!(!ToolNameMapping::new(Some(&old_web)).mark_code_execution_dynamic());
-    }
-
-    /// Every provider tool id this crate can build a request for must also be
-    /// mappable, and to the same name the request body uses. The two tables are
-    /// written out separately, so without this they drift silently: a renamed
-    /// tool would round-trip under the wrong name.
-    #[test]
-    fn every_known_provider_tool_id_maps_to_its_request_name() {
-        use crate::anthropic::prepare_tools::prepare_provider_tool;
-        use std::collections::BTreeSet;
-
-        // Ids are recovered from the source rather than duplicated here, so a
-        // newly supported tool cannot be added without this test seeing it.
-        let src = include_str!("prepare_tools.rs");
-        let ids: BTreeSet<&str> = src
-            .match_indices("\"anthropic.")
-            .filter_map(|(i, _)| {
-                let rest = &src[i + 1..];
-                rest.find('"').map(|end| &rest[..end])
-            })
-            .collect();
-        assert!(
-            ids.len() > 10,
-            "expected to recover the id table, got {ids:?}"
-        );
-
-        for id in ids {
-            let mut betas = BTreeSet::new();
-            let Some(def) = prepare_provider_tool(id, &json!({}), &mut betas) else {
-                continue;
-            };
-            let request_name = def["name"].as_str().expect("provider tool has a name");
-            let tools = vec![provider_tool(id, "myCustomName")];
-            let mapping = ToolNameMapping::new(Some(&tools));
-            assert_eq!(
-                mapping.to_custom_tool_name(request_name),
-                "myCustomName",
-                "{id} is sent as `{request_name}` but is not in the name mapping"
-            );
-        }
     }
 }

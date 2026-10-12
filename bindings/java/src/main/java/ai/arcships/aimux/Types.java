@@ -410,7 +410,6 @@ public final class Types {
         @JsonProperty("input") private JsonNode input = emptyObject();
         @JsonProperty("provider_executed") private Boolean providerExecuted;
         @JsonProperty("dynamic") private Boolean dynamic;
-        @JsonProperty("thought_signature") private String thoughtSignature;
         @JsonProperty("provider_metadata") private JsonNode providerMetadata;
         @JsonProperty("invalid") private Boolean invalid;
         @JsonProperty("error") private JsonNode error;
@@ -419,13 +418,12 @@ public final class Types {
         ToolCall() {}
 
         private ToolCall(String toolCallId, String toolName, JsonNode input, Boolean providerExecuted, Boolean dynamic,
-                         String thoughtSignature, JsonNode providerMetadata, Boolean invalid, JsonNode error) {
+                         JsonNode providerMetadata, Boolean invalid, JsonNode error) {
             this.toolCallId = toolCallId;
             this.toolName = toolName;
             this.input = input;
             this.providerExecuted = providerExecuted;
             this.dynamic = dynamic;
-            this.thoughtSignature = thoughtSignature;
             this.providerMetadata = providerMetadata;
             this.invalid = invalid;
             this.error = error;
@@ -436,7 +434,6 @@ public final class Types {
         public JsonNode getInput() { return input; }
         public Boolean getProviderExecuted() { return providerExecuted; }
         public Boolean getDynamic() { return dynamic; }
-        public String getThoughtSignature() { return thoughtSignature; }
         public JsonNode getProviderMetadata() { return providerMetadata; }
         /** Set by Core when the tool call stays invalid after optional repair. */
         public Boolean getInvalid() { return invalid; }
@@ -451,7 +448,6 @@ public final class Types {
             private JsonNode input = emptyObject();
             private Boolean providerExecuted;
             private Boolean dynamic;
-            private String thoughtSignature;
             private JsonNode providerMetadata;
             private Boolean invalid;
             private JsonNode error;
@@ -461,13 +457,12 @@ public final class Types {
             public Builder input(JsonNode v) { this.input = v; return this; }
             public Builder providerExecuted(Boolean v) { this.providerExecuted = v; return this; }
             public Builder dynamic(Boolean v) { this.dynamic = v; return this; }
-            public Builder thoughtSignature(String v) { this.thoughtSignature = v; return this; }
             public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
             public Builder invalid(Boolean v) { this.invalid = v; return this; }
             public Builder error(JsonNode v) { this.error = v; return this; }
 
             public ToolCall build() {
-                return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, thoughtSignature, providerMetadata,
+                return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata,
                     invalid, error);
             }
         }
@@ -482,7 +477,6 @@ public final class Types {
                 && Objects.equals(input, that.input)
                 && Objects.equals(providerExecuted, that.providerExecuted)
                 && Objects.equals(dynamic, that.dynamic)
-                && Objects.equals(thoughtSignature, that.thoughtSignature)
                 && Objects.equals(providerMetadata, that.providerMetadata)
                 && Objects.equals(invalid, that.invalid)
                 && Objects.equals(error, that.error);
@@ -490,7 +484,7 @@ public final class Types {
 
         @Override
         public int hashCode() {
-            return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic, thoughtSignature, providerMetadata,
+            return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata,
                 invalid, error);
         }
     }
@@ -500,6 +494,25 @@ public final class Types {
     //
     // `Tool` is an internally-tagged union on `type` (`"function" | "provider"`).
     // ─────────────────────────────────────────────────────────────────────────────
+
+    public static class FunctionToolInputExample {
+        @JsonProperty("input") private ObjectNode input = emptyObject();
+
+        @JsonCreator
+        FunctionToolInputExample() {}
+
+        public FunctionToolInputExample(ObjectNode input) { this.input = input; }
+        public ObjectNode getInput() { return input; }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof FunctionToolInputExample
+                && Objects.equals(input, ((FunctionToolInputExample) o).input);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(input); }
+    }
 
     /**
      * A user-defined function tool.
@@ -512,13 +525,13 @@ public final class Types {
         @JsonProperty("input_schema") private JsonNode inputSchema = emptyObject();
         @JsonProperty("strict") private Boolean strict;
         @JsonProperty("provider_options") private Map<String, JsonNode> providerOptions;
-        @JsonProperty("input_examples") private List<JsonNode> inputExamples;
+        @JsonProperty("input_examples") private List<FunctionToolInputExample> inputExamples;
 
         @JsonCreator
         FunctionTool() {}
 
         private FunctionTool(String name, String description, JsonNode inputSchema, Boolean strict,
-                             Map<String, JsonNode> providerOptions, List<JsonNode> inputExamples) {
+                             Map<String, JsonNode> providerOptions, List<FunctionToolInputExample> inputExamples) {
             this.name = name;
             this.description = description;
             this.inputSchema = inputSchema;
@@ -532,7 +545,7 @@ public final class Types {
         public JsonNode getInputSchema() { return inputSchema; }
         public Boolean getStrict() { return strict; }
         public Map<String, JsonNode> getProviderOptions() { return providerOptions; }
-        public List<JsonNode> getInputExamples() { return inputExamples; }
+        public List<FunctionToolInputExample> getInputExamples() { return inputExamples; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -542,14 +555,14 @@ public final class Types {
             private JsonNode inputSchema = emptyObject();
             private Boolean strict;
             private Map<String, JsonNode> providerOptions;
-            private List<JsonNode> inputExamples;
+            private List<FunctionToolInputExample> inputExamples;
 
             public Builder name(String v) { this.name = v; return this; }
             public Builder description(String v) { this.description = v; return this; }
             public Builder inputSchema(JsonNode v) { this.inputSchema = v; return this; }
             public Builder strict(Boolean v) { this.strict = v; return this; }
             public Builder providerOptions(Map<String, JsonNode> v) { this.providerOptions = v; return this; }
-            public Builder inputExamples(List<JsonNode> v) { this.inputExamples = v; return this; }
+            public Builder inputExamples(List<FunctionToolInputExample> v) { this.inputExamples = v; return this; }
 
             public FunctionTool build() {
                 return new FunctionTool(name, description, inputSchema, strict, providerOptions, inputExamples);
@@ -583,12 +596,12 @@ public final class Types {
     public static class ProviderTool {
         @JsonProperty("id") private String id = "";
         @JsonProperty("name") private String name = "";
-        @JsonProperty("args") private JsonNode args = emptyObject();
+        @JsonProperty("args") private ObjectNode args = emptyObject();
 
         @JsonCreator
         ProviderTool() {}
 
-        private ProviderTool(String id, String name, JsonNode args) {
+        private ProviderTool(String id, String name, ObjectNode args) {
             this.id = id;
             this.name = name;
             this.args = args;
@@ -596,18 +609,18 @@ public final class Types {
 
         public String getId() { return id; }
         public String getName() { return name; }
-        public JsonNode getArgs() { return args; }
+        public ObjectNode getArgs() { return args; }
 
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
             private String id = "";
             private String name = "";
-            private JsonNode args = emptyObject();
+            private ObjectNode args = emptyObject();
 
             public Builder id(String v) { this.id = v; return this; }
             public Builder name(String v) { this.name = v; return this; }
-            public Builder args(JsonNode v) { this.args = v; return this; }
+            public Builder args(ObjectNode v) { this.args = v; return this; }
 
             public ProviderTool build() { return new ProviderTool(id, name, args); }
         }
@@ -649,13 +662,13 @@ public final class Types {
             @JsonProperty("input_schema") private JsonNode inputSchema = emptyObject();
             @JsonProperty("strict") private Boolean strict;
             @JsonProperty("provider_options") private Map<String, JsonNode> providerOptions;
-            @JsonProperty("input_examples") private List<JsonNode> inputExamples;
+            @JsonProperty("input_examples") private List<FunctionToolInputExample> inputExamples;
 
             @JsonCreator
             Function() {}
 
             private Function(String name, String description, JsonNode inputSchema, Boolean strict,
-                             Map<String, JsonNode> providerOptions, List<JsonNode> inputExamples) {
+                             Map<String, JsonNode> providerOptions, List<FunctionToolInputExample> inputExamples) {
                 this.name = name;
                 this.description = description;
                 this.inputSchema = inputSchema;
@@ -675,7 +688,7 @@ public final class Types {
             public JsonNode getInputSchema() { return inputSchema; }
             public Boolean getStrict() { return strict; }
             public Map<String, JsonNode> getProviderOptions() { return providerOptions; }
-            public List<JsonNode> getInputExamples() { return inputExamples; }
+            public List<FunctionToolInputExample> getInputExamples() { return inputExamples; }
 
             public static Builder builder() { return new Builder(); }
 
@@ -685,14 +698,14 @@ public final class Types {
                 private JsonNode inputSchema = emptyObject();
                 private Boolean strict;
                 private Map<String, JsonNode> providerOptions;
-                private List<JsonNode> inputExamples;
+                private List<FunctionToolInputExample> inputExamples;
 
                 public Builder name(String v) { this.name = v; return this; }
                 public Builder description(String v) { this.description = v; return this; }
                 public Builder inputSchema(JsonNode v) { this.inputSchema = v; return this; }
                 public Builder strict(Boolean v) { this.strict = v; return this; }
                 public Builder providerOptions(Map<String, JsonNode> v) { this.providerOptions = v; return this; }
-                public Builder inputExamples(List<JsonNode> v) { this.inputExamples = v; return this; }
+                public Builder inputExamples(List<FunctionToolInputExample> v) { this.inputExamples = v; return this; }
 
                 public Function build() {
                     return new Function(name, description, inputSchema, strict, providerOptions, inputExamples);
@@ -722,12 +735,12 @@ public final class Types {
         public static class Provider extends Tool {
             @JsonProperty("id") private String id = "";
             @JsonProperty("name") private String name = "";
-            @JsonProperty("args") private JsonNode args = emptyObject();
+            @JsonProperty("args") private ObjectNode args = emptyObject();
 
             @JsonCreator
             Provider() {}
 
-            private Provider(String id, String name, JsonNode args) {
+            private Provider(String id, String name, ObjectNode args) {
                 this.id = id;
                 this.name = name;
                 this.args = args;
@@ -740,18 +753,18 @@ public final class Types {
 
             public String getId() { return id; }
             public String getName() { return name; }
-            public JsonNode getArgs() { return args; }
+            public ObjectNode getArgs() { return args; }
 
             public static Builder builder() { return new Builder(); }
 
             public static class Builder {
                 private String id = "";
                 private String name = "";
-                private JsonNode args = emptyObject();
+                private ObjectNode args = emptyObject();
 
                 public Builder id(String v) { this.id = v; return this; }
                 public Builder name(String v) { this.name = v; return this; }
-                public Builder args(JsonNode v) { this.args = v; return this; }
+                public Builder args(ObjectNode v) { this.args = v; return this; }
 
                 public Provider build() { return new Provider(id, name, args); }
             }
@@ -1273,19 +1286,17 @@ public final class Types {
             @JsonProperty("tool_name") private String toolName = "";
             @JsonProperty("input") private JsonNode input = emptyObject();
             @JsonProperty("provider_executed") private Boolean providerExecuted;
-            @JsonProperty("thought_signature") private String thoughtSignature;
             @JsonProperty("provider_options") private JsonNode providerOptions;
 
             @JsonCreator
             ToolCall() {}
 
             private ToolCall(String toolCallId, String toolName, JsonNode input,
-                             Boolean providerExecuted, String thoughtSignature, JsonNode providerOptions) {
+                             Boolean providerExecuted, JsonNode providerOptions) {
                 this.toolCallId = toolCallId;
                 this.toolName = toolName;
                 this.input = input;
                 this.providerExecuted = providerExecuted;
-                this.thoughtSignature = thoughtSignature;
                 this.providerOptions = providerOptions;
             }
 
@@ -1293,7 +1304,6 @@ public final class Types {
             public String getToolName() { return toolName; }
             public JsonNode getInput() { return input; }
             public Boolean getProviderExecuted() { return providerExecuted; }
-            public String getThoughtSignature() { return thoughtSignature; }
             public JsonNode getProviderOptions() { return providerOptions; }
 
             public static Builder builder() { return new Builder(); }
@@ -1303,18 +1313,16 @@ public final class Types {
                 private String toolName = "";
                 private JsonNode input = emptyObject();
                 private Boolean providerExecuted;
-                private String thoughtSignature;
                 private JsonNode providerOptions;
 
                 public Builder toolCallId(String v) { this.toolCallId = v; return this; }
                 public Builder toolName(String v) { this.toolName = v; return this; }
                 public Builder input(JsonNode v) { this.input = v; return this; }
                 public Builder providerExecuted(Boolean v) { this.providerExecuted = v; return this; }
-                public Builder thoughtSignature(String v) { this.thoughtSignature = v; return this; }
                 public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
 
                 public ToolCall build() {
-                    return new ToolCall(toolCallId, toolName, input, providerExecuted, thoughtSignature, providerOptions);
+                    return new ToolCall(toolCallId, toolName, input, providerExecuted, providerOptions);
                 }
             }
 
@@ -1327,13 +1335,12 @@ public final class Types {
                     && Objects.equals(toolName, that.toolName)
                     && Objects.equals(input, that.input)
                     && Objects.equals(providerExecuted, that.providerExecuted)
-                    && Objects.equals(thoughtSignature, that.thoughtSignature)
                     && Objects.equals(providerOptions, that.providerOptions);
             }
 
             @Override
             public int hashCode() {
-                return Objects.hash(toolCallId, toolName, input, providerExecuted, thoughtSignature, providerOptions);
+                return Objects.hash(toolCallId, toolName, input, providerExecuted, providerOptions);
             }
         }
 
@@ -1729,20 +1736,18 @@ public final class Types {
         @JsonProperty("input") private String input = "";
         @JsonProperty("provider_executed") private Boolean providerExecuted;
         @JsonProperty("dynamic") private Boolean dynamic;
-        @JsonProperty("thought_signature") private String thoughtSignature;
         @JsonProperty("provider_metadata") private JsonNode providerMetadata;
 
         @JsonCreator
         RawToolCall() {}
 
         private RawToolCall(String toolCallId, String toolName, String input, Boolean providerExecuted,
-                            Boolean dynamic, String thoughtSignature, JsonNode providerMetadata) {
+                            Boolean dynamic, JsonNode providerMetadata) {
             this.toolCallId = toolCallId;
             this.toolName = toolName;
             this.input = input;
             this.providerExecuted = providerExecuted;
             this.dynamic = dynamic;
-            this.thoughtSignature = thoughtSignature;
             this.providerMetadata = providerMetadata;
         }
 
@@ -1752,7 +1757,6 @@ public final class Types {
         public String getInput() { return input; }
         public Boolean getProviderExecuted() { return providerExecuted; }
         public Boolean getDynamic() { return dynamic; }
-        public String getThoughtSignature() { return thoughtSignature; }
         public JsonNode getProviderMetadata() { return providerMetadata; }
 
         public static Builder builder() { return new Builder(); }
@@ -1763,7 +1767,6 @@ public final class Types {
             private String input = "";
             private Boolean providerExecuted;
             private Boolean dynamic;
-            private String thoughtSignature;
             private JsonNode providerMetadata;
 
             public Builder toolCallId(String v) { this.toolCallId = v; return this; }
@@ -1771,12 +1774,11 @@ public final class Types {
             public Builder input(String v) { this.input = v; return this; }
             public Builder providerExecuted(Boolean v) { this.providerExecuted = v; return this; }
             public Builder dynamic(Boolean v) { this.dynamic = v; return this; }
-            public Builder thoughtSignature(String v) { this.thoughtSignature = v; return this; }
             public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
 
             public RawToolCall build() {
                 return new RawToolCall(toolCallId, toolName, input, providerExecuted, dynamic,
-                    thoughtSignature, providerMetadata);
+                    providerMetadata);
             }
         }
     }
@@ -2320,20 +2322,18 @@ public final class Types {
             @JsonProperty("input") private JsonNode input = emptyObject();
             @JsonProperty("provider_executed") private Boolean providerExecuted;
             @JsonProperty("dynamic") private Boolean dynamic;
-            @JsonProperty("thought_signature") private String thoughtSignature;
             @JsonProperty("provider_metadata") private JsonNode providerMetadata;
 
             @JsonCreator
             ToolCall() {}
 
             private ToolCall(String toolCallId, String toolName, JsonNode input, Boolean providerExecuted,
-                             Boolean dynamic, String thoughtSignature, JsonNode providerMetadata) {
+                             Boolean dynamic, JsonNode providerMetadata) {
                 this.toolCallId = toolCallId;
                 this.toolName = toolName;
                 this.input = input;
                 this.providerExecuted = providerExecuted;
                 this.dynamic = dynamic;
-                this.thoughtSignature = thoughtSignature;
                 this.providerMetadata = providerMetadata;
             }
 
@@ -2342,7 +2342,6 @@ public final class Types {
             public JsonNode getInput() { return input; }
             public Boolean getProviderExecuted() { return providerExecuted; }
             public Boolean getDynamic() { return dynamic; }
-            public String getThoughtSignature() { return thoughtSignature; }
             public JsonNode getProviderMetadata() { return providerMetadata; }
 
             public static Builder builder() { return new Builder(); }
@@ -2353,7 +2352,6 @@ public final class Types {
                 private JsonNode input = emptyObject();
                 private Boolean providerExecuted;
                 private Boolean dynamic;
-                private String thoughtSignature;
                 private JsonNode providerMetadata;
 
                 public Builder toolCallId(String v) { this.toolCallId = v; return this; }
@@ -2361,11 +2359,10 @@ public final class Types {
                 public Builder input(JsonNode v) { this.input = v; return this; }
                 public Builder providerExecuted(Boolean v) { this.providerExecuted = v; return this; }
                 public Builder dynamic(Boolean v) { this.dynamic = v; return this; }
-                public Builder thoughtSignature(String v) { this.thoughtSignature = v; return this; }
                 public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
 
                 public ToolCall build() {
-                    return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, thoughtSignature,
+                    return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic,
                         providerMetadata);
                 }
             }
@@ -2380,13 +2377,12 @@ public final class Types {
                     && Objects.equals(input, that.input)
                     && Objects.equals(providerExecuted, that.providerExecuted)
                     && Objects.equals(dynamic, that.dynamic)
-                    && Objects.equals(thoughtSignature, that.thoughtSignature)
                     && Objects.equals(providerMetadata, that.providerMetadata);
             }
 
             @Override
             public int hashCode() {
-                return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic, thoughtSignature,
+                return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic,
                     providerMetadata);
             }
         }
@@ -3543,7 +3539,6 @@ public final class Types {
             @JsonProperty("input") private JsonNode input = emptyObject();
             @JsonProperty("provider_executed") private Boolean providerExecuted;
             @JsonProperty("dynamic") private Boolean dynamic;
-            @JsonProperty("thought_signature") private String thoughtSignature;
             @JsonProperty("provider_metadata") private JsonNode providerMetadata;
             @JsonProperty("invalid") private Boolean invalid;
             @JsonProperty("error") private JsonNode error;
@@ -3552,14 +3547,13 @@ public final class Types {
             ToolCall() {}
 
             private ToolCall(String toolCallId, String toolName, JsonNode input, Boolean providerExecuted,
-                             Boolean dynamic, String thoughtSignature, JsonNode providerMetadata, Boolean invalid,
+                             Boolean dynamic, JsonNode providerMetadata, Boolean invalid,
                              JsonNode error) {
                 this.toolCallId = toolCallId;
                 this.toolName = toolName;
                 this.input = input;
                 this.providerExecuted = providerExecuted;
                 this.dynamic = dynamic;
-                this.thoughtSignature = thoughtSignature;
                 this.providerMetadata = providerMetadata;
                 this.invalid = invalid;
                 this.error = error;
@@ -3570,7 +3564,6 @@ public final class Types {
             public JsonNode getInput() { return input; }
             public Boolean getProviderExecuted() { return providerExecuted; }
             public Boolean getDynamic() { return dynamic; }
-            public String getThoughtSignature() { return thoughtSignature; }
             public JsonNode getProviderMetadata() { return providerMetadata; }
             /** Set by Core when the tool call stays invalid after optional repair. */
             public Boolean getInvalid() { return invalid; }
@@ -3585,7 +3578,6 @@ public final class Types {
                 private JsonNode input = emptyObject();
                 private Boolean providerExecuted;
                 private Boolean dynamic;
-                private String thoughtSignature;
                 private JsonNode providerMetadata;
                 private Boolean invalid;
                 private JsonNode error;
@@ -3595,13 +3587,12 @@ public final class Types {
                 public Builder input(JsonNode v) { this.input = v; return this; }
                 public Builder providerExecuted(Boolean v) { this.providerExecuted = v; return this; }
                 public Builder dynamic(Boolean v) { this.dynamic = v; return this; }
-                public Builder thoughtSignature(String v) { this.thoughtSignature = v; return this; }
                 public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
                 public Builder invalid(Boolean v) { this.invalid = v; return this; }
                 public Builder error(JsonNode v) { this.error = v; return this; }
 
                 public ToolCall build() {
-                    return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, thoughtSignature,
+                    return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic,
                         providerMetadata, invalid, error);
                 }
             }
@@ -3616,7 +3607,6 @@ public final class Types {
                     && Objects.equals(input, that.input)
                     && Objects.equals(providerExecuted, that.providerExecuted)
                     && Objects.equals(dynamic, that.dynamic)
-                    && Objects.equals(thoughtSignature, that.thoughtSignature)
                     && Objects.equals(providerMetadata, that.providerMetadata)
                     && Objects.equals(invalid, that.invalid)
                     && Objects.equals(error, that.error);
@@ -3624,7 +3614,7 @@ public final class Types {
 
             @Override
             public int hashCode() {
-                return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic, thoughtSignature,
+                return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic,
                     providerMetadata, invalid, error);
             }
         }

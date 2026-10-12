@@ -22,4 +22,4 @@ name: string,
  * The arguments for configuring the tool. Must match the expected
  * arguments defined by the provider for this tool.
  */
-args: JsonValue, };
+args: { [key in string]: JsonValue }, };

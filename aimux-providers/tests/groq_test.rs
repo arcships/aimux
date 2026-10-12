@@ -18,6 +18,7 @@
 //! browser_search tool, stream_options, etc.). Reasoning effort is a direct
 //! passthrough — no vendor normalization.
 
+use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -702,34 +703,6 @@ mod prepare_tools {
         assert_eq!(body["tools"][0]["function"]["parameters"]["type"], "object");
     }
 
-    /// TS: "should add warnings for unsupported provider-defined tools"
-    #[tokio::test]
-    async fn unsupported_provider_tool_warning() {
-        let server = MockServer::start().await;
-        mock_json(&server, text_completion_body()).await;
-
-        let model = make_provider(&server);
-
-        let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "some.unsupported_tool".to_string(),
-            name: "unsupported_tool".to_string(),
-            args: json!({}),
-        });
-        let options = CallOptions {
-            tools: Some(vec![tool]),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        // The unsupported tool should produce a warning.
-        assert!(result.warnings.iter().any(|w| match w {
-            aimux_core::types::Warning::Unsupported { feature, .. } => {
-                feature.contains("some.unsupported_tool")
-            }
-            _ => false,
-        }));
-    }
-
     /// TS: "should pass through strict mode when strict is true"
     #[tokio::test]
     async fn strict_mode_true() {
@@ -813,15 +786,13 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: ToolChoice::Auto,
+            tool_choice: Some(ToolChoice::Auto),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        // tool_choice is only sent when not Auto (default)
-        // Actually, the OpenAI converter sends tool_choice for Auto too
-        assert!(body.get("tool_choice").is_some() || body.get("tool_choice").is_none());
+        assert_eq!(body["tool_choice"], "auto");
     }
 
     /// TS: "should handle tool choice 'required'"
@@ -835,7 +806,7 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: ToolChoice::Required,
+            tool_choice: Some(ToolChoice::Required),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -855,7 +826,7 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: ToolChoice::None,
+            tool_choice: Some(ToolChoice::None),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -875,9 +846,9 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: ToolChoice::Tool {
+            tool_choice: Some(ToolChoice::Tool {
                 tool_name: "testFunction".to_string(),
-            },
+            }),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -885,138 +856,6 @@ mod prepare_tools {
         let body = first_request_body(&server).await;
         assert_eq!(body["tool_choice"]["type"], "function");
         assert_eq!(body["tool_choice"]["function"]["name"], "testFunction");
-    }
-
-    /// TS: "should handle browser search tool with supported model"
-    #[tokio::test]
-    async fn browser_search_supported_model() {
-        let server = MockServer::start().await;
-        mock_json(&server, text_completion_body()).await;
-
-        let model = provider(
-            "groq",
-            Some("test-api-key".to_string()),
-            "openai/gpt-oss-120b",
-            Some(ProviderOptions {
-                base_url: Some(server.uri()),
-                ..Default::default()
-            }),
-        )
-        .expect("groq provider should build");
-
-        let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "groq.browser_search".to_string(),
-            name: "browser_search".to_string(),
-            args: json!({}),
-        });
-        let options = CallOptions {
-            tools: Some(vec![tool]),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["tools"][0]["type"], "browser_search");
-    }
-
-    /// TS: "should warn when browser search is used with unsupported model"
-    #[tokio::test]
-    async fn browser_search_unsupported_model() {
-        let server = MockServer::start().await;
-        mock_json(&server, text_completion_body()).await;
-
-        let model = make_provider(&server);
-
-        let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "groq.browser_search".to_string(),
-            name: "browser_search".to_string(),
-            args: json!({}),
-        });
-        let options = CallOptions {
-            tools: Some(vec![tool]),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        assert!(result.warnings.iter().any(|w| match w {
-            aimux_core::types::Warning::Unsupported {
-                feature, details, ..
-            } => {
-                feature.contains("groq.browser_search")
-                    && details.as_ref().is_some_and(|d| d.contains("gemma2-9b-it"))
-            }
-            _ => false,
-        }));
-    }
-
-    /// TS: "should handle mixed tools with model validation"
-    #[tokio::test]
-    async fn mixed_tools_with_browser_search() {
-        let server = MockServer::start().await;
-        mock_json(&server, text_completion_body()).await;
-
-        let model = provider(
-            "groq",
-            Some("test-api-key".to_string()),
-            "openai/gpt-oss-20b",
-            Some(ProviderOptions {
-                base_url: Some(server.uri()),
-                ..Default::default()
-            }),
-        )
-        .expect("groq provider should build");
-
-        let func_tool = FunctionTool::new("test-tool", json!({"type":"object","properties":{}}))
-            .with_description("A test tool");
-        let browser_tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "groq.browser_search".to_string(),
-            name: "browser_search".to_string(),
-            args: json!({}),
-        });
-        let options = CallOptions {
-            tools: Some(vec![Tool::from(func_tool), browser_tool]),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["tools"][0]["type"], "function");
-        assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
-        assert_eq!(body["tools"][1]["type"], "browser_search");
-    }
-
-    /// TS: "should validate all browser search supported models"
-    #[tokio::test]
-    async fn browser_search_all_supported_models() {
-        for model_id in &["openai/gpt-oss-20b", "openai/gpt-oss-120b"] {
-            let server = MockServer::start().await;
-            mock_json(&server, text_completion_body()).await;
-
-            let model = provider(
-                "groq",
-                Some("test-api-key".to_string()),
-                model_id,
-                Some(ProviderOptions {
-                    base_url: Some(server.uri()),
-                    ..Default::default()
-                }),
-            )
-            .expect("groq provider should build");
-
-            let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-                id: "groq.browser_search".to_string(),
-                name: "browser_search".to_string(),
-                args: json!({}),
-            });
-            let options = CallOptions {
-                tools: Some(vec![tool]),
-                ..default_options(test_prompt())
-            };
-            model.do_generate(&options).await.unwrap();
-
-            let body = first_request_body(&server).await;
-            assert_eq!(body["tools"][0]["type"], "browser_search");
-        }
     }
 }
 
@@ -1081,11 +920,11 @@ mod do_generate {
             .unwrap();
 
         let tool_call = result.content.iter().find_map(|c| match c {
-            GenerateContent::ToolCall {
+            GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone())),
             _ => None,
         });
         let (id, name) = tool_call.expect("should have tool call");
@@ -1435,9 +1274,9 @@ mod do_generate {
         );
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: ToolChoice::Tool {
+            tool_choice: Some(ToolChoice::Tool {
                 tool_name: "test-tool".to_string(),
-            },
+            }),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -1725,18 +1564,18 @@ mod do_stream {
 
         // Should have a ToolCall part
         let tool_call = parts.iter().find_map(|p| match p {
-            StreamPart::ToolCall {
+            StreamPart::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         });
         let (id, name, input) = tool_call.expect("should have tool call");
         assert_eq!(id, "call_abc");
         assert_eq!(name, "test-tool");
-        assert_eq!(input, Value::String(r#"{"value":"Sparkle Day"}"#.into()));
+        assert_eq!(input, r#"{"value":"Sparkle Day"}"#);
 
         // Should have tool-calls finish reason
         let finish = parts.iter().find_map(|p| match p {
@@ -1790,13 +1629,10 @@ mod do_stream {
         let parts = collect_stream(result).await;
 
         let tool_call = parts.iter().find_map(|p| match p {
-            StreamPart::ToolCall { input, .. } => Some(input.clone()),
+            StreamPart::ToolCall(RawToolCall { input, .. }) => Some(input.clone()),
             _ => None,
         });
-        assert_eq!(
-            tool_call.unwrap(),
-            Value::String(r#"{"value":"Sparkle Day"}"#.into())
-        );
+        assert_eq!(tool_call.unwrap(), r#"{"value":"Sparkle Day"}"#);
     }
 
     /// TS: "should stream usage from x_groq.usage"

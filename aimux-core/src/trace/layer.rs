@@ -573,7 +573,7 @@ impl LanguageModel for TraceLayer {
                     &item,
                     Ok(StreamPart::TextDelta { .. })
                         | Ok(StreamPart::ReasoningDelta { .. })
-                        | Ok(StreamPart::ToolCall { .. })
+                        | Ok(StreamPart::ToolCall(_))
                 );
                 if is_model_output {
                     ttft_obs.store(started.elapsed().as_millis() as u64, Ordering::Relaxed);

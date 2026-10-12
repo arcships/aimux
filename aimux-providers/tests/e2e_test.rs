@@ -840,7 +840,7 @@ async fn e2e_openai_stream_tool_calls() {
     let has_tool_part = parts.iter().any(|p| {
         matches!(
             p,
-            StreamPart::ToolCall { .. }
+            StreamPart::ToolCall(_)
                 | StreamPart::ToolInputStart { .. }
                 | StreamPart::ToolInputDelta { .. }
                 | StreamPart::ToolInputEnd { .. }
@@ -857,9 +857,9 @@ async fn e2e_openai_stream_tool_calls() {
 
     // If a complete ToolCall part exists, verify its fields
     let tool_call = parts.iter().find_map(|p| match p {
-        StreamPart::ToolCall {
+        StreamPart::ToolCall(aimux_core::tool::ToolCall {
             tool_name, input, ..
-        } => Some((tool_name, input)),
+        }) => Some((tool_name, input)),
         _ => None,
     });
     if let Some((tool_name, input)) = tool_call {

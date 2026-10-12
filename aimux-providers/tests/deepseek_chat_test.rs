@@ -26,6 +26,7 @@
 //! overridden with the mock server's root URI (no `/v1` suffix), so the
 //! resulting request path is `/chat/completions`.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use futures::StreamExt;
@@ -409,18 +410,15 @@ async fn should_extract_tool_call_content() {
     // The tool-call fixture has empty content and one tool call.
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::ToolCall {
+        GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        } => {
+        }) => {
             assert_eq!(tool_call_id, "call_00_9V0vrf86Pc9aelHCJMZqnJBo");
             assert_eq!(tool_name, "weather");
-            assert_eq!(
-                input,
-                &Value::String(r#"{"location": "San Francisco"}"#.into())
-            );
+            assert_eq!(input, r#"{"location": "San Francisco"}"#);
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -745,22 +743,19 @@ async fn should_stream_tool_call() {
     let tool_calls: Vec<_> = parts
         .iter()
         .filter_map(|p| match p {
-            StreamPart::ToolCall {
+            StreamPart::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 ..
-            } => Some((tool_call_id, tool_name, input)),
+            }) => Some((tool_call_id, tool_name, input)),
             _ => None,
         })
         .collect();
     assert_eq!(tool_calls.len(), 1);
     assert_eq!(tool_calls[0].0, "call_1");
     assert_eq!(tool_calls[0].1, "weather");
-    assert_eq!(
-        tool_calls[0].2,
-        &Value::String(r#"{"location": "San Francisco"}"#.into())
-    );
+    assert_eq!(tool_calls[0].2, r#"{"location": "San Francisco"}"#);
 
     // The last part should be Finish with ToolCalls.
     match parts.last() {
