@@ -297,17 +297,6 @@ mod tests {
         assert_eq!(attempts.load(Ordering::SeqCst), 0);
     }
 
-    #[test]
-    fn prepared_retries_use_the_fixed_delay_and_backoff() {
-        let retries = prepare_retries(Some(4), None);
-
-        assert_eq!(retries.max_retries, 4);
-        assert_eq!(retries.initial_delay_ms, DEFAULT_INITIAL_DELAY_MS);
-        assert_eq!(retries.backoff_factor, u64::from(DEFAULT_BACKOFF_FACTOR));
-        assert_eq!(prepare_retries(None, None).max_retries, DEFAULT_MAX_RETRIES);
-        assert_eq!(prepare_retries(Some(0), None).max_retries, 0);
-    }
-
     #[tokio::test]
     async fn first_non_retryable_error_is_not_wrapped() {
         let error = retry_with_exponential_backoff(

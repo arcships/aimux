@@ -121,14 +121,17 @@ impl Files for OpenAIFiles {
             .unwrap_or_else(|| "blob".to_string());
 
         // Build multipart/form-data body manually.
+        let expiry_seconds = openai_options.expires_after.map(|value| value.to_string());
+        let mut text_fields = vec![("purpose", purpose.as_str())];
+        if let Some(seconds) = expiry_seconds.as_deref() {
+            text_fields.push(("expires_after[anchor]", "created_at"));
+            text_fields.push(("expires_after[seconds]", seconds));
+        }
         let (body, content_type) = build_multipart_form(
             &format!("form-data; name=\"file\"; filename=\"{filename}\""),
             &options.media_type,
             &file_bytes,
-            &[("purpose", purpose.as_str())],
-            openai_options
-                .expires_after
-                .map(|v| ("expires_after", v.to_string())),
+            &text_fields,
         );
 
         let header_list = self.config.request_headers(None).await?;
@@ -200,31 +203,17 @@ impl Files for OpenAIFiles {
 /// - `file_media_type`: the media type for the file part.
 /// - `file_bytes`: the raw file content.
 /// - `text_fields`: name/value pairs for simple text fields (e.g. `purpose`).
-/// - `extra_text_field`: an optional additional text field.
 fn build_multipart_form(
     file_content_disposition: &str,
     file_media_type: &str,
     file_bytes: &[u8],
     text_fields: &[(&str, &str)],
-    extra_text_field: Option<(&str, String)>,
 ) -> (Vec<u8>, String) {
     let boundary = generate_boundary();
     let mut body = Vec::new();
 
     // Text fields first.
     for (name, value) in text_fields {
-        body.extend_from_slice(b"--");
-        body.extend_from_slice(boundary.as_bytes());
-        body.extend_from_slice(b"\r\n");
-        body.extend_from_slice(
-            format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n").as_bytes(),
-        );
-        body.extend_from_slice(value.as_bytes());
-        body.extend_from_slice(b"\r\n");
-    }
-
-    // Optional extra text field.
-    if let Some((name, value)) = extra_text_field {
         body.extend_from_slice(b"--");
         body.extend_from_slice(boundary.as_bytes());
         body.extend_from_slice(b"\r\n");

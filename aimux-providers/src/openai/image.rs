@@ -115,9 +115,10 @@ impl ImageModel for OpenAIImageModel {
 
         let (body_value, response_headers, _response_body) = if options.files.is_some() {
             // ── Edit path: multipart form data ──
+            validate_image_options(&options.provider_options, true)?;
             let openai_options = parse_edit_provider_options(&options.provider_options);
             let (form_body, content_type) =
-                build_edit_multipart(&self.model_id, options, &openai_options);
+                build_edit_multipart(&self.model_id, options, &openai_options).await?;
 
             let resp = aimux_provider_utils::post_to_api(
                 self.config
@@ -132,6 +133,7 @@ impl ImageModel for OpenAIImageModel {
             (val, resp.response_headers, None)
         } else {
             // ── Generation path: JSON body ──
+            validate_image_options(&options.provider_options, false)?;
             let openai_options = parse_generation_provider_options(&options.provider_options);
             let body = self
                 .config
@@ -173,6 +175,57 @@ impl ImageModel for OpenAIImageModel {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Validate the fields accepted by the upstream generation/edit schemas.
+fn validate_image_options(options: &SharedProviderOptions, edit: bool) -> Result<(), AiMuxError> {
+    let Some(options) = options.get("openai") else {
+        return Ok(());
+    };
+    let enums: &[(&str, &[&str])] = &[
+        (
+            "quality",
+            &[
+                "standard", "hd", "low", "medium", "high", "xhigh", "max", "auto",
+            ],
+        ),
+        ("background", &["transparent", "opaque", "auto"]),
+        ("outputFormat", &["png", "jpeg", "webp"]),
+    ];
+    let validate_enum = |name: &str, values: &[&str]| -> Result<(), AiMuxError> {
+        if let Some(value) = options.get(name)
+            && !value.as_str().is_some_and(|value| values.contains(&value))
+        {
+            return Err(AiMuxError::InvalidArgument(format!(
+                "invalid openai image option: {name}"
+            )));
+        }
+        Ok(())
+    };
+    for (name, values) in enums {
+        validate_enum(name, values)?;
+    }
+    if edit {
+        validate_enum("inputFidelity", &["high", "low"])?;
+    } else {
+        validate_enum("style", &["vivid", "natural"])?;
+        validate_enum("moderation", &["auto", "low"])?;
+    }
+    if let Some(value) = options.get("outputCompression")
+        && !value
+            .as_f64()
+            .is_some_and(|value| (0.0..=100.0).contains(&value) && value.fract() == 0.0)
+    {
+        return Err(AiMuxError::InvalidArgument(
+            "invalid openai image option: outputCompression".into(),
+        ));
+    }
+    if options.get("user").is_some_and(|value| !value.is_string()) {
+        return Err(AiMuxError::InvalidArgument(
+            "invalid openai image option: user".into(),
+        ));
+    }
+    Ok(())
+}
 
 /// OpenAI generation provider options (camelCase → snake_case mapping).
 struct GenerationOptions {
@@ -269,38 +322,55 @@ fn build_generation_body(
     body
 }
 
-/// Decode an `ImageFile` to raw bytes.
-fn image_file_to_bytes(file: &ImageFile) -> Result<Vec<u8>, AiMuxError> {
+/// Convert inline data or download a URL without forwarding provider credentials.
+async fn image_file_to_bytes(
+    file: &ImageFile,
+    options: &ImageCallOptions,
+) -> Result<(Vec<u8>, String), AiMuxError> {
     match file {
-        ImageFile::File { data, .. } => match data {
-            ImageFileData::Binary(bytes) => Ok(bytes.clone()),
-            ImageFileData::Base64(b64) => {
-                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
-                    .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))
-            }
-        },
-        ImageFile::Url { .. } => Err(AiMuxError::InvalidArgument(
-            "OpenAI image edit does not support URL files in this implementation".to_string(),
-        )),
-    }
-}
-
-/// Get the media type from an `ImageFile`.
-fn image_file_media_type(file: &ImageFile) -> &str {
-    match file {
-        ImageFile::File { media_type, .. } => media_type,
-        ImageFile::Url { .. } => "application/octet-stream",
+        ImageFile::File {
+            data, media_type, ..
+        } => {
+            let bytes = match data {
+                ImageFileData::Binary(bytes) => bytes.clone(),
+                ImageFileData::Base64(value) => {
+                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, value)
+                        .map_err(|error| {
+                            AiMuxError::InvalidArgument(format!("invalid base64: {error}"))
+                        })?
+                }
+            };
+            Ok((bytes, media_type.clone()))
+        }
+        ImageFile::Url { url, .. } => {
+            let response = aimux_provider_utils::get_from_api(
+                aimux_provider_utils::HttpRequest {
+                    url: url.clone(),
+                    abort_signal: options.abort_signal.clone(),
+                    ..Default::default()
+                },
+                aimux_provider_utils::create_binary_response_handler(),
+                super::openai_failed_response_handler(),
+            )
+            .await?;
+            let media_type = response
+                .response_headers
+                .get("content-type")
+                .cloned()
+                .unwrap_or_default();
+            Ok((response.value.to_vec(), media_type))
+        }
     }
 }
 
 /// Build the multipart form-data body for `/images/edits`.
 ///
 /// Returns `(body_bytes, content_type)`.
-fn build_edit_multipart(
+async fn build_edit_multipart(
     model_id: &str,
     options: &ImageCallOptions,
     openai: &EditOptions,
-) -> (Vec<u8>, String) {
+) -> Result<(Vec<u8>, String), AiMuxError> {
     let boundary = generate_boundary();
     let mut body = Vec::new();
 
@@ -346,22 +416,26 @@ fn build_edit_multipart(
     let files = options.files.as_ref().unwrap();
     if files.len() == 1 {
         let file = &files[0];
-        let media_type = image_file_media_type(file);
-        let bytes = image_file_to_bytes(file).unwrap_or_default();
-        write_file_field(&mut body, &boundary, "image", "image", media_type, &bytes);
+        let (bytes, media_type) = image_file_to_bytes(file, options).await?;
+        write_file_field(&mut body, &boundary, "image", "image", &media_type, &bytes);
     } else {
         for file in files {
-            let media_type = image_file_media_type(file);
-            let bytes = image_file_to_bytes(file).unwrap_or_default();
-            write_file_field(&mut body, &boundary, "image[]", "image", media_type, &bytes);
+            let (bytes, media_type) = image_file_to_bytes(file, options).await?;
+            write_file_field(
+                &mut body,
+                &boundary,
+                "image[]",
+                "image",
+                &media_type,
+                &bytes,
+            );
         }
     }
 
     // Mask (optional).
     if let Some(ref mask) = options.mask {
-        let media_type = image_file_media_type(mask);
-        let bytes = image_file_to_bytes(mask).unwrap_or_default();
-        write_file_field(&mut body, &boundary, "mask", "mask", media_type, &bytes);
+        let (bytes, media_type) = image_file_to_bytes(mask, options).await?;
+        write_file_field(&mut body, &boundary, "mask", "mask", &media_type, &bytes);
     }
 
     // Closing boundary.
@@ -370,7 +444,7 @@ fn build_edit_multipart(
     body.extend_from_slice(b"--\r\n");
 
     let content_type = format!("multipart/form-data; boundary={boundary}");
-    (body, content_type)
+    Ok((body, content_type))
 }
 
 fn write_text_field(body: &mut Vec<u8>, boundary: &str, name: &str, value: &str) {

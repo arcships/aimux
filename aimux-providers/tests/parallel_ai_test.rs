@@ -194,8 +194,6 @@ async fn status_403_maps_to_provider_error() {
     );
 }
 
-// -- Provider trait ----------------------------------------------------------
-
 #[test]
 fn model_id_is_parallel_search() {
     let config = ParallelAiProviderSettings {

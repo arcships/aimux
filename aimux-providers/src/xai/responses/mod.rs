@@ -44,6 +44,134 @@ fn generate_source_id() -> String {
     format!("id-{}", SOURCE_ID_COUNTER.fetch_add(1, Ordering::SeqCst))
 }
 
+fn zero_usage() -> Usage {
+    Usage {
+        input_tokens: aimux_core::types::InputTokenUsage {
+            total: Some(0),
+            no_cache: Some(0),
+            cache_read: Some(0),
+            cache_write: Some(0),
+        },
+        output_tokens: aimux_core::types::OutputTokenUsage {
+            total: Some(0),
+            text: Some(0),
+            reasoning: Some(0),
+        },
+        raw: None,
+    }
+}
+
+fn response_provider_metadata(
+    cost: Option<u64>,
+    service_tier: Option<&str>,
+    prompt_cache_key: Option<&str>,
+    safety_identifier: Option<&str>,
+) -> Option<aimux_core::types::ProviderMetadata> {
+    let mut metadata = serde_json::Map::new();
+    if let Some(cost) = cost {
+        metadata.insert("costInUsdTicks".into(), json!(cost));
+    }
+    for (key, value) in [
+        ("serviceTier", service_tier),
+        ("promptCacheKey", prompt_cache_key),
+        ("safetyIdentifier", safety_identifier),
+    ] {
+        if let Some(value) = value {
+            metadata.insert(key.into(), json!(value));
+        }
+    }
+    (!metadata.is_empty()).then(|| crate::xai::options::xai_metadata(Value::Object(metadata)))
+}
+
+fn map_web_search_action(action: &Value) -> Value {
+    let Some(kind) = action.get("type").and_then(Value::as_str) else {
+        return json!({});
+    };
+    let fields: &[&str] = match kind {
+        "search" => &["query"],
+        "open_page" => &["url"],
+        "find_in_page" => &["url", "pattern"],
+        _ => return json!({}),
+    };
+    if fields.iter().any(|key| {
+        action
+            .get(key)
+            .is_some_and(|v| !v.is_null() && !v.is_string())
+    }) || action
+        .get("sources")
+        .is_some_and(|v| !v.is_null() && !v.is_array())
+        || (kind == "search"
+            && action.get("queries").is_some_and(|v| {
+                !v.is_null() && !v.as_array().is_some_and(|a| a.iter().all(Value::is_string))
+            }))
+    {
+        return json!({});
+    }
+    let mapped_type = match kind {
+        "open_page" => "openPage",
+        "find_in_page" => "findInPage",
+        _ => kind,
+    };
+    let mut mapped_action = json!({ "type": mapped_type });
+    for key in fields {
+        if let Some(value) = action.get(key)
+            && (kind != "search" || !value.is_null())
+        {
+            mapped_action[key] = value.clone();
+        }
+    }
+    if kind == "search"
+        && let Some(queries) = action.get("queries").filter(|v| !v.is_null())
+    {
+        mapped_action["queries"] = queries.clone();
+    }
+    let mut result = json!({ "action": mapped_action });
+    if let Some(sources) = action.get("sources").and_then(Value::as_array) {
+        let sources: Vec<Value> = sources
+            .iter()
+            .filter(|source| source.get("type").and_then(Value::as_str) == Some("url"))
+            .filter_map(|source| source.get("url").and_then(Value::as_str))
+            .map(|url| json!({ "type": "url", "url": url }))
+            .collect();
+        if !sources.is_empty() {
+            result["sources"] = json!(sources);
+        }
+    }
+    result
+}
+
+fn image_generation_result(part: &Value, tool_name: String) -> ToolResult {
+    let (result, is_error) = match part.get("result").filter(|value| !value.is_null()) {
+        Some(result) => {
+            let mut output = json!({ "result": result });
+            if let Some(prompt) = part.get("prompt").filter(|value| !value.is_null()) {
+                output["prompt"] = prompt.clone();
+            }
+            (output, None)
+        }
+        None => (
+            json!(format!(
+                "Image generation failed (status: {}).",
+                part.get("status").and_then(Value::as_str).unwrap_or("")
+            )),
+            Some(true),
+        ),
+    };
+    ToolResult {
+        tool_call_id: part
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        tool_name,
+        result,
+        is_error,
+        preliminary: None,
+        dynamic: None,
+        provider_metadata: None,
+    }
+}
+
 /// An xAI Responses language model (Grok).
 ///
 /// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
@@ -85,7 +213,7 @@ impl LanguageModel for XaiResponsesModel {
 
         let response_headers = resp.response_headers;
 
-        let response_value = resp.raw_value.unwrap_or(Value::Null);
+        let raw_value = resp.raw_value.unwrap_or(Value::Null);
         let data = resp.value;
 
         let mut content: Vec<GenerateContent> = Vec::new();
@@ -93,6 +221,26 @@ impl LanguageModel for XaiResponsesModel {
 
         for part in &data.output {
             let part_type = part.get("type").and_then(|v| v.as_str()).unwrap_or("");
+
+            if part_type == "image_generation_call" {
+                let tool_name = resolve_tool_name(part_type, None, &provider_tool_names);
+                content.push(GenerateContent::ToolCall(RawToolCall {
+                    tool_call_id: part
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    tool_name: tool_name.clone(),
+                    input: "{}".to_string(),
+                    provider_executed: Some(true),
+                    dynamic: None,
+                    provider_metadata: None,
+                }));
+                content.push(GenerateContent::ToolResult(image_generation_result(
+                    part, tool_name,
+                )));
+                continue;
+            }
 
             // ── file_search_call ──
             if part_type == "file_search_call" {
@@ -157,12 +305,23 @@ impl LanguageModel for XaiResponsesModel {
 
                 content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: part_id.to_string(),
-                    tool_name,
+                    tool_name: tool_name.clone(),
                     input: tool_input,
                     provider_executed: Some(true),
                     dynamic: None,
                     provider_metadata: None,
                 }));
+                if part_type == "web_search_call" {
+                    content.push(GenerateContent::ToolResult(ToolResult {
+                        tool_call_id: part_id.to_string(),
+                        tool_name,
+                        result: map_web_search_action(part.get("action").unwrap_or(&Value::Null)),
+                        is_error: None,
+                        preliminary: None,
+                        dynamic: None,
+                        provider_metadata: None,
+                    }));
+                }
                 continue;
             }
 
@@ -253,8 +412,14 @@ impl LanguageModel for XaiResponsesModel {
                     };
 
                     let reasoning_text = texts.join("");
-                    let encrypted_content = part.get("encrypted_content").and_then(|v| v.as_str());
-                    let item_id = part.get("id").and_then(|v| v.as_str());
+                    let encrypted_content = part
+                        .get("encrypted_content")
+                        .and_then(|v| v.as_str())
+                        .filter(|v| !v.is_empty());
+                    let item_id = part
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .filter(|v| !v.is_empty());
 
                     if !reasoning_text.is_empty() || encrypted_content.is_some() {
                         let mut meta = json!({});
@@ -266,7 +431,8 @@ impl LanguageModel for XaiResponsesModel {
                         }
                         content.push(GenerateContent::Reasoning(ReasoningOutput {
                             text: reasoning_text,
-                            provider_metadata: Some(crate::xai::options::xai_metadata(json!(meta))),
+                            provider_metadata: (encrypted_content.is_some() || item_id.is_some())
+                                .then(|| crate::xai::options::xai_metadata(meta)),
                         }));
                     }
                 }
@@ -286,18 +452,19 @@ impl LanguageModel for XaiResponsesModel {
             raw: data.status.clone(),
         };
 
-        let (usage, provider_metadata) = if let Some(u) = &data.usage {
-            let meta = if u.cost_in_usd_ticks.is_some() {
-                Some(crate::xai::options::xai_metadata(
-                    json!({ "costInUsdTicks": u.cost_in_usd_ticks }),
-                ))
-            } else {
-                None
-            };
-            (convert_xai_responses_usage(u), meta)
-        } else {
-            (Usage::default(), None)
-        };
+        let usage = data.usage.as_ref().map_or_else(zero_usage, |u| {
+            let mut usage = convert_xai_responses_usage(u);
+            usage.raw = raw_value
+                .get("usage")
+                .and_then(|value| value.as_object().cloned());
+            usage
+        });
+        let provider_metadata = response_provider_metadata(
+            data.usage.as_ref().and_then(|u| u.cost_in_usd_ticks),
+            data.service_tier.as_deref(),
+            data.prompt_cache_key.as_deref(),
+            data.safety_identifier.as_deref(),
+        );
 
         let timestamp = data
             .created_at
@@ -314,7 +481,7 @@ impl LanguageModel for XaiResponsesModel {
                 timestamp,
                 model_id: data.model,
                 headers: Some(response_headers),
-                body: Some(response_value),
+                body: Some(raw_value),
             }),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
@@ -341,9 +508,9 @@ impl LanguageModel for XaiResponsesModel {
         let mut sse_stream = resp.value;
         let first_event = match sse_stream.next().await {
             Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
-            first_event => first_event,
+            first => first,
         };
-        if let Some(Ok(ref event)) = first_event
+        if let Some(Ok(event)) = &first_event
             && types::event_type(event) == "error"
         {
             return Err(super::xai_stream_error(
@@ -356,6 +523,7 @@ impl LanguageModel for XaiResponsesModel {
         let stream_error_url = endpoint;
         let stream_request_body = body.clone();
         let stream_response_headers = response_headers.clone();
+        let include_raw_chunks = options.include_raw_chunks == Some(true);
 
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings });
@@ -366,11 +534,14 @@ impl LanguageModel for XaiResponsesModel {
                 raw: None,
             };
             let mut cost_in_usd_ticks: Option<u64> = None;
+            let mut service_tier: Option<String> = None;
+            let mut prompt_cache_key: Option<String> = None;
+            let mut safety_identifier: Option<String> = None;
             let mut has_function_call = false;
             let mut is_first_chunk = true;
 
             // Track content blocks.
-            let mut content_blocks: HashMap<String, bool> = HashMap::new(); // block_id -> ended (text blocks)
+            let mut content_blocks: Vec<String> = Vec::new();
             let mut seen_tool_calls: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut active_reasoning: HashMap<String, ()> = HashMap::new();
 
@@ -378,10 +549,12 @@ impl LanguageModel for XaiResponsesModel {
             let mut ongoing_tool_calls: HashMap<u64, (String, String)> = HashMap::new(); // output_index -> (tool_call_id, tool_name)
 
             let mut event_iter = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
-
             while let Some(event) = event_iter.next().await {
                 match event {
                     Ok(parsed) => {
+                        if include_raw_chunks {
+                            yield Ok(StreamPart::Raw { raw_value: parsed.clone() });
+                        }
                         let event_type = types::event_type(&parsed);
 
                         // ── response.created / response.in_progress ──
@@ -462,8 +635,8 @@ impl LanguageModel for XaiResponsesModel {
                             let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
                             let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
                             let block_id = format!("text-{item_id}");
-                            if !content_blocks.contains_key(&block_id) {
-                                content_blocks.insert(block_id.clone(), false);
+                            if !content_blocks.contains(&block_id) {
+                                content_blocks.push(block_id.clone());
                                 yield Ok(StreamPart::TextStart { id: block_id.clone(), provider_metadata: None});
                             }
                             yield Ok(StreamPart::TextDelta {
@@ -517,9 +690,15 @@ impl LanguageModel for XaiResponsesModel {
                             let response = parsed.get("response").cloned().unwrap_or(Value::Null);
                             if let Some(usage) = response.get("usage")
                                 && let Ok(u) = serde_json::from_value::<types::XaiResponsesUsage>(usage.clone()) {
-                                    final_usage = Some(convert_xai_responses_usage(&u));
+                                    let mut converted = convert_xai_responses_usage(&u);
+                                    converted.raw = usage.as_object().cloned();
+                                    final_usage = Some(converted);
                                     cost_in_usd_ticks = u.cost_in_usd_ticks;
                                 }
+
+                            service_tier = response.get("service_tier").and_then(Value::as_str).map(str::to_string);
+                            prompt_cache_key = response.get("prompt_cache_key").and_then(Value::as_str).map(str::to_string);
+                            safety_identifier = response.get("safety_identifier").and_then(Value::as_str).map(str::to_string);
 
                             if event_type == "response.incomplete" {
                                 let reason = response
@@ -560,8 +739,20 @@ impl LanguageModel for XaiResponsesModel {
                             };
                             if let Some(usage) = response.get("usage")
                                 && let Ok(u) = serde_json::from_value::<types::XaiResponsesUsage>(usage.clone()) {
-                                    final_usage = Some(convert_xai_responses_usage(&u));
+                                    let mut converted = convert_xai_responses_usage(&u);
+                                    converted.raw = usage.as_object().cloned();
+                                    final_usage = Some(converted);
                                 }
+                            if response.get("error").is_some_and(|error| !error.is_null()) {
+                                yield Ok(StreamPart::Error {
+                                    error: super::xai_stream_error(
+                                        &parsed,
+                                        &stream_error_url,
+                                        stream_request_body.clone(),
+                                        stream_response_headers.clone(),
+                                    ),
+                                });
+                            }
                             continue;
                         }
 
@@ -579,9 +770,6 @@ impl LanguageModel for XaiResponsesModel {
                                 unified: FinishReasonUnified::Error,
                                 raw: Some("error".to_string()),
                             };
-                            // A terminal error ends this stream; waiting for
-                            // more events can hang on a source that keeps the
-                            // connection open.
                             break;
                         }
 
@@ -614,8 +802,16 @@ impl LanguageModel for XaiResponsesModel {
                         // ── output_item.added / output_item.done ──
                         if event_type == "response.output_item.added"
                             || event_type == "response.output_item.done"
+                            || matches!(event_type,
+                                "response.image_generation_call.in_progress"
+                                | "response.image_generation_call.generating"
+                                | "response.image_generation_call.completed")
                         {
-                            let item = parsed.get("item").cloned().unwrap_or(Value::Null);
+                            let item = if event_type.starts_with("response.image_generation_call.") {
+                                json!({ "type": "image_generation_call", "id": parsed.get("item_id") })
+                            } else {
+                                parsed.get("item").cloned().unwrap_or(Value::Null)
+                            };
                             let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
                             let output_index = parsed.get("output_index").and_then(serde_json::Value::as_u64).unwrap_or(0);
 
@@ -624,17 +820,20 @@ impl LanguageModel for XaiResponsesModel {
                                 if event_type == "response.output_item.done" {
                                     let part_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
                                     let block_id = format!("reasoning-{part_id}");
-                                    let encrypted = item.get("encrypted_content").and_then(|v| v.as_str());
+                                    let encrypted = item.get("encrypted_content").and_then(|v| v.as_str()).filter(|v| !v.is_empty());
 
                                     if !active_reasoning.contains_key(part_id) {
                                         active_reasoning.insert(part_id.to_string(), ());
                                         yield Ok(StreamPart::ReasoningStart {
                                             id: block_id.clone(),
-                                            provider_metadata: Some(crate::xai::options::xai_metadata(json!({ "itemId": part_id }))),
+                                            provider_metadata: Some(crate::xai::options::xai_metadata(if part_id.is_empty() { json!({}) } else { json!({ "itemId": part_id }) })),
                                         });
                                     }
 
-                                    let mut meta = json!({ "itemId": part_id });
+                                    let mut meta = json!({});
+                                    if !part_id.is_empty() {
+                                        meta["itemId"] = json!(part_id);
+                                    }
                                     if let Some(ec) = encrypted {
                                         meta["reasoningEncryptedContent"] = json!(ec);
                                     }
@@ -648,23 +847,24 @@ impl LanguageModel for XaiResponsesModel {
                             }
 
                             // ── file_search_call item ──
-                            if item_type == "file_search_call" {
+                            if item_type == "file_search_call" || item_type == "image_generation_call" {
                                 let tool_name = resolve_tool_name(item_type, None, &provider_tool_names);
                                 let part_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                let input = if item_type == "image_generation_call" { "{}" } else { "" };
 
                                 if !seen_tool_calls.contains(part_id) {
                                     seen_tool_calls.insert(part_id.to_string());
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
-                                        provider_executed: Some(true),
+                                        provider_executed: None,
                                         dynamic: None,
                                         title: None,
                                         provider_metadata: None,
                                     });
                                     yield Ok(StreamPart::ToolInputDelta {
                                         id: part_id.to_string(),
-                                        delta: String::new(),
+                                        delta: input.to_string(),
                                         provider_metadata: None,
                                     });
                                     yield Ok(StreamPart::ToolInputEnd {
@@ -674,7 +874,7 @@ impl LanguageModel for XaiResponsesModel {
                                     yield Ok(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
-                                        input: String::new(),
+                                        input: input.to_string(),
                                         provider_executed: Some(true),
                                         dynamic: None,
                                         provider_metadata: None,
@@ -682,6 +882,10 @@ impl LanguageModel for XaiResponsesModel {
                                 }
 
                                 if event_type == "response.output_item.done" {
+                                    if item_type == "image_generation_call" {
+                                        yield Ok(StreamPart::ToolResult(image_generation_result(&item, tool_name)));
+                                        continue;
+                                    }
                                     let queries = item.get("queries").and_then(|v| v.as_array()).cloned().unwrap_or_default();
                                     let results = item.get("results").and_then(|v| v.as_array()).map(|arr| {
                                         json!(arr.iter().map(|r| json!({
@@ -727,7 +931,7 @@ impl LanguageModel for XaiResponsesModel {
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
-                                        provider_executed: Some(true),
+                                        provider_executed: None,
                                         dynamic: None,
                                         title: None,
                                         provider_metadata: None,
@@ -755,7 +959,11 @@ impl LanguageModel for XaiResponsesModel {
                                     yield Ok(StreamPart::ToolResult(ToolResult {
                                         tool_call_id: part_id.to_string(),
                                         tool_name,
-                                        result: json!({}),
+                                        result: if item_type == "web_search_call" {
+                                            map_web_search_action(item.get("action").unwrap_or(&Value::Null))
+                                        } else {
+                                            json!({})
+                                        },
                                         is_error: None,
                                         preliminary: None,
                                         dynamic: None,
@@ -777,8 +985,8 @@ impl LanguageModel for XaiResponsesModel {
                                         && !text.is_empty() {
                                             let part_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
                                             let block_id = format!("text-{part_id}");
-                                            if !content_blocks.contains_key(&block_id) {
-                                                content_blocks.insert(block_id.clone(), false);
+                                            if !content_blocks.contains(&block_id) {
+                                                content_blocks.push(block_id.clone());
                                                 yield Ok(StreamPart::TextStart { id: block_id.clone(), provider_metadata: None});
                                                 yield Ok(StreamPart::TextDelta {
                                                     id: block_id,
@@ -846,9 +1054,13 @@ impl LanguageModel for XaiResponsesModel {
                         // All other event types (web_search_call.in_progress, etc.) are ignored.
                     }
                     Err(error) => {
-                        let recoverable = error.is_recoverable_stream_error();
-                        yield Err(error);
-                        if !recoverable {
+                        if error.is_recoverable_stream_error() {
+                            if include_raw_chunks {
+                                yield Ok(StreamPart::Raw { raw_value: Value::Null });
+                            }
+                            yield Ok(StreamPart::Error { error });
+                        } else {
+                            yield Err(error);
                             return;
                         }
                     }
@@ -856,31 +1068,21 @@ impl LanguageModel for XaiResponsesModel {
             }
 
             // Close any remaining open text blocks.
-            for (block_id, ended) in &content_blocks {
-                if !ended {
-                    yield Ok(StreamPart::TextEnd { id: block_id.clone(), provider_metadata: None});
-                }
+            for block_id in &content_blocks {
+                yield Ok(StreamPart::TextEnd { id: block_id.clone(), provider_metadata: None});
             }
 
             // Final part: Finish.
-            let provider_meta = cost_in_usd_ticks.map(|cost| crate::xai::options::xai_metadata(json!({ "costInUsdTicks": cost })));
+            let provider_meta = response_provider_metadata(
+                cost_in_usd_ticks,
+                service_tier.as_deref(),
+                prompt_cache_key.as_deref(),
+                safety_identifier.as_deref(),
+            );
 
             yield Ok(StreamPart::Finish {
                 finish_reason: final_finish_reason,
-                usage: final_usage.unwrap_or(Usage {
-                    input_tokens: aimux_core::types::InputTokenUsage {
-                        total: Some(0),
-                        no_cache: Some(0),
-                        cache_read: Some(0),
-                        cache_write: Some(0),
-                    },
-                    output_tokens: aimux_core::types::OutputTokenUsage {
-                        total: Some(0),
-                        text: Some(0),
-                        reasoning: Some(0),
-                    },
-                    raw: None,
-                }),
+                usage: final_usage.unwrap_or_else(zero_usage),
                 provider_metadata: provider_meta,
             });
         };

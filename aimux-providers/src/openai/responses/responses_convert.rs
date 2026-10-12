@@ -14,7 +14,7 @@
 //! function — only the shared framework is extracted.
 
 use aimux_core::tool::RawToolCall;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::pin::Pin;
 
 use futures::{Stream, StreamExt};
@@ -26,7 +26,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Sourc
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage, Warning,
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Warning,
 };
 
 use super::convert::{convert_responses_usage, map_responses_finish_reason, parse_usage};
@@ -81,6 +81,31 @@ pub fn build_responses_generate_result(
     body: Value,
     response_headers: HashMap<String, String>,
 ) -> Result<GenerateResult, AiMuxError> {
+    build_responses_generate_result_with_tools(
+        data,
+        raw_body,
+        request_warnings,
+        provider_key,
+        request_url,
+        body,
+        response_headers,
+        HashMap::new(),
+        HashMap::new(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_responses_generate_result_with_tools(
+    data: &Value,
+    raw_body: &str,
+    request_warnings: Vec<Warning>,
+    provider_key: String,
+    request_url: String,
+    body: Value,
+    response_headers: HashMap<String, String>,
+    tool_names: HashMap<String, String>,
+    prompt_approval_tool_call_ids: HashMap<String, String>,
+) -> Result<GenerateResult, AiMuxError> {
     // Top-level error field.
     if let Some(err_obj) = data.get("error")
         && err_obj.is_object()
@@ -126,8 +151,11 @@ pub fn build_responses_generate_result(
         })
     })?;
 
+    let shell_provider_executed = hosted_shell(&body);
     let mut content: Vec<GenerateContent> = Vec::new();
     let mut has_function_call = false;
+    let mut logprobs = Vec::new();
+    let mut hosted_tool_search_ids = VecDeque::new();
 
     for part in output {
         match part.get("type").and_then(|v| v.as_str()) {
@@ -140,15 +168,27 @@ pub fn build_responses_generate_result(
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .to_string();
-                            if !text.is_empty() {
+                            if body
+                                .get("top_logprobs")
+                                .and_then(Value::as_u64)
+                                .is_some_and(|n| n > 0)
+                                && let Some(value) = cp.get("logprobs")
+                            {
+                                logprobs.push(value.clone());
+                            }
+                            {
                                 content.push(GenerateContent::Text {
                                     text,
-                                    provider_metadata: Some(provider_namespace(
-                                        &provider_key,
-                                        json!({
-                                            "itemId": part.get("id").cloned().unwrap_or(Value::Null),
-                                        }),
-                                    ).expect("provider metadata must be an object")),
+                                    provider_metadata: Some(
+                                        provider_namespace(
+                                            &provider_key,
+                                            text_metadata(
+                                                part,
+                                                cp.get("annotations").and_then(Value::as_array),
+                                            ),
+                                        )
+                                        .expect("provider metadata must be an object"),
+                                    ),
                                 });
                             }
                         }
@@ -189,13 +229,8 @@ pub fn build_responses_generate_result(
                     provider_executed: None,
                     dynamic: None,
                     provider_metadata: Some(
-                        provider_namespace(
-                            &provider_key,
-                            json!({
-                                "itemId": part.get("id").cloned().unwrap_or(Value::Null),
-                            }),
-                        )
-                        .expect("provider metadata must be an object"),
+                        provider_namespace(&provider_key, tool_metadata(part))
+                            .expect("provider metadata must be an object"),
                     ),
                 }));
             }
@@ -221,13 +256,8 @@ pub fn build_responses_generate_result(
                     provider_executed: None,
                     dynamic: None,
                     provider_metadata: Some(
-                        provider_namespace(
-                            &provider_key,
-                            json!({
-                                "itemId": part.get("id").cloned().unwrap_or(Value::Null),
-                            }),
-                        )
-                        .expect("provider metadata must be an object"),
+                        provider_namespace(&provider_key, tool_metadata(part))
+                            .expect("provider metadata must be an object"),
                     ),
                 }));
             }
@@ -260,52 +290,23 @@ pub fn build_responses_generate_result(
                     }
                 }
             }
-            Some("compaction") => {
-                content.push(GenerateContent::Custom {
-                    kind: "openai.compaction".to_string(),
-                    provider_metadata: Some(
-                        provider_namespace(
-                            &provider_key,
-                            json!({
-                                "type": "compaction", "itemId": part.get("id"),
-                                "encryptedContent": part.get("encrypted_content"),
-                            }),
-                        )
-                        .expect("provider metadata must be an object"),
-                    ),
-                });
-            }
-            Some("mcp_approval_request") => {
-                let tool_call_id = generate_source_id();
-                content.push(GenerateContent::ToolCall(RawToolCall {
-                    tool_call_id: tool_call_id.clone(),
-                    tool_name: format!(
-                        "mcp.{}",
-                        part.get("name").and_then(Value::as_str).unwrap_or("")
-                    ),
-                    input: part
-                        .get("arguments")
+            _ => {
+                let mut part = part.clone();
+                pair_tool_search_id(&mut part, &mut hosted_tool_search_ids);
+                let parts = super::provider_events::provider_tool_content(
+                    &part,
+                    &provider_key,
+                    &tool_names,
+                    shell_provider_executed,
+                    part.get("approval_request_id")
                         .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .to_string(),
-                    provider_executed: Some(true),
-                    dynamic: Some(true),
-                    provider_metadata: None,
-                }));
-                content.push(GenerateContent::ToolApprovalRequest(
-                    aimux_core::result::RawToolApprovalRequest {
-                        approval_id: part
-                            .get("approval_request_id")
-                            .or_else(|| part.get("id"))
-                            .and_then(Value::as_str)
-                            .unwrap_or("")
-                            .to_string(),
-                        tool_call_id,
-                        provider_metadata: None,
-                    },
-                ));
+                        .and_then(|id| prompt_approval_tool_call_ids.get(id))
+                        .map(String::as_str),
+                );
+                has_function_call |= part["type"] == "apply_patch_call"
+                    || (part["type"] == "computer_call" && !part["call_id"].is_null());
+                content.extend(parts);
             }
-            _ => {}
         }
     }
 
@@ -330,6 +331,9 @@ pub fn build_responses_generate_result(
     }
     if let Some(st) = data.get("service_tier").and_then(|v| v.as_str()) {
         pm["serviceTier"] = json!(st);
+    }
+    if !logprobs.is_empty() {
+        pm["logprobs"] = json!(logprobs);
     }
     let provider_metadata =
         Some(provider_namespace(&provider_key, pm).expect("provider metadata must be an object"));
@@ -396,11 +400,36 @@ fn reasoning_stream_metadata(
     item_id: &str,
     encrypted_content: Option<&str>,
 ) -> ProviderMetadata {
-    let mut inner = json!({ "itemId": item_id });
-    if let Some(enc) = encrypted_content {
-        inner["reasoningEncryptedContent"] = json!(enc);
-    }
+    let inner = json!({ "itemId": item_id, "reasoningEncryptedContent": encrypted_content });
     provider_namespace(provider_key, inner).expect("provider metadata must be an object")
+}
+
+fn tool_metadata(item: &Value) -> Value {
+    let mut metadata = json!({ "itemId": item.get("id").cloned().unwrap_or(Value::Null) });
+    for key in ["async", "namespace"] {
+        if let Some(value) = item.get(key).filter(|v| !v.is_null()) {
+            metadata[key] = value.clone();
+        }
+    }
+    if let Some(caller) = item.get("caller").filter(|value| !value.is_null()) {
+        metadata["caller"] = if caller["type"] == "program" {
+            json!({"type": "program", "callerId": caller["caller_id"]})
+        } else {
+            caller.clone()
+        };
+    }
+    metadata
+}
+
+fn text_metadata(item: &Value, annotations: Option<&Vec<Value>>) -> Value {
+    let mut metadata = json!({ "itemId": item.get("id").cloned().unwrap_or(Value::Null) });
+    if let Some(phase) = item.get("phase").filter(|v| !v.is_null()) {
+        metadata["phase"] = phase.clone();
+    }
+    if let Some(annotations) = annotations.filter(|v| !v.is_empty()) {
+        metadata["annotations"] = json!(annotations);
+    }
+    metadata
 }
 
 fn annotation_source(annotation: &Value, provider_key: &str) -> Result<Source, AiMuxError> {
@@ -470,7 +499,7 @@ fn annotation_source(annotation: &Value, provider_key: &str) -> Result<Source, A
     })
 }
 
-/// Generate a unique source ID for annotation sources.
+/// Generate a unique source ID for streaming annotation sources.
 ///
 /// Uses a process-wide atomic counter — consistent with the xAI Responses
 /// provider (`aimux-providers/src/xai/responses/mod.rs`). Upstream TS uses
@@ -515,46 +544,73 @@ pub fn build_responses_event_stream<S>(
 where
     S: Stream<Item = Result<Value, AiMuxError>> + Unpin + Send + 'static,
 {
+    build_responses_event_stream_with_raw(
+        first_event,
+        sse_stream,
+        provider_key,
+        warnings,
+        store_flag,
+        request_url,
+        request_body,
+        response_headers,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_responses_event_stream_with_raw<S>(
+    first_event: Option<Result<Value, AiMuxError>>,
+    sse_stream: S,
+    provider_key: String,
+    warnings: Vec<Warning>,
+    store_flag: bool,
+    request_url: String,
+    request_body: Value,
+    response_headers: HashMap<String, String>,
+    include_raw_chunks: bool,
+) -> Result<ResponsesEventStream, AiMuxError>
+where
+    S: Stream<Item = Result<Value, AiMuxError>> + Unpin + Send + 'static,
+{
+    build_responses_event_stream_with_tools(
+        first_event,
+        sse_stream,
+        provider_key,
+        warnings,
+        store_flag,
+        request_url,
+        request_body,
+        response_headers,
+        include_raw_chunks,
+        HashMap::new(),
+        HashMap::new(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_responses_event_stream_with_tools<S>(
+    first_event: Option<Result<Value, AiMuxError>>,
+    sse_stream: S,
+    provider_key: String,
+    warnings: Vec<Warning>,
+    store_flag: bool,
+    request_url: String,
+    request_body: Value,
+    response_headers: HashMap<String, String>,
+    include_raw_chunks: bool,
+    tool_names: HashMap<String, String>,
+    prompt_approval_tool_call_ids: HashMap<String, String>,
+) -> Result<ResponsesEventStream, AiMuxError>
+where
+    S: Stream<Item = Result<Value, AiMuxError>> + Unpin + Send + 'static,
+{
     // Peek at the first SSE event to detect early errors (before any output).
     if let Some(Ok(ref val)) = first_event {
         let etype = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
         if etype == "error" || etype == "response.failed" {
-            let error_value = val
-                .get("response")
-                .and_then(|response| response.get("error"))
-                .or_else(|| val.get("error"));
-            let message = val
-                .get("response")
-                .and_then(|r| r.get("error"))
-                .and_then(|e| e.get("message"))
-                .and_then(|v| v.as_str())
-                .or_else(|| {
-                    val.get("error")
-                        .and_then(|e| e.get("message"))
-                        .and_then(|v| v.as_str())
-                })
-                .unwrap_or("Responses API stream error");
-            let status_code = val
-                .get("status")
-                .or_else(|| val.get("status_code"))
-                .or_else(|| error_value.and_then(|error| error.get("status")))
-                .or_else(|| error_value.and_then(|error| error.get("code")))
-                .and_then(Value::as_u64)
-                .and_then(|status| u16::try_from(status).ok())
-                .filter(|status| (400..=599).contains(status));
-            let provider_code = val
-                .get("response")
-                .and_then(|r| r.get("error"))
-                .or_else(|| val.get("error"))
-                .and_then(|e| e.get("type").or_else(|| e.get("code")))
-                .and_then(|v| v.as_str())
-                .map(std::string::ToString::to_string);
-            return Err(aimux_provider_utils::stream_error_api_call(
-                message,
-                provider_code,
-                status_code,
+            return Err(super::super::openai_stream_error(
                 val,
-                request_url.clone(),
+                &request_url,
                 request_body.clone(),
                 response_headers.clone(),
             ));
@@ -578,6 +634,17 @@ where
         let mut final_finish_reason: Option<FinishReason> = None;
         let mut response_id: Option<String> = None;
         let mut stream_errored = false;
+        let mut text_states: HashMap<String, Value> = HashMap::new();
+        let mut output_ids: HashMap<usize, String> = HashMap::new();
+        let mut text_annotations: HashMap<String, Vec<Value>> = HashMap::new();
+        let mut logprobs = Vec::new();
+        let shell_provider_executed = hosted_shell(&request_body);
+        let mut provider_items: HashMap<usize, Value> = HashMap::new();
+        let mut emitted_calls = HashSet::new();
+        let mut ended_inputs = HashSet::new();
+        let mut diff_received = HashSet::new();
+        let mut hosted_tool_search_ids = VecDeque::new();
+        let mut approval_tool_call_ids: HashMap<String, String> = HashMap::new();
 
         let mut event_iter =
             futures::stream::iter(first_event.into_iter()).chain(sse_stream);
@@ -585,6 +652,7 @@ where
         while let Some(event) = event_iter.next().await {
             match event {
                 Ok(parsed) => {
+                    if include_raw_chunks { yield Ok(StreamPart::Raw { raw_value: parsed.clone() }); }
                     let etype = parsed
                         .get("type")
                         .and_then(|v| v.as_str())
@@ -638,7 +706,9 @@ where
                                             .and_then(|v| v.as_str())
                                             .unwrap_or("")
                                             .to_string();
-                                        yield Ok(StreamPart::TextStart { id, provider_metadata: None});
+                                        output_ids.insert(output_index, id.clone());
+                                        text_states.insert(id.clone(), item.clone());
+                                        yield Ok(StreamPart::TextStart { id, provider_metadata: Some(provider_namespace(&provider_key, text_metadata(item, None)).expect("provider metadata must be an object"))});
                                     }
                                     "function_call" => {
                                         let call_id = item
@@ -726,18 +796,64 @@ where
                                             provider_metadata: Some(meta),
                                         });
                                     }
-                                    _ => {}
+                                    _ => {
+                                        provider_items.insert(output_index, item.clone());
+                                        for part in provider_tool_start(item, &tool_names) {
+                                            if let StreamPart::ToolCall(call) = &part { emitted_calls.insert(call.tool_call_id.clone()); }
+                                            if let StreamPart::ToolInputEnd { id, .. } = &part { ended_inputs.insert(id.clone()); }
+                                            yield Ok(part);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        "response.image_generation_call.partial_image" => {
+                            yield Ok(StreamPart::ToolResult(aimux_core::tool::ToolResult {
+                                tool_call_id: parsed["item_id"].as_str().unwrap_or_default().to_owned(),
+                                tool_name: tool_names.get("image_generation").map_or("image_generation", String::as_str).to_owned(),
+                                result: json!({"result": parsed["partial_image_b64"]}),
+                                preliminary: Some(true), is_error: None, dynamic: None, provider_metadata: None,
+                            }));
+                        }
+                        "response.code_interpreter_call_code.delta" | "response.apply_patch_call_operation_diff.delta" => {
+                            let index = parsed["output_index"].as_u64().unwrap_or(0) as usize;
+                            if let Some(item) = provider_items.get(&index) {
+                                let id = item.get("call_id").filter(|v| !v.is_null()).unwrap_or(&item["id"]).as_str().unwrap_or_default().to_owned();
+                                diff_received.insert(id.clone());
+                                yield Ok(StreamPart::ToolInputDelta { id, delta: escaped_delta(parsed["delta"].as_str().unwrap_or_default()), provider_metadata: None });
+                            }
+                        }
+                        "response.code_interpreter_call_code.done" | "response.apply_patch_call_operation_diff.done" => {
+                            let index = parsed["output_index"].as_u64().unwrap_or(0) as usize;
+                            if let Some(item) = provider_items.get(&index) {
+                                let id = item.get("call_id").filter(|v| !v.is_null()).unwrap_or(&item["id"]).as_str().unwrap_or_default().to_owned();
+                                if ended_inputs.insert(id.clone()) {
+                                    let code = etype == "response.code_interpreter_call_code.done";
+                                    if !code && !diff_received.contains(&id) {
+                                        yield Ok(StreamPart::ToolInputDelta { id: id.clone(), delta: escaped_delta(parsed["diff"].as_str().unwrap_or_default()), provider_metadata: None });
+                                    }
+                                    yield Ok(StreamPart::ToolInputDelta { id: id.clone(), delta: if code { "\"}" } else { "\"}}" }.to_owned(), provider_metadata: None });
+                                    yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None });
+                                    if code {
+                                        let mut item = item.clone(); item["code"] = parsed["code"].clone();
+                                        for part in super::provider_events::provider_tool_content(&item, &provider_key, &tool_names, shell_provider_executed, None) {
+                                            if let GenerateContent::ToolCall(call) = part { emitted_calls.insert(id.clone()); yield Ok(StreamPart::ToolCall(call)); }
+                                        }
+                                    }
                                 }
                             }
                         }
 
                         // ── response.output_text.delta → TextDelta ────────────────
                         "response.output_text.delta" => {
-                            let id = parsed
+                            if request_body.get("top_logprobs").and_then(Value::as_u64).is_some_and(|n| n > 0) && let Some(value) = parsed.get("logprobs") { logprobs.push(value.clone()); }
+                            let mut id = parsed
                                 .get("item_id")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .to_string();
+                            if let Some(index) = parsed.get("output_index").and_then(Value::as_u64) && let Some(original_id) = output_ids.get(&(index as usize)) { id = original_id.clone(); }
                             let delta = parsed
                                 .get("delta")
                                 .and_then(|v| v.as_str())
@@ -878,37 +994,20 @@ where
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("");
                                 match item_type {
-                                    "mcp_approval_request" => {
-                                        let tool_call_id = generate_source_id();
-                                        yield Ok(StreamPart::ToolCall(RawToolCall {
-                                            tool_call_id: tool_call_id.clone(),
-                                            tool_name: format!("mcp.{}", item.get("name").and_then(Value::as_str).unwrap_or("")),
-                                            input: item.get("arguments").and_then(Value::as_str).unwrap_or("").to_string(),
-                                            provider_executed: Some(true), dynamic: Some(true),
-                                            provider_metadata: None,
-                                        }));
-                                        yield Ok(StreamPart::ToolApprovalRequest(aimux_core::result::RawToolApprovalRequest {
-                                            approval_id: item.get("approval_request_id").or_else(|| item.get("id")).and_then(Value::as_str).unwrap_or("").to_string(),
-                                            tool_call_id, provider_metadata: None,
-                                        }));
-                                    }
-                                    "compaction" => {
-                                        yield Ok(StreamPart::Custom {
-                                            kind: "openai.compaction".to_string(),
-                                            provider_metadata: Some(provider_namespace(&provider_key, json!({
-                                                "type": "compaction", "itemId": item.get("id"),
-                                                "encryptedContent": item.get("encrypted_content"),
-                                            })).expect("provider metadata must be an object")),
-                                        });
-                                    }
-
                                     "message" => {
-                                        let id = item
+                                        let mut id = item
                                             .get("id")
                                             .and_then(|v| v.as_str())
                                             .unwrap_or("")
                                             .to_string();
-                                        yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
+                                        if let Some(original_id) = output_ids.remove(&output_index) { id = original_id; }
+                                        let mut metadata_item = item.clone();
+                                        metadata_item["id"] = json!(id);
+                                        if metadata_item.get("phase").is_none() && let Some(phase) = text_states.get(&id).and_then(|v| v.get("phase")) {
+                                            metadata_item["phase"] = phase.clone();
+                                        }
+                                        let annotations = text_annotations.remove(&id);
+                                        yield Ok(StreamPart::TextEnd { id, provider_metadata: Some(provider_namespace(&provider_key, text_metadata(&metadata_item, annotations.as_ref())).expect("provider metadata must be an object"))});
                                     }
                                     "function_call" => {
                                         has_function_call = true;
@@ -939,7 +1038,7 @@ where
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
-                                            provider_metadata: None,
+                                            provider_metadata: Some(provider_namespace(&provider_key, tool_metadata(item)).expect("provider metadata must be an object")),
                                         }));
                                     }
                                     "custom_tool_call" => {
@@ -973,7 +1072,7 @@ where
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
-                                            provider_metadata: None,
+                                            provider_metadata: Some(provider_namespace(&provider_key, tool_metadata(item)).expect("provider metadata must be an object")),
                                         }));
                                     }
                                     "reasoning" => {
@@ -983,6 +1082,7 @@ where
                                             .unwrap_or("")
                                             .to_string();
                                         if let Some(state) = active_reasoning.get_mut(&id) {
+                                            state.encrypted_content = item.get("encrypted_content").and_then(Value::as_str).map(str::to_owned);
                                             let meta = reasoning_stream_metadata(
                                                 &provider_key,
                                                 &id,
@@ -1010,18 +1110,72 @@ where
                                         }
                                         active_reasoning.remove(&id);
                                     }
-                                    _ => {}
+                                    _ => {
+                                        let mut item = item.clone();
+                                        if item_type == "local_shell_call" && let Some(action) = item["action"].as_object_mut() {
+                                                for (from, to) in [("timeout_ms", "timeoutMs"), ("working_directory", "workingDirectory")] {
+                                                    if let Some(value) = action.remove(from) { action.insert(to.into(), value); }
+                                                }
+                                        }
+                                        if item_type == "apply_patch_call" {
+                                            let id = item["call_id"].as_str().unwrap_or_default().to_owned();
+                                            if ended_inputs.insert(id.clone()) && item["operation"]["type"] != "delete_file" {
+                                                if !diff_received.contains(&id) {
+                                                    yield Ok(StreamPart::ToolInputDelta { id: id.clone(), delta: escaped_delta(item["operation"]["diff"].as_str().unwrap_or_default()), provider_metadata: None });
+                                                }
+                                                yield Ok(StreamPart::ToolInputDelta { id: id.clone(), delta: "\"}}".into(), provider_metadata: None });
+                                                yield Ok(StreamPart::ToolInputEnd { id, provider_metadata: None });
+                                            }
+                                        }
+                                        if item_type == "tool_search_call" && item["execution"] == "server" {
+                                            item["call_id"] = Value::Null;
+                                        }
+                                        pair_tool_search_id(&mut item, &mut hosted_tool_search_ids);
+                                        let mcp_tool_call_id = item.get("approval_request_id").and_then(Value::as_str)
+                                            .and_then(|id| approval_tool_call_ids.get(id).or_else(|| prompt_approval_tool_call_ids.get(id))).cloned();
+                                        for part in super::provider_events::provider_tool_content(&item, &provider_key, &tool_names, shell_provider_executed, mcp_tool_call_id.as_deref()) {
+                                            match part {
+                                                GenerateContent::ToolCall(call) => {
+                                                    if item_type == "code_interpreter_call" || (item_type == "apply_patch_call" && item["status"] != "completed") { continue; }
+                                                    if emitted_calls.insert(call.tool_call_id.clone()) || item_type == "mcp_call" {
+                                                        has_function_call |= call.provider_executed != Some(true) && matches!(item_type, "computer_call" | "apply_patch_call");
+                                                        if matches!(item_type, "computer_call" | "apply_patch_call" | "tool_search_call") {
+                                                            if item_type == "tool_search_call" && item["execution"] != "server" {
+                                                                yield Ok(StreamPart::ToolInputStart { id: call.tool_call_id.clone(), tool_name: call.tool_name.clone(), provider_executed: call.provider_executed, dynamic: None, title: None, provider_metadata: None });
+                                                            }
+                                                            if !ended_inputs.contains(&call.tool_call_id) {
+                                                                if item_type == "computer_call" && !call.input.is_empty() { yield Ok(StreamPart::ToolInputDelta { id: call.tool_call_id.clone(), delta: call.input.clone(), provider_metadata: None }); }
+                                                                yield Ok(StreamPart::ToolInputEnd { id: call.tool_call_id.clone(), provider_metadata: None });
+                                                            }
+                                                        }
+                                                        yield Ok(StreamPart::ToolCall(call));
+                                                    }
+                                                }
+                                                GenerateContent::ToolResult(result) => { yield Ok(StreamPart::ToolResult(result)); }
+                                                GenerateContent::ToolApprovalRequest(approval) => {
+                                                    approval_tool_call_ids.insert(approval.approval_id.clone(), approval.tool_call_id.clone());
+                                                    yield Ok(StreamPart::ToolApprovalRequest(approval));
+                                                }
+                                                GenerateContent::Custom { kind, provider_metadata } => {
+                                                    yield Ok(StreamPart::Custom { kind, provider_metadata });
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                        provider_items.remove(&output_index);
+                                    }
                                 }
                             }
                         }
 
                         // ── response.output_text.annotation.added → Source ─────────
                         "response.output_text.annotation.added" => {
-                            match annotation_source(
-                                parsed.get("annotation").unwrap_or(&Value::Null),
-                                &provider_key,
-                            ) {
-                                Ok(source) => yield Ok(StreamPart::Source(source)),
+                            match annotation_source(parsed.get("annotation").unwrap_or(&Value::Null), &provider_key) {
+                                Ok(source) => {
+                                    let id = parsed.get("item_id").and_then(Value::as_str).unwrap_or_default().to_string();
+                                    text_annotations.entry(id).or_default().push(parsed["annotation"].clone());
+                                    yield Ok(StreamPart::Source(source));
+                                }
                                 Err(error) => {
                                     stream_errored = true;
                                     yield Ok(StreamPart::Error { error });
@@ -1036,10 +1190,9 @@ where
                                     .get("incomplete_details")
                                     .and_then(|d| d.get("reason"))
                                     .and_then(|v| v.as_str());
-                                final_finish_reason = Some(map_responses_finish_reason(
-                                    reason,
-                                    has_function_call,
-                                ));
+                                if !stream_errored {
+                                    final_finish_reason = Some(map_responses_finish_reason(reason, has_function_call));
+                                }
                                 final_usage =
                                     resp_obj.get("usage").and_then(parse_usage);
                                 // Keep the raw wire usage object for `usage.raw`
@@ -1091,32 +1244,8 @@ where
                                     && resp_obj.get("error").is_some()
                                 {
                                     stream_errored = true;
-                                    let message = resp_obj
-                                        .get("error")
-                                        .and_then(|e| e.get("message"))
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("Responses API stream failed");
-                                    // In-band failure inside the SSE stream: the shared
-                                    // helper redacts the raw request context.
-                                    yield Ok(StreamPart::Error {
-                                        error: aimux_provider_utils::stream_error_api_call(
-                                            message,
-                                            resp_obj
-                                                .get("error")
-                                                .and_then(|e| e.get("type").or_else(|| e.get("code")))
-                                                .and_then(|v| v.as_str())
-                                                .map(std::string::ToString::to_string),
-                                            Some(200),
-                                            &parsed,
-                                            request_url.clone(),
-                                            request_body.clone(),
-                                            response_headers.clone(),
-                                        ),
-                                    });
-                                    // A terminal error ends this stream; waiting
-                                    // for more events can hang on a source that
-                                    // keeps the connection open.
-                                    break;
+                                    yield Ok(StreamPart::Error { error: super::super::openai_stream_error(&parsed, &request_url, request_body.clone(), response_headers.clone()) });
+
                                 }
                             }
                         }
@@ -1128,27 +1257,7 @@ where
                                 unified: FinishReasonUnified::Error,
                                 raw: Some("error".to_string()),
                             });
-                            let message = parsed
-                                .get("error")
-                                .and_then(|e| e.get("message"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("Responses API stream error");
-                            yield Ok(StreamPart::Error {
-                                error: aimux_provider_utils::stream_error_api_call(
-                                    message,
-                                    parsed
-                                        .get("error")
-                                        .and_then(|e| e.get("type").or_else(|| e.get("code")))
-                                        .and_then(|v| v.as_str())
-                                        .map(std::string::ToString::to_string),
-                                    Some(200),
-                                    &parsed,
-                                    request_url.clone(),
-                                    request_body.clone(),
-                                    response_headers.clone(),
-                                ),
-                            });
-                            break;
+                            yield Ok(StreamPart::Error { error: super::super::openai_stream_error(&parsed, &request_url, request_body.clone(), response_headers.clone()) });
                         }
 
                         _ => {
@@ -1160,11 +1269,9 @@ where
                     }
                 }
                 Err(error) => {
-                    let recoverable = error.is_recoverable_stream_error();
-                    yield Err(error);
-                    if !recoverable {
-                        return;
-                    }
+                    stream_errored = true;
+                    final_finish_reason = Some(FinishReason { unified: FinishReasonUnified::Error, raw: None });
+                    yield Ok(StreamPart::Error { error });
                 }
             }
         }
@@ -1180,31 +1287,147 @@ where
         if let Some(ctx) = final_reasoning_context {
             pm["reasoningContext"] = ctx;
         }
+        if !logprobs.is_empty() { pm["logprobs"] = json!(logprobs); }
         let provider_metadata = Some(provider_namespace(&provider_key, pm).expect("provider metadata must be an object"));
 
         yield Ok(StreamPart::Finish {
-            finish_reason: if stream_errored {
-                FinishReason {
-                    unified: FinishReasonUnified::Error,
-                    raw: None,
-                }
-            } else {
-                final_finish_reason.unwrap_or(FinishReason {
-                    unified: if has_function_call {
-                        FinishReasonUnified::ToolCalls
-                    } else {
-                        FinishReasonUnified::Stop
-                    },
-                    raw: None,
-                })
-            },
-            usage: if stream_errored {
-                Usage::default()
-            } else {
-                convert_responses_usage(final_usage.as_ref(), final_raw_usage)
-            },
+            finish_reason: final_finish_reason.unwrap_or(FinishReason {
+                unified: FinishReasonUnified::Other, raw: None,
+            }),
+            usage: convert_responses_usage(final_usage.as_ref(), final_raw_usage),
             provider_metadata,
         });
     };
     Ok(Box::pin(stream))
+}
+
+fn pair_tool_search_id(item: &mut Value, hosted_ids: &mut VecDeque<Value>) {
+    match item["type"].as_str() {
+        Some("tool_search_call") if item["execution"] == "server" => {
+            hosted_ids.push_back(
+                item.get("call_id")
+                    .filter(|v| !v.is_null())
+                    .unwrap_or(&item["id"])
+                    .clone(),
+            );
+        }
+        Some("tool_search_output") if item.get("call_id").is_none_or(Value::is_null) => {
+            if let Some(id) = hosted_ids.pop_front() {
+                item["call_id"] = id;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn escaped_delta(value: &str) -> String {
+    let value = json!(value).to_string();
+    value[1..value.len() - 1].to_owned()
+}
+
+fn provider_tool_start(item: &Value, names: &HashMap<String, String>) -> Vec<StreamPart> {
+    let kind = item["type"].as_str().unwrap_or_default();
+    let canonical = match kind {
+        "web_search_call" => "web_search",
+        "file_search_call" => "file_search",
+        "image_generation_call" => "image_generation",
+        "code_interpreter_call" => "code_interpreter",
+        "computer_call" => "computer",
+        "apply_patch_call" => "apply_patch",
+        "tool_search_call" if item["execution"] == "server" => "tool_search",
+        _ => return Vec::new(),
+    };
+    let name = names
+        .get(canonical)
+        .map_or(canonical, String::as_str)
+        .to_owned();
+    let id = item
+        .get("call_id")
+        .filter(|v| !v.is_null())
+        .unwrap_or(&item["id"])
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    let hosted = matches!(
+        kind,
+        "web_search_call"
+            | "file_search_call"
+            | "image_generation_call"
+            | "code_interpreter_call"
+            | "tool_search_call"
+    )
+    .then_some(true);
+    let call = || {
+        StreamPart::ToolCall(RawToolCall {
+            tool_call_id: id.clone(),
+            tool_name: name.clone(),
+            input: "{}".to_owned(),
+            provider_executed: hosted,
+            dynamic: None,
+            provider_metadata: None,
+        })
+    };
+    if matches!(kind, "file_search_call" | "image_generation_call") {
+        return vec![call()];
+    }
+    let mut parts = vec![StreamPart::ToolInputStart {
+        id: id.clone(),
+        tool_name: name.clone(),
+        provider_executed: hosted,
+        dynamic: None,
+        title: None,
+        provider_metadata: None,
+    }];
+    match kind {
+        "web_search_call" => {
+            parts.push(StreamPart::ToolInputEnd {
+                id: id.clone(),
+                provider_metadata: None,
+            });
+            parts.push(call());
+        }
+        "code_interpreter_call" => parts.push(StreamPart::ToolInputDelta {
+            id,
+            delta: format!("{{\"containerId\":{},\"code\":\"", item["container_id"]),
+            provider_metadata: None,
+        }),
+        "apply_patch_call" => {
+            let operation = &item["operation"];
+            if operation["type"] == "delete_file" {
+                parts.push(StreamPart::ToolInputDelta {
+                    id: id.clone(),
+                    delta: json!({"callId":id,"operation":operation}).to_string(),
+                    provider_metadata: None,
+                });
+                parts.push(StreamPart::ToolInputEnd {
+                    id,
+                    provider_metadata: None,
+                });
+            } else {
+                parts.push(StreamPart::ToolInputDelta {
+                    id: id.clone(),
+                    delta: format!(
+                        "{{\"callId\":{},\"operation\":{{\"type\":{},\"path\":{},\"diff\":\"",
+                        json!(id),
+                        operation["type"],
+                        operation["path"]
+                    ),
+                    provider_metadata: None,
+                });
+            }
+        }
+        _ => {}
+    }
+    parts
+}
+
+fn hosted_shell(body: &Value) -> bool {
+    body["tools"].as_array().is_some_and(|tools| {
+        tools.iter().any(|tool| {
+            tool["type"] == "shell"
+                && tool.get("environment").is_some_and(|environment| {
+                    !matches!(environment["type"].as_str(), Some("local"))
+                })
+        })
+    })
 }

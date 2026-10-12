@@ -57,6 +57,26 @@ pub struct WebSocketRequest {
     pub connector: Option<Arc<dyn WsConnector>>,
 }
 
+impl WebSocketRequest {
+    /// Build a transcription connection with the operation's cancellation and timeouts.
+    #[must_use]
+    pub fn for_transcription(
+        url: String,
+        headers: Vec<(String, String)>,
+        options: &aimux_core::transcription_model::TranscriptionStreamOptions,
+        connector: Option<Arc<dyn WsConnector>>,
+    ) -> Self {
+        Self {
+            url,
+            headers,
+            subprotocols: Vec::new(),
+            abort_signal: options.abort_signal.clone(),
+            timeout: options.timeout,
+            connector,
+        }
+    }
+}
+
 /// Opens WebSocket connections. The built-in implementation is
 /// tungstenite plus the RFC-0034 proxy tunnel; a custom one returns a
 /// [`WsConnection`] built with [`WsConnection::from_transport`].

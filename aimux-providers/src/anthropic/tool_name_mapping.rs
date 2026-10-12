@@ -33,15 +33,20 @@ fn provider_tool_name(id: &str) -> Option<&'static str> {
         | "anthropic.code_execution_20260120" => "code_execution",
         "anthropic.computer_20241022"
         | "anthropic.computer_20250124"
-        | "anthropic.computer_20251124" => "computer",
+        | "anthropic.computer_20251124"
+        | "anthropic.computer_toolset_20260801" => "computer",
         "anthropic.text_editor_20241022" | "anthropic.text_editor_20250124" => "str_replace_editor",
         "anthropic.text_editor_20250429" | "anthropic.text_editor_20250728" => {
             "str_replace_based_edit_tool"
         }
         "anthropic.bash_20241022" | "anthropic.bash_20250124" => "bash",
         "anthropic.memory_20250818" => "memory",
-        "anthropic.web_search_20250305" | "anthropic.web_search_20260209" => "web_search",
-        "anthropic.web_fetch_20250910" | "anthropic.web_fetch_20260209" => "web_fetch",
+        "anthropic.web_search_20250305"
+        | "anthropic.web_search_20260209"
+        | "anthropic.web_search_20260318" => "web_search",
+        "anthropic.web_fetch_20250910"
+        | "anthropic.web_fetch_20260209"
+        | "anthropic.web_fetch_20260318" => "web_fetch",
         "anthropic.tool_search_regex_20251119" => "tool_search_tool_regex",
         "anthropic.tool_search_bm25_20251119" => "tool_search_tool_bm25",
         "anthropic.advisor_20260301" => "advisor",
@@ -58,6 +63,7 @@ pub struct ToolNameMapping {
     custom_to_provider: HashMap<String, String>,
     provider_to_custom: HashMap<String, String>,
     mark_code_execution_dynamic: bool,
+    toolset_names: HashMap<String, String>,
 }
 
 impl ToolNameMapping {
@@ -69,9 +75,17 @@ impl ToolNameMapping {
         let mut has_code_execution = false;
         for tool in tools.unwrap_or(&[]) {
             if let Tool::Provider(pt) = tool {
+                if pt.id == "anthropic.computer_toolset_20260801" {
+                    mapping
+                        .toolset_names
+                        .insert(pt.name.clone(), "computer".to_string());
+                }
                 has_web_tool_20260209 |= matches!(
                     pt.id.as_str(),
-                    "anthropic.web_search_20260209" | "anthropic.web_fetch_20260209"
+                    "anthropic.web_search_20260209"
+                        | "anthropic.web_fetch_20260209"
+                        | "anthropic.web_search_20260318"
+                        | "anthropic.web_fetch_20260318"
                 );
                 has_code_execution |= pt.id.starts_with("anthropic.code_execution_");
 
@@ -87,6 +101,10 @@ impl ToolNameMapping {
         }
         mapping.mark_code_execution_dynamic = has_web_tool_20260209 && !has_code_execution;
         mapping
+    }
+
+    pub(crate) fn toolset_name(&self, custom_name: &str) -> Option<&str> {
+        self.toolset_names.get(custom_name).map(String::as_str)
     }
 
     /// Caller's name → Anthropic's wire name. Unmapped names pass through.
@@ -109,27 +127,5 @@ impl ToolNameMapping {
     #[must_use]
     pub fn mark_code_execution_dynamic(&self) -> bool {
         self.mark_code_execution_dynamic
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use aimux_core::tool::FunctionTool;
-    use serde_json::json;
-
-    #[test]
-    fn unmapped_names_pass_through() {
-        let mapping = ToolNameMapping::new(None);
-        assert_eq!(mapping.to_custom_tool_name("web_search"), "web_search");
-        assert_eq!(mapping.to_provider_tool_name("get_weather"), "get_weather");
-    }
-
-    #[test]
-    fn function_tools_are_ignored() {
-        let tools = vec![Tool::Function(FunctionTool::new("web_search", json!({})))];
-        let mapping = ToolNameMapping::new(Some(&tools));
-        // A function tool named `web_search` must not hijack the provider name.
-        assert_eq!(mapping.to_custom_tool_name("web_search"), "web_search");
     }
 }

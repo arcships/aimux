@@ -32,38 +32,32 @@ use crate::shared::EndpointConfig;
 
 /// Google-specific error structure: `{ "error": { "message": "..." } }`.
 /// Google provider-specific file upload options.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GoogleFilesUploadOptions {
     display_name: Option<String>,
-    poll_interval_ms: Option<u64>,
-    poll_timeout_ms: Option<u64>,
+    poll_interval_ms: Option<f64>,
+    poll_timeout_ms: Option<f64>,
 }
 
-/// Parse provider options for the Google files provider.
 fn parse_google_files_options(
     provider_options: Option<&SharedProviderOptions>,
-) -> GoogleFilesUploadOptions {
-    let mut opts = GoogleFilesUploadOptions::default();
-    if let Some(po) = provider_options
-        && let Some(google) = po.get(GOOGLE)
+) -> Result<GoogleFilesUploadOptions, AiMuxError> {
+    let Some(google) = provider_options.and_then(|options| options.get(GOOGLE)) else {
+        return Ok(GoogleFilesUploadOptions::default());
+    };
+    let options: GoogleFilesUploadOptions = serde_json::from_value(Value::Object(google.clone()))
+        .map_err(|error| {
+        AiMuxError::InvalidArgument(format!("Invalid Google file options: {error}"))
+    })?;
+    if options.poll_interval_ms.is_some_and(|value| value <= 0.0)
+        || options.poll_timeout_ms.is_some_and(|value| value <= 0.0)
     {
-        if let Some(display_name) = google.get("displayName").and_then(|v| v.as_str()) {
-            opts.display_name = Some(display_name.to_string());
-        }
-        if let Some(interval) = google
-            .get("pollIntervalMs")
-            .and_then(serde_json::Value::as_u64)
-        {
-            opts.poll_interval_ms = Some(interval);
-        }
-        if let Some(timeout) = google
-            .get("pollTimeoutMs")
-            .and_then(serde_json::Value::as_u64)
-        {
-            opts.poll_timeout_ms = Some(timeout);
-        }
+        return Err(AiMuxError::InvalidArgument(
+            "Google file polling intervals must be positive".into(),
+        ));
     }
-    opts
+    Ok(options)
 }
 
 /// Convert `UploadFileData` to raw bytes.
@@ -77,6 +71,35 @@ fn data_to_bytes(data: &UploadFileData) -> Result<Vec<u8>, AiMuxError> {
             }
         },
         UploadFileData::Text { text } => Ok(text.as_bytes().to_vec()),
+    }
+}
+
+// Preserve file names in a single path segment, including dot segments.
+fn file_poll_path(name: &str) -> String {
+    fn encode(segment: &str) -> String {
+        if segment == "." {
+            return "%252E".to_string();
+        }
+        if segment == ".." {
+            return "%252E%252E".to_string();
+        }
+        const COMPONENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+            .remove(b'-')
+            .remove(b'_')
+            .remove(b'.')
+            .remove(b'!')
+            .remove(b'~')
+            .remove(b'*')
+            .remove(b'\'')
+            .remove(b'(')
+            .remove(b')');
+        percent_encoding::utf8_percent_encode(segment, COMPONENT).to_string()
+    }
+    match name.strip_prefix("files/") {
+        Some(segment) if !segment.is_empty() && !segment.contains('/') => {
+            format!("files/{}", encode(segment))
+        }
+        _ => encode(name),
     }
 }
 
@@ -132,13 +155,13 @@ impl Files for GoogleFiles {
         &self,
         options: &UploadFileCallOptions,
     ) -> Result<UploadFileResult, AiMuxError> {
-        let google_options = parse_google_files_options(options.provider_options.as_ref());
+        let google_options = parse_google_files_options(options.provider_options.as_ref())?;
         let exchange = self.config.exchange(None).await?;
         // The upload endpoint hangs off the origin: `base_url` without
         // `/v1beta`.
         let init_endpoint = format!(
             "{}/upload/v1beta/files",
-            exchange.base_url().replace("/v1beta", "")
+            exchange.base_url().trim_end_matches("/v1beta")
         );
 
         let mut warnings = Vec::new();
@@ -234,7 +257,7 @@ impl Files for GoogleFiles {
         // header and receives the user's file bytes; validate it. (AI SDK
         // fetches this URL unvalidated — kept stricter here deliberately.)
         let upload_resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
+            exchange.with_transport(HttpRequest {
                 url: upload_url,
                 headers: upload_headers,
                 abort_signal: options.abort_signal.clone(),
@@ -242,7 +265,7 @@ impl Files for GoogleFiles {
                 trusted_origin: Some(exchange.base_url().to_string()),
                 credentialed_origin: Some(exchange.base_url().to_string()),
                 ..Default::default()
-            },
+            }),
             HttpBody::Bytes(file_bytes, media_type.clone()),
             aimux_provider_utils::create_json_response_handler::<UploadResponse>(),
             super::google_failed_response_handler(),
@@ -265,8 +288,8 @@ impl Files for GoogleFiles {
             .unwrap_or(Value::Null);
 
         // Step 3: Poll if file is PROCESSING.
-        let poll_interval_ms = google_options.poll_interval_ms.unwrap_or(2000);
-        let poll_timeout_ms = google_options.poll_timeout_ms.unwrap_or(300000);
+        let poll_interval_ms = google_options.poll_interval_ms.unwrap_or(2000.0);
+        let poll_timeout_ms = google_options.poll_timeout_ms.unwrap_or(300000.0);
         let start_time = Instant::now();
 
         // Seed evidence from the upload response so a file that is already
@@ -275,7 +298,7 @@ impl Files for GoogleFiles {
         let mut last_poll_status: Option<u16> = Some(200);
         let mut last_poll_url = upload_request_url;
         while file.state == "PROCESSING" {
-            if start_time.elapsed() > Duration::from_millis(poll_timeout_ms) {
+            if start_time.elapsed().as_secs_f64() * 1000.0 > poll_timeout_ms {
                 return Err(AiMuxError::Timeout(format!(
                     "Google file upload polling for {} timed out after {}ms",
                     file.name, poll_timeout_ms
@@ -283,12 +306,13 @@ impl Files for GoogleFiles {
             }
 
             sleep_or_abort(
-                Duration::from_millis(poll_interval_ms),
+                Duration::try_from_secs_f64(poll_interval_ms / 1000.0)
+                    .map_err(|error| AiMuxError::InvalidArgument(error.to_string()))?,
                 options.abort_signal.as_ref(),
             )
             .await?;
 
-            let poll_url = exchange.url(&format!("/{}", file.name));
+            let poll_url = exchange.url(&format!("/{}", file_poll_path(&file.name)));
 
             let poll_resp = aimux_provider_utils::get_from_api(
                 exchange.with_transport(HttpRequest {

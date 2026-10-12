@@ -131,10 +131,6 @@ fn make_provider(server: &MockServer) -> OpenAICompatibleProvider {
     openrouter_at(server.uri(), "test-api-key")
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// Provider configuration
-// ════════════════════════════════════════════════════════════════════════════
-
 /// Custom API key is sent in the `Authorization: Bearer` header.
 #[tokio::test]
 async fn custom_api_key_used_in_auth_header() {

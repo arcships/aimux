@@ -326,7 +326,7 @@ fn message(role: Role, text: &str) -> LanguageModelMessage {
             })],
             provider_options: None,
         },
-        Role::Tool => unreachable!("fixture has no tool messages"),
+        Role::Tool => panic!("tool messages require tool results"),
     }
 }
 

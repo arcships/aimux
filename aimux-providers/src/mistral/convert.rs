@@ -3,15 +3,15 @@
 //! Mirrors the TS `convert-to-mistral-chat-messages.ts`,
 //! `mistral-prepare-tools.ts`, and `map-mistral-finish-reason.ts`.
 
-use aimux_core::error::AiMuxError;
+use aimux_core::AiMuxError;
 use aimux_core::language_model_message::{
-    AssistantPart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart, ToolPart,
-    ToolResultOutput, ToolResultPart, UserPart,
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::tool::{FunctionTool, Tool};
-use aimux_core::types::{FinishReason, FinishReasonUnified};
+use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
 use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Value, json};
 
@@ -96,183 +96,122 @@ pub fn prepare_tools(
 
 // ── Message conversion ──────────────────────────────────────────────────────
 
-/// Convert a `LanguageModelPrompt` to Mistral `messages` array.
-///
-/// Differences from OpenAI:
-/// - System content is a plain string.
-/// - User content is always an array of typed parts.
-/// - Assistant content is a plain string; `prefix: true` is set on the last
-///   message if it is an assistant message (continuation mode).
-/// - Tool messages include `tool_call_id` (no `name` — the Rust data model
-///   does not carry the tool name on `ToolResult` parts).
+/// Convert provider prompt parts using the upstream Mistral message format.
 ///
 /// # Errors
-/// Returns an error for text file parts or an unresolved inline file media type.
+/// Rejects file formats and assistant content unsupported by Mistral.
 pub fn convert_prompt_to_mistral_messages(
     prompt: &LanguageModelPrompt,
 ) -> Result<Vec<Value>, AiMuxError> {
-    let mut result = Vec::new();
-    let last_idx = prompt.len().saturating_sub(1);
-    for (i, msg) in prompt.iter().enumerate() {
-        let is_last = i == last_idx;
-        for value in convert_message_to_mistral(msg, is_last)? {
-            result.push(value);
+    let mut messages = Vec::new();
+    for (index, message) in prompt.iter().enumerate() {
+        match message {
+            LanguageModelMessage::System { content, .. } => {
+                messages.push(json!({"role":"system", "content": content}))
+            }
+            LanguageModelMessage::User { content, .. } => {
+                let parts = content
+                    .iter()
+                    .map(convert_user_part)
+                    .collect::<Result<Vec<_>, _>>()?;
+                messages.push(json!({"role":"user", "content":parts}));
+            }
+            LanguageModelMessage::Assistant { content, .. } => {
+                let mut text = String::new();
+                let mut parts = Vec::new();
+                let mut calls = Vec::new();
+                let mut has_reasoning = false;
+                for part in content {
+                    match part {
+                        AssistantPart::Text(part) => {
+                            text.push_str(&part.text);
+                            parts.push(json!({"type":"text", "text":part.text}));
+                        }
+                        AssistantPart::Reasoning(ReasoningPart { text, .. }) => {
+                            has_reasoning = true;
+                            parts.push(json!({"type":"thinking", "thinking":[{"type":"text", "text":text}], "closed":true}));
+                        }
+                        AssistantPart::ToolCall(ToolCallPart { tool_call_id, tool_name, input, .. }) => calls.push(json!({
+                            "id":tool_call_id, "type":"function", "function":{"name":tool_name,"arguments":input.to_string()}
+                        })),
+                        _ => return Err(AiMuxError::UnsupportedFunctionality("Unsupported content type in assistant message".into())),
+                    }
+                }
+                let content = if has_reasoning {
+                    json!(parts)
+                } else {
+                    json!(text)
+                };
+                let mut value = json!({"role":"assistant", "content":content});
+                if index + 1 == prompt.len() {
+                    value["prefix"] = json!(true);
+                }
+                if !calls.is_empty() {
+                    value["tool_calls"] = json!(calls);
+                }
+                messages.push(value);
+            }
+            LanguageModelMessage::Tool { content, .. } => {
+                for part in content {
+                    let ToolPart::ToolResult(ToolResultPart {
+                        tool_call_id,
+                        tool_name,
+                        output,
+                        ..
+                    }) = part
+                    else {
+                        continue;
+                    };
+                    messages.push(json!({"role":"tool", "name":tool_name, "tool_call_id":tool_call_id, "content":crate::openai::convert::tool_result_to_content(output)}));
+                }
+            }
         }
     }
-    Ok(result)
+    Ok(messages)
 }
 
-fn convert_message_to_mistral(
-    msg: &LanguageModelMessage,
-    is_last: bool,
-) -> Result<Vec<Value>, AiMuxError> {
-    Ok(match msg {
-        LanguageModelMessage::System { content, .. } => {
-            vec![json!({ "role": "system", "content": content })]
+fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
+    use base64::Engine;
+    let file = match part {
+        UserPart::Text(TextPart { text, .. }) => return Ok(json!({"type":"text", "text":text})),
+        UserPart::File(file) => file,
+    };
+    let url = match &file.data {
+        FileData::Reference { .. } => {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "file parts with provider references".into(),
+            ));
         }
-        LanguageModelMessage::User { content, .. } => {
-            let parts: Vec<Value> = content
-                .iter()
-                .map(convert_part_to_mistral)
-                .collect::<Result<_, _>>()?;
-            vec![json!({ "role": "user", "content": parts })]
+        FileData::Text { .. } => {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "text file parts".into(),
+            ));
         }
-        LanguageModelMessage::Assistant { content, .. } => {
-            let text = join_text_parts(content);
-            let has_reasoning = content.iter().any(|part| matches!(part, AssistantPart::Reasoning(_)));
-            let mut content_parts = Vec::new();
-            for part in content {
-                match part {
-                    AssistantPart::Text(part) => content_parts.push(json!({ "type": "text", "text": part.text })),
-                    AssistantPart::Reasoning(part) => content_parts.push(json!({ "type": "thinking", "thinking": [{ "type": "text", "text": part.text }], "closed": true })),
-                    AssistantPart::ToolCall(_) => {},
-                    _ => return Err(AiMuxError::UnsupportedFunctionality("assistant content part".to_string())),
-                }
-            }
-            let has_tool_calls = content
-                .iter()
-                .any(|p| matches!(p, AssistantPart::ToolCall(_)));
-
-            let mut msg_json = json!({ "role": "assistant", "content": text });
-            if has_reasoning { msg_json["content"] = json!(content_parts); }
-
-            if has_tool_calls {
-                let tool_calls: Vec<Value> = content
-                    .iter()
-                    .filter_map(|p| match p {
-                        AssistantPart::ToolCall(ToolCallPart {
-                            tool_call_id,
-                            tool_name,
-                            input,
-                            ..
-                        }) => {
-                            let arguments = input.to_string();
-                            Some(json!({
-                                "id": tool_call_id,
-                                "type": "function",
-                                "function": {
-                                    "name": tool_name,
-                                    "arguments": arguments,
-                                }
-                            }))
-                        }
-                        _ => None,
-                    })
-                    .collect();
-                msg_json["tool_calls"] = json!(tool_calls);
-            }
-
-            if is_last {
-                msg_json["prefix"] = json!(true);
-            }
-            vec![msg_json]
-        }
-        LanguageModelMessage::Tool { content, .. } => content
-            .iter()
-            .filter_map(|part| {
-                let ToolPart::ToolResult(ToolResultPart { tool_call_id, tool_name, output, .. }) = part else { return None; };
-                Some(json!({ "role": "tool", "name": tool_name, "tool_call_id": tool_call_id, "content": tool_result_to_content(output) }))
-            })
-            .collect(),
-    })
-}
-
-fn join_text_parts(content: &[AssistantPart]) -> String {
-    content
-        .iter()
-        .filter_map(|p| match p {
-            AssistantPart::Text(TextPart { text, .. }) => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("")
-}
-
-fn tool_result_to_content(output: &ToolResultOutput) -> Value {
-    Value::String(match output {
-        ToolResultOutput::Text { value, .. } | ToolResultOutput::ErrorText { value, .. } => {
-            value.clone()
-        }
-        ToolResultOutput::ExecutionDenied { reason, .. } => reason
-            .clone()
-            .unwrap_or_else(|| "Tool call execution denied.".to_string()),
-        ToolResultOutput::Json { value, .. } | ToolResultOutput::ErrorJson { value, .. } => {
-            value.to_string()
-        }
-        ToolResultOutput::Content { value } => {
-            crate::openai::convert::tool_result_content_value(value).to_string()
-        }
-    })
-}
-
-fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
-    Ok(match part {
-        UserPart::Text(TextPart { text, .. }) => json!({ "type": "text", "text": text }),
-        UserPart::File(file) => {
-            use base64::Engine;
-            let is_image = get_top_level_media_type(&file.media_type) == "image";
-            let url = match &file.data {
-                FileData::Data { data } => {
-                    let media_type = resolve_full_media_type(file)?;
-                    if !is_image && media_type != "application/pdf" {
-                        return Err(AiMuxError::UnsupportedFunctionality(
-                            "Only images and PDF file parts are supported".to_string(),
-                        ));
-                    }
-                    let b64 = match data {
-                        FileBytes::Binary(bytes) => {
-                            base64::engine::general_purpose::STANDARD.encode(bytes)
-                        }
-                        FileBytes::Base64(data) => data.clone(),
-                    };
-                    format!("data:{media_type};base64,{b64}")
-                }
-                FileData::Url { url, .. } => {
-                    if !is_image && file.media_type != "application/pdf" {
-                        return Err(AiMuxError::UnsupportedFunctionality(
-                            "Only images and PDF file parts are supported".to_string(),
-                        ));
-                    }
-                    url.clone()
-                }
-                FileData::Reference { .. } => {
-                    return Err(AiMuxError::UnsupportedFunctionality(
-                        "file parts with provider references".into(),
-                    ));
-                }
-                FileData::Text { .. } => {
-                    return Err(AiMuxError::UnsupportedFunctionality(
-                        "text file parts".into(),
-                    ));
-                }
+        FileData::Data { data } => {
+            let full = resolve_full_media_type(file)?;
+            let data = match data {
+                FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
+                FileBytes::Base64(data) => data.clone(),
             };
-            if is_image {
-                json!({ "type": "image_url", "image_url": url })
-            } else {
-                json!({ "type": "document_url", "document_url": url })
-            }
+            format!("data:{full};base64,{data}")
         }
-    })
+        FileData::Url { url, .. } => url.clone(),
+    };
+    if get_top_level_media_type(&file.media_type) == "image" {
+        Ok(json!({"type":"image_url", "image_url":url}))
+    } else {
+        let full = if matches!(file.data, FileData::Url { .. }) {
+            file.media_type.clone()
+        } else {
+            resolve_full_media_type(file)?
+        };
+        if full != "application/pdf" {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "Only images and PDF file parts are supported".into(),
+            ));
+        }
+        Ok(json!({"type":"document_url", "document_url":url}))
+    }
 }
 
 // ── Request body ────────────────────────────────────────────────────────────
@@ -280,38 +219,31 @@ fn convert_part_to_mistral(part: &UserPart) -> Result<Value, AiMuxError> {
 /// Convert `CallOptions` to a Mistral request body.
 ///
 /// # Errors
-/// Returns an error for text file parts or an unresolved inline file media type.
+/// Rejects invalid provider options and unsupported prompt parts.
 pub fn build_request_body(
     model_id: &str,
     options: &CallOptions,
     stream: bool,
 ) -> Result<Value, AiMuxError> {
-    let provider_options = options
-        .provider_options
-        .as_ref()
-        .and_then(|namespaces| namespaces.get(crate::mistral::options::NAMESPACE))
-        .map(|namespace| {
-            crate::openai::convert::parse_option_fields(
-                namespace,
-                crate::mistral::options::NAMESPACE,
-                |key, value| {
-                    let valid = match key {
-                        "safePrompt" | "structuredOutputs" | "strictJsonSchema"
-                        | "parallelToolCalls" => value.is_boolean(),
-                        "documentImageLimit" | "documentPageLimit" => value.is_number(),
-                        "promptCacheKey" => value.is_string(),
-                        "reasoningEffort" => value
-                            .as_str()
-                            .is_some_and(|value| matches!(value, "high" | "none")),
-                        _ => return None,
-                    };
-                    Some(if valid { Ok(value.clone()) } else { Err(()) })
-                },
-            )
-        })
-        .transpose()?
-        .unwrap_or_default();
-    let messages = convert_prompt_to_mistral_messages(&options.prompt)?;
+    let provider_options =
+        super::options::validated_mistral_options(options.provider_options.as_ref())?;
+    let mut messages = convert_prompt_to_mistral_messages(&options.prompt)?;
+    if matches!(
+        options.response_format,
+        Some(ResponseFormat::Json { schema: None, .. })
+    ) {
+        let instruction = "You MUST answer with JSON.";
+        if messages.first().is_some_and(|m| m["role"] == "system") {
+            let text = messages[0]["content"].as_str().unwrap_or_default();
+            messages[0]["content"] = json!(if text.is_empty() {
+                instruction.to_owned()
+            } else {
+                format!("{text}\n\n{instruction}")
+            });
+        } else {
+            messages.insert(0, json!({"role":"system", "content":instruction}));
+        }
+    }
 
     let mut body = json!({
         "model": model_id,
@@ -320,10 +252,6 @@ pub fn build_request_body(
 
     if stream {
         body["stream"] = json!(true);
-    }
-
-    if let Some(safe_prompt) = provider_options.get("safePrompt") {
-        body["safe_prompt"] = safe_prompt.clone();
     }
 
     if let Some(max_tokens) = options.max_output_tokens {
@@ -357,7 +285,12 @@ pub fn build_request_body(
                 name,
                 description,
             } => {
-                if schema.is_some() {
+                if schema.is_some()
+                    && provider_options
+                        .and_then(|o| o.get("structuredOutputs"))
+                        .and_then(Value::as_bool)
+                        .unwrap_or(true)
+                {
                     let mut schema_obj = json!({});
                     if let Some(s) = schema {
                         schema_obj["schema"] = s.clone();
@@ -367,7 +300,12 @@ pub fn build_request_body(
                     if let Some(d) = description {
                         schema_obj["description"] = json!(d);
                     }
-                    schema_obj["strict"] = json!(false);
+                    schema_obj["strict"] = json!(
+                        provider_options
+                            .and_then(|o| o.get("strictJsonSchema"))
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false)
+                    );
                     body["response_format"] = json!({
                         "type": "json_schema",
                         "json_schema": schema_obj,
@@ -379,25 +317,125 @@ pub fn build_request_body(
         }
     }
 
-    // Tools (delegated to `prepare_tools`).
-    let function_tools: Option<Vec<FunctionTool>> = options.tools.as_ref().map(|tools| {
-        tools
-            .iter()
-            .filter_map(|t| match t {
-                Tool::Function(ft) => Some(ft.clone()),
-                Tool::Provider(_) => None,
-            })
-            .collect()
-    });
-    let prepared = prepare_tools(&function_tools, options.tool_choice.as_ref());
-    if let Some(tools) = prepared.tools {
-        body["tools"] = json!(tools);
-        if let Some(tc) = prepared.tool_choice {
-            body["tool_choice"] = tc;
+    if let Some(provider_options) = provider_options {
+        for (key, wire_key) in [
+            ("safePrompt", "safe_prompt"),
+            ("documentImageLimit", "document_image_limit"),
+            ("documentPageLimit", "document_page_limit"),
+            ("promptCacheKey", "prompt_cache_key"),
+        ] {
+            if let Some(value) = provider_options.get(key) {
+                body[wire_key] = value.clone();
+            }
+        }
+    }
+    if supports_reasoning_effort(model_id) {
+        let effort = provider_options
+            .and_then(|o| o.get("reasoningEffort"))
+            .cloned()
+            .or_else(|| {
+                options.reasoning.filter(|r| r.is_custom()).map(|r| {
+                    json!(if r == ReasoningEffort::None {
+                        "none"
+                    } else {
+                        "high"
+                    })
+                })
+            });
+        if let Some(effort) = effort {
+            body["reasoning_effort"] = effort;
         }
     }
 
+    // Preserve the empty tools array when the supplied tools are all unsupported.
+    if let Some(tools) = options.tools.as_ref().filter(|tools| !tools.is_empty()) {
+        let function_tools = Some(
+            tools
+                .iter()
+                .filter_map(|t| match t {
+                    Tool::Function(ft) => Some(ft.clone()),
+                    Tool::Provider(_) => None,
+                })
+                .collect(),
+        );
+        let mut prepared = prepare_tools(&function_tools, options.tool_choice.as_ref());
+        if prepared.tools.is_none() {
+            prepared.tools = Some(Vec::new());
+            prepared.tool_choice = options.tool_choice.as_ref().map(|choice| {
+                json!(match choice {
+                    ToolChoice::Auto => "auto",
+                    ToolChoice::None => "none",
+                    _ => "any",
+                })
+            });
+        }
+        body["tools"] = json!(prepared.tools);
+        if let Some(choice) = prepared.tool_choice {
+            body["tool_choice"] = choice;
+        }
+        if let Some(value) = provider_options.and_then(|o| o.get("parallelToolCalls")) {
+            body["parallel_tool_calls"] = value.clone();
+        }
+    }
     Ok(body)
+}
+
+fn supports_reasoning_effort(model_id: &str) -> bool {
+    matches!(
+        model_id,
+        "glm-5-2"
+            | "labs-leanstral-1-5"
+            | "labs-leanstral-1-5-1"
+            | "magistral-medium-latest"
+            | "magistral-small-latest"
+            | "mistral-medium"
+            | "mistral-medium-2604"
+            | "mistral-medium-3"
+            | "mistral-medium-3-5"
+            | "mistral-medium-3.5"
+            | "mistral-medium-latest"
+            | "mistral-small-2603"
+            | "mistral-small-latest"
+            | "mistral-vibe-cli-fast"
+            | "mistral-vibe-cli-latest"
+            | "mistral-vibe-cli-with-tools"
+            | "zai-glm-5-2"
+    )
+}
+
+/// The warnings emitted while preparing an upstream Mistral request.
+#[must_use]
+pub fn request_warnings(options: &CallOptions, model_id: &str) -> Vec<Warning> {
+    let mut warnings = Vec::new();
+    if options.top_k.is_some() {
+        warnings.push(Warning::Unsupported {
+            feature: "topK".into(),
+            details: None,
+        });
+    }
+    if let Some(reasoning) = options.reasoning.filter(|r| r.is_custom()) {
+        if !supports_reasoning_effort(model_id) {
+            warnings.push(Warning::Unsupported {
+                feature: "reasoning".into(),
+                details: Some("This model does not support reasoning configuration.".into()),
+            });
+        } else if !matches!(reasoning, ReasoningEffort::None | ReasoningEffort::High)
+            && super::options::mistral_options(options.provider_options.as_ref())
+                .and_then(|o| o.get("reasoningEffort"))
+                .is_none()
+        {
+            warnings.push(Warning::Compatibility { feature:"reasoning".into(), details:Some(format!("reasoning \"{reasoning}\" is not directly supported by this model. mapped to effort \"high\".")) });
+        }
+    }
+    for tool in options.tools.iter().flatten() {
+        if let Tool::Provider(tool) = tool {
+            warnings.push(Warning::Unsupported {
+                feature: format!("provider-defined tool {}", tool.id),
+                details: None,
+            });
+        }
+    }
+    warnings
 }
 
 /// Parse Mistral finish reason string into `FinishReason`.
@@ -409,7 +447,6 @@ pub fn parse_finish_reason(s: &str) -> FinishReason {
         "stop" => FinishReasonUnified::Stop,
         "length" | "model_length" => FinishReasonUnified::Length,
         "tool_calls" => FinishReasonUnified::ToolCalls,
-        "content_filter" => FinishReasonUnified::ContentFilter,
         _ => FinishReasonUnified::Other,
     };
     FinishReason {

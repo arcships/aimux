@@ -21,6 +21,9 @@ use aimux_provider_utils::{
 
 pub use crate::shared::TransformRequestBody;
 
+/// Converts the raw optional token usage of a chat response.
+pub type ConvertUsage = Arc<dyn Fn(Option<&Value>) -> Usage + Send + Sync>;
+
 /// Where the base URL comes from.
 ///
 /// A plain provider has a [`Fixed`](Self::Fixed) URL. A preset whose URL is
@@ -82,6 +85,8 @@ pub(crate) struct ChatDialect {
     /// Streaming usage rides in `chunk[key].usage` instead of `chunk.usage`.
     pub stream_usage_key: Option<String>,
     pub metadata_extractor: Option<Arc<dyn MetadataExtractor>>,
+    pub supported_urls: Option<Arc<dyn Fn() -> SupportedUrls + Send + Sync>>,
+    pub convert_usage: Option<ConvertUsage>,
     pub error_structure: ErrorStructure,
 }
 
@@ -95,6 +100,8 @@ impl ChatDialect {
             max_tokens_key: None,
             stream_usage_key: None,
             metadata_extractor: None,
+            supported_urls: None,
+            convert_usage: None,
             error_structure: Arc::new(default_error_structure),
         }
     }
@@ -120,8 +127,6 @@ pub(crate) fn default_error_structure(data: &Value) -> ProviderErrorParts {
     }
 }
 
-/// Converts the upstream token usage object into language-model usage.
-pub type ConvertUsage = Arc<dyn Fn(&Value) -> Usage + Send + Sync>;
 /// Returns the URLs supported by chat models.
 pub type SupportedUrlsFn = Arc<dyn Fn() -> SupportedUrls + Send + Sync>;
 
@@ -130,9 +135,7 @@ pub type SupportedUrlsFn = Arc<dyn Fn() -> SupportedUrls + Send + Sync>;
 pub(crate) struct ChatSettings {
     pub include_usage: bool,
     pub supports_structured_outputs: bool,
-    pub supports_multi_part_tool_content: bool,
-    pub supported_urls: Option<SupportedUrlsFn>,
-    pub convert_usage: Option<ConvertUsage>,
+    pub supported_urls: SupportedUrls,
     pub dialect: Arc<ChatDialect>,
 }
 

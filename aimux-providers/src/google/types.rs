@@ -32,7 +32,7 @@ pub struct GenerateContentResponse {
 }
 
 /// A single candidate in the response.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Candidate {
     #[serde(default)]
@@ -87,6 +87,14 @@ pub struct GoogleUsageMetadata {
     pub prompt_tokens_details: Option<Vec<TokenDetail>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub candidates_tokens_details: Option<Vec<TokenDetail>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_use_prompt_token_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_tokens_details: Option<Vec<TokenDetail>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_use_prompt_tokens_details: Option<Vec<TokenDetail>>,
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -96,6 +104,8 @@ pub struct TokenDetail {
     pub modality: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token_count: Option<u32>,
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, Value>,
 }
 
 // ── Streaming chunk (`streamGenerateContent?alt=sse`) ────────────────────────

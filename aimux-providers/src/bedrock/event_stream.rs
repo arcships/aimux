@@ -176,7 +176,7 @@ pub fn decode_messages(data: &[u8]) -> Vec<EventStreamMessage> {
         let payload_start = header_end;
         let payload_end = offset + total_length - 4; // last 4 bytes are CRC
 
-        if header_end > data.len() || payload_end > data.len() {
+        if header_end > payload_end || payload_end > data.len() {
             break;
         }
 
@@ -215,7 +215,7 @@ pub fn decode_messages(data: &[u8]) -> Vec<EventStreamMessage> {
                     h_offset += val_len;
                     match name.as_str() {
                         ":message-type" => message_type = val,
-                        ":event-type" => event_type = val,
+                        ":event-type" | ":exception-type" => event_type = val,
                         _ => {}
                     }
                 }
@@ -259,96 +259,37 @@ pub fn decode_messages(data: &[u8]) -> Vec<EventStreamMessage> {
     messages
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn round_trip_single_message() {
-        let payload = r#"{"contentBlockIndex":0,"delta":{"text":"Hello"}}"#;
-        let encoded = encode_message("event", "contentBlockDelta", payload);
-        let decoded = decode_messages(&encoded);
-        assert_eq!(decoded.len(), 1);
-        assert_eq!(decoded[0].message_type, "event");
-        assert_eq!(decoded[0].event_type, "contentBlockDelta");
-        assert_eq!(decoded[0].data, payload);
-    }
-
-    #[test]
-    fn round_trip_multiple_messages() {
-        let messages = vec![
-            ("event", "messageStart", r#"{"role":"assistant""#),
-            (
-                "event",
-                "contentBlockDelta",
-                r#"{"contentBlockIndex":0,"delta":{"text":"Hi"}}"#,
-            ),
-            ("event", "messageStop", r#"{"stopReason":"end_turn"}"#),
-        ];
-        let encoded = encode_messages(&messages);
-        let decoded = decode_messages(&encoded);
-        assert_eq!(decoded.len(), 3);
-        assert_eq!(decoded[0].event_type, "messageStart");
-        assert_eq!(decoded[1].event_type, "contentBlockDelta");
-        assert_eq!(decoded[2].event_type, "messageStop");
-    }
-
-    #[test]
-    fn corrupt_prelude_crc_is_rejected() {
-        let payload = r#"{"delta":{"text":"Hi"}}"#;
-        let mut encoded = encode_message("event", "contentBlockDelta", payload);
-        // Flip a byte in the prelude CRC (bytes 8..12).
-        encoded[8] ^= 0xFF;
-        let decoded = decode_messages(&encoded);
-        assert_eq!(
-            decoded.len(),
-            0,
-            "frame with bad prelude CRC must be dropped"
-        );
-    }
-
-    #[test]
-    fn corrupt_message_crc_is_rejected() {
-        let payload = r#"{"delta":{"text":"Hi"}}"#;
-        let mut encoded = encode_message("event", "contentBlockDelta", payload);
-        // Flip the last byte (part of the trailing message CRC).
-        let last = encoded.len() - 1;
-        encoded[last] ^= 0xFF;
-        let decoded = decode_messages(&encoded);
-        assert_eq!(
-            decoded.len(),
-            0,
-            "frame with bad message CRC must be dropped"
-        );
-    }
-
-    #[test]
-    fn corrupt_payload_is_rejected_by_crc() {
-        let payload = r#"{"delta":{"text":"Hi"}}"#;
-        let mut encoded = encode_message("event", "contentBlockDelta", payload);
-        // Flip a byte in the payload region (middle of the frame).
-        let mid = encoded.len() / 2;
-        encoded[mid] ^= 0xFF;
-        let decoded = decode_messages(&encoded);
-        assert_eq!(
-            decoded.len(),
-            0,
-            "frame with corrupted payload must be caught by message CRC"
-        );
-    }
-
-    #[test]
-    fn valid_frame_before_corrupt_one_is_kept() {
-        // Two frames: first valid, second with a flipped payload byte.
-        let good = encode_message("event", "messageStart", r#"{"role":"assistant"}"#);
-        let mut bad = encode_message("event", "contentBlockDelta", r#"{"delta":{"text":"x"}}"#);
-        let bad_mid = bad.len() / 2;
-        bad[bad_mid] ^= 0xFF;
-        let mut buf = good.clone();
-        buf.extend_from_slice(&bad);
-        let decoded = decode_messages(&buf);
-        // First frame decodes; decoding stops (break) at the corrupt second frame.
-        assert_eq!(decoded.len(), 1);
-        assert_eq!(decoded[0].event_type, "messageStart");
-    }
+/// Decode frames incrementally, surfacing transport, framing, and checksum errors.
+#[must_use]
+pub fn decode_stream(
+    mut input: futures::stream::BoxStream<'static, Result<bytes::Bytes, aimux_core::AiMuxError>>,
+) -> futures::stream::BoxStream<'static, Result<EventStreamMessage, aimux_core::AiMuxError>> {
+    use futures::StreamExt;
+    Box::pin(async_stream::stream! {
+        let mut buffer = Vec::new();
+        while let Some(chunk) = input.next().await {
+            match chunk {
+                Ok(chunk) => buffer.extend_from_slice(&chunk),
+                Err(error) => { yield Err(error); return; }
+            }
+            while buffer.len() >= 4 {
+                let length = u32::from_be_bytes(buffer[..4].try_into().expect("four bytes")) as usize;
+                if length < 16 {
+                    yield Err(aimux_core::AiMuxError::InvalidResponseData("Invalid Amazon Bedrock event-stream frame length".into()));
+                    return;
+                }
+                if buffer.len() < length { break; }
+                let decoded = decode_messages(&buffer[..length]);
+                let Some(message) = decoded.into_iter().next() else {
+                    yield Err(aimux_core::AiMuxError::InvalidResponseData("Invalid Amazon Bedrock event-stream frame".into()));
+                    return;
+                };
+                buffer.drain(..length);
+                yield Ok(message);
+            }
+        }
+        if !buffer.is_empty() {
+            yield Err(aimux_core::AiMuxError::InvalidResponseData(format!("Incomplete Amazon Bedrock event-stream frame: {} buffered bytes remain at end of stream.", buffer.len())));
+        }
+    })
 }

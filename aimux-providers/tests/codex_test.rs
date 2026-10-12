@@ -240,8 +240,6 @@ async fn api_key_streams_text() {
     }
 }
 
-// Path B: subscription mode
-
 #[tokio::test]
 async fn subscription_generate_forces_stream_and_assembles_result() {
     let server = MockServer::start().await;
