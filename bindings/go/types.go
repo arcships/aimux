@@ -108,7 +108,6 @@ type ToolCall struct {
 	Input            json.RawMessage `json:"input,omitempty"`
 	ProviderExecuted *bool           `json:"provider_executed,omitempty"`
 	Dynamic          *bool           `json:"dynamic,omitempty"`
-	ThoughtSignature *string         `json:"thought_signature,omitempty"`
 	// ProviderMetadata carries provider-specific data associated with this call.
 	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
 	// Invalid is set by Core when the tool call stays invalid after optional repair.
@@ -309,6 +308,10 @@ type GenerateTextOptions struct {
 	RepairToolCall RepairToolCallFunc `json:"-"`
 }
 
+type FunctionToolInputExample struct {
+	Input map[string]json.RawMessage `json:"input"`
+}
+
 // Tool is a function tool definition (the "function" variant).
 // Mirrors Kotlin Tool.Function (Types.kt:209-230).
 type Tool struct {
@@ -318,7 +321,7 @@ type Tool struct {
 	InputSchema     json.RawMessage            `json:"input_schema,omitempty"`
 	Strict          *bool                      `json:"strict,omitempty"`
 	ProviderOptions map[string]json.RawMessage `json:"provider_options,omitempty"`
-	InputExamples   []json.RawMessage          `json:"input_examples,omitempty"`
+	InputExamples   []FunctionToolInputExample `json:"input_examples,omitempty"`
 }
 
 // MarshalOptions serializes GenerateTextOptions to JSON. Returns "" for nil opts.

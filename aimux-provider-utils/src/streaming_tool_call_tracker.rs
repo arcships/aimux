@@ -27,11 +27,11 @@
 //! Protocols whose streams carry explicit tool-call boundaries (Anthropic,
 //! Google, Bedrock, Cohere, the Responses API) do not need this.
 
-use serde_json::Value;
 use thiserror::Error;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::stream_part::StreamPart;
+use aimux_core::tool::RawToolCall;
 use aimux_core::types::ProviderMetadata;
 
 use crate::streaming_tool_call_argument_state::{
@@ -228,18 +228,15 @@ impl StreamingToolCallTracker {
                 id: call.id.clone(),
                 provider_metadata: None,
             });
-            out.push(StreamPart::ToolCall {
+            out.push(StreamPart::ToolCall(RawToolCall {
                 tool_call_id: call.id,
                 tool_name: call.name,
                 // Raw argument text; Core parses it.
-                input: Value::String(call.arguments),
+                input: call.arguments,
                 provider_executed: None,
                 dynamic: None,
-                thought_signature: None,
-                invalid: None,
-                error: None,
                 provider_metadata: call.provider_metadata,
-            });
+            }));
         }
     }
 

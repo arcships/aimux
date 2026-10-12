@@ -14,6 +14,8 @@
 //! - `map-huggingface-responses-finish-reason.ts` — finish-reason mapping
 //! - `huggingface-responses-language-model-options.ts` — provider options
 
+use aimux_core::tool::RawToolCall;
+use aimux_core::tool::ToolResult;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -419,28 +421,25 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 .get("arguments")
                                                 .and_then(|v| v.as_str())
                                                 .unwrap_or("{}");
-                                            let input = Value::String(arguments.to_string());
+                                            let input = arguments.to_string();
 
                                             yield Ok(StreamPart::ToolInputEnd {
                                                 id: call_id.clone(),
                                                 provider_metadata: None,
                                             });
-                                            yield Ok(StreamPart::ToolCall {
+                                            yield Ok(StreamPart::ToolCall(RawToolCall {
                                                 tool_call_id: call_id.clone(),
                                                 tool_name: name.clone(),
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
-                                                thought_signature: None,
-                                                invalid: None,
-                                                error: None,
                                                 provider_metadata: None,
-                                            });
+                                            }));
 
                                             if let Some(output) =
                                                 item.get("output").and_then(|v| v.as_str())
                                             {
-                                                yield Ok(StreamPart::ToolResult {
+                                                yield Ok(StreamPart::ToolResult(ToolResult {
                                                     tool_call_id: call_id,
                                                     tool_name: name.clone(),
                                                     result: Value::String(output.to_string()),
@@ -448,7 +447,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                     preliminary: None,
                                                     dynamic: None,
                                                     provider_metadata: None,
-                                                });
+                                                }));
                                             }
                                         }
                                         _ => {}
@@ -643,7 +642,7 @@ pub fn build_request_body_with_warnings(
 
     // Prepare tools.
     let (tools, tool_choice, tool_warnings) =
-        prepare_responses_tools(&options.tools, &options.tool_choice);
+        prepare_responses_tools(&options.tools, options.tool_choice.as_ref());
     warnings.extend(tool_warnings);
 
     // Assemble the body. Key insertion order follows the TS `baseArgs` object
@@ -1018,7 +1017,7 @@ fn detect_media_type_from_base64(data: &str, top_level: &str) -> Option<String> 
 #[must_use]
 pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
-    tool_choice: &ToolChoice,
+    tool_choice: Option<&ToolChoice>,
 ) -> (Option<Vec<Value>>, Option<Value>, Vec<Warning>) {
     let tools = match tools {
         Some(t) if !t.is_empty() => t,
@@ -1050,10 +1049,10 @@ pub fn prepare_responses_tools(
     }
 
     let mapped_tool_choice = match tool_choice {
-        ToolChoice::Auto => Some(json!("auto")),
-        ToolChoice::Required => Some(json!("required")),
-        ToolChoice::None => None, // not supported, ignore
-        ToolChoice::Tool { tool_name } => Some(json!({
+        Some(ToolChoice::Auto) => Some(json!("auto")),
+        Some(ToolChoice::Required) => Some(json!("required")),
+        None | Some(ToolChoice::None) => None, // not supported, ignore
+        Some(ToolChoice::Tool { tool_name }) => Some(json!({
             "type": "function",
             "function": { "name": tool_name }
         })),
@@ -1140,15 +1139,14 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     .and_then(|v| v.as_str())
                     .unwrap_or("{}");
                 let input = arguments.to_string();
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: call_id.to_string(),
                     tool_name: name.to_string(),
                     input,
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
             }
 
             "mcp_call" => {
@@ -1159,18 +1157,17 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     .and_then(|v| v.as_str())
                     .unwrap_or("{}");
                 let input = arguments.to_string();
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id.to_string(),
                     tool_name: name.to_string(),
                     input,
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
 
                 if let Some(output) = part.get("output").filter(|v| !v.is_null()) {
-                    content.push(GenerateContent::ToolResult {
+                    content.push(GenerateContent::ToolResult(ToolResult {
                         tool_call_id: id.to_string(),
                         tool_name: name.to_string(),
                         result: output.clone(),
@@ -1178,25 +1175,24 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                         preliminary: None,
                         dynamic: Some(true),
                         provider_metadata: None,
-                    });
+                    }));
                 }
             }
 
             "mcp_list_tools" => {
                 let id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 let server_label = part.get("server_label").cloned().unwrap_or(Value::Null);
-                content.push(GenerateContent::ToolCall {
+                content.push(GenerateContent::ToolCall(RawToolCall {
                     tool_call_id: id.to_string(),
                     tool_name: "list_tools".to_string(),
                     input: json!({ "server_label": server_label }).to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    thought_signature: None,
                     provider_metadata: None,
-                });
+                }));
 
                 if let Some(tools) = part.get("tools").filter(|v| !v.is_null()) {
-                    content.push(GenerateContent::ToolResult {
+                    content.push(GenerateContent::ToolResult(ToolResult {
                         tool_call_id: id.to_string(),
                         tool_name: "list_tools".to_string(),
                         result: json!({ "tools": tools }),
@@ -1204,7 +1200,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                         preliminary: None,
                         dynamic: Some(true),
                         provider_metadata: None,
-                    });
+                    }));
                 }
             }
 

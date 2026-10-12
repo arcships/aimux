@@ -45,7 +45,6 @@ data class RawToolCall(
     val input: String,
     @SerialName("provider_executed") val providerExecuted: Boolean? = null,
     val dynamic: Boolean? = null,
-    @SerialName("thought_signature") val thoughtSignature: String? = null,
     @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
 )
 

@@ -57,7 +57,6 @@ ToolCall _$ToolCallFromJson(Map<String, dynamic> json) => ToolCall(
       input: json['input'],
       providerExecuted: json['provider_executed'] as bool?,
       isDynamic: json['dynamic'] as bool?,
-      thoughtSignature: json['thought_signature'] as String?,
       providerMetadata: json['provider_metadata'],
       invalid: json['invalid'] as bool?,
       error: json['error'],
@@ -69,7 +68,6 @@ Map<String, dynamic> _$ToolCallToJson(ToolCall instance) => <String, dynamic>{
       'input': instance.input,
       'provider_executed': instance.providerExecuted,
       'dynamic': instance.isDynamic,
-      'thought_signature': instance.thoughtSignature,
       if (instance.providerMetadata != null)
         'provider_metadata': instance.providerMetadata,
       'invalid': instance.invalid,
@@ -83,7 +81,7 @@ FunctionTool _$FunctionToolFromJson(Map<String, dynamic> json) => FunctionTool(
       strict: json['strict'] as bool?,
       providerOptions: json['provider_options'] as Map<String, dynamic>?,
       inputExamples: (json['input_examples'] as List<dynamic>?)
-          ?.map((e) => e as Map<String, dynamic>)
+          ?.map((e) => FunctionToolInputExample.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
 
@@ -94,7 +92,7 @@ Map<String, dynamic> _$FunctionToolToJson(FunctionTool instance) =>
       'input_schema': instance.inputSchema,
       'strict': instance.strict,
       'provider_options': instance.providerOptions,
-      'input_examples': instance.inputExamples,
+      'input_examples': instance.inputExamples?.map((e) => e.toJson()).toList(),
     };
 
 ResponseMetadata _$ResponseMetadataFromJson(Map<String, dynamic> json) =>

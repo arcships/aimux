@@ -6,6 +6,7 @@
 //!
 //! Translation of `reference/ai/packages/open-responses/src/responses/`.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -396,15 +397,14 @@ impl LanguageModel for OpenResponsesModel {
                             .and_then(|a| a.as_str())
                             .unwrap_or("{}");
                         let input = arguments.to_string();
-                        content.push(GenerateContent::ToolCall {
+                        content.push(GenerateContent::ToolCall(RawToolCall {
                             tool_call_id: call_id,
                             tool_name: name,
                             input,
                             provider_executed: None,
                             dynamic: None,
-                            thought_signature: None,
                             provider_metadata: None,
-                        });
+                        }));
                     }
                     _ => {}
                 }
@@ -681,18 +681,15 @@ impl LanguageModel for OpenResponsesModel {
                                                         .map(std::string::ToString::to_string)
                                                 })
                                                 .unwrap_or_default();
-                                            let input = Value::String(arguments);
-                                            yield Ok(StreamPart::ToolCall {
+                                            let input = arguments;
+                                            yield Ok(StreamPart::ToolCall(RawToolCall {
                                                 tool_call_id,
                                                 tool_name,
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
-                                                thought_signature: None,
-                                                invalid: None,
-                                                error: None,
                                                 provider_metadata: None,
-                                            });
+                                            }));
                                             has_tool_calls = true;
                                         }
                                         "reasoning" => {
@@ -931,15 +928,12 @@ fn build_request_body(
         })
         .unwrap_or_default();
 
-    // Convert tool choice.
-    // Only emit when not the default (Auto) — Rust's ToolChoice::Auto is the
-    // default and indistinguishable from "not set", matching the TS behavior
-    // where undefined toolChoice is omitted from the body.
     let converted_tool_choice: Option<Value> = match &options.tool_choice {
-        ToolChoice::Auto => None,
-        ToolChoice::None => Some(json!("none")),
-        ToolChoice::Required => Some(json!("required")),
-        ToolChoice::Tool { tool_name } => Some(json!({
+        None => None,
+        Some(ToolChoice::Auto) => Some(json!("auto")),
+        Some(ToolChoice::None) => Some(json!("none")),
+        Some(ToolChoice::Required) => Some(json!("required")),
+        Some(ToolChoice::Tool { tool_name }) => Some(json!({
             "type": "function",
             "name": tool_name,
         })),
