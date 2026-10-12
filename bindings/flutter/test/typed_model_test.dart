@@ -110,8 +110,6 @@ class _TypedArgs {
   final List<Map<String, dynamic>>? messages; // for generateTextMessages
   final List<Tool>? tools;
   final ToolChoice? toolChoice;
-  final int? maxOutputTokens;
-  final double? temperature;
   final bool? includeRawChunks;
   _TypedArgs({
     required this.baseUrl,
@@ -121,8 +119,6 @@ class _TypedArgs {
     this.messages,
     this.tools,
     this.toolChoice,
-    this.maxOutputTokens,
-    this.temperature,
     this.includeRawChunks,
   });
 }
@@ -137,16 +133,11 @@ Future<Map<String, dynamic>> runTypedGenerateText(_TypedArgs args) {
     final model = Model.openai(args.apiKey, args.modelId, baseUrl: args.baseUrl);
     final typed = TypedModel(model);
     try {
-      final hasOptions = args.tools != null ||
-          args.toolChoice != null ||
-          args.maxOutputTokens != null ||
-          args.temperature != null;
+      final hasOptions = args.tools != null || args.toolChoice != null;
       final options = hasOptions
           ? GenerateTextOptions(
               tools: args.tools,
               toolChoice: args.toolChoice,
-              maxOutputTokens: args.maxOutputTokens,
-              temperature: args.temperature,
             )
           : null;
       final result = typed.generateText(args.prompt!, options);
