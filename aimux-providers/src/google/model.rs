@@ -221,16 +221,14 @@ impl LanguageModel for GoogleModel {
             usage,
             warnings: tool_warnings,
             provider_metadata,
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::result::GenerateResponse {
-                body: response_body,
+            response: Some(aimux_core::shared::ResponseInfo {
+                id: data.response_id,
+                timestamp: None,
+                model_id: None,
                 headers: Some(response_headers),
-                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
-                    id: data.response_id,
-                    timestamp: None,
-                    model_id: None,
-                })
+                body: response_body,
             }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
@@ -726,7 +724,7 @@ impl LanguageModel for GoogleModel {
         Ok(StreamResult {
             stream: Box::pin(stream),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::result::StreamResponse {
+            response: Some(aimux_core::shared::StreamResponseInfo {
                 headers: Some(response_headers),
             }),
         })

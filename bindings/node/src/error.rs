@@ -19,6 +19,7 @@ const ERROR_CLASS_NAMES: &[&str] = &[
     "RetryError",
     "JSONParseError",
     "InvalidResponseDataError",
+    "NoOutputGeneratedError",
     "NoSuchToolError",
     "InvalidToolInputError",
     "ToolCallRepairError",
@@ -177,6 +178,7 @@ fn aimux_error_class_name(error: &AiMuxError) -> &'static str {
         AiMuxError::ApiCall(_) => "APICallError",
         AiMuxError::Retry(_) => "RetryError",
         AiMuxError::JsonParse(_) => "JSONParseError",
+        AiMuxError::NoOutputGenerated(_) => "NoOutputGeneratedError",
         AiMuxError::InvalidResponseData(_) | AiMuxError::ToolCallNotFoundForApproval { .. } => {
             "InvalidResponseDataError"
         }

@@ -1,18 +1,15 @@
 //! Result types for `do_generate` and `do_stream`.
 
-use std::collections::HashMap;
-
 use futures::Stream;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-pub use crate::shared::GeneratedFileData;
-use crate::shared::RequestInfo;
+use crate::shared::{GeneratedFileData, RequestInfo, ResponseInfo, StreamResponseInfo};
 use crate::stream_part::StreamPart;
 use crate::tool::{RawToolCall, ToolResult};
-use crate::types::{FinishReason, ProviderMetadata, ResponseMetadata, Usage, Warning};
+use crate::types::{FinishReason, ProviderMetadata, Usage, Warning};
 
 /// A content item in the generation result.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -195,9 +192,12 @@ pub struct StreamTextResultAggregated {
     /// Provider-specific metadata from the Finish chunk.
     #[serde(default)]
     pub provider_metadata: Option<ProviderMetadata>,
-    /// Response metadata (id, timestamp, model_id) if emitted by the stream.
+    /// Request information from the provider.
     #[serde(default)]
-    pub response: Option<crate::types::ResponseMetadata>,
+    pub request: RequestInfo,
+    /// Response metadata and headers from the last step.
+    #[serde(default)]
+    pub response: ResponseInfo,
     /// Assistant messages ready to append for the next turn.
     #[serde(default)]
     pub response_messages: Vec<crate::message::ModelMessage>,
@@ -205,8 +205,7 @@ pub struct StreamTextResultAggregated {
 
 /// Result of `LanguageModel::do_generate` (non-streaming).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(from = "GenerateResultWire", into = "GenerateResultWire")]
-#[ts(export, as = "GenerateResultWire")]
+#[ts(export)]
 pub struct GenerateResult {
     /// Generated content items (text, tool calls, etc.).
     pub content: Vec<GenerateContent>,
@@ -218,18 +217,20 @@ pub struct GenerateResult {
     pub warnings: Vec<Warning>,
     /// Provider-specific metadata.
     pub provider_metadata: Option<ProviderMetadata>,
-    /// Optional response information.
-    pub response: Option<GenerateResponse>,
-    /// Optional request information.
+    /// Optional request information for telemetry and debugging.
     pub request: Option<RequestInfo>,
+    /// Optional response metadata, headers, and body.
+    pub response: Option<ResponseInfo>,
 }
 
 /// Result of `LanguageModel::do_stream` (streaming).
 pub struct StreamResult {
     /// The stream of `StreamPart` items.
     pub stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>>,
+    /// Optional request information for telemetry and debugging.
     pub request: Option<RequestInfo>,
-    pub response: Option<StreamResponse>,
+    /// Optional response headers.
+    pub response: Option<StreamResponseInfo>,
 }
 
 impl std::fmt::Debug for StreamResult {
@@ -239,122 +240,5 @@ impl std::fmt::Debug for StreamResult {
             .field("response", &self.response)
             .field("stream", &"<stream>")
             .finish()
-    }
-}
-
-/// Response metadata and HTTP details from a generation call.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct GenerateResponse {
-    pub id: Option<String>,
-    pub timestamp: Option<String>,
-    pub model_id: Option<String>,
-    pub headers: Option<HashMap<String, String>>,
-    pub body: Option<serde_json::Value>,
-}
-
-impl From<ResponseMetadata> for GenerateResponse {
-    fn from(metadata: ResponseMetadata) -> Self {
-        Self {
-            id: metadata.id,
-            timestamp: metadata.timestamp,
-            model_id: metadata.model_id,
-            ..Default::default()
-        }
-    }
-}
-
-impl From<GenerateResponse> for ResponseMetadata {
-    fn from(response: GenerateResponse) -> Self {
-        Self {
-            id: response.id,
-            timestamp: response.timestamp,
-            model_id: response.model_id,
-        }
-    }
-}
-
-/// HTTP details from a streaming call.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct StreamResponse {
-    pub headers: Option<HashMap<String, String>>,
-}
-
-// Preserve the established binding wire shape while exposing upstream's
-// request and response objects to Rust callers.
-#[derive(Serialize, Deserialize, TS)]
-struct GenerateResultWire {
-    content: Vec<GenerateContent>,
-    finish_reason: FinishReason,
-    usage: Usage,
-    warnings: Vec<Warning>,
-    provider_metadata: Option<ProviderMetadata>,
-    #[ts(inline)]
-    response: Option<GenerateResponseWire>,
-    request_body: Option<serde_json::Value>,
-    response_headers: Option<HashMap<String, String>>,
-}
-
-#[derive(Serialize, Deserialize, TS)]
-struct GenerateResponseWire {
-    id: Option<String>,
-    timestamp: Option<String>,
-    model_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    body: Option<serde_json::Value>,
-}
-
-impl From<GenerateResultWire> for GenerateResult {
-    fn from(wire: GenerateResultWire) -> Self {
-        Self {
-            content: wire.content,
-            finish_reason: wire.finish_reason,
-            usage: wire.usage,
-            warnings: wire.warnings,
-            provider_metadata: wire.provider_metadata,
-            request: wire
-                .request_body
-                .map(|body| RequestInfo { body: Some(body) }),
-            response: wire
-                .response
-                .map(|meta| GenerateResponse {
-                    id: meta.id,
-                    timestamp: meta.timestamp,
-                    model_id: meta.model_id,
-                    headers: wire.response_headers.clone(),
-                    body: meta.body,
-                })
-                .or_else(|| {
-                    wire.response_headers.map(|headers| GenerateResponse {
-                        headers: Some(headers),
-                        ..Default::default()
-                    })
-                }),
-        }
-    }
-}
-
-impl From<GenerateResult> for GenerateResultWire {
-    fn from(result: GenerateResult) -> Self {
-        let response_headers = result
-            .response
-            .as_ref()
-            .and_then(|response| response.headers.clone());
-        Self {
-            content: result.content,
-            finish_reason: result.finish_reason,
-            usage: result.usage,
-            warnings: result.warnings,
-            provider_metadata: result.provider_metadata,
-            request_body: result.request.and_then(|request| request.body),
-            response_headers,
-            response: result.response.map(|meta| GenerateResponseWire {
-                id: meta.id,
-                timestamp: meta.timestamp,
-                model_id: meta.model_id,
-                body: meta.body,
-            }),
-        }
     }
 }

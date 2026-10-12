@@ -295,7 +295,7 @@ impl LanguageModel for MoaModel {
             }
         };
 
-        // RFC-0022 §3.4: return None for request_body/response_headers. The
+        // RFC-0022 §3.4: return None for request/response. The
         // aggregator's request body is a synthesized prompt (references
         // spliced in), not the user's original — exposing it would mislead
         // cache probing (RFC-0015 fingerprinting).

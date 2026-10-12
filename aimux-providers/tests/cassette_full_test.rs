@@ -15,7 +15,7 @@ use futures::StreamExt;
 use wiremock::MockServer;
 
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
-use aimux_core::stream_part::StreamPart;
+use aimux_core::stream_part::TextStreamPart;
 use aimux_providers::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider};
 
 /// Run generate_text + stream_text against a cassette directory.
@@ -61,8 +61,8 @@ async fn replay_openai_compat(
     let mut got_finish = false;
     while let Some(part) = stream.next().await {
         match part.expect("{cassette_dir}: stream part should be ok") {
-            StreamPart::StreamStart { .. } => got_stream_start = true,
-            StreamPart::Finish { .. } => got_finish = true,
+            TextStreamPart::StreamStart { .. } => got_stream_start = true,
+            TextStreamPart::Finish { .. } => got_finish = true,
             _ => {}
         }
     }

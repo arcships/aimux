@@ -122,9 +122,9 @@ impl LanguageModel for XaiModel {
         .await?;
 
         // Capture response headers.
-        let response_body = resp.raw_value;
         let response_headers = resp.response_headers;
 
+        let response_value = resp.raw_value.unwrap_or(Value::Null);
         let data = resp.value;
 
         let choice = data
@@ -229,16 +229,14 @@ impl LanguageModel for XaiModel {
             usage,
             warnings: request_result.warnings,
             provider_metadata: None,
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::result::GenerateResponse {
-                body: response_body,
+            response: Some(aimux_core::shared::ResponseInfo {
+                id: data.id,
+                timestamp,
+                model_id: data.model,
                 headers: Some(response_headers),
-                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
-                    id: data.id,
-                    timestamp,
-                    model_id: data.model,
-                })
+                body: Some(response_value),
             }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
@@ -592,7 +590,7 @@ impl LanguageModel for XaiModel {
         Ok(StreamResult {
             stream: Box::pin(stream),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::result::StreamResponse {
+            response: Some(aimux_core::shared::StreamResponseInfo {
                 headers: Some(response_headers),
             }),
         })

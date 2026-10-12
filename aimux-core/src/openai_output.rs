@@ -1,6 +1,6 @@
 //! OpenAI Chat Completions output format.
 //!
-//! Converts aimux's internal types ([`GenerateResult`] / [`StreamPart`]) into
+//! Converts aimux's internal types ([`GenerateResult`] / [`TextStreamPart`]) into
 //! standard OpenAI Chat Completions structures ([`ChatCompletion`] /
 //! [`ChatCompletionChunk`]). This lets any provider (OpenAI, Anthropic, Google,
 //! …) be consumed via the OpenAI wire format.
@@ -9,7 +9,7 @@
 //!
 //! ```text
 //!   provider.do_generate()  →  GenerateResult  →  to_chat_completion()  →  ChatCompletion
-//!   provider.do_stream()    →  Stream<StreamPart>  →  to_chat_completion_stream()  →  Stream<Chunk>
+//!   stream_text()           →  Stream<TextStreamPart>  →  to_chat_completion_stream()  →  Stream<Chunk>
 //! ```
 //!
 //! The conversion is a post-processing step — it does not modify the
@@ -37,9 +37,9 @@ use crate::error::AiMuxError;
 use crate::parse_tool_call::raw_tool_call_text;
 use crate::result::{GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source};
 use crate::shared::GeneratedFileData;
-use crate::stream_part::{StreamPart, TextStreamPart};
+use crate::stream_part::TextStreamPart;
 use crate::tool::{ToolCall, ToolResult};
-use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+use crate::types::{FinishReason, FinishReasonUnified, Usage};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Non-streaming response types
@@ -377,7 +377,7 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Streaming conversion: Stream<StreamPart> → Stream<ChatCompletionChunk>
+// Streaming conversion: Stream<TextStreamPart> → Stream<ChatCompletionChunk>
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// A streaming OpenAI Chat Completions result.
@@ -394,7 +394,7 @@ impl std::fmt::Debug for ChatCompletionStream {
     }
 }
 
-/// Convert a `StreamPart` stream into a `ChatCompletionChunk` stream.
+/// Convert a `TextStreamPart` stream into a `ChatCompletionChunk` stream.
 ///
 /// Uses a stateful converter that maintains tool-call indices and accumulates
 /// the final usage / finish_reason. The output follows OpenAI SSE conventions:
@@ -445,7 +445,7 @@ pub fn to_chat_completion_stream(
             }
 
             // After Finish, stop (but we already emitted the final chunk).
-            if matches!(part, StreamPart::Finish { .. }) {
+            if matches!(part, TextStreamPart::Finish { .. }) {
                 return;
             }
         }
@@ -536,7 +536,7 @@ impl StreamState {
         Some(chunk)
     }
 
-    /// Process a single StreamPart, returning zero or more output chunks.
+    /// Process a single TextStreamPart, returning zero or more output chunks.
     fn process_part(
         &mut self,
         part: &TextStreamPart,
@@ -546,27 +546,30 @@ impl StreamState {
         let mut chunks = Vec::new();
 
         match part {
-            StreamPart::StreamStart { .. } => {
+            TextStreamPart::StreamStart { .. } => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
             }
 
-            StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. }) => {
-                if let Some(id) = id {
-                    self.id = id.clone();
-                }
-                if let Some(m) = model_id {
-                    self.model = m.clone();
+            TextStreamPart::FinishStep { response, .. } => {
+                // Response metadata arrives at step end; emitted chunks keep their identity.
+                if !self.started {
+                    if let Some(id) = &response.id {
+                        self.id = id.clone();
+                    }
+                    if let Some(model_id) = &response.model_id {
+                        self.model = model_id.clone();
+                    }
                 }
             }
 
-            StreamPart::TextStart { .. } => {
+            TextStreamPart::TextStart { .. } => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
             }
-            StreamPart::TextDelta { delta, .. } => {
+            TextStreamPart::TextDelta { delta, .. } => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
@@ -582,10 +585,10 @@ impl StreamState {
                 }];
                 chunks.push(chunk);
             }
-            StreamPart::TextEnd { .. } => {}
+            TextStreamPart::TextEnd { .. } => {}
 
-            StreamPart::ReasoningStart { .. } => {}
-            StreamPart::ReasoningDelta { delta, .. } => {
+            TextStreamPart::ReasoningStart { .. } => {}
+            TextStreamPart::ReasoningDelta { delta, .. } => {
                 if include_reasoning {
                     if let Some(c) = self.ensure_started() {
                         chunks.push(c);
@@ -603,9 +606,9 @@ impl StreamState {
                     chunks.push(chunk);
                 }
             }
-            StreamPart::ReasoningEnd { .. } => {}
+            TextStreamPart::ReasoningEnd { .. } => {}
 
-            StreamPart::ToolInputStart { id, tool_name, .. } => {
+            TextStreamPart::ToolInputStart { id, tool_name, .. } => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
@@ -649,7 +652,7 @@ impl StreamState {
                 }];
                 chunks.push(chunk);
             }
-            StreamPart::ToolInputDelta { id, delta, .. } => {
+            TextStreamPart::ToolInputDelta { id, delta, .. } => {
                 // Ensure started (shouldn't happen without Start, but be safe).
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
@@ -697,9 +700,9 @@ impl StreamState {
                 }];
                 chunks.push(chunk);
             }
-            StreamPart::ToolInputEnd { .. } => {}
+            TextStreamPart::ToolInputEnd { .. } => {}
 
-            StreamPart::ToolCall(ToolCall {
+            TextStreamPart::ToolCall(ToolCall {
                 tool_call_id,
                 tool_name,
                 input,
@@ -788,7 +791,7 @@ impl StreamState {
                 }
             }
 
-            StreamPart::ToolResult(ToolResult {
+            TextStreamPart::ToolResult(ToolResult {
                 tool_name, result, ..
             }) => {
                 // Degraded: provider-executed tool result as content.
@@ -809,7 +812,7 @@ impl StreamState {
                 chunks.push(chunk);
             }
 
-            StreamPart::File(GeneratedFile {
+            TextStreamPart::File(GeneratedFile {
                 data, media_type, ..
             }) => {
                 if let Some(c) = self.ensure_started() {
@@ -829,7 +832,7 @@ impl StreamState {
                 chunks.push(chunk);
             }
 
-            StreamPart::Source(Source::Url { url, .. }) => {
+            TextStreamPart::Source(Source::Url { url, .. }) => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
@@ -849,7 +852,7 @@ impl StreamState {
                 }
             }
 
-            StreamPart::Finish {
+            TextStreamPart::Finish {
                 finish_reason,
                 usage,
                 ..
@@ -862,17 +865,17 @@ impl StreamState {
                 }
             }
 
-            StreamPart::Error { error } => {
+            TextStreamPart::Error { error } => {
                 if let Some(chunk) = self.error_chunk(error) {
                     chunks.push(chunk);
                 }
             }
 
-            StreamPart::Raw { .. }
-            | StreamPart::Source(Source::Document { .. })
-            | StreamPart::Custom { .. }
-            | StreamPart::ReasoningFile(_)
-            | StreamPart::ToolApprovalRequest(_) => { /* no OpenAI chat equivalent */ }
+            TextStreamPart::Raw { .. }
+            | TextStreamPart::Source(Source::Document { .. })
+            | TextStreamPart::Custom { .. }
+            | TextStreamPart::ReasoningFile(_)
+            | TextStreamPart::ToolApprovalRequest(_) => { /* no OpenAI chat equivalent */ }
         }
 
         chunks
@@ -1019,7 +1022,7 @@ fn now_unix() -> u64 {
 
 // Rejected repairs retain the original call. Recover its text from the
 // original error, never from the replacement's validation failure.
-/// Render a Core-parsed `StreamPart::ToolCall`'s arguments as OpenAI-compatible
+/// Render a Core-parsed `TextStreamPart::ToolCall`'s arguments as OpenAI-compatible
 /// wire text: the provider's raw argument text verbatim for an invalid call,
 /// compact JSON of the parsed value otherwise.
 ///

@@ -67,6 +67,7 @@ __all__ = [
     "StreamTextResultAggregated",
     "GenerateResult",
     "GenerateResponseMetadata",
+    "RequestInfo",
     # functions
     "generate_text",
     "stream_text",
@@ -152,6 +153,11 @@ class ResponseMetadata(BaseModel):
     id: Optional[str] = None
     timestamp: Optional[str] = None
     model_id: Optional[str] = None
+
+
+class GenerateResponseMetadata(ResponseMetadata):
+    headers: Optional[Dict[str, str]] = None
+    body: Optional[Any] = None
 
 
 class ToolCall(BaseModel):
@@ -607,11 +613,9 @@ class _SPReasoningEnd(BaseModel):
     provider_metadata: Optional[Any] = None
 
 
-class _SPResponseMetadata(BaseModel):
-    type: Literal["ResponseMetadata"]
-    id: Optional[str] = None
-    timestamp: Optional[str] = None
-    model_id: Optional[str] = None
+class _SPFinishStep(_SPFinish):
+    type: Literal["FinishStep"]
+    response: GenerateResponseMetadata
 
 
 
@@ -687,7 +691,7 @@ _StreamPartUnion = Annotated[
         _SPReasoningStart,
         _SPReasoningDelta,
         _SPReasoningEnd,
-        _SPResponseMetadata,
+        _SPFinishStep,
         _ContentSource,
         _SPRaw,
         _ContentCustom,
@@ -1056,7 +1060,9 @@ class GenerateTextOptions(BaseModel):
     """
 
 
-class GenerateResponseMetadata(ResponseMetadata):
+
+
+class RequestInfo(BaseModel):
     body: Optional[Any] = None
 
 
@@ -1068,9 +1074,8 @@ class GenerateResult(BaseModel):
     usage: Usage
     warnings: List[Warning]
     provider_metadata: Optional[Any] = None
+    request: Optional[RequestInfo] = None
     response: Optional[GenerateResponseMetadata] = None
-    request_body: Optional[Any] = None
-    response_headers: Optional[Dict[str, str]] = None
 
 
 class GenerateTextResult(BaseModel):
@@ -1096,8 +1101,8 @@ class GenerateTextResult(BaseModel):
     # Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
     # raw.provider_metadata for top-level convenience. Weak type (Dict).
     provider_metadata: Optional[Dict[str, Any]] = None
-    # Response metadata (id, timestamp, model_id). Mirrored from raw.response.
-    response: ResponseMetadata = Field(default_factory=ResponseMetadata)
+    request: RequestInfo = Field(default_factory=RequestInfo)
+    response: GenerateResponseMetadata = Field(default_factory=GenerateResponseMetadata)
     # Total token usage across all steps. In single-step mode (aimux's
     # default), equals usage. Provided for AI SDK parity.
     total_usage: Usage = Field(default_factory=Usage)
@@ -1149,8 +1154,8 @@ class StreamTextResultAggregated(BaseModel):
     warnings: List[Warning] = Field(default_factory=list)
     # Provider-specific metadata from the Finish chunk. Weak type (Dict).
     provider_metadata: Optional[Dict[str, Any]] = None
-    # Response metadata (id, timestamp, model_id) if emitted by the stream.
-    response: Optional[ResponseMetadata] = None
+    request: RequestInfo = Field(default_factory=RequestInfo)
+    response: GenerateResponseMetadata = Field(default_factory=GenerateResponseMetadata)
     response_messages: List[ModelMessage] = Field(default_factory=list)
 
 

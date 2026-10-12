@@ -307,19 +307,17 @@ impl LanguageModel for MistralModel {
             usage,
             warnings: Vec::new(),
             provider_metadata: None,
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::result::GenerateResponse {
-                body: response_body,
+            response: Some(aimux_core::shared::ResponseInfo {
+                id: data.id,
+                timestamp: data
+                    .created
+                    .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
+                    .map(|dt| dt.to_rfc3339()),
+                model_id: data.model,
                 headers: Some(response_headers),
-                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
-                    id: data.id,
-                    timestamp: data
-                        .created
-                        .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-                        .map(|dt| dt.to_rfc3339()),
-                    model_id: data.model,
-                })
+                body: response_body,
             }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
@@ -610,7 +608,7 @@ impl LanguageModel for MistralModel {
         Ok(StreamResult {
             stream: Box::pin(stream),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::result::StreamResponse {
+            response: Some(aimux_core::shared::StreamResponseInfo {
                 headers: Some(response_headers),
             }),
         })

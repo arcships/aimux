@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Provider results carry request and response information as the AI SDK does
+  (`aimux-core`). `GenerateResult` has `request: Option<RequestInfo>` and
+  `response: Option<ResponseInfo>`; `ResponseInfo` gains `id` and holds the
+  timestamp, model id, headers and body. `StreamResult` has `request` and
+  `response: Option<StreamResponseInfo>`. The flat `request_body` and
+  `response_headers` fields are removed and `response` is optional; the call
+  layer fills a missing id, timestamp and model id. The user-facing results and
+  their JSON are unchanged.
+
 - The prompt a provider receives is modelled by role (`aimux-core`), as the AI
   SDK's `LanguageModelV4Message`. `LanguageModelPrompt` is
   `Vec<LanguageModelMessage>`: `System { content: String }`,
