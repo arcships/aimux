@@ -34,6 +34,7 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 
 	var raws []json.RawMessage
 	rawBeforeFirstDelta := false
+	sawDelta := false
 	var textBuilder strings.Builder
 	for part := range stream.Parts() {
 		sp, err := ParseStreamPart(part)
@@ -43,10 +44,14 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 		switch sp.Type {
 		case "raw":
 			raws = append(raws, sp.Raw)
-			if !rawBeforeFirstDelta {
+			if !sawDelta {
 				rawBeforeFirstDelta = true
 			}
 		case "text-delta":
+			sawDelta = true
+			if !rawBeforeFirstDelta {
+				t.Error("Raw must precede the first parsed text-delta")
+			}
 			var td TextDeltaPayload
 			json.Unmarshal(sp.Raw, &td)
 			textBuilder.WriteString(td.Delta)
@@ -91,10 +96,8 @@ func TestE2E_StreamStartCarriesNonEmptyWarnings(t *testing.T) {
 	m := chatModel(t, srv.URL)
 	defer m.Close()
 
-	// top_k on a provider that supports it produces no warning on the openai
-	// full profile; the Go assertion here is that a non-empty warnings array
-	// in stream-start decodes without breaking the stream (the warning itself
-	// is produced by the groq profile — covered in groq_test.rs).
+	// DeepSeek does not support topK, so its warning must cross the Go stream
+	// boundary while the text continues to parse normally.
 	stream := m.StreamText(`"Say hello"`, mustMarshalOptions(t, &GenerateTextOptions{
 		TopK: f64Ptr(0.5),
 	}))
@@ -113,9 +116,9 @@ func TestE2E_StreamStartCarriesNonEmptyWarnings(t *testing.T) {
 			if err := json.Unmarshal(sp.Raw, &start); err != nil {
 				t.Fatalf("failed to decode stream-start part: %v", err)
 			}
-			// warnings may be empty on the full profile; the point is that a
-			// non-empty array would decode here without error.
-			t.Logf("StreamStart warnings: %d", len(start.Warnings))
+			if len(start.Warnings) == 0 {
+				t.Error("expected an unsupported topK warning")
+			}
 		}
 	}
 	if err := stream.Err(); err != nil {

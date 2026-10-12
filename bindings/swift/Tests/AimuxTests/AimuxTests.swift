@@ -186,11 +186,14 @@ final class AimuxTests: XCTestCase {
                        Int32(AIMUX_E_TIMEOUT.rawValue))
     }
 
-    /// 18 / 19: a missing API key / provider setting have their own codes and
+    /// 19 / 20: a missing API key / provider setting have their own codes and
     /// carry the consulted environment variable.
     func testLoadErrorCodes() {
-        XCTAssertEqual(AIMUX_E_LOAD_API_KEY.rawValue, 18)
-        XCTAssertEqual(AIMUX_E_LOAD_SETTING.rawValue, 19)
+        XCTAssertEqual(AIMUX_E_NO_OUTPUT_GENERATED.rawValue, 18)
+        XCTAssertEqual(AimuxError.noOutputGenerated(message: "no output", status: -1,
+                                                    retryMs: -1, retryable: false).code, 18)
+        XCTAssertEqual(AIMUX_E_LOAD_API_KEY.rawValue, 19)
+        XCTAssertEqual(AIMUX_E_LOAD_SETTING.rawValue, 20)
         let key = AimuxError.loadApiKey(message: "no key", status: -1, retryMs: -1, retryable: false,
                                         envVar: "OPENAI_API_KEY")
         XCTAssertEqual(key.code, Int32(AIMUX_E_LOAD_API_KEY.rawValue))

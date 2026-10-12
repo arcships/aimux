@@ -11,7 +11,7 @@ import kotlinx.serialization.json.JsonPrimitive
 /**
  * Machine-readable codes matching aimux-ffi `aimux_error_code_t` (aimux-error.h).
  * 1..20 mirror the 19 core variants (1 is the catch-all `Other`;
- * 4 is retired — the legacy `Tool` variant; 14 = `Retry`; 18 / 19 = a
+ * 4 is retired — the legacy `Tool` variant; 14 = `Retry`; 19 / 20 = a
  * missing API key / provider setting). The
  * per-status codes (Provider, Http, RateLimited, Auth, ModelNotFound) are
  * gone, every HTTP-shaped failure arrives as [AIMUX_E_API_CALL].
@@ -31,9 +31,9 @@ const val AIMUX_E_ABORTED: Int = 13
 const val AIMUX_E_NO_SUCH_TOOL: Int = 15
 const val AIMUX_E_INVALID_TOOL_INPUT: Int = 16
 const val AIMUX_E_TOOL_CALL_REPAIR: Int = 17
-const val AIMUX_E_LOAD_API_KEY: Int = 18
-const val AIMUX_E_LOAD_SETTING: Int = 19
-const val AIMUX_E_NO_OUTPUT_GENERATED: Int = 20
+const val AIMUX_E_NO_OUTPUT_GENERATED: Int = 18
+const val AIMUX_E_LOAD_API_KEY: Int = 19
+const val AIMUX_E_LOAD_SETTING: Int = 20
 const val AIMUX_E_OTHER: Int = 1
 const val AIMUX_E_RETRY: Int = 14
 

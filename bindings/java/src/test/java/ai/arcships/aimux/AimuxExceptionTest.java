@@ -234,24 +234,26 @@ class AimuxExceptionTest {
 
     @Test
     void loadErrorsHaveTheirOwnCodesNamesAndNoEnvVarLocally() {
-        assertThat(AimuxException.AIMUX_E_LOAD_API_KEY).isEqualTo(18);
-        assertThat(AimuxException.AIMUX_E_LOAD_SETTING).isEqualTo(19);
-        assertThat(AimuxException.codeName(18)).isEqualTo("LoadApiKey");
-        assertThat(AimuxException.codeName(19)).isEqualTo("LoadSetting");
+        assertThat(AimuxException.AIMUX_E_LOAD_API_KEY).isEqualTo(19);
+        assertThat(AimuxException.AIMUX_E_LOAD_SETTING).isEqualTo(20);
+        assertThat(AimuxException.codeName(19)).isEqualTo("LoadApiKey");
+        assertThat(AimuxException.codeName(20)).isEqualTo("LoadSetting");
         AimuxException key = AimuxException.of(AimuxException.AIMUX_E_LOAD_API_KEY, "no key");
-        assertThat(key.getCode()).isEqualTo(18);
+        assertThat(key.getCode()).isEqualTo(19);
         assertThat(((AimuxException.LoadAPIKeyError) key).getEnvVar()).isNull();
         AimuxException setting = AimuxException.of(AimuxException.AIMUX_E_LOAD_SETTING, "no region");
-        assertThat(setting.getCode()).isEqualTo(19);
+        assertThat(setting.getCode()).isEqualTo(20);
         assertThat(((AimuxException.LoadSettingError) setting).getEnvVar()).isNull();
     }
 
     @Test
     void codesOutsideTheRustEnumAreRejected() {
-        // Tool errors occupy 15..17, 18 / 19 are the missing key / setting and 20
-        // is NoOutputGenerated; retired code 4 and values beyond 20 are
-        // header/library mismatches.
+        // Tool errors occupy 15..17, 18 is NoOutputGenerated and 19 / 20
+        // are the missing key / setting; 4 is retired and 21 is unassigned.
         assertThat(AimuxException.of(15, "")).isInstanceOf(AimuxException.NoSuchToolError.class);
+        assertThat(AimuxException.AIMUX_E_NO_OUTPUT_GENERATED).isEqualTo(18);
+        assertThat(AimuxException.codeName(18)).isEqualTo("NoOutputGenerated");
+        assertThat(AimuxException.of(18, "")).isInstanceOf(AimuxException.NoOutputGeneratedError.class);
         assertThatThrownBy(() -> AimuxException.of(4, ""))
             .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> AimuxException.of(21, ""))

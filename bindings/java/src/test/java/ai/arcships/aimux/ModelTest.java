@@ -74,6 +74,7 @@ class ModelTest {
             assertThat(result.getString("text"))
                 .isEqualTo("Rust is a systems programming language.");
             assertThat(server.lastRequestMethod()).isEqualTo("POST");
+            assertThat(server.lastRequestPath()).isEqualTo("/chat/completions");
             assertThat(server.lastRequestBody()).contains("gpt-4o-mini");
         }
     }

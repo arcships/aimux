@@ -246,6 +246,24 @@ func TestE2E_GenerateTextParsesText(t *testing.T) {
 	if len(parsed.ToolCalls) != 0 {
 		t.Errorf("expected no tool calls, got %d", len(parsed.ToolCalls))
 	}
+	// ProviderWithBase marshals the public baseUrl option through the FFI. The
+	// loopback server must receive this call, rather than the vendor's default URL.
+	var request struct {
+		Model    string `json:"model"`
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(srv.LastRequestBody()), &request); err != nil {
+		t.Fatalf("custom baseUrl did not receive a valid request: %v", err)
+	}
+	if request.Model != "gpt-4o" || len(request.Messages) != 1 {
+		t.Fatalf("unexpected request at custom baseUrl: %#v", request)
+	}
+	if request.Messages[0].Role != "user" || request.Messages[0].Content != "What is Rust?" {
+		t.Errorf("prompt did not reach custom baseUrl: %#v", request.Messages[0])
+	}
 }
 
 func TestE2E_GenerateTextParsesToolCalls(t *testing.T) {
@@ -398,7 +416,7 @@ func TestE2E_StreamTextParsesToolCallStreamParts(t *testing.T) {
 		t.Fatal("expected at least one stream part")
 	}
 
-	// We just verify we got JSON objects tagged by "type".
+	var gotToolCall, gotFinish bool
 	for _, p := range parts {
 		sp, err := ParseStreamPart(p)
 		if err != nil {
@@ -409,6 +427,26 @@ func TestE2E_StreamTextParsesToolCallStreamParts(t *testing.T) {
 		if sp.Type == "" {
 			t.Error("expected non-empty stream part type")
 		}
+		switch sp.Type {
+		case "tool-call":
+			gotToolCall = true
+			var call ToolCall
+			if err := json.Unmarshal(sp.Raw, &call); err != nil {
+				t.Fatalf("decode tool call: %v", err)
+			}
+			if call.ToolName != "get_weather" || call.ToolCallID != "call_xyz" {
+				t.Errorf("unexpected tool call: %#v", call)
+			}
+			var input map[string]any
+			if err := json.Unmarshal(call.Input, &input); err != nil || input["location"] != "Tokyo" {
+				t.Errorf("unexpected tool arguments: %q (%v)", call.Input, err)
+			}
+		case "finish":
+			gotFinish = true
+		}
+	}
+	if !gotToolCall || !gotFinish {
+		t.Errorf("expected completed tool call and finish; gotToolCall=%t gotFinish=%t", gotToolCall, gotFinish)
 	}
 }
 
@@ -620,8 +658,10 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 	}
 	conversation := []ModelMessage{
 		NewTextMessage(RoleUser, "What is the weather in Tokyo?"),
-		NewTextMessage(RoleAssistant, ""), // assistant's prior turn
-		toolResultMsg,                     // tool result fed back
+		{Role: RoleAssistant, Content: []map[string]any{
+			{"type": "tool-call", "toolCallId": call.ToolCallID, "toolName": call.ToolName, "input": map[string]any{"location": "Tokyo"}},
+		}},
+		toolResultMsg,
 	}
 	prompt, _ := MarshalMessages(conversation)
 
@@ -644,11 +684,32 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 			Role       string          `json:"role"`
 			Content    json.RawMessage `json:"content"`
 			ToolCallID string          `json:"tool_call_id,omitempty"`
+			ToolCalls  []struct {
+				ID       string `json:"id"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
 		} `json:"messages"`
 	}
-	json.Unmarshal([]byte(reqBody), &body)
+	if err := json.Unmarshal([]byte(reqBody), &body); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
 	if len(body.Messages) != 3 {
 		t.Fatalf("expected 3 messages, got %d", len(body.Messages))
+	}
+	second := body.Messages[1]
+	if second.Role != "assistant" || len(second.ToolCalls) != 1 {
+		t.Fatalf("assistant tool call did not round-trip: %#v", second)
+	}
+	priorCall := second.ToolCalls[0]
+	if priorCall.ID != call.ToolCallID || priorCall.Function.Name != call.ToolName {
+		t.Errorf("assistant tool call identity did not round-trip: %#v", priorCall)
+	}
+	var arguments map[string]any
+	if err := json.Unmarshal([]byte(priorCall.Function.Arguments), &arguments); err != nil || arguments["location"] != "Tokyo" {
+		t.Errorf("assistant arguments did not round-trip: %q (%v)", priorCall.Function.Arguments, err)
 	}
 	// The third message (tool result) in OpenAI format.
 	third := body.Messages[2]
@@ -658,9 +719,12 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 	if third.ToolCallID != call.ToolCallID {
 		t.Errorf("expected tool_call_id %q, got %q", call.ToolCallID, third.ToolCallID)
 	}
-	// The content should contain the result data (stringified by the engine).
-	contentStr := string(third.Content)
-	if !strings.Contains(contentStr, "temperature") {
-		t.Errorf("expected content to contain result data, got %s", contentStr)
+	var content string
+	if err := json.Unmarshal(third.Content, &content); err != nil {
+		t.Fatalf("decode tool content: %v", err)
+	}
+	var output map[string]any
+	if err := json.Unmarshal([]byte(content), &output); err != nil || output["temperature"] != "20C" {
+		t.Errorf("tool output did not round-trip: %q (%v)", content, err)
 	}
 }

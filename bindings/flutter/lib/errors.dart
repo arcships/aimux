@@ -22,7 +22,7 @@ import 'package:ffi/ffi.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Machine-readable codes. Values match C `aimux_error_code_t` / Go `Code`.
-/// 19 variant codes: 1–20 (1 is the catch-all; 4 is retired; 18 / 19 are a
+/// 19 variant codes: 1–20 (1 is the catch-all; 4 is retired; 19 / 20 are a
 /// missing API key / provider setting). A code outside
 /// that set is a header/library mismatch and fails with [StateError], not an
 /// error type. Every HTTP-shaped failure
@@ -46,9 +46,9 @@ abstract final class AimuxErrorCode {
   static const int noSuchTool = 15;
   static const int invalidToolInput = 16;
   static const int toolCallRepair = 17;
-  static const int loadApiKey = 18;
-  static const int loadSetting = 19;
-  static const int noOutputGenerated = 20;
+  static const int noOutputGenerated = 18;
+  static const int loadApiKey = 19;
+  static const int loadSetting = 20;
   static const int other = 1;
   static const int retry = 14;
 

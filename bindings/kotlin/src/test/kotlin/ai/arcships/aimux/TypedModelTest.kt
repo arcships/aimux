@@ -148,6 +148,7 @@ class TypedModelTest {
 
             // .text is a plain Kotlin String.
             assertThat(result.text).isEqualTo("Rust is a systems programming language.")
+            assertThat(server.lastRequestPath).isEqualTo("/chat/completions")
 
             // A plain-text response carries no tool calls.
             assertThat(result.toolCalls).isEmpty()

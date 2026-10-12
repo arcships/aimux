@@ -125,7 +125,7 @@ class ModelTest {
         val server = MockProviderServer()
         server.responseBody = plainOpenAiResponse()
         try {
-            val model = Model.openai("sk-test-fake-key", "gpt-4o-mini", server.baseUrl)
+            val model = chatCompletionsModel(server.baseUrl)
             val iterations = 300
             val unexpected = AtomicReference<Throwable?>(null)
             val sawClosed = AtomicBoolean(false)

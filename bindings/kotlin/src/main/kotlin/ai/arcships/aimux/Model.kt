@@ -296,8 +296,8 @@ internal fun expectAimuxError(e: Pointer, context: String = ""): RuntimeExceptio
         val code = FFI.lib.aimux_error_code(e)
         if (isFfiCode(code)) return ffiError(e, prefix)
         // Code 4 is retired; Retry is 14, tool errors are 15..17 and a missing
-        // API key / setting are 18 / 19.
-        check(code in AIMUX_E_OTHER..AIMUX_E_NO_OUTPUT_GENERATED && code != 4) {
+        // API key / setting are 19 / 20.
+        check(code in AIMUX_E_OTHER..AIMUX_E_LOAD_SETTING && code != 4) {
             "${prefix}aimux ffi: expected AiMuxError code, got $code"
         }
         return AimuxException.fromC(e, prefix)

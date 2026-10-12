@@ -415,7 +415,7 @@ impl DecisionModel for OpenAIDecisionModel {
     }
     async fn do_decide(&self, options: &DecisionCallOptions) -> Result<DecisionResult, AiMuxError> {
         let body = request_body(&self.model_id, options)?;
-        let url = format!("{}/decisions", self.config.base_url()?);
+        let url = self.config.url("/decisions")?;
         crate::decision_support::post(&self.config, options, &url, body, |raw, headers| {
             let data = serde_json::from_value(raw.clone())
                 .map_err(|e| crate::decision_support::invalid(format!("OpenAI decisions: {e}")))?;

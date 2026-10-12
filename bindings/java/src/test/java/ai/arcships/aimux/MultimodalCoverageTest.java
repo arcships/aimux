@@ -179,6 +179,7 @@ class MultimodalCoverageTest {
         try (Model model = Model.provider("deepseek", "sk-test-fake-key", "deepseek-chat", server.chatConfig())) {
             String result = model.generateText("\"Say hi\"");
             assertThat(new JSONObject(result).getString("text")).isEqualTo("Hi");
+            assertThat(server.lastRequestPath()).isEqualTo("/chat/completions");
         }
     }
 }

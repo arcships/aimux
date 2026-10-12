@@ -1166,6 +1166,7 @@ public enum TextStreamPart: Codable, Equatable {
     case textEnd(id: String, providerMetadata: ProviderMetadata?)
     case streamStart(warnings: [Warning])
     case finish(finishReason: FinishReason, usage: Usage, providerMetadata: ProviderMetadata?)
+    /// A completed model call (step), with the response metadata of that call.
     case finishStep(finishReason: FinishReason, usage: Usage, providerMetadata: ProviderMetadata?,
                     response: ResponseInfo)
     /// `error` is an `AiMuxError` object tagged by `name`.

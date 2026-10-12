@@ -49,6 +49,11 @@ internal class MockProviderServer {
     var lastRequestMethod: String = ""
         private set
 
+    /** Last received request path, used to verify the selected API. */
+    @Volatile
+    var lastRequestPath: String = ""
+        private set
+
     /** Status code to return. */
     var status: Int = 200
 
@@ -87,6 +92,7 @@ internal class MockProviderServer {
         val reqBytes = exchange.requestBody.readBytes()
         lastRequestBody = String(reqBytes, StandardCharsets.UTF_8)
         lastRequestMethod = exchange.requestMethod
+        lastRequestPath = exchange.requestURI.path
 
         // Pop the next queued response if any, otherwise fall back to the
         // single-response field (backward compatible with the existing tests).
@@ -416,13 +422,13 @@ class StructuredE2ETest {
             // Run the blocking FFI stream call on a separate thread so the JNA
             // callbacks (which attach to the calling thread) don't deadlock with
             // tokio's block_on. The main thread collects parts via a queue.
-            val parts = java.util.concurrent.LinkedBlockingQueue<String?>()
+            val parts = java.util.concurrent.LinkedBlockingQueue<String>()
             val streamThread = Thread {
                 model.streamText(
                     "\"What is the weather in Tokyo?\"",
                     weatherToolsOpts(),
                     onPart = { parts.put(it) },
-                    onDone = { parts.put(null) },
+                    onDone = { parts.put("__done__") },
                 )
             }
             streamThread.isDaemon = true
@@ -431,6 +437,7 @@ class StructuredE2ETest {
             val collected = mutableListOf<String>()
             while (true) {
                 val part = parts.poll(30, java.util.concurrent.TimeUnit.SECONDS) ?: break
+                if (part == "__done__") break
                 collected.add(part)
             }
             streamThread.join(5000)
@@ -560,6 +567,9 @@ class StructuredE2ETest {
             val lastMsg = reqMessages.getJSONObject(2)
             assertThat(lastMsg.getString("role")).isEqualTo("tool")
             assertThat(lastMsg.getString("tool_call_id")).isEqualTo("call_abc")
+            val output = JSONObject(lastMsg.getString("content"))
+            assertThat(output.getInt("temperature")).isEqualTo(22)
+            assertThat(output.getString("condition")).isEqualTo("sunny")
         }
     }
 }

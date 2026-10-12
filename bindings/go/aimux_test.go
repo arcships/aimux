@@ -254,7 +254,7 @@ func TestMissingAPIKeyIsLoadAPIKey(t *testing.T) {
 		t.Fatalf("Provider: %v", err)
 	}
 	defer m.Close()
-	_, err = m.GenerateText(`"hi"`, "")
+	_, err = m.GenerateText(`"hi"`, `{"maxRetries":0}`)
 	var e *Error
 	if !errors.As(err, &e) || e.Code != CodeLoadAPIKey {
 		t.Fatalf("want CodeLoadAPIKey, got %v", err)

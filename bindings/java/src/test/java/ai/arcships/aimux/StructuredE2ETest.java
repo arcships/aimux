@@ -373,6 +373,9 @@ class StructuredE2ETest {
             JSONObject lastMsg = reqMessages.getJSONObject(2);
             assertThat(lastMsg.getString("role")).isEqualTo("tool");
             assertThat(lastMsg.getString("tool_call_id")).isEqualTo("call_abc");
+            JSONObject output = new JSONObject(lastMsg.getString("content"));
+            assertThat(output.getInt("temperature")).isEqualTo(22);
+            assertThat(output.getString("condition")).isEqualTo("sunny");
         }
     }
 }
