@@ -146,7 +146,7 @@ test('params fills a preset template parameter', async (t) => {
     // Without the parameter the preset cannot build its base URL (reported at call time).
     const unfilled = await provider('cloudflare_workers_ai', 'k', 'm')
     const missing = await t.throwsAsync(() =>
-      unfilled.generateText(JSON.stringify('hi'), JSON.stringify({ max_retries: 0 })),
+      unfilled.generateText(JSON.stringify('hi'), JSON.stringify({ maxRetries: 0 })),
     )
     t.true(missing instanceof InvalidArgumentError)
     t.regex(missing!.message, /account_id/)
@@ -233,7 +233,7 @@ test('maxRetries: 0 disables retries (single request on 500)', async (t) => {
 
   try {
     const model = await openai('test-key', 'm', url)
-    const opts = JSON.stringify({ max_retries: 0 })
+    const opts = JSON.stringify({ maxRetries: 0 })
 
     await t.throwsAsync(
       async () => model.generateText(JSON.stringify('Hello'), opts),
