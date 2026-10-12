@@ -3,8 +3,13 @@ name: CI
 on:
   push:
     branches: [master]
+  # Every pull request runs the checks, whatever its base: stacked PRs are
+  # reviewed against the PR below them.
   pull_request:
-    branches: [master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
