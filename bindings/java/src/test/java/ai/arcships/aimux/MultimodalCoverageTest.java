@@ -176,9 +176,11 @@ class MultimodalCoverageTest {
                 + "\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Hi\"},\"finish_reason\":\"stop\"}],"
                 + "\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}");
 
-        try (Model model = Model.openaiWithBase("sk-test", "deepseek-chat", server.baseUrl())) {
+        String config = new JSONObject().put("base_url", server.baseUrl()).toString();
+        try (Model model = Model.provider("deepseek", "sk-test", "deepseek-chat", config)) {
             String result = model.generateText("\"Say hi\"");
             assertThat(new JSONObject(result).getString("text")).isEqualTo("Hi");
+            assertThat(server.lastRequestPath()).isEqualTo("/chat/completions");
         }
     }
 }

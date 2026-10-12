@@ -449,12 +449,13 @@ pub const AIMUX_E_RETRY: i32 = 14;
 pub const AIMUX_E_NO_SUCH_TOOL: i32 = 15;
 pub const AIMUX_E_INVALID_TOOL_INPUT: i32 = 16;
 pub const AIMUX_E_TOOL_CALL_REPAIR: i32 = 17;
-// Appended after 17 (4 stays retired): the AI SDK's `LoadAPIKeyError` and
-// `LoadSettingError`. Their facts travel on the provider-code / provider-message
-// getters: `env_var` and the description (key) or setting name.
-pub const AIMUX_E_LOAD_API_KEY: i32 = 18;
-pub const AIMUX_E_LOAD_SETTING: i32 = 19;
-pub const AIMUX_E_NO_OUTPUT_GENERATED: i32 = 20;
+pub const AIMUX_E_NO_OUTPUT_GENERATED: i32 = 18;
+// Appended after NoOutputGenerated (4 stays retired): the AI SDK's
+// `LoadAPIKeyError` and `LoadSettingError`. Their facts travel on the
+// provider-code / provider-message getters: `env_var` and the description
+// (key) or setting name.
+pub const AIMUX_E_LOAD_API_KEY: i32 = 19;
+pub const AIMUX_E_LOAD_SETTING: i32 = 20;
 
 // 100..105 preserve `RecordingError` as a separate high-level type while C
 // uses one code space for every returned error.
@@ -3724,7 +3725,7 @@ mod tests {
     fn expect_aimux_error(e: *mut aimux_error_t) -> (i32, String) {
         assert!(!e.is_null(), "expected a returned error");
         let code = aimux_error_code(e);
-        if !(AIMUX_E_OTHER..=AIMUX_E_NO_OUTPUT_GENERATED).contains(&code) {
+        if !(AIMUX_E_OTHER..=AIMUX_E_LOAD_SETTING).contains(&code) {
             panic!("expected an AiMuxError code, got {code}: {}", msg(e));
         }
         let out = (code, take(aimux_error_message(e)).unwrap());
@@ -4129,9 +4130,12 @@ mod tests {
         );
     }
 
-    /// Pin the full 18-variant → code mapping.
+    /// Pin the full 19-variant → code mapping.
     #[test]
     fn error_code_mapping_covers_all_variants() {
+        assert_eq!(AIMUX_E_NO_OUTPUT_GENERATED, 18);
+        assert_eq!(AIMUX_E_LOAD_API_KEY, 19);
+        assert_eq!(AIMUX_E_LOAD_SETTING, 20);
         let s = |t: &str| t.to_string();
         let cases: Vec<(AiMuxError, i32)> = vec![
             (
@@ -4150,6 +4154,10 @@ mod tests {
                 AIMUX_E_RETRY,
             ),
             (AiMuxError::JsonParse(s("x")), AIMUX_E_JSON_PARSE),
+            (
+                AiMuxError::NoOutputGenerated(s("x")),
+                AIMUX_E_NO_OUTPUT_GENERATED,
+            ),
             (
                 AiMuxError::InvalidResponseData(s("x")),
                 AIMUX_E_INVALID_RESPONSE_DATA,
