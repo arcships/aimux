@@ -37,6 +37,12 @@ import 'package:test/test.dart';
 // Mock server (mirrors structured_e2e_test.dart)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// A chat-completions model against [baseUrl]: the registry's `deepseek` entry
+/// with a `base_url` setting (`Model.openai` speaks the Responses API).
+Model mockChatModel(String baseUrl, String apiKey, String modelId) =>
+    Model.provider('deepseek', modelId,
+        apiKey: apiKey, configJson: jsonEncode({'base_url': baseUrl}));
+
 class MockOpenAIServer {
   final HttpServer _server;
   final List<Map<String, dynamic>> _responses;
@@ -130,7 +136,7 @@ class _TypedArgs {
 /// instances (not plain maps), which cannot be re-parsed by `fromJson`.
 Future<Map<String, dynamic>> runTypedGenerateText(_TypedArgs args) {
   return Isolate.run(() {
-    final model = Model.openai(args.apiKey, args.modelId, baseUrl: args.baseUrl);
+    final model = mockChatModel(args.baseUrl, args.apiKey, args.modelId);
     final typed = TypedModel(model);
     try {
       final hasOptions = args.tools != null || args.toolChoice != null;
@@ -151,7 +157,7 @@ Future<Map<String, dynamic>> runTypedGenerateText(_TypedArgs args) {
 /// Run a typed `generateTextMessages` (multi-turn) in a worker isolate.
 Future<Map<String, dynamic>> runTypedGenerateTextMessages(_TypedArgs args) {
   return Isolate.run(() {
-    final model = Model.openai(args.apiKey, args.modelId, baseUrl: args.baseUrl);
+    final model = mockChatModel(args.baseUrl, args.apiKey, args.modelId);
     final typed = TypedModel(model);
     try {
       final messages = args.messages!
@@ -168,7 +174,7 @@ Future<Map<String, dynamic>> runTypedGenerateTextMessages(_TypedArgs args) {
 /// Run a typed `streamText` in a worker isolate, returning the parsed parts.
 Future<List<StreamPart>> runTypedStreamText(_TypedArgs args) {
   return Isolate.run(() async {
-    final model = Model.openai(args.apiKey, args.modelId, baseUrl: args.baseUrl);
+    final model = mockChatModel(args.baseUrl, args.apiKey, args.modelId);
     final typed = TypedModel(model);
     try {
       final options = (args.tools != null || args.includeRawChunks != null)

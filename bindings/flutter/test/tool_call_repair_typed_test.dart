@@ -10,13 +10,12 @@
 import 'dart:convert';
 import 'dart:isolate';
 
-import 'package:aimux/aimux.dart';
 import 'package:aimux/typed_model.dart';
 import 'package:aimux/types.dart';
 import 'package:test/test.dart';
 
 import 'typed_model_test.dart'
-    show buildToolCallSse, startMockServer, toolCallOpenAIResponse;
+    show buildToolCallSse, mockChatModel, startMockServer, toolCallOpenAIResponse;
 
 /// Accepts `city` only, so the canned `{"location":"Tokyo"}` is invalid.
 GenerateTextOptions _strictOptions() => GenerateTextOptions(
@@ -48,7 +47,7 @@ void main() {
     final baseUrl = server.baseUrl;
 
     final result = await Isolate.run(() {
-      final typed = TypedModel(Model.openai('sk-test', 'gpt-4o', baseUrl: baseUrl));
+      final typed = TypedModel(mockChatModel(baseUrl, 'sk-test', 'gpt-4o'));
       try {
         return jsonDecode(jsonEncode(typed.generateText('weather?', _strictOptions())))
             as Map<String, dynamic>;
@@ -75,7 +74,7 @@ void main() {
     final baseUrl = server.baseUrl;
 
     final arguments = await Isolate.run(() {
-      final typed = TypedModel(Model.openai('sk-test', 'gpt-4o', baseUrl: baseUrl));
+      final typed = TypedModel(mockChatModel(baseUrl, 'sk-test', 'gpt-4o'));
       try {
         final completion = typed.generateTextAsOpenAI('weather?', _strictOptions());
         return completion.choices.first.message.toolCalls!.single.function.arguments;
@@ -95,7 +94,7 @@ void main() {
     final baseUrl = server.baseUrl;
 
     final input = await Isolate.run(() async {
-      final typed = TypedModel(Model.openai('sk-test', 'gpt-4o', baseUrl: baseUrl));
+      final typed = TypedModel(mockChatModel(baseUrl, 'sk-test', 'gpt-4o'));
       try {
         final parts = await typed.streamText('weather?', _strictOptions()).toList();
         final call = parts.whereType<StreamPartToolCall>().single;
