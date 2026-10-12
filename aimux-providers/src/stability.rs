@@ -303,7 +303,7 @@ impl ImageModel for StabilityImageModel {
         form.text("output_format", output_format)?;
 
         // Forward remaining stability provider options as scalar form fields.
-        if let Some(stab) = stability_opts.and_then(|v| v.as_object()) {
+        if let Some(stab) = stability_opts {
             for (k, v) in stab {
                 if matches!(
                     k.as_str(),

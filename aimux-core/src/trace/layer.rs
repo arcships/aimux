@@ -226,7 +226,7 @@ impl RecordCtx {
             output_total: usage.output_tokens.total.map(u64::from),
             output_text: usage.output_tokens.text.map(u64::from),
             output_reasoning: usage.output_tokens.reasoning.map(u64::from),
-            raw: usage.raw.clone(),
+            raw: usage.raw.clone().map(serde_json::Value::Object),
         }
     }
 
@@ -531,10 +531,19 @@ impl LanguageModel for TraceLayer {
         let ctx = self.make_record_ctx(options, None, None, Arc::new(AtomicU64::new(u64::MAX)));
         match self.inner.do_generate(options).await {
             Ok(result) => {
-                let request_id = result.response.id.clone();
+                let request_id = result
+                    .response
+                    .as_ref()
+                    .and_then(|response| response.id.clone());
                 let mut rec_ctx = ctx;
-                rec_ctx.request_body = result.request_body.clone();
-                rec_ctx.response_headers = result.response_headers.clone();
+                rec_ctx.request_body = result
+                    .request
+                    .as_ref()
+                    .and_then(|request| request.body.clone());
+                rec_ctx.response_headers = result
+                    .response
+                    .as_ref()
+                    .and_then(|response| response.headers.clone());
                 rec_ctx.record(&result.usage, None, request_id);
                 Ok(result)
             }
@@ -558,8 +567,14 @@ impl LanguageModel for TraceLayer {
         };
 
         let rec_ctx = Arc::new(RecordCtx {
-            request_body: result.request_body.clone(),
-            response_headers: result.response_headers.clone(),
+            request_body: result
+                .request
+                .as_ref()
+                .and_then(|request| request.body.clone()),
+            response_headers: result
+                .response
+                .as_ref()
+                .and_then(|response| response.headers.clone()),
             ..ctx
         });
         let ttft_obs = ttft.clone();
@@ -574,6 +589,8 @@ impl LanguageModel for TraceLayer {
                     Ok(StreamPart::TextDelta { .. })
                         | Ok(StreamPart::ReasoningDelta { .. })
                         | Ok(StreamPart::ToolCall(_))
+                        | Ok(StreamPart::File(_))
+                        | Ok(StreamPart::ReasoningFile(_))
                 );
                 if is_model_output {
                     ttft_obs.store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
@@ -595,8 +612,8 @@ impl LanguageModel for TraceLayer {
 
         Ok(StreamResult {
             stream: Box::pin(guarded),
-            request_body: result.request_body,
-            response_headers: result.response_headers,
+            request: result.request,
+            response: result.response,
         })
     }
 }

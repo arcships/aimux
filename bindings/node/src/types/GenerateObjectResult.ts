@@ -38,7 +38,7 @@ reasoning: string | null,
 /**
  * Provider-specific metadata (e.g. Anthropic cache info).
  */
-provider_metadata: JsonValue | null, 
+provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
 /**
  * Response metadata (id, timestamp, model_id).
  */

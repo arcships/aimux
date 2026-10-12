@@ -33,12 +33,38 @@ pub type SharedHeaders = HashMap<String, String>;
 /// ```json
 /// { "anthropic": { "cacheControl": { "type": "ephemeral" } } }
 /// ```
-pub type SharedProviderOptions = HashMap<String, Value>;
+pub type SharedProviderOptions = HashMap<String, JsonObject>;
 
 /// Additional provider-specific metadata (outputs), keyed by provider name.
 ///
 /// Aligned with V4 `SharedV4ProviderMetadata` (`Record<string, JSONObject>`).
-pub type SharedProviderMetadata = HashMap<String, Value>;
+pub type SharedProviderMetadata = HashMap<String, JsonObject>;
+
+/// A JSON object (`JSONObject` in the AI SDK).
+pub type JsonObject = serde_json::Map<String, Value>;
+
+/// Build a one-namespace [`SharedProviderMetadata`] / [`SharedProviderOptions`]
+/// (they are the same type) from a JSON object literal.
+///
+/// `provider_namespace("openai", json!({ "itemId": "x" }))?` is
+/// `{ "openai": { "itemId": "x" } }`.
+///
+/// Several namespaces: `extend` one map with another.
+///
+/// # Errors
+///
+/// Returns an invalid argument error when the value is not a JSON object.
+pub fn provider_namespace(
+    namespace: &str,
+    object: Value,
+) -> Result<SharedProviderMetadata, crate::AiMuxError> {
+    let Value::Object(object) = object else {
+        return Err(crate::AiMuxError::InvalidArgument(format!(
+            "invalid {namespace} provider options: expected a JSON object"
+        )));
+    };
+    Ok(HashMap::from([(namespace.to_string(), object)]))
+}
 
 /// A mapping of provider names to provider-specific file identifiers.
 ///
@@ -73,11 +99,29 @@ pub enum FileData {
     /// Raw bytes (`Uint8Array`) or a base64-encoded string.
     Data { data: FileBytes },
     /// A URL that points to the file.
-    Url { url: String },
+    Url {
+        url: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original_url: Option<String>,
+    },
     /// A provider reference (`{ [provider]: id }`).
     Reference { reference: SharedProviderReference },
     /// Inline text content (e.g. an inline text document).
     Text { text: String },
+}
+
+/// Data or a URL returned for a generated file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub enum GeneratedFileData {
+    Data {
+        data: FileBytes,
+    },
+    Url {
+        url: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original_url: Option<String>,
+    },
 }
 
 /// Image/video size in `{width}x{height}` format (e.g. `"1024x1024"`).

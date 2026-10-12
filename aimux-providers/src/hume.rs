@@ -318,8 +318,7 @@ struct HumeSpeechProviderOptions {
 fn parse_hume_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Option<HumeSpeechProviderOptions> {
-    let provider_opts = options.and_then(|opts| opts.get("hume"))?;
-    let opts = provider_opts.as_object()?;
+    let opts = options.and_then(|opts| opts.get("hume"))?;
     let context = opts.get("context").and_then(|c| c.as_object())?;
 
     // The context can be either { generationId: "..." } or { utterances: [...] }.

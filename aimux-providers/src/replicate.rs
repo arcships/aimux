@@ -266,7 +266,7 @@ impl ImageModel for ReplicateImageModel {
         }
 
         // Forward replicate provider options (excluding maxWaitTimeInSeconds)
-        if let Some(ro) = replicate_opts.and_then(|v| v.as_object()) {
+        if let Some(ro) = replicate_opts {
             for (k, v) in ro {
                 if k != "maxWaitTimeInSeconds" {
                     input.insert(k.clone(), v.clone());

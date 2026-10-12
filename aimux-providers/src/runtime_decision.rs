@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 use aimux_core::AiMuxError;
 use aimux_core::decision_model::*;
 use aimux_core::recording::ProviderRecord;
-use aimux_core::types::{TokenUsage, Usage};
+use aimux_core::types::{InputTokenUsage, OutputTokenUsage, Usage};
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -326,9 +326,12 @@ impl RuntimeDecisionModel {
         // Cloudflare's usage belongs to the nested result; keep the full envelope as raw.
         if let Some(usage) = &mut result.usage {
             usage.raw = if raw.get("result").is_some() {
-                raw["result"].get("usage").cloned()
+                raw["result"]
+                    .get("usage")
+                    .and_then(Value::as_object)
+                    .cloned()
             } else {
-                raw.get("usage").cloned()
+                raw.get("usage").and_then(Value::as_object).cloned()
             };
         }
         result.latency_ms = raw.get("latency_ms").and_then(Value::as_f64);
@@ -499,21 +502,21 @@ pub(crate) fn result_from_distributions(
         .get("usage")
         .filter(|v| !v.is_null())
         .map(|value| Usage {
-            input_tokens: TokenUsage {
+            input_tokens: InputTokenUsage {
                 total: value
                     .get("prompt_tokens")
                     .and_then(Value::as_u64)
                     .and_then(|n| n.try_into().ok()),
                 ..Default::default()
             },
-            output_tokens: TokenUsage {
+            output_tokens: OutputTokenUsage {
                 total: value
                     .get("completion_tokens")
                     .and_then(Value::as_u64)
                     .and_then(|n| n.try_into().ok()),
                 ..Default::default()
             },
-            raw: Some(value.clone()),
+            raw: value.as_object().cloned(),
         });
     let result = DecisionResult {
         rounding: DecisionRounding::default(),
@@ -524,7 +527,7 @@ pub(crate) fn result_from_distributions(
         probability_source: DecisionProbabilitySource::LogitScoring,
         usage,
         latency_ms: None,
-        provider_metadata: Some(HashMap::from([(provider.into(), raw.clone())])),
+        provider_metadata: Some(support::response_metadata(provider, &raw)?),
         response: Some(DecisionResponse {
             headers: Some(headers),
             body: Some(raw),

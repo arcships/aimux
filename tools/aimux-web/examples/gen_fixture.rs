@@ -3,9 +3,7 @@
 //!
 //! Usage: `cargo run -p aimux-web --example gen_fixture [out.jsonl]`
 
-use aimux_core::content::ContentPart;
-use aimux_core::language_model_message::LanguageModelPromptMessage;
-use aimux_core::message::Role;
+use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::CallOptions;
 use aimux_core::recording::{
     HttpExchange, HttpRecord, InputRecord, OutcomeRecord, OutcomeStatus, ProviderRecord, Recording,
@@ -18,18 +16,11 @@ fn main() {
         .unwrap_or_else(|| "fixture.jsonl".to_string());
 
     let prompt = vec![
-        LanguageModelPromptMessage {
-            role: Role::System,
-            content: vec![ContentPart::text(
-                "You are a helpful assistant. Always use the calculator tool.",
-            )],
+        LanguageModelMessage::System {
+            content: "You are a helpful assistant. Always use the calculator tool.".into(),
             provider_options: None,
         },
-        LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("what is 1 + 1?")],
-            provider_options: None,
-        },
+        LanguageModelMessage::user_text("what is 1 + 1?"),
     ];
 
     let options = CallOptions {

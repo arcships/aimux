@@ -117,8 +117,9 @@ test('issue 2: assistant reasoning + tool_call lifts reasoning to reasoning_cont
     const model = await openai('test-key', 'deepseek-v4-flash', url)
 
     // Reproduces the user's table row: assistant
-    // [{reasoning},{tool_call}] + tool string. The first turn produced a
+    // [{reasoning},{tool_call}] + tool result. The first turn produced a
     // reasoning_content + tool_call; the second turn must replay both.
+    // A tool message carries tool_result parts only (AI SDK `ToolModelMessage`).
     const messages = [
       { role: 'user', content: 'inspect the repo' },
       {
@@ -130,7 +131,12 @@ test('issue 2: assistant reasoning + tool_call lifts reasoning to reasoning_cont
       },
       {
         role: 'tool',
-        content: 'contents of README.md',
+        content: [{
+          type: 'tool_result',
+          tool_call_id: 'call_1',
+          tool_name: 'read_file',
+          output: 'contents of README.md',
+        }],
       },
     ]
 

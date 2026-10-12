@@ -281,8 +281,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
 
         // Parse and forward provider options.
         if let Some(ref po) = options.provider_options
-            && let Some(aai) = po.get("assemblyai")
-            && let Some(obj) = aai.as_object()
+            && let Some(obj) = po.get("assemblyai")
         {
             for (k, v) in obj {
                 body.insert(k.clone(), v.clone());
@@ -412,7 +411,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
                     );
                 }
                 if !aai_meta.is_empty() {
-                    md.insert("assemblyai".to_string(), Value::Object(aai_meta));
+                    md.insert("assemblyai".to_string(), aai_meta);
                     provider_metadata = Some(md);
                 }
 

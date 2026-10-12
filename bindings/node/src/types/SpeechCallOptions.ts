@@ -38,7 +38,7 @@ language: string | null,
 /**
  * Additional provider-specific options, keyed by provider name.
  */
-provider_options: { [key in string]: JsonValue } | null, 
+provider_options: { [key in string]: { [key in string]: JsonValue } } | null, 
 /**
  * Per-call retry override. `None` uses the model default.
  */

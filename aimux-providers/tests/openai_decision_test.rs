@@ -18,6 +18,13 @@ use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
 mod common;
 
+fn object(value: Value) -> serde_json::Map<String, Value> {
+    value
+        .as_object()
+        .cloned()
+        .expect("provider options must be an object")
+}
+
 fn fixture() -> Value {
     serde_json::from_str(include_str!("fixtures/openai_decisions.json")).unwrap()
 }
@@ -68,8 +75,11 @@ async fn native_wire_maps_all_questions_and_preserves_partial_refusal() {
     let mut request = options();
     request.headers = Some(HashMap::from([("X-Per-Call".into(), "yes".into())]));
     request.provider_options = Some(HashMap::from([
-        ("openai".into(), json!({"safety_identifier":"opaque-user"})),
-        ("other-provider".into(), json!({"ignored":true})),
+        (
+            "openai".into(),
+            object(json!({"safety_identifier":"opaque-user"})),
+        ),
+        ("other-provider".into(), object(json!({"ignored":true}))),
     ]));
     let result = decide(model(&server).as_ref(), request).await.unwrap();
     assert!(matches!(
@@ -120,7 +130,7 @@ async fn response_order_and_usage_metadata_do_not_discard_answers() {
         assert_eq!(result.answers.len(), 4);
         assert_eq!(
             result.usage.and_then(|usage| usage.raw),
-            if usage.is_null() { None } else { Some(usage) }
+            usage.as_object().cloned()
         );
     }
 }

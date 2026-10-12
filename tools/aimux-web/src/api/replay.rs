@@ -100,7 +100,7 @@ async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMu
                     "prompt override must be a message list".into(),
                 ));
             };
-            overrides.prompt = Some(convert_to_language_model_prompt(&list, None));
+            overrides.prompt = Some(convert_to_language_model_prompt(&list, None)?);
         }
     }
 

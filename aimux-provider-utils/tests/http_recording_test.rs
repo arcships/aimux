@@ -62,18 +62,12 @@ fn request(url: String, call_id: &str, recorder: Arc<dyn Recorder>) -> HttpReque
 }
 
 fn finish_call(recorder: &dyn Recorder, call_id: &str) {
-    use aimux_core::content::ContentPart;
-    use aimux_core::language_model_message::LanguageModelPromptMessage;
-    use aimux_core::message::Role;
+    use aimux_core::language_model_message::LanguageModelMessage;
     use aimux_core::options::CallOptions;
 
     recorder.record_input(
         call_id,
-        &CallOptions::new(vec![LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("hi")],
-            ..Default::default()
-        }]),
+        &CallOptions::new(vec![LanguageModelMessage::user_text("hi")]),
         "openai",
         "gpt-test",
     );

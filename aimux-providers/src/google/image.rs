@@ -17,7 +17,7 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult, ImageUsage,
 };
-use aimux_core::shared::{SharedProviderMetadata, Warning};
+use aimux_core::shared::{SharedProviderMetadata, SharedProviderOptions, Warning};
 
 use aimux_provider_utils::HttpRequest;
 
@@ -283,17 +283,20 @@ impl GoogleImageModel {
             generation_config.insert("seed".to_string(), json!(seed));
         }
 
-        // Passthrough provider options (excluding googleSearch)
-        if let Some(google) = options
-            .provider_options
-            .get("google")
-            .and_then(|v| v.as_object())
-        {
-            for (key, value) in google {
-                if key == "googleSearch" || key == "personGeneration" || key == "aspectRatio" {
-                    continue;
+        // Only declared generation-config options survive the upstream language schema.
+        if let Some(google) = options.provider_options.get("google") {
+            for key in [
+                "audioTimestamp",
+                "thinkingConfig",
+                "mediaResolution",
+                "imageConfig",
+            ] {
+                if let Some(value) = google.get(key) {
+                    generation_config.insert(
+                        key.to_string(),
+                        crate::google::convert::image_generation_option(key, value),
+                    );
                 }
-                generation_config.insert(key.clone(), value.clone());
             }
         }
 
@@ -386,7 +389,7 @@ struct GoogleImageOptions {
 }
 
 /// Parse Google image provider options from the `"google"` key.
-fn parse_google_image_options(provider_options: &HashMap<String, Value>) -> GoogleImageOptions {
+fn parse_google_image_options(provider_options: &SharedProviderOptions) -> GoogleImageOptions {
     let google = provider_options.get("google");
     GoogleImageOptions {
         person_generation: google
@@ -427,7 +430,7 @@ fn extract_imagen_metadata(response: &Value) -> SharedProviderMetadata {
     let images: Vec<Value> = (0..predictions).map(|_| json!({})).collect();
     let mut google_meta = Map::new();
     google_meta.insert("images".to_string(), json!(images));
-    metadata.insert("google".to_string(), Value::Object(google_meta));
+    metadata.insert("google".to_string(), google_meta);
     metadata
 }
 
@@ -493,7 +496,7 @@ fn extract_gemini_result(
     if let Some(gm) = grounding_metadata {
         google_meta.insert("groundingMetadata".to_string(), gm);
     }
-    metadata.insert("google".to_string(), Value::Object(google_meta));
+    metadata.insert("google".to_string(), google_meta);
 
     (ImageOutputs::Base64(images), metadata, usage)
 }

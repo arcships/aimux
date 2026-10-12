@@ -12,6 +12,7 @@ pub mod types;
 pub mod usage;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
@@ -38,7 +39,7 @@ pub(crate) fn anthropic_failed_response_handler()
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com";
 
 /// Configuration for the Anthropic provider.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AnthropicConfig {
     /// API key sent via the `x-api-key` header. Empty when authenticating with
     /// an `auth_token` instead.
@@ -64,6 +65,25 @@ pub struct AnthropicConfig {
     /// (config_snapshot 记为 "explicit");`Some("env:VAR")` = 来自环境变量;
     /// `Some("none")` = 本地/匿名占位。不存明文之外的信息。
     pub api_key_source: Option<String>,
+    /// Generator for source IDs. Defaults to a 16-character alphanumeric ID.
+    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+}
+
+impl std::fmt::Debug for AnthropicConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnthropicConfig")
+            .field("api_key", &"<redacted>")
+            .field("auth_token", &self.auth_token.is_some())
+            .field("base_url", &self.base_url)
+            .field("api_version", &self.api_version)
+            .field("name", &self.name)
+            .field("headers", &self.headers)
+            .field("retry_config", &self.retry_config)
+            .field("body_overrides", &self.body_overrides)
+            .field("api_key_source", &self.api_key_source)
+            .field("generate_id", &self.generate_id.is_some())
+            .finish()
+    }
 }
 
 impl AnthropicConfig {
@@ -80,7 +100,18 @@ impl AnthropicConfig {
             retry_config: RetryConfig::default(),
             body_overrides: None,
             api_key_source: None,
+            generate_id: None,
         }
+    }
+
+    /// Set the generator used for source IDs.
+    #[must_use]
+    pub fn with_generate_id<F>(mut self, generate_id: F) -> Self
+    where
+        F: Fn() -> String + Send + Sync + 'static,
+    {
+        self.generate_id = Some(Arc::new(generate_id));
+        self
     }
 
     /// Start a builder for more involved configurations (e.g. `auth_token`,
@@ -166,7 +197,7 @@ impl AnthropicConfig {
 
 /// Builder for [`AnthropicConfig`] supporting both `api_key` and `auth_token`
 /// authentication, with conflict validation mirroring the TS `createAnthropic`.
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 pub struct AnthropicConfigBuilder {
     api_key: Option<String>,
     auth_token: Option<String>,
@@ -174,6 +205,21 @@ pub struct AnthropicConfigBuilder {
     name: Option<String>,
     headers: Option<HashMap<String, String>>,
     body_overrides: Option<Value>,
+    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+}
+
+impl std::fmt::Debug for AnthropicConfigBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnthropicConfigBuilder")
+            .field("api_key", &self.api_key.is_some())
+            .field("auth_token", &self.auth_token.is_some())
+            .field("base_url", &self.base_url)
+            .field("name", &self.name)
+            .field("headers", &self.headers)
+            .field("body_overrides", &self.body_overrides)
+            .field("generate_id", &self.generate_id.is_some())
+            .finish()
+    }
 }
 
 impl AnthropicConfigBuilder {
@@ -213,6 +259,15 @@ impl AnthropicConfigBuilder {
         self
     }
 
+    #[must_use]
+    pub fn generate_id<F>(mut self, generate_id: F) -> Self
+    where
+        F: Fn() -> String + Send + Sync + 'static,
+    {
+        self.generate_id = Some(Arc::new(generate_id));
+        self
+    }
+
     /// Build the config, validating that `api_key` and `auth_token` are not
     /// both set and that a provided `base_url` is non-empty.
     ///
@@ -243,6 +298,7 @@ impl AnthropicConfigBuilder {
             retry_config: RetryConfig::default(),
             body_overrides: self.body_overrides,
             api_key_source: None,
+            generate_id: self.generate_id,
         })
     }
 }

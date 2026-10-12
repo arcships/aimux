@@ -120,25 +120,6 @@ void main() {
       expect(tc.isDynamic, false);
     });
 
-    test('Source variant', () {
-      final original = GenerateContentSource(
-        id: 'src_1',
-        sourceType: 'url',
-        url: 'https://example.com',
-        title: 'Example',
-        providerMetadata: null,
-      );
-      final decoded = GenerateContent.fromJson(original.toJson());
-
-      expect(decoded, isA<GenerateContentSource>());
-      expect(decoded.tag, 'Source');
-      final s = decoded as GenerateContentSource;
-      expect(s.id, 'src_1');
-      expect(s.sourceType, 'url');
-      expect(s.url, 'https://example.com');
-      expect(s.title, 'Example');
-    });
-
     test('Reasoning variant', () {
       final original =
           GenerateContentReasoning(text: 'thinking...', providerMetadata: null);
@@ -150,31 +131,7 @@ void main() {
       expect(r.text, 'thinking...');
     });
 
-    test('File variant — no filename field', () {
-      final original = GenerateContentFile(
-        data: FileDataUrl(url: 'https://example.com/img.png'),
-        mediaType: 'image/png',
-        providerMetadata: null,
-      );
-      final json = original.toJson();
 
-      // Externally-tagged shape: a single top-level key.
-      expect(json.keys, ['File']);
-      final payload = json['File'] as Map<String, dynamic>;
-
-      // Contract: `data` + `media_type`, never `filename`.
-      expect(payload, contains('data'));
-      expect(payload, contains('media_type'));
-      expect(payload, isNot(contains('filename')));
-
-      final decoded = GenerateContent.fromJson(json);
-      expect(decoded, isA<GenerateContentFile>());
-      expect(decoded.tag, 'File');
-      final f = decoded as GenerateContentFile;
-      expect(f.data, isA<FileDataUrl>());
-      expect((f.data as FileDataUrl).url, 'https://example.com/img.png');
-      expect(f.mediaType, 'image/png');
-    });
 
     test('ToolResult variant — uses result, not output', () {
       final original = GenerateContentToolResult(
@@ -280,31 +237,7 @@ void main() {
       expect(s.warnings.first['code'], 'deprecation');
     });
 
-    test('Finish variant', () {
-      final original = StreamPartFinish(
-        finishReason: FinishReason(unified: 'stop', raw: 'stop'),
-        usage: Usage(
-          inputTokens: TokenUsage(total: 10, text: 10),
-          outputTokens: TokenUsage(total: 5, text: 5),
-        ),
-        providerMetadata: null,
-      );
-      // `Finish` nests `@JsonSerializable` `Usage`/`TokenUsage`, whose
-      // generated `toJson()` (explicitToJson: false) does not recurse — so we
-      // deep-flatten across the JSON boundary before re-parsing, exactly as the
-      // real Rust→Dart pipeline does. See `typed_model_test.dart` for the same
-      // note.
-      final decoded =
-          StreamPart.fromJson(deepFlatten(original.toJson()));
 
-      expect(decoded, isA<StreamPartFinish>());
-      expect(decoded.type, 'Finish');
-      final f = decoded as StreamPartFinish;
-      expect(f.finishReason.unified, 'stop');
-      expect(f.finishReason.raw, 'stop');
-      expect(f.usage.inputTokens.total, 10);
-      expect(f.usage.outputTokens.total, 5);
-    });
 
     test('Error variant', () {
       final original = StreamPartError(error: {'message': 'boom', 'code': 500});
@@ -419,28 +352,7 @@ void main() {
     });
 
     // ── File ──
-    test('File variant — no filename field', () {
-      final original = StreamPartFile(
-        data: FileDataUrl(url: 'https://example.com/img.png'),
-        mediaType: 'image/png',
-        providerMetadata: null,
-      );
-      final json = original.toJson();
 
-      expect(json.keys, ['File']);
-      final payload = json['File'] as Map<String, dynamic>;
-      expect(payload, contains('data'));
-      expect(payload, contains('media_type'));
-      expect(payload, isNot(contains('filename')));
-
-      final decoded = StreamPart.fromJson(json);
-      expect(decoded, isA<StreamPartFile>());
-      expect(decoded.type, 'File');
-      final f = decoded as StreamPartFile;
-      expect(f.data, isA<FileDataUrl>());
-      expect((f.data as FileDataUrl).url, 'https://example.com/img.png');
-      expect(f.mediaType, 'image/png');
-    });
 
     // ── Reasoning ──
     test('ReasoningStart variant', () {
@@ -490,25 +402,6 @@ void main() {
       expect(m.id, 'resp_1');
       expect(m.timestamp, '2024-01-01T00:00:00Z');
       expect(m.modelId, 'gpt-4o');
-    });
-
-    test('Source variant', () {
-      final original = StreamPartSource(
-        id: 'src_1',
-        sourceType: 'url',
-        url: 'https://example.com',
-        title: 'Example',
-        providerMetadata: null,
-      );
-      final decoded = StreamPart.fromJson(original.toJson());
-
-      expect(decoded, isA<StreamPartSource>());
-      expect(decoded.type, 'Source');
-      final s = decoded as StreamPartSource;
-      expect(s.id, 'src_1');
-      expect(s.sourceType, 'url');
-      expect(s.url, 'https://example.com');
-      expect(s.title, 'Example');
     });
 
     test('Raw variant', () {

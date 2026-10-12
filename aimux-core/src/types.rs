@@ -31,17 +31,18 @@ pub enum FinishReasonUnified {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Usage {
-    pub input_tokens: TokenUsage,
-    pub output_tokens: TokenUsage,
+    pub input_tokens: InputTokenUsage,
+    pub output_tokens: OutputTokenUsage,
     /// Raw usage information from the provider (opaque, provider-specific).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub raw: Option<Value>,
+    #[ts(type = "Record<string, unknown> | null")]
+    pub raw: Option<serde_json::Map<String, Value>>,
 }
 
-/// Token usage detail (with cache breakdown).
+/// Input token usage detail.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct TokenUsage {
+pub struct InputTokenUsage {
     /// Total tokens.
     pub total: Option<u32>,
     /// Tokens that were not served from cache.
@@ -53,6 +54,13 @@ pub struct TokenUsage {
     /// Tokens written to cache.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_write: Option<u32>,
+}
+
+/// Output token usage detail.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct OutputTokenUsage {
+    pub total: Option<u32>,
     /// Text (non-reasoning) tokens (output side).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<u32>,
@@ -158,5 +166,5 @@ pub struct ResponseMetadata {
     pub model_id: Option<String>,
 }
 
-/// Provider-specific metadata (opaque to core).
-pub type ProviderMetadata = Value;
+/// Provider-specific metadata: namespace -> JSON object.
+pub type ProviderMetadata = crate::shared::SharedProviderMetadata;
