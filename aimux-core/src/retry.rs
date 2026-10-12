@@ -8,40 +8,19 @@ use rand::Rng;
 use crate::AbortSignal;
 use crate::error::{AiMuxError, RetryError, RetryErrorReason};
 
+/// Default maximum number of retries after the initial attempt.
 const DEFAULT_MAX_RETRIES: u32 = 2;
-const INITIAL_DELAY_MS: u64 = 2_000;
-const BACKOFF_FACTOR: u32 = 2;
-
-/// Default retry settings for model operations.
-///
-/// Per-call `max_retries` overrides only [`Self::max_retries`]; the configured
-/// delay and backoff factor remain in effect.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RetryConfig {
-    /// Maximum number of retries after the initial attempt.
-    pub max_retries: u32,
-    /// Initial delay between attempts.
-    pub initial_delay: Duration,
-    /// Multiplier applied to the delay after each retry.
-    pub backoff_factor: u32,
-}
-
-impl Default for RetryConfig {
-    fn default() -> Self {
-        Self {
-            max_retries: DEFAULT_MAX_RETRIES,
-            initial_delay: Duration::from_millis(INITIAL_DELAY_MS),
-            backoff_factor: BACKOFF_FACTOR,
-        }
-    }
-}
+/// Default delay before the first retry, in milliseconds.
+const DEFAULT_INITIAL_DELAY_MS: u64 = 2_000;
+/// Default multiplier applied to the delay after each retry.
+const DEFAULT_BACKOFF_FACTOR: u32 = 2;
 
 /// A prepared operation retry function and its resolved retry count.
 ///
 /// This is the Rust representation of the AI SDK's
 /// `prepareRetries()` result: `{ maxRetries, retry }`.
 #[derive(Debug, Clone)]
-pub struct PreparedRetries {
+pub(crate) struct PreparedRetries {
     /// The effective maximum after applying the default.
     pub max_retries: u32,
     initial_delay_ms: u64,
@@ -49,21 +28,20 @@ pub struct PreparedRetries {
     abort_signal: Option<AbortSignal>,
 }
 
-/// Bind retry settings, applying a per-call retry-count override.
+/// Bind the call-level retry count, applying [`DEFAULT_MAX_RETRIES`] when the
+/// caller gave none. The delay and backoff factor are the fixed
+/// [`DEFAULT_INITIAL_DELAY_MS`] / [`DEFAULT_BACKOFF_FACTOR`] constants: retry
+/// is a call-level concern with no provider-level settings.
 #[must_use]
-pub fn prepare_retries(
+pub(crate) fn prepare_retries(
     max_retries: Option<u32>,
-    mut config: RetryConfig,
-    abort_signal: Option<AbortSignal>,
+    abort: Option<AbortSignal>,
 ) -> PreparedRetries {
-    if let Some(max_retries) = max_retries {
-        config.max_retries = max_retries;
-    }
     PreparedRetries {
-        max_retries: config.max_retries,
-        initial_delay_ms: u64::try_from(config.initial_delay.as_millis()).unwrap_or(u64::MAX),
-        backoff_factor: u64::from(config.backoff_factor),
-        abort_signal,
+        max_retries: max_retries.unwrap_or(DEFAULT_MAX_RETRIES),
+        initial_delay_ms: DEFAULT_INITIAL_DELAY_MS,
+        backoff_factor: u64::from(DEFAULT_BACKOFF_FACTOR),
+        abort_signal: abort,
     }
 }
 
@@ -299,14 +277,11 @@ mod tests {
 
     #[tokio::test]
     async fn prepared_retries_resolves_the_default_and_binds_abort() {
-        assert_eq!(
-            prepare_retries(None, RetryConfig::default(), None).max_retries,
-            2
-        );
+        assert_eq!(prepare_retries(None, None).max_retries, 2);
 
         let signal = AbortSignal::new();
         signal.abort();
-        let retries = prepare_retries(Some(4), RetryConfig::default(), Some(signal));
+        let retries = prepare_retries(Some(4), Some(signal));
         let attempts = AtomicUsize::new(0);
 
         let error = retries
@@ -323,20 +298,14 @@ mod tests {
     }
 
     #[test]
-    fn per_call_max_preserves_the_model_delay_and_backoff() {
-        let retries = prepare_retries(
-            Some(4),
-            RetryConfig {
-                max_retries: 7,
-                initial_delay: Duration::from_millis(123),
-                backoff_factor: 3,
-            },
-            None,
-        );
+    fn prepared_retries_use_the_fixed_delay_and_backoff() {
+        let retries = prepare_retries(Some(4), None);
 
         assert_eq!(retries.max_retries, 4);
-        assert_eq!(retries.initial_delay_ms, 123);
-        assert_eq!(retries.backoff_factor, 3);
+        assert_eq!(retries.initial_delay_ms, DEFAULT_INITIAL_DELAY_MS);
+        assert_eq!(retries.backoff_factor, u64::from(DEFAULT_BACKOFF_FACTOR));
+        assert_eq!(prepare_retries(None, None).max_retries, DEFAULT_MAX_RETRIES);
+        assert_eq!(prepare_retries(Some(0), None).max_retries, 0);
     }
 
     #[tokio::test]

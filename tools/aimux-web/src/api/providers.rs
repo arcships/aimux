@@ -4,16 +4,9 @@ use axum::Json;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
 
-/// Provider names: the six native single-key protocols plus every
-/// registry-backed OpenAI-compatible provider.
+/// Provider names: every built-in provider.
 pub fn provider_names() -> Vec<String> {
-    const NATIVE: [&str; 6] = ["openai", "anthropic", "google", "mistral", "xai", "cohere"];
-    let mut names: Vec<String> = NATIVE
-        .iter()
-        .map(std::string::ToString::to_string)
-        .collect();
-    names.extend(aimux_providers::provider_names().map(str::to_owned));
-    names
+    aimux_providers::default_providers().into_keys().collect()
 }
 
 /// `GET /api/providers` — the provider list and suggested models for common ones.

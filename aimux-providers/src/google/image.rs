@@ -19,9 +19,8 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::{SharedProviderMetadata, SharedProviderOptions, Warning};
 
-use aimux_provider_utils::HttpRequest;
-
-use super::GoogleConfig;
+use super::options::{GOOGLE, google_options as read_google_options};
+use crate::shared::EndpointConfig;
 
 /// Google error structure: `{ "error": { "message": "...", "status": "..." } }`.
 /// Returns `true` if the model ID is a Gemini image model.
@@ -43,12 +42,15 @@ pub struct GoogleImageSettings {
 pub struct GoogleImageModel {
     model_id: String,
     settings: GoogleImageSettings,
-    config: GoogleConfig,
+    config: EndpointConfig,
 }
 
 impl GoogleImageModel {
-    #[must_use]
-    pub fn new(model_id: String, settings: GoogleImageSettings, config: GoogleConfig) -> Self {
+    pub(crate) fn from_config(
+        model_id: String,
+        settings: GoogleImageSettings,
+        config: EndpointConfig,
+    ) -> Self {
         Self {
             model_id,
             settings,
@@ -56,39 +58,24 @@ impl GoogleImageModel {
         }
     }
 
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert("x-goog-api-key".to_string(), self.config.api_key.clone());
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
+    fn predict_path(&self) -> String {
+        format!("/models/{}:predict", self.model_id)
     }
 
-    fn predict_endpoint(&self) -> String {
-        format!("{}/models/{}:predict", self.config.base_url, self.model_id)
-    }
-
-    fn generate_content_endpoint(&self) -> String {
+    fn generate_content_path(&self) -> String {
         let model_path = if self.model_id.contains('/') {
             self.model_id.clone()
         } else {
             format!("models/{}", self.model_id)
         };
-        format!("{}/{}:generateContent", self.config.base_url, model_path)
+        format!("/{model_path}:generateContent")
     }
 
     fn max_images(&self) -> u32 {
         if let Some(max) = self.settings.max_images_per_call {
             return max;
         }
-        if is_gemini_model(&self.model_id) {
-            10
-        } else {
-            4
-        }
+        1
     }
 
     // ── Imagen path ─────────────────────────────────────────────────────────
@@ -165,12 +152,10 @@ impl GoogleImageModel {
             "parameters": parameters,
         });
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list = build_header_list(&headers);
-
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.predict_endpoint(), header_list, options),
-            body,
+            exchange.request(exchange.url(&self.predict_path()), options),
+            exchange.transform_body(body),
             aimux_provider_utils::create_json_response_handler(),
             super::google_failed_response_handler(),
         )
@@ -284,7 +269,7 @@ impl GoogleImageModel {
         }
 
         // Only declared generation-config options survive the upstream language schema.
-        if let Some(google) = options.provider_options.get("google") {
+        if let Some(google) = read_google_options(Some(&options.provider_options)) {
             for key in [
                 "audioTimestamp",
                 "thinkingConfig",
@@ -312,12 +297,10 @@ impl GoogleImageModel {
             body.insert("tools".to_string(), json!([{ "googleSearch": gs }]));
         }
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list = build_header_list(&headers);
-
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.generate_content_endpoint(), header_list, options),
-            Value::Object(body),
+            exchange.request(exchange.url(&self.generate_content_path()), options),
+            exchange.transform_body(Value::Object(body)),
             aimux_provider_utils::create_json_response_handler(),
             super::google_failed_response_handler(),
         )
@@ -346,15 +329,11 @@ impl GoogleImageModel {
 #[async_trait]
 impl ImageModel for GoogleImageModel {
     fn provider(&self) -> &str {
-        "google.generative-ai"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
 
     fn max_images_per_call(&self) -> Option<u32> {
@@ -372,16 +351,6 @@ impl ImageModel for GoogleImageModel {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Build the header list for a JSON POST: auth/extra headers + `Content-Type`.
-fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
-    let mut list: Vec<(String, String)> = headers
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-    list.push(("Content-Type".to_string(), "application/json".to_string()));
-    list
-}
-
 /// Parsed Google image provider options.
 struct GoogleImageOptions {
     person_generation: Option<String>,
@@ -390,7 +359,7 @@ struct GoogleImageOptions {
 
 /// Parse Google image provider options from the `"google"` key.
 fn parse_google_image_options(provider_options: &SharedProviderOptions) -> GoogleImageOptions {
-    let google = provider_options.get("google");
+    let google = read_google_options(Some(provider_options));
     GoogleImageOptions {
         person_generation: google
             .and_then(|g| g.get("personGeneration"))
@@ -430,7 +399,7 @@ fn extract_imagen_metadata(response: &Value) -> SharedProviderMetadata {
     let images: Vec<Value> = (0..predictions).map(|_| json!({})).collect();
     let mut google_meta = Map::new();
     google_meta.insert("images".to_string(), json!(images));
-    metadata.insert("google".to_string(), google_meta);
+    metadata.insert(GOOGLE.to_string(), google_meta);
     metadata
 }
 
@@ -496,7 +465,7 @@ fn extract_gemini_result(
     if let Some(gm) = grounding_metadata {
         google_meta.insert("groundingMetadata".to_string(), gm);
     }
-    metadata.insert("google".to_string(), google_meta);
+    metadata.insert(GOOGLE.to_string(), google_meta);
 
     (ImageOutputs::Base64(images), metadata, usage)
 }

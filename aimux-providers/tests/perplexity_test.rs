@@ -4,7 +4,7 @@
 //! - `packages/perplexity/src/perplexity-language-model.test.ts`
 //! - `packages/perplexity/src/convert-to-perplexity-messages.test.ts`
 //!
-//! Perplexity is a thin OpenAI-compatible wrapper over [`OpenAIProvider`]. The
+//! Perplexity is a registry preset of the OpenAI-compatible package. The
 //! behaviours verified here are the ones the wrapper is responsible for:
 //!
 //! - Provider configuration: name, `PERPLEXITY_API_KEY` env var, custom API
@@ -23,6 +23,7 @@
 use futures::StreamExt;
 use serde_json::{Value, json};
 use serial_test::serial;
+use std::sync::Arc;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -34,7 +35,7 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::{ProviderOptions, provider, provider_from_env};
+use aimux_providers::{PresetSettings, create_provider};
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -86,16 +87,17 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     parts
 }
 
-fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-    provider(
+fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+    create_provider(
         "perplexity",
-        Some("test-api-key".to_string()),
-        "sonar",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("test-api-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("sonar")
     .expect("perplexity provider should build")
 }
 
@@ -106,8 +108,16 @@ fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
 /// TS: `createPerplexity()` produces a provider whose name is "perplexity".
 #[test]
 fn provider_builds_perplexity_model() {
-    let model = provider("perplexity", Some("test-key".to_string()), "sonar", None)
-        .expect("perplexity provider should build");
+    let model = create_provider(
+        "perplexity",
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
+            ..Default::default()
+        },
+    )
+    .expect("provider should build")
+    .language_model("sonar")
+    .expect("perplexity provider should build");
     assert_eq!(model.model_id(), "sonar");
 }
 
@@ -122,15 +132,16 @@ async fn custom_api_key_used_in_auth_header() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = create_provider(
         "perplexity",
-        Some("my-custom-key".to_string()),
-        "sonar",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("my-custom-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("sonar")
     .expect("perplexity provider should build");
 
     model
@@ -150,15 +161,16 @@ async fn custom_headers_forwarded() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = create_provider(
         "perplexity",
-        Some("test-key".to_string()),
-        "sonar",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("sonar")
     .expect("perplexity provider should build");
 
     let mut options = default_options(test_prompt());
@@ -188,15 +200,16 @@ async fn language_model_via_trait() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = create_provider(
         "perplexity",
-        Some("test-key".to_string()),
-        "sonar",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("sonar")
     .expect("provider should build a model");
 
     model
@@ -214,7 +227,9 @@ fn from_env_loads_perplexity_api_key() {
         std::env::set_var("PERPLEXITY_API_KEY", "env-test-key");
     }
 
-    let model = provider_from_env("perplexity", "sonar", None);
+    let model = create_provider("perplexity", PresetSettings::default())
+        .expect("provider should build")
+        .language_model("sonar");
     assert!(model.is_ok(), "from_env should succeed with env var set");
 
     unsafe {
@@ -227,15 +242,19 @@ fn from_env_loads_perplexity_api_key() {
 
 /// TS: without the env var, `createPerplexity()` fails.
 #[serial]
-#[test]
-fn from_env_fails_without_env_var() {
+#[tokio::test]
+async fn from_env_fails_without_env_var() {
     let saved = std::env::var("PERPLEXITY_API_KEY").ok();
     unsafe {
         std::env::remove_var("PERPLEXITY_API_KEY");
     }
 
-    let model = provider_from_env("perplexity", "sonar", None);
-    assert!(model.is_err(), "from_env should fail without env var");
+    let model = create_provider("perplexity", PresetSettings::default())
+        .expect("provider should build")
+        .language_model("sonar")
+        .expect("provider should build a model");
+    let result = model.do_generate(&default_options(test_prompt())).await;
+    assert!(result.is_err(), "from_env should fail without env var");
 
     unsafe {
         if let Some(v) = saved {
@@ -444,4 +463,33 @@ async fn status_429_maps_to_rate_limited() {
         matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
+}
+
+/// TS: "should expose the raw response headers".
+#[tokio::test]
+async fn exposes_response_headers() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("test-header", "test-value")
+                .set_body_json(text_completion_body()),
+        )
+        .mount(&server)
+        .await;
+
+    let model = make_provider(&server);
+
+    let result = model
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect("should succeed");
+
+    let headers = result
+        .response
+        .as_ref()
+        .and_then(|response| response.headers.as_ref())
+        .expect("response_headers should be Some");
+    assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }

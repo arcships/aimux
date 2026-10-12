@@ -163,24 +163,18 @@ impl TraceLayer {
             .session_id
             .clone()
             .or_else(|| self.default_session.clone());
-        // B1: scope_key isolates by (provider, base_url, model_id) — not just
-        // model_id — so two TraceLayers over the same model_id but different
-        // providers (or base_urls) sharing one RingTraceStore never cross-match
-        // their LCP history. `base_url` comes from the inner model's config
-        // snapshot; providers that only report a minimal snapshot omit it, in
-        // which case provider + model_id still isolate the scope. The default
-        // `scope_salt` stays process-level (set in `new` / `with_default_session`).
+        // B1: scope_key isolates by (provider, model_id), so two TraceLayers
+        // over the same model_id but different providers sharing one
+        // RingTraceStore never cross-match their LCP history. A model's
+        // `provider()` string already carries the settings-level name, so two
+        // endpoints of one vendor stay apart when they are given different
+        // provider names. The default `scope_salt` stays process-level (set in
+        // `new` / `with_default_session`).
         let provider = self.inner.provider();
         let model_id = self.inner.model_id();
-        let base_url = self.inner.config_snapshot().base_url;
-        let mut scope_bytes = Vec::with_capacity(
-            provider.len() + model_id.len() + base_url.as_deref().map_or(0, str::len),
-        );
+        let mut scope_bytes = Vec::with_capacity(provider.len() + model_id.len());
         scope_bytes.extend_from_slice(provider.as_bytes());
         scope_bytes.extend_from_slice(model_id.as_bytes());
-        if let Some(b) = &base_url {
-            scope_bytes.extend_from_slice(b.as_bytes());
-        }
         let scope_key = hash::hash64(self.scope_salt, &scope_bytes);
         let sent_at_unix_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -505,10 +499,6 @@ impl<S> Drop for TraceRecordingStream<S> {
 
 #[async_trait]
 impl LanguageModel for TraceLayer {
-    fn specification_version(&self) -> &'static str {
-        "v4"
-    }
-
     fn provider(&self) -> &str {
         self.inner.provider()
     }
@@ -517,14 +507,8 @@ impl LanguageModel for TraceLayer {
         self.inner.model_id()
     }
 
-    fn retry_config(&self) -> crate::retry::RetryConfig {
-        self.inner.retry_config()
-    }
-
-    /// RFC-0023 §3.3: transparent decorators must forward the inner snapshot
-    /// (otherwise recording sees the decorator's minimal record).
-    fn config_snapshot(&self) -> crate::recording::ProviderRecord {
-        self.inner.config_snapshot()
+    fn supported_urls(&self) -> crate::language_model::SupportedUrls {
+        self.inner.supported_urls()
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {

@@ -4,13 +4,12 @@ use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
-use std::time::Duration;
 
 use aimux_core::decision_model::*;
 use aimux_core::recording::{self, RingRecorder};
 use aimux_core::replay::{MockDecisionReplayModel, replay_decision_with_model};
 use aimux_core::{AiMuxError, Provider};
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::{OpenAIProvider, OpenAIProviderSettings, PresetSettings, create_openai};
 use serde_json::{Value, json};
 use serial_test::serial;
 use wiremock::matchers::{body_json, header, method, path};
@@ -31,20 +30,39 @@ fn fixture() -> Value {
 fn options() -> DecisionCallOptions {
     serde_json::from_value(fixture()["options"].clone()).unwrap()
 }
-fn config(server: &MockServer) -> OpenAIConfig {
-    OpenAIConfig::new("decision-secret")
-        .with_base_url(format!("{}/v1", server.uri()))
-        .with_org_id("org-test")
-        .with_project("proj-test")
-        .with_headers(HashMap::from([(
+fn provider(server: &MockServer, api_key: &str) -> OpenAIProvider {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(api_key.into()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        organization: Some("org-test".into()),
+        project: Some("proj-test".into()),
+        headers: Some(HashMap::from([(
             "X-Client".into(),
-            "decision-tests".into(),
-        )]))
+            Some("decision-tests".into()),
+        )])),
+        ..Default::default()
+    })
+    .unwrap()
 }
 fn model(server: &MockServer) -> Box<dyn DecisionModel> {
-    OpenAIProvider::new(config(server))
+    provider(server, "decision-secret")
         .decision_model("gpt-6-luna")
         .unwrap()
+}
+/// The caller's registry at replay time: the same OpenAI settings at the
+/// replay server, with another key.
+fn rebuild(
+    record: &aimux_core::recording::ProviderRecord,
+    server: &MockServer,
+) -> Box<dyn DecisionModel> {
+    let registry = aimux_core::create_provider_registry(
+        std::collections::BTreeMap::from([(
+            "openai".into(),
+            Arc::new(provider(server, "replacement-key")) as Arc<dyn Provider>,
+        )]),
+        Default::default(),
+    );
+    aimux_providers::rebuild_decision_provider(record, &registry).unwrap()
 }
 async fn mount(server: &MockServer, response: Value) {
     Mock::given(method("POST"))
@@ -257,11 +275,7 @@ async fn retry_and_standard_provider_errors_use_the_shared_transport() {
         })
         .mount(&server)
         .await;
-    let mut config = config(&server);
-    config.retry_config.initial_delay = Duration::ZERO;
-    let model = OpenAIProvider::new(config)
-        .decision_model("gpt-6-luna")
-        .unwrap();
+    let model = model(&server);
     let mut request = options();
     request.max_retries = Some(1);
     decide(model.as_ref(), request).await.unwrap();
@@ -283,11 +297,25 @@ async fn retry_and_standard_provider_errors_use_the_shared_transport() {
 
 #[test]
 fn factory_is_explicit_and_preserves_the_provider_boundary() {
-    let provider = aimux_providers::provider_handle("openai", Some("key".into()), None).unwrap();
+    let provider = aimux_providers::create_provider(
+        "openai",
+        PresetSettings {
+            api_key: Some("key".to_string().into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let model = provider.decision_model("deployment-alias").unwrap();
     assert_eq!(model.model_id(), "deployment-alias");
     assert!(provider.decision_model(" ").is_err());
-    let other = aimux_providers::provider_handle("deepseek", Some("key".into()), None).unwrap();
+    let other = aimux_providers::create_provider(
+        "deepseek",
+        PresetSettings {
+            api_key: Some("key".to_string().into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     assert!(matches!(
         other.decision_model("any"),
         Err(AiMuxError::UnsupportedFunctionality(_))
@@ -304,7 +332,7 @@ impl Drop for StopRecording {
 
 #[tokio::test]
 #[serial]
-async fn unified_recording_replays_refusals_and_rebuilds_the_same_provider_config() {
+async fn unified_recording_replays_refusals_and_rebuilds_from_the_registered_provider() {
     let server = MockServer::start().await;
     mount(&server, fixture()["response"].clone()).await;
     let recorder = Arc::new(RingRecorder::new());
@@ -328,10 +356,7 @@ async fn unified_recording_replays_refusals_and_rebuilds_the_same_provider_confi
     );
     let replay_server = MockServer::start().await;
     common::replay::mount_recording(&replay_server, &records[0]).await;
-    let mut snapshot = records[0].provider.clone();
-    snapshot.base_url = Some(format!("{}/v1", replay_server.uri()));
-    let rebuilt =
-        aimux_providers::rebuild_decision_provider(&snapshot, Some("replacement-key")).unwrap();
+    let rebuilt = rebuild(&records[0].provider, &replay_server);
     let again = replay_decision_with_model(&records[0], rebuilt.as_ref())
         .await
         .unwrap();
@@ -383,10 +408,7 @@ async fn images_typed_choices_and_score_descriptions_roundtrip_and_key_replay() 
     assert!(decide(&mock, changed).await.is_err());
     let replay_server = MockServer::start().await;
     common::replay::mount_recording(&replay_server, &records[0]).await;
-    let mut config = records[0].provider.clone();
-    config.base_url = Some(format!("{}/v1", replay_server.uri()));
-    let rebuilt =
-        aimux_providers::rebuild_decision_provider(&config, Some("replacement-key")).unwrap();
+    let rebuilt = rebuild(&records[0].provider, &replay_server);
     let again = replay_decision_with_model(&records[0], rebuilt.as_ref())
         .await
         .unwrap();

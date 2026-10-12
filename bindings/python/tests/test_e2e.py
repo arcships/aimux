@@ -19,7 +19,7 @@ from multiprocessing import Process, Queue
 
 import pytest
 
-from aimux import openai, anthropic, generate_text, stream_text
+from aimux import deepseek, anthropic, generate_text, stream_text
 
 
 # ── Mock server in a separate process ───────────────────────────────────────
@@ -143,14 +143,14 @@ class TestOpenAIE2E:
 
     def test_generate_text(self):
         with MockServer(OPENAI_CHAT) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             result = generate_text(model, "What is Rust?")
             assert result["text"] == "Rust is a systems programming language."
             assert result["usage"] is not None
 
     def test_stream_text(self):
         with MockServer(OPENAI_STREAM, content_type='text/event-stream') as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             parts = list(stream_text(model, "Say hello"))
             assert len(parts) > 0
             text = "".join(
@@ -160,7 +160,7 @@ class TestOpenAIE2E:
 
     def test_generate_text_with_options(self):
         with MockServer(OPENAI_CHAT) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             generate_text(model, "Hello", {"max_output_tokens": 100, "temperature": 0.5})
             # Options should reach the HTTP request (tested implicitly — if they
             # don't serialize, the Rust side would error)
@@ -344,7 +344,7 @@ class TestStructuredContent:
 
     def test_generate_text_parses_tool_calls(self):
         with RecordingMockServer(OPENAI_TOOL_CALL) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             opts = {
                 "tools": [{
                     "type": "function",
@@ -378,7 +378,7 @@ class TestStructuredContent:
 
     def test_multi_role_messages_reach_provider(self):
         with RecordingMockServer(OPENAI_CHAT) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             prompt = [
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": "What is Rust?"},
@@ -396,7 +396,7 @@ class TestStructuredContent:
 
     def test_tool_choice_reaches_provider(self):
         with RecordingMockServer(OPENAI_TOOL_CALL) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             opts = {
                 "tools": [{
                     "type": "function",
@@ -422,7 +422,7 @@ class TestStructuredContent:
             'data: [DONE]\n\n'
         )
         with MockServer(sse_body, content_type='text/event-stream') as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             opts = {
                 "tools": [{
                     "type": "function",
@@ -465,7 +465,7 @@ class TestStructuredContent:
         """
         # The mock answers request #1 with a tool call and request #2 with text.
         with SequencedMockServer([OPENAI_TOOL_CALL, OPENAI_CHAT]) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             opts = {
                 "tools": [{
                     "type": "function",

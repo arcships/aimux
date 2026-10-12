@@ -1,16 +1,15 @@
 //! aimux-replay — RFC-0023 请求回放 CLI(层 2 消费端)。
 //!
-//! 读录制 jsonl(每行一个 `Recording`),按 `ProviderRecord` 自动重建
-//! provider(语言模型 OpenAI 兼容族、官方 TypeSafe Jev decision),再用录制输入 **重发真实
-//! API**。用途:离线重跑线上流量、改 prompt 重发(A/B)、回归对比、CI 集成。
+//! 读录制 jsonl(每行一个 `Recording`,仅 schema 3),按 `ProviderRecord` 的
+//! `provider_id` + `model_id` 重建 model,再用录制输入经 `replay_with_model`
+//! **重发真实 API**。用途:离线重跑线上流量、改 prompt 重发(A/B)、回归对比、CI 集成。
 //!
 //! 安全:
-//! - `--dry-run` 只打印重建后的 provider/prompt/目标 URL,**不发请求、
-//!   不输出任何凭据**(api_key 来源按 `api_key_source` 打印)。
+//! - `--dry-run` 只打印录制的 provider/model/prompt,**不发请求、
+//!   不输出任何凭据**。
 //! - 重发会消耗真实 token/费用,文档(§3.6.1)已有警示。
-//! - `--mock` 使用统一录制的响应离线回放；decision 使用规范化结果。
-//! - 其他原生语言协议 provider(anthropic/google/...)`rebuild_provider` 明确
-//!   `Unsupported`——CLI 打印错误并跳过,需自行传 model 实例走库 API。
+//! - `--mock` 离线回放语言或 decision 录制；真实回放只使用调用方配置，
+//!   不从录制恢复连接设置。Jev 使用显式 key 或 TYPESAFE_API_KEY。
 
 use std::path::PathBuf;
 
@@ -35,16 +34,16 @@ struct Cli {
     /// 仅回放该 call_id(默认全部)。
     #[arg(long)]
     call_id: Option<String>,
-    /// 显式 api key。api_key_source 为 explicit/unknown 时需要。
+    /// 显式 api key;缺省时读 registry 条目的环境变量。
     #[arg(long)]
     api_key: Option<String>,
     /// 覆盖 prompt(替换所有录制的 prompt;A/B 重发)。
     #[arg(long)]
     prompt: Option<String>,
-    /// dry-run:打印重建后的 provider/prompt/目标 URL,不发请求、不输出凭据。
+    /// dry-run:打印录制的 provider/model/prompt,不发请求、不输出凭据。
     #[arg(long)]
     dry_run: bool,
-    /// Replay recorded responses offline instead of sending a live request.
+    /// Replay recorded responses offline.
     #[arg(long)]
     mock: bool,
 }
@@ -104,14 +103,9 @@ fn load_recordings(path: &PathBuf) -> Result<Vec<Recording>> {
 fn run_dry(rec: &Recording) -> Result<()> {
     println!("call_id: {}", rec.call_id);
     println!(
-        "  provider: {} / model: {}",
-        rec.provider.provider, rec.provider.model_id
+        "  provider_id: {} / provider: {} / model: {}",
+        rec.provider.provider_id, rec.provider.provider, rec.provider.model_id
     );
-    println!(
-        "  base_url: {}",
-        rec.provider.base_url.as_deref().unwrap_or("(default)")
-    );
-    println!("  api_key_source: {}", rec.provider.api_key_source);
     if rec.input.operation == aimux_core::recording::RecordingOperation::Decision {
         println!(
             "  decision: {} question(s)",
@@ -119,11 +113,10 @@ fn run_dry(rec: &Recording) -> Result<()> {
                 .as_array()
                 .map_or(0, Vec::len)
         );
-    } else {
-        println!("  prompt: {} message(s)", rec.input.prompt.len());
-        if let Some(text) = rec.input.prompt.first().and_then(prompt_text) {
-            println!("  first message: {text:?}");
-        }
+    }
+    println!("  prompt: {} message(s)", rec.input.prompt.len());
+    if let Some(text) = rec.input.prompt.first().and_then(prompt_text) {
+        println!("  first message: {text:?}");
     }
     println!("  (dry-run — no request sent)");
     Ok(())
@@ -158,14 +151,30 @@ fn run_replay(
                 "--prompt applies to language recordings; decision replay preserves state/questions"
             );
         }
-        let model: Box<dyn aimux_core::decision_model::DecisionModel> = if mock {
+        let model: Box<dyn aimux_core::DecisionModel> = if mock {
             Box::new(aimux_core::replay::MockDecisionReplayModel::new(
                 &rec.provider.provider,
                 &rec.provider.model_id,
                 vec![rec.clone()],
             )?)
         } else {
-            aimux_providers::rebuild_decision_provider(&rec.provider, api_key)?
+            if rec.provider.provider_id != "jev" {
+                bail!(
+                    "decision replay: no configured provider {}",
+                    rec.provider.provider_id
+                );
+            }
+            let config = match api_key {
+                Some(key) => aimux_providers::JevConfig::new(key),
+                None => aimux_providers::JevConfig::from_env()?,
+            };
+            let providers = std::collections::BTreeMap::from([(
+                "jev".into(),
+                std::sync::Arc::new(aimux_providers::JevProvider::new(config))
+                    as std::sync::Arc<dyn aimux_core::Provider>,
+            )]);
+            let registry = aimux_core::create_provider_registry(providers, Default::default());
+            aimux_providers::rebuild_decision_provider(&rec.provider, &registry)?
         };
         let result = Runtime::new()?.block_on(aimux_core::replay::replay_decision_with_model(
             rec,
@@ -180,15 +189,29 @@ fn run_replay(
         );
         return Ok(());
     }
-    let model: Box<dyn aimux_core::LanguageModel> = if mock {
-        Box::new(aimux_core::replay::MockReplayModel::new(
+    let model: std::sync::Arc<dyn aimux_core::LanguageModel> = if mock {
+        std::sync::Arc::new(aimux_core::replay::MockReplayModel::new(
             &rec.provider.provider,
             &rec.provider.model_id,
             vec![rec.clone()],
         ))
     } else {
-        rebuild_provider(&rec.provider, api_key)
-            .with_context(|| format!("rebuild provider for '{}'", rec.provider.provider))?
+        let mut providers = aimux_providers::default_providers();
+        if let Some(key) = api_key {
+            providers.insert(
+                rec.provider.provider_id.clone(),
+                aimux_providers::create_provider(
+                    &rec.provider.provider_id,
+                    aimux_providers::PresetSettings {
+                        api_key: Some(key.to_string().into()),
+                        ..Default::default()
+                    },
+                )?,
+            );
+        }
+        let registry = aimux_core::create_provider_registry(providers, Default::default());
+        rebuild_provider(&rec.provider, &registry)
+            .with_context(|| format!("rebuild provider for '{}'", rec.provider.provider_id))?
     };
 
     let overrides = prompt.map(|text| ReplayOverrides {

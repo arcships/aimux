@@ -3,8 +3,6 @@
 //! Aligned with Vercel AI SDK `VoyageRerankingModel`
 //! (`reference/ai/packages/voyage/src/reranking/voyage-reranking-model.ts`).
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -17,9 +15,9 @@ use aimux_core::reranking_model::{
 use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
 
-use aimux_provider_utils::HttpRequest;
+use crate::shared::EndpointConfig;
 
-use super::{VoyageConfig, voyage_failed_response_handler};
+use super::voyage_failed_response_handler;
 
 /// Voyage provider-specific reranking options.
 #[derive(Debug, Clone, Default)]
@@ -32,9 +30,7 @@ fn parse_voyage_reranking_options(
     provider_options: Option<&SharedProviderOptions>,
 ) -> VoyageRerankingOptions {
     let mut opts = VoyageRerankingOptions::default();
-    if let Some(po) = provider_options
-        && let Some(voyage) = po.get("voyage")
-    {
+    if let Some(voyage) = super::options::voyage_options(provider_options) {
         if let Some(v) = voyage
             .get("returnDocuments")
             .and_then(serde_json::Value::as_bool)
@@ -66,38 +62,19 @@ struct VoyageRerankingResult {
 /// A Voyage reranking model.
 pub struct VoyageRerankingModel {
     model_id: String,
-    config: VoyageConfig,
+    config: EndpointConfig,
 }
 
 impl VoyageRerankingModel {
-    #[must_use]
-    pub fn new(model_id: String, config: VoyageConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/rerank", self.config.base_url)
     }
 }
 
 #[async_trait]
 impl RerankingModel for VoyageRerankingModel {
     fn provider(&self) -> &str {
-        "voyage"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -141,15 +118,11 @@ impl RerankingModel for VoyageRerankingModel {
             body["truncation"] = json!(truncation);
         }
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let mut header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        header_list.push(("Content-Type".to_string(), "application/json".to_string()));
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(body);
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), header_list, options),
+            exchange.request(exchange.url("/rerank"), options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler::<VoyageRerankingResponse>(),
             voyage_failed_response_handler(),

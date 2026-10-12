@@ -159,6 +159,20 @@ fn error_value_snapshots_plain_variants() {
             r#"{"UnsupportedFunctionality":"no audio"}"#,
         ),
         (
+            AiMuxError::LoadApiKey {
+                env_var: "OPENAI_API_KEY".into(),
+                description: "OpenAI".into(),
+            },
+            r#"{"LoadApiKey":{"env_var":"OPENAI_API_KEY","description":"OpenAI"}}"#,
+        ),
+        (
+            AiMuxError::LoadSetting {
+                env_var: "AWS_REGION".into(),
+                name: "region".into(),
+            },
+            r#"{"LoadSetting":{"env_var":"AWS_REGION","name":"region"}}"#,
+        ),
+        (
             AiMuxError::NoSuchModel {
                 model_id: "gpt-9".into(),
                 model_type: "languageModel".into(),
@@ -168,8 +182,11 @@ fn error_value_snapshots_plain_variants() {
         (
             AiMuxError::NoSuchProvider {
                 provider_id: "acme".into(),
+                model_id: "acme".into(),
+                model_type: "languageModel".into(),
+                available_providers: vec!["other".into()],
             },
-            r#"{"NoSuchProvider":{"provider_id":"acme"}}"#,
+            r#"{"NoSuchProvider":{"provider_id":"acme","model_id":"acme","model_type":"languageModel","available_providers":["other"]}}"#,
         ),
         (
             AiMuxError::Timeout("total timeout".into()),

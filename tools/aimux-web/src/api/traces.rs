@@ -84,10 +84,12 @@ pub async fn import_jsonl(State(state): State<AppState>, body: String) -> Respon
                 count += 1;
             }
             Err(e) => {
-                return err_response(AiMuxError::JsonParse(format!(
-                    "import line {}: {e}",
-                    idx + 1
-                )));
+                let msg = format!("import line {}: {e}", idx + 1);
+                return err_response(if e.classify() == serde_json::error::Category::Data {
+                    AiMuxError::InvalidArgument(msg)
+                } else {
+                    AiMuxError::JsonParse(msg)
+                });
             }
         }
     }

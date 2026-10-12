@@ -337,7 +337,7 @@ pub struct JudgmentInput {
 }
 
 #[must_use]
-pub fn quantize_down(x: u64, gran: Option<u64>) -> u64 {
+fn quantize_down(x: u64, gran: Option<u64>) -> u64 {
     match gran {
         Some(g) if g > 0 => x / g * g,
         _ => x,

@@ -3,13 +3,12 @@ use std::collections::{BTreeMap, HashMap};
 
 use aimux_core::AiMuxError;
 use aimux_core::decision_model::*;
-use aimux_core::recording::ProviderRecord;
 use aimux_core::types::{InputTokenUsage, OutputTokenUsage, Usage};
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
-use crate::decision_support::{self as support, invalid};
-use crate::openai::OpenAIConfig;
+use crate::decision_support::{self as support, DecisionConfig, invalid};
+use crate::openai_compatible::config::CompatModelConfig;
 
 pub(crate) fn supported(provider: &str) -> bool {
     matches!(
@@ -25,18 +24,24 @@ pub(crate) fn supported(provider: &str) -> bool {
     )
 }
 
+/// Decisions of an official runtime, made from its OpenAI-compatible preset.
 pub(crate) struct RuntimeDecisionModel {
-    pub(crate) config: OpenAIConfig,
+    /// The preset name; it selects the runtime's protocol and limits.
+    pub(crate) provider: String,
+    pub(crate) config: DecisionConfig,
     pub(crate) model_id: String,
 }
 
 impl RuntimeDecisionModel {
-    pub(crate) fn new(model_id: &str, config: OpenAIConfig) -> Result<Self, AiMuxError> {
-        if !supported(&config.provider) || config.body_overrides.is_some() {
-            return Err(AiMuxError::UnsupportedFunctionality(
-                "native decisions require an official adapter without generation body_overrides"
-                    .into(),
-            ));
+    pub(crate) fn new(
+        provider: &str,
+        model_id: &str,
+        config: CompatModelConfig,
+    ) -> Result<Self, AiMuxError> {
+        if !supported(provider) {
+            return Err(AiMuxError::UnsupportedFunctionality(format!(
+                "provider '{provider}' does not provide decision models"
+            )));
         }
         if model_id.trim().is_empty() {
             return Err(AiMuxError::InvalidArgument(
@@ -44,7 +49,8 @@ impl RuntimeDecisionModel {
             ));
         }
         Ok(Self {
-            config,
+            provider: provider.into(),
+            config: DecisionConfig::Compatible(config),
             model_id: model_id.into(),
         })
     }
@@ -153,7 +159,8 @@ impl RuntimeDecisionModel {
         }
         copy_options(&mut body, options, allowed)?;
         self.add_images(request, &mut body)?;
-        let base = self.config.base_url.trim_end_matches('/');
+        let base = self.config.base_url()?;
+        let base = base.as_str();
         let url = if matches!(provider, "cloudflare" | "cloudflare_workers_ai") {
             let model = self
                 .model_id
@@ -616,13 +623,10 @@ fn sglang_response(
 #[async_trait]
 impl DecisionModel for RuntimeDecisionModel {
     fn provider(&self) -> &str {
-        &self.config.provider
+        &self.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
     fn capabilities(&self) -> DecisionCapabilities {
         let provider = self.provider();
@@ -661,24 +665,13 @@ impl DecisionModel for RuntimeDecisionModel {
             },
         }
     }
-    fn config_snapshot(&self) -> ProviderRecord {
-        let mut record = crate::openai::config_snapshot_from_config(
-            self.provider(),
-            self.model_id(),
-            &self.config,
-        );
-        record.profile = Some(
-            json!({"decision_default_protocol":"systemone", "decision_capabilities":self.capabilities()}),
-        );
-        record
-    }
     async fn do_decide(&self, request: &DecisionCallOptions) -> Result<DecisionResult, AiMuxError> {
         let mut options = support::options(request, self.provider())?;
         let protocol = options.remove("protocol").unwrap_or(json!("systemone"));
         match (self.provider(), protocol.as_str()) {
             ("sglang", Some("decisions")) => {
                 let body = self.sglang_request(request, options)?;
-                let url = format!("{}/decisions", self.config.base_url.trim_end_matches('/'));
+                let url = format!("{}/decisions", self.config.base_url()?);
                 support::post(&self.config, request, &url, body, |raw, headers| {
                     sglang_response(request, raw, headers)
                 })

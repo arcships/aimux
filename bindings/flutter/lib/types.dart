@@ -428,8 +428,15 @@ class GenerateResponse {
   final Map<String, String>? headers;
   final dynamic body;
   GenerateResponse({this.id, this.timestamp, this.modelId, this.headers, this.body});
-  factory GenerateResponse.fromJson(Map<String, dynamic> json) => GenerateResponse(id: json['id'] as String?, timestamp: json['timestamp'] as String?, modelId: json['model_id'] as String?, headers: (json['headers'] as Map<String, dynamic>?)?.cast<String, String>(), body: json['body']);
-  Map<String, dynamic> toJson() => {if (id != null) 'id': id, 'timestamp': timestamp, 'model_id': modelId, 'headers': headers, 'body': body};
+  factory GenerateResponse.fromJson(Map<String, dynamic> json) => GenerateResponse(id: json['id'] as String?, timestamp: json['timestamp'] as String?, modelId: json['model_id'] as String?, headers: (json['headers'] as Map<String, dynamic>?)?.map((key, value) => MapEntry(key, value as String)), body: json['body']);
+  Map<String, dynamic> toJson() => {'id': id, 'timestamp': timestamp, 'model_id': modelId, if (headers != null) 'headers': headers, if (body != null) 'body': body};
+}
+
+class GenerateRequest {
+  final dynamic body;
+  GenerateRequest({this.body});
+  factory GenerateRequest.fromJson(Map<String, dynamic> json) => GenerateRequest(body: json['body']);
+  Map<String, dynamic> toJson() => {if (body != null) 'body': body};
 }
 
 /// A content item in a `GenerateResult`. Mirrors `GenerateContent.ts`
@@ -793,7 +800,7 @@ class GenerateResult {
     response: json['response'] == null ? null : GenerateResponse.fromJson(json['response'] as Map<String, dynamic>),
     request: json['request'] == null ? null : GenerateRequest.fromJson(json['request'] as Map<String, dynamic>),
   );
-  Map<String, dynamic> toJson() => {'content': content.map((c) => c.toJson()).toList(), 'finish_reason': finishReason.toJson(), 'usage': usage.toJson(), 'warnings': warnings, 'response': response?.toJson(), if (providerMetadata != null) 'provider_metadata': providerMetadata, 'request': request?.toJson()};
+  Map<String, dynamic> toJson() => {'content': content.map((c) => c.toJson()).toList(), 'finish_reason': finishReason.toJson(), 'usage': usage.toJson(), 'warnings': warnings, 'response': response?.toJson(), if (providerMetadata != null) 'provider_metadata': providerMetadata, if (request != null) 'request': request?.toJson()};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1016,8 +1023,6 @@ class GenerateTextOptions {
   final Map<String, dynamic>? providerOptions;
   final ReasoningEffort? reasoning;
   final String? instructions;
-  @JsonKey(name: 'body_overrides')
-  final Map<String, dynamic>? bodyOverrides;
   @JsonKey(name: 'max_retries')
   final int? maxRetries;
   final TimeoutConfiguration? timeout;
@@ -1060,7 +1065,6 @@ class GenerateTextOptions {
     this.providerOptions,
     this.reasoning,
     this.instructions,
-    this.bodyOverrides,
     this.maxRetries,
     this.timeout,
     this.includeRawChunks,
@@ -1091,7 +1095,6 @@ class GenerateTextOptions {
           ? ReasoningEffort.fromJson(json['reasoning'] as String)
           : null,
       instructions: json['instructions'] as String?,
-      bodyOverrides: json['body_overrides'] as Map<String, dynamic>?,
       maxRetries: json['max_retries'] as int?,
       timeout: json['timeout'] != null
           ? TimeoutConfiguration.fromJson(json['timeout'] as Map<String, dynamic>)
@@ -1116,7 +1119,6 @@ class GenerateTextOptions {
         if (providerOptions != null) 'provider_options': providerOptions,
         if (reasoning != null) 'reasoning': reasoning!.toJson(),
         if (instructions != null) 'instructions': instructions,
-        if (bodyOverrides != null) 'body_overrides': bodyOverrides,
         if (maxRetries != null) 'max_retries': maxRetries,
         if (timeout != null) 'timeout': timeout!.toJson(),
         if (includeRawChunks != null) 'include_raw_chunks': includeRawChunks,

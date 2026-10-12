@@ -10,10 +10,10 @@ use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
-use aimux_providers::{TinyfishConfig, TinyfishProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{TinyfishProvider, TinyfishProviderSettings, create_tinyfish};
 
 const API_KEY: &str = "test-tinyfish-key";
 
@@ -48,8 +48,12 @@ fn search_response_body() -> Value {
 }
 
 fn provider(server: &MockServer) -> TinyfishProvider {
-    let config = TinyfishConfig::new(API_KEY).with_base_url(server.uri());
-    TinyfishProvider::new(config)
+    let config = TinyfishProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_tinyfish(config).unwrap()
 }
 
 fn opts(query: &str, max_results: Option<u32>) -> SearchCallOptions {
@@ -196,25 +200,3 @@ async fn status_401_maps_to_auth_error() {
 }
 
 // -- Provider trait ----------------------------------------------------------
-
-#[tokio::test]
-async fn provider_name_is_tinyfish() {
-    let config = TinyfishConfig::new(API_KEY);
-    let provider = TinyfishProvider::new(config);
-    assert_eq!(provider.name(), "tinyfish");
-}
-
-#[test]
-fn language_model_returns_unsupported_error() {
-    let config = TinyfishConfig::new(API_KEY);
-    let provider = TinyfishProvider::new(config);
-    match provider.language_model("tinyfish-search") {
-        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
-            assert!(
-                msg.contains("provider 'tinyfish' does not provide language models"),
-                "unexpected message: {msg}"
-            );
-        }
-        _ => panic!("expected Unsupported error, got success or another error variant"),
-    }
-}

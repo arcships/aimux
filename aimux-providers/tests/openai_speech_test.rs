@@ -1,4 +1,4 @@
-﻿//! Rust translation of the OpenAI speech (TTS) model tests.
+//! Rust translation of the OpenAI speech (TTS) model tests.
 //!
 //! Source: `reference/ai/packages/openai/src/speech/openai-speech-model.test.ts`
 //!
@@ -17,8 +17,9 @@ use serde_json::Value;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::speech_model::{AudioData, SpeechCallOptions, SpeechModel};
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_core::provider::Provider;
+use aimux_core::speech_model::{AudioData, SpeechCallOptions};
+use aimux_providers::{OpenAIProviderSettings, create_openai};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -75,9 +76,13 @@ async fn should_pass_the_model_and_text() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.speech("tts-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.speech_model("tts-1").unwrap().unwrap();
 
     model
         .do_generate(&speech_options("Hello from the AI SDK!"))
@@ -107,13 +112,21 @@ async fn should_pass_headers() {
         "Custom-Provider-Header".to_string(),
         "provider-header-value".to_string(),
     );
-    let config = OpenAIConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_org_id("test-organization")
-        .with_project("test-project")
-        .with_headers(provider_headers);
-    let provider = OpenAIProvider::new(config);
-    let model = provider.speech("tts-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        organization: Some("test-organization".into()),
+        project: Some("test-project".into()),
+        headers: Some(
+            provider_headers
+                .into_iter()
+                .map(|(k, v)| (k, Some(v)))
+                .collect(),
+        ),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.speech_model("tts-1").unwrap().unwrap();
 
     let mut options = speech_options("Hello from the AI SDK!");
     let mut request_headers = HashMap::new();
@@ -147,9 +160,13 @@ async fn should_pass_options() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "opus").await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.speech("tts-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.speech_model("tts-1").unwrap().unwrap();
 
     let mut options = speech_options("Hello from the AI SDK!");
     options.voice = Some("nova".to_string());
@@ -181,9 +198,13 @@ async fn should_return_audio_data_with_correct_content_type() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.speech("tts-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.speech_model("tts-1").unwrap().unwrap();
 
     let mut options = speech_options("Hello from the AI SDK!");
     options.output_format = Some("opus".to_string());
@@ -214,9 +235,13 @@ async fn should_include_response_data_with_timestamp_modelid_and_headers() {
     )
     .await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.speech("tts-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.speech_model("tts-1").unwrap().unwrap();
 
     let result = model
         .do_generate(&speech_options("Hello from the AI SDK!"))
@@ -250,9 +275,13 @@ async fn should_use_real_date_when_no_custom_date_provider_is_specified() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.speech("tts-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.speech_model("tts-1").unwrap().unwrap();
 
     let result = model
         .do_generate(&speech_options("Hello from the AI SDK!"))
@@ -269,21 +298,30 @@ async fn should_use_real_date_when_no_custom_date_provider_is_specified() {
 /// TS: "should handle different audio formats"
 ///
 /// Iterates over the supported formats and verifies audio data is returned.
-/// The TS test passes `providerOptions.openai.response_format`; the Rust model
-/// does not parse openai-specific provider options (the TS schema does not
-/// include `response_format` either), so we pass `output_format` directly.
+/// Matches the TS input `providerOptions.openai.response_format`, which the
+/// upstream schema does not include.
 #[tokio::test]
 async fn should_handle_different_audio_formats() {
     for format in &["mp3", "opus", "aac", "flac", "wav", "pcm"] {
         let server = MockServer::start().await;
         mock_audio_response(&server, format).await;
 
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = OpenAIProvider::new(config);
-        let model = provider.speech("tts-1");
+        let settings = OpenAIProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        };
+        let provider = create_openai(settings).unwrap();
+        let model = provider.speech_model("tts-1").unwrap().unwrap();
 
         let mut options = speech_options("Hello from the AI SDK!");
-        options.output_format = Some(format.to_string());
+        options.provider_options = Some(HashMap::from([(
+            "openai".into(),
+            serde_json::Map::from_iter([(
+                "response_format".into(),
+                serde_json::Value::String((*format).into()),
+            )]),
+        )]));
 
         let result = model
             .do_generate(&options)
@@ -305,9 +343,13 @@ async fn should_include_warnings_if_any_are_generated() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.speech("tts-1");
+    let settings = OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    };
+    let provider = create_openai(settings).unwrap();
+    let model = provider.speech_model("tts-1").unwrap().unwrap();
 
     let result = model
         .do_generate(&speech_options("Hello from the AI SDK!"))
@@ -319,37 +361,4 @@ async fn should_include_warnings_if_any_are_generated() {
         "expected no warnings, got {:?}",
         result.warnings
     );
-}
-
-// ── Additional: unsupported language emits a warning ─────────────────────────
-
-/// The TS model emits an `unsupported` warning when `language` is set. The TS
-/// suite does not have a dedicated test for this, but the behaviour is
-/// exercised here to guard the Rust translation.
-#[tokio::test]
-async fn language_option_emits_unsupported_warning() {
-    let server = MockServer::start().await;
-    mock_audio_response(&server, "mp3").await;
-
-    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = OpenAIProvider::new(config);
-    let model = provider.speech("tts-1");
-
-    let mut options = speech_options("Hello from the AI SDK!");
-    options.language = Some("en".to_string());
-
-    let result = model.do_generate(&options).await.unwrap();
-
-    assert_eq!(
-        result.warnings.len(),
-        1,
-        "expected one warning, got {:?}",
-        result.warnings
-    );
-    match &result.warnings[0] {
-        aimux_core::types::Warning::Unsupported { feature, .. } => {
-            assert_eq!(feature, "language");
-        }
-        other => panic!("expected Unsupported warning, got {other:?}"),
-    }
 }

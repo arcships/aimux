@@ -7,7 +7,7 @@ are excluded, not faked.
 import json
 import pytest
 
-from aimux import openai, anthropic, generate_text, stream_text
+from aimux import openai, deepseek, anthropic, generate_text, stream_text
 from tests.cassette_replay import CassetteServer
 
 
@@ -58,7 +58,7 @@ class TestDeepSeekCassette:
     def test_generate(self):
         with CassetteServer("deepseek") as srv:
             assert srv.count > 0
-            model = openai("test-key", "deepseek-chat", srv.url)
+            model = deepseek("test-key", "deepseek-chat", srv.url)
             result = generate_text(model, "Hello")
             assert "error" not in result, f"unexpected error: {result.get('error')}"
             assert isinstance(result["text"], str)
@@ -67,7 +67,7 @@ class TestDeepSeekCassette:
         """RFC-0016 M10: DeepSeek's vendor-specific usage fields survive in
         usage.raw (they are NOT part of the typed Usage model)."""
         with CassetteServer("deepseek") as srv:
-            model = openai("test-key", "deepseek-chat", srv.url)
+            model = deepseek("test-key", "deepseek-chat", srv.url)
             result = generate_text(model, "Hello")
 
         raw = result.get("usage", {}).get("raw")
@@ -83,7 +83,7 @@ class TestGroqCassette:
     def test_generate(self):
         with CassetteServer("groq") as srv:
             assert srv.count > 0
-            model = openai("test-key", "llama-3.3-70b-versatile", f"{srv.url}/openai/v1")
+            model = deepseek("test-key", "llama-3.3-70b-versatile", f"{srv.url}/openai/v1")
             result = generate_text(model, "Hello")
             assert "error" not in result, f"unexpected error: {result.get('error')}"
             assert isinstance(result["text"], str)
@@ -94,7 +94,7 @@ class TestMistralCassette:
     def test_generate(self):
         with CassetteServer("mistral") as srv:
             assert srv.count > 0
-            model = openai("test-key", "ministral-8b-latest", f"{srv.url}/v1")
+            model = deepseek("test-key", "ministral-8b-latest", f"{srv.url}/v1")
             result = generate_text(model, "Hello")
             assert "error" not in result, f"unexpected error: {result.get('error')}"
             assert isinstance(result["text"], str)
@@ -105,7 +105,7 @@ class TestOllamaCassette:
     def test_generate(self):
         with CassetteServer("ollama") as srv:
             assert srv.count > 0
-            model = openai("test-key", "qwen3:4b", f"{srv.url}/v1")
+            model = deepseek("test-key", "qwen3:4b", f"{srv.url}/v1")
             result = generate_text(model, "Hello")
             assert "error" not in result, f"unexpected error: {result.get('error')}"
             assert isinstance(result["text"], str)
@@ -116,7 +116,7 @@ class TestPerplexityCassette:
     def test_generate(self):
         with CassetteServer("perplexity") as srv:
             assert srv.count > 0
-            model = openai("test-key", "sonar", srv.url)
+            model = deepseek("test-key", "sonar", srv.url)
             result = generate_text(model, "Hello")
             assert "error" not in result, f"unexpected error: {result.get('error')}"
             assert isinstance(result["text"], str)

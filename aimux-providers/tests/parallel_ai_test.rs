@@ -10,10 +10,10 @@ use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel};
-use aimux_providers::{ParallelAiConfig, ParallelAiProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{ParallelAiProvider, ParallelAiProviderSettings, create_parallel_ai};
 
 const API_KEY: &str = "test-parallel-key";
 
@@ -38,8 +38,12 @@ fn search_body() -> Value {
 }
 
 fn provider(server: &MockServer) -> ParallelAiProvider {
-    let config = ParallelAiConfig::new(API_KEY).with_base_url(server.uri());
-    ParallelAiProvider::new(config)
+    let config = ParallelAiProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_parallel_ai(config).unwrap()
 }
 
 fn opts(query: &str) -> SearchCallOptions {
@@ -192,33 +196,14 @@ async fn status_403_maps_to_provider_error() {
 
 // -- Provider trait ----------------------------------------------------------
 
-#[tokio::test]
-async fn provider_name_is_parallel_ai() {
-    let config = ParallelAiConfig::new(API_KEY);
-    let provider = ParallelAiProvider::new(config);
-    assert_eq!(provider.name(), "parallel_ai");
-}
-
-#[test]
-fn language_model_returns_unsupported_error() {
-    let config = ParallelAiConfig::new(API_KEY);
-    let provider = ParallelAiProvider::new(config);
-    match provider.language_model("parallel-search") {
-        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
-            assert!(
-                msg.contains("provider 'parallel_ai' does not provide language models"),
-                "unexpected message: {msg}"
-            );
-        }
-        _ => panic!("expected Unsupported error, got success or another error variant"),
-    }
-}
-
 #[test]
 fn model_id_is_parallel_search() {
-    let config = ParallelAiConfig::new(API_KEY);
-    let provider = ParallelAiProvider::new(config);
+    let config = ParallelAiProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        ..Default::default()
+    };
+    let provider = create_parallel_ai(config).unwrap();
     let model = provider.search_model();
     assert_eq!(model.model_id(), "parallel-search");
-    assert_eq!(model.provider(), "parallel_ai");
+    assert_eq!(model.provider(), "parallel_ai.search");
 }

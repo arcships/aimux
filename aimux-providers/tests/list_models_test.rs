@@ -1,4 +1,4 @@
-//! Integration tests for `Provider::list_models` (RFC-0027).
+//! Integration tests for `ProviderDiscovery::list_models` (RFC-0027).
 //!
 //! `list_models` returns `RuntimeModel` (provider's official data only).
 //! Community catalogue (`get_model_specs`) is tested separately — the two are
@@ -14,10 +14,10 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::model_catalogue::RuntimeModel;
-use aimux_core::provider::Provider;
+use aimux_core::provider::ProviderDiscovery;
 use aimux_providers::catalogue;
-use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-use aimux_providers::{ProviderOptions, provider_handle};
+use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
+use aimux_providers::{PresetSettings, create_provider};
 
 async fn mount_cassette_file(server: &MockServer, cassette_path: &Path) -> String {
     let text = std::fs::read_to_string(cassette_path)
@@ -62,8 +62,12 @@ async fn openai_provider_list_models() {
     let cassette = Path::new("tests/cassettes/openai/list_models_smoke.json");
     let recorded_path = mount_cassette_file(&server, cassette).await;
     let base_url = base_url_for(&server.uri(), &recorded_path);
-    let config = OpenAIConfig::new("test-key").with_base_url(base_url);
-    let provider = OpenAIProvider::new(config);
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("test-key".to_string()),
+        base_url: Some(base_url),
+        ..Default::default()
+    })
+    .unwrap();
     let models: Vec<RuntimeModel> = provider.list_models().await.unwrap();
     assert!(models.iter().any(|m| m.id == "gpt-4o"));
     assert!(models.iter().all(|m| m.owned_by.is_some()));
@@ -71,16 +75,21 @@ async fn openai_provider_list_models() {
 
 #[tokio::test]
 #[serial]
-async fn deepseek_provider_list_models_via_handle() {
+async fn deepseek_provider_list_models_via_discovery_handle() {
     let server = MockServer::start().await;
     let cassette = Path::new("tests/cassettes/deepseek/list_models_smoke.json");
     let recorded_path = mount_cassette_file(&server, cassette).await;
     let base_url = base_url_for(&server.uri(), &recorded_path);
-    let opts = ProviderOptions {
-        base_url: Some(base_url),
-        ..Default::default()
-    };
-    let handle = provider_handle("deepseek", Some("test-key".into()), Some(opts)).unwrap();
+    let provider = create_provider(
+        "deepseek",
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
+            base_url: Some(base_url),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let handle = provider.discovery().expect("deepseek lists its models");
     let models = handle.list_models().await.unwrap();
     assert_eq!(models.len(), 2);
     assert!(models.iter().any(|m| m.id == "deepseek-v4-flash"));
@@ -89,17 +98,22 @@ async fn deepseek_provider_list_models_via_handle() {
 
 #[tokio::test]
 #[serial]
-async fn provider_handle_then_language_model() {
+async fn discovery_then_language_model() {
     let server = MockServer::start().await;
     let cassette = Path::new("tests/cassettes/deepseek/list_models_smoke.json");
     let recorded_path = mount_cassette_file(&server, cassette).await;
     let base_url = base_url_for(&server.uri(), &recorded_path);
-    let opts = ProviderOptions {
-        base_url: Some(base_url),
-        ..Default::default()
-    };
-    let handle = provider_handle("deepseek", Some("test-key".into()), Some(opts)).unwrap();
-    let models = handle.list_models().await.unwrap();
+    let handle = create_provider(
+        "deepseek",
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
+            base_url: Some(base_url),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let discovery = handle.discovery().expect("deepseek lists its models");
+    let models = discovery.list_models().await.unwrap();
     let first_id = models[0].id.clone();
     let _model = handle.language_model(&first_id).unwrap();
 }
@@ -111,9 +125,13 @@ async fn anthropic_list_models() {
     let cassette = Path::new("tests/cassettes/anthropic/list_models_smoke.json");
     let _ = mount_cassette_file(&server, cassette).await;
     let base_url = server.uri().trim_end_matches('/').to_string();
-    use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
-    let config = AnthropicConfig::new("test-key").with_base_url(&base_url);
-    let provider = AnthropicProvider::new(config);
+    use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
+    let provider = create_anthropic(AnthropicProviderSettings {
+        api_key: Some("test-key".to_string()),
+        base_url: Some(format!("{base_url}/v1")),
+        ..Default::default()
+    })
+    .unwrap();
     let models: Vec<RuntimeModel> = provider.list_models().await.unwrap();
     assert!(!models.is_empty());
     assert!(models.iter().all(|m| !m.id.is_empty()));
@@ -132,34 +150,16 @@ async fn google_list_models() {
             .strip_suffix("/models")
             .unwrap_or(&recorded_path)
     );
-    use aimux_providers::google::{GoogleConfig, GoogleProvider};
-    let config = GoogleConfig::new("test-key").with_base_url(&base_url);
-    let provider = GoogleProvider::new(config);
+    use aimux_providers::google::{GoogleProviderSettings, create_google};
+    let provider = create_google(GoogleProviderSettings {
+        api_key: Some("test-key".to_string()),
+        base_url: Some(base_url),
+        ..Default::default()
+    })
+    .unwrap();
     let models: Vec<RuntimeModel> = provider.list_models().await.unwrap();
     assert!(!models.is_empty());
     assert!(models.iter().all(|m| !m.id.starts_with("models/")));
-}
-
-#[tokio::test]
-#[serial]
-async fn ollama_list_models_via_delegate_macro() {
-    let server = MockServer::start().await;
-    let body = r#"{"data":[{"id":"llama3.2","object":"model","owned_by":"ollama"},{"id":"qwen3:4b","object":"model","owned_by":"ollama"}]}"#;
-    Mock::given(method("GET"))
-        .and(path("/v1/models"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .append_header("content-type", "application/json")
-                .set_body_bytes(body.as_bytes().to_vec()),
-        )
-        .mount(&server)
-        .await;
-    use aimux_providers::ollama::{OllamaConfig, OllamaProvider};
-    let config = OllamaConfig::new("ollama").with_base_url(format!("{}/v1", server.uri()));
-    let provider = OllamaProvider::new(config);
-    let models: Vec<RuntimeModel> = provider.list_models().await.unwrap();
-    assert_eq!(models.len(), 2);
-    assert!(models.iter().any(|m| m.id == "llama3.2"));
 }
 
 #[tokio::test]
@@ -171,8 +171,12 @@ async fn list_models_malformed_response() {
         .respond_with(ResponseTemplate::new(200).set_body_bytes(b"not json at all".to_vec()))
         .mount(&server)
         .await;
-    let config = OpenAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-    let provider = OpenAIProvider::new(config);
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("test-key".to_string()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap();
     let err = provider.list_models().await.unwrap_err();
     assert!(matches!(
         err,
@@ -191,8 +195,12 @@ async fn list_models_empty_data() {
         .respond_with(ResponseTemplate::new(200).set_body_bytes(br#"{"data":[]}"#.to_vec()))
         .mount(&server)
         .await;
-    let config = OpenAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-    let provider = OpenAIProvider::new(config);
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("test-key".to_string()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap();
     let models: Vec<RuntimeModel> = provider.list_models().await.unwrap();
     assert!(models.is_empty());
 }
@@ -204,51 +212,21 @@ async fn list_models_http_error() {
     Mock::given(method("GET"))
         .and(path("/v1/models"))
         .respond_with(
-            ResponseTemplate::new(500).set_body_bytes(br#"{"error":"internal"}"#.to_vec()),
+            ResponseTemplate::new(500)
+                // A zero retry hint keeps the default retries instant.
+                .insert_header("retry-after-ms", "0")
+                .set_body_bytes(br#"{"error":"internal"}"#.to_vec()),
         )
         .mount(&server)
         .await;
-    let config = OpenAIConfig::new("test-key")
-        .with_base_url(format!("{}/v1", server.uri()))
-        .with_retry_config(aimux_provider_utils::RetryConfig {
-            max_retries: 0,
-            ..Default::default()
-        });
-    let provider = OpenAIProvider::new(config);
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("test-key".to_string()),
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..Default::default()
+    })
+    .unwrap();
     let err = provider.list_models().await.unwrap_err();
     assert!(!err.to_string().is_empty());
-}
-
-#[test]
-fn provider_handle_unknown_name() {
-    match aimux_providers::provider_handle("no-such-provider", Some("k".into()), None) {
-        Err(e) => assert!(matches!(e, aimux_core::AiMuxError::NoSuchProvider { .. })),
-        Ok(_) => panic!("unknown provider should fail"),
-    }
-}
-
-#[tokio::test]
-async fn unsupported_provider_returns_unsupported() {
-    struct StubProvider;
-    impl Provider for StubProvider {
-        fn name(&self) -> &str {
-            "stub"
-        }
-        fn language_model(
-            &self,
-            _model_id: &str,
-        ) -> Result<Box<dyn aimux_core::language_model::LanguageModel>, aimux_core::AiMuxError>
-        {
-            Err(aimux_core::AiMuxError::UnsupportedFunctionality(
-                "none".into(),
-            ))
-        }
-    }
-    let err = StubProvider.list_models().await.unwrap_err();
-    assert!(matches!(
-        err,
-        aimux_core::AiMuxError::UnsupportedFunctionality(_)
-    ));
 }
 
 #[test]

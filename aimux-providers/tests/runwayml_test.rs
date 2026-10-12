@@ -6,14 +6,14 @@
 //! async polling loop without a real delay.
 
 use std::collections::HashMap;
-use std::time::Duration;
 
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::video_model::{VideoCallOptions, VideoModel, generate_video};
-use aimux_providers::{RunwaymlConfig, RunwaymlProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{RunwaymlProviderSettings, create_runwayml};
 
 const MODEL_ID: &str = "gen3a_turbo";
 const VIDEO_URL: &str = "https://cdn.runwayml.com/video.mp4";
@@ -33,11 +33,12 @@ fn options(prompt: &str) -> VideoCallOptions {
 
 /// A config pointed at the mock server with a short poll interval so tests run
 /// fast. Uses a dummy, non-secret API key.
-fn config(server_uri: String) -> RunwaymlConfig {
-    RunwaymlConfig::new("test-api-key")
-        .with_base_url(server_uri)
-        .with_poll_interval(Duration::from_millis(10))
-        .with_timeout(Duration::from_secs(10))
+fn config(server_uri: String) -> RunwaymlProviderSettings {
+    RunwaymlProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server_uri.to_string()),
+        ..Default::default()
+    }
 }
 
 /// Mount a submit mock (returning task id `task-123`) and a polling sequence:
@@ -86,7 +87,7 @@ async fn should_generate_video_from_prompt() {
     let server = MockServer::start().await;
     mock_task_sequence(&server).await;
 
-    let provider = RunwaymlProvider::new(config(server.uri()));
+    let provider = create_runwayml(config(server.uri())).unwrap();
     let model = provider.video(MODEL_ID);
 
     let result = generate_video(&model, options("A cat playing"))
@@ -109,7 +110,7 @@ async fn should_post_to_text_to_video_endpoint() {
     let server = MockServer::start().await;
     mock_task_sequence(&server).await;
 
-    let provider = RunwaymlProvider::new(config(server.uri()));
+    let provider = create_runwayml(config(server.uri())).unwrap();
     let model = provider.video(MODEL_ID);
 
     generate_video(&model, options("A cat playing"))
@@ -130,7 +131,7 @@ async fn should_send_auth_and_version_headers() {
     let server = MockServer::start().await;
     mock_task_sequence(&server).await;
 
-    let provider = RunwaymlProvider::new(config(server.uri()));
+    let provider = create_runwayml(config(server.uri())).unwrap();
     let model = provider.video(MODEL_ID);
 
     generate_video(&model, options("test")).await.unwrap();
@@ -164,12 +165,18 @@ async fn should_pass_custom_headers() {
 
     let mut provider_headers = HashMap::new();
     provider_headers.insert("Custom-Provider-Header".to_string(), "val".to_string());
-    let cfg = RunwaymlConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(provider_headers)
-        .with_poll_interval(Duration::from_millis(10))
-        .with_timeout(Duration::from_secs(10));
-    let provider = RunwaymlProvider::new(cfg);
+    let cfg = RunwaymlProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        headers: Some(
+            (provider_headers)
+                .into_iter()
+                .map(|(k, v)| (k, Some(v)))
+                .collect(),
+        ),
+        ..Default::default()
+    };
+    let provider = create_runwayml(cfg).unwrap();
     let model = provider.video(MODEL_ID);
 
     let mut opts = options("test");
@@ -203,7 +210,7 @@ async fn should_return_error_when_task_failed() {
         .mount(&server)
         .await;
 
-    let provider = RunwaymlProvider::new(config(server.uri()));
+    let provider = create_runwayml(config(server.uri())).unwrap();
     let model = provider.video(MODEL_ID);
 
     let result = generate_video(&model, options("test")).await;
@@ -224,7 +231,7 @@ async fn should_return_error_on_submit_failure() {
         .mount(&server)
         .await;
 
-    let provider = RunwaymlProvider::new(config(server.uri()));
+    let provider = create_runwayml(config(server.uri())).unwrap();
     let model = provider.video(MODEL_ID);
 
     let result = generate_video(&model, options("test")).await;
@@ -233,9 +240,13 @@ async fn should_return_error_on_submit_failure() {
 
 #[tokio::test]
 async fn should_return_max_videos_per_call() {
-    let provider = RunwaymlProvider::new(RunwaymlConfig::new("test-api-key"));
+    let provider = create_runwayml(RunwaymlProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        ..Default::default()
+    })
+    .unwrap();
     let model = provider.video(MODEL_ID);
     assert_eq!(model.max_videos_per_call(), Some(1));
-    assert_eq!(model.provider(), "runwayml");
+    assert_eq!(model.provider(), "runwayml.video");
     assert_eq!(model.model_id(), MODEL_ID);
 }

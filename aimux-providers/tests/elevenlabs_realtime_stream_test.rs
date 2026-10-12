@@ -10,6 +10,7 @@
 //! (2026-09). Live-API smoke pending (no key at implementation time) — same
 //! posture as RFC-0028 D4.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -25,7 +26,26 @@ use aimux_core::transcription_model::{
     AudioChunk, InputAudioFormat, TranscriptionModel, TranscriptionStreamOptions,
     TranscriptionStreamPart,
 };
-use aimux_providers::{ElevenLabsConfig, ElevenLabsProvider};
+use aimux_providers::{ElevenLabsProvider, ElevenLabsProviderSettings, create_elevenlabs};
+
+fn test_provider(
+    api_key: &str,
+    base_url: impl Into<String>,
+    headers: Option<HashMap<String, String>>,
+) -> ElevenLabsProvider {
+    create_elevenlabs(ElevenLabsProviderSettings {
+        api_key: Some(api_key.to_string().into()),
+        base_url: Some(base_url.into()),
+        headers: headers.map(|headers| {
+            headers
+                .into_iter()
+                .map(|(name, value)| (name, Some(value)))
+                .collect()
+        }),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -135,12 +155,7 @@ async fn start(
 }
 
 fn realtime_model(base_url: &str, model_id: &str) -> aimux_providers::ElevenLabsTranscriptionModel {
-    let config = ElevenLabsConfig {
-        api_key: "test-api-key".to_string(),
-        base_url: base_url.to_string(),
-        headers: None,
-    };
-    ElevenLabsProvider::new(config).transcription(model_id)
+    test_provider("test-api-key", base_url, None).transcription(model_id)
 }
 
 fn stream_options(

@@ -53,3 +53,6 @@ quirks-corpus/
 # Generated audit artifacts — keep conclusions in Markdown, not raw output.
 /docs/quality-audit/**/lcov.info
 /docs/quality-audit/**/*.log
+
+# AI SDK protocol fixture recorder (scripts/aisdk-fixtures) — npm install output
+scripts/aisdk-fixtures/node_modules/

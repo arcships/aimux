@@ -211,16 +211,16 @@ type ResponseMetadata struct {
 	ModelID   *string `json:"model_id,omitempty"`
 }
 
-// GenerateRequest contains the provider HTTP request body.
-type GenerateRequest struct {
-	Body json.RawMessage `json:"body,omitempty"`
-}
-
-// GenerateResponseMetadata is response metadata with optional headers and body.
+// GenerateResponseMetadata is response metadata with optional HTTP headers and body.
 type GenerateResponseMetadata struct {
 	ResponseMetadata
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    json.RawMessage   `json:"body,omitempty"`
+}
+
+// GenerateRequest is provider request information with an optional HTTP body.
+type GenerateRequest struct {
+	Body json.RawMessage `json:"body,omitempty"`
 }
 
 // GenerateResult is the raw provider result.
@@ -387,7 +387,6 @@ type GenerateTextOptions struct {
 	ProviderOptions  json.RawMessage       `json:"provider_options,omitempty"`
 	Reasoning        *ReasoningEffort      `json:"reasoning,omitempty"`
 	Instructions     *string               `json:"instructions,omitempty"`
-	BodyOverrides    json.RawMessage       `json:"body_overrides,omitempty"`
 	MaxRetries       *uint32               `json:"max_retries,omitempty"`
 	Timeout          *TimeoutConfiguration `json:"timeout,omitempty"`
 	IncludeRawChunks *bool                 `json:"include_raw_chunks,omitempty"`

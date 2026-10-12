@@ -28,10 +28,14 @@ use aimux_core::language_model_message::{
 use aimux_core::options::{CallOptions, Tool};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
+use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Map, Value, json};
 
 use crate::anthropic::cache_control::CacheControlValidator;
-use crate::anthropic::prepare_tools::{AnthropicTool, prepare_tools_with_provider};
+use crate::anthropic::options::{
+    CANONICAL, PROVIDER_SKILL_TYPE, anthropic_options, anthropic_options_in,
+};
+use crate::anthropic::prepare_tools::{AnthropicTool, prepare_tools_for};
 use crate::anthropic::tool_name_mapping::ToolNameMapping;
 
 /// Beta header emitted when a PDF file part is present.
@@ -99,17 +103,34 @@ pub fn convert_prompt_to_anthropic_full_with_tools(
     send_reasoning: bool,
     tool_names: &ToolNameMapping,
 ) -> Result<AnthropicPromptConversion, AiMuxError> {
+    convert_prompt_for(prompt, send_reasoning, tool_names, CANONICAL)
+}
+
+/// [`convert_prompt_to_anthropic_full_with_tools`] for a provider whose
+/// providerOptions key is `options_name`: the part and message options are
+/// read from `anthropic` merged with `options_name` (the custom key wins) and
+/// the metadata the response side wrote under `options_name` is read back.
+///
+/// # Errors
+///
+/// Same as [`convert_prompt_to_anthropic_full_with_tools`].
+pub(crate) fn convert_prompt_for(
+    prompt: &LanguageModelPrompt,
+    send_reasoning: bool,
+    tool_names: &ToolNameMapping,
+    options_name: &str,
+) -> Result<AnthropicPromptConversion, AiMuxError> {
     // Ids of tool calls that were executed over MCP. Their results must be sent
     // back as `mcp_tool_result`, not as a provider-tool result block. Upstream
     // scopes this set to one merged assistant block; scanning the whole prompt
     // is a superset of that and is safe because tool call ids are unique.
-    let mcp_tool_use_ids = collect_mcp_tool_use_ids(prompt);
+    let mcp_tool_use_ids = collect_mcp_tool_use_ids(prompt, options_name);
 
     let mut system: Vec<Value> = Vec::new();
     let mut messages: Vec<Value> = Vec::new();
     let mut betas: BTreeSet<String> = BTreeSet::new();
     let mut warnings: Vec<Warning> = Vec::new();
-    let mut validator = CacheControlValidator::new();
+    let mut validator = CacheControlValidator::for_options_name(options_name);
 
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Eff {
@@ -134,31 +155,14 @@ pub fn convert_prompt_to_anthropic_full_with_tools(
     }
 
     for msg in prompt {
-        let role = match msg {
-            LanguageModelMessage::System { .. } => None,
-            LanguageModelMessage::User { .. } | LanguageModelMessage::Tool { .. } => {
-                Some(Eff::User)
-            }
-            LanguageModelMessage::Assistant { .. } => Some(Eff::Assistant),
-        };
-        if let Some(role) = role {
-            seen_non_system = true;
-            if last != Some(role) {
-                flush(&mut messages, &mut last, &mut acc);
-            }
-            last = Some(role);
-        }
-        match msg {
+        let eff = match msg {
             LanguageModelMessage::System {
                 content,
                 provider_options,
             } => {
                 flush(&mut messages, &mut last, &mut acc);
-                let cc = validator.get_cache_control(
-                    provider_options.as_ref().and_then(|o| o.get("anthropic")),
-                    "system message",
-                    true,
-                );
+                let cc =
+                    validator.get_cache_control(provider_options.as_ref(), "system message", true);
                 let blocks = vec![apply_cc(json!({ "type": "text", "text": content }), cc)];
                 if !seen_non_system {
                     system.extend(blocks);
@@ -166,13 +170,24 @@ pub fn convert_prompt_to_anthropic_full_with_tools(
                     messages.push(json!({ "role": "system", "content": blocks }));
                     betas.insert(BETA_MID_CONVERSATION_SYSTEM.to_string());
                 }
+                continue;
             }
+            LanguageModelMessage::Assistant { .. } => Eff::Assistant,
+            LanguageModelMessage::User { .. } | LanguageModelMessage::Tool { .. } => Eff::User,
+        };
+        seen_non_system = true;
+        if last != Some(eff) {
+            flush(&mut messages, &mut last, &mut acc);
+        }
+        match msg {
+            LanguageModelMessage::System { .. } => unreachable!(),
             LanguageModelMessage::User {
                 content,
                 provider_options,
             } => {
                 for (idx, part) in content.iter().enumerate() {
-                    acc.push(match part {
+                    let is_last = idx + 1 == content.len();
+                    let block = match part {
                         UserPart::Text(TextPart {
                             text,
                             provider_options: part_options,
@@ -181,7 +196,7 @@ pub fn convert_prompt_to_anthropic_full_with_tools(
                                 &mut validator,
                                 part_options.as_ref(),
                                 provider_options.as_ref(),
-                                idx + 1 == content.len(),
+                                is_last,
                                 "user message part",
                                 "user message",
                             );
@@ -192,11 +207,13 @@ pub fn convert_prompt_to_anthropic_full_with_tools(
                             &mut betas,
                             &mut validator,
                             provider_options.as_ref(),
-                            idx + 1 == content.len(),
+                            is_last,
                             "user message part",
                             "user message",
+                            options_name,
                         )?,
-                    });
+                    };
+                    acc.push(block);
                 }
             }
             LanguageModelMessage::Tool {
@@ -222,22 +239,37 @@ pub fn convert_prompt_to_anthropic_full_with_tools(
                 provider_options,
             } => {
                 for (idx, part) in content.iter().enumerate() {
-                    if let Some(block) = convert_assistant_part(
-                        part,
-                        send_reasoning,
-                        tool_names,
-                        &mcp_tool_use_ids,
-                        &mut betas,
-                        &mut warnings,
-                        &mut validator,
-                        idx + 1 == content.len(),
-                        provider_options.as_ref(),
-                    )? {
+                    let is_last = idx + 1 == content.len();
+                    let block = if let AssistantPart::ToolResult(part) = part {
+                        convert_assistant_tool_result(
+                            part,
+                            tool_names,
+                            &mcp_tool_use_ids,
+                            &mut warnings,
+                            &mut validator,
+                            is_last,
+                            provider_options.as_ref(),
+                        )
+                    } else {
+                        convert_assistant_part(
+                            part,
+                            send_reasoning,
+                            tool_names,
+                            &mut betas,
+                            &mut warnings,
+                            &mut validator,
+                            is_last,
+                            provider_options.as_ref(),
+                            options_name,
+                        )?
+                    };
+                    if let Some(block) = block {
                         acc.push(block);
                     }
                 }
             }
         }
+        last = Some(eff);
     }
     flush(&mut messages, &mut last, &mut acc);
 
@@ -316,11 +348,6 @@ pub fn convert_prompt_to_anthropic(
     }
 }
 
-/// Return the top-level media type (the segment before the first `/`).
-fn top_level_media_type(media_type: &str) -> &str {
-    media_type.split('/').next().unwrap_or("")
-}
-
 fn resolve_cache_control(
     validator: &mut CacheControlValidator,
     part_options: Option<&SharedProviderOptions>,
@@ -330,18 +357,10 @@ fn resolve_cache_control(
     message_context: &str,
 ) -> Option<Value> {
     validator
-        .get_cache_control(
-            part_options.and_then(|o| o.get("anthropic")),
-            part_context,
-            true,
-        )
+        .get_cache_control(part_options, part_context, true)
         .or_else(|| {
             if is_last_part {
-                validator.get_cache_control(
-                    message_options.and_then(|o| o.get("anthropic")),
-                    message_context,
-                    true,
-                )
+                validator.get_cache_control(message_options, message_context, true)
             } else {
                 None
             }
@@ -355,6 +374,7 @@ fn apply_cc(mut block: Value, cc: Option<Value>) -> Value {
     block
 }
 
+#[allow(clippy::too_many_arguments)]
 fn convert_file_part(
     file: &FilePart,
     betas: &mut BTreeSet<String>,
@@ -363,6 +383,7 @@ fn convert_file_part(
     is_last_part: bool,
     part_context: &str,
     message_context: &str,
+    options_name: &str,
 ) -> Result<Value, AiMuxError> {
     let FilePart {
         data,
@@ -374,7 +395,14 @@ fn convert_file_part(
         FileData::Data {
             data: FileBytes::Binary(bytes),
         } => {
-            let full = resolve_full_media_type(media_type, bytes)?;
+            let full = if matches!(
+                get_top_level_media_type(media_type),
+                "image" | "application"
+            ) {
+                resolve_full_media_type(file)?
+            } else {
+                media_type.clone()
+            };
             route_file_bytes(&full, bytes, filename.as_deref(), betas)?
         }
         FileData::Data {
@@ -384,29 +412,36 @@ fn convert_file_part(
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(data)
                 .unwrap_or_default();
-            let full = resolve_full_media_type(media_type, &bytes)?;
+            let full = if matches!(
+                get_top_level_media_type(media_type),
+                "image" | "application"
+            ) {
+                resolve_full_media_type(file)?
+            } else {
+                media_type.clone()
+            };
             route_file_base64(&full, data, &bytes, filename.as_deref(), betas)?
         }
         FileData::Url { url, .. } => route_file_url(media_type, url, betas)?,
         FileData::Reference { reference } => {
             let file_id = resolve_anthropic_reference(reference)?;
             betas.insert(BETA_FILES_API.to_string());
-            let container_upload = provider_options
+            let container_upload = anthropic_options(provider_options.as_ref(), options_name)
                 .as_ref()
-                .and_then(|o| o.get("anthropic"))
                 .and_then(|a| a.get("containerUpload"))
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
             if container_upload {
                 return Ok(json!({ "type": "container_upload", "file_id": file_id }));
-            } else if top_level_media_type(media_type) == "image" {
+            } else if get_top_level_media_type(media_type) == "image" {
                 json!({ "type": "image", "source": { "type": "file", "file_id": file_id } })
             } else {
                 json!({ "type": "document", "source": { "type": "file", "file_id": file_id } })
             }
         }
         FileData::Text { text } => {
-            let options = provider_options.as_ref().and_then(|o| o.get("anthropic"));
+            let document_options = anthropic_options(provider_options.as_ref(), options_name);
+            let options = document_options.as_ref();
             let mut block = json!({ "type": "document", "source": {
                 "type": "text", "media_type": "text/plain", "data": text,
             }});
@@ -464,16 +499,9 @@ fn convert_tool_result(
     if let ToolResultOutput::Content { value } = output {
         for item in value {
             if let ToolResultContent::File(file) = item
-                && let FileData::Data { data } = &file.data
+                && let FileData::Data { .. } = &file.data
             {
-                use base64::Engine;
-                let bytes = match data {
-                    FileBytes::Binary(bytes) => bytes.clone(),
-                    FileBytes::Base64(data) => base64::engine::general_purpose::STANDARD
-                        .decode(data)
-                        .unwrap_or_default(),
-                };
-                resolve_full_media_type(&file.media_type, &bytes)?;
+                resolve_full_media_type(file)?;
             }
         }
     }
@@ -487,45 +515,40 @@ fn convert_tool_result(
         block["is_error"] = json!(true);
     }
     // cache_control: part ?? output ?? (is_last_part ? message).
-    let cc = match validator.get_cache_control(
-        provider_options.as_ref().and_then(|o| o.get("anthropic")),
-        "tool result part",
-        true,
-    ) {
-        Some(v) => Some(v),
-        None => match extract_tool_result_output_provider_options(output) {
-            Some(out_opts) => {
-                validator.get_cache_control(out_opts.get("anthropic"), "tool result output", true)
-            }
-            None => {
-                if is_last_part {
+    let cc = validator
+        .get_cache_control(provider_options.as_ref(), "tool result part", true)
+        .or_else(|| {
+            validator.get_cache_control(
+                extract_tool_result_output_provider_options(output),
+                "tool result output",
+                true,
+            )
+        })
+        .or_else(|| {
+            is_last_part
+                .then(|| {
                     validator.get_cache_control(
-                        message_provider_options.and_then(|o| o.get("anthropic")),
+                        message_provider_options,
                         "tool result message",
                         true,
                     )
-                } else {
-                    None
-                }
-            }
-        },
-    };
+                })
+                .flatten()
+        });
     Ok(apply_cc(block, cc))
 }
 
-/// Convert an assistant part, preserving reasoning and provider-executed tool results.
-/// Part-level cache control falls back to message options on the final part.
 #[allow(clippy::too_many_arguments)]
 fn convert_assistant_part(
     part: &AssistantPart,
     send_reasoning: bool,
     tool_names: &ToolNameMapping,
-    mcp_tool_use_ids: &HashSet<&str>,
     betas: &mut BTreeSet<String>,
     warnings: &mut Vec<Warning>,
     validator: &mut CacheControlValidator,
     is_last_part: bool,
     message_provider_options: Option<&SharedProviderOptions>,
+    options_name: &str,
 ) -> Result<Option<Value>, AiMuxError> {
     let resolve_cc = |validator: &mut CacheControlValidator, part_opts| {
         resolve_cache_control(
@@ -555,6 +578,7 @@ fn convert_assistant_part(
             is_last_part,
             "assistant message part",
             "assistant message",
+            options_name,
         )?,
 
         AssistantPart::Reasoning(ReasoningPart {
@@ -567,6 +591,7 @@ fn convert_assistant_part(
                 send_reasoning,
                 warnings,
                 validator,
+                options_name,
             ));
         }
 
@@ -582,16 +607,16 @@ fn convert_assistant_part(
 
             if *provider_executed == Some(true) {
                 let provider_name = tool_names.to_provider_tool_name(tool_name);
-                let anthropic_options = provider_options
-                    .as_ref()
-                    .and_then(|options| options.get("anthropic"));
+                let own_options = anthropic_options(provider_options.as_ref(), options_name);
 
-                if anthropic_options
+                if own_options
+                    .as_ref()
                     .and_then(|options| options.get("type"))
                     .and_then(Value::as_str)
                     == Some("mcp-tool-use")
                 {
-                    let Some(server_name) = anthropic_options
+                    let Some(server_name) = own_options
+                        .as_ref()
                         .and_then(|options| options.get("serverName"))
                         .and_then(Value::as_str)
                     else {
@@ -667,9 +692,8 @@ fn convert_assistant_part(
             } else {
                 json!({ "rawInvalidInput": input })
             };
-            let caller = provider_options
+            let caller = anthropic_options(provider_options.as_ref(), options_name)
                 .as_ref()
-                .and_then(|options| options.get("anthropic"))
                 .and_then(|anthropic| anthropic.get("caller"))
                 .and_then(|caller| {
                     let caller_type = caller.get("type")?.as_str()?;
@@ -694,18 +718,8 @@ fn convert_assistant_part(
             apply_cc(block, cc)
         }
 
-        AssistantPart::ReasoningFile(_) | AssistantPart::Custom(_) => return Ok(None),
-        AssistantPart::ToolResult(part) => {
-            return Ok(convert_assistant_tool_result(
-                part,
-                tool_names,
-                mcp_tool_use_ids,
-                warnings,
-                validator,
-                is_last_part,
-                message_provider_options,
-            ));
-        }
+        AssistantPart::Custom(_) | AssistantPart::ReasoningFile(_) => return Ok(None),
+        AssistantPart::ToolResult(_) => unreachable!(),
     }))
 }
 
@@ -717,7 +731,10 @@ fn convert_assistant_part(
 /// before any message is converted. The marker is the one the response side
 /// writes on an `mcp_tool_use` block (`stream.rs`):
 /// `providerOptions.anthropic.type == "mcp-tool-use"`.
-fn collect_mcp_tool_use_ids(prompt: &LanguageModelPrompt) -> HashSet<&str> {
+fn collect_mcp_tool_use_ids<'a>(
+    prompt: &'a LanguageModelPrompt,
+    options_name: &str,
+) -> HashSet<&'a str> {
     let mut ids = HashSet::new();
     for msg in prompt {
         let LanguageModelMessage::Assistant { content, .. } = msg else {
@@ -729,8 +746,8 @@ fn collect_mcp_tool_use_ids(prompt: &LanguageModelPrompt) -> HashSet<&str> {
                 provider_options: Some(opts),
                 ..
             }) = part
-                && opts
-                    .get("anthropic")
+                && anthropic_options(Some(opts), options_name)
+                    .as_ref()
                     .and_then(|a| a.get("type"))
                     .and_then(|t| t.as_str())
                     == Some("mcp-tool-use")
@@ -791,29 +808,22 @@ fn convert_assistant_tool_result(
 
     // cache_control: part ?? output ?? (is_last_part ? message) — the same
     // resolution order the bare `tool_result` path uses.
-    let cache_control = match validator.get_cache_control(
-        provider_options.as_ref().and_then(|o| o.get("anthropic")),
-        "assistant message part",
-        true,
-    ) {
-        Some(v) => Some(v),
-        None => match extract_tool_result_output_provider_options(output) {
-            Some(out_opts) => {
-                validator.get_cache_control(out_opts.get("anthropic"), "tool result output", true)
-            }
-            None => {
-                if is_last_part {
-                    validator.get_cache_control(
-                        message_provider_options.and_then(|o| o.get("anthropic")),
-                        "assistant message",
-                        true,
-                    )
-                } else {
-                    None
-                }
-            }
-        },
-    };
+    let cache_control = validator
+        .get_cache_control(provider_options.as_ref(), "assistant message part", true)
+        .or_else(|| {
+            validator.get_cache_control(
+                extract_tool_result_output_provider_options(output),
+                "tool result output",
+                true,
+            )
+        })
+        .or_else(|| {
+            is_last_part
+                .then(|| {
+                    validator.get_cache_control(message_provider_options, "assistant message", true)
+                })
+                .flatten()
+        });
 
     let raw_value = match output {
         ToolResultOutput::Json { value, .. } | ToolResultOutput::ErrorJson { value, .. } => {
@@ -1144,7 +1154,7 @@ fn route_file_bytes(
     betas: &mut BTreeSet<String>,
 ) -> Result<Value, AiMuxError> {
     use base64::Engine;
-    match top_level_media_type(full_media_type) {
+    match get_top_level_media_type(full_media_type) {
         "image" => {
             let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
             Ok(json!({
@@ -1192,7 +1202,7 @@ fn route_file_base64(
     title: Option<&str>,
     betas: &mut BTreeSet<String>,
 ) -> Result<Value, AiMuxError> {
-    match top_level_media_type(full_media_type) {
+    match get_top_level_media_type(full_media_type) {
         "image" => Ok(json!({
             "type": "image",
             "source": { "type": "base64", "media_type": full_media_type, "data": b64 }
@@ -1234,7 +1244,7 @@ fn route_file_url(
     url: &str,
     betas: &mut BTreeSet<String>,
 ) -> Result<Value, AiMuxError> {
-    match top_level_media_type(media_type) {
+    match get_top_level_media_type(media_type) {
         "image" => Ok(json!({ "type": "image", "source": { "type": "url", "url": url } })),
         "application" if media_type == "application/pdf" => {
             betas.insert(BETA_PDFS.to_string());
@@ -1245,75 +1255,6 @@ fn route_file_url(
         }
         _ => Err(AiMuxError::UnsupportedFunctionality(format!(
             "media type: {media_type}"
-        ))),
-    }
-}
-
-/// Returns `true` only when the media type has a non-empty, non-wildcard
-/// subtype (i.e. `type/subtype` where `subtype` is not `*`).
-fn is_full_media_type(media_type: &str) -> bool {
-    match media_type.find('/') {
-        Some(i) => {
-            let subtype = &media_type[i + 1..];
-            !subtype.is_empty() && subtype != "*"
-        }
-        None => false,
-    }
-}
-
-/// Sniff the concrete media type from inline bytes for the given top-level
-/// segment, mirroring the TS `detectMediaType` signature tables.
-fn detect_media_type(bytes: &[u8], top_level: &str) -> Option<&'static str> {
-    match top_level {
-        "image" => detect_image_media_type(bytes),
-        "application" => detect_document_media_type(bytes),
-        _ => None,
-    }
-}
-
-fn detect_image_media_type(bytes: &[u8]) -> Option<&'static str> {
-    const SIGS: &[(&[u8], &str)] = &[
-        (&[0x47, 0x49, 0x46], "image/gif"),
-        (&[0x89, 0x50, 0x4e, 0x47], "image/png"),
-        (&[0xff, 0xd8], "image/jpeg"),
-        (&[0x42, 0x4d], "image/bmp"),
-        (&[0x49, 0x49, 0x2a, 0x00], "image/tiff"),
-        (&[0x4d, 0x4d, 0x00, 0x2a], "image/tiff"),
-    ];
-    for (prefix, mt) in SIGS {
-        if bytes.starts_with(prefix) {
-            return Some(mt);
-        }
-    }
-    // WEBP: "RIFF" .... "WEBP"
-    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-        return Some("image/webp");
-    }
-    None
-}
-
-fn detect_document_media_type(bytes: &[u8]) -> Option<&'static str> {
-    if bytes.starts_with(&[0x25, 0x50, 0x44, 0x46]) {
-        return Some("application/pdf");
-    }
-    None
-}
-
-/// Resolve a file part's media type to a full `type/subtype` form, mirroring
-/// the TS `resolveFullMediaType`. When the media type is already a full type it
-/// is returned as-is; otherwise the subtype is sniffed from the inline bytes.
-pub(crate) fn resolve_full_media_type(
-    media_type: &str,
-    bytes: &[u8],
-) -> Result<String, AiMuxError> {
-    if is_full_media_type(media_type) {
-        return Ok(media_type.to_string());
-    }
-    let top = top_level_media_type(media_type);
-    match detect_media_type(bytes, top) {
-        Some(detected) => Ok(detected.to_string()),
-        None => Err(AiMuxError::UnsupportedFunctionality(format!(
-            "file of media type \"{media_type}\" must specify subtype since it could not be auto-detected"
         ))),
     }
 }
@@ -1331,6 +1272,7 @@ fn convert_reasoning_part(
     send_reasoning: bool,
     warnings: &mut Vec<Warning>,
     validator: &mut CacheControlValidator,
+    options_name: &str,
 ) -> Option<Value> {
     if !send_reasoning {
         warnings.push(Warning::Other {
@@ -1341,13 +1283,14 @@ fn convert_reasoning_part(
 
     // `redactedData` is read from `providerOptions.anthropic.redactedData`
     // (mirroring the TS `anthropicReasoningMetadataSchema`).
-    let redacted_data = provider_options
-        .and_then(|o| o.get("anthropic"))
+    let reasoning_options = anthropic_options(provider_options, options_name);
+    let redacted_data = reasoning_options
+        .as_ref()
         .and_then(|a| a.get("redactedData"))
         .and_then(|v| v.as_str());
 
-    let effective_signature = provider_options
-        .and_then(|o| o.get("anthropic"))
+    let effective_signature = reasoning_options
+        .as_ref()
         .and_then(|a| a.get("signature"))
         .and_then(Value::as_str);
 
@@ -1355,11 +1298,7 @@ fn convert_reasoning_part(
         // Thinking blocks cannot carry cache_control directly — they are cached
         // implicitly when in previous assistant turns. Validate to emit a
         // helpful warning if a value was set.
-        validator.get_cache_control(
-            provider_options.and_then(|o| o.get("anthropic")),
-            "thinking block",
-            false,
-        );
+        validator.get_cache_control(provider_options, "thinking block", false);
         Some(json!({
             "type": "thinking",
             "thinking": text,
@@ -1367,11 +1306,7 @@ fn convert_reasoning_part(
         }))
     } else if let Some(data) = redacted_data {
         // Redacted thinking blocks likewise cannot carry cache_control.
-        validator.get_cache_control(
-            provider_options.and_then(|o| o.get("anthropic")),
-            "redacted thinking block",
-            false,
-        );
+        validator.get_cache_control(provider_options, "redacted thinking block", false);
         Some(json!({
             "type": "redacted_thinking",
             "data": data,
@@ -1385,17 +1320,19 @@ fn convert_reasoning_part(
 }
 
 /// Resolve the Anthropic file id from a provider-reference object, mirroring the
-/// TS `resolveProviderReference`. Returns an error when the key is missing.
+/// TS `resolveProviderReference`: the reference is always keyed by the
+/// canonical name, whatever the provider is called. Errors when that key is
+/// absent, matching the TS `UnsupportedFunctionalityError`.
 fn resolve_anthropic_reference(
     reference: &std::collections::HashMap<String, String>,
 ) -> Result<String, AiMuxError> {
-    if let Some(id) = reference.get("anthropic") {
+    if let Some(id) = reference.get(CANONICAL) {
         return Ok(id.to_string());
     }
     let mut providers: Vec<&str> = reference.keys().map(String::as_str).collect();
     providers.sort_unstable();
     Err(AiMuxError::InvalidArgument(format!(
-        "No provider reference found for provider 'anthropic'. Available providers: {}",
+        "No provider reference found for provider '{CANONICAL}'. Available providers: {}",
         providers.join(", ")
     )))
 }
@@ -1428,11 +1365,11 @@ fn resolve_tool_result_output(
                 let source = match &part.data {
                     FileData::Url { url, .. } => json!({ "type": "url", "url": url }),
                     FileData::Data { data } => {
-                        let (data, bytes) = match data {
-                            FileBytes::Binary(bytes) => (base64::engine::general_purpose::STANDARD.encode(bytes), bytes.clone()),
-                            FileBytes::Base64(data) => (data.clone(), base64::engine::general_purpose::STANDARD.decode(data).unwrap_or_default()),
+                        let data = match data {
+                            FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
+                            FileBytes::Base64(data) => data.clone(),
                         };
-                        let full = resolve_full_media_type(&part.media_type, &bytes).ok()?;
+                        let full = resolve_full_media_type(part).ok()?;
                         if top_level != Some("image") && full != "application/pdf" { warnings.push(Warning::Other { message: "unsupported tool content file media type".to_string() }); return None; }
                         if full == "application/pdf" { betas.insert("pdfs-2024-09-25".to_string()); }
                         json!({ "type": "base64", "media_type": full, "data": data })
@@ -1442,7 +1379,7 @@ fn resolve_tool_result_output(
                 Some(json!({ "type": if top_level == Some("image") { "image" } else { "document" }, "source": source }))
             },
             ToolResultContent::Custom { provider_options } => {
-                if let Some(options) = provider_options.as_ref().and_then(|options| options.get("anthropic"))
+                if let Some(options) = provider_options.as_ref().and_then(|options| options.get(CANONICAL))
                     && options.get("type").and_then(Value::as_str) == Some("tool-reference") {
                     Some(json!({ "type": "tool_reference", "tool_name": options.get("toolName") }))
                 } else { warnings.push(Warning::Other { message: "unsupported custom tool content part".to_string() }); None }
@@ -1698,7 +1635,7 @@ pub struct RequestBodyResult {
 
 fn parse_anthropic_option_object(shape: &str, value: &Value) -> Result<Value, ()> {
     let object = value.as_object().ok_or(())?;
-    let parsed = crate::openai::convert::parse_option_fields(object, "anthropic", |key, value| {
+    let parsed = crate::openai::convert::parse_option_fields(object, CANONICAL, |key, value| {
         let kind = match (shape, key) {
             ("options", "sendReasoning" | "disableParallelToolUse" | "toolStreaming") => "bool",
             ("options", "structuredOutputMode") => "outputFormat|jsonTool|auto",
@@ -1749,7 +1686,7 @@ fn parse_anthropic_option_object(shape: &str, value: &Value) -> Result<Value, ()
             ("container", "skills") => "[]skill",
             ("skill", "type") => "anthropic|custom",
             ("skill", "skillId")
-                if object.get("type").and_then(Value::as_str) == Some("anthropic") =>
+                if object.get("type").and_then(Value::as_str) == Some(PROVIDER_SKILL_TYPE) =>
             {
                 "string"
             }
@@ -1913,13 +1850,39 @@ fn parse_anthropic_option_value(kind: &str, value: &Value) -> Result<Value, ()> 
     if valid { Ok(value.clone()) } else { Err(()) }
 }
 
-/// Read a value from `provider_options["anthropic"][key]`.
-fn anthropic_option(options: &Option<SharedProviderOptions>, key: &str) -> Option<Value> {
-    options
-        .as_ref()
-        .and_then(|m| m.get("anthropic"))
-        .and_then(|o| o.get(key))
-        .cloned()
+/// What differs between the hosts of the Messages API as far as the request
+/// body goes: which providerOptions key the caller's options live under (read
+/// in addition to the canonical one) and which tool/output features the host
+/// accepts.
+#[derive(Debug, Clone)]
+pub(crate) struct RequestProfile {
+    /// The custom providerOptions key; `anthropic` is always read too.
+    pub(crate) options_name: String,
+    /// Structured outputs and their beta header (Vertex has neither).
+    pub(crate) supports_native_structured_output: bool,
+    /// `strict` on tool definitions (Vertex rejects it).
+    pub(crate) supports_strict_tools: bool,
+}
+
+impl Default for RequestProfile {
+    /// The first-party API under its canonical name.
+    fn default() -> Self {
+        Self {
+            options_name: CANONICAL.to_string(),
+            supports_native_structured_output: true,
+            supports_strict_tools: true,
+        }
+    }
+}
+
+/// Read a value from the Anthropic options of a call (`anthropic` merged with
+/// the profile's custom key).
+fn anthropic_option(
+    options: &Option<SharedProviderOptions>,
+    profile: &RequestProfile,
+    key: &str,
+) -> Option<Value> {
+    anthropic_options_in(options.as_ref(), &profile.options_name).and_then(|o| o.get(key).cloned())
 }
 
 /// Recursively remove `null`-valued fields from JSON objects (mirroring the
@@ -2016,12 +1979,13 @@ fn strip_anthropic_sampling_params(
 fn resolve_anthropic_thinking(
     model_id: &str,
     options: &CallOptions,
+    profile: &RequestProfile,
     caps: &ModelCapabilities,
     warnings: &mut Vec<Warning>,
 ) -> (Option<Value>, Option<String>) {
     let mut thinking_config: Option<Value> =
-        anthropic_option(&options.provider_options, "thinking");
-    let mut effort: Option<String> = anthropic_option(&options.provider_options, "effort")
+        anthropic_option(&options.provider_options, profile, "thinking");
+    let mut effort: Option<String> = anthropic_option(&options.provider_options, profile, "effort")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string));
 
     if let Some(reasoning) = options.reasoning
@@ -2231,17 +2195,18 @@ fn insert_anthropic_sampling(
 fn apply_anthropic_tools(
     body: &mut Value,
     options: &CallOptions,
+    profile: &RequestProfile,
     stream: bool,
     caps: &ModelCapabilities,
     betas: &mut BTreeSet<String>,
     warnings: &mut Vec<Warning>,
 ) {
     let disable_parallel_tool_use =
-        anthropic_option(&options.provider_options, "disableParallelToolUse")
+        anthropic_option(&options.provider_options, profile, "disableParallelToolUse")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
     let default_eager_input_streaming = stream
-        && anthropic_option(&options.provider_options, "toolStreaming")
+        && anthropic_option(&options.provider_options, profile, "toolStreaming")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
@@ -2260,7 +2225,7 @@ fn apply_anthropic_tools(
         None => Vec::new(),
     };
 
-    let prepared = prepare_tools_with_provider(
+    let prepared = prepare_tools_for(
         if options.tools.is_some() {
             Some(&anthropic_tools)
         } else {
@@ -2268,9 +2233,10 @@ fn apply_anthropic_tools(
         },
         options.tool_choice.as_ref(),
         disable_parallel_tool_use,
-        caps.supports_structured_output,
-        caps.supports_structured_output,
+        caps.supports_structured_output && profile.supports_native_structured_output,
+        caps.supports_structured_output && profile.supports_strict_tools,
         default_eager_input_streaming,
+        &profile.options_name,
     );
 
     warnings.extend(prepared.tool_warnings);
@@ -2296,9 +2262,10 @@ fn apply_anthropic_tools(
 fn append_anthropic_mcp_servers(
     body: &mut Value,
     options: &CallOptions,
+    profile: &RequestProfile,
     betas: &mut BTreeSet<String>,
 ) {
-    let Some(mcp) = anthropic_option(&options.provider_options, "mcpServers") else {
+    let Some(mcp) = anthropic_option(&options.provider_options, profile, "mcpServers") else {
         return;
     };
     let Some(arr) = mcp.as_array() else {
@@ -2351,10 +2318,11 @@ fn append_anthropic_mcp_servers(
 fn append_anthropic_container(
     body: &mut Value,
     options: &CallOptions,
+    profile: &RequestProfile,
     betas: &mut BTreeSet<String>,
     warnings: &mut Vec<Warning>,
 ) -> Result<(), AiMuxError> {
-    let Some(container) = anthropic_option(&options.provider_options, "container") else {
+    let Some(container) = anthropic_option(&options.provider_options, profile, "container") else {
         return Ok(());
     };
     let skills = container.get("skills").and_then(|s| s.as_array());
@@ -2371,12 +2339,12 @@ fn append_anthropic_container(
             let skill_id = if stype == "custom" {
                 match skill
                     .get("providerReference")
-                    .and_then(|r| r.get("anthropic"))
+                    .and_then(|r| r.get(CANONICAL))
                 {
                     Some(id) => id.clone(),
                     None => {
                         return Err(AiMuxError::UnsupportedFunctionality(format!(
-                            "skill provider reference is missing the 'anthropic' key: {skill}"
+                            "skill provider reference is missing the '{CANONICAL}' key: {skill}"
                         )));
                     }
                 }
@@ -2445,15 +2413,37 @@ pub fn build_request_body_with_warnings(
     options: &CallOptions,
     stream: bool,
 ) -> Result<RequestBodyResult, AiMuxError> {
+    build_request_body_for(model_id, options, stream, &RequestProfile::default())
+}
+
+/// [`build_request_body_with_warnings`] for a host of the Messages API other
+/// than the first-party endpoint under its canonical name.
+///
+/// # Errors
+///
+/// Same as [`build_request_body_with_warnings`].
+pub(crate) fn build_request_body_for(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+    profile: &RequestProfile,
+) -> Result<RequestBodyResult, AiMuxError> {
     let mut parsed_options = options.clone();
-    if let Some(namespaces) = parsed_options.provider_options.as_mut()
-        && let Some(raw) = namespaces.get("anthropic")
+    if let Some(raw) =
+        anthropic_options_in(options.provider_options.as_ref(), &profile.options_name)
     {
-        let parsed = parse_anthropic_option_object("options", &Value::Object(raw.clone()))
-            .map_err(|()| {
+        let parsed =
+            parse_anthropic_option_object("options", &Value::Object(raw)).map_err(|()| {
                 AiMuxError::InvalidArgument("invalid anthropic provider options".to_string())
             })?;
-        namespaces.insert("anthropic".to_string(), parsed.as_object().unwrap().clone());
+        let namespaces = parsed_options
+            .provider_options
+            .get_or_insert_with(Default::default);
+        namespaces.remove(CANONICAL);
+        namespaces.insert(
+            profile.options_name.clone(),
+            parsed.as_object().unwrap().clone(),
+        );
     }
     let options = &parsed_options;
     let mut warnings: Vec<Warning> = Vec::new();
@@ -2479,7 +2469,7 @@ pub fn build_request_body_with_warnings(
 
     // providerOptions.anthropic.thinking / .effort + top-level `reasoning`.
     let (thinking_config, thinking_effort) =
-        resolve_anthropic_thinking(model_id, options, &caps, &mut warnings);
+        resolve_anthropic_thinking(model_id, options, profile, &caps, &mut warnings);
     let (thinking_type, send_thinking, mut thinking_budget, thinking_display) =
         derive_anthropic_thinking(&thinking_config);
 
@@ -2493,10 +2483,11 @@ pub fn build_request_body_with_warnings(
     // the parts are omitted with a warning instead.
     let send_input_reasoning =
         matches!(thinking_type.as_deref(), Some("enabled") | Some("adaptive"));
-    let conversion = convert_prompt_to_anthropic_full_with_tools(
+    let conversion = convert_prompt_for(
         &options.prompt,
         send_input_reasoning,
         &ToolNameMapping::new(options.tools.as_deref()),
+        &profile.options_name,
     )?;
     let system = conversion.system;
     let messages = conversion.messages;
@@ -2507,8 +2498,11 @@ pub fn build_request_body_with_warnings(
         "model": model_id,
         "messages": messages,
         "max_tokens": max_tokens,
-        "stream": stream,
     });
+    // `stream` is sent only when streaming, as the AI SDK does.
+    if stream {
+        body["stream"] = json!(true);
+    }
 
     if let Some(sys) = system {
         body["system"] = json!(sys);
@@ -2541,24 +2535,34 @@ pub fn build_request_body_with_warnings(
 
     insert_anthropic_sampling(&mut body, temperature, top_p, top_k, options);
 
+    // providerOptions.anthropic.metadata.userId -> metadata.user_id.
+    if let Some(user_id) = anthropic_option(&options.provider_options, profile, "metadata")
+        .and_then(|metadata| metadata.get("userId").cloned())
+        .filter(|user_id| !user_id.is_null())
+    {
+        body["metadata"] = json!({ "user_id": user_id });
+    }
+
     // Tools — provider-defined tools alongside function tools, plus the
     // required beta headers / tool warnings.
-    apply_anthropic_tools(&mut body, options, stream, &caps, &mut betas, &mut warnings);
+    apply_anthropic_tools(
+        &mut body,
+        options,
+        profile,
+        stream,
+        &caps,
+        &mut betas,
+        &mut warnings,
+    );
 
     // providerOptions.anthropic.mcpServers → mcp_servers + beta header.
-    append_anthropic_mcp_servers(&mut body, options, &mut betas);
+    append_anthropic_mcp_servers(&mut body, options, profile, &mut betas);
 
     // providerOptions.anthropic.container — programmatic tool calling / skills.
-    append_anthropic_container(&mut body, options, &mut betas, &mut warnings)?;
+    append_anthropic_container(&mut body, options, profile, &mut betas, &mut warnings)?;
 
     // providerOptions.anthropic.contextManagement → context_management is not
     // yet implemented (build_context_management pending).
-
-    // Per-call request body overrides (RFC-0017): deep-merge user-supplied
-    // JSON into the built body. `null` values delete the corresponding key.
-    if let Some(ref overrides) = options.body_overrides {
-        crate::openai::convert::deep_merge_json(&mut body, overrides);
-    }
 
     Ok(RequestBodyResult {
         body,

@@ -132,8 +132,10 @@ async fn run_inner(state: AppState, req: ProbeRequest) -> Result<Response, AiMux
         }
     }
 
+    // Traces carry the model's own provider string (`openai.chat`, `groq`, ...),
+    // which is not the name the request used.
     let stats = sink.inner().aggregate(&TraceFilter {
-        provider: Some(req.provider.clone()),
+        provider: Some(model.provider().to_string()),
         model: None,
         session_id: Some(PROBE_SESSION.to_string()),
         since_unix_ms: None,

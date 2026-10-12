@@ -15,6 +15,8 @@ use aimux_core::tool::ToolChoice;
 use aimux_core::types::Warning;
 use serde_json::{Map, Value, json};
 
+use super::options::{CANONICAL, anthropic_options_in};
+
 /// Result of [`prepare_tools`] / [`prepare_tools_with_provider`].
 #[derive(Debug, Clone)]
 pub struct PreparedTools {
@@ -62,6 +64,7 @@ pub fn prepare_tools(
                     supports_structured_output,
                     supports_strict_tools,
                     default_eager_input_streaming,
+                    CANONICAL,
                     &mut betas,
                     &mut tool_warnings,
                 ));
@@ -143,6 +146,30 @@ pub fn prepare_tools_with_provider(
     supports_strict_tools: bool,
     default_eager_input_streaming: bool,
 ) -> PreparedTools {
+    prepare_tools_for(
+        tools,
+        tool_choice,
+        disable_parallel_tool_use,
+        supports_structured_output,
+        supports_strict_tools,
+        default_eager_input_streaming,
+        CANONICAL,
+    )
+}
+
+/// [`prepare_tools_with_provider`] for a provider whose providerOptions key is
+/// `options_name`: a tool's options are read from `anthropic` merged with that
+/// key, the custom one winning.
+#[must_use]
+pub(crate) fn prepare_tools_for(
+    tools: Option<&[AnthropicTool]>,
+    tool_choice: Option<&ToolChoice>,
+    disable_parallel_tool_use: bool,
+    supports_structured_output: bool,
+    supports_strict_tools: bool,
+    default_eager_input_streaming: bool,
+    options_name: &str,
+) -> PreparedTools {
     // Empty arrays are coerced to "no tools" to match the TS behaviour.
     let non_empty = tools.filter(|&t| !t.is_empty());
 
@@ -161,6 +188,7 @@ pub fn prepare_tools_with_provider(
                             supports_structured_output,
                             supports_strict_tools,
                             default_eager_input_streaming,
+                            options_name,
                             &mut betas,
                             &mut tool_warnings,
                         ));
@@ -249,13 +277,12 @@ fn prepare_function_tool(
     supports_structured_output: bool,
     supports_strict_tools: bool,
     default_eager_input_streaming: bool,
+    options_name: &str,
     betas: &mut BTreeSet<String>,
     tool_warnings: &mut Vec<Warning>,
 ) -> Value {
-    let anthropic_options = tool
-        .provider_options
-        .as_ref()
-        .and_then(|po| po.get("anthropic"));
+    let tool_options = anthropic_options_in(tool.provider_options.as_ref(), options_name);
+    let anthropic_options = tool_options.as_ref();
 
     let eager_input_streaming = anthropic_options
         .and_then(|o| o.get("eagerInputStreaming"))

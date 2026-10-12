@@ -2,7 +2,7 @@
 //!
 //! Two independent data surfaces:
 //! - [`RuntimeModel`] — what a provider's `/models` endpoint returns (sparse:
-//!   id, owned_by, created). Produced by `Provider::list_models`.
+//!   id, owned_by, created). Produced by `ProviderDiscovery::list_models`.
 //! - [`ModelSpec`] — community knowledge portrait (context length, capabilities,
 //!   reasoning). Produced by `get_model_specs` (anya2a).
 //!
@@ -219,8 +219,7 @@ pub struct ModelCost {
 /// The full static portrait for a model, supplemented from community knowledge.
 ///
 /// All fields are advisory — aimux never auto-applies them in the request path.
-/// The caller reads them to decide how to configure `GenerateTextOptions` /
-/// `bodyOverrides`.
+/// The caller reads them to decide how to configure `GenerateTextOptions`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export)]
 pub struct ModelSpec {

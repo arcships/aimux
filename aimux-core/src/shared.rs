@@ -311,3 +311,13 @@ impl From<crate::types::ResponseMetadata> for ResponseInfo {
         }
     }
 }
+
+impl From<ResponseInfo> for crate::types::ResponseMetadata {
+    fn from(response: ResponseInfo) -> Self {
+        Self {
+            id: response.id,
+            timestamp: response.timestamp,
+            model_id: response.model_id,
+        }
+    }
+}

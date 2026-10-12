@@ -51,12 +51,34 @@ def test_provider_accepts_full_config():
             "headers": {"X-Custom": "1"},
             "organization": "org-1",
             "project": "proj-1",
-            "max_retries": 0,
-            "body_overrides": {"temperature": 0.1},
         },
     )
     assert model is not None
     assert hasattr(model, "generate_text")
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [("max_retries", 0), ("body_overrides", {"temperature": 0.1})],
+)
+def test_provider_rejects_removed_config_keys(key, value):
+    """max_retries is call-level and body_overrides is gone: neither is silently ignored."""
+    from aimux import provider
+
+    with pytest.raises(Exception, match=key):
+        provider("groq", "sk-test-fake-key", "llama-3.3-70b", config={key: value})
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [("max_retries", 0), ("body_overrides", {"temperature": 0.1})],
+)
+def test_create_provider_rejects_removed_config_keys(key, value):
+    """create_provider() goes through the same ProviderOptions check."""
+    from aimux import InvalidArgumentError, create_provider
+
+    with pytest.raises(InvalidArgumentError, match=key):
+        create_provider("groq", "sk-test-fake-key", config={key: value})
 
 
 def test_provider_base_url_param_wins_over_config():
@@ -82,16 +104,49 @@ def test_provider_invalid_config_raises():
             "groq",
             "sk-test-fake-key",
             "llama-3.3-70b",
-            config={"max_retries": "not-a-number"},
+            config={"headers": "not-a-map"},
         )
 
 
-def test_provider_missing_env_key_raises():
-    """provider() with api_key=None reads the env var and fails clearly when unset."""
-    from aimux import provider
+def test_provider_missing_env_key_raises(monkeypatch):
+    """provider() with api_key=None reads the env var when a request is made, and
+    fails clearly when it is unset (the AI SDK loads the key lazily)."""
+    from aimux import LoadAPIKeyError, generate_text, provider
 
-    with pytest.raises(Exception, match="(?i)api key"):
-        provider("abacus", None, "m")
+    monkeypatch.delenv("ABACUS_API_KEY", raising=False)
+    model = provider("abacus", None, "m")
+    with pytest.raises(LoadAPIKeyError, match="(?i)api key"):
+        generate_text(model, "hi")
+
+
+def test_provider_params_fill_a_preset_template(monkeypatch):
+    """config["params"] reaches the preset's template parameters."""
+    from aimux import InvalidArgumentError, generate_text, provider
+
+    monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    # Without the parameter the preset cannot build its base URL (reported at call time).
+    unfilled = provider("cloudflare_workers_ai", "sk-test-fake-key", "m")
+    with pytest.raises(InvalidArgumentError, match="account_id"):
+        generate_text(unfilled, "hi", {"max_retries": 0})
+    model = provider(
+        "cloudflare_workers_ai",
+        "sk-test-fake-key",
+        "m",
+        config={"params": {"account_id": "acct123"}},
+    )
+    assert model is not None
+
+
+def test_provider_params_the_preset_does_not_declare_are_rejected():
+    from aimux import InvalidArgumentError, provider
+
+    with pytest.raises(InvalidArgumentError, match="no template parameter `account_id`"):
+        provider(
+            "abacus",
+            "sk-test-fake-key",
+            "m",
+            config={"params": {"account_id": "acct123"}},
+        )
 
 
 def test_openai_creates_model():

@@ -5,8 +5,14 @@
 //!
 //! POST to `/job?price=true`, returns a multipart response with a JSON "job"
 //! part and a binary "output" image part.
+//!
+//! [`create_prodia`] takes [`ProdiaProviderSettings`], validates the base URL, fixes
+//! the provider name and returns a [`ProdiaProvider`]. The credential is not read
+//! there: it is loaded for every request, from the setting or from `PRODIA_API_KEY`.
+//! [`prodia()`] is the default instance; it reads nothing and cannot fail.
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
@@ -16,7 +22,9 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 use aimux_core::shared::Warning;
-use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
+
+use crate::shared::{AuthScheme, Credential, EndpointConfig, credential_headers};
 
 fn prodia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -47,93 +55,175 @@ fn prodia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiM
     })
 }
 
-/// Configuration for the Prodia provider.
-#[derive(Debug, Clone)]
-pub struct ProdiaConfig {
-    pub api_key: String,
-    pub base_url: String,
-    pub headers: Option<HashMap<String, String>>,
+pub(crate) mod options;
+
+const DEFAULT_BASE_URL: &str = "https://prodia.com/api";
+const API_KEY_ENV_VAR: &str = "PRODIA_API_KEY";
+const DEFAULT_NAME: &str = "prodia";
+
+/// Settings of [`create_prodia`].
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct ProdiaProviderSettings {
+    /// Base URL for the API calls. Default `https://prodia.com/api`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `PRODIA_API_KEY` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including the credential. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` strings (`"{name}.image"`, `"{name}.video"`).
+    /// Default `"prodia"`. The providerOptions key stays `prodia`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
 }
 
-impl ProdiaConfig {
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: "https://prodia.com/api".to_string(),
-            headers: None,
-        }
-    }
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-    #[must_use]
-    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = Some(headers);
-        self
-    }
-    /// Create from the `PRODIA_API_KEY` environment variable.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
-    /// set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "PRODIA_API_KEY", "Prodia")?;
-        Ok(Self::new(api_key))
+impl std::fmt::Debug for ProdiaProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProdiaProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .finish()
     }
 }
 
+/// Create a Prodia provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_prodia(settings: ProdiaProviderSettings) -> Result<ProdiaProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(ProdiaProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        credential: Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Prodia"),
+        user_headers: settings.headers,
+        fetch: settings.fetch,
+    })
+}
+
+/// The default provider: `create_prodia` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn prodia() -> &'static ProdiaProvider {
+    static DEFAULT: OnceLock<ProdiaProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_prodia(ProdiaProviderSettings::default())
+            .expect("default Prodia settings are always valid")
+    })
+}
+
+/// A Prodia provider. Cheap to clone the models out of; it holds no HTTP
+/// client.
 pub struct ProdiaProvider {
-    config: ProdiaConfig,
+    name: String,
+    base_url: String,
+    credential: Credential,
+    user_headers: Option<HeaderMapOpt>,
+    fetch: Option<FetchFunction>,
 }
+
 impl ProdiaProvider {
-    #[must_use]
-    pub fn new(config: ProdiaConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            match method {
+                "image" => credential_headers(
+                    self.credential.clone(),
+                    AuthScheme::Header("X-Prodia-Key"),
+                    vec![(
+                        "Accept".to_string(),
+                        "multipart/form-data; image/png".to_string(),
+                    )],
+                    self.user_headers.clone(),
+                ),
+                _ => credential_headers(
+                    self.credential.clone(),
+                    AuthScheme::Header("X-Prodia-Key"),
+                    Vec::new(),
+                    self.user_headers.clone(),
+                ),
+            },
+            self.fetch.clone(),
+            None,
+        )
     }
+
+    /// An image model (e.g. `"inference.flux-fast.schnell.txt2img.v2"`); `provider()` is `"{name}.image"`.
     #[must_use]
     pub fn image(&self, model_id: &str) -> ProdiaImageModel {
-        ProdiaImageModel::new(model_id.to_string(), self.config.clone())
+        ProdiaImageModel::from_config(model_id.to_string(), self.model_config("image"))
     }
-    /// Create a video generation model instance.
+
+    /// A video model; `provider()` is `"{name}.video"`.
     #[must_use]
     pub fn video(&self, model_id: &str) -> ProdiaVideoModel {
-        ProdiaVideoModel::new(model_id.to_string(), self.config.clone())
+        ProdiaVideoModel::from_config(model_id.to_string(), self.model_config("video"))
     }
 }
 
-/// A Prodia image generation model.
+impl ::aimux_core::Provider for ProdiaProvider {
+    fn language_model(
+        &self,
+        model_id: &str,
+    ) -> Result<::std::sync::Arc<dyn ::aimux_core::LanguageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "languageModel"))
+    }
+
+    fn embedding_model(
+        &self,
+        model_id: &str,
+    ) -> Result<::std::sync::Arc<dyn ::aimux_core::EmbeddingModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
+    }
+
+    fn image_model(
+        &self,
+        model_id: &str,
+    ) -> Result<::std::sync::Arc<dyn ::aimux_core::ImageModel>, AiMuxError> {
+        Ok(::std::sync::Arc::new(self.image(model_id)))
+    }
+
+    fn video_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<::std::sync::Arc<dyn ::aimux_core::VideoModel>, AiMuxError>> {
+        Some(Ok(::std::sync::Arc::new(self.video(model_id))))
+    }
+}
+
 pub struct ProdiaImageModel {
     model_id: String,
-    config: ProdiaConfig,
+    config: EndpointConfig,
 }
+
 impl ProdiaImageModel {
-    #[must_use]
-    pub fn new(model_id: String, config: ProdiaConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut h = HashMap::new();
-        h.insert("X-Prodia-Key".into(), self.config.api_key.clone());
-        h.insert("Accept".into(), "multipart/form-data; image/png".into());
-        if let Some(ref ch) = self.config.headers {
-            for (k, v) in ch {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        h
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/job?price=true", self.config.base_url)
     }
 }
 
@@ -204,7 +294,7 @@ fn parse_multipart(body: &[u8], boundary: &str) -> Vec<(String, String, Vec<u8>)
 #[async_trait]
 impl ImageModel for ProdiaImageModel {
     fn provider(&self) -> &str {
-        "prodia"
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
@@ -216,7 +306,7 @@ impl ImageModel for ProdiaImageModel {
     async fn do_generate(&self, options: &ImageCallOptions) -> Result<ImageResult, AiMuxError> {
         let warnings: Vec<Warning> = Vec::new();
 
-        let prodia_opts = options.provider_options.get("prodia");
+        let prodia_opts = options::prodia_options(Some(&options.provider_options));
 
         // Build job config
         let mut job_config = Map::new();
@@ -254,11 +344,10 @@ impl ImageModel for ProdiaImageModel {
 
         let body = json!({ "type": self.model_id, "config": job_config });
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), header_list, options),
+            exchange.request(exchange.url("/job?price=true"), options),
             body,
             aimux_provider_utils::create_binary_response_handler(),
             prodia_failed_response_handler(),
@@ -310,7 +399,7 @@ impl ImageModel for ProdiaImageModel {
         let mut metadata = HashMap::new();
         let mut prodia_meta = Map::new();
         prodia_meta.insert("images".into(), json!([job_result]));
-        metadata.insert("prodia".into(), prodia_meta);
+        metadata.insert(options::NAMESPACE.into(), prodia_meta);
 
         Ok(ImageResult {
             images: ImageOutputs::Binary(vec![image_bytes]),
@@ -341,36 +430,19 @@ use aimux_core::video_model::{
 /// (`reference/ai/packages/prodia/src/prodia-video-model.ts`).
 pub struct ProdiaVideoModel {
     model_id: String,
-    config: ProdiaConfig,
+    config: EndpointConfig,
 }
 
 impl ProdiaVideoModel {
-    #[must_use]
-    pub fn new(model_id: String, config: ProdiaConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut h = HashMap::new();
-        h.insert("X-Prodia-Key".to_string(), self.config.api_key.clone());
-        if let Some(ref ch) = self.config.headers {
-            for (k, v) in ch {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        h
     }
 }
 
 #[async_trait]
 impl VideoModel for ProdiaVideoModel {
     fn provider(&self) -> &str {
-        "prodia"
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
@@ -395,16 +467,11 @@ impl VideoModel for ProdiaVideoModel {
 
         let body = json!({"type": self.model_id, "config": Value::Object(config_obj)});
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         // Submit job.
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(
-                format!("{}/job", self.config.base_url),
-                header_list,
-                options,
-            ),
+            exchange.request(exchange.url("/job"), options),
             body,
             aimux_provider_utils::create_json_response_handler(),
             prodia_failed_response_handler(),
@@ -449,12 +516,11 @@ impl VideoModel for ProdiaVideoModel {
                 )
             })?;
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers.into_iter().collect();
-        let poll_url = format!("{}/job/{}", self.config.base_url, job_id);
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let poll_url = exchange.url(&format!("/job/{job_id}"));
 
         let resp = aimux_provider_utils::get_from_api(
-            HttpRequest::new(poll_url.clone(), header_list, options),
+            exchange.request(poll_url.clone(), options),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             prodia_failed_response_handler(),
         )

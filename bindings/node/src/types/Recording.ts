@@ -9,7 +9,8 @@ import type { ProviderRecord } from "./ProviderRecord";
  */
 export type Recording = { 
 /**
- * 格式版本。
+ * 格式版本。读取时只接受当前 [`RECORDING_SCHEMA`];旧 schema 的录制带有
+ * 配置快照(base_url / profile 等),不再读取。
  */
 schema: number, 
 /**

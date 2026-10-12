@@ -226,16 +226,34 @@ class AimuxExceptionTest {
             .isInstanceOf(AimuxException.OtherError.class);
         assertThat(AimuxException.of(AimuxException.AIMUX_E_RETRY, "m"))
             .isInstanceOf(AimuxException.RetryError.class);
+        assertThat(AimuxException.of(AimuxException.AIMUX_E_LOAD_API_KEY, "m"))
+            .isInstanceOf(AimuxException.LoadAPIKeyError.class);
+        assertThat(AimuxException.of(AimuxException.AIMUX_E_LOAD_SETTING, "m"))
+            .isInstanceOf(AimuxException.LoadSettingError.class);
+    }
+
+    @Test
+    void loadErrorsHaveTheirOwnCodesNamesAndNoEnvVarLocally() {
+        assertThat(AimuxException.AIMUX_E_LOAD_API_KEY).isEqualTo(18);
+        assertThat(AimuxException.AIMUX_E_LOAD_SETTING).isEqualTo(19);
+        assertThat(AimuxException.codeName(18)).isEqualTo("LoadApiKey");
+        assertThat(AimuxException.codeName(19)).isEqualTo("LoadSetting");
+        AimuxException key = AimuxException.of(AimuxException.AIMUX_E_LOAD_API_KEY, "no key");
+        assertThat(key.getCode()).isEqualTo(18);
+        assertThat(((AimuxException.LoadAPIKeyError) key).getEnvVar()).isNull();
+        AimuxException setting = AimuxException.of(AimuxException.AIMUX_E_LOAD_SETTING, "no region");
+        assertThat(setting.getCode()).isEqualTo(19);
+        assertThat(((AimuxException.LoadSettingError) setting).getEnvVar()).isNull();
     }
 
     @Test
     void codesOutsideTheRustEnumAreRejected() {
-        // Tool errors occupy 15..17; retired code 4 and values beyond 17 are
-        // header/library mismatches.
+        // Tool errors occupy 15..17 and 18 / 19 are the missing key / setting;
+        // retired code 4 and values beyond 19 are header/library mismatches.
         assertThat(AimuxException.of(15, "")).isInstanceOf(AimuxException.NoSuchToolError.class);
         assertThatThrownBy(() -> AimuxException.of(4, ""))
             .isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> AimuxException.of(18, ""))
+        assertThatThrownBy(() -> AimuxException.of(20, ""))
             .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> AimuxException.of(999, "m"))
             .isInstanceOf(IllegalStateException.class);

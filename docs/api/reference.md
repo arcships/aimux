@@ -15,10 +15,10 @@
 | `ResponseFormat` | [options.rs](../../aimux-core/src/options.rs) | [ResponseFormat.ts](../../bindings/node/src/types/ResponseFormat.ts) | text / json_object / json_schema |
 | `ReasoningEffort` | [types.rs](../../aimux-core/src/types.rs) | [ReasoningEffort.ts](../../bindings/node/src/types/ReasoningEffort.ts) | 7 levels, passed through verbatim |
 | `AbortSignal` | [abort_signal.rs](../../aimux-core/src/abort_signal.rs) | — (runtime handle) | Rust: options field; Node: `AbortBridge` + JS `AbortSignal` |
-| `ProviderOptions` | [provider.rs](../../aimux-providers/src/provider.rs) | `ProviderConfig` (per binding) | `base_url` / `headers` / `organization` / `project` / `max_retries` / `body_overrides` |
-| `GenerateTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | [GenerateTextResult.ts](../../bindings/node/src/types/GenerateTextResult.ts) | `text`, `tool_calls`, `usage`, `warnings`, `raw` |
-| `StreamTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | — | use `StreamPart` while iterating |
-| `StreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | [StreamPart.ts](../../bindings/node/src/types/StreamPart.ts) | TextDelta / ToolCallDelta / Finish / … |
+| `aimux_providers::provider::ProviderOptions` (binding compatibility) | [provider.rs](../../aimux-providers/src/provider.rs) | `ProviderConfig` (per binding) | `base_url` / `headers` / `organization` / `project` / `params` (a `max_retries` or `body_overrides` key is rejected as `InvalidArgument`) |
+| `GenerateTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | [GenerateTextResult.ts](../../bindings/node/src/types/GenerateTextResult.ts) | `text`, `tool_calls`, `usage`, `warnings`, `raw`, `request`, `response` |
+| `StreamTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | — | use `TextStreamPart` while iterating |
+| `StreamPart` / `TextStreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | [TextStreamPart.ts](../../bindings/node/src/types/TextStreamPart.ts) | Provider / call layer; only the provider layer emits ResponseMetadata |
 | `Usage` / `TokenUsage` | [types.rs](../../aimux-core/src/types.rs) | [Usage.ts](../../bindings/node/src/types/Usage.ts) | input/output/reasoning tokens |
 | `FinishReason` / `FinishReasonUnified` | [types.rs](../../aimux-core/src/types.rs) | [FinishReason.ts](../../bindings/node/src/types/FinishReason.ts) | |
 | `Warning` | [types.rs](../../aimux-core/src/types.rs) | [Warning.ts](../../bindings/node/src/types/Warning.ts) | non-fatal provider notices |
@@ -44,24 +44,23 @@
 
 | Provider | Rust | Node / Python | Go / Java | Kotlin / Swift / Flutter | C ABI |
 |----------|------|--------------|-----------|--------------------------|-------|
-| OpenAI | `OpenAIProvider::new(OpenAIConfig::new(key))` | `openai(apiKey, model, baseUrl?)` | `NewOpenAI(...)` / `Model.openai(...)` | `Model.openai(...)` / `Aimux.openai(apiKey:modelId:)` | `aimux_openai_new` |
-| Anthropic | `AnthropicProvider::new(AnthropicConfig::new(key))` | `anthropic(apiKey, model, baseUrl?)` | `NewAnthropic(...)` / `Model.anthropic(...)` | `Model.anthropic(...)` / `Aimux.anthropic(apiKey:modelId:)` | `aimux_anthropic_new` |
+| OpenAI | `create_openai(OpenAIProviderSettings { api_key: Some(key.into()), ..Default::default() })` | `openai(apiKey, model, baseUrl?)` | `NewOpenAI(...)` / `Model.openai(...)` | `Model.openai(...)` / `Aimux.openai(apiKey:modelId:)` | `aimux_openai_new` |
+| Anthropic | `create_anthropic(AnthropicProviderSettings { api_key: Some(key.into()), ..Default::default() })` | `anthropic(apiKey, model, baseUrl?)` | `NewAnthropic(...)` / `Model.anthropic(...)` | `Model.anthropic(...)` / `Aimux.anthropic(apiKey:modelId:)` | `aimux_anthropic_new` |
 | Google | `GoogleProvider` | `google(apiKey, model, baseUrl?)` | — | — | — |
-| DeepSeek (registry) | `provider("deepseek", ...)` | `deepseek(...)` | `NewDeepSeek(...)` / `Model.deepseek(...)` | — | `aimux_provider_new("deepseek", ...)` |
+| DeepSeek | `aimux_providers::deepseek::create_deepseek(DeepSeekProviderSettings::default())` | `deepseek(...)` | `NewDeepSeek(...)` / `Model.deepseek(...)` | — | `aimux_provider_new("deepseek", ...)` |
 | Cohere | `CohereProvider` | `cohere(apiKey, model, baseUrl?)` | `NewCohere(...)` / `Model.cohere(...)` | `Model.cohere(...)` / `Aimux.cohere(...)` | `aimux_cohere_new` |
 | Mistral | `MistralProvider` | `mistral(apiKey, model, baseUrl?)` | `NewMistral(...)` / `Model.mistral(...)` | `Model.mistral(...)` / `Aimux.mistral(...)` | `aimux_mistral_new` |
 | xAI | `XAIProvider` | `xai(apiKey, model, baseUrl?)` | `NewXai(...)` / `Model.xai(...)` | `Model.xai(...)` / `Aimux.xai(...)` | `aimux_xai_new` |
-| Bedrock | `BedrockProvider` | `bedrock(accessKeyId, secretKey, region, model, baseUrl?)` | `NewBedrock(...)` / `Model.bedrock(...)` | `Model.bedrock(...)` / `Aimux.bedrock(...)` | `aimux_bedrock_new` |
+| Bedrock | `AmazonBedrockProvider` | `bedrock(accessKeyId, secretKey, region, model, baseUrl?)` | `NewBedrock(...)` / `Model.bedrock(...)` | `Model.bedrock(...)` / `Aimux.bedrock(...)` | `aimux_bedrock_new` |
 | Vertex | `VertexProvider` | `vertex(accessToken, project, location, model, baseUrl?)` | `NewVertex(...)` / `Model.vertex(...)` | `Model.vertex(...)` / `Aimux.vertex(...)` | `aimux_vertex_new` |
 | Anthropic-AWS | `AnthropicAwsProvider` | `anthropicAws(apiKey, region, model, baseUrl?)` | `NewAnthropicAws(...)` / `Model.anthropicAws(...)` | `Model.anthropicAws(...)` / `Aimux.anthropicAws(...)` | `aimux_anthropic_aws_new` |
-| Azure | `AzureProvider` | `azure(apiKey, resource, deployment, apiVersion?, baseUrl?)` | `NewAzure(...)` / `Model.azure(...)` | `Model.azure(...)` / `Aimux.azure(...)` | `aimux_azure_new` |
+| Azure | `AzureOpenAIProvider` | `azure(apiKey, resource, deployment, apiVersion?, baseUrl?)` | `NewAzure(...)` / `Model.azure(...)` | `Model.azure(...)` / `Aimux.azure(...)` | `aimux_azure_new` |
 
 `—` = not exposed in that binding yet (Google is Rust / Node / Python only).
 Every constructor has a base-URL variant (`WithBase` / `baseUrl` overload).
 
-The remaining 65 providers (speech, transcription, image, video, local
-inference, search, standalone OpenAI-compatible, Vertex-hosted) each have a
-typed Rust constructor — full list, one entry per provider:
+Other vendor packages (speech, transcription, image, video and search) have
+typed Rust factories; presets use `create_provider(name, PresetSettings)`:
 [providers.md](providers.md). Their per-binding modality factories are in the
 function tables below.
 
@@ -69,9 +68,11 @@ function tables below.
 
 | Function | Signature (abridged) | Notes |
 |----------|----------------------|-------|
-| `provider` | `provider(name, api_key, model_id, options) -> Box<dyn LanguageModel>` | registry lookup; unknown name → `NoSuchProvider` |
-| `provider_from_env` | `provider_from_env(name, model_id, options)` | key read from the registry entry's env var |
-| `provider_registry_entry` | `-> Option<OpenAICompatProfile>` | inspect a registry profile |
+| `create_provider` | `(name, PresetSettings) -> Result<Arc<dyn Provider>, AiMuxError>` | vendor package or preset; unknown name → `NoSuchProvider`; keys read per request |
+| `default_providers` | `() -> BTreeMap<String, Arc<dyn Provider>>` | all built-in providers with default settings |
+| `provider_names` | `() -> Vec<&'static str>` | sorted names accepted by `create_provider` |
+| `provider_registry::create_provider_registry` | `(providers, options) -> ProviderRegistry` | resolves `"provider:model"` ids; options set the separator |
+| `Provider::discovery` | `() -> Option<&dyn ProviderDiscovery>` | optional model listing via `list_models().await` |
 | `generate_text` | `(model, prompt, options) -> GenerateTextResult` | non-streaming |
 | `stream_text` | `(model, prompt, options) -> StreamTextResult` | streaming |
 
@@ -79,13 +80,17 @@ Per-modality entry points are trait methods on the model types
 (`EmbeddingModel`, `ImageModel`, `SpeechModel`, …) — see
 [API.md §Features](API.md#features).
 
+The bindings keep their own compatibility API, implemented in
+`aimux_providers::provider`; these helpers and option types are not Rust
+crate-root exports.
+
 ### Node (`@arcships/aimux`)
 
 | Function | Notes |
 |----------|-------|
 | `generateText(model, prompt, options?, signal?)` / `streamText(...)` | typed wrappers; `signal` = `AbortSignal` |
-| `openai()` / `anthropic()` / `deepseek()` / `google()` | native typed path; `deepseek()` is registry-backed |
-| `provider(name, apiKey?, modelId, config?)` | registry-backed; names listed in [providers.md](providers.md) |
+| `openai()` / `anthropic()` / `deepseek()` / `google()` | native typed path; `deepseek()` uses the vendor chat model |
+| `provider(name, apiKey?, modelId, config?)` | by-name vendor packages and presets; names listed in [providers.md](providers.md) |
 | `openaiEmbedding` / `cohereEmbedding` / `googleEmbedding` | embeddings |
 | `openaiSpeech` / `openaiTranscription` | speech / STT |
 | `openaiImage` / `googleImage` / `googleVideo` | image / video |
@@ -97,7 +102,7 @@ Per-modality entry points are trait methods on the model types
 | Function | Notes |
 |----------|-------|
 | `generate_text(model, prompt, options?)` / `stream_text(...)` | typed wrappers |
-| `openai` / `anthropic` / `deepseek` / `provider` | same semantics as Node; `deepseek` registry-backed |
+| `openai` / `anthropic` / `deepseek` / `provider` | same semantics as Node; `deepseek` uses the vendor chat model |
 | `openai_embedding` / `cohere_embedding` / `google_embedding` | embeddings |
 | `openai_speech` / `openai_transcription` | speech / STT |
 | `openai_image` / `google_image` / `google_video` | image / video |
@@ -107,7 +112,7 @@ Per-modality entry points are trait methods on the model types
 
 | Function | Notes |
 |----------|-------|
-| `Provider(name, apiKey?, modelId, config?)` | registry-backed; names listed in [providers.md](providers.md) |
+| `Provider(name, apiKey?, modelId, config?)` | by-name vendor packages and presets; names listed in [providers.md](providers.md) |
 | `NewOpenAI` / `NewAnthropic` / `NewDeepSeek` | native typed path (+ `WithBase` variants) |
 | `NewOpenAIEmbedding` / `NewCohereEmbedding` / `NewGoogleEmbedding` | embeddings |
 | `NewOpenAISpeech` / `NewOpenAITranscription` | speech / STT |
@@ -118,14 +123,14 @@ Per-modality entry points are trait methods on the model types
 
 | Function | Notes |
 |----------|-------|
-| `provider(name, apiKey?, modelId, config?)` | registry-backed |
+| `provider(name, apiKey?, modelId, config?)` | by-name vendor packages and presets |
 | `openai(apiKey, modelId)` / `anthropic(apiKey, modelId)` | native typed path (+ `WithBase`/`baseUrl` variants; Swift: `Aimux.openai(apiKey:modelId:)`) |
 | modality classes | `EmbeddingModel` / `SpeechModel` / `ImageModel` / `TranscriptionModel` / `VideoModel` / `RerankingModel` / `SearchModel` / `Files`, each with `openai` / `cohere` / `google` … factories |
 
 ### C ABI (`aimux-ffi`)
 
 All functions communicate via JSON strings. Entry points are declared in
-[aimux-ffi.h](../../aimux-ffi/aimux-ffi.h): `provider_new` (registry lookup),
+[aimux-ffi.h](../../aimux-ffi/aimux-ffi.h): `provider_new` (by-name vendor package or preset),
 model constructors (`openai_new`, `anthropic_new`, …), `*_generate`,
 `*_stream` (push-callback), `*_embed` / `*_speech` / … per modality, and the
 `*_free` family.

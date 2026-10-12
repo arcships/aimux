@@ -205,6 +205,7 @@ fn ws_request(url: String) -> WebSocketRequest {
             step_ms: None,
             total_ms: Some(10_000),
         }),
+        connector: None,
     }
 }
 
@@ -563,6 +564,7 @@ async fn live_wss_handshake_through_connect_proxy() {
             step_ms: None,
             total_ms: Some(20_000),
         }),
+        connector: None,
     };
     let _ = &mut request;
 

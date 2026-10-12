@@ -59,6 +59,8 @@ pub fn err_response(e: AiMuxError) -> Response {
     let status = match &e {
         AiMuxError::InvalidArgument(_)
         | AiMuxError::InvalidPrompt(_)
+        | AiMuxError::LoadApiKey { .. }
+        | AiMuxError::LoadSetting { .. }
         | AiMuxError::NoSuchProvider { .. }
         | AiMuxError::NoSuchModel { .. } => StatusCode::BAD_REQUEST,
         AiMuxError::UnsupportedFunctionality(_) => StatusCode::NOT_IMPLEMENTED,

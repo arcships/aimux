@@ -5,21 +5,33 @@
 //!
 //! Fal uses an async queue pattern: POST to submit, then GET to poll until
 //! the result is ready. The audio is sent as a base64 data URL.
+//!
+//! [`create_fal`] takes [`FalProviderSettings`], validates the base URL, fixes
+//! the provider name and returns a [`FalProvider`]. The credential is not read
+//! there: it is loaded for every request, from the setting or from `FAL_KEY`.
+//! [`fal()`] is the default instance; it reads nothing and cannot fail.
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::retry;
 use aimux_core::shared::Warning;
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::{HttpRequest, load_api_key, sleep_or_abort, without_trailing_slash};
+use aimux_provider_utils::HttpRequest;
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+
+use crate::shared::{
+    AuthScheme, Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, credential_headers,
+    is_poll_control_key, poll_interval_ms, poll_until, retry_download,
+};
 
 /// fal errors are FastAPI-style: `{"detail": "..."}` or
 /// `{"detail": [{"loc": [...], "msg": "...", "type": "..."}]}` where `type`
@@ -60,73 +72,173 @@ fn fal_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxE
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
-pub struct FalConfig {
-    pub api_key: String,
-    pub base_url: String,
-    pub headers: Option<HashMap<String, String>>,
+/// Milliseconds between two polls of a queued transcription request
+/// (`providerOptions.fal.pollIntervalMs` overrides it for one call).
+const POLL_INTERVAL_MS: u64 = 100;
+/// How many times a queued transcription request is polled before the call
+/// gives up (ten minutes at the default interval).
+const MAX_POLL_ATTEMPTS: u32 = 6_000;
+/// Milliseconds between two attempts to download a generated image
+/// (`providerOptions.fal.pollIntervalMs` overrides it for one call).
+const DOWNLOAD_RETRY_INTERVAL_MS: u64 = 1_000;
+
+pub(crate) mod options;
+
+const DEFAULT_BASE_URL: &str = "https://queue.fal.run";
+const API_KEY_ENV_VAR: &str = "FAL_KEY";
+const DEFAULT_NAME: &str = "fal";
+
+/// Settings of [`create_fal`].
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct FalProviderSettings {
+    /// Base URL for the API calls. Default `https://queue.fal.run`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `FAL_KEY` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including the credential. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` strings (`"{name}.transcription"`, `"{name}.video"`, `"{name}.image"`).
+    /// Default `"fal"`. The providerOptions key stays `fal`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
 }
 
-impl FalConfig {
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: "https://queue.fal.run".to_string(),
-            headers: None,
-        }
-    }
-
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-
-    #[must_use]
-    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = Some(headers);
-        self
-    }
-
-    /// Create from the `FAL_KEY` environment variable.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
-    /// set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "FAL_KEY", "Fal")?;
-        Ok(Self::new(api_key))
+impl std::fmt::Debug for FalProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FalProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .finish()
     }
 }
 
+/// Create a Fal provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_fal(settings: FalProviderSettings) -> Result<FalProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(FalProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: credential_headers(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Fal"),
+            AuthScheme::Scheme("Key"),
+            Vec::new(),
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+    })
+}
+
+/// The default provider: `create_fal` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn fal() -> &'static FalProvider {
+    static DEFAULT: OnceLock<FalProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_fal(FalProviderSettings::default()).expect("default Fal settings are always valid")
+    })
+}
+
+/// A Fal provider. Cheap to clone the models out of; it holds no HTTP
+/// client.
 pub struct FalProvider {
-    config: FalConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
 }
 
 impl FalProvider {
-    #[must_use]
-    pub fn new(config: FalConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            None,
+        )
     }
 
+    /// A transcription (STT) model (e.g. `"wizper"`); `provider()` is `"{name}.transcription"`.
     #[must_use]
     pub fn transcription(&self, model_id: &str) -> FalTranscriptionModel {
-        FalTranscriptionModel::new(model_id.to_string(), self.config.clone())
+        FalTranscriptionModel::from_config(model_id.to_string(), self.model_config("transcription"))
     }
 
-    /// Create a video generation model instance for the given model name
-    /// (e.g. `"fal-ai/kling-video"`).
+    /// A video model (e.g. `"fal-ai/kling-video"`); `provider()` is `"{name}.video"`.
     #[must_use]
     pub fn video(&self, model_id: &str) -> FalVideoModel {
-        FalVideoModel::new(model_id.to_string(), self.config.clone())
+        FalVideoModel::from_config(model_id.to_string(), self.model_config("video"))
     }
 
-    /// Create an image generation model instance for the given model name
-    /// (e.g. `"fal-ai/flux/schnell"`).
+    /// An image model (e.g. `"fal-ai/flux/schnell"`); `provider()` is `"{name}.image"`.
     #[must_use]
     pub fn image(&self, model_id: &str) -> FalImageModel {
-        FalImageModel::new(model_id.to_string(), self.config.clone())
+        FalImageModel::from_config(model_id.to_string(), self.model_config("image"))
+    }
+}
+
+impl ::aimux_core::Provider for FalProvider {
+    fn language_model(
+        &self,
+        model_id: &str,
+    ) -> Result<::std::sync::Arc<dyn ::aimux_core::LanguageModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "languageModel"))
+    }
+
+    fn embedding_model(
+        &self,
+        model_id: &str,
+    ) -> Result<::std::sync::Arc<dyn ::aimux_core::EmbeddingModel>, AiMuxError> {
+        Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
+    }
+
+    fn image_model(
+        &self,
+        model_id: &str,
+    ) -> Result<::std::sync::Arc<dyn ::aimux_core::ImageModel>, AiMuxError> {
+        Ok(::std::sync::Arc::new(self.image(model_id)))
+    }
+
+    fn transcription_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<::std::sync::Arc<dyn ::aimux_core::TranscriptionModel>, AiMuxError>> {
+        Some(Ok(::std::sync::Arc::new(self.transcription(model_id))))
+    }
+
+    fn video_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<::std::sync::Arc<dyn ::aimux_core::VideoModel>, AiMuxError>> {
+        Some(Ok(::std::sync::Arc::new(self.video(model_id))))
     }
 }
 
@@ -167,50 +279,27 @@ fn audio_input_to_base64(audio: &AudioInput) -> Result<String, AiMuxError> {
 
 pub struct FalTranscriptionModel {
     model_id: String,
-    config: FalConfig,
+    config: EndpointConfig,
 }
 
 impl FalTranscriptionModel {
-    #[must_use]
-    pub fn new(model_id: String, config: FalConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
     }
 
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Key {}", self.config.api_key),
-        );
-        if let Some(ref config_headers) = self.config.headers {
-            for (k, v) in config_headers {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
+    fn submit_path(&self) -> String {
+        format!("/fal-ai/{}", self.model_id)
     }
 
-    fn submit_url(&self) -> String {
-        format!("{}/fal-ai/{}", self.config.base_url, self.model_id)
-    }
-
-    fn poll_url(&self, request_id: &str) -> String {
-        format!(
-            "{}/fal-ai/{}/requests/{}",
-            self.config.base_url, self.model_id, request_id
-        )
+    fn poll_path(&self, request_id: &str) -> String {
+        format!("/fal-ai/{}/requests/{request_id}", self.model_id)
     }
 }
 
 #[async_trait]
 impl TranscriptionModel for FalTranscriptionModel {
     fn provider(&self) -> &str {
-        "fal"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -233,9 +322,8 @@ impl TranscriptionModel for FalTranscriptionModel {
         body.insert("audio_url".to_string(), json!(audio_url));
 
         // Parse provider options.
-        if let Some(ref po) = options.provider_options
-            && let Some(fal) = po.get("fal")
-        {
+        let fal_options = options::fal_options(options.provider_options.as_ref());
+        if let Some(fal) = fal_options {
             if let Some(v) = fal.get("language") {
                 body.insert("language".to_string(), v.clone());
             }
@@ -256,26 +344,11 @@ impl TranscriptionModel for FalTranscriptionModel {
             }
         }
 
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         // Submit job.
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.submit_url(),
-                headers: headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                max_json_response_bytes: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            exchange.request(exchange.url(&self.submit_path()), options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             fal_failed_response_handler(),
@@ -283,71 +356,44 @@ impl TranscriptionModel for FalTranscriptionModel {
         .await?;
 
         let job: FalJobResponse = resp.value;
-        let retries = retry::prepare_retries(
-            options.max_retries,
-            self.retry_config(),
-            options.abort_signal.clone(),
-        );
 
-        // Poll for result.
-        let raw_body: Value;
-        let parsed: FalTranscriptionResponse;
-        let response_headers: HashMap<String, String>;
-        loop {
-            // Fal returns 400/404 while a queued request is still registering.
-            // Normalize that state inside the retry attempt so a preceding 5xx
-            // cannot wrap the pending response in RetryError.
-            let resp = retries
-                .retry(|| {
-                    let request = aimux_provider_utils::get_from_api(
-                        HttpRequest {
-                            url: self.poll_url(&job.request_id),
-                            headers: headers
-                                .iter()
-                                .map(|(k, v)| (k.clone(), v.clone()))
-                                .collect(),
-
-                            abort_signal: options.abort_signal.clone(),
-                            call_id: None,
-                            recording_context: None,
-                            response_timeout: None,
-                            max_json_response_bytes: None,
-                            validate_url: false,
-                            trusted_origin: None,
-                            credentialed_origin: None,
-                        },
-                        aimux_provider_utils::create_json_response_handler::<
-                            FalTranscriptionResponse,
-                        >(),
-                        fal_failed_response_handler(),
-                    );
-                    async move {
-                        match request.await {
-                            Ok(response) => Ok(Some(response)),
-                            Err(AiMuxError::ApiCall(detail))
-                                if matches!(detail.status_code, Some(400 | 404)) =>
-                            {
-                                Ok(None)
-                            }
-                            Err(error) => Err(error),
-                        }
-                    }
-                })
-                .await?;
-            let Some(resp) = resp else {
-                sleep_or_abort(
-                    std::time::Duration::from_millis(100),
-                    options.abort_signal.as_ref(),
+        // Poll for the result. Submitting is over: only this status request
+        // repeats.
+        let poll_url = exchange.url(&self.poll_path(&job.request_id));
+        let resp = poll_until(
+            &format!("fal request {}", job.request_id),
+            options.abort_signal.as_ref(),
+            Duration::from_millis(poll_interval_ms(
+                fal_options,
+                POLL_INTERVAL_MS_KEY,
+                POLL_INTERVAL_MS,
+            )),
+            MAX_POLL_ATTEMPTS,
+            || async {
+                // Fal returns 400/404 while a queued request is still
+                // registering; that is pending, not a failure.
+                match aimux_provider_utils::get_from_api(
+                    exchange.request(poll_url.clone(), options),
+                    aimux_provider_utils::create_json_response_handler::<FalTranscriptionResponse>(
+                    ),
+                    fal_failed_response_handler(),
                 )
-                .await?;
-                continue;
-            };
-
-            response_headers = resp.response_headers;
-            raw_body = resp.raw_value.unwrap_or(Value::Null);
-            parsed = resp.value;
-            break;
-        }
+                .await
+                {
+                    Ok(response) => Ok(PollStep::Ready(response)),
+                    Err(AiMuxError::ApiCall(detail))
+                        if matches!(detail.status_code, Some(400 | 404)) =>
+                    {
+                        Ok(PollStep::Pending)
+                    }
+                    Err(error) => Err(error),
+                }
+            },
+        )
+        .await?;
+        let response_headers = resp.response_headers;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let parsed = resp.value;
 
         let segments: Vec<TranscriptionSegment> = parsed
             .chunks
@@ -414,36 +460,16 @@ use aimux_core::image_model::{
 /// An fal.ai image generation model.
 pub struct FalImageModel {
     model_id: String,
-    config: FalConfig,
+    config: EndpointConfig,
 }
 
 impl FalImageModel {
-    #[must_use]
-    pub fn new(model_id: String, config: FalConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
     }
 
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Key {}", self.config.api_key),
-        );
-        if let Some(ref ch) = self.config.headers {
-            for (k, v) in ch {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/{}", self.config.base_url, self.model_id)
+    fn endpoint_path(&self) -> String {
+        format!("/{}", self.model_id)
     }
 
     fn file_to_data_uri(file: &ImageFile) -> Result<String, AiMuxError> {
@@ -480,7 +506,7 @@ impl FalImageModel {
 #[async_trait]
 impl ImageModel for FalImageModel {
     fn provider(&self) -> &str {
-        "fal"
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
@@ -509,7 +535,7 @@ impl ImageModel for FalImageModel {
         body.insert("image_size".into(), image_size);
         body.insert("num_images".into(), json!(options.n));
 
-        let fal_opts = options.provider_options.get("fal");
+        let fal_opts = options::fal_options(Some(&options.provider_options));
 
         if let Some(ref files) = options.files
             && !files.is_empty()
@@ -552,7 +578,10 @@ impl ImageModel for FalImageModel {
                 ("safetyTolerance", "safety_tolerance"),
             ];
             for (key, value) in fal {
-                if key == "__deprecatedKeys" || key == "useMultipleImages" {
+                if key == "__deprecatedKeys"
+                    || key == "useMultipleImages"
+                    || is_poll_control_key(key)
+                {
                     continue;
                 }
                 let ak = map
@@ -564,25 +593,10 @@ impl ImageModel for FalImageModel {
             }
         }
 
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.endpoint(),
-                headers: headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                max_json_response_bytes: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            exchange.request(exchange.url(&self.endpoint_path()), options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             fal_failed_response_handler(),
@@ -591,12 +605,6 @@ impl ImageModel for FalImageModel {
 
         let rh = resp.response_headers;
         let rb: Value = resp.value;
-        let retries = retry::prepare_retries(
-            options.max_retries,
-            self.retry_config(),
-            options.abort_signal.clone(),
-        );
-
         let target_images: Vec<Value> = if let Some(i) = rb.get("images").and_then(|v| v.as_array())
         {
             i.clone()
@@ -611,27 +619,29 @@ impl ImageModel for FalImageModel {
             if let Some(url) = img.get("url").and_then(|v| v.as_str()) {
                 // images[].url comes from the queue result response body, so
                 // it goes through the SSRF download guard.
-                let ir = retries
-                    .retry(|| {
+                let ir = retry_download(
+                    options.abort_signal.as_ref(),
+                    Duration::from_millis(poll_interval_ms(
+                        fal_opts,
+                        POLL_INTERVAL_MS_KEY,
+                        DOWNLOAD_RETRY_INTERVAL_MS,
+                    )),
+                    || {
                         aimux_provider_utils::get_from_api(
                             HttpRequest {
                                 url: url.to_string(),
-                                headers: vec![],
-
                                 abort_signal: options.abort_signal.clone(),
-                                call_id: None,
-                                recording_context: None,
-                                response_timeout: None,
-                                max_json_response_bytes: None,
                                 validate_url: true,
-                                trusted_origin: Some(self.config.base_url.clone()),
-                                credentialed_origin: Some(self.config.base_url.clone()),
+                                trusted_origin: Some(exchange.base_url().to_string()),
+                                credentialed_origin: Some(exchange.base_url().to_string()),
+                                ..Default::default()
                             },
                             aimux_provider_utils::create_binary_response_handler(),
                             fal_failed_response_handler(),
                         )
-                    })
-                    .await?;
+                    },
+                )
+                .await?;
                 downloaded.push(ir.value.to_vec());
             }
         }
@@ -678,7 +688,7 @@ impl ImageModel for FalImageModel {
                 }
             }
         }
-        metadata.insert("fal".into(), fm);
+        metadata.insert(options::NAMESPACE.into(), fm);
 
         Ok(ImageResult {
             images: ImageOutputs::Binary(downloaded),
@@ -712,12 +722,11 @@ use aimux_core::video_model::{
 /// polling is driven by Core via `do_status`.
 pub struct FalVideoModel {
     model_id: String,
-    config: FalConfig,
+    config: EndpointConfig,
 }
 
 impl FalVideoModel {
-    #[must_use]
-    pub fn new(model_id: String, config: FalConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
     }
 
@@ -729,40 +738,15 @@ impl FalVideoModel {
             .to_string()
     }
 
-    fn submit_url(&self) -> String {
+    fn submit_path(&self) -> String {
+        format!("/fal-ai/{}", self.normalized_model_id())
+    }
+
+    fn poll_path(&self, request_id: &str) -> String {
         format!(
-            "{}/fal-ai/{}",
-            self.config.base_url,
+            "/fal-ai/{}/requests/{request_id}",
             self.normalized_model_id()
         )
-    }
-
-    fn poll_url(&self, request_id: &str) -> String {
-        format!(
-            "{}/fal-ai/{}/requests/{}",
-            self.config.base_url,
-            self.normalized_model_id(),
-            request_id
-        )
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Key {}", self.config.api_key),
-        );
-        if let Some(ref ch) = self.config.headers {
-            for (k, v) in ch {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
     }
 }
 
@@ -782,7 +766,7 @@ fn video_file_to_data_uri(file: &VideoFile) -> Result<String, AiMuxError> {
 #[async_trait]
 impl VideoModel for FalVideoModel {
     fn provider(&self) -> &str {
-        "fal"
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
@@ -817,26 +801,11 @@ impl VideoModel for FalVideoModel {
             body.insert("seed".to_string(), json!(seed));
         }
 
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         // Submit.
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: self.submit_url(),
-                headers: headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                max_json_response_bytes: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            exchange.request(exchange.url(&self.submit_path()), options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             fal_failed_response_handler(),
@@ -872,25 +841,10 @@ impl VideoModel for FalVideoModel {
                 )
             })?;
 
-        let headers = self.build_headers(options.headers.as_ref());
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::get_from_api(
-            HttpRequest {
-                url: self.poll_url(request_id),
-                headers: headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                response_timeout: None,
-                max_json_response_bytes: None,
-                validate_url: false,
-                trusted_origin: None,
-                credentialed_origin: None,
-            },
+            exchange.request(exchange.url(&self.poll_path(request_id)), options),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             fal_failed_response_handler(),
         )

@@ -71,7 +71,7 @@ The code range identifies the source:
 
 | Range | Meaning |
 |---|---|
-| `1..17` | `AiMuxError` (4 retired, 14 = `Retry`) |
+| `1..19` | `AiMuxError` (4 retired, 14 = `Retry`) |
 | `100..105` | `RecordingError` |
 | `200..206` | failure detected by the C ABI |
 
@@ -139,10 +139,10 @@ it with these same getters — it can itself be any AiMuxError code, including
 `aimux_error_free` independently of the parent (free order is
 unconstrained).
 
-The unified `aimux_error_code_t` maps AiMuxError variants to values 1–17
+The unified `aimux_error_code_t` maps AiMuxError variants to values 1–19
 (`AIMUX_E_RETRY` 14, `AIMUX_E_NO_SUCH_TOOL` 15, `AIMUX_E_INVALID_TOOL_INPUT` 16,
-`AIMUX_E_TOOL_CALL_REPAIR` 17; 4 is retired — the legacy catch-all `Tool`
-variant, never produced), adds RecordingError values
+`AIMUX_E_TOOL_CALL_REPAIR` 17, `AIMUX_E_LOAD_API_KEY` 18, `AIMUX_E_LOAD_SETTING` 19;
+4 is retired — the legacy catch-all `Tool` variant, never produced), adds RecordingError values
 100–105, and assigns C ABI failures 200–206: `NULL_POINTER`, `INVALID_UTF8`,
 `INVALID_WIRE_JSON`, `INVALID_HANDLE`, `REENTRANT_CALL`,
 `RESULT_SERIALIZATION`, and `CALLBACK_FAILURE`. Values are never renumbered
@@ -153,6 +153,18 @@ ones: `aimux_error_tool_name` (codes 15/16), `aimux_error_available_tools`
 `aimux_error_tool_input` (16), and `aimux_error_original_error` (17; the
 original failure as the same externally-tagged JSON used by
 `ToolCall.error`). All returned strings are caller-owned.
+
+`AIMUX_E_LOAD_API_KEY` (18) and `AIMUX_E_LOAD_SETTING` (19) are the AI SDK's
+`LoadAPIKeyError` / `LoadSettingError`: no key was passed and the fallback
+environment variable is unset, or a required setting (AWS region, Azure
+resource name, Vertex project, …) is. Provider keys resolve on every request,
+so these arrive from the call (or from `aimux_provider_new` for registry
+providers), never from a request that was sent. `aimux_error_provider_code`
+returns the environment variable that was consulted; `aimux_error_provider_message`
+the key's description (`"OpenAI"`) or the setting name (`"region"`). A provider
+`config_json` is `{"base_url", "headers", "organization", "project", "params"}`;
+`max_retries` (a per-call option) and `body_overrides` (removed) are rejected
+with `AIMUX_E_INVALID_ARGUMENT`.
 
 Internal panics abort the process in this workspace's **release** profile
 (`panic = "abort"`); in a `panic=unwind` build a Rust callback's panic is
@@ -313,8 +325,8 @@ high-level range. Any fallible call can additionally return 200..206.
 | `aimux_vertex_new(access_token, project, location, model_id, out_handle)` / `_with_base(…, base_url, out_handle)` | Vertex AI |
 | `aimux_anthropic_aws_new(api_key, region, model_id, out_handle)` / `_with_base(…, base_url, out_handle)` | Anthropic on AWS |
 | `aimux_azure_new(api_key, resource_name, deployment, api_version, out_handle)` / `_with_base(api_key, base_url, deployment, api_version, out_handle)` | Azure OpenAI (`_with_base` requires `base_url`) |
-| `aimux_provider_new(name, api_key, model_id, config_json, uint64_t *out_handle)` | [AiMuxError] Registry provider (`api_key` NULL → env) |
-| `aimux_provider_from_env(name, model_id, uint64_t *out_handle)` | [AiMuxError] Registry + env API key |
+| `aimux_provider_new(name, api_key, model_id, config_json, uint64_t *out_handle)` | [AiMuxError] Vendor package or preset (`api_key` NULL → env at request time) |
+| `aimux_provider_from_env(name, model_id, uint64_t *out_handle)` | [AiMuxError] By-name provider + env API key at request time |
 | `aimux_provider_handle_new(name, api_key, config_json, uint64_t *out_handle)` | [AiMuxError] RFC-0027 provider handle |
 | `aimux_provider_list_models(handle, char **out_models_json)` | [AiMuxError] JSON `RuntimeModel[]` |
 | `aimux_provider_model(handle, model_id, uint64_t *out_handle)` | [AiMuxError] Model from a provider handle |

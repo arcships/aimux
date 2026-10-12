@@ -8,8 +8,13 @@
 //! 2. GET `/v1/videos/text2video/{id}/{task_id}` — polled by Core via `do_status`
 //!    until `succeeded`
 //! 3. Return the video URL from the result
+//!
+//! [`create_klingai`] takes [`KlingAIProviderSettings`], validates the base URL, fixes
+//! the provider name and returns a [`KlingAIProvider`]. The credential is not read
+//! there: it is loaded for every request, from the setting or from `KLINGAI_API_KEY`.
+//! [`klingai()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -20,8 +25,9 @@ use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoModel, VideoOperationStart, VideoOperationStatus,
     VideoResponse, VideoResult,
 };
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
-use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
+use crate::shared::{Credential, EndpointConfig, provider_headers};
 
 fn klingai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -42,61 +48,118 @@ fn klingai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<Ai
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
-pub struct KlingAIConfig {
-    pub api_key: String,
-    pub base_url: String,
-    pub headers: Option<HashMap<String, String>>,
+pub(crate) mod options;
+
+const DEFAULT_BASE_URL: &str = "https://api.klingai.com";
+const API_KEY_ENV_VAR: &str = "KLINGAI_API_KEY";
+const DEFAULT_NAME: &str = "klingai";
+
+/// Settings of [`create_klingai`].
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct KlingAIProviderSettings {
+    /// Base URL for the API calls. Default `https://api.klingai.com`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `KLINGAI_API_KEY` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including the credential. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` strings (`"{name}.video"`).
+    /// Default `"klingai"`. The providerOptions key stays `klingai`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
 }
 
-impl KlingAIConfig {
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: "https://api.klingai.com".to_string(),
-            headers: None,
-        }
-    }
-
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = without_trailing_slash(&url.into());
-        self
-    }
-
-    #[must_use]
-    pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = Some(headers);
-        self
-    }
-
-    /// Create from the `KLINGAI_API_KEY` environment variable.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
-    /// set.
-    pub fn from_env() -> Result<Self, AiMuxError> {
-        let api_key = load_api_key(None, "KLINGAI_API_KEY", "KlingAI")?;
-        Ok(Self::new(api_key))
+impl std::fmt::Debug for KlingAIProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KlingAIProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .finish()
     }
 }
 
+/// Create a KlingAI provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_klingai(settings: KlingAIProviderSettings) -> Result<KlingAIProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(KlingAIProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: provider_headers(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "KlingAI"),
+            Vec::new(),
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+    })
+}
+
+/// The default provider: `create_klingai` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn klingai() -> &'static KlingAIProvider {
+    static DEFAULT: OnceLock<KlingAIProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_klingai(KlingAIProviderSettings::default())
+            .expect("default KlingAI settings are always valid")
+    })
+}
+
+/// A KlingAI provider. Cheap to clone the models out of; it holds no HTTP
+/// client.
 pub struct KlingAIProvider {
-    config: KlingAIConfig,
+    name: String,
+    base_url: String,
+    headers: HeadersFn,
+    fetch: Option<FetchFunction>,
 }
 
 impl KlingAIProvider {
-    #[must_use]
-    pub fn new(config: KlingAIConfig) -> Self {
-        Self { config }
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            None,
+        )
     }
 
+    /// A video model (e.g. `"kling-v2.6-t2v"`); `provider()` is `"{name}.video"`.
     #[must_use]
     pub fn video(&self, model_id: &str) -> KlingAIVideoModel {
-        KlingAIVideoModel::new(model_id.to_string(), self.config.clone())
+        KlingAIVideoModel::from_config(model_id.to_string(), self.model_config("video"))
     }
 }
+
+crate::impl_single_modality_provider!(KlingAIProvider, video_model, |p, id| p.video(id));
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -161,52 +224,22 @@ struct KlingAITaskVideos {
 
 pub struct KlingAIVideoModel {
     model_id: String,
-    config: KlingAIConfig,
+    config: EndpointConfig,
 }
 
 impl KlingAIVideoModel {
-    #[must_use]
-    pub fn new(model_id: String, config: KlingAIConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
     }
+}
 
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(ref config_headers) = self.config.headers {
-            for (k, v) in config_headers {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn submit_endpoint(&self, mode: &str) -> String {
-        let path = match mode {
-            "i2v" => "/v1/videos/image2video",
-            "mi2v" => "/v1/videos/multi-image2video",
-            "motion-control" => "/v1/videos/motion-control",
-            _ => "/v1/videos/text2video",
-        };
-        format!("{}{path}", self.config.base_url)
-    }
-
-    fn poll_endpoint(&self, mode: &str, id: &str, task_id: &str) -> String {
-        let path = match mode {
-            "i2v" => "/v1/videos/image2video",
-            "mi2v" => "/v1/videos/multi-image2video",
-            "motion-control" => "/v1/videos/motion-control",
-            _ => "/v1/videos/text2video",
-        };
-        format!("{}{path}/{id}/{task_id}", self.config.base_url)
+/// The API path of a generation mode.
+fn mode_path(mode: &str) -> &'static str {
+    match mode {
+        "i2v" => "/v1/videos/image2video",
+        "mi2v" => "/v1/videos/multi-image2video",
+        "motion-control" => "/v1/videos/motion-control",
+        _ => "/v1/videos/text2video",
     }
 }
 
@@ -225,7 +258,7 @@ fn video_file_to_image_string(file: &aimux_core::video_model::VideoFile) -> Stri
 #[async_trait]
 impl VideoModel for KlingAIVideoModel {
     fn provider(&self) -> &str {
-        "klingai"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -249,9 +282,7 @@ impl VideoModel for KlingAIVideoModel {
         if let Some(ref prompt) = options.prompt {
             body.insert("prompt".to_string(), json!(prompt));
         }
-        if let Some(negative_prompt) = options
-            .provider_options
-            .get("klingai")
+        if let Some(negative_prompt) = options::klingai_options(Some(&options.provider_options))
             .and_then(|v| v.get("negativePrompt"))
             .and_then(|v| v.as_str())
         {
@@ -286,14 +317,13 @@ impl VideoModel for KlingAIVideoModel {
             }
         }
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         // Submit task.
-        let submit_url = self.submit_endpoint(&mode);
+        let submit_url = exchange.url(mode_path(&mode));
         let request_body = Value::Object(body);
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(submit_url.clone(), header_list, options),
+            exchange.request(submit_url.clone(), options),
             request_body.clone(),
             aimux_provider_utils::create_json_response_handler::<KlingAITaskResponse>(),
             klingai_failed_response_handler(),
@@ -364,12 +394,11 @@ impl VideoModel for KlingAIVideoModel {
         let id = field("id")?;
         let task_id = field("task_id")?;
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
-        let poll_url = self.poll_endpoint(mode, id, task_id);
+        let poll_url = exchange.url(&format!("{}/{id}/{task_id}", mode_path(mode)));
         let resp = aimux_provider_utils::get_from_api(
-            HttpRequest::new(poll_url.clone(), header_list, options),
+            exchange.request(poll_url.clone(), options),
             aimux_provider_utils::create_json_response_handler::<KlingAITaskResult>(),
             klingai_failed_response_handler(),
         )

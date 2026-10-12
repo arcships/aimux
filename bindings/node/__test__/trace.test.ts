@@ -8,7 +8,7 @@ import test from 'ava'
 import { createServer, type Server } from 'node:http'
 
 import {
-  openai,
+  deepseek,
   generateText,
   type GenerateTextResult,
 } from '../src/index.ts'
@@ -26,7 +26,10 @@ const MOCK_RESPONSE = JSON.stringify({
     prompt_tokens: 200,
     completion_tokens: 5,
     total_tokens: 205,
-    prompt_tokens_details: { cached_tokens: 128 },
+    // DeepSeek reports cache hits in its own fields (@ai-sdk/deepseek reads
+    // prompt_cache_hit_tokens, not prompt_tokens_details.cached_tokens).
+    prompt_cache_hit_tokens: 128,
+    prompt_cache_miss_tokens: 72,
   },
 })
 
@@ -47,7 +50,7 @@ test('trace() records calls and query API returns typed results', async (t) => {
   const { server, url } = await startMockServer()
   t.teardown(() => server.close())
 
-  const raw = await openai('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
+  const raw = await deepseek('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
   const traced = raw.traceAudited(true) // strict mode
 
   // > 4 KiB user message so block-aligned prefixes actually match.
@@ -69,7 +72,7 @@ test('trace() records calls and query API returns typed results', async (t) => {
   const statsJson = traced.traceAggregate()
   const stats = JSON.parse(statsJson) as any[]
   t.is(stats.length, 1)
-  t.is(stats[0].provider, 'openai')
+  t.is(stats[0].provider, 'deepseek.chat')
   t.is(stats[0].requests, 2)
   t.truthy(stats[0].reported_hit_rate)
   t.truthy(stats[0].client_upper_bound_hit_rate)
@@ -99,7 +102,7 @@ test('default streams carry no Raw parts (RFC-0016 M2 contract)', async (t) => {
   const { server, url } = await startMockServer()
   t.teardown(() => server.close())
 
-  const model = await openai('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
+  const model = await deepseek('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
   const gen = await model.streamText(JSON.stringify('hello'), undefined)
   const parts: string[] = []
   for await (const json of gen) {
@@ -118,7 +121,7 @@ test('non-traced model still generates normally', async (t) => {
   const { server, url } = await startMockServer()
   t.teardown(() => server.close())
 
-  const model = await openai('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
+  const model = await deepseek('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
   const result: GenerateTextResult = await generateText(model, 'hello')
   t.truthy(result.text)
   t.is(result.usage.input_tokens.total, 200)
