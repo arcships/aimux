@@ -18,13 +18,31 @@ use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
 /// A set of AWS credentials for SigV4 signing.
-#[derive(Debug, Clone)]
+///
+/// `Debug` is hand-written so the secret key and session token never reach
+/// logs or error output; the access key id and region stay visible because
+/// they identify the credentials without granting access.
+#[derive(Clone)]
 pub struct AwsCredentials {
     pub access_key_id: String,
     pub secret_access_key: String,
     /// Optional temporary session token (STS).
     pub session_token: Option<String>,
     pub region: String,
+}
+
+impl std::fmt::Debug for AwsCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AwsCredentials")
+            .field("access_key_id", &self.access_key_id)
+            .field("secret_access_key", &"[REDACTED]")
+            .field(
+                "session_token",
+                &self.session_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("region", &self.region)
+            .finish()
+    }
 }
 
 /// The result of signing a request.
@@ -280,6 +298,17 @@ mod tests {
             session_token: None,
             region: "us-east-1".to_string(),
         }
+    }
+
+    #[test]
+    fn debug_redacts_secret_key_and_session_token() {
+        let mut credentials = creds();
+        credentials.session_token = Some("FwoGZXIvYXdzEXAMPLETOKEN".to_string());
+        let printed = format!("{credentials:?}");
+        assert!(!printed.contains("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"));
+        assert!(!printed.contains("FwoGZXIvYXdzEXAMPLETOKEN"));
+        assert!(printed.contains("[REDACTED]"));
+        assert!(printed.contains("us-east-1"));
     }
 
     fn host_header(signed: &SignedRequest) -> String {
