@@ -230,12 +230,13 @@ class AimuxExceptionTest {
 
     @Test
     void codesOutsideTheRustEnumAreRejected() {
-        // Tool errors occupy 15..17; retired code 4 and values beyond 17 are
-        // header/library mismatches.
+        // Tool errors occupy 15..17 and 18 is NoOutputGenerated; retired code 4
+        // and values beyond 18 are header/library mismatches.
         assertThat(AimuxException.of(15, "")).isInstanceOf(AimuxException.NoSuchToolError.class);
+        assertThat(AimuxException.of(18, "")).isInstanceOf(AimuxException.NoOutputGeneratedError.class);
         assertThatThrownBy(() -> AimuxException.of(4, ""))
             .isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> AimuxException.of(18, ""))
+        assertThatThrownBy(() -> AimuxException.of(19, ""))
             .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> AimuxException.of(999, "m"))
             .isInstanceOf(IllegalStateException.class);
