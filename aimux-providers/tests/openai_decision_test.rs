@@ -8,6 +8,7 @@ use std::sync::{
 use aimux_core::decision_model::*;
 use aimux_core::recording::{self, RingRecorder};
 use aimux_core::replay::{MockDecisionReplayModel, replay_decision_with_model};
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::{AiMuxError, Provider};
 use aimux_providers::{OpenAIProvider, OpenAIProviderSettings, PresetSettings, create_openai};
 use indexmap::IndexMap;
@@ -585,7 +586,7 @@ async fn malformed_image_answers_bound_error_context_but_preserve_wire_and_respo
     let raw = json!({"model":"gpt-6-luna","answers":[],"metadata":{"api_key":"response-secret"}});
     mount(&server, raw.clone()).await;
     let mut request = options();
-    request.provider_options = Some(HashMap::from([(
+    request.provider_options = Some(SharedProviderOptions::from([(
         "openai".into(),
         object(json!({"images": [{"data": encoded, "media_type": "image/png", "detail": "low"}]})),
     )]));

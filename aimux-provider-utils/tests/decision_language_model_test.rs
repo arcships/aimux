@@ -650,7 +650,6 @@ async fn the_language_model_call_joins_the_decision_recording() {
     ));
     model.do_decide(&opts).await.unwrap();
     let calls = mock.calls.lock().unwrap();
-    assert_eq!(calls[0].call_id.as_deref(), Some("call-decision"));
     assert_eq!(
         calls[0]
             .recording_context

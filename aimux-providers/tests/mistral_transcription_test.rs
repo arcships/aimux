@@ -95,6 +95,7 @@ fn options(audio: AudioInput, media_type: &str) -> TranscriptionCallOptions {
         max_retries: None,
         timeout: None,
         headers: None,
+        download: None,
     }
 }
 

@@ -220,6 +220,7 @@ impl TranscriptionModel for GoogleTranscriptionModel {
             options.provider_options.as_ref(),
         ))?;
         let audio = match &options.audio {
+            AudioInput::Url(_) => return Err(AudioInput::url_error()),
             AudioInput::Base64(value) => value.clone(),
             AudioInput::Binary(value) => {
                 base64::Engine::encode(&base64::engine::general_purpose::STANDARD, value)

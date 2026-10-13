@@ -155,6 +155,7 @@ impl TranscriptionModel for XaiTranscriptionModel {
             form.text("keyterm", keyterm)?;
         }
         let audio = match &options.audio {
+            AudioInput::Url(_) => return Err(AudioInput::url_error()),
             AudioInput::Binary(bytes) => bytes.clone(),
             AudioInput::Base64(data) => base64::engine::general_purpose::STANDARD
                 .decode(data)

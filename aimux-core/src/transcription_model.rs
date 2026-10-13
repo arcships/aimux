@@ -416,6 +416,8 @@ pub async fn stream_transcribe(
 mod tests {
     use super::*;
 
+    use std::sync::{Arc, Mutex};
+
     /// A batch-only model, like Groq's: it defines no `do_stream`.
     struct BatchOnly;
 
@@ -470,13 +472,6 @@ mod tests {
             other => panic!("expected UnsupportedFunctionality, got {other:?}"),
         }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use std::sync::{Arc, Mutex};
 
     use crate::download::{DownloadRequest, DownloadedFile};
 

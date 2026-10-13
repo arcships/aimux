@@ -422,7 +422,7 @@ impl RuntimeDecisionModel {
         )?;
         let metadata = result
             .provider_metadata
-            .get_or_insert_with(HashMap::new)
+            .get_or_insert_with(Default::default)
             .entry(provider.to_owned())
             .or_default();
         if provider == "laya" && !abstentions.is_empty() {

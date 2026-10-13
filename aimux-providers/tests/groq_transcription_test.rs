@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
 use aimux_providers::groq::{GroqProviderSettings, create_groq};
 
@@ -20,7 +21,7 @@ const AUDIO: [u8; 4] = [0x49, 0x44, 0x33, 0x04];
 fn call(media_type: &str, groq: Option<Value>) -> TranscriptionCallOptions {
     let mut options = TranscriptionCallOptions::new(AudioInput::Binary(AUDIO.to_vec()), media_type);
     if let Some(Value::Object(groq)) = groq {
-        options.provider_options = Some(HashMap::from([("groq".to_string(), groq)]));
+        options.provider_options = Some(SharedProviderOptions::from([("groq".to_string(), groq)]));
     }
     options
 }

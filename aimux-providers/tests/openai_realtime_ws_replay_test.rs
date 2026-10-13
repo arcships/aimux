@@ -124,7 +124,11 @@ async fn realtime_transcription_replays_through_injected_web_socket() {
         include_raw_chunks: false,
         timeout: None,
     };
-    let result = model.do_stream(options).await.expect("stream opens");
+    let result = model
+        .do_stream(options)
+        .expect("the OpenAI transcription model streams")
+        .await
+        .expect("stream opens");
     let parts: Vec<TranscriptionStreamPart> = result
         .stream
         .map(|part| part.expect("no stream error"))

@@ -190,7 +190,7 @@ async fn media_is_native_per_runtime_and_recorded_for_replay() {
     ] {
         let server = MockServer::start().await;
         let mut request = options();
-        request.provider_options = Some(HashMap::from([(
+        request.provider_options = Some(SharedProviderOptions::from([(
             provider.into(),
             object(json!({"images": [image.clone()]})),
         )]));
@@ -770,7 +770,7 @@ async fn runtime_limits_are_checked_before_http() {
     let image = json!({"data": "iVBORw0KGgo=", "media_type": "image/png"});
     let with_images = |provider: &str, count: usize| {
         let mut request = options();
-        request.provider_options = Some(HashMap::from([(
+        request.provider_options = Some(SharedProviderOptions::from([(
             provider.into(),
             object(json!({"images": vec![image.clone(); count]})),
         )]));

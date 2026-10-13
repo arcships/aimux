@@ -192,11 +192,8 @@ impl DecisionModel for DecisionLanguageModel {
         call.abort_signal.clone_from(&options.abort_signal);
         call.headers.clone_from(&options.headers);
         call.provider_options.clone_from(&options.provider_options);
-        // The language-model exchanges belong to the decision's recording.
-        call.call_id = options
-            .recording_context
-            .as_ref()
-            .map(|context| context.call_id.clone());
+        // The language-model exchanges belong to the decision's recording
+        // (the call id is the recording context's).
         call.recording_context
             .clone_from(&options.recording_context);
 
