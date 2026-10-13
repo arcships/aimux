@@ -123,7 +123,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   then reaches the provider as inline data; they used to pass every URL
   through. The Cohere chat, Open Responses and xAI Responses models declare
   the URLs their packages declare (HTTP(S) images; for xAI also PDF and
-  text), so those still reach the API as URLs.
+  text), so those still reach the API as URLs. Codex models declare the
+  OpenAI Responses model's URLs (HTTP(S) images and PDFs) on both channels.
   `GenerateTextOptions::download` takes a `DownloadFunction` (the AI SDK's
   `experimental_download`) instead. `AudioInput::Url` is new:
   `transcribe` downloads it with `TranscriptionCallOptions::download`, and a
