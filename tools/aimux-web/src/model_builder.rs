@@ -54,6 +54,23 @@ pub fn build_model(
     }
 }
 
+/// Whether `base_url` points somewhere other than `provider`'s own default
+/// endpoint. Stored and environment keys are never sent to such a URL: it
+/// came from the caller (a request field, or an imported recording).
+///
+/// The default is what [`build_model`] uses when no base URL is given; when
+/// it cannot be determined (an unknown provider, a templated registry URL)
+/// every given URL counts as custom.
+pub fn is_custom_base_url(provider: &str, base_url: Option<&str>) -> bool {
+    let Some(url) = base_url else {
+        return false;
+    };
+    let default = build_model(provider, Some(String::new()), "default-base-url", None)
+        .ok()
+        .and_then(|model| model.config_snapshot().base_url);
+    default.is_none_or(|default| default.trim_end_matches('/') != url.trim_end_matches('/'))
+}
+
 /// The env var a native provider (see [`build_model`]) reads its key from.
 pub fn native_key_env(provider: &str) -> Option<&'static str> {
     Some(match provider {
@@ -76,5 +93,40 @@ fn native_key(provider: &str, env: &str, api_key: Option<String>) -> Result<Stri
                 "provider '{provider}' needs an API key — set `{env}` or pass api_key=\"env:{env}\""
             ))
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_custom_base_url;
+
+    #[test]
+    fn only_the_providers_own_default_is_not_custom() {
+        assert!(!is_custom_base_url("openai", None));
+        assert!(!is_custom_base_url(
+            "openai",
+            Some("https://api.openai.com/v1")
+        ));
+        assert!(!is_custom_base_url(
+            "openai",
+            Some("https://api.openai.com/v1/")
+        ));
+        assert!(!is_custom_base_url(
+            "groq",
+            Some("https://api.groq.com/openai/v1")
+        ));
+        assert!(is_custom_base_url(
+            "openai",
+            Some("https://attacker.example/v1")
+        ));
+        assert!(is_custom_base_url(
+            "groq",
+            Some("https://api.openai.com/v1")
+        ));
+        // No known default: every given URL counts as custom.
+        assert!(is_custom_base_url(
+            "no-such-provider",
+            Some("https://x.example")
+        ));
     }
 }
