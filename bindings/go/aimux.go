@@ -364,10 +364,10 @@ func RegisterProviders(configJSON string) error {
 	return expectAimuxError(C.aimux_register_providers(cJSON))
 }
 
-// InitProxy sets the global proxy configuration (M6, RFC-0016). Must be called
-// before the first GenerateText / StreamText call; a no-op if the shared HTTP
-// client is already initialised. configJSON is required (pass "{}" for
-// defaults); shape:
+// InitProxy replaces the default transport with one routed by this proxy
+// configuration (M6, RFC-0016). Requests started afterwards use it; calling it
+// again replaces the previous configuration. configJSON is required (pass "{}"
+// for defaults); shape:
 // { "http_url": "...", "https_url": "...", "all_url": "...", "no_proxy": "..." }
 // (all fields optional).
 func InitProxy(configJSON string) error {

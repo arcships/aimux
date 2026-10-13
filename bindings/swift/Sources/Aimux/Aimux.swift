@@ -915,9 +915,9 @@ public final class Model: @unchecked Sendable {
         if let e = aimux_register_providers(configJSON) { throw expectAimuxError(e, context: "registerProviders") }
     }
 
-    /// Set the global proxy configuration (M6, RFC-0016). Must be called before
-    /// the first `generateText` / `streamText` call; a no-op (returns without
-    /// error) if the shared HTTP client is already initialised.
+    /// Replace the default transport with one routed by this proxy configuration
+    /// (M6, RFC-0016). Requests started afterwards use it; calling it again
+    /// replaces the previous configuration.
     ///
     /// `configJSON` shape: `{ "http_url", "https_url", "all_url", "no_proxy" }`
     /// (all fields optional; omitting all is equivalent to relying on the

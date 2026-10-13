@@ -388,10 +388,9 @@ export declare function googleVideo(apiKey: string, modelId: string, baseUrl?: s
 export declare function initLogging(level: string): void
 
 /**
- * Set the global proxy configuration (M6, RFC-0016). Must be called before
- * the first `generateText` / `streamText` call; a no-op if the shared HTTP
- * client is already initialised (the shared client is lazily built on first
- * use and locked for the process lifetime).
+ * Replace the default transport with one routed by this proxy configuration
+ * (M6, RFC-0016). Requests started afterwards use it; calling it again
+ * replaces the previous configuration.
  *
  * `configJson` shape: `{ "http_url": "...", "https_url": "...", "all_url":
  * "...", "no_proxy": "..." }` (all fields optional; omitting all is equivalent
