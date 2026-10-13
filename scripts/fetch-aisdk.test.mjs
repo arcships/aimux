@@ -187,3 +187,30 @@ test('only the {version, integrity} object form is accepted, before any download
     assert.equal(existsSync(dest), false, `${name}: destination not created`);
   }
 });
+
+test('a failing package leaves every destination as it was', async () => {
+  // eta sorts and is fetched first and verifies; theta then fails its check.
+  const eta = publish('@aimux-test/eta', '1.0.0', pack('@aimux-test/eta', '1.0.0'));
+  publish('aimux-test-theta', '1.0.0', pack('aimux-test-theta', '1.0.0'));
+  const thetaPin = sri(pack('aimux-test-theta', '1.0.0', 'tampered\n'));
+
+  const dest = mkdtempSync(join(root, 'dest-'));
+  for (const spec of ['@aimux-test/eta@1.0.0', 'aimux-test-theta@1.0.0']) {
+    mkdirSync(join(dest, spec), { recursive: true });
+    writeFileSync(join(dest, spec, 'index.js'), `old ${spec}\n`);
+  }
+  const old = tree(dest);
+
+  const run = await fetchInto(
+    {
+      '@aimux-test/eta': { version: '1.0.0', integrity: eta },
+      'aimux-test-theta': { version: '1.0.0', integrity: thetaPin },
+    },
+    dest,
+  );
+  assert.notEqual(run.code, 0);
+  assert.match(run.stderr, /aimux-test-theta@1\.0\.0: integrity mismatch/);
+  assert.match(run.stdout, /fetch-aisdk: @aimux-test\/eta@1\.0\.0\n/, 'eta was fetched before theta failed');
+  assert.deepEqual(tree(dest), old);
+  assert.deepEqual(readdirSync(dest).sort(), ['@aimux-test', 'aimux-test-theta@1.0.0']);
+});

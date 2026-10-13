@@ -12,10 +12,11 @@
 # sha512 must equal the pinned integrity, and its package.json must name the
 # pinned package and version.
 #
-# Each package is extracted into a temporary directory and renamed into place
-# only after every check passes, so a failure never leaves a partial
-# destination. Running it again replaces each destination with identical
-# content.
+# Two phases: every package is fetched, verified and extracted into a staging
+# directory first; only when all of them pass are the destinations replaced.
+# Any failure (network, missing version, integrity or version mismatch)
+# leaves the destination exactly as it was. Running it again replaces each
+# destination with identical content.
 #
 # Usage: bash scripts/fetch-aisdk.sh
 
@@ -61,6 +62,8 @@ trap 'rm -rf "$work"' EXIT
 # pkg<TAB>version<TAB>integrity
 entries="$(jq -r 'to_entries[] | [.key, .value.version, .value.integrity] | @tsv' "$versions_file")"
 
+# Phase 1: fetch, verify and stage every package; nothing is placed yet.
+specs=()
 while IFS=$'\t' read -r pkg ver integrity; do
     spec="$pkg@$ver"
     echo "fetch-aisdk: $spec"
@@ -76,22 +79,46 @@ while IFS=$'\t' read -r pkg ver integrity; do
     [[ "$actual" == "$integrity" ]] ||
         die "$spec: integrity mismatch (expected $integrity, got $actual)"
 
-    staging="$work/stage"
-    rm -rf "$staging" && mkdir -p "$staging"
-    tar -xzf "$tarball" -C "$staging" --no-same-owner --no-same-permissions
-    [[ -f "$staging/package/package.json" ]] || die "$spec: tarball has no package/package.json"
+    unpack="$work/unpack"
+    rm -rf "$unpack" && mkdir -p "$unpack"
+    tar -xzf "$tarball" -C "$unpack" --no-same-owner --no-same-permissions
+    [[ -f "$unpack/package/package.json" ]] || die "$spec: tarball has no package/package.json"
 
-    got="$(jq -r '.name + "@" + .version' "$staging/package/package.json")"
+    got="$(jq -r '.name + "@" + .version' "$unpack/package/package.json")"
     [[ "$got" == "$spec" ]] || die "version mismatch: wanted $spec, tarball is $got"
 
-    # Atomic replace: the destination either holds the old or the new tree.
-    dest="$dest_root/$spec"
-    mkdir -p "$(dirname "$dest")"
-    if [[ -e "$dest" ]]; then
-        mv "$dest" "$work/old"
-    fi
-    mv "$staging/package" "$dest"
-    rm -rf "$work/old"
+    staging="$work/stage/$spec"
+    mkdir -p "$(dirname "$staging")"
+    mv "$unpack/package" "$staging"
+    specs+=("$spec")
 done <<<"$entries"
+
+# Phase 2: every package verified. Move the old trees aside, place the new
+# ones, and put the old ones back if a move fails. (The ${a[@]+...} form keeps
+# an empty array safe under `set -u` in bash 3.2.)
+placed=()
+restore() {
+    local spec
+    for spec in ${placed[@]+"${placed[@]}"}; do
+        rm -rf "${dest_root:?}/$spec"
+    done
+    for spec in "${specs[@]}"; do
+        if [[ -e "$work/old/$spec" ]]; then
+            mkdir -p "$(dirname "$dest_root/$spec")"
+            mv "$work/old/$spec" "$dest_root/$spec"
+        fi
+    done
+}
+for spec in "${specs[@]}"; do
+    if [[ -e "$dest_root/$spec" ]]; then
+        mkdir -p "$(dirname "$work/old/$spec")"
+        mv "$dest_root/$spec" "$work/old/$spec" || { restore; die "could not move $dest_root/$spec aside"; }
+    fi
+done
+for spec in "${specs[@]}"; do
+    mkdir -p "$(dirname "$dest_root/$spec")"
+    mv "$work/stage/$spec" "$dest_root/$spec" || { restore; die "could not place $spec"; }
+    placed+=("$spec")
+done
 
 echo "fetch-aisdk: done ($(jq length "$versions_file") packages in $dest_root)"
