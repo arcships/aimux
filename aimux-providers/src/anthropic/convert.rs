@@ -21,7 +21,9 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, FunctionTool, ResponseFormat, Tool, ToolChoice};
+use aimux_core::options::{
+    CallOptions, FunctionTool, LanguageModelV4ToolChoice, ResponseFormat, Tool,
+};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
 use aimux_provider_utils::{
@@ -2571,7 +2573,7 @@ fn apply_anthropic_tools(
         ));
     }
     let requested_choice = if json_schema.is_some() {
-        Some(&ToolChoice::Required)
+        Some(&LanguageModelV4ToolChoice::Required)
     } else {
         options.tool_choice.as_ref()
     };
@@ -2579,17 +2581,17 @@ fn apply_anthropic_tools(
         && !anthropic_tools.is_empty()
         && matches!(
             requested_choice,
-            Some(ToolChoice::Required | ToolChoice::Tool { .. })
+            Some(LanguageModelV4ToolChoice::Required | LanguageModelV4ToolChoice::Tool { .. })
         ) {
         warnings.push(Warning::Unsupported {
             feature: "toolChoice".to_string(),
             details: Some(match requested_choice {
-                Some(ToolChoice::Required) => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".to_string(),
-                Some(ToolChoice::Tool { tool_name }) => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
+                Some(LanguageModelV4ToolChoice::Required) => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".to_string(),
+                Some(LanguageModelV4ToolChoice::Tool { tool_name }) => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
                 _ => unreachable!(),
             }),
         });
-        Some(&ToolChoice::Auto)
+        Some(&LanguageModelV4ToolChoice::Auto)
     } else {
         requested_choice
     };
@@ -2619,7 +2621,7 @@ fn apply_anthropic_tools(
         // `undefined` args on provider-defined tools such as web_search).
         let mut defs = tool_defs;
         if caps.rejects_forced_tool_use
-            && let Some(ToolChoice::Tool { tool_name }) = requested_choice
+            && let Some(LanguageModelV4ToolChoice::Tool { tool_name }) = requested_choice
         {
             defs.retain(|tool| {
                 tool.get("name").and_then(Value::as_str) == Some(tool_name.as_str())

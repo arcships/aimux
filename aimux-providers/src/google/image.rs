@@ -13,6 +13,7 @@ use aimux_core::language_model_message::{FilePart, LanguageModelMessage, TextPar
 use aimux_core::options::CallOptions;
 use aimux_core::shared::{FileBytes, FileData, Warning};
 use aimux_core::tool::{ProviderTool, Tool};
+use aimux_core::types::NamespacedKind;
 use async_trait::async_trait;
 use serde_json::json;
 
@@ -140,7 +141,8 @@ impl ImageModel for GoogleImageModel {
                 return Err(invalid());
             }
             call.tools = Some(vec![Tool::Provider(ProviderTool {
-                id: "google.google_search".into(),
+                id: NamespacedKind::new("google.google_search")
+                    .expect("google.google_search is namespaced"),
                 name: "google_search".into(),
                 args: object.clone(),
             })]);

@@ -550,7 +550,7 @@ fn convert_responses_input_with_conversation(
 
 fn provider_tool_kind<'a>(tools: Option<&'a [Tool]>, name: &str) -> Option<&'a str> {
     tools?.iter().find_map(|tool| match tool {
-        Tool::Provider(tool) if tool.name == name => tool.id.strip_prefix("openai."),
+        Tool::Provider(tool) if tool.name == name => tool.id.as_str().strip_prefix("openai."),
         _ => None,
     })
 }
@@ -1055,10 +1055,10 @@ fn prepare_responses_tools_for(
         }
     }
     let mut tool_choice = tool_choice.map(|choice| match choice {
-        ToolChoice::Auto => json!("auto"),
-        ToolChoice::None => json!("none"),
-        ToolChoice::Required => json!("required"),
-        ToolChoice::Tool { tool_name } => {
+        LanguageModelV4ToolChoice::Auto => json!("auto"),
+        LanguageModelV4ToolChoice::None => json!("none"),
+        LanguageModelV4ToolChoice::Required => json!("required"),
+        LanguageModelV4ToolChoice::Tool { tool_name } => {
             let tool = tools.iter().find_map(|tool| match tool {
                 Tool::Provider(tool) if tool.name == *tool_name => Some(tool),
                 _ => None,
@@ -1139,7 +1139,7 @@ fn prepare_allowed_tools(
             Tool::Function(tool) => tool.name == name,
             Tool::Provider(tool) => tool.name == name,
         });
-        let aliases: Vec<_> = tools.iter().filter(|tool| matches!(tool, Tool::Provider(tool) if tool.id.strip_prefix("openai.") == Some(name) && tool.name != name)).collect();
+        let aliases: Vec<_> = tools.iter().filter(|tool| matches!(tool, Tool::Provider(tool) if tool.id.as_str().strip_prefix("openai.") == Some(name) && tool.name != name)).collect();
         let tool = if let Some(tool) = direct {
             if !aliases.is_empty() {
                 warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("this name is both a tool name and the provider tool name of another tool in this request; the tool with this name is allowed".into()) });
@@ -1216,7 +1216,7 @@ fn map_tool_fields(value: &Value, fields: &[(&str, &str)]) -> Value {
 fn provider_tool_to_json(
     tool: &aimux_core::tool::ProviderTool,
 ) -> Result<Option<Value>, AiMuxError> {
-    let kind = tool.id.strip_prefix("openai.").unwrap_or("");
+    let kind = tool.id.as_str().strip_prefix("openai.").unwrap_or("");
     if ![
         "file_search",
         "local_shell",
@@ -2310,7 +2310,6 @@ mod tests {
             &prompt,
             SystemMessageMode::System,
             store,
-            false,
             false,
         )
         .unwrap()

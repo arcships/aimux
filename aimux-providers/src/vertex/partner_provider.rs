@@ -266,9 +266,9 @@ pub fn create_google_vertex_xai(
             include_usage: Some(true),
             supports_structured_outputs: Some(true),
             supported_urls: Some(Arc::new(move || {
-                SupportedUrls(
+                Box::pin(std::future::ready(SupportedUrls(
                     std::iter::once(("image/*".to_string(), vec![http.clone()])).collect(),
-                )
+                )))
             })),
             transform_request_body: Some(Arc::new(xai_request_body)),
             convert_usage: Some(Arc::new(xai_usage)),

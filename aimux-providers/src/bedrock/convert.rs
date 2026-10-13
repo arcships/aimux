@@ -1355,7 +1355,7 @@ pub fn build_request_body_checked(
         ));
     }
     let tool_choice = if uses_json_tool {
-        Some(ToolChoice::Required)
+        Some(LanguageModelV4ToolChoice::Required)
     } else {
         call.tool_choice.clone()
     };
@@ -1385,12 +1385,13 @@ pub fn build_request_body_checked(
             })
             .collect(),
     );
-    let function_choice =
-        if provider_tools.using_anthropic_tools && matches!(tool_choice, Some(ToolChoice::None)) {
-            Some(ToolChoice::Auto)
-        } else {
-            tool_choice.clone()
-        };
+    let function_choice = if provider_tools.using_anthropic_tools
+        && matches!(tool_choice, Some(LanguageModelV4ToolChoice::None))
+    {
+        Some(LanguageModelV4ToolChoice::Auto)
+    } else {
+        tool_choice.clone()
+    };
     let mut tool_config = prepare_tools(&tools, function_choice.as_ref(), model_id);
     if !provider_tools.tools.is_empty() {
         let mut combined = provider_tools.tools;
@@ -1417,18 +1418,18 @@ pub fn build_request_body_checked(
     }
     if !provider_tools.using_anthropic_tools
         && rejects_forced
-        && matches!(tool_choice, Some(ToolChoice::Required | ToolChoice::Tool { .. }))
+        && matches!(tool_choice, Some(LanguageModelV4ToolChoice::Required | LanguageModelV4ToolChoice::Tool { .. }))
         && all_tools.iter().any(|tool| !matches!(tool, Tool::Provider(provider) if matches!(provider.id.as_str(), "anthropic.web_search_20250305" | "anthropic.web_search_20260318" | "anthropic.web_fetch_20260318")))
     {
         if tool_config.get("tools").is_some() { tool_config["toolChoice"] = json!({"auto":{}}); }
         let details = match &tool_choice {
-            Some(ToolChoice::Tool {tool_name}) => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
+            Some(LanguageModelV4ToolChoice::Tool {tool_name}) => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
             _ => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".into(),
         };
         warn("toolChoice", Some(&details));
     }
     if let Some(tools) = &tools {
-        for tool in tools.iter().filter(|tool| !matches!(&function_choice, Some(ToolChoice::Tool { tool_name }) if tool_name != &tool.name)) {
+        for tool in tools.iter().filter(|tool| !matches!(&function_choice, Some(LanguageModelV4ToolChoice::Tool { tool_name }) if tool_name != &tool.name)) {
             if let Some(strict) = tool.strict
                 && !supports_strict_tools(model_id)
             {
@@ -1460,10 +1461,10 @@ pub fn build_request_body_checked(
             json!({"type":"auto","disable_parallel_tool_use":true})
         } else {
             match &tool_choice {
-                Some(ToolChoice::Required) => {
+                Some(LanguageModelV4ToolChoice::Required) => {
                     json!({"type":"any","disable_parallel_tool_use":true})
                 }
-                Some(ToolChoice::Tool { tool_name }) => {
+                Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
                     json!({"type":"tool","name":tool_name,"disable_parallel_tool_use":true})
                 }
                 _ => json!({"type":"auto","disable_parallel_tool_use":true}),

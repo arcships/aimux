@@ -86,7 +86,7 @@ pub(crate) struct ChatDialect {
     /// Streaming usage rides in `chunk[key].usage` instead of `chunk.usage`.
     pub stream_usage_key: Option<String>,
     pub metadata_extractor: Option<Arc<dyn MetadataExtractor>>,
-    pub supported_urls: Option<Arc<dyn Fn() -> SupportedUrls + Send + Sync>>,
+    pub supported_urls: Option<SupportedUrlsFn>,
     pub convert_usage: Option<ConvertUsage>,
     pub error_structure: ErrorStructure,
 }

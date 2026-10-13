@@ -807,7 +807,7 @@ async fn responses_web_search_stream() {
     ])]);
     let mut call = options();
     call.tools = Some(vec![Tool::Provider(aimux_core::tool::ProviderTool {
-        id: "openai.web_search".into(),
+        id: "openai.web_search".parse().unwrap(),
         name: "webSearch".into(),
         args: serde_json::Map::new(),
     })]);

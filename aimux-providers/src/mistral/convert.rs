@@ -365,8 +365,8 @@ pub fn build_request_body(
             prepared.tools = Some(Vec::new());
             prepared.tool_choice = options.tool_choice.as_ref().map(|choice| {
                 json!(match choice {
-                    ToolChoice::Auto => "auto",
-                    ToolChoice::None => "none",
+                    LanguageModelV4ToolChoice::Auto => "auto",
+                    LanguageModelV4ToolChoice::None => "none",
                     _ => "any",
                 })
             });

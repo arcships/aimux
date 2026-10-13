@@ -1193,16 +1193,16 @@ async fn tool_call_should_send_correct_request_body() {
 
 #[tokio::test]
 async fn tool_call_should_send_the_tool_choice() {
-    use aimux_core::options::ToolChoice;
+    use aimux_core::options::LanguageModelV4ToolChoice;
     let mut options = tool_options();
-    options.tool_choice = Some(ToolChoice::Tool {
+    options.tool_choice = Some(LanguageModelV4ToolChoice::Tool {
         tool_name: "weather".to_string(),
     });
     assert_eq!(
         generate_body("deepseek-reasoner", &options).await["tool_choice"],
         json!({ "type": "function", "function": { "name": "weather" } })
     );
-    options.tool_choice = Some(ToolChoice::Required);
+    options.tool_choice = Some(LanguageModelV4ToolChoice::Required);
     assert_eq!(
         generate_body("deepseek-reasoner", &options).await["tool_choice"],
         "required"
@@ -1214,7 +1214,7 @@ async fn tool_call_should_warn_about_provider_defined_tools() {
     use aimux_core::tool::ProviderTool;
     let mut options = options();
     options.tools = Some(vec![Tool::Provider(ProviderTool {
-        id: "test.search".to_string(),
+        id: "test.search".parse().unwrap(),
         name: "search".to_string(),
         args: serde_json::Map::new(),
     })]);

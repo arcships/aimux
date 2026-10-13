@@ -26,7 +26,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Sourc
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, NamespacedKind, ProviderMetadata, ResponseMetadata, Warning,
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Warning,
 };
 
 use super::convert::{convert_responses_usage, map_responses_finish_reason, parse_usage};

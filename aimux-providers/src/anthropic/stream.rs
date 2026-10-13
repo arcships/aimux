@@ -24,7 +24,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Sourc
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
-use aimux_core::types::{ProviderMetadata, Warning};
+use aimux_core::types::{NamespacedKind, ProviderMetadata, Warning};
 use aimux_provider_utils::HttpRequest;
 use serde_json::{Value, json};
 
@@ -681,7 +681,8 @@ pub(crate) fn parse_anthropic_content(
         match block {
             ContentBlock::ContainerUpload { file_id } => {
                 content.push(GenerateContent::Custom {
-                    kind: "anthropic.container_upload".to_string(),
+                    kind: NamespacedKind::new("anthropic.container_upload")
+                        .expect("anthropic.container_upload is namespaced"),
                     provider_metadata: Some(
                         provider_namespace(CANONICAL, json!({ "fileId": file_id }))
                             .expect("provider metadata must be an object"),

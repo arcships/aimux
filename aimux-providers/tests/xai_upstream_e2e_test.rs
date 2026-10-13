@@ -172,7 +172,7 @@ async fn tool_results_preserve_actions_and_sources() {
     let fetch = MockFetch::new(vec![Canned::json(&body)]);
     let mut options = options();
     options.tools = Some(vec![Tool::Provider(ProviderTool {
-        id: "xai.web_search".into(),
+        id: "xai.web_search".parse().unwrap(),
         name: "web_search".into(),
         args: serde_json::Map::new(),
     })]);

@@ -145,7 +145,7 @@ pub(crate) fn prepare_tools_for(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prepare_tools_with_validator(
     tools: Option<&[AnthropicTool]>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
     disable_parallel_tool_use: bool,
     supports_structured_output: bool,
     supports_strict_tools: bool,
