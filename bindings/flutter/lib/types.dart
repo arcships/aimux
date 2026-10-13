@@ -455,9 +455,15 @@ class ToolChoice {
 /// Mirrors `RequestInfo.ts`.
 class RequestInfo {
   final dynamic body;
-  const RequestInfo({this.body});
-  factory RequestInfo.fromJson(Json j) => RequestInfo(body: j['body']);
-  Json toJson() => {if (body != null) 'body': body};
+  final bool? _hasBody;
+  /// `hasBody: true` with a null `body` writes `"body": null`; the AI SDK's
+  /// JSON keeps `null` apart from a missing value.
+  const RequestInfo({this.body, bool? hasBody}) : _hasBody = hasBody;
+  /// Whether `body` is present, even when it is JSON `null`.
+  bool get hasBody => _hasBody ?? body != null;
+  factory RequestInfo.fromJson(Json j) =>
+      RequestInfo(body: j['body'], hasBody: j.containsKey('body'));
+  Json toJson() => {if (hasBody) 'body': body};
 }
 
 /// Mirrors `ResponseInfo.ts`.
@@ -467,19 +473,32 @@ class ResponseInfo {
   final String? modelId;
   final Map<String, String>? headers;
   final dynamic body;
-  const ResponseInfo({this.id, this.timestamp, this.modelId, this.headers, this.body});
+  final bool? _hasBody;
+  /// `hasBody: true` with a null `body` writes `"body": null`; the AI SDK's
+  /// JSON keeps `null` apart from a missing value.
+  const ResponseInfo(
+      {this.id,
+      this.timestamp,
+      this.modelId,
+      this.headers,
+      this.body,
+      bool? hasBody})
+      : _hasBody = hasBody;
+  /// Whether `body` is present, even when it is JSON `null`.
+  bool get hasBody => _hasBody ?? body != null;
   factory ResponseInfo.fromJson(Json j) => ResponseInfo(
       id: j['id'] as String?,
       timestamp: j['timestamp'] as String?,
       modelId: j['modelId'] as String?,
       headers: (j['headers'] as Json?)?.cast<String, String>(),
-      body: j['body']);
+      body: j['body'],
+      hasBody: j.containsKey('body'));
   Json toJson() => {
         if (id != null) 'id': id,
         if (timestamp != null) 'timestamp': timestamp,
         if (modelId != null) 'modelId': modelId,
         if (headers != null) 'headers': headers,
-        if (body != null) 'body': body,
+        if (hasBody) 'body': body,
       };
 }
 
@@ -760,7 +779,8 @@ sealed class ContentPart {
             reason: j['reason'] as String?,
             isAutomatic: j['isAutomatic'] as bool?,
             signature: j['signature'] as String?,
-            inputSchemaInput: j['inputSchemaInput']),
+            inputSchemaInput: j['inputSchemaInput'],
+            hasInputSchemaInput: j.containsKey('inputSchemaInput')),
         'image' => ContentPartImage(
             image: decodeBase64Bytes(j['image']),
             mediaType: j['mediaType'] as String,
@@ -850,13 +870,22 @@ final class ContentPartToolApprovalRequest extends ContentPart {
   final bool? isAutomatic;
   final String? signature;
   final dynamic inputSchemaInput;
+  final bool? _hasInputSchemaInput;
+  /// `hasInputSchemaInput: true` with a null `inputSchemaInput` writes
+  /// `"inputSchemaInput": null`; the AI SDK's JSON keeps `null` apart from a
+  /// missing value.
   const ContentPartToolApprovalRequest(
       {required this.approvalId,
       required this.toolCallId,
       this.reason,
       this.isAutomatic,
       this.signature,
-      this.inputSchemaInput});
+      this.inputSchemaInput,
+      bool? hasInputSchemaInput})
+      : _hasInputSchemaInput = hasInputSchemaInput;
+  /// Whether `inputSchemaInput` is present, even when it is JSON `null`.
+  bool get hasInputSchemaInput =>
+      _hasInputSchemaInput ?? inputSchemaInput != null;
   @override
   Json toJson() => {
         'type': 'tool-approval-request',
@@ -865,7 +894,7 @@ final class ContentPartToolApprovalRequest extends ContentPart {
         if (reason != null) 'reason': reason,
         if (isAutomatic != null) 'isAutomatic': isAutomatic,
         if (signature != null) 'signature': signature,
-        if (inputSchemaInput != null) 'inputSchemaInput': inputSchemaInput,
+        if (hasInputSchemaInput) 'inputSchemaInput': inputSchemaInput,
       };
 }
 

@@ -77,6 +77,25 @@ pub mod base64_bytes {
     }
 }
 
+/// `#[serde(default, deserialize_with = "crate::wire::present", skip_serializing_if =
+/// "Option::is_none")]` for an `Option<Value>` that is an optional `unknown` or
+/// `JSONValue` upstream.
+///
+/// The AI SDK's JSON omits `undefined` and keeps `null`, so the two differ: a
+/// missing field is `None`, an explicit `null` is `Some(Value::Null)` (serde's
+/// own `Option` reads both as `None`), and serializing writes each back.
+///
+/// # Errors
+///
+/// Returns the value's deserialization error.
+pub fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}
+
 /// Serde and TypeScript for a `Binary(Vec<u8>) | Base64(String)` enum: the AI
 /// SDK's `Uint8Array | string`, a base64 string in its JSON either way.
 ///

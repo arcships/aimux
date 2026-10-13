@@ -91,6 +91,7 @@ data class EmbeddingUsage(
 @Serializable
 data class EmbeddingResponse(
     val headers: Map<String, String>? = null,
+    @Serializable(with = JsonValuePresentSerializer::class)
     val body: JsonElement? = null,
 )
 
@@ -137,6 +138,7 @@ sealed interface AudioData {
 /** Request metadata for speech generation. */
 @Serializable
 data class SpeechRequest(
+    @Serializable(with = JsonValuePresentSerializer::class)
     val body: JsonElement? = null,
 )
 
@@ -146,6 +148,7 @@ data class SpeechResponse(
     val timestamp: String? = null,
     val modelId: String? = null,
     val headers: Map<String, String>? = null,
+    @Serializable(with = JsonValuePresentSerializer::class)
     val body: JsonElement? = null,
 )
 
@@ -276,6 +279,7 @@ data class TranscriptionResponse(
     val timestamp: String? = null,
     val modelId: String? = null,
     val headers: Map<String, String>? = null,
+    @Serializable(with = JsonValuePresentSerializer::class)
     val body: JsonElement? = null,
 )
 
@@ -321,6 +325,7 @@ data class RerankingResponse(
     val timestamp: String? = null,
     val modelId: String? = null,
     val headers: Map<String, String>? = null,
+    @Serializable(with = JsonValuePresentSerializer::class)
     val body: JsonElement? = null,
 )
 
@@ -475,6 +480,7 @@ data class SearchResultItem(
 @Serializable
 data class SearchResponse(
     val headers: Map<String, String>? = null,
+    @Serializable(with = JsonValuePresentSerializer::class)
     val body: JsonElement? = null,
 )
 

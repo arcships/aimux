@@ -145,7 +145,11 @@ pub struct SpeechResult {
 pub struct SpeechRequest {
     /// Response body (HTTP providers only).
     #[ts(optional)]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::wire::present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub body: Option<serde_json::Value>,
 }
 
@@ -168,7 +172,11 @@ pub struct SpeechResponse {
     pub headers: Option<SharedHeaders>,
     /// Response body (opaque JSON).
     #[ts(optional)]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::wire::present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub body: Option<serde_json::Value>,
 }
 

@@ -390,6 +390,22 @@ class MultimodalTypesTest {
     }
 
     @Test
+    void unknownFieldsKeepNullApartFromMissing() throws Exception {
+        // body?: unknown (provider language-model-v4-generate-result.ts:41, :56)
+        // and inputSchemaInput?: unknown (provider-utils
+        // types/tool-approval-request.ts:41): the AI SDK's JSON keeps null and
+        // omits undefined, and a parsed value writes back the same JSON.
+        ObjectMapper t = Types.AimuxJson.MAPPER;
+        for (String wire : new String[] {"{}", "{\"body\":null}", "{\"body\":{\"a\":null}}"}) {
+            assertThat(t.writeValueAsString(t.readValue(wire, Types.ResponseInfo.class))).isEqualTo(wire);
+            assertThat(t.writeValueAsString(t.readValue(wire, Types.RequestInfo.class))).isEqualTo(wire);
+        }
+        String approval = "{\"type\":\"tool-approval-request\",\"approvalId\":\"a1\","
+            + "\"toolCallId\":\"c1\",\"inputSchemaInput\":null}";
+        assertThat(t.writeValueAsString(t.readValue(approval, Types.ContentPart.class))).isEqualTo(approval);
+    }
+
+    @Test
     void imageOutputsSerializerAllVariants() throws Exception {
         // Base64 variant (list of strings).
         MultimodalTypes.ImageOutputs base64 =

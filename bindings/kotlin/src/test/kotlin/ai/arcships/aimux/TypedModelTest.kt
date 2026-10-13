@@ -388,6 +388,24 @@ class TypedModelRoundTripTest {
     }
 
     @Test
+    fun `unknown fields keep null apart from missing`() {
+        // body?: unknown (provider language-model-v4-generate-result.ts:41, :56)
+        // and inputSchemaInput?: unknown (provider-utils
+        // types/tool-approval-request.ts:41): the AI SDK's JSON keeps null and
+        // omits undefined, and a parsed value writes back the same JSON.
+        for (wire in listOf("{}", "{\"body\":null}", "{\"body\":{\"a\":null}}")) {
+            val info = AimuxJson.decodeFromString(ResponseInfo.serializer(), wire)
+            assertThat(AimuxJson.encodeToString(ResponseInfo.serializer(), info)).isEqualTo(wire)
+            val request = AimuxJson.decodeFromString(RequestInfo.serializer(), wire)
+            assertThat(AimuxJson.encodeToString(RequestInfo.serializer(), request)).isEqualTo(wire)
+        }
+        val approval = "{\"type\":\"tool-approval-request\",\"approvalId\":\"a1\"," +
+            "\"toolCallId\":\"c1\",\"inputSchemaInput\":null}"
+        val part = AimuxJson.decodeFromString(ContentPart.serializer(), approval)
+        assertThat(AimuxJson.encodeToString(ContentPart.serializer(), part)).isEqualTo(approval)
+    }
+
+    @Test
     fun `image and file part bytes are base64 strings`() {
         // ImagePart.image / FilePart.data are DataContent (provider-utils
         // types/content-part.ts:42, :75): base64 strings in the JSON.

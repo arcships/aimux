@@ -605,3 +605,24 @@ func TestTranscriptionSessionCloseUnblocksNextPart(t *testing.T) {
 	// Idempotence remains part of the public session contract.
 	session.Close()
 }
+
+// Response bodies are the AI SDK's body?: unknown
+// (language-model-v4-generate-result.ts:41, :56): an explicit null is kept
+// apart from a missing body when decoded and encoded again.
+func TestResponseBodyKeepsNullApartFromMissing(t *testing.T) {
+	for _, body := range []string{`,"body":null`, ``, `,"body":{"a":null}`} {
+		wire := `{"audio":"aGk=","warnings":[],"response":{"modelId":"tts-1"` + body + `}}`
+		result, err := ParseSpeechResult(wire)
+		if err != nil {
+			t.Fatalf("parse %s: %v", wire, err)
+		}
+		encoded, _ := json.Marshal(result.Response)
+		if want := `{"modelId":"tts-1"` + body + `}`; string(encoded) != want {
+			t.Errorf("body %q: got %s, want %s", body, encoded, want)
+		}
+	}
+	var info ResponseInfo
+	if err := json.Unmarshal([]byte(`{"body":null}`), &info); err != nil || string(info.Body) != "null" {
+		t.Errorf("ResponseInfo body null: %q, %v", info.Body, err)
+	}
+}

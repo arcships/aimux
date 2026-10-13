@@ -298,7 +298,9 @@ session (idempotent).
 typed model surface. The wire JSON is the AI SDK's and equals the generated
 TypeScript types in `bindings/node/src/types`: camelCase field names (Kotlin
 properties carry the same names), unions tagged on `type` (`Source` on
-`sourceType`), optional fields absent rather than null. Decoding is lenient
+`sourceType`), optional fields absent rather than null. An `unknown` value
+(`body`, `inputSchemaInput`) keeps a JSON `null` as `JsonNull`, written back as
+`null`; a missing field is Kotlin `null` and omitted. Decoding is lenient
 (unknown keys ignored).
 
 | Kotlin | Wire |

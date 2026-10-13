@@ -469,7 +469,10 @@ The wire format is the AI SDK's: JSON keys are camelCase and unions are tagged
 by `type`. The raw dict API exchanges that JSON as-is (`result["finishReason"]`,
 `{"type": "text-delta", ...}`). The typed wrapper's models keep `snake_case`
 Python attributes and map them to the camelCase keys through a pydantic alias
-generator (both spellings validate; serialization uses camelCase).
+generator (both spellings validate; serialization uses camelCase). A field left
+unset is omitted; an `Any` field (`body`, `input_schema_input`) set to `None`
+is written as JSON `null`, as the AI SDK's JSON keeps `null` apart from a
+missing value.
 
 Key shapes (mirroring the shared JSON schema):
 

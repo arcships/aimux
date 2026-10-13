@@ -435,7 +435,10 @@ are the AI SDK's camelCase (`toolCallId`, `providerOptions`, `finishReason`, ...
 and optional fields are absent, never `null`. Sealed hierarchies are tagged on
 `type` with the upstream kebab-case names (e.g. `{"type":"text-delta",...}`,
 `{"type":"tool-call",...}`); bytes (`FileBytes`, image and file parts) are
-base64 strings, as the AI SDK's JSON carries a `Uint8Array`.
+base64 strings, as the AI SDK's JSON carries a `Uint8Array`. An `unknown`
+value (`body`, `inputSchemaInput`) is a `JsonNode`: a JSON `null` reads as
+`NullNode` and is written back as `null`, a missing field stays Java `null`
+and is omitted.
 
 A `ContentPart.ToolResult` (`type: "tool-result"`) carries `toolCallId`,
 `toolName`, `output` and `providerOptions`; `output` is a `ToolResultOutput`

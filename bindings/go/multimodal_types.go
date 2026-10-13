@@ -59,7 +59,7 @@ type EmbeddingUsage struct {
 // EmbeddingResponse is provider response metadata for embeddings.
 type EmbeddingResponse struct {
 	Headers map[string]string `json:"headers,omitempty"`
-	Body    any               `json:"body,omitempty"`
+	Body    json.RawMessage   `json:"body,omitempty"`
 }
 
 // EmbeddingResult is the result of an embedding call.
@@ -97,7 +97,7 @@ type SpeechResponse struct {
 	Timestamp *string           `json:"timestamp,omitempty"`
 	ModelID   *string           `json:"modelId,omitempty"`
 	Headers   map[string]string `json:"headers,omitempty"`
-	Body      any               `json:"body,omitempty"`
+	Body      json.RawMessage   `json:"body,omitempty"`
 }
 
 // SpeechResult is the result of a speech generation call.
@@ -190,7 +190,7 @@ type TranscriptionResponse struct {
 	Timestamp *string           `json:"timestamp,omitempty"`
 	ModelID   *string           `json:"modelId,omitempty"`
 	Headers   map[string]string `json:"headers,omitempty"`
-	Body      any               `json:"body,omitempty"`
+	Body      json.RawMessage   `json:"body,omitempty"`
 }
 
 // TranscriptionResult is the result of a transcription call.
@@ -229,7 +229,7 @@ type RerankingResponse struct {
 	Timestamp *string           `json:"timestamp,omitempty"`
 	ModelID   *string           `json:"modelId,omitempty"`
 	Headers   map[string]string `json:"headers,omitempty"`
-	Body      any               `json:"body,omitempty"`
+	Body      json.RawMessage   `json:"body,omitempty"`
 }
 
 // RerankingResult is the result of a reranking call.
@@ -317,7 +317,7 @@ type SearchResultItem struct {
 // SearchResponse is provider response metadata for search.
 type SearchResponse struct {
 	Headers map[string]string `json:"headers,omitempty"`
-	Body    any               `json:"body,omitempty"`
+	Body    json.RawMessage   `json:"body,omitempty"`
 }
 
 // SearchResult is the result of a search call.

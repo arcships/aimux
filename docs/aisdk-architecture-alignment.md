@@ -1865,6 +1865,8 @@ pub enum Optional<T> {
 
 这样可以避免 `Option<Value>` 在反序列化时把“缺字段”和“值为 null”合并。普通运行时 API 可以继续用 Option；wire DTO 必须保留上游 JSONValue 的 null 语义。
 
+落地形式(#232 C34)：`Option<Value>` 字段使用 `#[serde(default, deserialize_with = "crate::wire::present", skip_serializing_if = "Option::is_none")]`，`None` 即 Missing，`Some(Value::Null)` 即显式 null，序列化时各自写回。已覆盖上游为 `unknown` 的字段：各模型结果的 response/request `body`(`language-model-v4-generate-result.ts:41, :56` 等)、`APICallError.data`(`errors/api-call-error.ts:18`)与工具审批请求的 `inputSchemaInput`(`provider-utils` `types/tool-approval-request.ts:41`)。绑定同样区分：Python 不再以 `exclude_none` 序列化，`Any` 字段显式设为 `None` 时写出 null；Go 以 `json.RawMessage` 读取这些 body；Kotlin 以 `JsonValuePresentSerializer`、Swift 以 `KeyedDecodingContainer.decodeIfPresent(JSONValue.self)` 重载、Dart 以 `hasBody`/`hasInputSchemaInput` 保留显式 null；Java 的 `JsonNode` 字段由 Jackson 读成 `NullNode`。
+
 生成的 JSON TypeScript DTO 对缺失属性使用 `?`。上游运行时的 `number | undefined` 可在 SDK facade 中恢复，但不能要求 JSON 对象携带不存在的 undefined。
 
 provider options/metadata 的内部键完全透传，不执行 camelCase 改写，不从 `model.provider()` 拆字符串推导 namespace。

@@ -308,6 +308,37 @@ class TestPromptMessages:
         assert source == {"type": "base64", "media_type": "image/png", "data": "iVBORw=="}
 
 
+# ── JSON null and undefined (#232 C34) ───────────────────────────────────────
+
+class TestNullIsKeptApartFromMissing:
+
+    def test_unknown_fields_keep_null(self):
+        """``body?: unknown`` (provider language-model-v4-generate-result.ts:41,
+        :56) and ``inputSchemaInput?: unknown`` (provider-utils
+        types/tool-approval-request.ts:41): the AI SDK's JSON keeps ``null``
+        and omits ``undefined``; so does the dump of a parsed model."""
+        from aimux.wrapper import GenerateResponseMetadata, RequestInfo
+
+        for wire in ({}, {"body": None}, {"body": {"a": None}}):
+            assert GenerateResponseMetadata.model_validate(wire).model_dump(
+                mode="json", by_alias=True) == wire
+            assert RequestInfo.model_validate(wire).model_dump(
+                mode="json", by_alias=True) == wire
+        approval = {"type": "tool-approval-request", "approvalId": "a1",
+                    "toolCallId": "c1", "inputSchemaInput": None}
+        part = TypeAdapter(ContentPart).validate_python(approval)
+        assert part.model_dump(mode="json", by_alias=True) == approval
+
+    def test_null_tool_input_is_sent_as_null(self):
+        """A tool call's ``input`` is a JSON value; ``null`` is sent back as
+        ``null`` instead of being dropped (which Rust rejects as missing)."""
+        part = TypeAdapter(ContentPart).validate_python(
+            {"type": "tool-call", "toolCallId": "c1", "toolName": "t", "input": None})
+        assert part.model_dump(mode="json", by_alias=True)["input"] is None
+        assert TextContentPart(text="x").model_dump(mode="json", by_alias=True) == {
+            "type": "text", "text": "x"}
+
+
 # ── tool-call round trip with typed content parts ────────────────────────────
 
 class TestToolCallRoundTrip:

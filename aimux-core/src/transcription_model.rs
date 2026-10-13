@@ -183,7 +183,11 @@ pub struct TranscriptionResponse {
     pub headers: Option<SharedHeaders>,
     /// Response body (opaque JSON).
     #[ts(optional)]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::wire::present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub body: Option<serde_json::Value>,
 }
 
@@ -317,7 +321,11 @@ pub enum TranscriptionStreamPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         headers: Option<SharedHeaders>,
         #[ts(optional)]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            deserialize_with = "crate::wire::present",
+            skip_serializing_if = "Option::is_none"
+        )]
         body: Option<serde_json::Value>,
     },
     /// Metadata available after the stream finishes.

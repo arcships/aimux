@@ -25,7 +25,15 @@ import base64
 import json
 from typing import Annotated, Any, Callable, Dict, Iterator, List, Literal, Optional, Union
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, TypeAdapter
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    SerializationInfo,
+    TypeAdapter,
+    model_serializer,
+)
 from pydantic.alias_generators import to_camel
 
 from . import _repair
@@ -95,10 +103,32 @@ __all__ = [
 ]
 
 
+_JSON_VALUE_TYPES = (Any, Optional[Any])
+
+
 class _Wire(BaseModel):
-    """Base of every aimux model: ``snake_case`` attributes, camelCase JSON keys."""
+    """Base of every aimux model: ``snake_case`` attributes, camelCase JSON keys.
+
+    ``None`` is omitted when dumping, as Rust omits ``None`` (``undefined`` in
+    the AI SDK's JSON), except in a JSON-value field (``Any``) that was given
+    a value: there ``None`` is a JSON ``null``, which the AI SDK keeps apart
+    from a missing value (Rust ``wire::present``).
+    """
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    @model_serializer(mode="wrap")
+    def _omit_undefined(self, handler: Any, info: SerializationInfo) -> Any:
+        data = handler(self)
+        if not isinstance(data, dict):
+            return data
+        for name, field in type(self).model_fields.items():
+            if getattr(self, name, None) is not None:
+                continue
+            if name in self.model_fields_set and field.annotation in _JSON_VALUE_TYPES:
+                continue
+            data.pop(field.alias if info.by_alias and field.alias else name, None)
+        return data
 
 
 class _Meta(_Wire):
@@ -1064,7 +1094,7 @@ def _prompt_to_json(prompt: Prompt) -> str:
             f"prompt must be str or list of messages, got {type(prompt).__name__}"
         )
     msgs = [
-        m.model_dump(mode="json", exclude_none=True, by_alias=True)
+        m.model_dump(mode="json", by_alias=True)
         if isinstance(m, BaseModel)
         else m
         for m in prompt
@@ -1081,11 +1111,12 @@ def _opts_to_json(options: Optional[GenerateTextOptions]) -> Optional[str]:
             "options must be a GenerateTextOptions instance, got "
             f"{type(options).__name__}"
         )
-    # ``exclude_none`` mirrors Rust's ``#[serde(skip_serializing_if = "Option::is_none")]``
-    # on the inner struct fields, producing clean payloads (absent == None for the
-    # Rust deserializer). ``by_alias`` emits the ``schema`` field of the JSON
-    # response-format body and the camelCase keys of every model.
-    return options.model_dump_json(exclude_none=True, by_alias=True)
+    # ``_Wire`` omits unset ``None`` fields as Rust's
+    # ``#[serde(skip_serializing_if = "Option::is_none")]`` does and keeps a
+    # JSON ``null`` a JSON-value field was given. ``by_alias`` emits the
+    # ``schema`` field of the JSON response-format body and the camelCase keys
+    # of every model.
+    return options.model_dump_json(by_alias=True)
 
 
 def _repair_adapter(options: Optional[GenerateTextOptions]):
@@ -1099,7 +1130,7 @@ def _repair_adapter(options: Optional[GenerateTextOptions]):
         replacement = _repair.run_hook(fn, typed)
         if replacement is None:
             return None
-        return replacement.model_dump(mode="json", exclude_none=True, by_alias=True)
+        return replacement.model_dump(mode="json", by_alias=True)
 
     return adapter
 

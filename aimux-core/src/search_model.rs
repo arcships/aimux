@@ -172,7 +172,11 @@ pub struct SearchResponse {
     pub headers: Option<SharedHeaders>,
     /// The response body (opaque JSON).
     #[ts(optional)]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::wire::present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub body: Option<serde_json::Value>,
 }
 

@@ -602,7 +602,10 @@ generated TypeScript types in `bindings/node/src/types/`: camelCase field names
 (`toolCallId`, `finishReason`, `inputTokens`, `providerOptions`, ...), unions
 tagged by a `type` key (`"tool-call"`, `"text-delta"`, ...; errors by `name`),
 and optional fields absent rather than `null`. Go field tags follow it, so a
-typed struct marshals to exactly that JSON.
+typed struct marshals to exactly that JSON. An `unknown` value keeps a JSON
+`null` apart from a missing field: response and request `Body` fields are
+`json.RawMessage`, `nil` when the field was missing and `null` when the JSON
+carried `null`. `APICallError.Data` is `any` and cannot tell the two apart.
 
 A tool result goes back to the model as a `tool-result` content part in a
 `tool` message; its `output` is a union:

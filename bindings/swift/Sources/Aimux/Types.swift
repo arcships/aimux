@@ -26,6 +26,18 @@ import Foundation
 /// On this toolchain `Bool` and `Double` decode are mutually exclusive (a JSON
 /// bool fails `Double` decode and a JSON number fails `Bool` decode), so the
 /// scalar ordering below is unambiguous.
+extension KeyedDecodingContainer {
+    /// An optional JSON value (an optional `unknown` upstream, such as a
+    /// response `body` or `inputSchemaInput`): a missing key is `nil` and an
+    /// explicit JSON `null` is `.null`, as the AI SDK's JSON keeps `null` apart
+    /// from `undefined` (Rust `wire::present`). Synthesized `Codable`
+    /// conformances in this module pick this overload over the generic one.
+    public func decodeIfPresent(_ type: JSONValue.Type, forKey key: Key) throws -> JSONValue? {
+        guard contains(key) else { return nil }
+        return try decode(JSONValue.self, forKey: key)
+    }
+}
+
 public enum JSONValue: Codable, Equatable, Sendable {
     case null
     case bool(Bool)

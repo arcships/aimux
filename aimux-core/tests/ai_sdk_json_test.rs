@@ -8,8 +8,9 @@
 
 use aimux_core::content::ContentPart;
 use aimux_core::decision_model::DecisionImage;
+use aimux_core::error::ApiCallError;
 use aimux_core::image_model::ImageOutputs;
-use aimux_core::shared::{FileBytes, GeneratedFileData};
+use aimux_core::shared::{FileBytes, GeneratedFileData, RequestInfo, ResponseInfo};
 use aimux_core::speech_model::AudioData;
 use aimux_core::video_model::VideoData;
 use serde::Serialize;
@@ -138,4 +139,58 @@ fn decision_image_bytes_are_a_base64_string() {
         )
         .is_err()
     );
+}
+
+// ── null and undefined (#232 C34) ───────────────────────────────────────────
+
+/// `unknown` fields keep `null` apart from a missing value, as the AI SDK's
+/// JSON does (`undefined` is omitted, `null` is kept): response and request
+/// `body?: unknown` (`provider` `language-model-v4-generate-result.ts:41, :56`),
+/// `APICallError.data?: unknown` (`errors/api-call-error.ts:18`) and
+/// `ToolApprovalRequest.inputSchemaInput?: unknown` (`provider-utils`
+/// `types/tool-approval-request.ts:41`).
+#[test]
+fn unknown_fields_keep_null_apart_from_missing() {
+    for wire in [
+        json!({}),
+        json!({ "body": null }),
+        json!({ "body": { "a": null } }),
+    ] {
+        let response: ResponseInfo = assert_json_back(wire.clone());
+        assert_eq!(response.body.is_some(), wire.get("body").is_some());
+        let _: RequestInfo = assert_json_back(wire);
+    }
+
+    let mut error = ApiCallError::new("bad", "https://example.com", json!({}));
+    error.data = Some(serde_json::Value::Null);
+    let wire = serde_json::to_value(&error).unwrap();
+    assert_eq!(wire["data"], serde_json::Value::Null);
+    let back: ApiCallError = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(back.data, Some(serde_json::Value::Null));
+    let mut missing = wire;
+    missing.as_object_mut().unwrap().remove("data");
+    let back: ApiCallError = serde_json::from_value(missing).unwrap();
+    assert_eq!(back.data, None);
+
+    let approval = json!({
+        "type": "tool-approval-request",
+        "approvalId": "a1",
+        "toolCallId": "c1",
+        "inputSchemaInput": null,
+    });
+    let part: ContentPart = assert_json_back(approval);
+    assert!(matches!(
+        part,
+        ContentPart::ToolApprovalRequest {
+            input_schema_input: Some(serde_json::Value::Null),
+            ..
+        }
+    ));
+}
+
+/// Parse `wire` and check that it serializes back unchanged.
+fn assert_json_back<T: Serialize + DeserializeOwned>(wire: Value) -> T {
+    let value: T = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&value).unwrap(), wire);
+    value
 }

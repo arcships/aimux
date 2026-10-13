@@ -151,6 +151,20 @@ final class WrapperTests: XCTestCase {
     /// `{"type":"tool","toolName":...}` (camelCase `toolName`) for the named
     /// tool. (The provider later remaps the named form to its own wire shape,
     /// so we validate the wrapper's encoding directly here.)
+    /// `body?: unknown` (provider language-model-v4-generate-result.ts:41, :56)
+    /// and `inputSchemaInput?: unknown` (provider-utils
+    /// types/tool-approval-request.ts:41): an explicit null is kept apart from
+    /// a missing value.
+    func testUnknownFieldsKeepNullApartFromMissing() throws {
+        let missing = try JSONDecoder().decode(ResponseInfo.self, from: Data("{}".utf8))
+        XCTAssertNil(missing.body)
+        let null = try JSONDecoder().decode(ResponseInfo.self, from: Data(#"{"body":null}"#.utf8))
+        XCTAssertEqual(null.body, .null)
+        XCTAssertEqual(String(decoding: try JSONEncoder().encode(null), as: UTF8.self), #"{"body":null}"#)
+        let request = try JSONDecoder().decode(RequestInfo.self, from: Data(#"{"body":null}"#.utf8))
+        XCTAssertEqual(request.body, .null)
+    }
+
     func testToolChoiceCodableWire() throws {
         let pairs: [(ToolChoice, String)] = [
             (ToolChoice.auto, "\"auto\""),

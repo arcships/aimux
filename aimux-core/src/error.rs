@@ -68,7 +68,11 @@ pub struct ApiCallError {
     pub response_headers: Option<HashMap<String, String>>,
     /// Parsed provider error data.
     #[ts(optional)]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::wire::present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub data: Option<serde_json::Value>,
     /// Whether retrying can help (`APICallError.isRetryable`) — stored at
     /// construction, exactly like the AI SDK: the response path computes it

@@ -67,7 +67,8 @@ print(result2)
 > the [API overview](../API.md#text-generation).
 
 The JSON is the AI SDK JSON: camelCase fields, optional fields absent (never
-`null`), unions tagged by `type` (`{"type":"tool-call","toolCallId":…}`). The
+`null`; an `unknown` value such as `body` keeps a JSON `null` as
+`JSONValue.null`), unions tagged by `type` (`{"type":"tool-call","toolCallId":…}`). The
 typed overloads take and return Codable values with exactly that shape:
 
 ```swift

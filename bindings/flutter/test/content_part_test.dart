@@ -147,4 +147,34 @@ void main() {
       expect(part.toJson(), json);
     });
   });
+
+  group('null is kept apart from a missing value', () {
+    // `body?: unknown` (language-model-v4-generate-result.ts:41, :56) and
+    // `inputSchemaInput?: unknown` (tool-approval-request.ts:41): the AI SDK's
+    // JSON omits undefined and keeps null.
+    test('response and request body', () {
+      for (final json in <Map<String, dynamic>>[
+        {},
+        {'body': null},
+        {'body': {'a': null}},
+      ]) {
+        expect(ResponseInfo.fromJson(json).toJson(), json);
+        expect(RequestInfo.fromJson(json).toJson(), json);
+      }
+      expect(const RequestInfo(hasBody: true).toJson(), {'body': null});
+      expect(const RequestInfo().toJson(), <String, dynamic>{});
+    });
+
+    test('tool approval request inputSchemaInput', () {
+      final json = {
+        'type': 'tool-approval-request',
+        'approvalId': 'a1',
+        'toolCallId': 'c1',
+        'inputSchemaInput': null,
+      };
+      final part = ContentPart.fromJson(json) as ContentPartToolApprovalRequest;
+      expect(part.hasInputSchemaInput, isTrue);
+      expect(part.toJson(), json);
+    });
+  });
 }

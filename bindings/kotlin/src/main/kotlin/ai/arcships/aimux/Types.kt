@@ -23,6 +23,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Transient
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
+import kotlinx.serialization.descriptors.nullable
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
@@ -31,6 +32,7 @@ import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
@@ -51,6 +53,28 @@ val AimuxJson: Json = Json {
     ignoreUnknownKeys = true
     explicitNulls = false
     encodeDefaults = false
+}
+
+/**
+ * (De)serializer for a `JsonElement?` that is an optional `unknown` upstream
+ * (a response `body`, `inputSchemaInput`): a missing field is `null` and an
+ * explicit JSON `null` is [JsonNull], as the AI SDK's JSON keeps `null` apart
+ * from `undefined` (Rust `wire::present`).
+ */
+object JsonValuePresentSerializer : KSerializer<JsonElement?> {
+    override val descriptor: SerialDescriptor = JsonElement.serializer().descriptor.nullable
+
+    override fun deserialize(decoder: Decoder): JsonElement? {
+        val json = decoder as? JsonDecoder
+            ?: throw SerializationException("a JSON value can only be decoded from JSON")
+        return json.decodeJsonElement()
+    }
+
+    override fun serialize(encoder: Encoder, value: JsonElement?) {
+        val json = encoder as? JsonEncoder
+            ?: throw SerializationException("a JSON value can only be encoded to JSON")
+        json.encodeJsonElement(value ?: JsonNull)
+    }
 }
 
 /** Provider-specific options / metadata: `{ providerName: { key: value } }`. */
@@ -147,11 +171,15 @@ data class ResponseInfo(
     val timestamp: String? = null,
     val modelId: String? = null,
     val headers: Map<String, String>? = null,
+    @Serializable(with = JsonValuePresentSerializer::class)
     val body: JsonElement? = null,
 )
 
 @Serializable
-data class RequestInfo(val body: JsonElement? = null)
+data class RequestInfo(
+    @Serializable(with = JsonValuePresentSerializer::class)
+    val body: JsonElement? = null,
+)
 
 /**
  * A tool call requested by the model. Mirrors `ToolCall.ts`.
@@ -539,6 +567,7 @@ sealed interface ContentPart {
         val reason: String? = null,
         val isAutomatic: Boolean? = null,
         val signature: String? = null,
+        @Serializable(with = JsonValuePresentSerializer::class)
         val inputSchemaInput: JsonElement? = null,
     ) : ContentPart
 
