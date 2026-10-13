@@ -1010,7 +1010,8 @@ fn user_tool_choice(choice: LanguageModelV4ToolChoice) -> ToolChoice {
 /// 侧到用户侧的反向映射)。
 ///
 /// `instructions` 已烘焙进 prompt(system 消息),重建时置 None;
-/// `abort_signal` 运行时句柄不跨 JSON,重建时置 None。
+/// `abort_signal` 运行时句柄不跨 JSON,重建时置 None;回放原样发送录制的
+/// prompt,不再下载其中的 URL,`download` 置 None。
 fn generate_options_from_call_options(
     o: CallOptions,
     settings: OperationSettings,
@@ -1037,6 +1038,7 @@ fn generate_options_from_call_options(
         abort_signal: None,
         include_raw_chunks: o.include_raw_chunks,
         repair_tool_call: None,
+        download: None,
     }
 }
 

@@ -418,7 +418,8 @@ controller.abort() // cancels the image call
 
 ## Video Generation
 
-Video generation typically returns a URL (not binary).
+Most video models return a URL; `generate` downloads it, as the AI SDK's
+`generateVideo` does, and returns the video's bytes (`Binary`).
 
 ```typescript
 const { googleVideo } = require('@arcships/aimux/raw')
@@ -432,9 +433,10 @@ const resultJson = await videor.generate(JSON.stringify({
 }))
 const result = JSON.parse(resultJson)
 
-// result.videos is usually [{ Url: { url, media_type } }]
-if (result.videos[0].Url) {
-  console.log('Video URL:', result.videos[0].Url.url)
+// result.videos is usually [{ Binary: { data, media_type } }]
+const video = result.videos[0].Binary
+if (video) {
+  require('fs').writeFileSync('video.mp4', Buffer.from(video.data))
 }
 ```
 

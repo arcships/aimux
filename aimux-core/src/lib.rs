@@ -22,7 +22,7 @@ pub mod composite;
 pub mod content;
 pub mod decision_model;
 mod decision_replay;
-pub(crate) mod download;
+pub mod download;
 #[doc(hidden)]
 pub mod download_guard;
 pub mod embedding_model;

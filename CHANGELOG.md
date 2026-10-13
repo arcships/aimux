@@ -62,6 +62,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of once at wrap time. The OpenAI-compatible `SupportedUrlsFn`
   setting returns a `BoxFuture<'static, SupportedUrls>`.
 
+- The user operations download as the AI SDK's do, through a transport the
+  caller can replace (`aimux-core`, new public `download` module).
+  `generate_text` and `stream_text` read the model's `supported_urls()`
+  before the call and download each prompt file URL it does not cover (user
+  `FileUrl` parts and `file` items of tool outputs; not `data:` URLs), which
+  then reaches the provider as inline data; they used to pass every URL
+  through. `GenerateTextOptions::download` takes a `DownloadFunction` (the AI
+  SDK's `experimental_download`) instead. `AudioInput::Url` is new:
+  `transcribe` downloads it with `TranscriptionCallOptions::download`, and a
+  transcription model given one returns `AudioInput::url_error()`.
+  `generate_video` downloads every video returned as a URL with
+  `VideoCallOptions::download` and returns it as `VideoData::Binary` (it
+  returned the URL before). Without a download each operation uses
+  `create_download(None)`, the guarded download (public HTTP(S) URLs only,
+  pinned hops, no provider credentials, 2 GiB limit), so a Vertex `gs://`
+  video result needs an injected download.
+
 - Provider results carry request and response information as the AI SDK does
   (`aimux-core`). `GenerateResult` has `request: Option<RequestInfo>` and
   `response: Option<ResponseInfo>`; `ResponseInfo` gains `id` and holds the

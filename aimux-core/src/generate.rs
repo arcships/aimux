@@ -1,7 +1,9 @@
 //! User-facing API: `generate_text` and `stream_text`.
 //!
 //! These are the primary entry points for users. They:
-//! 1. Convert user prompt (`ModelPrompt`) to `LanguageModelPrompt` (provider-facing).
+//! 1. Convert user prompt (`ModelPrompt`) to `LanguageModelPrompt`
+//!    (provider-facing), first downloading the file URLs the model does not
+//!    fetch itself.
 //! 2. Build `CallOptions` from user-facing options.
 //! 3. Call `LanguageModel::do_generate` / `do_stream`.
 //! 4. Record the model call as a [`StepResult`] and aggregate the steps into
@@ -20,9 +22,12 @@ use serde_json::Value;
 use tracing::Instrument;
 use ts_rs::TS;
 
+use crate::download::{DownloadFunction, create_default_download_function};
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
-use crate::language_model_message::convert_to_language_model_prompt;
+use crate::language_model_message::{
+    LanguageModelPrompt, convert_with_downloaded_assets, download_assets,
+};
 use crate::message::{ModelMessage, ModelPrompt};
 use crate::operation::OperationSettings;
 use crate::options::{CallOptions, ToolChoice, prepare_tool_choice};
@@ -151,6 +156,19 @@ pub struct GenerateTextOptions {
     #[serde(skip)]
     #[ts(skip)]
     pub repair_tool_call: Option<ToolCallRepair>,
+    /// The download of the prompt's file URLs, the AI SDK's
+    /// `experimental_download` (ai@7.0.127 `generate-text.ts:382-386`,
+    /// `stream-text.ts:439`). Before the model call it receives every file
+    /// URL of the prompt, each marked with whether the model's
+    /// `supported_urls` cover it; the files it returns are sent inline.
+    /// `None` downloads the URLs the model does not fetch itself with the
+    /// guarded download
+    /// ([`create_default_download_function`](crate::download::create_default_download_function)).
+    ///
+    /// Runtime handle; never crosses the JSON boundary.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub download: Option<DownloadFunction>,
 }
 
 impl GenerateTextOptions {
@@ -882,17 +900,23 @@ pub async fn generate_text(
     prompt: impl Into<ModelPrompt>,
     options: GenerateTextOptions,
 ) -> Result<GenerateTextResult, AiMuxError> {
-    let (messages, instructions) =
-        standardize_prompt(prompt.into(), options.instructions.as_deref())?;
-    let lm_prompt = convert_to_language_model_prompt(&messages, instructions, provider_id(model))?;
-    generate_text_from_language_model_prompt(model, lm_prompt, messages, options).await
+    let settings = options.operation_settings();
+    settings
+        .clone()
+        .scope(generate_in_operation(
+            model,
+            OperationPrompt::User(prompt.into()),
+            options,
+            settings,
+        ))
+        .await
 }
 
 // Replay already has a provider prompt. Keep it intact instead of converting
 // through user content, which cannot represent every provider part.
 pub(crate) async fn generate_text_from_language_model_prompt(
     model: &dyn LanguageModel,
-    lm_prompt: crate::language_model_message::LanguageModelPrompt,
+    lm_prompt: LanguageModelPrompt,
     messages: Vec<ModelMessage>,
     options: GenerateTextOptions,
 ) -> Result<GenerateTextResult, AiMuxError> {
@@ -900,17 +924,66 @@ pub(crate) async fn generate_text_from_language_model_prompt(
     settings
         .clone()
         .scope(generate_in_operation(
-            model, lm_prompt, messages, options, settings,
+            model,
+            OperationPrompt::Model {
+                prompt: lm_prompt,
+                messages,
+            },
+            options,
+            settings,
         ))
         .await
+}
+
+/// The prompt of a text operation.
+enum OperationPrompt {
+    /// A user prompt, prepared inside the operation ([`prepare_prompt`]).
+    User(ModelPrompt),
+    /// A model prompt sent as it is (replay), with the user messages it was
+    /// made from.
+    Model {
+        prompt: LanguageModelPrompt,
+        messages: Vec<ModelMessage>,
+    },
+}
+
+/// Standardize a user prompt, download the file URLs the model does not
+/// fetch itself, and convert it for the model: the AI SDK's
+/// `convertToLanguageModelPrompt` with the model's `supportedUrls` and the
+/// operation's `experimental_download` (ai@7.0.127
+/// `prompt/convert-to-language-model-prompt.ts:36-55`,
+/// `generate-text/generate-text.ts:963-971`).
+///
+/// It runs inside the operation, before the model call: the download
+/// observes the caller's abort signal and the operation timeout.
+async fn prepare_prompt(
+    model: &dyn LanguageModel,
+    prompt: ModelPrompt,
+    instructions: Option<&str>,
+    download: Option<DownloadFunction>,
+    abort_signal: Option<&AbortSignal>,
+    operation_timeout: timeout::OperationTimeout,
+) -> Result<(LanguageModelPrompt, Vec<ModelMessage>), AiMuxError> {
+    let (messages, instructions) = standardize_prompt(prompt, instructions)?;
+    let supported_urls = model.supported_urls().await;
+    let download =
+        download.unwrap_or_else(|| create_default_download_function(None, abort_signal.cloned()));
+    let assets = timeout::run(
+        download_assets(&messages, &download, &supported_urls),
+        abort_signal,
+        operation_timeout,
+    )
+    .await?;
+    let lm_prompt =
+        convert_with_downloaded_assets(&messages, instructions, provider_id(model), &assets)?;
+    Ok((lm_prompt, messages))
 }
 
 // The operation body runs inside its settings' scope, where the model, the
 // composite children and the recorder read them.
 async fn generate_in_operation(
     model: &dyn LanguageModel,
-    lm_prompt: crate::language_model_message::LanguageModelPrompt,
-    messages: Vec<ModelMessage>,
+    prompt: OperationPrompt,
     options: GenerateTextOptions,
     settings: OperationSettings,
 ) -> Result<GenerateTextResult, AiMuxError> {
@@ -921,11 +994,27 @@ async fn generate_in_operation(
     if let Some(output) = &output {
         output.validate()?;
     }
+    let operation_timeout = timeout::OperationTimeout::new(settings.timeout.unwrap_or_default())?;
+    let abort_signal = options.abort_signal.clone();
+
+    // 1. Convert the user prompt to the provider-facing prompt.
+    let (lm_prompt, messages) = match prompt {
+        OperationPrompt::User(prompt) => {
+            prepare_prompt(
+                model,
+                prompt,
+                operation_instructions.as_deref(),
+                options.download.clone(),
+                abort_signal.as_ref(),
+                operation_timeout,
+            )
+            .await?
+        }
+        OperationPrompt::Model { prompt, messages } => (prompt, messages),
+    };
 
     // 2. Build CallOptions.
     let mut call_options = options.into_call_options(lm_prompt);
-    let operation_timeout = timeout::OperationTimeout::new(settings.timeout.unwrap_or_default())?;
-    let abort_signal = call_options.abort_signal.clone();
     let retries = retry::prepare_retries(settings.max_retries, abort_signal.clone());
 
     // 2a. RFC-0023: 关闭时零成本(M2 评审)——仅在录制开启时生成 call_id
@@ -1418,17 +1507,25 @@ async fn stream_in_operation(
     if let Some(output) = &output {
         output.validate()?;
     }
-    let (messages, instructions) = standardize_prompt(prompt, operation_instructions.as_deref())?;
-    let lm_prompt = convert_to_language_model_prompt(&messages, instructions, provider_id(model))?;
+    let stream_timeout = settings.timeout.unwrap_or_default();
+    let operation_timeout = timeout::OperationTimeout::new(stream_timeout)?;
+    let (lm_prompt, messages) = prepare_prompt(
+        model,
+        prompt,
+        operation_instructions.as_deref(),
+        options.download.clone(),
+        options.abort_signal.as_ref(),
+        operation_timeout,
+    )
+    .await?;
 
     // 2. Build CallOptions.
     let mut call_options = options.into_call_options(lm_prompt);
-    let stream_timeout = settings.timeout.unwrap_or_default();
-    let operation_timeout = timeout::OperationTimeout::new(stream_timeout)?;
-    // Armed at operation start: providers await their first SSE event inside
-    // do_stream, so the first-chunk budget must already be counting there —
-    // a 200-then-silence server is otherwise unbounded when only
-    // first_chunk_ms is configured.
+    // Armed before the model call (after the prompt's downloads, which only
+    // the total and step deadlines bound): providers await their first SSE
+    // event inside do_stream, so the first-chunk budget must already be
+    // counting there — a 200-then-silence server is otherwise unbounded when
+    // only first_chunk_ms is configured.
     let first_chunk_deadline = stream_timeout
         .first_chunk_ms
         .map(|duration_ms| timeout::TimeoutDeadline::from_now("First chunk", duration_ms))

@@ -7,7 +7,9 @@
 //! the user-facing `ModelMessage`s.
 
 use crate::content::{self as user, AssistantContentPart, ToolContentPart, UserContentPart};
+use crate::download::{DownloadFunction, DownloadedFile, PlannedDownload};
 use crate::error::AiMuxError;
+use crate::language_model::SupportedUrls;
 use crate::message::{AssistantContent, ModelMessage, UserContent};
 use crate::shared::{
     FileBytes, FileData, GeneratedFileData, SharedProviderOptions, SharedProviderReference,
@@ -279,12 +281,139 @@ fn text_part(text: &str, provider_options: Option<&SharedProviderOptions>) -> Te
     }
 }
 
+/// The files downloaded for a prompt's URLs, by URL.
+pub(crate) type DownloadedAssets = HashMap<String, DownloadedFile>;
+
+/// A file part holding a file downloaded for its URL (upstream
+/// `convertPartToLanguageModelPart`, `:567-578`): the downloaded media type
+/// replaces the part's when the part's is not a full `type/subtype`.
+fn downloaded_file_part(
+    file: &DownloadedFile,
+    media_type: &str,
+    filename: Option<String>,
+    provider_options: Option<SharedProviderOptions>,
+) -> FilePart {
+    let media_type = match &file.media_type {
+        Some(downloaded) if !is_full_media_type(media_type) => downloaded,
+        _ => media_type,
+    };
+    FilePart {
+        data: bytes(&file.data),
+        media_type: media_type.to_owned(),
+        filename,
+        provider_options,
+    }
+}
+
+/// Upstream `isFullMediaType` (provider-utils@5.0.55
+/// `detect-media-type.ts:381-388`): `type/subtype` with a subtype that is not
+/// empty and not `*`.
+fn is_full_media_type(media_type: &str) -> bool {
+    media_type
+        .split_once('/')
+        .is_some_and(|(_, subtype)| !subtype.is_empty() && subtype != "*")
+}
+
+/// Download the prompt's file URLs, the AI SDK's `downloadAssets`
+/// (`ai` `prompt/convert-to-language-model-prompt.ts:444-540`).
+///
+/// It plans the URL of every user `file` part and of every `file` item of
+/// a `content` tool output (in tool and assistant messages), in prompt
+/// order, marks the URLs the model fetches itself (`supported_urls`), and
+/// calls `download` once with all of them. As upstream, assistant file parts
+/// and the deprecated `file-url` / `image-url` tool output items are not
+/// downloaded. Neither is a `data:` URL, which upstream turns into inline
+/// data before planning and aimux sends as it is.
+///
+/// # Errors
+///
+/// The download function's error.
+pub(crate) async fn download_assets(
+    messages: &[ModelMessage],
+    download: &DownloadFunction,
+    supported_urls: &SupportedUrls,
+) -> Result<DownloadedAssets, AiMuxError> {
+    fn plan_output(output: &user::ToolResultOutput, plan: &mut impl FnMut(&str, &str)) {
+        if let user::ToolResultOutput::Content { value } = output {
+            for item in value {
+                if let user::ToolResultContentPart::File {
+                    data: FileData::Url { url, .. },
+                    media_type,
+                    ..
+                } = item
+                {
+                    plan(url, media_type);
+                }
+            }
+        }
+    }
+
+    let mut planned = Vec::new();
+    let mut plan = |url: &str, media_type: &str| {
+        if url
+            .get(..5)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("data:"))
+        {
+            return;
+        }
+        planned.push(PlannedDownload {
+            url: url.to_owned(),
+            is_url_supported_by_model: supported_urls.is_supported(url, media_type),
+        });
+    };
+    for message in messages {
+        match message {
+            ModelMessage::User {
+                content: UserContent::Parts(parts),
+                ..
+            } => {
+                for part in parts {
+                    if let UserContentPart::FileUrl {
+                        url, media_type, ..
+                    } = part
+                    {
+                        plan(url, media_type);
+                    }
+                }
+            }
+            ModelMessage::Tool { content, .. } => {
+                for part in content {
+                    if let ToolContentPart::ToolResult(result) = part {
+                        plan_output(&result.output, &mut plan);
+                    }
+                }
+            }
+            ModelMessage::Assistant {
+                content: AssistantContent::Parts(parts),
+                ..
+            } => {
+                for part in parts {
+                    if let AssistantContentPart::ToolResult(result) = part {
+                        plan_output(&result.output, &mut plan);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let files = download.download(planned.clone()).await?;
+    Ok(planned
+        .into_iter()
+        .zip(files)
+        .filter_map(|(planned, file)| file.map(|file| (planned.url, file)))
+        .collect())
+}
+
 /// A user part as the provider sees it: text, or one `file` part.
 ///
 /// An `image` part is deprecated upstream (`provider-utils`
 /// `types/content-part.ts:29`); it becomes a `file` part with a deprecation
 /// warning (`ai` `prompt/convert-to-language-model-prompt.ts:229-238`).
-fn user_part(part: &UserContentPart, warnings: &mut Vec<Warning>) -> Result<UserPart, AiMuxError> {
+fn user_part(
+    part: &UserContentPart,
+    assets: &DownloadedAssets,
+    warnings: &mut Vec<Warning>,
+) -> Result<UserPart, AiMuxError> {
     Ok(match part {
         UserContentPart::Text {
             text,
@@ -332,12 +461,10 @@ fn user_part(part: &UserContentPart, warnings: &mut Vec<Warning>) -> Result<User
             url: file_url,
             media_type,
             provider_options,
-        } => UserPart::File(file_part(
-            url(file_url),
-            media_type,
-            None,
-            provider_options.as_ref(),
-        )),
+        } => UserPart::File(match assets.get(file_url) {
+            Some(file) => downloaded_file_part(file, media_type, None, provider_options.clone()),
+            None => file_part(url(file_url), media_type, None, provider_options.as_ref()),
+        }),
         UserContentPart::FileReference {
             media_type,
             reference: file_reference,
@@ -460,6 +587,8 @@ struct Context<'a> {
     provider: Option<&'a str>,
     /// Deprecation warnings of the message being converted.
     warnings: Vec<Warning>,
+    /// The files downloaded for the prompt's URLs.
+    assets: &'a DownloadedAssets,
 }
 
 fn tool_result_part(
@@ -479,7 +608,12 @@ fn tool_result_part(
                     "tool result {tool_call_id} has no tool name or preceding tool call"
                 ))
             })?,
-        output: tool_result_output(&part.output, context.provider, &mut context.warnings)?,
+        output: tool_result_output(
+            &part.output,
+            context.provider,
+            context.assets,
+            &mut context.warnings,
+        )?,
         provider_options: part.provider_options.clone(),
     })
 }
@@ -491,6 +625,7 @@ fn tool_result_part(
 fn tool_result_output(
     output: &user::ToolResultOutput,
     provider: Option<&str>,
+    assets: &DownloadedAssets,
     warnings: &mut Vec<Warning>,
 ) -> Result<ToolResultOutput, AiMuxError> {
     Ok(match output.clone() {
@@ -532,7 +667,7 @@ fn tool_result_output(
         user::ToolResultOutput::Content { value } => ToolResultOutput::Content {
             value: value
                 .into_iter()
-                .map(|item| tool_result_content(item, provider, warnings))
+                .map(|item| tool_result_content(item, provider, assets, warnings))
                 .collect::<Result<_, _>>()?,
         },
     })
@@ -577,6 +712,7 @@ fn file_reference(reference: SharedProviderReference) -> FileData {
 fn tool_result_content(
     item: user::ToolResultContentPart,
     provider: Option<&str>,
+    assets: &DownloadedAssets,
     warnings: &mut Vec<Warning>,
 ) -> Result<ToolResultContent, AiMuxError> {
     use user::ToolResultContentPart as Item;
@@ -601,7 +737,12 @@ fn tool_result_content(
             media_type,
             filename,
             provider_options,
-        } => file(data, &media_type, filename, provider_options),
+        } => match &data {
+            FileData::Url { url, .. } if assets.contains_key(url) => ToolResultContent::File(
+                downloaded_file_part(&assets[url], &media_type, filename, provider_options),
+            ),
+            _ => file(data, &media_type, filename, provider_options),
+        },
         Item::FileData {
             data,
             media_type,
@@ -793,7 +934,7 @@ fn convert_message(
                 UserContent::Text(text) => vec![UserPart::Text(text_part(text, None))],
                 UserContent::Parts(parts) => parts
                     .iter()
-                    .map(|part| user_part(part, &mut context.warnings))
+                    .map(|part| user_part(part, context.assets, &mut context.warnings))
                     .filter(|part| {
                         // remove empty text parts (`:242-243`)
                         !matches!(part, Ok(UserPart::Text(TextPart { text, .. })) if text.is_empty())
@@ -875,6 +1016,9 @@ fn convert_message(
 /// - Consecutive tool messages become one; the earlier message's
 ///   `provider_options` are merged into its last part (`:104-130`).
 /// - A tool message left empty is dropped.
+/// - File URLs are sent as they are. `generate_text` and `stream_text` first
+///   download the ones the model does not fetch itself
+///   ([`crate::download::DownloadFunction`]).
 ///
 /// # Errors
 ///
@@ -889,7 +1033,19 @@ pub fn convert_to_language_model_prompt(
     instructions: Option<&str>,
     provider: Option<&str>,
 ) -> Result<LanguageModelPrompt, AiMuxError> {
-    convert_with_warnings(messages, instructions, provider).map(|(prompt, _)| prompt)
+    convert_with_warnings(messages, instructions, provider, &DownloadedAssets::new())
+        .map(|(prompt, _)| prompt)
+}
+
+/// [`convert_to_language_model_prompt`] with the files [`download_assets`]
+/// downloaded for the prompt's URLs: a downloaded URL becomes inline data.
+pub(crate) fn convert_with_downloaded_assets(
+    messages: &[ModelMessage],
+    instructions: Option<&str>,
+    provider: Option<&str>,
+    assets: &DownloadedAssets,
+) -> Result<LanguageModelPrompt, AiMuxError> {
+    convert_with_warnings(messages, instructions, provider, assets).map(|(prompt, _)| prompt)
 }
 
 /// [`convert_to_language_model_prompt`], also returning the deprecation
@@ -898,6 +1054,7 @@ fn convert_with_warnings(
     messages: &[ModelMessage],
     instructions: Option<&str>,
     provider: Option<&str>,
+    assets: &DownloadedAssets,
 ) -> Result<(LanguageModelPrompt, Vec<Warning>), AiMuxError> {
     let mut result = Vec::new();
     if let Some(instructions) = instructions {
@@ -911,6 +1068,7 @@ fn convert_with_warnings(
         tool_names: HashMap::new(),
         provider,
         warnings: Vec::new(),
+        assets,
     };
     let mut warnings = Vec::new();
     for message in messages {
@@ -1096,7 +1254,12 @@ mod tests {
         items: Value,
         provider: Option<&str>,
     ) -> Result<(Vec<ToolResultContent>, Vec<Warning>), AiMuxError> {
-        let (prompt, warnings) = convert_with_warnings(&tool_output(items), None, provider)?;
+        let (prompt, warnings) = convert_with_warnings(
+            &tool_output(items),
+            None,
+            provider,
+            &DownloadedAssets::new(),
+        )?;
         let [LanguageModelMessage::Tool { content, .. }] = &prompt[..] else {
             panic!("one tool message: {prompt:?}")
         };
@@ -1310,7 +1473,8 @@ mod tests {
             ] }
         ]))
         .unwrap();
-        let (prompt, warnings) = convert_with_warnings(&messages, None, None).unwrap();
+        let (prompt, warnings) =
+            convert_with_warnings(&messages, None, None, &DownloadedAssets::new()).unwrap();
         let [LanguageModelMessage::User { content, .. }] = &prompt[..] else {
             panic!()
         };
@@ -1324,5 +1488,158 @@ mod tests {
                 "The \"image\" content part type is deprecated. Use a \"file\" part with mediaType: 'image' (or a more specific image/* subtype) instead.",
             )]
         );
+    }
+}
+
+#[cfg(test)]
+mod download_tests {
+    //! Prompt downloads, against `ai@7.0.127`
+    //! `prompt/convert-to-language-model-prompt.ts` (`downloadAssets`,
+    //! `convertPartToLanguageModelPart`).
+
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    use regex::Regex;
+    use serde_json::json;
+
+    fn messages() -> Vec<ModelMessage> {
+        serde_json::from_value(json!([
+            { "role": "user", "content": [
+                { "type": "file_url", "url": "https://model.test/a.png", "media_type": "image/png" },
+                { "type": "file_url", "url": "https://cdn.test/b", "media_type": "image" },
+                { "type": "file_url", "url": "data:image/png;base64,AAAA", "media_type": "image/png" }
+            ] },
+            { "role": "assistant", "content": [
+                { "type": "file_url", "url": "https://cdn.test/assistant.png", "media_type": "image/png" },
+                { "type": "tool_call", "tool_call_id": "c1", "tool_name": "t", "input": {} }
+            ] },
+            { "role": "tool", "content": [
+                { "type": "tool_result", "tool_call_id": "c1", "tool_name": "t",
+                  "output": { "type": "content", "value": [
+                      { "type": "file", "data": { "Url": { "url": "https://cdn.test/c.pdf" } },
+                        "media_type": "application/pdf" },
+                      { "type": "file-url", "url": "https://cdn.test/c.pdf", "media_type": "application/pdf" }
+                  ] } }
+            ] }
+        ]))
+        .expect("valid messages")
+    }
+
+    fn supported_urls() -> SupportedUrls {
+        SupportedUrls(HashMap::from([(
+            "image/*".to_owned(),
+            vec![Regex::new(r"^https://model\.test/").unwrap()],
+        )]))
+    }
+
+    /// A download function that records what it is asked for and downloads
+    /// every URL the model does not fetch itself.
+    fn recording(planned: Arc<Mutex<Vec<PlannedDownload>>>) -> DownloadFunction {
+        DownloadFunction::new(move |downloads: Vec<PlannedDownload>| {
+            planned.lock().unwrap().extend(downloads.clone());
+            async move {
+                Ok(downloads
+                    .into_iter()
+                    .map(|download| {
+                        (!download.is_url_supported_by_model).then(|| DownloadedFile {
+                            data: download.url.into_bytes(),
+                            media_type: Some("image/jpeg".into()),
+                        })
+                    })
+                    .collect())
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn user_file_urls_and_tool_output_files_are_planned_in_prompt_order() {
+        let planned = Arc::new(Mutex::new(Vec::new()));
+        download_assets(&messages(), &recording(planned.clone()), &supported_urls())
+            .await
+            .unwrap();
+        let planned = planned.lock().unwrap().clone();
+        assert_eq!(
+            planned,
+            [
+                PlannedDownload {
+                    url: "https://model.test/a.png".into(),
+                    is_url_supported_by_model: true,
+                },
+                PlannedDownload {
+                    url: "https://cdn.test/b".into(),
+                    is_url_supported_by_model: false,
+                },
+                PlannedDownload {
+                    url: "https://cdn.test/c.pdf".into(),
+                    is_url_supported_by_model: false,
+                },
+            ],
+            "no data: URL, no assistant file part, no deprecated file-url item"
+        );
+    }
+
+    #[tokio::test]
+    async fn downloaded_urls_become_inline_data_and_the_others_stay_urls() {
+        let assets = download_assets(
+            &messages(),
+            &recording(Arc::new(Mutex::new(Vec::new()))),
+            &supported_urls(),
+        )
+        .await
+        .unwrap();
+        let prompt = convert_with_downloaded_assets(&messages(), None, None, &assets).unwrap();
+
+        let LanguageModelMessage::User { content, .. } = &prompt[0] else {
+            panic!("user message: {:?}", prompt[0])
+        };
+        let files: Vec<_> = content
+            .iter()
+            .map(|part| match part {
+                UserPart::File(file) => (file.data.clone(), file.media_type.as_str()),
+                UserPart::Text(_) => panic!("file parts only"),
+            })
+            .collect();
+        assert_eq!(
+            files,
+            [
+                // The model fetches it: the URL is sent.
+                (url("https://model.test/a.png"), "image/png"),
+                // Downloaded: a top-level media type takes the downloaded one.
+                (bytes(b"https://cdn.test/b"), "image/jpeg"),
+                (url("data:image/png;base64,AAAA"), "image/png"),
+            ]
+        );
+
+        let LanguageModelMessage::Assistant { content, .. } = &prompt[1] else {
+            panic!("assistant message: {:?}", prompt[1])
+        };
+        assert!(
+            matches!(&content[0], AssistantPart::File(file)
+                if file.data == url("https://cdn.test/assistant.png")),
+            "{content:?}"
+        );
+
+        let LanguageModelMessage::Tool { content, .. } = &prompt[2] else {
+            panic!("tool message: {:?}", prompt[2])
+        };
+        let [ToolPart::ToolResult(result)] = &content[..] else {
+            panic!("one tool result: {content:?}")
+        };
+        let ToolResultOutput::Content { value } = &result.output else {
+            panic!("content output: {:?}", result.output)
+        };
+        let [
+            ToolResultContent::File(file),
+            ToolResultContent::File(deprecated),
+        ] = &value[..]
+        else {
+            panic!("two files: {value:?}")
+        };
+        // A full media type is kept.
+        assert_eq!(file.data, bytes(b"https://cdn.test/c.pdf"));
+        assert_eq!(file.media_type, "application/pdf");
+        // The deprecated file-url item is not downloaded.
+        assert_eq!(deprecated.data, url("https://cdn.test/c.pdf"));
     }
 }

@@ -366,7 +366,7 @@ Examples: [Node.js](api/node.md#image-generation) · [Python](api/python.md#imag
 
 ### Video Generation
 
-Video generation typically returns a URL (not binary).
+Most video models return a URL; the video operation downloads it, as the AI SDK's `generateVideo` does, and returns the bytes.
 
 Examples: [Node.js](api/node.md#video-generation) · [Python](api/python.md#video-generation) · [Rust](api/rust.md#video-generation) · [Go](api/go.md#video-generation) · [C ABI](api/c.md#video-generation)
 

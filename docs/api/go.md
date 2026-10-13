@@ -385,7 +385,8 @@ if err != nil {
 
 ## Video Generation
 
-Video generation typically returns a URL (not binary).
+Most video models return a URL; `Generate` downloads it, as the AI SDK's
+`generateVideo` does, and returns the video's bytes.
 
 ```go
 prompt := "A cat playing piano"
@@ -414,7 +415,7 @@ result, err := aimux.ParseVideoResult(resultJSON)
 if err != nil {
     log.Fatal(err)
 }
-// result.Videos[0].Url.URL — video URL
+// result.Videos[0].Binary.Data — the downloaded video
 ```
 
 ## Reranking

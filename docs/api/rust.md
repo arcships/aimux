@@ -151,6 +151,14 @@ signal.abort(); // cancels connect, body reads, and streaming
 let result = task.await.unwrap()?;
 ```
 
+File URLs in the prompt — user `FileUrl` parts and `file` items of tool
+outputs — are downloaded before the model call unless the model's
+`supported_urls()` covers them, as the AI SDK's `generateText` does. Set
+`download` (a `aimux_core::download::DownloadFunction`, the AI SDK's
+`experimental_download`) to choose per URL; it receives every URL with
+`is_url_supported_by_model` and returns the downloaded file or `None` to
+send the URL. The default downloads with the guarded download.
+
 > Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
@@ -270,6 +278,12 @@ let result = transcribe(&model, opts).await?;
 // result.text, result.segments, result.language
 ```
 
+`AudioInput::Url(url)` is downloaded by `transcribe` before the model call,
+as the AI SDK's `transcribe` does. `opts.download` replaces the transport
+(an `aimux_core::download::Download`); the default is
+`create_download(None)`, the guarded download (public HTTP(S) URLs only,
+2 GiB limit).
+
 ## Image Generation
 
 ```rust
@@ -283,7 +297,9 @@ let result = generate_image(&model, opts).await?;
 
 ## Video Generation
 
-Video generation typically returns a URL (not binary).
+Most video models return a URL. `generate_video` downloads it, as the AI
+SDK's `generateVideo` does, with `opts.download` (default: the guarded
+download), so the result holds the video's bytes.
 
 ```rust
 use aimux_core::video_model::{VideoCallOptions, generate_video};
@@ -291,7 +307,7 @@ use aimux_core::video_model::{VideoCallOptions, generate_video};
 let model = provider.video("veo-3.0");
 let opts = VideoCallOptions { prompt: Some("A cat".into()), n: 1, .. };
 let result = generate_video(&model, opts).await?;
-// result.videos[0] is VideoData::Url { url, media_type }
+// result.videos[0] is VideoData::Binary { data, media_type } for a URL video
 ```
 
 ## Reranking
@@ -384,6 +400,7 @@ Rust types are the canonical definitions — one module per feature in
 | `types` | `Usage`, `TokenUsage`, `FinishReason`, `ResponseMetadata`, `Warning` |
 | `shared` | `FileBytes`, `FileData`, `Size`, `AspectRatio`, `ResponseInfo` |
 | `abort_signal` | `AbortSignal` |
+| `download` | `Download`, `DownloadFunction`, `create_download`, `create_default_download_function` |
 | `embedding_model` | `EmbeddingModel`, `EmbeddingCallOptions`, `EmbeddingResult` |
 | `speech_model` | `SpeechModel`, `SpeechCallOptions`, `SpeechResult` |
 | `transcription_model` | `TranscriptionModel`, `TranscriptionCallOptions`, `TranscriptionResult`, `AudioInput` |

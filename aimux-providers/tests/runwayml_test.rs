@@ -6,11 +6,13 @@
 //! async polling loop without a real delay.
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use aimux_core::download::{Download, DownloadRequest, DownloadedFile};
 use aimux_core::video_model::{VideoCallOptions, VideoModel, generate_video};
 use aimux_provider_utils::Resolvable;
 use aimux_providers::{RunwaymlProviderSettings, create_runwayml};
@@ -28,7 +30,25 @@ fn fast_poll() -> Option<aimux_core::video_model::VideoPollOptions> {
 fn options(prompt: &str) -> VideoCallOptions {
     let mut o = VideoCallOptions::new(prompt);
     o.poll = fast_poll();
+    o.download = Some(recording_download(Arc::default()));
     o
+}
+
+/// The bytes the test download returns for every video URL.
+const VIDEO_BYTES: &[u8] = b"video bytes";
+
+/// A download that fetches nothing: it records each URL `generate_video`
+/// asks for and returns [`VIDEO_BYTES`].
+fn recording_download(requests: Arc<Mutex<Vec<String>>>) -> Download {
+    Download::new(move |request: DownloadRequest| {
+        requests.lock().unwrap().push(request.url);
+        async {
+            Ok(DownloadedFile {
+                data: VIDEO_BYTES.to_vec(),
+                media_type: None,
+            })
+        }
+    })
 }
 
 /// A config pointed at the mock server. Poll pacing is a per-call option
@@ -91,16 +111,20 @@ async fn should_generate_video_from_prompt() {
     let provider = create_runwayml(config(server.uri())).unwrap();
     let model = provider.video(MODEL_ID);
 
-    let result = generate_video(&model, options("A cat playing"))
-        .await
-        .unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let mut opts = options("A cat playing");
+    opts.download = Some(recording_download(requests.clone()));
+    let result = generate_video(&model, opts).await.unwrap();
 
+    // `generate_video` downloads the returned URL, as the AI SDK does.
+    assert_eq!(*requests.lock().unwrap(), [VIDEO_URL]);
     assert_eq!(result.videos.len(), 1);
     match &result.videos[0] {
-        aimux_core::video_model::VideoData::Url { url, .. } => {
-            assert_eq!(url, VIDEO_URL);
+        aimux_core::video_model::VideoData::Binary { data, media_type } => {
+            assert_eq!(data, VIDEO_BYTES);
+            assert_eq!(media_type, "video/mp4");
         }
-        v => panic!("expected Url, got: {v:?}"),
+        v => panic!("expected the downloaded video, got: {v:?}"),
     }
     assert!(result.response.timestamp.is_some());
     assert_eq!(result.response.model_id, Some(MODEL_ID.to_string()));

@@ -789,6 +789,10 @@ start/status 流），Core 拥有 poll 循环并分别 retry 两个阶段：
   设置；`poll.timeout` 是整个轮询的预算：每次 `do_status`（含其重试）与剩余时间
   竞争，超时即丢弃挂起的请求，以 `Video generation timed out after {timeoutMs}ms.`
   失败（与上游一致，ai 7.0.127 `generate-video/generate-video.ts:543-549`、`:586-625`）；
+- 所有批次完成后，Core 按顺序下载以 URL 返回的视频，返回 `VideoData::Binary`
+  （上游 `generateVideo` 返回 `GeneratedFile`，ai 7.0.127
+  `generate-video/generate-video.ts:383-410`）；传输为 `VideoCallOptions::download`，
+  缺省为受控下载 `create_download(None)`。下载不重试，计入 operation timeout；
 - Provider-specific polling delay 不是通用 exponential retry；
 - 耗尽产生的 `RetryError` 原样透传，外层不得再次 submit。
 - **修订**（RFC-0031 review）：`options.n` 按 `VideoModel::max_videos_per_call`

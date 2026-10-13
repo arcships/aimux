@@ -252,7 +252,8 @@ if "Base64" in result["images"]:
 
 ## Video Generation
 
-Video generation typically returns a URL (not binary).
+Most video models return a URL; `generate` downloads it, as the AI SDK's
+`generateVideo` does, and returns the video's bytes (`Binary`).
 
 ```python
 from aimux import google_video
@@ -265,9 +266,10 @@ result = json.loads(videor.generate(json.dumps({
     "provider_options": {},
 })))
 
-# result["videos"] is usually [{"Url": {"url": "...", "media_type": "..."}}]
-if "Url" in result["videos"][0]:
-    print(result["videos"][0]["Url"]["url"])
+# result["videos"] is usually [{"Binary": {"data": [...], "media_type": "..."}}]
+if "Binary" in result["videos"][0]:
+    with open("video.mp4", "wb") as f:
+        f.write(bytes(result["videos"][0]["Binary"]["data"]))
 ```
 
 ## Reranking
