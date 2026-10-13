@@ -320,3 +320,21 @@ async fn the_model_has_no_streaming_method() {
     );
     assert!(server.received_requests().await.unwrap().is_empty());
 }
+
+/// Only `transcribe` downloads an audio URL (layer 5's `AudioInput::Url`);
+/// the model itself refuses one before any request, as every transcription
+/// model does.
+#[tokio::test]
+async fn url_audio_is_refused_before_any_request() {
+    let server = serve(ResponseTemplate::new(200).set_body_json(json_body())).await;
+    let options = TranscriptionCallOptions::new(
+        AudioInput::Url("https://cdn.test/a.wav".into()),
+        "audio/wav",
+    );
+    let error = model_on(&server, None, "whisper-large-v3-turbo")
+        .do_generate(&options)
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), AudioInput::url_error().to_string());
+    assert!(server.received_requests().await.unwrap().is_empty());
+}

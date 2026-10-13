@@ -598,3 +598,19 @@ async fn emits_raw_chunks_when_include_raw_chunks_is_set() {
     .await;
     assert!(described(&parts).iter().any(|part| part == "raw"));
 }
+
+/// Only `transcribe` downloads an audio URL (layer 5's `AudioInput::Url`);
+/// the model itself refuses one before any request, as every transcription
+/// model does.
+#[tokio::test]
+async fn url_audio_is_refused_before_any_request() {
+    let server = MockServer::start().await;
+    let mut options = wav_call(None);
+    options.audio = AudioInput::Url("https://cdn.test/a.wav".into());
+    let error = model(&server.uri(), "gemini-3.5-transcribe")
+        .do_generate(&options)
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), AudioInput::url_error().to_string());
+    assert!(server.received_requests().await.unwrap().is_empty());
+}

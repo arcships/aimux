@@ -739,3 +739,19 @@ async fn should_warn_on_unrecognized_input_audio_format_types() {
         other => panic!("expected StreamStart, got {other:?}"),
     }
 }
+
+/// Only `transcribe` downloads an audio URL (layer 5's `AudioInput::Url`);
+/// the model itself refuses one before any request, as every transcription
+/// model does.
+#[tokio::test]
+async fn url_audio_is_refused_before_any_request() {
+    let server = MockServer::start().await;
+    let mut options = call(None, "audio/wav");
+    options.audio = AudioInput::Url("https://cdn.test/a.wav".into());
+    let error = model(&server.uri(), None)
+        .do_generate(&options)
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), AudioInput::url_error().to_string());
+    assert!(server.received_requests().await.unwrap().is_empty());
+}

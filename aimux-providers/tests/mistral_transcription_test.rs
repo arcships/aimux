@@ -403,3 +403,21 @@ async fn should_handle_nullable_response_fields_and_use_the_last_segment_for_dur
     assert_eq!(result.duration_in_seconds, Some(2.5));
     assert!(result.provider_metadata.is_none());
 }
+
+/// Only `transcribe` downloads an audio URL (layer 5's `AudioInput::Url`);
+/// the model itself refuses one before any request, as every transcription
+/// model does.
+#[tokio::test]
+async fn url_audio_is_refused_before_any_request() {
+    let fetch = MockFetch::new(vec![Canned::json(&transcription_response())]);
+    let model = provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
+    let error = model
+        .do_generate(&options(
+            AudioInput::Url("https://cdn.test/a.wav".into()),
+            "audio/wav",
+        ))
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), AudioInput::url_error().to_string());
+    assert!(fetch.seen().is_empty());
+}
