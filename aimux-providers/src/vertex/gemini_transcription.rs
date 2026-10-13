@@ -182,6 +182,7 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
             AudioInput::Binary(value) => {
                 base64::Engine::encode(&base64::engine::general_purpose::STANDARD, value)
             }
+            AudioInput::Url(_) => return Err(AudioInput::url_error()),
         };
         let mut body = json!({"contents": [{"role": "user", "parts": [{"inlineData": {"mimeType": options.media_type, "data": audio}}]}]});
         if config.as_object().is_some_and(|config| !config.is_empty()) {

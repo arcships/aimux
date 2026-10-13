@@ -196,6 +196,7 @@ impl TranscriptionModel for AzureTranscriptionModel {
         }
         let timestamp = chrono::Utc::now().to_rfc3339();
         let audio = match &options.audio {
+            AudioInput::Url(_) => return Err(AudioInput::url_error()),
             AudioInput::Binary(audio) => audio.clone(),
             AudioInput::Base64(audio) => {
                 let audio: String = audio
@@ -270,7 +271,7 @@ impl TranscriptionModel for AzureTranscriptionModel {
             ),
             HttpBody::Bytes(body, content_type),
             aimux_provider_utils::create_json_response_handler::<SpeechResponse>(),
-            aimux_provider_utils::create_standard_json_error_response_handler(),
+            speech_failed_response_handler(),
         )
         .await?;
         let parsed = response.value;
@@ -371,4 +372,26 @@ impl TranscriptionModel for AzureTranscriptionModel {
         }
         self.openai.do_stream(options).await
     }
+}
+
+/// The speech model's error handler: `{ error: { message } }` or
+/// `{ message }` (azure-speech-transcription-model.ts:72-79). The code is
+/// read from `type`, else `code`, as the shared handler that layer 5 removed
+/// from provider-utils did.
+fn speech_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error").unwrap_or(data);
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: error
+                .get("type")
+                .or_else(|| error.get("code"))
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        }
+    })
 }
