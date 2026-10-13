@@ -13,7 +13,7 @@
 //!   the loop alone does not cover the send path).
 //! - **Backpressure is socket-level**: tungstenite's `send().await` drives
 //!   flush and pends while the socket write buffer is full.
-//! - **Proxy support (RFC-0034 §2)**: a [`TungsteniteConnector`] carries its
+//! - **Proxy support (RFC-0034 §2)**: a [`TungsteniteConnector`](crate::ws::TungsteniteConnector) carries its
 //!   own `ProxyConfig`; the built-in default shares the default HTTP
 //!   transport's. `wss` uses `https_url` (or `all_url`), `ws` uses `http_url`
 //!   (or `all_url`), `no_proxy` entries are honored, and tunneled
