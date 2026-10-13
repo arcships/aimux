@@ -260,7 +260,7 @@ pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider,
                 settings.headers,
             ),
             "openai",
-            "4.0.80",
+            crate::shared::aisdk_pins::OPENAI,
         ),
         fetch: settings.fetch,
         #[cfg(feature = "realtime")]

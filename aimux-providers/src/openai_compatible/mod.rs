@@ -167,7 +167,7 @@ pub fn create_openai_compatible(
     provider.headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
         headers,
         "openai-compatible",
-        "3.0.59",
+        crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
     );
     Ok(provider)
 }
@@ -246,7 +246,7 @@ impl OpenAICompatibleProvider {
                     assembly.headers,
                 ),
                 "openai-compatible",
-                "3.0.59",
+                crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
             ),
             fetch: assembly.fetch,
             transform_request_body: assembly.transform_request_body,

@@ -234,7 +234,7 @@ pub fn create_azure(
         speech_headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
             speech_headers,
             options::NAMESPACE,
-            "4.0.84",
+            crate::shared::aisdk_pins::AZURE,
         ),
         info,
         api_version: settings.api_version,
@@ -243,7 +243,7 @@ pub fn create_azure(
         headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
             headers,
             options::NAMESPACE,
-            "4.0.84",
+            crate::shared::aisdk_pins::AZURE,
         ),
     })
 }

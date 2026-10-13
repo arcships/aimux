@@ -166,7 +166,7 @@ pub fn create_mistral(settings: MistralProviderSettings) -> Result<MistralProvid
             settings.headers,
         ),
         options::NAMESPACE,
-        "4.0.54",
+        crate::shared::aisdk_pins::MISTRAL,
     );
     Ok(MistralProvider {
         base_url,

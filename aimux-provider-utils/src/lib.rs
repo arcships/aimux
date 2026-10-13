@@ -9,6 +9,7 @@
 //! of `@ai-sdk/provider-utils`. Operation retry and timeout live in
 //! `aimux-core`.
 
+mod aisdk_pins;
 pub mod api_key;
 #[doc(hidden)]
 pub use aimux_core::download_guard;

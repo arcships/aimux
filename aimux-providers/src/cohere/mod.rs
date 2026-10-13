@@ -123,7 +123,7 @@ pub fn create_cohere(settings: CohereProviderSettings) -> Result<CohereProvider,
     let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
         headers,
         options::NAMESPACE,
-        "4.0.52",
+        crate::shared::aisdk_pins::COHERE,
     );
     Ok(CohereProvider {
         generate_id: settings.generate_id,

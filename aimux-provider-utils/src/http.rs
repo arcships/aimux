@@ -555,7 +555,10 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
             .map_err(|_| AiMuxError::InvalidArgument(format!("invalid header value for {name}")))?;
         headers.insert(header_name, header_value);
     }
-    let suffix = "ai-sdk-provider-utils/5.0.51";
+    let suffix = format!(
+        "ai-sdk-provider-utils/{}",
+        crate::aisdk_pins::PROVIDER_UTILS
+    );
     let current = request
         .headers
         .iter()
@@ -565,7 +568,7 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
                 .then_some(value.as_str())
         })
         .unwrap_or_default();
-    let user_agent = crate::headers::user_agent_value(current, suffix);
+    let user_agent = crate::headers::user_agent_value(current, &suffix);
     headers.insert(
         http::header::USER_AGENT,
         http::HeaderValue::try_from(user_agent).map_err(|_| {

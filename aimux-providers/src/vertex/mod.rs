@@ -255,7 +255,7 @@ impl Resolver {
         let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
             Resolvable::Value(headers),
             "google-vertex",
-            "5.0.98",
+            crate::shared::aisdk_pins::GOOGLE_VERTEX,
         )
         .resolve()
         .await?;

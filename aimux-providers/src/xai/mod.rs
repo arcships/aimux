@@ -314,7 +314,7 @@ pub fn create_xai(settings: XAIProviderSettings) -> Result<XAIProvider, AiMuxErr
                 settings.headers,
             ),
             options::NAMESPACE,
-            "5.0.12",
+            crate::shared::aisdk_pins::XAI,
         ),
         fetch: settings.fetch,
     })

@@ -409,11 +409,17 @@ pub fn create_amazon_bedrock(
     let headers: HeadersFn = Resolvable::from_async_fn(move || {
         let auth = header_auth.clone();
         let mut user = combine_headers(&[&user_headers.clone().unwrap_or_default()]);
-        let suffix = concat!("ai-sdk-amazon-bedrock/", env!("CARGO_PKG_VERSION"));
+        // amazon-bedrock-provider.ts:294 (getHeaders) appends the pinned
+        // package part; the second occurrence comes from the fetch
+        // (amazon-bedrock-sigv4-fetch.ts:44, :131).
+        let suffix = format!(
+            "ai-sdk-amazon-bedrock/{}",
+            crate::shared::aisdk_pins::AMAZON_BEDROCK
+        );
         let agent = user
             .get("user-agent")
             .and_then(|value| value.as_deref())
-            .map_or_else(|| suffix.to_string(), |value| format!("{value} {suffix}"));
+            .map_or_else(|| suffix.clone(), |value| format!("{value} {suffix}"));
         user.insert("user-agent".into(), Some(agent));
         async move {
             match auth.bearer().await? {
@@ -450,7 +456,7 @@ pub fn create_amazon_bedrock(
         headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
             headers,
             "amazon-bedrock",
-            "5.0.100",
+            crate::shared::aisdk_pins::AMAZON_BEDROCK,
         ),
         fetch,
         transform_request_body: settings.transform_request_body,

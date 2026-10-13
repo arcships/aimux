@@ -3,6 +3,7 @@
 //! Only transport plumbing lives here: how the provider-level request headers
 //! are produced. Nothing in this module knows a vendor.
 
+pub(crate) mod aisdk_pins;
 mod discovery;
 mod exchange;
 mod poll;
