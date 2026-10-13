@@ -312,10 +312,11 @@ export declare function anthropicAws(apiKey: string, region: string, modelId: st
 export declare function applyToolCallRepair(toolCallJson: string, optsJson: string | undefined | null, replyJson: string): AimuxResult<string>
 
 /**
- * Apply a repair reply to a serialized `GenerateTextResult` or
- * `GenerateObjectResult`, rewriting both `tool_calls` and the matching
- * `response_messages` tool-call part. `optsJson` is the same string the call
- * was generated with.
+ * Apply a repair reply to a serialized `GenerateTextResult`: the call is
+ * repaired in the result's steps (content, approval requests and response
+ * messages) and the derived `tool_calls`, `content` and `response_messages`
+ * are written from them. `optsJson` is the same string the call was
+ * generated with.
  *
  * The OpenAI-shaped result has no equivalent: it carries no `invalid` /
  * `error`, so repair is driven from the native result, which
