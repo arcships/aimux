@@ -7,6 +7,7 @@
 //! `@ai-sdk/provider@4.0.21`, `@ai-sdk/provider-utils@5.0.53`).
 
 use aimux_core::content::ContentPart;
+use aimux_core::decision_model::DecisionImage;
 use aimux_core::image_model::ImageOutputs;
 use aimux_core::shared::{FileBytes, GeneratedFileData};
 use aimux_core::speech_model::AudioData;
@@ -113,4 +114,28 @@ fn model_result_bytes_are_base64_strings() {
         serde_json::from_value(json!({ "type": "binary", "data": "AAAAGA==", "mediaType": "video/mp4" })).unwrap(),
         VideoData::Binary { data, .. } if data == [0, 0, 0, 24]
     ));
+}
+
+/// A decision image is an inline image like `ImagePart.image` (`DataContent`,
+/// `provider-utils` `types/content-part.ts:42`): its bytes are one base64
+/// string in the JSON (`uint8-utils.ts:12-23`), never an array of numbers.
+#[test]
+fn decision_image_bytes_are_a_base64_string() {
+    let image = DecisionImage {
+        data: FileBytes::Binary(vec![137, 80, 78, 71]),
+        media_type: "image/png".into(),
+        detail: Some("low".into()),
+    };
+    let back: DecisionImage = assert_json(
+        &image,
+        json!({ "data": "iVBORw==", "media_type": "image/png", "detail": "low" }),
+    );
+    assert_eq!(back.data, FileBytes::Base64("iVBORw==".into()));
+    assert_eq!(back.data, image.data);
+    assert!(
+        serde_json::from_value::<DecisionImage>(
+            json!({ "data": [137, 80, 78, 71], "media_type": "image/png" })
+        )
+        .is_err()
+    );
 }

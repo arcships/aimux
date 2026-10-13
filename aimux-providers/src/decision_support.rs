@@ -5,7 +5,6 @@ use aimux_core::AiMuxError;
 use aimux_core::decision_model::{DecisionCallOptions, DecisionImage};
 use aimux_core::shared::{FileBytes, SharedProviderMetadata};
 use aimux_provider_utils::HttpRequest;
-use base64::Engine;
 use serde_json::Value;
 
 use crate::openai::config::OpenAIModelConfig;
@@ -78,12 +77,13 @@ pub(crate) fn inline_image(image: &DecisionImage) -> Result<InlineImage, AiMuxEr
             "decision image requires an image MIME type".into(),
         ));
     }
-    let engine = base64::engine::general_purpose::STANDARD;
+    // The image's bytes are a base64 string in the JSON and read as the AI
+    // SDK reads base64 (`convertBase64ToUint8Array`); a string is sent on
+    // verbatim, as `convertToBase64` passes a string through.
     let (base64, decoded_len) = match &image.data {
-        FileBytes::Binary(bytes) => (engine.encode(bytes), bytes.len()),
+        FileBytes::Binary(bytes) => (aimux_core::wire::encode_base64(bytes), bytes.len()),
         FileBytes::Base64(data) => {
-            let bytes = engine
-                .decode(data)
+            let bytes = aimux_core::wire::decode_base64(data)
                 .map_err(|e| AiMuxError::InvalidArgument(format!("decision image base64: {e}")))?;
             (data.clone(), bytes.len())
         }
@@ -207,5 +207,26 @@ mod tests {
             DecisionConfig::OpenAI(config).url("/decisions").unwrap(),
             "https://example.com/decisions?version=1"
         );
+    }
+
+    /// Decision image bytes are the AI SDK's base64 JSON: binary is encoded as
+    /// `btoa` does, a string is decoded as `atob` reads it (`provider-utils`
+    /// `uint8-utils.ts:6-23`) and sent on verbatim.
+    #[test]
+    fn inline_image_reads_bytes_as_the_ai_sdk_does() {
+        let image = |data| DecisionImage {
+            data,
+            media_type: "image/png".into(),
+            detail: None,
+        };
+        let binary = inline_image(&image(FileBytes::Binary(vec![0, 1, 2, 250, 255]))).unwrap();
+        assert_eq!(binary.base64, "AAEC+v8=");
+        assert_eq!(binary.data_url, "data:image/png;base64,AAEC+v8=");
+        let unpadded = inline_image(&image(FileBytes::Base64("AAEC+v8".into()))).unwrap();
+        assert_eq!(
+            (unpadded.base64.as_str(), unpadded.decoded_len),
+            ("AAEC+v8", 5)
+        );
+        assert!(inline_image(&image(FileBytes::Base64("not base64!".into()))).is_err());
     }
 }

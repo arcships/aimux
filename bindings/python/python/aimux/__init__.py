@@ -4,6 +4,7 @@ This wrapper layer parses JSON strings from the native layer into Python dicts,
 providing a Pythonic API surface.
 """
 
+import base64
 import json
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
@@ -187,9 +188,22 @@ def decision_capabilities(model: DecisionModel) -> Dict[str, Any]:
 
 def decide(model: DecisionModel, state: Any, questions: List[Dict[str, Any]],
            **options: Any) -> Dict[str, Any]:
-    """Answer typed questions over shared state; Boolean returns P(true)."""
+    """Answer typed questions over shared state; Boolean returns P(true).
+
+    ``images[].data`` is a base64 string, the AI SDK's JSON for bytes; ``bytes``
+    are encoded here.
+    """
+    if options.get('images') is not None:
+        options['images'] = [_base64_image(image) for image in options['images']]
     payload = dict(options, state=state, questions=questions)
     return json.loads(model.decide(json.dumps(payload)))
+
+
+def _base64_image(image: Dict[str, Any]) -> Dict[str, Any]:
+    data = image.get('data')
+    if isinstance(data, (bytes, bytearray, memoryview)):
+        return dict(image, data=base64.b64encode(bytes(data)).decode('ascii'))
+    return image
 
 
 def session_calls(session_id: str) -> List[Dict[str, Any]]:

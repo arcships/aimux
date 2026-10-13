@@ -2,6 +2,7 @@
 
 A thread-based server also verifies the native decision call releases the GIL.
 """
+import base64
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -184,10 +185,19 @@ def test_official_structured_contract_and_capabilities():
         thread.join(timeout=2)
 
 
-def test_openai_images_native_values_and_score_descriptions():
+@pytest.mark.parametrize('as_bytes', [False, True])
+def test_openai_images_native_values_and_score_descriptions(as_bytes):
     from aimux import create_provider
     contract = json.loads((Path(__file__).resolve().parents[3] /
         'contract-tests/fixtures/decision-openai-full.json').read_text())
+    if as_bytes:
+        # DecisionImage.data is a base64 string on the wire, as the AI SDK
+        # writes bytes (provider-utils uint8-utils.ts:12-23); bytes given to
+        # decide() are encoded to the same string.
+        contract['options']['images'] = [
+            dict(image, data=base64.b64decode(image['data']))
+            for image in contract['options']['images']
+        ]
     captured = []
 
     class Handler(BaseHTTPRequestHandler):

@@ -25,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `audio`, image outputs, video `binary` data and audio/image/video inputs. An
   array of numbers is no longer read. Bindings keep their byte-valued APIs
   (`Binary` variants, Python `bytes`) and encode them at the JSON boundary
-  (#232 C33).
+  (#232 C33). Decision images (`images[].data`) follow the same rule; Python
+  `decide` encodes `bytes` image data (C33a).
 
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
