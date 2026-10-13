@@ -140,9 +140,7 @@ pub struct VideoCallOptions {
     pub abort_signal: Option<AbortSignal>,
 
     /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
-    /// retrying. `None` uses 2, the AI SDK default, unless the model's
-    /// `retry_config()` sets another count (model-level retry settings are
-    /// removed in the target design, docs/aisdk-architecture-alignment.md D14).
+    /// retrying. `None` uses 2, the AI SDK default.
     pub max_retries: Option<u32>,
 
     /// Poll pacing for the start/status flow, the AI SDK's `generateVideo`
@@ -904,7 +902,9 @@ mod tests {
     /// The race covers the status retries too (upstream passes the status
     /// timeout signal to `prepareRetries`, generate-video.ts:602-605): a
     /// retry delay longer than the remaining budget ends with the polling
-    /// timeout, not after the delay.
+    /// timeout, not after the delay. The failed check asks for a 30 s delay
+    /// (`retry-after-ms`, honoured exactly below 60 s), so the delay does not
+    /// depend on the jittered exponential backoff.
     #[tokio::test]
     async fn status_retries_race_the_remaining_poll_timeout() {
         struct SlowRetries(ScriptedVideoModel);
@@ -915,12 +915,6 @@ mod tests {
             }
             fn model_id(&self) -> &str {
                 "slow-retries"
-            }
-            fn retry_config(&self) -> crate::retry::RetryConfig {
-                crate::retry::RetryConfig {
-                    initial_delay: Duration::from_secs(60),
-                    ..crate::retry::RetryConfig::default()
-                }
             }
             fn max_videos_per_call(&self) -> Option<u32> {
                 Some(1)
@@ -936,7 +930,18 @@ mod tests {
                 operation: &serde_json::Value,
                 options: &VideoCallOptions,
             ) -> Result<VideoOperationStatus, AiMuxError> {
-                self.0.do_status(operation, options).await
+                self.0
+                    .do_status(operation, options)
+                    .await
+                    .map_err(|error| match error {
+                        AiMuxError::ApiCall(mut detail) => {
+                            detail.response_headers = Some(
+                                [("retry-after-ms".to_string(), "30000".to_string())].into(),
+                            );
+                            AiMuxError::ApiCall(detail)
+                        }
+                        other => other,
+                    })
             }
         }
         let model = SlowRetries(ScriptedVideoModel::new(vec![

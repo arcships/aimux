@@ -48,7 +48,8 @@ pub(crate) fn step_options(options: &CallOptions, step: impl Into<String>) -> Ca
 
 /// The retry count of a child call: the `max_retries` of the operation the
 /// composite runs in ([`OperationSettings::current`]). `None` outside an
-/// operation, or when the operation sets none, leaves the child's default.
+/// operation, or when the operation sets none, retries twice, the AI SDK
+/// default.
 pub(crate) fn child_max_retries() -> Option<u32> {
     OperationSettings::current().and_then(|settings| settings.max_retries)
 }

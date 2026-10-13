@@ -310,6 +310,8 @@ fn variant_addition_breaks_this_match(error: &AiMuxError) {
         | AiMuxError::ToolCallRepair { .. }
         | AiMuxError::InvalidArgument(_)
         | AiMuxError::InvalidPrompt(_)
+        | AiMuxError::LoadApiKey { .. }
+        | AiMuxError::LoadSetting { .. }
         | AiMuxError::MissingToolResults { .. }
         | AiMuxError::ToolChoiceViolation(_)
         | AiMuxError::NoOutputGenerated(_)
@@ -357,6 +359,14 @@ fn variant_set_is_exactly_the_wire_tag_list() {
         },
         AiMuxError::InvalidArgument("x".into()),
         AiMuxError::InvalidPrompt("x".into()),
+        AiMuxError::LoadApiKey {
+            env_var: "X".into(),
+            description: "x".into(),
+        },
+        AiMuxError::LoadSetting {
+            env_var: "X".into(),
+            name: "x".into(),
+        },
         AiMuxError::MissingToolResults {
             tool_call_ids: vec!["x".into()],
         },
@@ -376,6 +386,9 @@ fn variant_set_is_exactly_the_wire_tag_list() {
         },
         AiMuxError::NoSuchProvider {
             provider_id: "x".into(),
+            model_id: "x".into(),
+            model_type: String::new(),
+            available_providers: vec![],
         },
         AiMuxError::Timeout("x".into()),
         AiMuxError::Aborted("request aborted".into()),
@@ -401,6 +414,8 @@ fn variant_set_is_exactly_the_wire_tag_list() {
             "InvalidResponseData",
             "InvalidToolInput",
             "JsonParse",
+            "LoadApiKey",
+            "LoadSetting",
             "MissingToolResults",
             "NoOutputGenerated",
             "NoSuchModel",

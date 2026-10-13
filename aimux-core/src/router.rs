@@ -644,7 +644,6 @@ mod tests {
             FallbackPolicy::OnError,
             RouterConfig::default(),
         );
-        assert_eq!(router.retry_config().max_retries, 0);
 
         let result = crate::generate::generate_text(
             &router,
