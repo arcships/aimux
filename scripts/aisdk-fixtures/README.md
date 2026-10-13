@@ -16,6 +16,10 @@ node record.mjs openai               # one package
 node record.mjs openai/chat-basic    # one case (VERSIONS.json / SKIPPED.md untouched)
 ```
 
+Each `fixtures/aisdk/VERSIONS.json` entry is `{version, integrity}`: `node record.mjs` keeps the
+integrity of an unchanged version and takes a new one from `package-lock.json`, and
+`bash scripts/fetch-aisdk.sh` fetches exactly those sources into `target/aisdk`.
+
 No network is used. The mock `fetch` (`mock-fetch.mjs`) throws on any URL other than the
 case's expected one and on a second request.
 

@@ -218,8 +218,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `NoSuchModel { model_id, model_type }` when a vendor has no such modality;
   `transcription_model`, `speech_model`, `reranking_model` and `files` are
   optional (`None` = not offered); video and search stay aimux extensions.
+  `Provider` gains `specification_version()`, returning `"v4"` like
+  `ProviderV4` and the model traits.
   AI SDK model constructors return an `Arc<dyn …>`. Removed: `Provider::name()`,
-  `specification_version()` (from `Provider` and the nine model traits),
   `LanguageModel::config_snapshot()` and `list_models` on `Provider`.
   Discovery is the separate `ProviderDiscovery` trait, accessed through
   `Provider::discovery()`; `supported_urls()` is added to `LanguageModel`.
@@ -421,6 +422,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   have been silently ignored). The provider `config_json` helpers
   (`ProviderConfig` in Go and Dart) drop `max_retries` / `body_overrides` and
   gain `params`; call-level `max_retries` is unchanged.
+
+### RFCs
+
+- `docs/aisdk-architecture-alignment.md`: the V4 migration now lands on
+  master layer by layer, each layer CI-green with all its consumers updated,
+  instead of one atomic cutover through an integration branch (§0.4 Q3, D31,
+  §9.1). The new C ABI, codegen, the full recording schema 3 and the binding
+  migration come last; until then the existing C constructors keep their
+  signatures and call the new factories, and ts-rs stays as the interim
+  generator. No release is cut from master until every layer is merged;
+  fixes for released versions ship from a maintenance branch. `ROADMAP.md`
+  defers the ops protocol schema and L0 passthrough and no longer fixes C1
+  at nine exports.
 
 ## [0.5.0] - 2026-09-27
 

@@ -507,6 +507,10 @@ impl DecisionResult {
 
 #[async_trait]
 pub trait DecisionModel: Send + Sync {
+    /// Specification version (always `"v4"`).
+    fn specification_version(&self) -> &'static str {
+        "v4"
+    }
     fn provider(&self) -> &str;
     fn model_id(&self) -> &str;
     fn capabilities(&self) -> DecisionCapabilities;
