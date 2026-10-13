@@ -657,6 +657,7 @@ mod tests {
                 reason: None,
                 is_automatic: None,
                 signature: None,
+                input_schema_input: None,
             });
         }
         let assembled = builder.finish();

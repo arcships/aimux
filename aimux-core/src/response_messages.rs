@@ -29,6 +29,26 @@ pub(crate) fn response_tool_call_input(input: &Value, invalid: Option<bool>) -> 
     }
 }
 
+/// The AI SDK's `isDeepEqualData` (`ai` `util/is-deep-equal-data.ts:8-48`)
+/// over parsed JSON: numbers compare as JavaScript numbers (`1` equals `1.0`,
+/// `-0` equals `0`, integers beyond 2^53 compare after rounding to a
+/// double), objects compare by key set regardless of order, and arrays
+/// element by element.
+pub(crate) fn is_deep_equal_data(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(x, y)| is_deep_equal_data(x, y))
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(key, x)| y.get(key).is_some_and(|y| is_deep_equal_data(x, y)))
+        }
+        _ => a == b,
+    }
+}
+
 /// Reasoning signature echoed back on the next turn (Anthropic:
 /// `provider_metadata.anthropic.signature`; Bedrock: `.bedrock.signature` /
 /// `.amazonBedrock.signature`).
@@ -234,7 +254,13 @@ impl ResponseMessageBuilder {
                         reason: approval.reason.clone(),
                         is_automatic: approval.is_automatic,
                         signature: approval.signature.clone(),
-                        input_schema_input: None,
+                        // Written only when it differs from the call's input
+                        // (`to-response-messages.ts:133-146`).
+                        input_schema_input: approval
+                            .input_schema_input
+                            .as_ref()
+                            .filter(|raw| !is_deep_equal_data(raw, &approval.tool_call.input))
+                            .cloned(),
                     }
                 }
                 GenerateContent::ToolCall(call) => ContentPart::ToolCall {
@@ -275,5 +301,96 @@ fn file_base64(data: &FileBytes) -> String {
     match data {
         FileBytes::Base64(data) => data.clone(),
         FileBytes::Binary(data) => base64::engine::general_purpose::STANDARD.encode(data),
+    }
+}
+
+#[cfg(test)]
+mod deep_equal_tests {
+    use serde_json::{Value, json};
+
+    use super::{ResponseMessageBuilder, is_deep_equal_data};
+    use crate::content::ContentPart;
+    use crate::message::MessageContent;
+    use crate::result::ToolApprovalRequestOutput;
+    use crate::tool::ToolCall;
+
+    /// Each case is `[a, b, isDeepEqualData(JSON.parse(a), JSON.parse(b))]`
+    /// for `ai` `util/is-deep-equal-data.ts:8-48`: `===` on numbers (doubles),
+    /// `==` null check, constructor check (array vs object), key-set check.
+    #[test]
+    fn deep_equal_data_matches_javascript() {
+        let cases = [
+            (r#"{"a":1}"#, r#"{"a":1.0}"#, true),
+            ("-0.0", "0", true),
+            (r#"{"x":-0.0}"#, r#"{"x":0}"#, true),
+            ("9007199254740993", "9007199254740992", true),
+            ("[9007199254740993]", "[9007199254740992]", true),
+            ("18446744073709551615", "18446744073709551616", true),
+            ("1e2", "100", true),
+            (r#"{"a":1,"b":2}"#, r#"{"b":2,"a":1}"#, true),
+            ("[]", "{}", false),
+            ("null", "{}", false),
+            (r#""1""#, "1", false),
+            (r#"{"a":null}"#, "{}", false),
+            (r#"{"a":[1,{"b":2}]}"#, r#"{"a":[1,{"b":3}]}"#, false),
+        ];
+        for (a, b, js) in cases {
+            let (x, y): (Value, Value) = (
+                serde_json::from_str(a).unwrap(),
+                serde_json::from_str(b).unwrap(),
+            );
+            assert_eq!(is_deep_equal_data(&x, &y), js, "{a} vs {b}");
+            assert_eq!(is_deep_equal_data(&y, &x), js, "{b} vs {a}");
+        }
+    }
+
+    fn approval(input: Value, input_schema_input: Option<Value>) -> ToolApprovalRequestOutput {
+        ToolApprovalRequestOutput {
+            approval_id: "approval-1".to_string(),
+            tool_call: ToolCall {
+                tool_call_id: "call-1".to_string(),
+                tool_name: "weather".to_string(),
+                input,
+                provider_executed: None,
+                dynamic: None,
+                provider_metadata: None,
+                invalid: None,
+                error: None,
+            },
+            reason: None,
+            is_automatic: None,
+            signature: None,
+            input_schema_input,
+        }
+    }
+
+    fn replayed_input_schema_input(request: &ToolApprovalRequestOutput) -> Option<Value> {
+        let mut builder = ResponseMessageBuilder::new();
+        builder.approval(request);
+        let messages = builder.finish().messages;
+        let MessageContent::Parts(parts) = &messages[0].content else {
+            panic!("assistant message has parts");
+        };
+        match &parts[0] {
+            ContentPart::ToolApprovalRequest {
+                input_schema_input, ..
+            } => input_schema_input.clone(),
+            other => panic!("unexpected part {other:?}"),
+        }
+    }
+
+    /// `to-response-messages.ts:133-146`: the approval part carries
+    /// `inputSchemaInput` only when it is not deep-equal to the call input.
+    #[test]
+    fn approval_writes_input_schema_input_only_when_it_differs() {
+        let raw = json!({ "city": "Paris", "unit": "c" });
+        let request = approval(json!({ "city": "Paris" }), Some(raw.clone()));
+        assert_eq!(replayed_input_schema_input(&request), Some(raw));
+
+        let request = approval(json!({ "n": 1 }), Some(json!({ "n": 1.0 })));
+        assert_eq!(replayed_input_schema_input(&request), None);
+
+        let request = approval(json!({ "n": 1 }), None);
+        assert_eq!(replayed_input_schema_input(&request), None);
     }
 }

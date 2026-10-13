@@ -78,6 +78,15 @@ pub struct ToolApprovalRequestOutput {
     pub is_automatic: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
+    /// The tool input before input-schema validation (upstream keeps it on
+    /// the tool call, `tool-call.ts:64-86`). Rust-side only: not part of
+    /// this type's JSON. The response message's `tool-approval-request` part
+    /// carries it only when it differs from `tool_call.input`
+    /// (`to-response-messages.ts:133-146`). aimux's parse validates without
+    /// transforming the input, so text generation leaves it `None`.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub input_schema_input: Option<serde_json::Value>,
 }
 
 /// A source / citation (e.g. URL citation from search-preview models). The

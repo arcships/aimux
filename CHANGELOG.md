@@ -149,6 +149,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   metadata, as the AI SDK does (`aimux-core`); providers emit one, e.g. the
   opening `"content": ""` chunk of OpenAI chat.
 
+- The response messages write a tool approval request's
+  `input_schema_input` only when it differs from the call's input under the
+  AI SDK's `isDeepEqualData` (`aimux-core`, to-response-messages.ts:133-146).
+
 **Rust (aimux-stream)**
 
 - `SseStream` is now a thin adapter over the `sse-stream` crate (WHATWG

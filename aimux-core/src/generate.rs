@@ -1093,6 +1093,7 @@ async fn convert_generated_content(
                     reason: None,
                     is_automatic: None,
                     signature: None,
+                    input_schema_input: None,
                 });
             }
             GenerateContent::ToolResult(result) => rm.tool_result(result.clone()),
@@ -1556,7 +1557,7 @@ pub async fn stream_text(
                         if let Some(call) = tool_calls.get(&approval.tool_call_id) {
                             yield Ok(TextStreamPart::ToolApprovalRequest(ToolApprovalRequestOutput {
                                 approval_id: approval.approval_id, tool_call: call.clone(),
-                                reason: None, is_automatic: None, signature: None,
+                                reason: None, is_automatic: None, signature: None, input_schema_input: None,
                             }));
                         } else {
                             yield Ok(TextStreamPart::Error { error: AiMuxError::ToolCallNotFoundForApproval {
