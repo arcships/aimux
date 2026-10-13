@@ -16,13 +16,14 @@ use serde_json::{Value, json};
 
 use aimux_core::AbortSignal;
 use aimux_core::decision_model::{
-    DecisionAnswer, DecisionCallOptions, DecisionModel, DecisionQuestion, DecisionQuestionType,
-    DecisionResult,
+    DecideOptions, DecisionAnswer, DecisionCallOptions, DecisionModel, DecisionQuestion,
+    DecisionQuestionType, DecisionResult, decide,
 };
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, UserPart};
-use aimux_core::options::{CallOptions, ResponseFormat};
+use aimux_core::operation::OperationSettings;
+use aimux_core::options::{CallOptions, ResponseFormat, TimeoutConfiguration};
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::shared::ResponseInfo;
 use aimux_core::types::{
@@ -33,6 +34,8 @@ use aimux_provider_utils::DecisionLanguageModel;
 struct MockLanguageModel {
     result: Mutex<Result<GenerateResult, AiMuxError>>,
     calls: Mutex<Vec<CallOptions>>,
+    /// The operation settings each call ran in.
+    operations: Mutex<Vec<Option<OperationSettings>>>,
     /// Aborted from inside `do_generate`, as the TS test does.
     abort_during_call: Option<AbortSignal>,
 }
@@ -47,6 +50,10 @@ impl LanguageModel for MockLanguageModel {
     }
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         self.calls.lock().unwrap().push(options.clone());
+        self.operations
+            .lock()
+            .unwrap()
+            .push(OperationSettings::current());
         if let Some(signal) = &self.abort_during_call {
             signal.abort();
         }
@@ -136,6 +143,7 @@ fn setup_with(
     let language_model = Arc::new(MockLanguageModel {
         result: Mutex::new(result),
         calls: Mutex::default(),
+        operations: Mutex::default(),
         abort_during_call,
     });
     let model = DecisionLanguageModel::new(language_model.clone(), Some("test.decision".into()));
@@ -570,6 +578,7 @@ fn provider_defaults_to_the_language_provider_with_a_decision_suffix() {
     let language_model = Arc::new(MockLanguageModel {
         result: Mutex::new(Ok(generate_result(DEFAULT_TEXT))),
         calls: Mutex::default(),
+        operations: Mutex::default(),
         abort_during_call: None,
     });
     let model = DecisionLanguageModel::new(language_model.clone(), None);
@@ -656,5 +665,35 @@ async fn the_language_model_call_joins_the_decision_recording() {
             .as_ref()
             .map(|context| context.call_id.as_str()),
         Some("call-decision")
+    );
+}
+
+/// `decide` runs the model call inside the operation's settings, as
+/// `generate_text` does (docs/aisdk-architecture-alignment.md §3.5): a
+/// language model below the decision, such as a router whose children take
+/// the operation's retry count, reads the decision's `max_retries` and
+/// `timeout`. A direct `do_decide` runs in no operation.
+#[tokio::test]
+async fn the_language_model_call_runs_in_the_decision_operation_settings() {
+    let (model, mock) = setup(DEFAULT_TEXT);
+    let timeout = TimeoutConfiguration {
+        total_ms: Some(30_000),
+        ..Default::default()
+    };
+    let mut settings = DecideOptions::new("A state", questions(base_questions()));
+    settings.max_retries = Some(0);
+    settings.timeout = Some(timeout);
+    decide(&model, settings).await.unwrap();
+    model.do_decide(&options(base_questions())).await.unwrap();
+    assert_eq!(
+        *mock.operations.lock().unwrap(),
+        [
+            Some(OperationSettings {
+                max_retries: Some(0),
+                timeout: Some(timeout),
+                session_id: None,
+            }),
+            None,
+        ]
     );
 }

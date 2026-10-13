@@ -753,7 +753,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DecideResult` (answers, usage with `total_tokens`, warnings, rounding,
   provider metadata, response). It validates the input, rejects unsupported
   question types before any I/O and validates the answers once after the
-  retries, with the upstream messages.
+  retries, with the upstream messages. The model call runs inside
+  `operation::OperationSettings::scope` with the decision's `max_retries` and
+  `timeout`, as `generate_text`'s does.
 - `DecisionModel` has `specification_version`, `provider`, `model_id`,
   `supported_question_types` and `do_decide(&DecisionCallOptions)`;
   `capabilities()` and `DecisionCapabilities` are removed, and provider limits

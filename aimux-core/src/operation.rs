@@ -8,7 +8,7 @@
 //! @ai-sdk/provider@4.0.21 `language-model/v4/language-model-v4-call-options.ts:8-138`).
 //! Aimux's session id (RFC-0024) is an operation setting too.
 //!
-//! `generate_text` and `stream_text` run their model calls inside
+//! `generate_text`, `stream_text` and `decide` run their model calls inside
 //! [`OperationSettings::scope`]. Code below the model interface that needs a
 //! setting reads [`OperationSettings::current`]: the router and MoA take the
 //! child retry count from it, the trace layer the session id, and the recorder

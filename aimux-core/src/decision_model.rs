@@ -8,7 +8,9 @@
 //! retries the model call, and validates the answers after the retries.
 //!
 //! Retries, the timeout and recording are operation settings
-//! ([`DecideOptions`]). What a provider needs beyond the V4 call options
+//! ([`DecideOptions`]); the model call runs inside
+//! [`OperationSettings::scope`](crate::operation::OperationSettings::scope),
+//! as `generate_text`'s does. What a provider needs beyond the V4 call options
 //! (images, typed choice values, runtime protocols) goes in its
 //! `provider_options`; what it reports beyond the V4 result (probability
 //! source, confidence) goes in its `provider_metadata`.
@@ -623,6 +625,14 @@ pub async fn decide(
             ));
         }
     }
+    // The operation settings a model below the decision reads, as in
+    // `generate_text` (a language model under `DecisionLanguageModel` may be
+    // a router whose children take the retry count from them).
+    let settings = crate::operation::OperationSettings {
+        max_retries: options.max_retries,
+        timeout: options.timeout,
+        session_id: None,
+    };
     let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
     let abort_signal = options.abort_signal.clone();
     let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
@@ -649,45 +659,46 @@ pub async fn decide(
         provider_options: options.provider_options,
         recording_context: context.clone(),
     };
-    let result = timeout::run(
-        retries.retry(|| async {
+    let result = settings
+        .scope(timeout::run(
+            retries.retry(|| async {
+                check_abort(abort_signal.as_ref())?;
+                if let Some(ctx) = &call.recording_context {
+                    let _ = ctx.start_attempt();
+                }
+                model.do_decide(&call).await
+            }),
+            abort_signal.as_ref(),
+            timeout,
+        ))
+        .await
+        .and_then(|result| {
             check_abort(abort_signal.as_ref())?;
-            if let Some(ctx) = &call.recording_context {
-                let _ = ctx.start_attempt();
-            }
-            model.do_decide(&call).await
-        }),
-        abort_signal.as_ref(),
-        timeout,
-    )
-    .await
-    .and_then(|result| {
-        check_abort(abort_signal.as_ref())?;
-        validate_decision_answers(&call.questions, &result.answers, result.rounding)?;
-        let usage = result.usage.unwrap_or_default();
-        let mut response = result.response.unwrap_or_default();
-        response
-            .timestamp
-            .get_or_insert_with(crate::util::rfc3339_now);
-        response
-            .model_id
-            .get_or_insert_with(|| model.model_id().to_owned());
-        Ok(DecideResult {
-            answers: result.answers,
-            usage: DecideUsage {
-                input_tokens: usage.input_tokens,
-                output_tokens: usage.output_tokens,
-                total_tokens: usage
-                    .input_tokens
-                    .zip(usage.output_tokens)
-                    .and_then(|(input, output)| input.checked_add(output)),
-            },
-            warnings: result.warnings,
-            rounding: result.rounding,
-            provider_metadata: result.provider_metadata,
-            response,
-        })
-    });
+            validate_decision_answers(&call.questions, &result.answers, result.rounding)?;
+            let usage = result.usage.unwrap_or_default();
+            let mut response = result.response.unwrap_or_default();
+            response
+                .timestamp
+                .get_or_insert_with(crate::util::rfc3339_now);
+            response
+                .model_id
+                .get_or_insert_with(|| model.model_id().to_owned());
+            Ok(DecideResult {
+                answers: result.answers,
+                usage: DecideUsage {
+                    input_tokens: usage.input_tokens,
+                    output_tokens: usage.output_tokens,
+                    total_tokens: usage
+                        .input_tokens
+                        .zip(usage.output_tokens)
+                        .and_then(|(input, output)| input.checked_add(output)),
+                },
+                warnings: result.warnings,
+                rounding: result.rounding,
+                provider_metadata: result.provider_metadata,
+                response,
+            })
+        });
     if let Some(ctx) = context {
         let outcome = match &result {
             Ok(result) => crate::recording::OutcomeRecord {
