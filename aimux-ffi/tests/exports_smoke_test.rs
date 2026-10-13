@@ -30,7 +30,7 @@
 //!
 //! ## Coverage
 //!
-//! All 129 `#[unsafe(no_mangle)]` exports in `src/lib.rs` are exercised (the
+//! All 130 `#[unsafe(no_mangle)]` exports in `src/lib.rs` are exercised (the
 //! constructor and utility classes in full; the session class one
 //! representative call per export). [`header_and_exports_agree`] pins the
 //! count against the two headers. Decision exports are exercised by
@@ -51,13 +51,13 @@ use aimux_ffi::{
     aimux_azure_new_with_base, aimux_bedrock_new, aimux_bedrock_new_with_base, aimux_codex_refresh,
     aimux_cohere_embedding_new, aimux_cohere_embedding_new_with_base, aimux_cohere_new,
     aimux_cohere_new_with_base, aimux_cohere_reranking_new, aimux_cohere_reranking_new_with_base,
-    aimux_consume_stream_text, aimux_drop_handle, aimux_embed, aimux_error_available_tools,
-    aimux_error_code, aimux_error_free, aimux_error_message, aimux_error_model_id,
-    aimux_error_model_type, aimux_error_original_error, aimux_error_provider_code,
-    aimux_error_provider_id, aimux_error_provider_message, aimux_error_response_body,
-    aimux_error_retry_ms, aimux_error_retryable, aimux_error_status, aimux_error_t,
-    aimux_error_tool_input, aimux_error_tool_name, aimux_file_upload, aimux_free_string,
-    aimux_generate_object, aimux_generate_text, aimux_generate_text_as_openai,
+    aimux_consume_stream_text, aimux_drop_handle, aimux_drop_handle_ptr, aimux_embed,
+    aimux_error_available_tools, aimux_error_code, aimux_error_free, aimux_error_message,
+    aimux_error_model_id, aimux_error_model_type, aimux_error_original_error,
+    aimux_error_provider_code, aimux_error_provider_id, aimux_error_provider_message,
+    aimux_error_response_body, aimux_error_retry_ms, aimux_error_retryable, aimux_error_status,
+    aimux_error_t, aimux_error_tool_input, aimux_error_tool_name, aimux_file_upload,
+    aimux_free_string, aimux_generate_object, aimux_generate_text, aimux_generate_text_as_openai,
     aimux_generate_text_result_as_openai, aimux_get_model_specs, aimux_google_embedding_new,
     aimux_google_embedding_new_with_base, aimux_google_image_new, aimux_google_image_new_with_base,
     aimux_google_video_new, aimux_google_video_new_with_base, aimux_image_generate,
@@ -158,7 +158,7 @@ fn header_and_exports_agree() {
     exports.sort();
     assert_eq!(
         exports.len(),
-        129,
+        130,
         "export count changed; update the headers"
     );
 
@@ -550,9 +550,11 @@ fn constructor_exports_build_and_release_handles() {
     assert_ne!(*handles.last().unwrap(), 0, "abort_signal_new");
 
     // Release every handle created above (aimux_drop_handle is safe with 0).
-    for h in [traced, audited, router, moa] {
+    // The pointer-sized entry point (a finalizer's callback) releases one.
+    for h in [traced, audited, router] {
         aimux_drop_handle(h);
     }
+    aimux_drop_handle_ptr(std::ptr::without_provenance_mut(moa as usize));
 
     // mock_replay_new: empty input must fail cleanly (no recordings) — the
     // success path needs a real Recording, covered by replay tests elsewhere.

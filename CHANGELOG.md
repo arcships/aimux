@@ -453,6 +453,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   language model of a provider with language-model middleware and, when
   given, every image model with image-model middleware; all other members
   are the provider's own.
+- C ABI: `void aimux_drop_handle_ptr(void *handle)`, `aimux_drop_handle` with
+  the handle passed as a pointer-sized value (NULL is a no-op), for a
+  finalizer that can only register a `void (*)(void *)` callback.
 
 ### Fixed
 
@@ -472,6 +475,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recordings and logs redact Prodia's `X-Prodia-Key` and any header ending in
   `subscription-key` (Azure's `Ocp-Apim-Subscription-Key`), with or without
   separators; both were stored in clear text.
+- Flutter: the `NativeFinalizer` that releases a garbage-collected `Model` or
+  `ProviderHandle` calls `aimux_drop_handle_ptr`. It called
+  `aimux_drop_handle(uint64_t)` through a `void (*)(void *)` pointer, which on
+  32-bit ARM (armeabi-v7a) passes a garbage high word and leaks the handle.
 
 ### RFCs
 

@@ -455,6 +455,16 @@ aimux_error_t *aimux_apply_tool_call_repair_to_result(const char *result_json,
 void aimux_drop_handle(uint64_t handle);
 
 /**
+ * aimux_drop_handle with the handle passed as a pointer-sized value, for a
+ * finalizer that can only call `void (*)(void *)` (Dart NativeFinalizer).
+ * The pointer is never dereferenced: its address is the handle. Safe to call
+ * with NULL or an unknown handle (no-op).
+ *
+ * @param handle Handle from aimux_*_new, cast to a pointer.
+ */
+void aimux_drop_handle_ptr(void *handle);
+
+/**
  * Free a string written by any aimux function (`*out_json`, error getters).
  * (Handles are released with aimux_drop_handle, errors with
  * aimux_error_free, not here.)

@@ -265,14 +265,18 @@ final class _AimuxFFI {
           'aimux_stream_text_as_openai');
   late final dropHandle =
       _lib.lookupFunction<_DropHandleC, _DropHandleDart>('aimux_drop_handle');
-  // NativeFinalizer callback pointer: aimux_drop_handle reinterpreted as
-  // Void Function(Pointer<Void>). The handle value is attached as the token
-  // (its address == the uint64 handle); on 64-bit the ABI is identical, so
-  // the finalizer releases the handle when a Model/ProviderHandle is GC'd
-  // without close(). NativeFinalizerFunction is already a NativeFunction<…>,
-  // so it is looked up directly (no extra NativeFunction wrapper).
+  // NativeFinalizer callback pointer: aimux_drop_handle_ptr, declared
+  // `void aimux_drop_handle_ptr(void *)` — exactly NativeFinalizerFunction
+  // (Void Function(Pointer<Void>)). The handle value is attached as the token
+  // (its address == the handle), and the finalizer releases the handle when
+  // a Model/ProviderHandle is GC'd without close(). aimux_drop_handle takes a
+  // uint64_t and must not be called through this signature: on 32-bit ARM
+  // (armeabi-v7a) a uint64_t argument does not travel like a pointer, so it
+  // would receive a garbage high word and leak the handle.
+  // NativeFinalizerFunction is already a NativeFunction<…>, so it is looked
+  // up directly (no extra NativeFunction wrapper).
   late final dropHandlePtr =
-      _lib.lookup<NativeFinalizerFunction>('aimux_drop_handle');
+      _lib.lookup<NativeFinalizerFunction>('aimux_drop_handle_ptr');
   late final initLogging =
       _lib.lookupFunction<_StrC, _StrDart>('aimux_init_logging');
   late final initRecording =
@@ -309,8 +313,8 @@ final _AimuxFFI _ffi = _AimuxFFI();
 /// Process-wide native finalizer that releases a handle when a [Model] or
 /// [ProviderHandle] is garbage-collected without [Model.close] /
 /// [ProviderHandle.close] (T9). The token attached is the handle value
-/// encoded as a `Pointer` (its address == the uint64 handle), so the
-/// `aimux_drop_handle` native callback receives it as a uint64.
+/// encoded as a `Pointer` (its address == the handle), which the
+/// `aimux_drop_handle_ptr` native callback takes as a pointer-sized value.
 final NativeFinalizer _handleFinalizer = NativeFinalizer(_ffi.dropHandlePtr);
 
 // ─────────────────────────────────────────────────────────────────────────────
