@@ -283,8 +283,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Presets: `provider_registry.json` has 282 rows; Groq and DeepSeek are
   vendor packages instead of preset rows. Former thin wrapper types are
   deleted. The JSON is embedded and parsed once into a runtime descriptor
-  table in `preset.rs`; there is no `family` field, generated presets source
-  or per-name Rust function. Create presets or vendor packages by name via
+  table in `preset.rs`, held in a `OnceLock` without leaking memory:
+  `PresetDescriptor`, `ParamSpec` and `DeriveSpec` own their data (`String`,
+  `Vec`) instead of `&'static` slices, and lose `Copy`; there is no `family`
+  field, generated presets source or per-name Rust function. Create presets or vendor packages by name via
   `create_provider(name, PresetSettings)`.
   Rows carry `auth: api_key | none` (`none` sends no
   `Authorization` unless the row's optional key variable, such as
