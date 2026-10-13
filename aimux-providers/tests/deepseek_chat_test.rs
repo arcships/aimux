@@ -1393,6 +1393,29 @@ async fn stream_error(data: &Value) -> aimux_core::error::ApiCallError {
         .expect("an API call error part")
 }
 
+/// `deepSeekErrorSchema` as the chat model's failed-response handler
+/// (deepseek@3.0.56 `deepseek-chat-api-types.ts:117-124`,
+/// `deepseek-chat-language-model.ts:213-217`): `code` may be a number.
+#[tokio::test]
+async fn a_failed_response_reads_deepseeks_error_schema() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path_regex(".*/chat/completions$"))
+        .respond_with(ResponseTemplate::new(402).set_body_json(json!({ "error": {
+            "message": "Insufficient Balance", "type": "unknown_error", "param": null, "code": 4020
+        } })))
+        .mount(&server)
+        .await;
+    let Err(AiMuxError::ApiCall(error)) =
+        chat(&server, "deepseek-chat").do_generate(&options()).await
+    else {
+        panic!("expected an API call error");
+    };
+    assert_eq!(error.message, "Insufficient Balance");
+    assert_eq!(error.provider_code.as_deref(), Some("4020"));
+    assert_eq!(error.status_code, Some(402));
+}
+
 #[tokio::test]
 async fn stream_should_preserve_a_provider_error_envelope_in_stream_errors() {
     let data = json!({ "error": {

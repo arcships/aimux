@@ -183,11 +183,8 @@ impl ProviderDiscovery for DeepSeekProvider {
     fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
         let config = self.endpoint_config("models");
         Box::pin(async move {
-            crate::shared::list_data_models(
-                &config,
-                aimux_provider_utils::create_standard_json_error_response_handler(),
-            )
-            .await
+            crate::shared::list_data_models(&config, types::deepseek_failed_response_handler())
+                .await
         })
     }
 }

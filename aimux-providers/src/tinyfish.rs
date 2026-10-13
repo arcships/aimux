@@ -27,6 +27,28 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, v
 use crate::shared::{AuthScheme, Credential, EndpointConfig, credential_headers};
 
 /// Fixed model id for the TinyFish search model.
+/// Failed-response handler of the TinyFish endpoint: `message`, and `type`
+/// else `code` as the provider code, from the body's `error` object, or from
+/// the top level when there is none. This is the mapping the endpoint used
+/// with the removed shared handler; it is not an AI SDK schema.
+fn tinyfish_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error").unwrap_or(data);
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: error
+                .get("type")
+                .or_else(|| error.get("code"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+        }
+    })
+}
+
 const MODEL_ID: &str = "tinyfish-search";
 
 /// Default number of results when `max_results` is unset.
@@ -229,7 +251,7 @@ impl SearchModel for TinyfishSearchModel {
         let resp = aimux_provider_utils::get_from_api(
             exchange.request(url.to_string(), options),
             aimux_provider_utils::create_json_response_handler::<TinyfishSearchResponse>(),
-            aimux_provider_utils::create_standard_json_error_response_handler(),
+            tinyfish_failed_response_handler(),
         )
         .await?;
 

@@ -57,8 +57,7 @@ pub use response_handler::{
     ProviderErrorParts, ResponseHandler, ResponseHandlerInput, ResponseHandlerOutput,
     create_binary_response_handler, create_event_source_response_handler,
     create_json_error_response_handler, create_json_response_handler,
-    create_standard_json_error_response_handler, create_status_code_error_response_handler,
-    invalid_response_api_call, stream_error_api_call,
+    create_status_code_error_response_handler, invalid_response_api_call, stream_error_api_call,
 };
 pub use sigv4_fetch::{AwsCredentials, SigV4Fetch};
 pub use streaming_tool_call_argument_state::{

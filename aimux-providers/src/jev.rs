@@ -11,6 +11,28 @@ use aimux_provider_utils::{HttpRequest, load_api_key};
 
 use crate::systemone::{ResponseProfile, WireResponse};
 
+/// Failed-response handler of the Jev endpoint: `message`, and `type`
+/// else `code` as the provider code, from the body's `error` object, or from
+/// the top level when there is none. This is the mapping the endpoint used
+/// with the removed shared handler; it is not an AI SDK schema.
+fn jev_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error").unwrap_or(data);
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: error
+                .get("type")
+                .or_else(|| error.get("code"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+        }
+    })
+}
+
 const JEV_ROUNDING: DecisionRounding = DecisionRounding {
     probability_decimals: Some(2),
     score_decimals: Some(2),
@@ -152,7 +174,7 @@ impl DecisionModel for JevDecisionModel {
             ),
             body.clone(),
             aimux_provider_utils::create_json_response_handler::<WireResponse>(),
-            aimux_provider_utils::create_standard_json_error_response_handler(),
+            jev_failed_response_handler(),
         )
         .await?;
         let raw = response.raw_value.unwrap_or(Value::Null);

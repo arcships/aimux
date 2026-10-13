@@ -28,6 +28,28 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, v
 use crate::shared::{AuthScheme, Credential, EndpointConfig, credential_headers};
 
 /// Fixed model ID for the Parallel AI search model.
+/// Failed-response handler of the Parallel AI endpoint: `message`, and `type`
+/// else `code` as the provider code, from the body's `error` object, or from
+/// the top level when there is none. This is the mapping the endpoint used
+/// with the removed shared handler; it is not an AI SDK schema.
+fn parallel_ai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error").unwrap_or(data);
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: error
+                .get("type")
+                .or_else(|| error.get("code"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+        }
+    })
+}
+
 const MODEL_ID: &str = "parallel-search";
 
 const DEFAULT_BASE_URL: &str = "https://api.parallel.ai";
@@ -225,7 +247,7 @@ impl SearchModel for ParallelAiSearchModel {
             exchange.request(exchange.url("/v1/search"), options),
             body,
             aimux_provider_utils::create_json_response_handler::<ParallelAiResponse>(),
-            aimux_provider_utils::create_standard_json_error_response_handler(),
+            parallel_ai_failed_response_handler(),
         )
         .await?;
 

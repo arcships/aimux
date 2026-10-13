@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   forms), and the `ResponsesSystemMessageMode` alias (use
   `SystemMessageMode`).
 
+- `aimux_provider_utils::create_standard_json_error_response_handler` is
+  removed. Failed-response handlers live in the provider modules, as the AI
+  SDK keeps `groqFailedResponseHandler` and DeepSeek's error schema in their
+  packages; build one with `create_json_error_response_handler`. The Groq
+  handler now reads only `error.type` as the provider code, and DeepSeek's
+  prefers `error.code` (a string or a number) over `error.type`.
+
 - Provider results carry request and response information as the AI SDK does
   (`aimux-core`). `GenerateResult` has `request: Option<RequestInfo>` and
   `response: Option<ResponseInfo>`; `ResponseInfo` gains `id` and holds the
