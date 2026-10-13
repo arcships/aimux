@@ -647,9 +647,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `blackForestLabs.image`, `cartesia.transcription`, … . Consumers that
   compared `provider` to `"openai"` must match the prefix (the CLI and web
   probes filter by `model.provider()`).
-- providerOptions namespaces are canonical only: `googleVertex` and
-  `amazonBedrock` (the legacy `vertex` / `bedrock` keys are neither read nor
-  written; Bedrock still reads `anthropic` for its Anthropic models). The
+- providerOptions namespaces: `googleVertex` and `amazonBedrock` are the
+  canonical keys; the legacy `vertex` / `bedrock` keys are still read, and
+  provider metadata is written under both, as the upstream packages do
+  (Bedrock also reads `anthropic` for its Anthropic models). The
   Anthropic package reads `anthropic` merged with the first segment of a
   custom `name` (custom wins) and writes metadata under the custom key;
   compat providers no longer read the `openai` key; `providerOptions.deepseek`
