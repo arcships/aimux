@@ -171,6 +171,183 @@ async fn chat_tool_call() {
     );
 }
 
+/// Upstream: @ai-sdk/openai 4.0.83 src/chat/openai-chat-language-model.ts:539-542
+/// creates the stream's tool-call tracker with `typeValidation: 'if-present'`:
+/// a tool-call delta without `type` starts a call, one whose `type` is
+/// present and not `function` is invalid response data.
+#[tokio::test]
+async fn chat_stream_tool_call_type_is_validated_if_present() {
+    let tool_stream = |delta: Value| {
+        sse(vec![
+            json!({"id":"chatcmpl-test","model":"test-model","created":1702657020,"choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[delta]},"finish_reason":null}]}),
+            json!({"id":"chatcmpl-test","model":"test-model","created":1702657020,"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}),
+        ])
+    };
+    let fetch = MockFetch::new(vec![
+        tool_stream(
+            json!({"index":0,"id":"call_1","function":{"name":"test-tool","arguments":"{}"}}),
+        ),
+        tool_stream(
+            json!({"index":0,"id":"call_2","type":"custom","function":{"name":"test-tool","arguments":"{}"}}),
+        ),
+    ]);
+    let model = provider(&fetch).chat("test-model");
+
+    let untyped = model
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .collect::<Vec<_>>()
+        .await;
+    assert!(
+        untyped.iter().any(
+            |part| matches!(part, Ok(StreamPart::ToolCall(call)) if call.tool_call_id == "call_1")
+        ),
+        "{untyped:?}"
+    );
+    assert!(untyped.iter().all(Result::is_ok), "{untyped:?}");
+
+    let custom = model
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .collect::<Vec<_>>()
+        .await;
+    assert!(
+        custom.iter().any(|part| matches!(part, Err(error) if error.to_string().contains("Expected 'function' type."))),
+        "{custom:?}"
+    );
+    assert!(
+        !custom
+            .iter()
+            .any(|part| matches!(part, Ok(StreamPart::ToolCall(_))))
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/openai-stream-error.ts:18-37,
+/// :235-267 and :303-315: an error frame before any output fails the call
+/// with the status `createOpenAIProviderStreamError` gives it — an HTTP
+/// status in `code`, else one inferred from `code`/`type` — and
+/// `insufficient_quota` is never retryable.
+#[tokio::test]
+async fn chat_stream_error_frame_status_is_inferred_as_upstream() {
+    let cases = [
+        (
+            json!({"message":"quota","type":"insufficient_quota","code":"insufficient_quota","param":null}),
+            429,
+            false,
+        ),
+        (
+            json!({"message":"slow down","type":"requests","code":"rate_limit_exceeded"}),
+            429,
+            true,
+        ),
+        (
+            json!({"message":"busy","type":"server_error","code":"503"}),
+            503,
+            true,
+        ),
+        (
+            json!({"message":"bad","type":"invalid_request_error","code":null}),
+            400,
+            false,
+        ),
+        (
+            json!({"message":"oops","type":"server_error","code":null}),
+            500,
+            true,
+        ),
+    ];
+    let fetch = MockFetch::new(
+        cases
+            .iter()
+            .map(|(error, ..)| sse(vec![json!({ "error": error })]))
+            .collect(),
+    );
+    let model = provider(&fetch).chat("test-model");
+    for (frame, status, retryable) in cases {
+        let Err(AiMuxError::ApiCall(error)) = model.do_stream(&options()).await.map(|_| ()) else {
+            panic!("expected an API error for {frame}");
+        };
+        assert_eq!(error.message, frame["message"], "{frame}");
+        assert_eq!(error.status_code, Some(status), "{frame}");
+        assert_eq!(error.is_retryable, retryable, "{frame}");
+    }
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/openai-stream-error.ts:207-217 types a
+/// `response.failed` frame as `response.failed`, so its status comes from
+/// the inner error's `code` alone, never from an inner `type`.
+#[tokio::test]
+async fn responses_failed_frame_status_ignores_the_inner_type() {
+    let fetch = MockFetch::new(vec![sse(vec![json!({
+        "type":"response.failed","sequence_number":1,
+        "response":{"error":{"code":"server_error","message":"boom","type":"invalid_request_error"}}
+    })])]);
+    let Err(AiMuxError::ApiCall(error)) = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .map(|_| ())
+    else {
+        panic!("expected an API error");
+    };
+    assert_eq!(error.message, "boom");
+    assert_eq!(error.status_code, Some(500));
+    assert!(error.is_retryable);
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/chat/map-openai-finish-reason.ts:13-15
+/// maps the legacy `function_call` finish reason to `tool-calls`; the raw
+/// value stays `function_call`.
+#[tokio::test]
+async fn chat_function_call_finish_reason_is_tool_calls() {
+    let mut response = chat_response();
+    response["choices"][0]["finish_reason"] = json!("function_call");
+    let fetch = MockFetch::new(vec![Canned::json(&response)]);
+    let result = provider(&fetch)
+        .chat("test-model")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
+    assert_eq!(result.finish_reason.raw.as_deref(), Some("function_call"));
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/chat/convert-openai-chat-usage.ts:28
+/// reads cache reads only from the nested `prompt_tokens_details.cached_tokens`;
+/// a top-level `cached_tokens` (Moonshot's wire format) is not a cache read and
+/// only survives in `usage.raw`.
+#[tokio::test]
+async fn chat_cache_read_is_only_the_nested_cached_tokens() {
+    let usage = |usage: Value| {
+        let mut response = chat_response();
+        response["usage"] = usage;
+        response
+    };
+    let fetch = MockFetch::new(vec![
+        Canned::json(&usage(
+            json!({"prompt_tokens":100,"completion_tokens":10,"cached_tokens":7,"prompt_tokens_details":{"cached_tokens":25}}),
+        )),
+        Canned::json(&usage(
+            json!({"prompt_tokens":100,"completion_tokens":10,"cached_tokens":7}),
+        )),
+    ]);
+    let model = provider(&fetch).chat("test-model");
+
+    let nested = model.do_generate(&options()).await.unwrap().usage;
+    assert_eq!(nested.input_tokens.cache_read, Some(25));
+    assert_eq!(nested.input_tokens.no_cache, Some(75));
+    assert_eq!(nested.raw.unwrap()["cached_tokens"], json!(7));
+
+    let top_level_only = model.do_generate(&options()).await.unwrap().usage;
+    assert_eq!(top_level_only.input_tokens.cache_read, Some(0));
+    assert_eq!(top_level_only.input_tokens.no_cache, Some(100));
+    assert_eq!(top_level_only.raw.unwrap()["cached_tokens"], json!(7));
+}
+
 /// TS: "should parse OpenRouter resource exhausted error" (src/openai-error.test.ts)
 #[tokio::test]
 async fn chat_error_response() {
@@ -570,5 +747,79 @@ async fn responses_web_search_stream() {
             {"ToolResult":{"tool_call_id":"ws_missing_action","tool_name":"webSearch","result":{}}},
             {"Finish":{"finish_reason":{"unified":"stop","raw":null},"usage":{"input_tokens":{"total":10,"no_cache":10,"cache_read":0},"output_tokens":{"total":2,"reasoning":0,"text":2},"raw":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":12}},"provider_metadata":{"openai":{"responseId":"resp_missing_action"}}}}
         ])
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/openai-provider.ts:387 puts
+/// `openaiTools` on the provider, so `openai.tools.webSearch(…)` makes the
+/// provider tool; it is the module's factory and reaches the request.
+#[tokio::test]
+async fn provider_tools_member_makes_the_provider_tools() {
+    use aimux_providers::openai::tools::{SearchContextSize, WebSearchArgs};
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let openai = provider(&fetch);
+    let args = || WebSearchArgs {
+        search_context_size: Some(SearchContextSize::High),
+        ..Default::default()
+    };
+    let tool = openai.tools.web_search(args()).unwrap();
+    let factory = aimux_providers::openai::tools::web_search(args()).unwrap();
+    assert_eq!(
+        (&tool.id, &tool.name, &tool.args),
+        (&factory.id, &factory.name, &factory.args)
+    );
+    assert_eq!(openai.tools.apply_patch().id, "openai.apply_patch");
+    let mut call = options();
+    call.tools = Some(vec![Tool::Provider(tool)]);
+    openai
+        .responses("test-model")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["tools"],
+        json!([{"type":"web_search","search_context_size":"high"}])
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-language-model.ts:1660-1663
+/// enqueues `{ type: 'raw', rawValue }` for every chunk, before the parts
+/// derived from it, when `includeRawChunks` is set, and nothing otherwise.
+#[tokio::test]
+async fn responses_stream_emits_raw_chunks_when_asked() {
+    let events = vec![
+        json!({"type":"response.created","response":{"id":"resp_raw","created_at":1741630255,"model":"test-model"}}),
+        json!({"type":"response.completed","response":{"id":"resp_raw","usage":{"input_tokens":1,"output_tokens":1}}}),
+    ];
+    let fetch = MockFetch::new(vec![sse(events.clone()), sse(events.clone())]);
+    let model = provider(&fetch).responses("test-model");
+    let mut call = options();
+    call.include_raw_chunks = Some(true);
+    let with_raw: Vec<_> = model
+        .do_stream(&call)
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect()
+        .await;
+    assert!(matches!(&with_raw[0], StreamPart::StreamStart { .. }));
+    assert!(matches!(&with_raw[1], StreamPart::Raw { raw_value } if *raw_value == events[0]));
+    assert!(matches!(&with_raw[2], StreamPart::ResponseMetadata(_)));
+    assert!(matches!(&with_raw[3], StreamPart::Raw { raw_value } if *raw_value == events[1]));
+    assert!(matches!(with_raw.last(), Some(StreamPart::Finish { .. })));
+
+    let without_raw: Vec<_> = model
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect()
+        .await;
+    assert!(
+        !without_raw
+            .iter()
+            .any(|part| matches!(part, StreamPart::Raw { .. }))
     );
 }

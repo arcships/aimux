@@ -40,7 +40,7 @@ use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt, HeadersFn,
-    HttpRequest, Resolvable, default_fetch, load_setting, validate_base_url,
+    HttpRequest, RequestCredentials, Resolvable, default_fetch, load_setting, validate_base_url,
     without_trailing_slash,
 };
 
@@ -234,7 +234,7 @@ pub fn create_azure(
         speech_headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
             speech_headers,
             options::NAMESPACE,
-            "4.0.84",
+            crate::shared::aisdk_pins::AZURE,
         ),
         info,
         api_version: settings.api_version,
@@ -243,12 +243,17 @@ pub fn create_azure(
         headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
             headers,
             options::NAMESPACE,
-            "4.0.84",
+            crate::shared::aisdk_pins::AZURE,
         ),
+        tools: crate::openai::tools::AzureOpenAITools,
     })
 }
 
-/// Resolve authentication after per-call headers have been merged.
+/// Resolve authentication after per-call headers have been merged, like the
+/// token-provider fetch of azure-openai-provider.ts:248-262. A request marked
+/// [`RequestCredentials::Omit`] (a redirect hop that left the request's
+/// origin) gets no token: upstream adds it once, before fetch follows the
+/// redirect and drops `authorization` on a cross-origin hop.
 struct BearerTokenFetch {
     token: Resolvable<String>,
     fetch: Option<FetchFunction>,
@@ -257,7 +262,9 @@ struct BearerTokenFetch {
 #[async_trait::async_trait]
 impl Fetch for BearerTokenFetch {
     async fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
-        if !request.headers.contains_key("authorization") {
+        if request.credentials == RequestCredentials::Include
+            && !request.headers.contains_key("authorization")
+        {
             let token = self
                 .token
                 .resolve()
@@ -304,6 +311,8 @@ pub struct AzureOpenAIProvider {
     use_deployment_based_urls: bool,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
+    /// The provider tools (`azure.tools` in the AI SDK).
+    pub tools: crate::openai::tools::AzureOpenAITools,
 }
 
 /// Everything the URL of a request depends on, owned so a closure can hold it.

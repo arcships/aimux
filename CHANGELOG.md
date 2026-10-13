@@ -26,6 +26,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Mistral has no `transform_request_body` setting; the deprecated
   `text_embedding` and `text_embedding_model` provider methods are removed.
 
+- `SigV4Fetch::new` takes a required `SigV4Signing`. `Aws4Fetch` signs like
+  aws4fetch 1.0.20, the signer of the AI SDK's AWS packages: `user-agent`,
+  `content-type` and its other `UNSIGNABLE_HEADERS` are sent but not signed,
+  and no `x-amz-content-sha256` is sent. `AllHeaders` is the previous rule.
+  Bedrock and Anthropic-AWS sign with `Aws4Fetch`, Polly with `AllHeaders`.
+  Bedrock, Bedrock Mantle and Anthropic-AWS send the user-agents of
+  `@ai-sdk/amazon-bedrock` 5.0.100 and `@ai-sdk/anthropic-aws` 2.0.63 (the
+  package part is appended again by the transport).
+
+- Anthropic-AWS follows `@ai-sdk/anthropic-aws` 2.0.63 settings: the region
+  comes from the setting or `AWS_REGION` with no `us-east-1` default; the
+  workspace id is required, from the setting or `ANTHROPIC_AWS_WORKSPACE_ID`;
+  with no `auth`, a request uses `ANTHROPIC_AWS_API_KEY` when it is set and
+  otherwise SigV4 with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
+  `AWS_SESSION_TOKEN`. All of them are read when a request is made.
+
 - Public surface (`aimux-core`, `aimux-provider-utils`): removed
   `recording::init_recording_from_env`; made private the retry preparation
   helpers and default constants, `composite::{add_usage,
@@ -218,8 +234,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `NoSuchModel { model_id, model_type }` when a vendor has no such modality;
   `transcription_model`, `speech_model`, `reranking_model` and `files` are
   optional (`None` = not offered); video and search stay aimux extensions.
+  `Provider` gains `specification_version()`, returning `"v4"` like
+  `ProviderV4` and the model traits.
   AI SDK model constructors return an `Arc<dyn …>`. Removed: `Provider::name()`,
-  `specification_version()` (from `Provider` and the nine model traits),
   `LanguageModel::config_snapshot()` and `list_models` on `Provider`.
   Discovery is the separate `ProviderDiscovery` trait, accessed through
   `Provider::discovery()`; `supported_urls()` is added to `LanguageModel`.
@@ -421,6 +438,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   have been silently ignored). The provider `config_json` helpers
   (`ProviderConfig` in Go and Dart) drop `max_retries` / `body_overrides` and
   gain `params`; call-level `max_retries` is unchanged.
+
+### Added
+
+- Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's
+  `/maas` and `/xai` paths: `create_google_vertex_maas` / `google_vertex_maas`
+  (an OpenAI-compatible provider named `vertex.maas`) and
+  `create_google_vertex_xai` / `google_vertex_xai` (Grok chat models named
+  `googleVertex.xai`), over the project/location `endpoints/openapi` URL with
+  a Google OAuth token.
+- `OpenAIProvider::tools` and `AzureOpenAIProvider::tools`: the provider tools
+  on the provider instance, as the AI SDK's `openai.tools` and `azure.tools`
+  (`openai().tools.web_search(…)`). Azure's holds its upstream subset.
+
+### RFCs
+
+- `docs/aisdk-architecture-alignment.md`: the V4 migration now lands on
+  master layer by layer, each layer CI-green with all its consumers updated,
+  instead of one atomic cutover through an integration branch (§0.4 Q3, D31,
+  §9.1). The new C ABI, codegen, the full recording schema 3 and the binding
+  migration come last; until then the existing C constructors keep their
+  signatures and call the new factories, and ts-rs stays as the interim
+  generator. No release is cut from master until every layer is merged;
+  fixes for released versions ship from a maintenance branch. `ROADMAP.md`
+  defers the ops protocol schema and L0 passthrough and no longer fixes C1
+  at nine exports.
 
 ## [0.5.0] - 2026-09-27
 

@@ -289,6 +289,38 @@ async fn chat_stream_preserves_structured_error() {
     );
 }
 
+/// Upstream: @ai-sdk/openai-compatible 3.0.62
+/// src/completion/openai-compatible-completion-language-model.ts:320-324
+/// passes an error chunk on as it is (`error: value.error`): unlike
+/// @ai-sdk/openai, no status is inferred from its `code`/`type`.
+#[tokio::test]
+async fn completion_stream_error_infers_no_status() {
+    let fetch = MockFetch::new(vec![stream_response(&[json!({"error":{
+        "message":"Slow down","type":"requests","code":"rate_limit_exceeded"}})])]);
+    let parts: Vec<_> = provider(&fetch)
+        .completion("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect()
+        .await;
+    let error = parts
+        .iter()
+        .find_map(|part| match part {
+            StreamPart::Error {
+                error: AiMuxError::ApiCall(error),
+            } => Some(error),
+            _ => None,
+        })
+        .expect("expected an API error part");
+    assert_eq!(error.message, "Slow down");
+    assert_eq!(error.provider_code.as_deref(), Some("rate_limit_exceeded"));
+    assert_eq!(error.status_code, None);
+    assert!(!error.is_retryable);
+}
+
 /// TS: "should extract embedding" (openai-compatible/src/embedding/openai-compatible-embedding-model.test.ts)
 /// TS: "should pass the model and the values" (openai-compatible/src/embedding/openai-compatible-embedding-model.test.ts)
 #[tokio::test]
@@ -391,4 +423,131 @@ async fn image_generate_api_error() {
     assert_eq!(error.message, "Invalid prompt content");
     assert_eq!(error.status_code, Some(400));
     assert_eq!(error.url, format!("{BASE_URL}/images/generations"));
+}
+
+/// A tool result whose output is `content` (a text part and a base64 image
+/// part), as the AI SDK passes it to the provider.
+fn multi_part_tool_prompt(
+    extra: Option<aimux_core::language_model_message::ToolResultContent>,
+) -> CallOptions {
+    use aimux_core::language_model_message::{
+        FilePart, TextPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart,
+    };
+    use aimux_core::shared::{FileBytes, FileData};
+    let mut value = vec![
+        ToolResultContent::Text(TextPart {
+            text: "The weather is sunny".into(),
+            provider_options: None,
+        }),
+        ToolResultContent::File(FilePart {
+            data: FileData::Data {
+                data: FileBytes::Base64("AAECAw==".into()),
+            },
+            media_type: "image/png".into(),
+            filename: None,
+            provider_options: None,
+        }),
+    ];
+    value.extend(extra);
+    CallOptions::new(vec![
+        LanguageModelMessage::user_text("Weather?"),
+        LanguageModelMessage::Tool {
+            content: vec![ToolPart::ToolResult(ToolResultPart {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: ToolResultOutput::Content { value },
+                provider_options: None,
+            })],
+            provider_options: None,
+        },
+    ])
+}
+
+fn multi_part_provider(
+    fetch: &Arc<MockFetch>,
+    supported: Option<bool>,
+) -> OpenAICompatibleProvider {
+    create_openai_compatible(OpenAICompatibleProviderSettings {
+        name: "test-provider".into(),
+        base_url: BASE_URL.into(),
+        fetch: Some(fetch.transport()),
+        supports_multi_part_tool_content: supported,
+        ..Default::default()
+    })
+    .unwrap()
+}
+
+/// Upstream: @ai-sdk/openai-compatible 3.0.62
+/// src/chat/convert-to-openai-compatible-chat-messages.ts:303-306 sends a
+/// `content` tool output as an array of content parts
+/// (`convertToolContentPart`, :162-176) when `supportsMultiPartToolContent`
+/// (openai-compatible-provider.ts:94-100, :183) is set, and as
+/// `JSON.stringify(output.value)` otherwise (the default, `false`).
+#[tokio::test]
+async fn chat_multi_part_tool_content_follows_the_setting() {
+    let response = || {
+        Canned::json(&chat_response(
+            json!({"role":"assistant","content":"ok"}),
+            json!({"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}),
+        ))
+    };
+    let fetch = MockFetch::new(vec![response(), response(), response()]);
+    let tool_message = |index: usize| fetch.seen()[index].json_body()["messages"][1].clone();
+
+    multi_part_provider(&fetch, Some(true))
+        .chat("test-model")
+        .do_generate(&multi_part_tool_prompt(None))
+        .await
+        .unwrap();
+    assert_eq!(
+        tool_message(0),
+        json!({
+            "role": "tool",
+            "tool_call_id": "call-1",
+            "content": [
+                {"type": "text", "text": "The weather is sunny"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAECAw=="}}
+            ]
+        })
+    );
+
+    for (index, supported) in [(1, None), (2, Some(false))] {
+        multi_part_provider(&fetch, supported)
+            .chat("test-model")
+            .do_generate(&multi_part_tool_prompt(None))
+            .await
+            .unwrap();
+        let message = tool_message(index);
+        let content: Value =
+            serde_json::from_str(message["content"].as_str().expect("a JSON string")).unwrap();
+        assert_eq!(
+            content,
+            json!([
+                {"type": "text", "text": "The weather is sunny"},
+                {"type": "file", "mediaType": "image/png", "data": {"type": "data", "data": "AAECAw=="}}
+            ]),
+            "{supported:?}"
+        );
+    }
+}
+
+/// Upstream: convert-to-openai-compatible-chat-messages.ts:166-170 rejects a
+/// custom part in multi-part tool content.
+#[tokio::test]
+async fn chat_multi_part_tool_content_rejects_a_custom_part() {
+    let fetch = MockFetch::new(Vec::new());
+    let error = multi_part_provider(&fetch, Some(true))
+        .chat("test-model")
+        .do_generate(&multi_part_tool_prompt(Some(
+            aimux_core::language_model_message::ToolResultContent::Custom {
+                provider_options: None,
+            },
+        )))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::UnsupportedFunctionality(what) if what == "custom tool content parts"),
+        "{error:?}"
+    );
+    assert!(fetch.seen().is_empty());
 }

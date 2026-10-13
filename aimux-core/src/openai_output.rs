@@ -339,13 +339,18 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
     // finish_reason
     let finish_reason = finish_reason_to_openai(&result.finish_reason);
 
-    // logprobs from provider_metadata
-    let logprobs = result
-        .provider_metadata
-        .as_ref()
-        .and_then(|pm| pm.get("openai"))
-        .and_then(|o| o.get("logprobs"))
-        .cloned();
+    // logprobs from the calling provider's metadata namespace. Upstream
+    // writes them under the provider's own key, not a fixed `openai`: the
+    // Responses model under `providerOptionsName` (`azure` for Azure,
+    // @ai-sdk/openai 4.0.83 src/responses/openai-responses-language-model.ts:324,
+    // :1080), DeepSeek under `deepseek`. One model call carries one
+    // provider's namespace, so the namespace holding `logprobs` is the
+    // caller's.
+    let logprobs = result.provider_metadata.as_ref().and_then(|pm| {
+        pm.values()
+            .find_map(|namespace| namespace.get("logprobs").filter(|value| !value.is_null()))
+            .cloned()
+    });
 
     // id / model / created
     let id = result

@@ -73,12 +73,6 @@ pub struct UsageResponse {
     pub completion_tokens: Option<u32>,
     #[serde(default)]
     pub total_tokens: Option<u32>,
-    /// Top-level `cached_tokens` — returned by some OpenAI-compatible providers
-    /// (notably Moonshot AI) instead of the nested `prompt_tokens_details.cached_tokens`.
-    /// When present it takes precedence over the nested value, matching the
-    /// Moonshot usage converter.
-    #[serde(default)]
-    pub cached_tokens: Option<u32>,
     #[serde(default)]
     pub prompt_tokens_details: Option<PromptTokensDetails>,
     #[serde(default)]

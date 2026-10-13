@@ -9,6 +9,7 @@
 //! of `@ai-sdk/provider-utils`. Operation retry and timeout live in
 //! `aimux-core`.
 
+mod aisdk_pins;
 pub mod api_key;
 #[doc(hidden)]
 pub use aimux_core::download_guard;
@@ -64,7 +65,7 @@ pub use response_handler::{
     create_standard_json_error_response_handler, create_status_code_error_response_handler,
     invalid_response_api_call, stream_error_api_call,
 };
-pub use sigv4_fetch::{AwsCredentials, SigV4Fetch};
+pub use sigv4_fetch::{AwsCredentials, SigV4Fetch, SigV4Signing};
 pub use streaming_tool_call_argument_state::{
     StreamingToolCallArgumentState, starts_with_structured_value,
 };

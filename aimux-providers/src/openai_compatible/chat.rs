@@ -60,6 +60,7 @@ impl OpenAICompatibleChatModel {
                 provider_options_name: self.config.provider_options_name(),
                 include_usage: self.config.chat.include_usage,
                 supports_structured_outputs: self.config.chat.supports_structured_outputs,
+                supports_multi_part_tool_content: self.config.chat.supports_multi_part_tool_content,
                 dialect: &self.config.chat.dialect,
             },
         )
@@ -140,7 +141,7 @@ fn thought_signature(extra_content: Option<&Value>) -> Option<String> {
         .map(str::to_string)
 }
 
-fn stream_error(
+pub(super) fn stream_error(
     name: &str,
     error: &Value,
     url: &str,

@@ -10,11 +10,10 @@ use serde_json::{Value, json};
 
 use crate::google::convert::build_vertex_request_body;
 use crate::google::google_failed_response_handler;
-use crate::google::options::{GOOGLE_VERTEX, Namespace};
+use crate::google::options::Namespace;
 use crate::shared::EndpointConfig;
 use aimux_core::language_model_message::{FilePart, LanguageModelMessage, TextPart, UserPart};
 use aimux_core::options::CallOptions;
-use aimux_core::shared::provider_namespace;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
@@ -137,10 +136,10 @@ impl VertexImageModel {
             provider_options: None,
         }]);
         call_options.seed = options.seed;
-        call_options.provider_options = Some(
-            provider_namespace(GOOGLE_VERTEX, Value::Object(inner_options))
-                .expect("provider metadata must be an object"),
-        );
+        // Under both Vertex keys, as google-vertex-image-model.ts:190-194
+        // passes them to the inner language model.
+        call_options.provider_options =
+            Some(Namespace::Vertex.metadata(Value::Object(inner_options)));
         let body = build_vertex_request_body(&self.model_id, &call_options)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 

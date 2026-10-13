@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use aimux_provider_utils::{
-    AwsCredentials, HttpRequest, ProviderErrorParts, Resolvable, SigV4Fetch,
+    AwsCredentials, HttpRequest, ProviderErrorParts, Resolvable, SigV4Fetch, SigV4Signing,
     create_json_error_response_handler, create_json_response_handler, default_fetch,
     post_json_to_api,
 };
@@ -139,6 +139,7 @@ async fn a_signing_transport_does_not_sign_a_cross_origin_hop() {
             region: "us-east-1".into(),
         }),
         "bedrock",
+        SigV4Signing::Aws4Fetch,
     );
 
     post(HttpRequest {

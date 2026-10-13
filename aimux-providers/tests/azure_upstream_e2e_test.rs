@@ -371,3 +371,106 @@ async fn speech_transcription_request() {
         );
     }
 }
+
+/// With a `token_provider`, the bearer token is added by the transport
+/// (azure-openai-provider.ts:248-262), once, before fetch follows a redirect;
+/// fetch drops `authorization` on a cross-origin hop. aimux follows redirects
+/// in the helper layer and sends such a hop through the transport again with
+/// `RequestCredentials::Omit`, so the token must not be added back there.
+#[tokio::test]
+async fn token_provider_bearer_is_not_sent_across_a_cross_origin_redirect() {
+    use wiremock::matchers::any;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let origin = MockServer::start().await;
+    let foreign = MockServer::start().await;
+    Mock::given(any())
+        .respond_with(
+            ResponseTemplate::new(307)
+                .insert_header("location", format!("{}/moved", foreign.uri()).as_str()),
+        )
+        .mount(&origin)
+        .await;
+    Mock::given(any())
+        .respond_with(ResponseTemplate::new(200).set_body_json(chat_response()))
+        .mount(&foreign)
+        .await;
+    let provider = create_azure(AzureOpenAIProviderSettings {
+        base_url: Some(format!("{}/openai", origin.uri())),
+        token_provider: Some(Resolvable::Value("test-token".into())),
+        ..Default::default()
+    })
+    .unwrap();
+    provider
+        .chat("test-deployment")
+        .do_generate(&prompt())
+        .await
+        .unwrap();
+
+    let first = origin.received_requests().await.unwrap();
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].headers["authorization"], "Bearer test-token");
+    let hop = foreign.received_requests().await.unwrap();
+    assert_eq!(hop.len(), 1);
+    assert!(
+        !hop[0].headers.contains_key("authorization"),
+        "the bearer token reached another origin"
+    );
+    assert!(
+        hop[0].headers["user-agent"]
+            .to_str()
+            .unwrap()
+            .contains("ai-sdk-azure/")
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-language-model.ts:324
+/// and :1062-1080 write Azure's responses logprobs under `azure`, the
+/// provider's own key; the OpenAI wire output reads them from there.
+#[tokio::test]
+async fn responses_logprobs_reach_the_openai_output_under_the_azure_key() {
+    let mut fixture = text_fixture();
+    let logprobs = json!([{"token":"Word","logprob":-0.25,"top_logprobs":[]}]);
+    fixture["output"][0]["content"][0]["logprobs"] = logprobs.clone();
+    let fetch = MockFetch::new(vec![Canned::json(&fixture)]);
+    let options = CallOptions {
+        provider_options: Some(
+            aimux_core::shared::provider_namespace("azure", json!({"logprobs": true})).unwrap(),
+        ),
+        ..prompt()
+    };
+    let result = provider(&fetch)
+        .responses("test-deployment")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    let metadata = result.provider_metadata.as_ref().unwrap();
+    assert!(!metadata.contains_key("openai"));
+    assert_eq!(metadata["azure"]["logprobs"], json!([logprobs]));
+
+    let completion = aimux_core::openai_output::to_chat_completion(&result, "test-deployment");
+    assert_eq!(completion.choices[0].logprobs, Some(json!([logprobs])));
+}
+
+/// Upstream: @ai-sdk/azure 4.0.84 src/azure-openai-provider.ts:434 puts
+/// `azureOpenaiTools` (src/azure-openai-tools.ts: the OpenAI code
+/// interpreter, file search, image generation and web search tools) on the
+/// provider as `azure.tools`.
+#[tokio::test]
+async fn provider_tools_member_makes_the_azure_tool_subset() {
+    let fetch = MockFetch::new(vec![Canned::json(&text_fixture())]);
+    let azure = provider(&fetch);
+    let tool = azure.tools.web_search(Default::default()).unwrap();
+    assert_eq!(tool.id, "openai.web_search");
+    let mut options = prompt();
+    options.tools = Some(vec![aimux_core::options::Tool::Provider(tool)]);
+    azure
+        .responses("test-deployment")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    assert_eq!(
+        assert_request(&fetch, "responses")["tools"],
+        json!([{"type":"web_search"}])
+    );
+}

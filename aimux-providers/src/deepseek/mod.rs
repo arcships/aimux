@@ -102,7 +102,7 @@ pub fn create_deepseek(settings: DeepSeekProviderSettings) -> Result<DeepSeekPro
                 settings.headers,
             ),
             "deepseek",
-            "3.0.56",
+            crate::shared::aisdk_pins::DEEPSEEK,
         ),
         fetch: settings.fetch,
     })

@@ -202,7 +202,7 @@ pub fn create_anthropic(
                 settings.headers,
             ),
             options::CANONICAL,
-            "4.0.68",
+            crate::shared::aisdk_pins::ANTHROPIC,
         ),
         fetch: settings.fetch,
         supported_urls: supported_urls(),

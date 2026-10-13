@@ -477,6 +477,7 @@ fn build_external(
         fetch: None,
         transform_request_body: None,
         profile: entry.profile.chat_profile()?,
+        user_agent: crate::openai_compatible::OPENAI_COMPATIBLE_USER_AGENT,
     })
 }
 

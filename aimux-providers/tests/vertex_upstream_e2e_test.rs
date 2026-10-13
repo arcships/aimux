@@ -4,6 +4,7 @@
 mod mock_fetch;
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
+use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
@@ -423,4 +424,290 @@ async fn gemini_transcription_generate_request_and_result() {
         serde_json::to_value(result.provider_metadata.unwrap()).unwrap(),
         json!({"google": {"usageMetadata": usage}})
     );
+}
+
+/// Executable-sourced external-account credentials are kept (an opt-in, as in
+/// google-auth-library, which `@ai-sdk/google-vertex` uses for credentials on
+/// Node), registered in docs/aisdk-architecture-alignment.md §5. Without
+/// `GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1` the request fails before
+/// anything is spawned and before any HTTP request is sent.
+#[tokio::test]
+async fn executable_credential_without_the_opt_in_fails_and_spawns_nothing() {
+    use aimux_providers::vertex::GoogleAuthOptions;
+
+    for var in [
+        "GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES",
+        "GOOGLE_VERTEX_ACCESS_TOKEN",
+    ] {
+        assert!(
+            std::env::var_os(var).is_none(),
+            "this test needs {var} unset"
+        );
+    }
+    let marker = std::env::temp_dir().join(format!(
+        "aimux-vertex-executable-marker-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&marker);
+    let credentials = json!({
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/pool/providers/exec",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+        "token_url": "https://sts.googleapis.com/v1/token",
+        "credential_source": {
+            "executable": {
+                "command": format!("touch {}", marker.display()),
+                "timeout_millis": 5000
+            }
+        }
+    });
+    let fetch = MockFetch::new(Vec::new());
+    let provider = create_google_vertex(VertexProviderSettings {
+        api_key: Some(Resolvable::Value(String::new())),
+        project: Some("test-project".into()),
+        location: Some("us-central1".into()),
+        google_auth_options: Some(GoogleAuthOptions {
+            credentials: Some(credentials),
+            ..Default::default()
+        }),
+        fetch: Some(fetch.transport()),
+        ..Default::default()
+    })
+    .unwrap();
+    let error = provider
+        .chat("gemini-2.5-flash")
+        .do_generate(&CallOptions::new(vec![LanguageModelMessage::user_text(
+            "Hello",
+        )]))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::InvalidArgument(message)
+            if message.contains("GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1")),
+        "{error:?}"
+    );
+    assert!(!marker.exists(), "the credential executable was spawned");
+    assert!(fetch.seen().is_empty(), "a request was sent");
+}
+
+/// Upstream: @ai-sdk/google-vertex 5.0.98 src/google-vertex-image-model.ts
+/// reads the image options under `googleVertex`, then the legacy `vertex`,
+/// hands them to the inner language model under both keys (:190-194) and
+/// writes its metadata under both (:221-224).
+#[tokio::test]
+async fn image_options_under_the_legacy_vertex_key_are_read_and_metadata_written_back() {
+    let response = json!({
+        "candidates": [{"content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": "image"}}], "role": "model"}, "finishReason": "STOP"}]
+    });
+    let fetch = MockFetch::new(vec![Canned::json(&response)]);
+    let provider = create_google_vertex(VertexProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".into())),
+        base_url: Some("https://api.example.com".into()),
+        fetch: Some(fetch.transport()),
+        ..Default::default()
+    })
+    .unwrap();
+    let mut options = ImageCallOptions::new("A cat");
+    options.provider_options =
+        provider_namespace("vertex", json!({"imageConfig": {"imageSize": "2K"}})).unwrap();
+    let result = provider
+        .image("gemini-2.5-flash-image")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["generationConfig"],
+        json!({"responseModalities": ["IMAGE"], "imageConfig": {"imageSize": "2K"}})
+    );
+    let metadata = result.provider_metadata.unwrap();
+    assert_eq!(metadata["googleVertex"], metadata["vertex"]);
+}
+
+fn prompt() -> CallOptions {
+    CallOptions::new(vec![LanguageModelMessage::user_text("Hello")])
+}
+
+fn partner_response(usage: serde_json::Value) -> Canned {
+    Canned::json(&json!({
+        "id": "chatcmpl-1", "object": "chat.completion", "created": 1, "model": "m",
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+        "usage": usage
+    }))
+}
+
+fn partner_settings(
+    fetch: &Arc<MockFetch>,
+    location: Option<&str>,
+) -> aimux_providers::VertexPartnerProviderSettings {
+    aimux_providers::VertexPartnerProviderSettings {
+        project: Some("test-project".into()),
+        location: location.map(String::from),
+        headers: Some(Resolvable::Value(
+            [("Custom-Header".into(), Some("custom-value".into()))].into(),
+        )),
+        fetch: Some(fetch.transport()),
+        generate_auth_token: Some(Resolvable::Value(Some("test-token".into()))),
+        ..Default::default()
+    }
+}
+
+/// Upstream: @ai-sdk/google-vertex 5.0.98 src/maas/google-vertex-maas-provider.ts:77-118
+/// (the project/location URL, `global` by default, the `vertex.maas` name,
+/// the llama-4 `max_tokens` default at :14-25) and
+/// google-vertex-maas-provider-node.ts:170-189 (the headers, then the bearer token).
+#[tokio::test]
+async fn maas_sub_provider_builds_on_openai_compatible() {
+    let fetch = MockFetch::new(vec![
+        partner_response(json!({"prompt_tokens": 1, "completion_tokens": 1})),
+        partner_response(json!({"prompt_tokens": 1, "completion_tokens": 1})),
+    ]);
+    let regional =
+        aimux_providers::create_google_vertex_maas(partner_settings(&fetch, Some("us-central1")))
+            .unwrap();
+    let model = regional.chat("meta/llama-4-scout-17b-16e-instruct-maas");
+    assert_eq!(model.provider(), "vertex.maas.chat");
+    model.do_generate(&prompt()).await.unwrap();
+    let global =
+        aimux_providers::create_google_vertex_maas(partner_settings(&fetch, None)).unwrap();
+    let mut options = prompt();
+    options.max_output_tokens = Some(100);
+    global
+        .chat("meta/llama-4-scout-17b-16e-instruct-maas")
+        .do_generate(&options)
+        .await
+        .unwrap();
+
+    let seen = fetch.seen();
+    assert_eq!(
+        seen[0].url,
+        "https://us-central1-aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/endpoints/openapi/chat/completions"
+    );
+    assert_eq!(
+        seen[1].url,
+        "https://aiplatform.googleapis.com/v1/projects/test-project/locations/global/endpoints/openapi/chat/completions"
+    );
+    assert_eq!(seen[0].headers["authorization"], "Bearer test-token");
+    assert_eq!(seen[0].headers["custom-header"], "custom-value");
+    assert!(seen[0].headers["user-agent"].starts_with("ai-sdk-openai-compatible/"));
+    assert_eq!(seen[0].json_body()["max_tokens"], 8192);
+    assert_eq!(seen[1].json_body()["max_tokens"], 100);
+}
+
+/// Upstream: @ai-sdk/google-vertex 5.0.98 src/xai/google-vertex-xai-provider.ts:
+/// the global host whatever the location (:159-164), the `googleVertex.xai`
+/// name with usage in streams and structured outputs (:172-184), no
+/// `reasoning_effort` (:131-134), reasoning tokens on top of
+/// `completion_tokens` (:89-129) and no embedding or image models (:203-209).
+#[tokio::test]
+async fn xai_sub_provider_builds_on_openai_compatible() {
+    let fetch = MockFetch::new(vec![partner_response(json!({
+        "prompt_tokens": 10, "completion_tokens": 30,
+        "prompt_tokens_details": {"cached_tokens": 4},
+        "completion_tokens_details": {"reasoning_tokens": 12}
+    }))]);
+    let provider =
+        aimux_providers::create_google_vertex_xai(partner_settings(&fetch, Some("us-central1")))
+            .unwrap();
+    let model = provider.chat("xai/grok-4.1-fast-reasoning");
+    assert_eq!(model.provider(), "googleVertex.xai.chat");
+    let mut options = prompt();
+    options.reasoning = Some(aimux_core::types::ReasoningEffort::High);
+    let result = model.do_generate(&options).await.unwrap();
+
+    let seen = fetch.seen();
+    assert_eq!(
+        seen[0].url,
+        "https://aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/endpoints/openapi/chat/completions"
+    );
+    assert_eq!(seen[0].headers["authorization"], "Bearer test-token");
+    assert!(seen[0].json_body().get("reasoning_effort").is_none());
+    assert_eq!(result.usage.input_tokens.total, Some(10));
+    assert_eq!(result.usage.input_tokens.no_cache, Some(6));
+    assert_eq!(result.usage.input_tokens.cache_read, Some(4));
+    assert_eq!(result.usage.output_tokens.total, Some(42));
+    assert_eq!(result.usage.output_tokens.text, Some(30));
+    assert_eq!(result.usage.output_tokens.reasoning, Some(12));
+    assert!(
+        model
+            .supported_urls()
+            .0
+            .get("image/*")
+            .is_some_and(|patterns| patterns[0].is_match("https://example.com/a.png"))
+    );
+    assert!(matches!(
+        aimux_core::provider::Provider::embedding_model(&provider, "e"),
+        Err(AiMuxError::NoSuchModel { .. })
+    ));
+}
+
+/// Upstream: both sub-providers load the project with `loadSetting`
+/// (google-vertex-maas-provider.ts:83-89): no project, no request.
+#[tokio::test]
+async fn partner_sub_providers_require_a_project() {
+    assert!(
+        std::env::var_os("GOOGLE_VERTEX_PROJECT").is_none(),
+        "the test needs GOOGLE_VERTEX_PROJECT unset"
+    );
+    let fetch = MockFetch::new(vec![]);
+    let settings = aimux_providers::VertexPartnerProviderSettings {
+        project: None,
+        ..partner_settings(&fetch, None)
+    };
+    let error = aimux_providers::create_google_vertex_maas(settings)
+        .unwrap()
+        .chat("m")
+        .do_generate(&prompt())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::LoadSetting { env_var, .. } if env_var == "GOOGLE_VERTEX_PROJECT"),
+        "{error:?}"
+    );
+    assert!(fetch.seen().is_empty());
+}
+
+/// Upstream: @ai-sdk/google-vertex 5.0.98 src/google-vertex-provider-base.ts:270-276
+/// appends `ai-sdk-google-vertex/<v>` to the Gemini models' headers; the
+/// Anthropic sub-provider hands the caller's headers to the Anthropic model
+/// as they are (anthropic/google-vertex-anthropic-provider.ts:206-210), so
+/// only the helper's `ai-sdk-provider-utils/<v>` part is sent.
+#[tokio::test]
+async fn only_gemini_models_send_the_google_vertex_user_agent_part() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "msg_1", "type": "message", "role": "assistant", "model": "claude",
+        "content": [{"type": "text", "text": "ok"}],
+        "stop_reason": "end_turn", "stop_sequence": null,
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+    let anthropic = aimux_providers::create_google_vertex_anthropic(
+        aimux_providers::VertexAnthropicProviderSettings {
+            project: Some("test-project".into()),
+            location: Some("us-east5".into()),
+            fetch: Some(fetch.transport()),
+            generate_auth_token: Some(Resolvable::Value(Some("test-token".into()))),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut options = prompt();
+    options.max_output_tokens = Some(16);
+    anthropic
+        .call("claude-sonnet-4-5")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    let agent = &fetch.seen()[0].headers["user-agent"];
+    assert!(agent.starts_with("ai-sdk-provider-utils/"), "{agent}");
+    assert!(!agent.contains("ai-sdk-google-vertex/"), "{agent}");
+
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "candidates": [{"content": {"parts": [{"text": "ok"}], "role": "model"}, "finishReason": "STOP"}]
+    }))]);
+    provider(&fetch)
+        .chat("gemini-2.5-flash")
+        .do_generate(&prompt())
+        .await
+        .unwrap();
+    let agent = &fetch.seen()[0].headers["user-agent"];
+    assert!(agent.starts_with("ai-sdk-google-vertex/"), "{agent}");
 }

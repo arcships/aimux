@@ -85,6 +85,10 @@ pub struct OpenAICompatibleProviderSettings {
     /// Whether the chat endpoint accepts `json_schema` response formats; when
     /// not, a schema degrades to `json_object` with a warning.
     pub supports_structured_outputs: Option<bool>,
+    /// Whether chat tool results may carry multi-part content: a `content`
+    /// tool output is then sent as an array of content parts instead of a
+    /// JSON string. Default `false`.
+    pub supports_multi_part_tool_content: Option<bool>,
     /// Rewrites each chat JSON request body once, after it is serialized and
     /// before it is sent.
     pub transform_request_body: Option<TransformRequestBody>,
@@ -115,6 +119,10 @@ impl std::fmt::Debug for OpenAICompatibleProviderSettings {
                 &self.supports_structured_outputs,
             )
             .field(
+                "supports_multi_part_tool_content",
+                &self.supports_multi_part_tool_content,
+            )
+            .field(
                 "transform_request_body",
                 &self.transform_request_body.is_some(),
             )
@@ -143,31 +151,46 @@ pub fn create_openai_compatible(
         .map_or(Credential::None, |key| {
             Credential::Explicit(Resolvable::Value(key))
         });
-    let user_headers = settings.headers.clone();
+    let headers = compatible_headers(credential, settings.headers.clone());
+    build(settings, BaseUrl::Fixed(base_url), headers)
+}
+
+/// [`create_openai_compatible`] for a package that builds on it with its own
+/// base URL source and provider headers (the AI SDK's sub-providers that
+/// call `createOpenAICompatible`). `settings.base_url`, `api_key` and
+/// `headers` are not read; the package user-agent part is added to
+/// `headers`.
+pub(crate) fn build(
+    settings: OpenAICompatibleProviderSettings,
+    base_url: BaseUrl,
+    headers: HeadersFn,
+) -> Result<OpenAICompatibleProvider, AiMuxError> {
     let mut provider = OpenAICompatibleProvider::assemble(Assembly {
         name: settings.name,
-        base_url: BaseUrl::Fixed(base_url),
-        credential: credential.clone(),
+        base_url,
+        credential: Credential::None,
         fixed_headers: Vec::new(),
-        headers: settings.headers,
+        headers: None,
         query_params: settings.query_params,
         fetch: settings.fetch,
         transform_request_body: settings.transform_request_body,
+        user_agent: OPENAI_COMPATIBLE_USER_AGENT,
         profile: ChatProfile {
             include_usage: settings.include_usage.unwrap_or(false),
             supports_structured_outputs: settings.supports_structured_outputs.unwrap_or(false),
             dialect: ChatDialect::baseline(),
         },
     })?;
+    provider.chat.supports_multi_part_tool_content =
+        settings.supports_multi_part_tool_content.unwrap_or(false);
     let dialect = Arc::make_mut(&mut provider.chat.dialect);
     dialect.metadata_extractor = settings.metadata_extractor;
     dialect.supported_urls = settings.supported_urls;
     dialect.convert_usage = settings.convert_usage;
-    let headers = compatible_headers(credential, user_headers);
     provider.headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
         headers,
         "openai-compatible",
-        "3.0.59",
+        crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
     );
     Ok(provider)
 }
@@ -196,7 +219,15 @@ pub(crate) struct Assembly {
     pub fetch: Option<FetchFunction>,
     pub transform_request_body: Option<TransformRequestBody>,
     pub profile: ChatProfile,
+    /// `(package, version)` of the provider headers' user-agent suffix.
+    pub user_agent: (&'static str, &'static str),
 }
+
+/// The user-agent part of the `@ai-sdk/openai-compatible` package.
+pub(crate) const OPENAI_COMPATIBLE_USER_AGENT: (&str, &str) = (
+    "openai-compatible",
+    crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
+);
 
 /// An OpenAI-compatible provider (the AI SDK's `OpenAICompatibleProvider`).
 /// Cheap to take models out of; it holds no HTTP client.
@@ -245,14 +276,15 @@ impl OpenAICompatibleProvider {
                     assembly.fixed_headers,
                     assembly.headers,
                 ),
-                "openai-compatible",
-                "3.0.59",
+                assembly.user_agent.0,
+                assembly.user_agent.1,
             ),
             fetch: assembly.fetch,
             transform_request_body: assembly.transform_request_body,
             chat: ChatSettings {
                 include_usage: assembly.profile.include_usage,
                 supports_structured_outputs: assembly.profile.supports_structured_outputs,
+                supports_multi_part_tool_content: false,
                 supported_urls: SupportedUrls::default(),
                 dialect: Arc::new(assembly.profile.dialect),
             },

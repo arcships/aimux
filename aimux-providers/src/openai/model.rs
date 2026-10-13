@@ -63,14 +63,15 @@ fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
     let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
     let completion_tokens = usage.completion_tokens.unwrap_or(0);
 
-    // Cache-read tokens: prefer the top-level `cached_tokens` (Moonshot format)
-    // over the nested `prompt_tokens_details.cached_tokens` (OpenAI format).
-    let nested_cached = usage
+    // Cache-read tokens: only the nested `prompt_tokens_details.cached_tokens`
+    // (upstream convert-openai-chat-usage.ts:28). A top-level `cached_tokens`
+    // (Moonshot's wire format) stays in `usage.raw`; Moonshot is an
+    // OpenAI-compatible preset with its own usage converter.
+    let cached = usage
         .prompt_tokens_details
         .as_ref()
         .and_then(|d| d.cached_tokens)
         .unwrap_or(0);
-    let cached = usage.cached_tokens.unwrap_or(nested_cached);
 
     let cache_write = usage
         .prompt_tokens_details
@@ -107,7 +108,7 @@ fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
             reasoning: Some(reasoning_tokens),
         },
         // M10 (RFC-0016): keep the provider's original usage JSON verbatim —
-        // vendor-specific fields (e.g. Moonshot `cached_tokens`, prompt-cache
+        // vendor-specific fields (e.g. a top-level `cached_tokens`, prompt-cache
         // `prompt_cache_hit_tokens`) are otherwise lost for audit/billing.
         raw: usage_raw.and_then(|value| value.as_object().cloned()),
     }
