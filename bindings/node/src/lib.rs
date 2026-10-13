@@ -314,8 +314,9 @@ impl Model {
 
     /// Stream text from the model.
     ///
-    /// Returns an `AsyncGenerator<string>` yielding `StreamPart` JSON strings.
-    /// Use `for await (const part of model.streamText(...))` to consume.
+    /// Returns an `AsyncGenerator<string>` yielding `TextStreamPart` JSON
+    /// strings. Use `for await (const part of model.streamText(...))` to
+    /// consume.
     #[napi(ts_return_type = "Promise<AsyncGenerator<string>>")]
     pub async fn stream_text(
         &self,

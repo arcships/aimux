@@ -932,9 +932,9 @@ public final class Model: @unchecked Sendable {
     /// Generate a structured JSON object (M12, RFC-0016).
     ///
     /// Same signature as `generateText`; returns a JSON-serialized
-    /// `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }`
-    /// via `options` for schema control; aimux-core applies JSON repair
-    /// before parsing.
+    /// `GenerateObjectResult`. Pass `"output": {"Object": {"schema": ...}}`
+    /// via `options` to describe the object; the model's text must parse as
+    /// JSON and match the schema.
     ///
     /// - Parameters:
     ///   - prompt: A prompt string or messages array (serialized as JSON).
@@ -950,12 +950,12 @@ public final class Model: @unchecked Sendable {
     /// (M11, RFC-0016). Synchronous (blocks until the stream finishes).
     ///
     /// Same signature as `generateText`; returns a JSON-serialized
-    /// `StreamTextResultAggregated`.
+    /// `GenerateTextResult`.
     ///
     /// - Parameters:
     ///   - prompt: A prompt string or messages array (serialized as JSON).
     ///   - options: Optional GenerateTextOptions (serialized as JSON).
-    /// - Returns: The JSON-serialized StreamTextResultAggregated.
+    /// - Returns: The JSON-serialized GenerateTextResult.
     public func consumeStreamText(prompt: String, options: String? = nil) throws -> String {
         try validateJson(prompt, parameter: "prompt")
         try validateJson(options, parameter: "options")

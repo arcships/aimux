@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeout;
  * that the typed wrapper:
  * <ol>
  *   <li>returns a {@link Types.GenerateTextResult} object (no manual JSON parsing),</li>
- *   <li>surfaces {@code .text}, {@code .toolCalls[0].toolName}, and {@code .raw.content},</li>
+ *   <li>surfaces {@code .text}, {@code .toolCalls[0].toolName}, and {@code .content},</li>
  *   <li>forwards typed {@code tools} / {@code tool_choice} onto the provider request,</li>
  *   <li>forwards multi-role {@link Types.ModelMessage} conversations,</li>
  *   <li>decodes SSE stream parts into typed {@link Types.StreamPart}s.</li>
@@ -189,8 +189,11 @@ class TypedModelTest {
             // A plain-text response carries no tool calls.
             assertThat(result.getToolCalls()).isEmpty();
 
-            // .raw.content is accessible as a list (no JSON digging required).
-            assertThat(result.getRaw().getContent()).isNotEmpty();
+            // .content is accessible as a list (no JSON digging required).
+            assertThat(result.getContent()).isNotEmpty();
+            // Everything else is derived from the steps.
+            assertThat(result.getSteps()).hasSize(1);
+            assertThat(result.getFinishReason()).isEqualTo(Types.FinishReasonUnified.STOP);
         }
     }
 
@@ -216,8 +219,9 @@ class TypedModelTest {
             // input is a JsonNode (tool arguments); inspect it directly.
             assertThat(call.getInput().get("location").asText()).isEqualTo("Tokyo");
 
-            // .raw.content carries the ToolCall variant tag.
-            assertThat(result.getRaw().hasContentVariant("ToolCall")).isTrue();
+            // .content carries the ToolCall variant tag.
+            assertThat(result.getContent()).anyMatch(part -> part.has("ToolCall"));
+            assertThat(result.getFinishReason()).isEqualTo(Types.FinishReasonUnified.TOOL_CALLS);
         }
     }
 
@@ -304,10 +308,15 @@ class TypedModelTest {
                 .as("expected a ToolCall or ToolInputDelta stream part; got: %s", parts)
                 .isTrue();
 
-            // The finish part should also be present, carrying the tool-calls
-            // finish reason.
-            boolean hasFinish = parts.stream().anyMatch(p -> p instanceof Types.StreamPart.Finish);
-            assertThat(hasFinish).isTrue();
+            // The stream opens with Start and StartStep and closes with
+            // FinishStep and Finish, carrying the tool-calls finish reason.
+            assertThat(parts.get(0)).isInstanceOf(Types.StreamPart.Start.class);
+            assertThat(parts.get(1)).isInstanceOf(Types.StreamPart.StartStep.class);
+            assertThat(parts.get(parts.size() - 2)).isInstanceOf(Types.StreamPart.FinishStep.class);
+            Types.StreamPart last = parts.get(parts.size() - 1);
+            assertThat(last).isInstanceOf(Types.StreamPart.Finish.class);
+            assertThat(((Types.StreamPart.Finish) last).getFinishReason())
+                .isEqualTo(Types.FinishReasonUnified.TOOL_CALLS);
         }
     }
 

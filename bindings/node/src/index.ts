@@ -327,9 +327,8 @@ async function repairReplyFor(
 }
 
 /**
- * Repair every invalid call in a serialized result, before it is decoded.
- * `tool_calls` sits at the top level of a generate-text result and under `raw`
- * in a generate-object one.
+ * Repair every invalid call in a serialized generate-text result, before it is
+ * decoded. Its `tool_calls` are the final step's calls.
  */
 async function repairResultJson(
   resultJson: string,
@@ -337,11 +336,8 @@ async function repairResultJson(
   optsJson: string | undefined,
   repair: RepairToolCall,
 ): Promise<string> {
-  const result = JSON.parse(resultJson) as {
-    tool_calls?: ToolCall[]
-    raw?: { tool_calls?: ToolCall[] }
-  }
-  const calls = result.tool_calls ?? result.raw?.tool_calls ?? []
+  const result = JSON.parse(resultJson) as { tool_calls?: ToolCall[] }
+  const calls = result.tool_calls ?? []
 
   let patched = resultJson
   for (const call of calls) {
@@ -359,7 +355,7 @@ async function repairResultJson(
  * @param model   - A raw model instance from `openai()`, `anthropic()`, etc.
  * @param prompt  - A plain string or an array of typed chat messages.
  * @param options - Optional typed generation options (tools, tool_choice,
- *                  temperature, response_format, …). Invalid tool calls arrive
+ *                  temperature, output, …). Invalid tool calls arrive
  *                  with `invalid`/`error` set on the tool call; pass
  *                  {@link RepairToolCall | `repairToolCall`} to fix them up
  *                  before the result is decoded.
@@ -410,7 +406,7 @@ export async function generateText(
  * import { openai, streamText } from 'aimux'
  * const model = await openai(apiKey, 'gpt-4o')
  * for await (const part of streamText(model, 'Write a haiku about Rust.')) {
- *   if ('TextDelta' in part) process.stdout.write(part.TextDelta.delta)
+ *   if ('TextDelta' in part) process.stdout.write(part.TextDelta.text)
  * }
  * ```
  */

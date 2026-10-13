@@ -1141,10 +1141,9 @@ fn apply_tool_call_repair(
     serialize_result(&repaired)
 }
 
-/// Apply a repair reply to a serialized ``GenerateTextResult`` or
-/// ``GenerateObjectResult``, rewriting both ``tool_calls`` and the matching
-/// ``response_messages`` tool-call part. `opts_json` is the same string the
-/// call was generated with.
+/// Apply a repair reply to a serialized ``GenerateTextResult``, rewriting the
+/// call in its steps' content and the matching response-message tool-call
+/// part. `opts_json` is the same string the call was generated with.
 ///
 /// The OpenAI-shaped result has no equivalent: it carries no ``invalid`` /
 /// ``error``, so repair is driven from the native result, which

@@ -328,10 +328,12 @@ void main() {
 
     expect(result.text, 'Rust is a systems programming language.');
     expect(result.toolCalls, isEmpty);
-    expect(result.finishReason.unified, 'stop');
-    expect(result.finishReason.raw, 'stop');
-    expect(result.usage.inputTokens.total, 10);
-    expect(result.usage.outputTokens.total, 8);
+    expect(result.finishReason, 'stop');
+    expect(result.rawFinishReason, 'stop');
+    expect(result.usage.inputTokens, 10);
+    expect(result.usage.outputTokens, 8);
+    expect(result.usage.totalTokens, 18);
+    expect(result.steps, hasLength(1));
   });
 
   test('generateTextMessages passes multi-role messages to provider', () async {
@@ -416,12 +418,17 @@ void main() {
     expect(toolCall.toolCallId, 'call_xyz');
     expect((toolCall.input as Map<String, dynamic>)['location'], 'Tokyo');
 
-    // A Finish part carries typed usage + finish reason.
-    final finish = parts.whereType<StreamPartFinish>().first;
+    // The stream opens with Start and StartStep and closes with FinishStep
+    // and a Finish part carrying the total usage and finish reason.
+    expect(parts.first, isA<StreamPartStart>());
+    expect(parts[1], isA<StreamPartStartStep>());
+    expect(parts[parts.length - 2], isA<StreamPartFinishStep>());
+    final finish = parts.last as StreamPartFinish;
     expect(finish.type, 'Finish');
-    expect(finish.usage, isA<Usage>());
-    expect(finish.usage.inputTokens.total, 5);
-    expect(finish.usage.outputTokens.total, 2);
+    expect(finish.finishReason, 'tool-calls');
+    expect(finish.totalUsage, isA<LanguageModelUsage>());
+    expect(finish.totalUsage.inputTokens, 5);
+    expect(finish.totalUsage.outputTokens, 2);
 
     // The request was a streaming POST.
     expect(server.recorded, hasLength(1));
@@ -462,13 +469,13 @@ void main() {
     // Parsed text is unaffected.
     final text = parts
         .whereType<StreamPartTextDelta>()
-        .map((p) => p.delta)
+        .map((p) => p.text)
         .join();
     expect(text, 'Hello world');
   });
 
-  test('streamText parses non-empty StreamStart warnings', () async {
-    // RFC-0016 M9: StreamStart carries a warnings array; a non-empty array
+  test('streamText parses non-empty StartStep warnings', () async {
+    // RFC-0016 M9: StartStep carries the call's warnings; a non-empty array
     // (e.g. from a provider that rejects top_k) must decode without breaking
     // the stream. The openai full profile produces no warning, so the
     // assertion is decode-ability + field presence (the warning itself is
@@ -485,8 +492,8 @@ void main() {
       prompt: 'Say hello',
     ));
 
-    final start = parts.whereType<StreamPartStreamStart>().first;
-    expect(start.type, 'StreamStart');
+    final start = parts.whereType<StreamPartStartStep>().first;
+    expect(start.type, 'StartStep');
     expect(start.warnings, isA<List<dynamic>>());
   });
 }

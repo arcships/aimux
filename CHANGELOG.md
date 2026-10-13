@@ -207,6 +207,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name ends the stream with `InvalidResponseData` (previously it started a
   call with an empty name). `DeltaToolCall.index` is now `Option<usize>`.
 
+**All bindings**
+
+- The typed results and stream parts follow the core's AI SDK shapes
+  (Go, Java, Kotlin, Swift, Flutter, Node, Python). `GenerateTextResult`
+  gains `steps`, `tool_results` and `output` and loses `raw`; its `content`
+  holds the final step's parsed parts; `usage` / `total_usage` are
+  `LanguageModelUsage` and `finish_reason` the unified string.
+  `GenerateObjectResult` loses `raw` and `raw_finish_reason`.
+  `consume_stream_text` returns a `GenerateTextResult`
+  (`StreamTextResultAggregated` is removed). The options' `response_format`
+  is replaced by `output`. Stream parts: `TextDelta` / `ReasoningDelta` carry
+  `text`; `StreamStart` and `ResponseMetadata` give way to `Start`,
+  `StartStep`, `FinishStep`, `Finish { finish_reason, raw_finish_reason,
+  total_usage }` and `Abort`. Tool-call repair reads the top-level
+  `tool_calls` only.
+
 ## [0.5.0] - 2026-09-27
 
 **Breaking release.** 13 PRs since 0.3.0: the cross-language error model

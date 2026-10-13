@@ -858,9 +858,9 @@ func (m *Model) GenerateText(promptJson, optsJson string) (string, error) {
 // GenerateObject generates a structured JSON object (M12, RFC-0016).
 //
 // Same signature as GenerateText; returns the JSON-serialized
-// GenerateObjectResult. Pass response_format: { "Json": { ... } } via
-// optsJson for schema control; the function applies JSON repair before
-// parsing.
+// GenerateObjectResult. Pass "output": {"Object": {"schema": {...}}} via
+// optsJson to describe the object; the model's text must parse as JSON and
+// match the schema.
 func (m *Model) GenerateObject(promptJson, optsJson string) (string, error) {
 	if err := checkPromptOpts(promptJson, optsJson); err != nil {
 		return "", err
@@ -890,7 +890,7 @@ func (m *Model) GenerateObject(promptJson, optsJson string) (string, error) {
 // finishes).
 //
 // Same signature as GenerateText; returns the JSON-serialized
-// StreamTextResultAggregated.
+// GenerateTextResult.
 func (m *Model) ConsumeStreamText(promptJson, optsJson string) (string, error) {
 	if err := checkPromptOpts(promptJson, optsJson); err != nil {
 		return "", err

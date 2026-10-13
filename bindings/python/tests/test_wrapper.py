@@ -50,8 +50,10 @@ class TestGenerateText:
         assert isinstance(result, GenerateTextResult)
         assert result.text == "Rust is a systems programming language."
         # Usage is parsed into a model, not left as a dict.
-        assert result.usage.input_tokens.total == 10
-        assert result.usage.output_tokens.total == 8
+        assert result.usage.input_tokens == 10
+        assert result.usage.output_tokens == 8
+        assert result.finish_reason == "stop"
+        assert len(result.steps) == 1
 
     def test_parses_tool_calls(self):
         with RecordingMockServer(OPENAI_TOOL_CALL) as mock:
@@ -79,22 +81,21 @@ class TestGenerateText:
         assert tc.tool_call_id == "call_abc"
         assert tc.input == {"location": "Tokyo"}
 
-        # raw.content carries the ToolCall variant as a typed GenerateContent.
-        assert isinstance(result.raw.content, list)
-        tool_call_parts = [c for c in result.raw.content if c.root.type == "ToolCall"]
-        assert tool_call_parts, "raw.content must contain a ToolCall variant"
+        # content carries the parsed ToolCall variant as a typed TextContent.
+        assert isinstance(result.content, list)
+        tool_call_parts = [c for c in result.content if c.root.type == "ToolCall"]
+        assert tool_call_parts, "content must contain a ToolCall variant"
         assert tool_call_parts[0].root.tool_name == "get_weather"
         assert tool_call_parts[0].root.tool_call_id == "call_abc"
-        # raw content keeps the provider's argument text (see test_e2e).
-        assert tool_call_parts[0].root.input == '{"location":"Tokyo"}'
+        assert tool_call_parts[0].root.input == {"location": "Tokyo"}
 
-    def test_raw_content_is_text_variant(self):
+    def test_content_is_text_variant(self):
         with MockServer(OPENAI_CHAT) as mock:
             model = openai("test-key", "gpt-4o", mock.url)
             result = generate_text(model, "What is Rust?")
 
-        # raw.content[0] is a typed Text content part.
-        first = result.raw.content[0]
+        # content[0] is a typed Text content part.
+        first = result.content[0]
         assert first.root.type == "Text"
         assert first.root.text == "Rust is a systems programming language."
 
@@ -109,7 +110,7 @@ class TestStreamText:
             parts = list(stream_text(model, "Say hello"))
 
         assert len(parts) > 0
-        text = "".join(p["TextDelta"]["delta"] for p in parts if "TextDelta" in p)
+        text = "".join(p["TextDelta"]["text"] for p in parts if "TextDelta" in p)
         assert text == "Hello world"
 
     def test_stream_part_can_be_typed(self):
@@ -123,7 +124,7 @@ class TestStreamText:
         sp = parse_stream_part(first_delta)
         assert isinstance(sp, StreamPart)
         assert sp.root.type == "TextDelta"
-        assert sp.root.delta == "Hello"
+        assert sp.root.text == "Hello"
         # Round-trips back to the external-tag dict form.
         assert sp.model_dump(exclude_none=True) == first_delta
 

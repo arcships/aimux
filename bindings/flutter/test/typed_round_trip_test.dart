@@ -21,14 +21,9 @@ import 'package:test/test.dart';
 
 /// Deep-flatten a `toJson()` result across the JSON boundary.
 ///
-/// Mirrors the workaround used in `typed_model_test.dart`: `Usage` /
-/// `TokenUsage` are `@JsonSerializable()` with the default
-/// `explicitToJson: false`, so their generated `toJson()` keeps nested
-/// `TokenUsage` instances instead of recursing to plain maps. The only variant
-/// affected is `StreamPartFinish` (the only one nesting `@JsonSerializable`
-/// types). In the real pipeline the value always crosses a JSON-string
-/// boundary (Rust core → JSON → Dart), which flattens it — so we do the same
-/// here before re-parsing.
+/// The variants nesting `@JsonSerializable` types (`StreamPartFinishStep`,
+/// `StreamPartFinish`) are re-parsed after crossing a JSON-string boundary,
+/// as in the real pipeline (Rust core → JSON → Dart).
 Map<String, dynamic> deepFlatten(Map<String, dynamic> json) =>
     jsonDecode(jsonEncode(json)) as Map<String, dynamic>;
 
@@ -204,14 +199,14 @@ void main() {
 
     test('TextDelta variant', () {
       final original =
-          StreamPartTextDelta(id: 't1', delta: 'hel', providerMetadata: null);
+          StreamPartTextDelta(id: 't1', text: 'hel', providerMetadata: null);
       final decoded = StreamPart.fromJson(original.toJson());
 
       expect(decoded, isA<StreamPartTextDelta>());
       expect(decoded.type, 'TextDelta');
       final d = decoded as StreamPartTextDelta;
       expect(d.id, 't1');
-      expect(d.delta, 'hel');
+      expect(d.text, 'hel');
     });
 
     test('TextEnd variant', () {
@@ -224,20 +219,63 @@ void main() {
     });
 
     // ── Stream lifecycle ──
-    test('StreamStart variant', () {
-      final original = StreamPartStreamStart(warnings: [
+    test('Start variant', () {
+      final decoded = StreamPart.fromJson(StreamPartStart().toJson());
+      expect(decoded, isA<StreamPartStart>());
+      expect(decoded.type, 'Start');
+    });
+
+    test('StartStep variant', () {
+      final original = StreamPartStartStep(request: {}, warnings: [
         {'code': 'deprecation', 'message': 'soon'},
       ]);
       final decoded = StreamPart.fromJson(original.toJson());
 
-      expect(decoded, isA<StreamPartStreamStart>());
-      expect(decoded.type, 'StreamStart');
-      final s = decoded as StreamPartStreamStart;
+      expect(decoded, isA<StreamPartStartStep>());
+      expect(decoded.type, 'StartStep');
+      final s = decoded as StreamPartStartStep;
       expect(s.warnings, hasLength(1));
       expect(s.warnings.first['code'], 'deprecation');
     });
 
+    test('FinishStep and Finish variants', () {
+      final usage = {
+        'input_tokens': 3,
+        'input_token_details': {'cache_read_tokens': 1},
+        'output_tokens': 2,
+        'output_token_details': {},
+        'total_tokens': 5,
+      };
+      final step = StreamPart.fromJson(deepFlatten({
+        'FinishStep': {
+          'response': {'id': 'resp_1', 'timestamp': 't', 'model_id': 'gpt-4o', 'headers': null},
+          'usage': usage,
+          'performance': {'step_time_ms': 1.0},
+          'finish_reason': 'tool-calls',
+          'raw_finish_reason': 'tool_calls',
+        },
+      }));
+      expect(step, isA<StreamPartFinishStep>());
+      final fs = step as StreamPartFinishStep;
+      expect(fs.response.modelId, 'gpt-4o');
+      expect(fs.usage.totalTokens, 5);
+      expect(fs.finishReason, 'tool-calls');
+      expect(StreamPart.fromJson(deepFlatten(fs.toJson())), isA<StreamPartFinishStep>());
 
+      final finish = StreamPart.fromJson(deepFlatten({
+        'Finish': {'finish_reason': 'stop', 'raw_finish_reason': null, 'total_usage': usage},
+      })) as StreamPartFinish;
+      expect(finish.finishReason, 'stop');
+      expect(finish.totalUsage.inputTokenDetails.cacheReadTokens, 1);
+      final again = StreamPart.fromJson(deepFlatten(finish.toJson())) as StreamPartFinish;
+      expect(again.totalUsage.inputTokens, 3);
+    });
+
+    test('Abort variant', () {
+      final decoded = StreamPart.fromJson(StreamPartAbort(reason: 'stop').toJson());
+      expect(decoded, isA<StreamPartAbort>());
+      expect((decoded as StreamPartAbort).reason, 'stop');
+    });
 
     test('Error variant', () {
       final original = StreamPartError(error: {'message': 'boom', 'code': 500});
@@ -367,14 +405,14 @@ void main() {
 
     test('ReasoningDelta variant', () {
       final original =
-          StreamPartReasoningDelta(id: 'r1', delta: 'thi', providerMetadata: null);
+          StreamPartReasoningDelta(id: 'r1', text: 'thi', providerMetadata: null);
       final decoded = StreamPart.fromJson(original.toJson());
 
       expect(decoded, isA<StreamPartReasoningDelta>());
       expect(decoded.type, 'ReasoningDelta');
       final d = decoded as StreamPartReasoningDelta;
       expect(d.id, 'r1');
-      expect(d.delta, 'thi');
+      expect(d.text, 'thi');
     });
 
     test('ReasoningEnd variant', () {
@@ -388,22 +426,6 @@ void main() {
     });
 
     // ── Metadata / sources / raw ──
-    test('ResponseMetadata variant', () {
-      final original = StreamPartResponseMetadata(
-        id: 'resp_1',
-        timestamp: '2024-01-01T00:00:00Z',
-        modelId: 'gpt-4o',
-      );
-      final decoded = StreamPart.fromJson(original.toJson());
-
-      expect(decoded, isA<StreamPartResponseMetadata>());
-      expect(decoded.type, 'ResponseMetadata');
-      final m = decoded as StreamPartResponseMetadata;
-      expect(m.id, 'resp_1');
-      expect(m.timestamp, '2024-01-01T00:00:00Z');
-      expect(m.modelId, 'gpt-4o');
-    });
-
     test('Raw variant', () {
       final original = StreamPartRaw(rawValue: {'raw': 'chunk'});
       final decoded = StreamPart.fromJson(original.toJson());
