@@ -404,6 +404,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixes for released versions ship from a maintenance branch. `ROADMAP.md`
   defers the ops protocol schema and L0 passthrough and no longer fixes C1
   at nine exports.
+- `docs/aisdk-architecture-alignment.md` and RFC-0031
+  (`docs/ai-sdk-request-pipeline.md`), against ai 7.0.127: object generation
+  is the deprecated wrapper over `output` (no separate object spans), async
+  jobs follow `generateVideo`'s start/status retries and poll budget, the
+  result convenience fields are marked deprecated as upstream marks them,
+  the response-message rules gain the empty-reasoning, invalid-input,
+  `inputSchemaInput`, tool-message order and tool-error encoding rows, and
+  the remaining differences are listed: stream retries, the first-chunk
+  timeout's start, `additionalRetryableError` and per-batch idempotency
+  keys.
 
 ## [0.5.0] - 2026-09-27
 

@@ -2,7 +2,7 @@
 
 > **性质**: [RFC-0036](../rfc/0036-positioning-and-layered-architecture.md)(定位与分层架构)之下的实施设计文档,不是独立 RFC,不占 RFC 编号。随本文件合入生效;§0.4 的四项决定、§0.7 对 ROADMAP 既有承诺的保留 / 调整 / 后置清单,以本文件为准,后续变更直接修改本文件并在 CHANGELOG 记录
 >
-> **Date**: 2026-09-29 · 2026-10-04 修订（撤销切换后的 ABI 共存承诺、登记 xAI/HF chat 扩展、修复附录 §6.4-14 裁定缺失等评审问题）· 2026-10-12 修订（§9.1 / Q3 / D31 改为逐层合入主线、全部合完前不发布；新 C ABI、生成链、完整录制 schema 3 与绑定迁移排在最后）· 2026-10-13 修订（删除未实现且不再采用的 aimux 自有设计：LanguageModelRef / ResolvedModel / RegistryModelReference、注册 sidecar 元数据、SessionInferer trait、session affinity middleware；体积与性能门禁、能力矩阵移到 ROADMAP；§9.1 登记已知差距）
+> **Date**: 2026-09-29 · 2026-10-04 修订（撤销切换后的 ABI 共存承诺、登记 xAI/HF chat 扩展、修复附录 §6.4-14 裁定缺失等评审问题）· 2026-10-12 修订（§9.1 / Q3 / D31 改为逐层合入主线、全部合完前不发布；新 C ABI、生成链、完整录制 schema 3 与绑定迁移排在最后）· 2026-10-13 修订（删除未实现且不再采用的 aimux 自有设计：LanguageModelRef / ResolvedModel / RegistryModelReference、注册 sidecar 元数据、SessionInferer trait、session affinity middleware；体积与性能门禁、能力矩阵移到 ROADMAP；§9.1 登记已知差距）· 2026-10-13 修订（[4/8] 结果与流：对象生成改为 `output` 的 deprecated 包装（§3.5）；异步 job 跟随上游 start/status 与轮询预算（§4.5、§9.3）；登记视频多批 idempotency-key、流中途重试、首块超时起点（§5）；结果便捷字段 deprecated 与回放规则补充（第二部分））
 >
 > **Reference baseline**: `reference/aisdk-review/node_modules`(本地安装、带 `src/`):`ai` 7.0.122、`@ai-sdk/provider` 4.0.19、`@ai-sdk/provider-utils` 5.0.51、openai 4.0.80、anthropic 4.0.68、google 4.0.85、google-vertex 5.0.98、amazon-bedrock 5.0.100、azure 4.0.84、xai 5.0.12、mistral 4.0.54、cohere 4.0.52、deepseek 3.0.56、groq 4.0.52、openai-compatible 3.0.59、gateway 4.0.100
 >
@@ -677,12 +677,7 @@ Telemetry 保留当前采用范围的生命周期回调、object callbacks、emb
 
 不实现 `onStepFinish` 的 deprecated 转发。Evaluation 若以后纳入范围，必须同时加入模型解析、操作、四个 evaluation callbacks 和 tracing，而不是本期仅列出一个永远不产生的事件。
 
-对象生成明确采用 aimux 扩展：
-
-- `GenerateObject`、`StreamObject` operation span；
-- retry 内 `LanguageModelCall` attempt span；
-- 对应 scope；
-- 现有 object callback 语义。
+对象生成跟随上游（2026-10-13 修订）：上游 `generateObject` / `streamObject` 已标 `@deprecated`，改用 `generateText` / `streamText` 的 `output` 设置（ai 7.0.127 `A/generate-object/generate-object.ts:120`、`A/generate-object/stream-object.ts:190`）。aimux 的 `generate_object` 是 `generate_text` 加 `output` 的 deprecated 包装，走同一个 generate operation span、retry 内的 `LanguageModelCall` attempt span 和 scope，不另设 `GenerateObject` / `StreamObject` span；没有 `stream_object`，流式对象输出用 `stream_text` 的 `output`。原先的“对象生成采用 aimux 扩展”（独立 span、scope 与 object callback）撤销。
 
 非 LM 模态增加 `ModelCall { modality }` attempt span。不能把 SDK 的 operation 级 embed span描述为天然的逐 attempt span。（基线 ai 7.0.122 没有 speech / transcription 的 tracing；7.0.127 起上游增加了 generateSpeech / transcribe / streamTranscribe 的 tracing 类型与回调，见 `telemetry/tracing-channel.ts:12-14`，升级基线时重新核对哪些仍属 aimux 扩展。）
 
@@ -989,7 +984,7 @@ pub fn prepare_retries(
 | text/object/embed/image 等模型操作 | ai 层包住一次模型调用 |
 | `getAvailableModels` | 厂商扩展执行一次请求；需要重试时由 ai 层 discovery 操作包装 |
 | files upload | 对齐本地 SDK `uploadFile`，不自动重试完整上传 |
-| 已提交的异步 job | 仅重试安全的 poll/download 阶段，不重新 submit |
+| 异步 job | 跟随上游。start/status 模型：每次逻辑 start 铸造一个 idempotency-key（调用方在 headers 里给的优先），带同一个 key 重试 doStart；status 单独重试，每次 status 请求（含重试）与剩余的轮询预算竞争（ai 7.0.127 `A/generate-video/generate-video.ts:520-536`、`:576-625`）。submit 与 poll 都在 doGenerate 内的模型：与上游一样整体重试 doGenerate（`A/generate-image/generate-image.ts:206`、`A/transcribe/transcribe.ts:243`），因此可能重新 submit；包内只提交一次，轮询中的可重试错误在包内消化，以缩小这个窗口 |
 | Codex refresh | 不自动重试旋转 refresh token |
 | 已输出语义数据的 stream | 不重试整次生成、不切换备用模型 |
 
@@ -1107,6 +1102,9 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 产品选择 | retry 细节 | 保留 jitter、Retry-After 处理和既定错误历史 |
 | 产品选择 | helper 超时 | 非流式 30 秒上限，与注入 fetch 无关 |
 | 产品选择 | SSE 预读 | 保留首事件错误预读，明确计时影响 |
+| 产品选择 | 视频多批的 idempotency-key | 调用方给 key 时，多批按批次派生 `<key>:batch:<i>`，单批保持原键；上游每个批次的 doStart 带同一个调用方 key（ai 7.0.127 `A/generate-video/generate-video.ts:338-372`、`:520-536`），provider 可能据此把几个批次去重成一个任务 |
+| 尚未对齐 | 流中途重试 | 上游 `streamText` 有 `streamRetries`（不设时不重试；设为 n 时流中途的 provider error 最多重新调用模型 n 次，`onError` 也可请求重试，见 ai 7.0.127 `A/generate-text/stream-text.ts:374`、`:1948-1953`、`:2495-2665`）。aimux 待实现，现状与不设时相同：流返回后不重试（RFC-0031 §8.3） |
+| 尚未对齐 | 首块超时的起点 | 上游在 provider 响应流开始时才开始计 chunk 超时（`A/generate-text/stream-text.ts:2228-2243`、`:2671`）；aimux 的 provider 在 `do_stream` 内预读首个 SSE 事件，所以 `first_chunk_ms` 在 operation 开始时计时，覆盖请求建立。改成上游的时机要先让 `do_stream` 在响应头到达时返回，未决（RFC-0031 §8.1、§8.3） |
 | 产品选择 | core 工具循环 | 保持单步，不引入 agent loop |
 | 不采用 | workflow 模型序列化 | 不用于录制或重建 |
 | 不采用 | 历史版本和 deprecated 兼容 | 不实现 V2/V3 适配、旧 namespace 双写、旧方法转发、旧录制读取 |
@@ -1514,7 +1512,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 | 内容往返 | reasoning signature、thought metadata、tool IDs、图片、文件、provider-executed 结果 |
 | 流 | 事件顺序、可恢复错误、终结、Drop、pump 取消、TTFT 起算 |
 | Retry | 默认 2；Retry-After；仅调用层预算；组合模型不整组重跑 |
-| 状态操作 | poll/download 重试不重新 submit；upload 和 refresh 无隐式重跑 |
+| 状态操作 | start 带同一个 idempotency-key 重试、status 单独重试且受剩余轮询预算约束；doGenerate 内 submit+poll 的模型按 §4.5 整体重试；upload 和 refresh 无隐式重跑 |
 | 录制 | 全模态、attempt、并发 child、parent、准备阶段下载、WS、barrier、丢失与截断 |
 | Mock | 无真实凭证、禁网环境；OpenAI/Anthropic/Google/Vertex/Bedrock；multipart；Score/Prefix；poll/WS |
 | Leaf 边界 | Bedrock 原始 event-stream 录制后仅转换一次；错误转换不重复 |
@@ -2275,7 +2273,7 @@ core ToolCall 的 input 是解析后的值；provider raw input String 在解析
 
 core 自己可以用 `ParseOutcome::Invalid { error, ... }` 保证解析失败一定携带错误，但不能把这个内部不变量误称为 SDK DynamicToolCall 的静态类型要求。
 
-provider deferred tool result 可能没有本轮可关联的调用输入，SDK 会设置 `input: undefined`，见 `A/generate-text/convert-language-model-content.ts:87`。只有对应工具是 provider 工具且声明了 `supportsDeferredResults` 时才允许这种结果，否则报 “Tool call … not found”（同文件 `:96-103`）。wire 必须能表示这种缺失，不能凭空填 `{}` 或 null。
+provider deferred tool result 可能没有本轮可关联的调用输入，SDK 会设置 `input: undefined`，见 `A/generate-text/convert-language-model-content.ts:87`。只有对应工具是 provider 工具且声明了 `supportsDeferredResults` 时才允许这种结果，否则报 “Tool call … not found”（同文件 `:96-103`）。aimux 的工具定义还没有 `supportsDeferredResults` 标记，暂按“传入了同名 provider 工具”放行（2026-10-13，[4/8]）；标记随工具定义一起补。wire 必须能表示这种缺失，不能凭空填 `{}` 或 null。
 
 GeneratedFile 使用一个数据来源：
 
@@ -2414,6 +2412,8 @@ timeBetweenOutputChunksMs?: { min, p10, median, avg, p90, max }
 
 这不是旧版本常见的“usage 等于最后一步”。依据 `A/generate-text/generate-text.ts:1714`，尤其 `:1797`。
 
+表中 reasoning、reasoningText、totalUsage、request、response、providerMetadata 等便捷字段在上游已标 `@deprecated`，推荐改读 `finalStep.*` 与 `usage`（ai 7.0.127 `A/generate-text/generate-text-result.ts:52-160`；`StreamTextResult` 同样，`fullStream` 也已 deprecated、改用 `stream`，见 `A/generate-text/stream-text-result.ts:148-330`）。aimux 的规范结果以 `steps`、`final_step`、`usage` 为准，Rust 上的这些便捷 getter 同样标 `#[deprecated]`，wire snapshot 照上游保留这些字段，不为它们另立事实。
+
 `StreamTextResult` 是拥有流及完成结果的运行时对象。流完成后使用相同 StepResult/最终聚合逻辑，不再维护 `StreamTextResultAggregated` 的另一套字段定义。对象输出使用同一 Output/结果机制；现有 `GenerateObjectResult` 的重复 raw 镜像结构应删除。
 
 ---
@@ -2502,7 +2502,11 @@ fn aggregate_steps(
 | 拒绝审批 | 追加 execution-denied 工具结果 |
 | source | 不进入 prompt |
 | 空 text | 过滤 |
-| 空 reasoning 但有 metadata | 保留 |
+| 空 reasoning | 保留（上游无条件保留，只过滤空 text，`A/generate-text/to-response-messages.ts:43`） |
+| 非法调用的非对象 input | 回放时写为 `{}`（同文件 `:93-94`） |
+| tool-approval-request 的 inputSchemaInput | 仅当与调用 input 按 `isDeepEqualData` 不相等时写入（同文件 `:133-146`，`A/util/is-deep-equal-data.ts:8-48`） |
+| tool 消息中的结果 | 按对应 tool-call 的出现顺序排列，未知调用的结果排在最后（同文件 `:220`、`:230-265`） |
+| tool-error 的 output | assistant 中按 json 错误、tool 消息中按 text 错误编码（同文件 `:122`、`:203`） |
 | providerMetadata | 映射为对应 part 的 providerOptions |
 | file/reasoning-file | 回放使用 base64 数据并保留 part metadata |
 
