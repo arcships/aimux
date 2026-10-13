@@ -274,8 +274,9 @@ pub fn to_generate_options(
 ///
 /// Priority:
 /// 1. **explicit request spec** — `Some("env:VAR")` reads the environment
-///    variable; a plaintext literal is accepted only when the console is
-///    loopback-bound (`allow_plaintext`, one-shot Playground use);
+///    variable, which must be the provider's registered key variable
+///    ([`registered_key_env`]); a plaintext literal is accepted only when the
+///    console is loopback-bound (`allow_plaintext`, one-shot Playground use);
 /// 2. **Settings key store** — a key saved for this provider in the console
 ///    Settings page (`store.get(provider)`);
 /// 3. `None` — the provider reads its registered env var.
@@ -300,6 +301,24 @@ pub fn resolve_api_key(
                     "empty env: reference (use env:VAR_NAME)".into(),
                 ));
             }
+            // Only the provider's own key variable: any other name would let a
+            // caller read an arbitrary server environment variable (and send
+            // it wherever the request points).
+            match registered_key_env(provider) {
+                Some(allowed) if allowed == var => {}
+                Some(allowed) => {
+                    return Err(AiMuxError::InvalidArgument(format!(
+                        "env:{var} is not allowed for provider '{provider}' — only its \
+                         registered key variable can be referenced (env:{allowed})"
+                    )));
+                }
+                None => {
+                    return Err(AiMuxError::InvalidArgument(format!(
+                        "provider '{provider}' has no registered key variable, so env: \
+                         references are not accepted for it"
+                    )));
+                }
+            }
             match std::env::var(var) {
                 Ok(v) => Ok(Some(v)),
                 Err(_) => Err(AiMuxError::InvalidArgument(format!(
@@ -315,6 +334,15 @@ pub fn resolve_api_key(
                 .into(),
         )),
     }
+}
+
+/// The environment variable a provider's key is registered under: the
+/// native providers' standard variable, or the registry / runtime overlay
+/// entry's. The only name an `env:` reference may use for that provider.
+pub fn registered_key_env(provider: &str) -> Option<String> {
+    crate::model_builder::native_key_env(provider)
+        .map(str::to_string)
+        .or_else(|| aimux_providers::provider_api_key_env(provider))
 }
 
 #[cfg(test)]
@@ -338,14 +366,31 @@ mod tests {
         );
     }
 
+    /// Register a console-test provider whose key variable is `env_var`.
+    fn test_provider(name: &str, env_var: &str) {
+        aimux_providers::load_providers_from_json(&format!(
+            r#"{{"providers":[{{"name":"{name}","base_url":"https://example.invalid/v1","env_var":"{env_var}"}}]}}"#
+        ))
+        .unwrap();
+    }
+
     #[test]
     fn resolve_key_priority_explicit_env_over_store() {
+        test_provider("web-test-priority", "AIMUX_WEB_TEST_KEY");
         let store = KeyStore::from_path(None);
-        store.set("openai", "sk-from-store", false).unwrap();
+        store
+            .set("web-test-priority", "sk-from-store", false)
+            .unwrap();
         // SAFETY: This test owns a unique process-wide env key and removes it below.
         unsafe { std::env::set_var("AIMUX_WEB_TEST_KEY", "k-123") };
         assert_eq!(
-            resolve_api_key(Some("env:AIMUX_WEB_TEST_KEY"), "openai", &store, true).unwrap(),
+            resolve_api_key(
+                Some("env:AIMUX_WEB_TEST_KEY"),
+                "web-test-priority",
+                &store,
+                true
+            )
+            .unwrap(),
             Some("k-123".to_string())
         );
         // SAFETY: Cleanup of the unique test key set above.
@@ -387,14 +432,45 @@ mod tests {
         let err = resolve_api_key(Some("sk-literal"), "openai", &store, false).unwrap_err();
         assert!(err.to_string().contains("loopback"), "err: {err}");
         // env: references still work on non-loopback.
+        test_provider("web-test-lan", "AIMUX_WEB_TEST_KEY_LAN");
         // SAFETY: This test owns a unique process-wide env key and removes it below.
         unsafe { std::env::set_var("AIMUX_WEB_TEST_KEY_LAN", "k-lan") };
         assert_eq!(
-            resolve_api_key(Some("env:AIMUX_WEB_TEST_KEY_LAN"), "openai", &store, false,).unwrap(),
+            resolve_api_key(
+                Some("env:AIMUX_WEB_TEST_KEY_LAN"),
+                "web-test-lan",
+                &store,
+                false
+            )
+            .unwrap(),
             Some("k-lan".to_string())
         );
         // SAFETY: Cleanup of the unique test key set above.
         unsafe { std::env::remove_var("AIMUX_WEB_TEST_KEY_LAN") };
+    }
+
+    #[test]
+    fn env_reference_is_limited_to_the_providers_key_variable() {
+        let store = KeyStore::from_path(None);
+        // Any other server variable is refused before it is read.
+        for spec in ["env:HOME", "env:PATH", "env:ANTHROPIC_API_KEY"] {
+            let err = resolve_api_key(Some(spec), "openai", &store, true).unwrap_err();
+            assert!(err.to_string().contains("not allowed"), "{spec}: {err}");
+            assert!(err.to_string().contains("env:OPENAI_API_KEY"), "{err}");
+        }
+        assert!(resolve_api_key(Some("env:HOME"), "groq", &store, false).is_err());
+        // A provider without a registered variable accepts no env: reference.
+        let err = resolve_api_key(Some("env:HOME"), "no-such-provider", &store, true).unwrap_err();
+        assert!(
+            err.to_string().contains("no registered key variable"),
+            "{err}"
+        );
+
+        assert_eq!(registered_key_env("groq").as_deref(), Some("GROQ_API_KEY"));
+        assert_eq!(
+            registered_key_env("google").as_deref(),
+            Some("GOOGLE_GENERATIVE_AI_API_KEY")
+        );
     }
 
     #[test]

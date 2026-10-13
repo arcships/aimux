@@ -23,8 +23,9 @@ pub fn build_model(
     base_url: Option<&str>,
 ) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
     macro_rules! native {
-        ($provider_mod:ident, $config:ident, $provider_type:ident, $env:literal) => {{
-            let key = native_key(provider, $env, api_key.clone())?;
+        ($provider_mod:ident, $config:ident, $provider_type:ident) => {{
+            let env = native_key_env(provider).unwrap_or_default();
+            let key = native_key(provider, env, api_key.clone())?;
             let mut cfg = aimux_providers::$provider_mod::$config::new(key);
             if let Some(url) = base_url {
                 cfg = cfg.with_base_url(url);
@@ -35,22 +36,12 @@ pub fn build_model(
     }
 
     match provider {
-        "openai" => native!(openai, OpenAIConfig, OpenAIProvider, "OPENAI_API_KEY"),
-        "anthropic" => native!(
-            anthropic,
-            AnthropicConfig,
-            AnthropicProvider,
-            "ANTHROPIC_API_KEY"
-        ),
-        "google" => native!(
-            google,
-            GoogleConfig,
-            GoogleProvider,
-            "GOOGLE_GENERATIVE_AI_API_KEY"
-        ),
-        "mistral" => native!(mistral, MistralConfig, MistralProvider, "MISTRAL_API_KEY"),
-        "xai" => native!(xai, XAIConfig, XAIProvider, "XAI_API_KEY"),
-        "cohere" => native!(cohere, CohereConfig, CohereProvider, "COHERE_API_KEY"),
+        "openai" => native!(openai, OpenAIConfig, OpenAIProvider),
+        "anthropic" => native!(anthropic, AnthropicConfig, AnthropicProvider),
+        "google" => native!(google, GoogleConfig, GoogleProvider),
+        "mistral" => native!(mistral, MistralConfig, MistralProvider),
+        "xai" => native!(xai, XAIConfig, XAIProvider),
+        "cohere" => native!(cohere, CohereConfig, CohereProvider),
         _ => {
             let mut options = ProviderOptions::default();
             if let Some(url) = base_url {
@@ -61,6 +52,19 @@ pub fn build_model(
             Ok(Arc::from(model))
         }
     }
+}
+
+/// The env var a native provider (see [`build_model`]) reads its key from.
+pub fn native_key_env(provider: &str) -> Option<&'static str> {
+    Some(match provider {
+        "openai" => "OPENAI_API_KEY",
+        "anthropic" => "ANTHROPIC_API_KEY",
+        "google" => "GOOGLE_GENERATIVE_AI_API_KEY",
+        "mistral" => "MISTRAL_API_KEY",
+        "xai" => "XAI_API_KEY",
+        "cohere" => "COHERE_API_KEY",
+        _ => return None,
+    })
 }
 
 /// Resolve the key for a native provider: explicit key, else the standard env var.

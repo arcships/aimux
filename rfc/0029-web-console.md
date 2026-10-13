@@ -222,7 +222,7 @@ POST /api/calls
 - **API 面**(见 §5.1):`GET` 只返回 `{provider, status, hint}`(hint = 末 4 位,不足 4 位给长度),**明文永不回传**;`PUT`/`DELETE` 非回环绑定时返回 403。
 - **回环门控**:后端启动时已知 bind host;非 `127.0.0.1`/`localhost`/`::1` 时 Settings 写接口 403(错误信息引导 `env:` 引用),`GET` 附 `plaintext_entry: false` 供前端隐藏输入框,请求内明文 spec 亦维持拒绝。
 - **调用优先级**(`wire.rs` `resolve_api_key`,三个调用方 calls/cache-probe/replay 均带上 provider 名):
-  1. **请求内显式 spec** —— `env:VAR` 引用(任意绑定可用);明文仅限回环绑定(Playground 快速用一次、不保存的场景);
+  1. **请求内显式 spec** —— `env:VAR` 引用(任意绑定可用;`VAR` 只能是该 provider 注册的 key 变量,如 openai 的 `OPENAI_API_KEY`,其他变量名一律拒绝、不读取);明文仅限回环绑定(Playground 快速用一次、不保存的场景);
   2. **Settings 已存该 provider 的 key**(KeyStore,含启动时从磁盘加载的);
   3. `None` —— provider 读自己注册的默认 env var。
 
