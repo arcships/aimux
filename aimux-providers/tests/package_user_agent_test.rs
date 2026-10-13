@@ -358,3 +358,21 @@ async fn open_responses_user_agent_suffix_replaces_the_package_part() {
         "my-app/1.0 ai-sdk-provider-utils/5.0.53"
     );
 }
+
+/// huggingface-provider.ts:68-75 adds no package part; `@ai-sdk/huggingface@2.0.62`
+/// depends on provider-utils 5.0.53.
+#[tokio::test]
+async fn huggingface_sends_only_its_provider_utils() {
+    let (fetch, transport) = transport();
+    let provider =
+        aimux_providers::create_huggingface(aimux_providers::HuggingFaceProviderSettings {
+            api_key: Some("k".to_string().into()),
+            fetch: Some(transport),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(
+        sent_user_agent(&provider, "model", &fetch).await,
+        "ai-sdk-provider-utils/5.0.53"
+    );
+}

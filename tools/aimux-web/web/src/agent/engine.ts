@@ -211,6 +211,6 @@ function applyPart(view: AgentStepView, part: TextStreamPart): void {
       }
     }
   } else if (part.type === 'finish') {
-    view.usage = part.usage
+    view.usage = part.totalUsage
   }
 }

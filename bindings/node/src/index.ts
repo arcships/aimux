@@ -41,7 +41,19 @@ import type {
   Usage,
   InputTokenUsage,
   OutputTokenUsage,
-  TextContent,
+  LanguageModelUsage,
+  InputTokenDetails,
+  OutputTokenDetails,
+  StepResult,
+  StepResponse,
+  StepResponseMetadata,
+  StepModel,
+  StepResultPerformance,
+  FinishReasonUnified,
+  Output,
+  GenerateObjectResult,
+  GenerateObjectResponse,
+  ContentPart,
   ReasoningPart,
   GeneratedFile,
   GeneratedFileOutput,
@@ -50,11 +62,19 @@ import type {
   GeneratedFileData,
   RawToolApprovalRequest,
   ToolApprovalRequestOutput,
+  TypedToolResult,
+  TypedToolError,
+  ToolOutputDenied,
+  ToolApprovalResponseOutput,
   FinishReason,
   Warning,
-  Role,
-  MessageContent,
-  ContentPart,
+  UserContent,
+  AssistantContent,
+  UserContentPart,
+  AssistantContentPart,
+  ToolContentPart,
+  ToolResultPart,
+  ToolResultOutput,
   ResponseFormat,
   ReasoningEffort,
   GenerateResult,
@@ -73,10 +93,9 @@ import type {
   JsonValue,
   RawToolCall,
   ToolCallRepairReply,
-  DecisionCallOptions,
-  DecisionResult,
-  DecisionProbabilitySource,
-  DecisionCapabilities,
+  DecideOptions,
+  DecideResult,
+  DecisionQuestionType,
 } from './types'
 
 // Error hierarchy (throw/catch). Wire payload type `AiMuxError` lives under StreamPart only.
@@ -165,7 +184,19 @@ export type {
   Usage,
   InputTokenUsage,
   OutputTokenUsage,
-  TextContent,
+  LanguageModelUsage,
+  InputTokenDetails,
+  OutputTokenDetails,
+  StepResult,
+  StepResponse,
+  StepResponseMetadata,
+  StepModel,
+  StepResultPerformance,
+  FinishReasonUnified,
+  Output,
+  GenerateObjectResult,
+  GenerateObjectResponse,
+  ContentPart,
   ReasoningPart,
   GeneratedFile,
   GeneratedFileOutput,
@@ -174,11 +205,19 @@ export type {
   GeneratedFileData,
   RawToolApprovalRequest,
   ToolApprovalRequestOutput,
+  TypedToolResult,
+  TypedToolError,
+  ToolOutputDenied,
+  ToolApprovalResponseOutput,
   FinishReason,
   Warning,
-  Role,
-  MessageContent,
-  ContentPart,
+  UserContent,
+  AssistantContent,
+  UserContentPart,
+  AssistantContentPart,
+  ToolContentPart,
+  ToolResultPart,
+  ToolResultOutput,
   ResponseFormat,
   ReasoningEffort,
   GenerateResult,
@@ -195,24 +234,40 @@ export type {
   VideoPollOptions,
   RawToolCall,
   ToolCallRepairReply,
-  DecisionCallOptions,
-  DecisionResult,
+  DecideOptions,
+  DecideResult,
 }
 
-/** Typed decisions with the same JSON contract as Rust and C. */
+/**
+ * Answer questions about one shared state (AI SDK `decide`): validates the
+ * input, retries transient failures (two retries by default), validates the
+ * answers and completes usage and response information. Same JSON contract
+ * as Rust and C.
+ */
 export async function decide(
   model: native.DecisionModel,
-  options: DecisionCallOptions,
+  options: DecideOptions,
   signal?: AbortSignal,
-): Promise<DecisionResult> {
+): Promise<DecideResult> {
   const bridge = signal ? new AbortBridge(signal) : undefined
-  return JSON.parse(await model.decide(JSON.stringify(options), bridge)) as DecisionResult
+  return JSON.parse(await model.decide(JSON.stringify(options), bridge)) as DecideResult
 }
 
-/** Query native decision capabilities without making a network request. */
-export function decisionCapabilities(model: native.DecisionModel): DecisionCapabilities {
-  return JSON.parse(model.capabilities()) as DecisionCapabilities
+/** The DecisionModelV4 properties of a decision model, without a network request. */
+export interface DecisionModelDescription {
+  specification_version: 'v4'
+  provider: string
+  model_id: string
+  supported_question_types: DecisionQuestionType[]
 }
+
+/** Describe a native decision model without making a network request. */
+export function describeDecisionModel(model: native.DecisionModel): DecisionModelDescription {
+  return JSON.parse(model.describe()) as DecisionModelDescription
+}
+
+/** How a System One endpoint produces probabilities (reported as provider metadata). */
+export type DecisionProbabilitySource = 'native' | 'logit_scoring' | 'model_estimate'
 
 /** Declare how a hosted or self-hosted System One endpoint produces probabilities. */
 export async function jevDecision(
@@ -235,17 +290,15 @@ export type RawModel = Model
 
 export type {
   DecisionAnswer,
-  DecisionDescription,
-  DecisionImage,
-  DecisionValue,
-  DecisionScoreLevel,
   DecisionBooleanCriteria,
-  DecisionRounding,
+  DecisionCallOptions,
+  DecisionInput,
   DecisionQuestion,
-  DecisionOption,
-  DecisionCapabilities,
-  DecisionProbabilitySource,
-  DecisionResponse,
+  DecisionQuestionType,
+  DecisionResult,
+  DecisionRounding,
+  DecisionUsage,
+  DecideUsage,
 } from './types'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -271,8 +324,9 @@ export type ToolCallRepairContext = {
  * Return a replacement call, or `null` to leave the call invalid with its
  * original error. Throwing marks the repair as failed: the call stays invalid
  * and carries a {@link ToolCallRepairError} whose cause is the thrown message.
- * A returned call is re-parsed and re-validated; if it still does not match the
- * schema the result is likewise a {@link ToolCallRepairError}.
+ * A returned call is re-parsed and re-validated; if it still does not parse or
+ * match the schema, the original call stays invalid with that new error
+ * (not wrapped), as in the AI SDK.
  *
  * Runs outside any native call, so it may itself call back into aimux (the
  * usual implementation asks a model to rewrite the arguments). It is invoked at
@@ -333,9 +387,8 @@ async function repairReplyFor(
 }
 
 /**
- * Repair every invalid call in a serialized result, before it is decoded.
- * `toolCalls` sits at the top level of a generate-text result and under `raw`
- * in a generate-object one.
+ * Repair every invalid call in a serialized generate-text result, before it is
+ * decoded. Its `toolCalls` are the final step's calls.
  */
 async function repairResultJson(
   resultJson: string,
@@ -343,11 +396,8 @@ async function repairResultJson(
   optsJson: string | undefined,
   repair: RepairToolCall,
 ): Promise<string> {
-  const result = JSON.parse(resultJson) as {
-    toolCalls?: ToolCall[]
-    raw?: { toolCalls?: ToolCall[] }
-  }
-  const calls = result.toolCalls ?? result.raw?.toolCalls ?? []
+  const result = JSON.parse(resultJson) as { toolCalls?: ToolCall[] }
+  const calls = result.toolCalls ?? []
 
   let patched = resultJson
   for (const call of calls) {
@@ -365,7 +415,7 @@ async function repairResultJson(
  * @param model   - A raw model instance from `openai()`, `anthropic()`, etc.
  * @param prompt  - A plain string or an array of typed chat messages.
  * @param options - Optional typed generation options (tools, toolChoice,
- *                  temperature, responseFormat, …). Invalid tool calls arrive
+ *                  temperature, output, …). Invalid tool calls arrive
  *                  with `invalid`/`error` set on the tool call; pass
  *                  {@link RepairToolCall | `repairToolCall`} to fix them up
  *                  before the result is decoded.

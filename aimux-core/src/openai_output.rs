@@ -34,15 +34,16 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::parse_tool_call::raw_tool_call_text;
+use crate::generate::GenerateTextResult;
+use crate::parse_tool_call::original_tool_call_text;
 use crate::result::{
-    GenerateContent, GenerateResult, GeneratedFileOutput, LanguageModelFile, ReasoningOutput,
-    Source,
+    ContentPart, GenerateContent, GenerateResult, GeneratedFileOutput, ReasoningOutput, Source,
+    TypedToolError, TypedToolResult,
 };
 use crate::shared::GeneratedFileData;
 use crate::stream_part::TextStreamPart;
-use crate::tool::{ToolCall, ToolResult};
-use crate::types::{FinishReason, FinishReasonUnified, Usage};
+use crate::tool::ToolCall;
+use crate::types::{FinishReasonUnified, LanguageModelUsage, as_language_model_usage};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Non-streaming response types
@@ -233,38 +234,171 @@ impl Default for OpenAiStreamOptions {
 /// precedence.
 #[must_use]
 pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletion {
+    let content = result.content.iter().map(|item| match item {
+        GenerateContent::Text { text, .. } => CompletionContent::Text(text),
+        GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
+            CompletionContent::Reasoning(text)
+        }
+        // The provider's raw argument text passes through verbatim; OpenAI's
+        // wire format requires a JSON object even when the model emitted no
+        // arguments at all.
+        GenerateContent::ToolCall(call) => CompletionContent::ToolCall {
+            id: &call.tool_call_id,
+            name: &call.tool_name,
+            arguments: if call.input.trim().is_empty() {
+                "{}".to_string()
+            } else {
+                call.input.clone()
+            },
+        },
+        GenerateContent::Source(source) => CompletionContent::Source(source),
+        GenerateContent::File(file) => {
+            CompletionContent::File(file_data_to_text(&file.data, &file.media_type))
+        }
+        GenerateContent::ToolResult(result) => CompletionContent::ToolResult {
+            tool_name: &result.tool_name,
+            output: &result.result,
+            is_error: result.is_error == Some(true),
+        },
+        GenerateContent::Custom { .. }
+        | GenerateContent::ReasoningFile(_)
+        | GenerateContent::ToolApprovalRequest(_) => CompletionContent::None,
+    });
+    let response = result.response.as_ref();
+    build_chat_completion(
+        content,
+        finish_reason_to_openai(
+            result.finish_reason.unified,
+            result.finish_reason.raw.as_deref(),
+        ),
+        result.provider_metadata.as_ref(),
+        response.and_then(|response| response.id.clone()),
+        response
+            .and_then(|response| response.model_id.clone())
+            .unwrap_or_else(|| model.to_string()),
+        usage_to_openai(&as_language_model_usage(&result.usage)),
+    )
+}
+
+/// Convert a [`GenerateTextResult`] into an OpenAI [`ChatCompletion`]: the
+/// content of every step, the last step's finish reason, id, model and
+/// logprobs, and the usage summed over the steps. Tool calls carry the
+/// Core-parsed (and possibly repaired) arguments.
+#[must_use]
+pub(crate) fn text_result_to_chat_completion(
+    result: &GenerateTextResult,
+    model: &str,
+) -> ChatCompletion {
+    let content = result.content().into_iter().map(|item| match item {
+        ContentPart::Text { text, .. } => CompletionContent::Text(text),
+        ContentPart::Reasoning(ReasoningOutput { text, .. }) => CompletionContent::Reasoning(text),
+        ContentPart::ToolCall(call) => CompletionContent::ToolCall {
+            id: &call.tool_call_id,
+            name: &call.tool_name,
+            arguments: parsed_tool_call_arguments(&call.input, call.invalid, call.error.as_ref()),
+        },
+        ContentPart::Source(source) => CompletionContent::Source(source),
+        ContentPart::File { file, .. } => {
+            CompletionContent::File(format!("data:{};base64,{}", file.media_type, file.base64()))
+        }
+        ContentPart::ToolResult(result) => CompletionContent::ToolResult {
+            tool_name: &result.tool_name,
+            output: &result.output,
+            is_error: false,
+        },
+        // A provider's tool error renders as the generated path renders it;
+        // the error of a call that could not be parsed has no Chat
+        // Completions form.
+        ContentPart::ToolError(error) if error.provider_executed == Some(true) => {
+            CompletionContent::ToolResult {
+                tool_name: &error.tool_name,
+                output: &error.error,
+                is_error: true,
+            }
+        }
+        ContentPart::Custom { .. }
+        | ContentPart::ReasoningFile(_)
+        | ContentPart::ToolError(_)
+        | ContentPart::ToolApprovalRequest(_)
+        | ContentPart::ToolApprovalResponse(_) => CompletionContent::None,
+    });
+    let final_step = result.final_step();
+    let model = if final_step.response.model_id.is_empty() {
+        model.to_string()
+    } else {
+        final_step.response.model_id.clone()
+    };
+    build_chat_completion(
+        content,
+        finish_reason_to_openai(
+            final_step.finish_reason,
+            final_step.raw_finish_reason.as_deref(),
+        ),
+        final_step.provider_metadata.as_ref(),
+        Some(final_step.response.id.clone()).filter(|id| !id.is_empty()),
+        model,
+        usage_to_openai(result.usage()),
+    )
+}
+
+/// A content item as the non-streaming converter maps it.
+enum CompletionContent<'a> {
+    Text(&'a str),
+    Reasoning(&'a str),
+    ToolCall {
+        id: &'a str,
+        name: &'a str,
+        arguments: String,
+    },
+    Source(&'a Source),
+    /// A generated file as text: its URL or a `data:` URL.
+    File(String),
+    /// A provider-executed tool result or error.
+    ToolResult {
+        tool_name: &'a str,
+        output: &'a serde_json::Value,
+        is_error: bool,
+    },
+    /// No Chat Completions equivalent.
+    None,
+}
+
+fn build_chat_completion<'a>(
+    content: impl Iterator<Item = CompletionContent<'a>>,
+    finish_reason: Option<String>,
+    provider_metadata: Option<&crate::types::ProviderMetadata>,
+    id: Option<String>,
+    model: String,
+    usage: ChatCompletionUsage,
+) -> ChatCompletion {
     let mut content_text = String::new();
     let mut reasoning_text = String::new();
     let mut tool_calls = Vec::new();
     let mut annotations = Vec::new();
 
-    for item in &result.content {
+    for item in content {
         match item {
-            GenerateContent::Text { text, .. } => {
+            CompletionContent::Text(text) => {
                 content_text.push_str(text);
             }
-            GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
+            CompletionContent::Reasoning(text) => {
                 reasoning_text.push_str(text);
             }
-            GenerateContent::ToolCall(call) => {
-                // The provider's raw argument text passes through verbatim;
-                // OpenAI's wire format requires a JSON object even when the
-                // model emitted no arguments at all.
-                let arguments = if call.input.trim().is_empty() {
-                    "{}".to_string()
-                } else {
-                    call.input.clone()
-                };
+            CompletionContent::ToolCall {
+                id,
+                name,
+                arguments,
+            } => {
                 tool_calls.push(ChatCompletionToolCall {
-                    id: call.tool_call_id.clone(),
+                    id: id.to_string(),
                     tool_type: "function".to_string(),
                     function: ChatCompletionFunction {
-                        name: call.tool_name.clone(),
+                        name: name.to_string(),
                         arguments,
                     },
                 });
             }
-            GenerateContent::Source(Source::Url { url, title, .. }) => {
+            CompletionContent::Source(Source::Url { url, title, .. }) => {
                 // Map to OpenAI url_citation annotation.
                 let mut ann = serde_json::json!({
                     "type": "url_citation",
@@ -282,35 +416,29 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                 }
                 content_text.push_str(url);
             }
-            GenerateContent::File(LanguageModelFile {
-                data, media_type, ..
-            }) => {
+            CompletionContent::File(text) => {
                 if !content_text.is_empty() {
                     content_text.push('\n');
                 }
-                content_text.push_str(&file_data_to_text(data, media_type));
+                content_text.push_str(&text);
             }
-            GenerateContent::Custom { .. }
-            | GenerateContent::Source(Source::Document { .. })
-            | GenerateContent::ReasoningFile(_)
-            | GenerateContent::ToolApprovalRequest(_) => {}
-            GenerateContent::ToolResult(ToolResult {
+            CompletionContent::Source(Source::Document { .. }) | CompletionContent::None => {}
+            CompletionContent::ToolResult {
                 tool_name,
-                result,
+                output,
                 is_error,
-                ..
-            }) => {
+            } => {
                 // Degraded mapping: provider-executed tool result as text.
                 if !content_text.is_empty() {
                     content_text.push('\n');
                 }
-                let prefix = if is_error.unwrap_or(false) {
+                let prefix = if is_error {
                     format!("[tool error: {tool_name}] ")
                 } else {
                     format!("[tool result: {tool_name}] ")
                 };
                 content_text.push_str(&prefix);
-                content_text.push_str(&result.to_string());
+                content_text.push_str(&output.to_string());
             }
         }
     }
@@ -342,9 +470,6 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
         },
     };
 
-    // finish_reason
-    let finish_reason = finish_reason_to_openai(&result.finish_reason);
-
     // logprobs from the calling provider's metadata namespace. Upstream
     // writes them under the provider's own key, not a fixed `openai`: the
     // Responses model under `providerOptionsName` (`azure` for Azure,
@@ -352,32 +477,17 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
     // :1080), DeepSeek under `deepseek`. One model call carries one
     // provider's namespace, so the namespace holding `logprobs` is the
     // caller's.
-    let logprobs = result
-        .provider_metadata
-        .as_ref()
+    let logprobs = provider_metadata
         .and_then(|pm| {
             pm.values()
                 .find_map(|namespace| namespace.get("logprobs").filter(|value| !value.is_null()))
         })
         .and_then(chat_logprobs);
 
-    // id / model / created
-    let id = result
-        .response
-        .as_ref()
-        .and_then(|response| response.id.clone())
-        .unwrap_or_else(|| format!("chatcmpl-{}", random_id()));
-    let model = result
-        .response
-        .as_ref()
-        .and_then(|response| response.model_id.clone())
-        .unwrap_or_else(|| model.to_string());
-    let created = now_unix();
-
     ChatCompletion {
-        id,
+        id: id.unwrap_or_else(|| format!("chatcmpl-{}", random_id())),
         object: "chat.completion".to_string(),
-        created,
+        created: now_unix(),
         model,
         choices: vec![ChatCompletionChoice {
             index: 0,
@@ -385,7 +495,7 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
             finish_reason,
             logprobs,
         }],
-        usage: usage_to_openai(&result.usage),
+        usage,
         system_fingerprint: None,
     }
 }
@@ -487,8 +597,8 @@ struct StreamState {
     next_tool_index: u32,
     /// Whether each tool_call_id has had its opening chunk emitted.
     tool_call_opened: std::collections::HashSet<String>,
-    final_usage: Option<Usage>,
-    final_finish_reason: Option<FinishReason>,
+    final_usage: Option<LanguageModelUsage>,
+    final_finish_reason: Option<(FinishReasonUnified, Option<String>)>,
     finish_emitted: bool,
 }
 
@@ -560,7 +670,7 @@ impl StreamState {
         let mut chunks = Vec::new();
 
         match part {
-            TextStreamPart::StreamStart { .. } => {
+            TextStreamPart::Start {} => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
@@ -569,12 +679,8 @@ impl StreamState {
             TextStreamPart::FinishStep { response, .. } => {
                 // Response metadata arrives at step end; emitted chunks keep their identity.
                 if !self.started {
-                    if let Some(id) = &response.id {
-                        self.id = id.clone();
-                    }
-                    if let Some(model_id) = &response.model_id {
-                        self.model = model_id.clone();
-                    }
+                    self.id.clone_from(&response.id);
+                    self.model.clone_from(&response.model_id);
                 }
             }
 
@@ -805,14 +911,39 @@ impl StreamState {
                 }
             }
 
-            TextStreamPart::ToolResult(ToolResult {
-                tool_name, result, ..
+            TextStreamPart::ToolResult(TypedToolResult {
+                tool_name, output, ..
             }) => {
                 // Degraded: provider-executed tool result as content.
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
-                let text = format!("[tool result: {tool_name}] {result}");
+                let text = format!("[tool result: {tool_name}] {output}");
+                let mut chunk = self.base_chunk();
+                chunk.choices = vec![ChatCompletionChunkChoice {
+                    index: 0,
+                    delta: ChatCompletionDelta {
+                        content: Some(text),
+                        ..Default::default()
+                    },
+                    finish_reason: None,
+                    logprobs: None,
+                }];
+                chunks.push(chunk);
+            }
+
+            TextStreamPart::ToolError(TypedToolError {
+                tool_name,
+                error,
+                provider_executed: Some(true),
+                ..
+            }) => {
+                // Degraded: provider-executed tool error as content, as the
+                // generated path renders it.
+                if let Some(c) = self.ensure_started() {
+                    chunks.push(c);
+                }
+                let text = format!("[tool error: {tool_name}] {error}");
                 let mut chunk = self.base_chunk();
                 chunk.choices = vec![ChatCompletionChunkChoice {
                     index: 0,
@@ -866,11 +997,11 @@ impl StreamState {
 
             TextStreamPart::Finish {
                 finish_reason,
-                usage,
-                ..
+                raw_finish_reason,
+                total_usage,
             } => {
-                self.final_usage = Some(usage.clone());
-                self.final_finish_reason = Some(finish_reason.clone());
+                self.final_usage = Some(total_usage.clone());
+                self.final_finish_reason = Some((*finish_reason, raw_finish_reason.clone()));
                 // Emit the final chunk here.
                 if let Some(c) = self.final_chunk_impl(include_usage) {
                     chunks.push(c);
@@ -884,10 +1015,15 @@ impl StreamState {
             }
 
             TextStreamPart::Raw { .. }
+            | TextStreamPart::StartStep { .. }
+            | TextStreamPart::Abort { .. }
             | TextStreamPart::Source(Source::Document { .. })
             | TextStreamPart::Custom { .. }
             | TextStreamPart::ReasoningFile(_)
-            | TextStreamPart::ToolApprovalRequest(_) => { /* no OpenAI chat equivalent */ }
+            | TextStreamPart::ToolError(_)
+            | TextStreamPart::ToolOutputDenied(_)
+            | TextStreamPart::ToolApprovalRequest(_)
+            | TextStreamPart::ToolApprovalResponse(_) => { /* no OpenAI chat equivalent */ }
         }
 
         chunks
@@ -932,7 +1068,7 @@ impl StreamState {
         let finish_reason_str = self
             .final_finish_reason
             .as_ref()
-            .map(finish_reason_to_openai)
+            .map(|(unified, raw)| finish_reason_to_openai(*unified, raw.as_deref()))
             .unwrap_or(Some("stop".to_string()));
 
         let usage = if include_usage {
@@ -971,7 +1107,6 @@ pub const DONE_FRAME: &str = "data: [DONE]\n\n";
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Map an aimux [`FinishReason`] to an OpenAI `finish_reason` string.
 /// A provider's `logprobs` metadata in the Chat Completions wire shape:
 /// `{ "content": [...], "refusal": null }`.
 ///
@@ -1019,28 +1154,29 @@ fn chat_logprobs(logprobs: &Value) -> Option<Value> {
     }
 }
 
-fn finish_reason_to_openai(reason: &FinishReason) -> Option<String> {
-    match reason.unified {
+/// Map a finish reason to an OpenAI `finish_reason` string.
+fn finish_reason_to_openai(unified: FinishReasonUnified, raw: Option<&str>) -> Option<String> {
+    match unified {
         FinishReasonUnified::Stop => Some("stop".to_string()),
         FinishReasonUnified::Length => Some("length".to_string()),
         FinishReasonUnified::ContentFilter => Some("content_filter".to_string()),
         FinishReasonUnified::ToolCalls => Some("tool_calls".to_string()),
         FinishReasonUnified::Error => Some("stop".to_string()),
-        FinishReasonUnified::Other => reason.raw.clone().or(Some("stop".to_string())),
+        FinishReasonUnified::Other => Some(raw.unwrap_or("stop").to_string()),
     }
 }
 
-/// Convert aimux [`Usage`] to OpenAI [`ChatCompletionUsage`].
+/// Convert a [`LanguageModelUsage`] to OpenAI [`ChatCompletionUsage`].
 ///
 /// This is the inverse of `convert_usage` in
 /// `aimux-providers/src/openai/model.rs`.
-fn usage_to_openai(usage: &Usage) -> ChatCompletionUsage {
-    let prompt_tokens = usage.input_tokens.total.unwrap_or(0);
-    let completion_tokens = usage.output_tokens.total.unwrap_or(0);
+fn usage_to_openai(usage: &LanguageModelUsage) -> ChatCompletionUsage {
+    let prompt_tokens = usage.input_tokens.unwrap_or(0);
+    let completion_tokens = usage.output_tokens.unwrap_or(0);
 
-    let cached_tokens = usage.input_tokens.cache_read.unwrap_or(0);
-    let cache_write = usage.input_tokens.cache_write;
-    let reasoning_tokens = usage.output_tokens.reasoning;
+    let cached_tokens = usage.input_token_details.cache_read_tokens.unwrap_or(0);
+    let cache_write = usage.input_token_details.cache_write_tokens;
+    let reasoning_tokens = usage.output_token_details.reasoning_tokens;
 
     ChatCompletionUsage {
         prompt_tokens,
@@ -1085,8 +1221,8 @@ fn now_unix() -> u64 {
 /// wire text: the provider's raw argument text verbatim for an invalid call,
 /// compact JSON of the parsed value otherwise.
 ///
-/// Older errors without raw argument text fall back to serializing the
-/// parsed input as JSON.
+/// Errors without the original argument text (older errors, or the error
+/// of a rejected repair) fall back to serializing the parsed input as JSON.
 pub(crate) fn parsed_tool_call_arguments(
     input: &Value,
     invalid: Option<bool>,
@@ -1094,7 +1230,7 @@ pub(crate) fn parsed_tool_call_arguments(
 ) -> String {
     if invalid == Some(true)
         && let Some(error) = error
-        && let Some(raw) = raw_tool_call_text(error)
+        && let Some(raw) = original_tool_call_text(input, error)
     {
         // Blank text still fails validation against a schema with required
         // properties, but OpenAI's wire format has no representation for
@@ -1121,4 +1257,896 @@ fn random_id() -> String {
     let count = COUNTER.fetch_add(1, Ordering::Relaxed);
     let ts = now_unix();
     format!("{ts:012x}{count:012x}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::result::GenerateResult;
+    use crate::result::ReasoningOutput;
+    use crate::shared::ResponseInfo;
+    use crate::tool::RawToolCall;
+    use crate::types::{
+        FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, Usage,
+    };
+    use futures::StreamExt;
+    use serde_json::json;
+
+    fn make_result(content: Vec<GenerateContent>) -> GenerateResult {
+        GenerateResult {
+            content,
+            finish_reason: FinishReason {
+                unified: FinishReasonUnified::Stop,
+                raw: None,
+            },
+            usage: Usage::default(),
+            warnings: vec![],
+            provider_metadata: None,
+            response: Some(ResponseInfo {
+                id: Some("chatcmpl-test123".to_string()),
+                timestamp: None,
+                model_id: Some("gpt-4o".to_string()),
+                headers: None,
+                body: None,
+            }),
+            request: None,
+        }
+    }
+
+    #[test]
+    fn test_text_only_non_streaming() {
+        let result = make_result(vec![GenerateContent::Text {
+            text: "Hello world".to_string(),
+            provider_metadata: None,
+        }]);
+        let completion = to_chat_completion(&result, "gpt-4o");
+
+        assert_eq!(completion.object, "chat.completion");
+        assert_eq!(completion.id, "chatcmpl-test123");
+        assert_eq!(completion.model, "gpt-4o");
+        assert_eq!(completion.choices.len(), 1);
+        assert_eq!(completion.choices[0].index, 0);
+        assert_eq!(
+            completion.choices[0].message.content.as_deref(),
+            Some("Hello world")
+        );
+        assert_eq!(completion.choices[0].message.role, "assistant");
+        assert_eq!(completion.choices[0].finish_reason.as_deref(), Some("stop"));
+        assert!(completion.choices[0].message.tool_calls.is_none());
+        assert!(completion.choices[0].message.reasoning_content.is_none());
+    }
+
+    #[test]
+    fn test_tool_call_non_streaming() {
+        let result = make_result(vec![
+            GenerateContent::Text {
+                text: "Let me check.".to_string(),
+                provider_metadata: None,
+            },
+            GenerateContent::ToolCall(RawToolCall {
+                tool_call_id: "call_abc".to_string(),
+                tool_name: "get_weather".to_string(),
+                input: r#"{"city":"Tokyo"}"#.to_string(),
+                provider_executed: None,
+                dynamic: None,
+                provider_metadata: None,
+            }),
+        ]);
+        // Set finish_reason to ToolCalls.
+        let mut result = result;
+        result.finish_reason = FinishReason {
+            unified: FinishReasonUnified::ToolCalls,
+            raw: None,
+        };
+
+        let completion = to_chat_completion(&result, "gpt-4o");
+
+        let msg = &completion.choices[0].message;
+        assert_eq!(msg.content.as_deref(), Some("Let me check."));
+        let tool_calls = msg.tool_calls.as_ref().unwrap();
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].id, "call_abc");
+        assert_eq!(tool_calls[0].tool_type, "function");
+        assert_eq!(tool_calls[0].function.name, "get_weather");
+        assert_eq!(tool_calls[0].function.arguments, r#"{"city":"Tokyo"}"#);
+        assert_eq!(
+            completion.choices[0].finish_reason.as_deref(),
+            Some("tool_calls")
+        );
+    }
+
+    #[test]
+    fn test_raw_tool_call_arguments_are_not_double_encoded() {
+        let result = make_result(vec![GenerateContent::ToolCall(RawToolCall {
+            tool_call_id: "call_raw".to_string(),
+            tool_name: "get_weather".to_string(),
+            input: r#"{"city":"Tokyo"}"#.to_string(),
+            provider_executed: None,
+            dynamic: None,
+            provider_metadata: None,
+        })]);
+
+        let completion = to_chat_completion(&result, "gpt-4o");
+        assert_eq!(
+            completion.choices[0].message.tool_calls.as_ref().unwrap()[0]
+                .function
+                .arguments,
+            r#"{"city":"Tokyo"}"#
+        );
+    }
+
+    #[test]
+    fn blank_invalid_tool_arguments_render_as_an_empty_object() {
+        // Both OpenAI renderers: blank raw text has no wire representation
+        // other than `{}`.
+        let error = AiMuxError::InvalidToolInput {
+            tool_name: "get_weather".to_string(),
+            tool_input: String::new(),
+            cause: "Type validation failed: missing 'city'".to_string(),
+        };
+        let arguments = parsed_tool_call_arguments(&json!({}), Some(true), Some(&error));
+        assert_eq!(arguments, "{}");
+
+        let result = make_result(vec![GenerateContent::ToolCall(RawToolCall {
+            tool_call_id: "call_blank".to_string(),
+            tool_name: "get_weather".to_string(),
+            input: "  ".to_string(),
+            provider_executed: None,
+            dynamic: None,
+            provider_metadata: None,
+        })]);
+        assert_eq!(
+            to_chat_completion(&result, "gpt-4o").choices[0]
+                .message
+                .tool_calls
+                .as_ref()
+                .unwrap()[0]
+                .function
+                .arguments,
+            "{}"
+        );
+    }
+
+    #[test]
+    fn parsed_tool_call_arguments_null_is_not_rewritten_to_empty_object() {
+        // A valid call whose parsed input happens to be `null` (no schema
+        // constraint rejected it) must round-trip as `null`, not `{}`.
+        let arguments = parsed_tool_call_arguments(&Value::Null, None, None);
+        assert_eq!(arguments, "null");
+    }
+
+    /// Regression coverage for the P1 finding on PR #165: `input: Value`
+    /// alone cannot distinguish a validly parsed JSON string from malformed
+    /// text wrapped as a fallback string, so an invalid call's arguments are
+    /// recovered from its typed error instead. Driven end to end so the
+    /// error/`input` pairing `parse_tool_call` actually produces is pinned
+    /// too, not just the renderer.
+    #[tokio::test]
+    async fn invalid_tool_calls_stream_their_raw_arguments_verbatim() {
+        let failing_repair = crate::parse_tool_call::ToolCallRepair::new(|_context| async {
+            Err(AiMuxError::Other("repair model failed".to_string()))
+        });
+        let cases: [(&str, &str, Option<&crate::parse_tool_call::ToolCallRepair>); 3] = [
+            // Valid JSON string rejected by the schema: the quotes must
+            // survive, or the arguments field stops being JSON at all.
+            ("get_weather", r#""hello""#, None),
+            // Unknown tool *and* malformed text: `NoSuchTool` carries no raw
+            // text of its own, so it comes off the unparsable `input`.
+            ("unknown_tool", r#"{"a":"#, None),
+            // A failed repair callback wraps the pre-repair error.
+            ("get_weather", r#"{"a":"#, Some(&failing_repair)),
+        ];
+        let tools = [crate::tool::Tool::Function(crate::tool::FunctionTool::new(
+            "get_weather",
+            json!({"type": "object", "properties": {}, "additionalProperties": false}),
+        ))];
+
+        for (tool_name, raw_input, repair) in cases {
+            let parsed = crate::parse_tool_call::parse_tool_call(
+                RawToolCall {
+                    tool_call_id: "call_1".to_string(),
+                    tool_name: tool_name.to_string(),
+                    input: raw_input.to_string(),
+                    provider_executed: None,
+                    dynamic: None,
+                    provider_metadata: None,
+                },
+                Some(&tools),
+                repair,
+                &[],
+                None,
+            )
+            .await;
+            assert_eq!(parsed.invalid, Some(true), "{raw_input}");
+
+            let parts: Vec<Result<TextStreamPart, AiMuxError>> =
+                vec![Ok(TextStreamPart::ToolCall(ToolCall {
+                    tool_call_id: parsed.tool_call_id,
+                    tool_name: parsed.tool_name,
+                    input: parsed.input,
+                    provider_executed: parsed.provider_executed,
+                    dynamic: parsed.dynamic,
+                    invalid: parsed.invalid,
+                    error: parsed.error,
+                    provider_metadata: parsed.provider_metadata,
+                }))];
+            let chunks = collect_stream(to_chat_completion_stream(
+                Box::pin(futures::stream::iter(parts)),
+                "gpt-4o",
+                OpenAiStreamOptions::default(),
+            ))
+            .await;
+
+            let arguments = chunks
+                .iter()
+                .find_map(|c| {
+                    c.choices
+                        .first()?
+                        .delta
+                        .tool_calls
+                        .as_ref()?
+                        .first()?
+                        .function
+                        .arguments
+                        .clone()
+                })
+                .expect("tool call arguments chunk not found");
+            assert_eq!(arguments, raw_input, "tool {tool_name}");
+        }
+    }
+
+    #[test]
+    fn test_tool_call_null_content() {
+        // Tool call with no text → content should be null.
+        let result = make_result(vec![GenerateContent::ToolCall(RawToolCall {
+            tool_call_id: "call_abc".to_string(),
+            tool_name: "get_weather".to_string(),
+            input: r#"{"city":"Tokyo"}"#.to_string(),
+            provider_executed: None,
+            dynamic: None,
+            provider_metadata: None,
+        })]);
+        let completion = to_chat_completion(&result, "gpt-4o");
+
+        assert_eq!(completion.choices[0].message.content, None);
+        assert!(completion.choices[0].message.tool_calls.is_some());
+    }
+
+    #[test]
+    fn test_reasoning_non_streaming() {
+        let result = make_result(vec![
+            GenerateContent::Reasoning(ReasoningOutput {
+                text: "Thinking...".to_string(),
+                provider_metadata: None,
+            }),
+            GenerateContent::Text {
+                text: "Answer".to_string(),
+                provider_metadata: None,
+            },
+        ]);
+        let completion = to_chat_completion(&result, "gpt-4o");
+
+        assert_eq!(
+            completion.choices[0].message.reasoning_content.as_deref(),
+            Some("Thinking...")
+        );
+        assert_eq!(
+            completion.choices[0].message.content.as_deref(),
+            Some("Answer")
+        );
+    }
+
+    #[test]
+    fn test_usage_round_trip() {
+        let usage = Usage {
+            input_tokens: InputTokenUsage {
+                total: Some(100),
+                cache_read: Some(30),
+                cache_write: Some(10),
+                ..Default::default()
+            },
+            output_tokens: OutputTokenUsage {
+                total: Some(50),
+                reasoning: Some(20),
+                ..Default::default()
+            },
+            raw: None,
+        };
+        let mut result = make_result(vec![]);
+        result.usage = usage;
+
+        let completion = to_chat_completion(&result, "gpt-4o");
+        let u = &completion.usage;
+
+        assert_eq!(u.prompt_tokens, 100);
+        assert_eq!(u.completion_tokens, 50);
+        assert_eq!(u.total_tokens, 150);
+        assert_eq!(u.prompt_tokens_details.as_ref().unwrap().cached_tokens, 30);
+        assert_eq!(
+            u.prompt_tokens_details.as_ref().unwrap().cache_write_tokens,
+            Some(10)
+        );
+        assert_eq!(
+            u.completion_tokens_details
+                .as_ref()
+                .unwrap()
+                .reasoning_tokens,
+            Some(20)
+        );
+    }
+
+    #[test]
+    fn test_finish_reason_mapping() {
+        let cases = [
+            (FinishReasonUnified::Stop, "stop"),
+            (FinishReasonUnified::Length, "length"),
+            (FinishReasonUnified::ContentFilter, "content_filter"),
+            (FinishReasonUnified::ToolCalls, "tool_calls"),
+            (FinishReasonUnified::Error, "stop"),
+        ];
+        for (unified, expected) in cases {
+            assert_eq!(
+                finish_reason_to_openai(unified, None).as_deref(),
+                Some(expected)
+            );
+        }
+    }
+
+    // ── Streaming tests ──
+
+    async fn collect_stream(stream: ChatCompletionStream) -> Vec<ChatCompletionChunk> {
+        let mut chunks = Vec::new();
+        let mut s = stream.stream;
+        while let Some(result) = s.next().await {
+            chunks.push(result.unwrap());
+        }
+        chunks
+    }
+
+    #[tokio::test]
+    async fn test_stream_text_only() {
+        let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::TextStart {
+                id: "0".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::TextDelta {
+                id: "0".to_string(),
+                text: "Hello ".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::TextDelta {
+                id: "0".to_string(),
+                text: "world".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::TextEnd {
+                id: "0".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::Stop,
+                raw_finish_reason: None,
+                total_usage: LanguageModelUsage::default(),
+            }),
+        ];
+
+        let input_stream = Box::pin(futures::stream::iter(parts));
+        let result =
+            to_chat_completion_stream(input_stream, "gpt-4o", OpenAiStreamOptions::default());
+        let chunks = collect_stream(result).await;
+
+        // First chunk: role frame.
+        assert_eq!(
+            chunks[0].choices[0].delta.role.as_deref(),
+            Some("assistant")
+        );
+        assert_eq!(chunks[0].choices[0].delta.content.as_deref(), Some(""));
+
+        // Content deltas.
+        assert_eq!(
+            chunks[1].choices[0].delta.content.as_deref(),
+            Some("Hello ")
+        );
+        assert_eq!(chunks[2].choices[0].delta.content.as_deref(), Some("world"));
+
+        // Final chunk: finish_reason.
+        let last = chunks.last().unwrap();
+        assert_eq!(last.choices[0].finish_reason.as_deref(), Some("stop"));
+        assert!(last.choices[0].delta.content.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_stream_tool_calls() {
+        let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::ToolInputStart {
+                id: "call_1".to_string(),
+                tool_name: "get_weather".to_string(),
+                provider_executed: None,
+                dynamic: None,
+                title: None,
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::ToolInputDelta {
+                id: "call_1".to_string(),
+                delta: "{\"city\":".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::ToolInputDelta {
+                id: "call_1".to_string(),
+                delta: "\"Tokyo\"}".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::ToolInputEnd {
+                id: "call_1".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::ToolCall(ToolCall {
+                tool_call_id: "call_1".to_string(),
+                tool_name: "get_weather".to_string(),
+                input: json!({ "city": "Tokyo" }),
+                provider_executed: None,
+                dynamic: None,
+                invalid: None,
+                error: None,
+                provider_metadata: None,
+            })),
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::ToolCalls,
+                raw_finish_reason: None,
+                total_usage: LanguageModelUsage::default(),
+            }),
+        ];
+
+        let input_stream = Box::pin(futures::stream::iter(parts));
+        let result =
+            to_chat_completion_stream(input_stream, "gpt-4o", OpenAiStreamOptions::default());
+        let chunks = collect_stream(result).await;
+
+        // Find the tool_call opening chunk (with id + name).
+        let open_chunk = chunks
+            .iter()
+            .find(|c| {
+                c.choices
+                    .first()
+                    .and_then(|ch| ch.delta.tool_calls.as_ref())
+                    .and_then(|tcs| tcs.first())
+                    .and_then(|tc| tc.id.as_deref())
+                    == Some("call_1")
+            })
+            .expect("tool call opening chunk not found");
+
+        let tc = open_chunk.choices[0]
+            .delta
+            .tool_calls
+            .as_ref()
+            .unwrap()
+            .first()
+            .unwrap();
+        assert_eq!(tc.index, 0);
+        assert_eq!(tc.id.as_deref(), Some("call_1"));
+        assert_eq!(tc.tool_type.as_deref(), Some("function"));
+        assert_eq!(tc.function.name.as_deref(), Some("get_weather"));
+
+        // Find argument delta chunks.
+        let arg_chunks: Vec<_> = chunks
+            .iter()
+            .filter(|c| {
+                c.choices
+                    .first()
+                    .and_then(|ch| ch.delta.tool_calls.as_ref())
+                    .and_then(|tcs| tcs.first())
+                    .is_some_and(|tc| tc.id.is_none() && tc.function.arguments.is_some())
+            })
+            .collect();
+        assert_eq!(arg_chunks.len(), 2);
+        assert_eq!(
+            arg_chunks[0].choices[0].delta.tool_calls.as_ref().unwrap()[0]
+                .function
+                .arguments
+                .as_deref(),
+            Some("{\"city\":")
+        );
+
+        // Final chunk.
+        let last = chunks.last().unwrap();
+        assert_eq!(last.choices[0].finish_reason.as_deref(), Some("tool_calls"));
+    }
+
+    #[tokio::test]
+    async fn test_stream_complete_call_backfills_arguments_absent_from_deltas() {
+        let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
+            Ok(TextStreamPart::ToolInputStart {
+                id: "call_1".to_string(),
+                tool_name: "fetch".to_string(),
+                provider_executed: Some(true),
+                dynamic: None,
+                title: None,
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::ToolInputEnd {
+                id: "call_1".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::ToolCall(ToolCall {
+                tool_call_id: "call_1".to_string(),
+                tool_name: "fetch".to_string(),
+                input: json!({ "url": "https://example.com" }),
+                provider_executed: Some(true),
+                dynamic: None,
+                invalid: None,
+                error: None,
+                provider_metadata: None,
+            })),
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::Stop,
+                raw_finish_reason: None,
+                total_usage: LanguageModelUsage::default(),
+            }),
+        ];
+
+        let result = to_chat_completion_stream(
+            Box::pin(futures::stream::iter(parts)),
+            "claude",
+            OpenAiStreamOptions::default(),
+        );
+        let chunks = collect_stream(result).await;
+        let arguments = chunks
+            .iter()
+            .filter_map(|chunk| {
+                chunk
+                    .choices
+                    .first()?
+                    .delta
+                    .tool_calls
+                    .as_ref()?
+                    .first()?
+                    .function
+                    .arguments
+                    .as_deref()
+            })
+            .collect::<String>();
+
+        assert_eq!(arguments, r#"{"url":"https://example.com"}"#);
+    }
+
+    #[tokio::test]
+    async fn test_stream_multiple_tool_calls_index() {
+        let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::ToolInputStart {
+                id: "call_a".to_string(),
+                tool_name: "tool_a".to_string(),
+                provider_executed: None,
+                dynamic: None,
+                title: None,
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::ToolInputStart {
+                id: "call_b".to_string(),
+                tool_name: "tool_b".to_string(),
+                provider_executed: None,
+                dynamic: None,
+                title: None,
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::ToolCalls,
+                raw_finish_reason: None,
+                total_usage: LanguageModelUsage::default(),
+            }),
+        ];
+
+        let input_stream = Box::pin(futures::stream::iter(parts));
+        let result =
+            to_chat_completion_stream(input_stream, "gpt-4o", OpenAiStreamOptions::default());
+        let chunks = collect_stream(result).await;
+
+        // Find both tool call opening chunks.
+        let open_chunks: Vec<_> = chunks
+            .iter()
+            .filter(|c| {
+                c.choices
+                    .first()
+                    .and_then(|ch| ch.delta.tool_calls.as_ref())
+                    .and_then(|tcs| tcs.first())
+                    .and_then(|tc| tc.id.as_deref())
+                    .is_some()
+            })
+            .collect();
+        assert_eq!(open_chunks.len(), 2);
+
+        let tc0 = &open_chunks[0].choices[0].delta.tool_calls.as_ref().unwrap()[0];
+        let tc1 = &open_chunks[1].choices[0].delta.tool_calls.as_ref().unwrap()[0];
+        assert_eq!(tc0.index, 0);
+        assert_eq!(tc0.id.as_deref(), Some("call_a"));
+        assert_eq!(tc1.index, 1);
+        assert_eq!(tc1.id.as_deref(), Some("call_b"));
+    }
+
+    #[tokio::test]
+    async fn test_stream_reasoning() {
+        let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::ReasoningStart {
+                id: "reasoning-0".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::ReasoningDelta {
+                id: "reasoning-0".to_string(),
+                text: "Hmm...".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::ReasoningEnd {
+                id: "reasoning-0".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::TextDelta {
+                id: "0".to_string(),
+                text: "Answer".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::Stop,
+                raw_finish_reason: None,
+                total_usage: LanguageModelUsage::default(),
+            }),
+        ];
+
+        let input_stream = Box::pin(futures::stream::iter(parts));
+        let result =
+            to_chat_completion_stream(input_stream, "gpt-4o", OpenAiStreamOptions::default());
+        let chunks = collect_stream(result).await;
+
+        // Find reasoning chunk.
+        let reasoning_chunk = chunks
+            .iter()
+            .find(|c| c.choices[0].delta.reasoning_content.is_some())
+            .expect("reasoning chunk not found");
+        assert_eq!(
+            reasoning_chunk.choices[0]
+                .delta
+                .reasoning_content
+                .as_deref(),
+            Some("Hmm...")
+        );
+
+        // Find text chunk.
+        let text_chunk = chunks
+            .iter()
+            .find(|c| {
+                c.choices[0]
+                    .delta
+                    .content
+                    .as_deref()
+                    .is_some_and(|s| s == "Answer")
+            })
+            .expect("text chunk not found");
+        assert_eq!(
+            text_chunk.choices[0].delta.content.as_deref(),
+            Some("Answer")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_stream_usage_in_final_chunk() {
+        let usage = Usage {
+            input_tokens: InputTokenUsage {
+                total: Some(42),
+                ..Default::default()
+            },
+            output_tokens: OutputTokenUsage {
+                total: Some(10),
+                ..Default::default()
+            },
+            raw: None,
+        };
+
+        let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::TextDelta {
+                id: "0".to_string(),
+                text: "Hi".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::Stop,
+                raw_finish_reason: None,
+                total_usage: as_language_model_usage(&usage),
+            }),
+        ];
+
+        let input_stream = Box::pin(futures::stream::iter(parts));
+        let result = to_chat_completion_stream(
+            input_stream,
+            "gpt-4o",
+            OpenAiStreamOptions {
+                include_usage: true,
+                include_reasoning: true,
+            },
+        );
+        let chunks = collect_stream(result).await;
+
+        let last = chunks.last().unwrap();
+        assert_eq!(last.usage.as_ref().unwrap().prompt_tokens, 42);
+        assert_eq!(last.usage.as_ref().unwrap().completion_tokens, 10);
+        assert_eq!(last.usage.as_ref().unwrap().total_tokens, 52);
+    }
+
+    #[tokio::test]
+    async fn test_stream_no_usage_when_disabled() {
+        let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::Stop,
+                raw_finish_reason: None,
+                total_usage: as_language_model_usage(&Usage {
+                    input_tokens: InputTokenUsage {
+                        total: Some(42),
+                        ..Default::default()
+                    },
+                    output_tokens: OutputTokenUsage::default(),
+                    raw: None,
+                }),
+            }),
+        ];
+
+        let input_stream = Box::pin(futures::stream::iter(parts));
+        let result = to_chat_completion_stream(
+            input_stream,
+            "gpt-4o",
+            OpenAiStreamOptions {
+                include_usage: false,
+                include_reasoning: true,
+            },
+        );
+        let chunks = collect_stream(result).await;
+
+        let last = chunks.last().unwrap();
+        assert!(last.usage.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_stream_error() {
+        let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::TextDelta {
+                id: "0".to_string(),
+                text: "partial".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::Error {
+                error: AiMuxError::ApiCall(Box::new(crate::error::ApiCallError::new(
+                    "something went wrong",
+                    "https://example.test/v1",
+                    serde_json::json!({}),
+                ))),
+            }),
+        ];
+
+        let input_stream = Box::pin(futures::stream::iter(parts));
+        let result =
+            to_chat_completion_stream(input_stream, "gpt-4o", OpenAiStreamOptions::default());
+        let chunks = collect_stream(result).await;
+
+        // Error should appear as a content delta.
+        let error_chunk = chunks
+            .iter()
+            .find(|c| {
+                c.choices[0]
+                    .delta
+                    .content
+                    .as_deref()
+                    .is_some_and(|s| s.contains("[error]"))
+            })
+            .expect("error chunk not found");
+
+        assert!(
+            error_chunk.choices[0]
+                .delta
+                .content
+                .as_deref()
+                .unwrap()
+                .contains("something went wrong")
+        );
+
+        // Final chunk should still have finish_reason.
+        let last = chunks.last().unwrap();
+        assert_eq!(last.choices[0].finish_reason.as_deref(), Some("stop"));
+    }
+
+    #[tokio::test]
+    async fn recoverable_frame_error_does_not_truncate_chat_completion_stream() {
+        let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
+            Ok(TextStreamPart::Start {}),
+            Err(AiMuxError::JsonParse("malformed SSE data".into())),
+            Ok(TextStreamPart::TextDelta {
+                id: "0".to_string(),
+                text: "after-error".to_string(),
+                provider_metadata: None,
+            }),
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::Stop,
+                raw_finish_reason: Some("stop".into()),
+                total_usage: LanguageModelUsage::default(),
+            }),
+        ];
+
+        let result = to_chat_completion_stream(
+            Box::pin(futures::stream::iter(parts)),
+            "gpt-4o",
+            OpenAiStreamOptions::default(),
+        );
+        let outcomes: Vec<_> = result.stream.collect().await;
+        let error_index = outcomes
+            .iter()
+            .position(|outcome| matches!(outcome, Err(AiMuxError::JsonParse(_))))
+            .expect("parse error should be preserved as an error item");
+
+        assert!(outcomes[error_index + 1..].iter().any(|outcome| matches!(
+            outcome,
+            Ok(chunk)
+                if chunk.choices.first().and_then(|choice| choice.delta.content.as_deref())
+                    == Some("after-error")
+        )));
+        assert!(outcomes.iter().any(|outcome| matches!(
+            outcome,
+            Ok(chunk)
+                if chunk.choices.first().and_then(|choice| choice.finish_reason.as_deref())
+                    == Some("stop")
+        )));
+    }
+
+    #[tokio::test]
+    async fn test_stream_completes_without_finish() {
+        // Stream ends without Finish — should still emit a final chunk.
+        let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::TextDelta {
+                id: "0".to_string(),
+                text: "Hello".to_string(),
+                provider_metadata: None,
+            }),
+        ];
+
+        let input_stream = Box::pin(futures::stream::iter(parts));
+        let result =
+            to_chat_completion_stream(input_stream, "gpt-4o", OpenAiStreamOptions::default());
+        let chunks = collect_stream(result).await;
+
+        let last = chunks.last().unwrap();
+        assert_eq!(last.choices[0].finish_reason.as_deref(), Some("stop"));
+    }
+
+    #[test]
+    fn test_sse_encoding() {
+        let chunk = ChatCompletionChunk {
+            id: "chatcmpl-test".to_string(),
+            object: "chat.completion.chunk".to_string(),
+            created: 1234567890,
+            model: "gpt-4o".to_string(),
+            choices: vec![ChatCompletionChunkChoice {
+                index: 0,
+                delta: ChatCompletionDelta {
+                    content: Some("Hi".to_string()),
+                    ..Default::default()
+                },
+                finish_reason: None,
+                logprobs: None,
+            }],
+            usage: None,
+        };
+
+        let sse = encode_chunk_sse(&chunk);
+        assert!(sse.starts_with("data: {"));
+        assert!(sse.ends_with("\n\n"));
+        assert!(sse.contains("\"content\":\"Hi\""));
+    }
+
+    #[test]
+    fn test_done_frame() {
+        assert_eq!(DONE_FRAME, "data: [DONE]\n\n");
+    }
 }

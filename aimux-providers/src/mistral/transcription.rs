@@ -104,6 +104,7 @@ impl TranscriptionModel for MistralTranscriptionModel {
         }
 
         let audio = match &options.audio {
+            AudioInput::Url(_) => return Err(AudioInput::url_error()),
             AudioInput::Binary(bytes) => bytes.clone(),
             AudioInput::Base64(data) => base64::engine::general_purpose::STANDARD
                 .decode(data)

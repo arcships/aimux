@@ -216,8 +216,12 @@ struct ResponseCandidate {
 }
 
 #[derive(DeriveDeserialize)]
+#[serde(rename_all = "camelCase")]
 struct SpeechResponseBody {
     candidates: Option<Vec<ResponseCandidate>>,
+    /// Passed through as the result's usage
+    /// (`@ai-sdk/google@4.0.87 src/google-speech-api.ts:35`).
+    usage_metadata: Option<serde_json::Map<String, Value>>,
 }
 
 // ── Model ───────────────────────────────────────────────────────────────────
@@ -464,6 +468,7 @@ impl SpeechModel for GoogleSpeechModel {
         )
         .await?;
 
+        let usage_metadata = response.value.usage_metadata;
         // `generate_speech` returns one audio result and Gemini returns one
         // inline audio part per request: take the first inline part with data.
         let inline = response
@@ -526,6 +531,8 @@ impl SpeechModel for GoogleSpeechModel {
         Ok(SpeechResult {
             audio: AudioData::Binary(audio),
             warnings,
+            // `@ai-sdk/google@4.0.87 src/google-speech-model.ts:356-358`.
+            usage: usage_metadata,
             request: Some(SpeechRequest { body: Some(body) }),
             response: SpeechResponse {
                 timestamp: Some(timestamp),

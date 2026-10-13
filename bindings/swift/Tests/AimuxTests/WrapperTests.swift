@@ -14,8 +14,8 @@ final class WrapperTests: XCTestCase {
     // MARK: - generateText: plain text result
 
     /// A plain string prompt returns a `GenerateTextResult` with `.text`,
-    /// `.raw.content` (a `.text` content item), a unified `.stop` finish
-    /// reason, and token usage decoded from the mock.
+    /// `.content` (a `Text` content item), a unified `.stop` finish reason,
+    /// and token usage decoded from the mock.
     func testTypedGenerateTextPlainText() throws {
         let server = MockHTTPServer(response: .json(openaiPlainResponse))
         try server.start()
@@ -25,13 +25,14 @@ final class WrapperTests: XCTestCase {
         let result = try model.generateText(prompt: .text("What is Rust?"))
 
         XCTAssertEqual(result.text, "Rust is a systems programming language.")
-        XCTAssertEqual(result.finishReason.unified, .stop)
-        XCTAssertEqual(result.usage.inputTokens.total, 10)
-        XCTAssertEqual(result.usage.outputTokens.total, 8)
+        XCTAssertEqual(result.finishReason, .stop)
+        XCTAssertEqual(result.usage.inputTokens, 10)
+        XCTAssertEqual(result.usage.outputTokens, 8)
+        XCTAssertEqual(result.steps.count, 1)
 
-        // raw.content carries a typed .text GenerateContent item.
-        let textContent = result.raw.content.compactMap { part -> String? in
-            if case .text(let t, _) = part { return t } else { return nil }
+        // content carries a `Text` content item.
+        let textContent = result.content.compactMap { part -> String? in
+            part["Text"]?["text"]?.stringValue
         }
         XCTAssertEqual(textContent, ["Rust is a systems programming language."])
 
@@ -58,8 +59,8 @@ final class WrapperTests: XCTestCase {
     }
 
     /// Passing a typed `tools` option yields a typed `ToolCall` in the result:
-    /// `.toolCalls[0].toolName`, `.toolCallId`, and the structured
-    /// `.raw.content` `.toolCall` variant.
+    /// `.toolCalls[0].toolName`, `.toolCallId`, and the `ToolCall` variant
+    /// of `.content`.
     func testTypedGenerateTextToolCall() throws {
         let server = MockHTTPServer(response: .json(openaiToolCallResponse))
         try server.start()
@@ -83,17 +84,13 @@ final class WrapperTests: XCTestCase {
         XCTAssertEqual(result.toolCalls[0].toolCallId, "call_abc")
         XCTAssertEqual(result.toolCalls[0].input["location"]?.stringValue, "Tokyo")
 
-        // Structured raw.content contains a tool-call item mirroring the call.
-        let toolContents = result.raw.content.compactMap { part -> RawToolCall? in
-            if case .toolCall(let call) = part { return call }
-            return nil
-        }
+        // content contains a tool-call item with the parsed input.
+        let toolContents = result.content.filter { $0["type"]?.stringValue == "tool-call" }
         XCTAssertEqual(toolContents.count, 1)
-        XCTAssertEqual(toolContents[0].toolName, "get_weather")
-        XCTAssertEqual(toolContents[0].toolCallId, "call_abc")
-        // Raw content keeps the provider's argument text; the parsed object
-        // lives on the top-level toolCalls (asserted above).
-        XCTAssertEqual(toolContents[0].input, "{\"location\":\"Tokyo\"}")
+        XCTAssertEqual(toolContents[0]["toolName"]?.stringValue, "get_weather")
+        XCTAssertEqual(toolContents[0]["toolCallId"]?.stringValue, "call_abc")
+        XCTAssertEqual(toolContents[0]["input"]?["location"]?.stringValue, "Tokyo")
+        XCTAssertEqual(result.finishReason, .toolCalls)
     }
 
     // MARK: - generateText: multi-role messages
@@ -309,12 +306,22 @@ final class WrapperTests: XCTestCase {
 
         // The text deltas reassemble to "Hello world".
         let text = parts.reduce(into: "") { acc, part in
-            if case .textDelta(_, let delta, _) = part { acc += delta }
+            if case .textDelta(_, let text, _) = part { acc += text }
         }
         XCTAssertEqual(text, "Hello world")
 
-        // Every emitted part decoded into a concrete TextStreamPart variant.
+        // Every emitted part decoded into a concrete TextStreamPart variant;
+        // the stream opens with start and start-step and closes with
+        // finish-step and finish.
         XCTAssertTrue(parts.contains { if case .textDelta = $0 { true } else { false } })
+        XCTAssertEqual(parts.first, .start)
+        if case .startStep = parts[1] {} else { XCTFail("expected startStep, got \(parts[1])") }
+        if case .finishStep = parts[parts.count - 2] {} else { XCTFail("expected finishStep") }
+        if case .finish(let reason, _, _) = parts[parts.count - 1] {
+            XCTAssertEqual(reason, .stop)
+        } else {
+            XCTFail("expected finish")
+        }
     }
 
     /// Streaming tool-call fragments are delivered as typed tool-related
@@ -372,7 +379,7 @@ final class WrapperTests: XCTestCase {
         let parts = try await collect(model.streamTextAsync(prompt: .text("Say hello")))
         XCTAssertFalse(parts.isEmpty)
         let text = parts.reduce(into: "") { acc, part in
-            if case .textDelta(_, let delta, _) = part { acc += delta }
+            if case .textDelta(_, let text, _) = part { acc += text }
         }
         XCTAssertEqual(text, "Hello world")
     }
@@ -384,17 +391,26 @@ final class WrapperTests: XCTestCase {
     func testGenerateTextResultRoundTrip() throws {
         let json = """
         {
-          "text": "hello",
-          "toolCalls": [
-            {"toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
+          "content": [
+            {"type":"text","text":"hello"},
+            {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
           ],
-          "finishReason": {"unified":"stop","raw":"stop"},
-          "usage": {"inputTokens":{"total":3},"outputTokens":{"total":2}},
-          "warnings": [{"type":"other","message":"careful"}],
+          "text": "hello",
           "reasoning": [{"type":"reasoning","text":"hmm"}],
           "reasoningText": "hmm",
-          "sources": [{"sourceType":"url","id":"s1","url":"https://example.com"}],
           "files": [],
+          "sources": [{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"}],
+          "toolCalls": [
+            {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
+          ],
+          "toolResults": [],
+          "finishReason": "tool-calls",
+          "rawFinishReason": "tool_calls",
+          "usage": {"input_tokens":3,"input_token_details":{},"output_tokens":2,"output_token_details":{},"total_tokens":5},
+          "totalUsage": {"input_tokens":3,"input_token_details":{},"output_tokens":2,"output_token_details":{},"total_tokens":5},
+          "warnings": [{"type":"other","message":"careful"}],
+          "request": {},
+          "response": {"id":"resp_1","timestamp":"2026-01-01T00:00:00.000Z","model_id":"gpt-4o","messages":[]},
           "responseMessages": [
             {"role":"assistant","content":[
               {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
@@ -404,34 +420,19 @@ final class WrapperTests: XCTestCase {
                "output":{"type":"json","value":{"temp":22}}}
             ]}
           ],
-          "rawFinishReason": "stop",
-          "request": {},
-          "response": {"id":"resp_1","modelId":"gpt-4o"},
-          "totalUsage": {"inputTokens":{"total":3},"outputTokens":{"total":2}},
-          "content": [
-            {"type":"text","text":"hello"},
-            {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
-          ],
-          "raw": {
-            "content": [
-              {"type":"text","text":"hello"},
-              {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":"{\\"location\\":\\"Tokyo\\"}"}
-            ],
-            "finishReason": {"unified":"tool-calls","raw":"tool_calls"},
-            "usage": {"inputTokens":{"total":3},"outputTokens":{"total":2}},
-            "warnings": [],
-            "response": {"id":"resp_1","modelId":"gpt-4o"}
-          }
+          "steps": [{"call_id":"c1","step_number":0}]
         }
         """
         let original = try JSONDecoder().decode(GenerateTextResult.self,
                                                 from: json.data(using: .utf8)!)
         XCTAssertEqual(original.text, "hello")
         XCTAssertEqual(original.toolCalls[0].toolName, "get_weather")
-        XCTAssertEqual(original.finishReason.unified, .stop)
-        XCTAssertEqual(original.raw.finishReason.unified, .toolCalls)
-        XCTAssertEqual(original.raw.response?.id, "resp_1")
-        XCTAssertEqual(original.raw.response?.modelId, "gpt-4o")
+        XCTAssertEqual(original.finishReason, .toolCalls)
+        XCTAssertEqual(original.rawFinishReason, "tool_calls")
+        XCTAssertEqual(original.usage.totalTokens, 5)
+        XCTAssertEqual(original.reasoningText, "hmm")
+        XCTAssertNil(original.output)
+        XCTAssertEqual(original.response.id, "resp_1")
         XCTAssertEqual(original.warnings, [.other(message: "careful")])
         XCTAssertEqual(original.reasoning, [.reasoning(ReasoningOutput(text: "hmm"))])
         guard case .parts(let toolContent) = original.responseMessages[1].content,

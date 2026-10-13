@@ -1,11 +1,13 @@
 //! Rust translation of the Prodia video model tests.
 //! Source: `reference/ai/packages/prodia/src/prodia-video-model.test.ts`
 
+use aimux_core::download::{Download, DownloadRequest, DownloadedFile};
 use aimux_core::video_model::{VideoCallOptions, generate_video};
 use aimux_provider_utils::Resolvable;
 use aimux_providers::{ProdiaProviderSettings, create_prodia};
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -19,7 +21,25 @@ fn fast_poll() -> Option<aimux_core::video_model::VideoPollOptions> {
 fn options(p: &str) -> VideoCallOptions {
     let mut o = VideoCallOptions::new(p);
     o.poll = fast_poll();
+    o.download = Some(recording_download(Arc::default()));
     o
+}
+
+/// The bytes the test download returns for every video URL.
+const VIDEO_BYTES: &[u8] = b"video bytes";
+
+/// A download that fetches nothing: it records each URL `generate_video`
+/// asks for and returns [`VIDEO_BYTES`].
+fn recording_download(requests: Arc<Mutex<Vec<String>>>) -> Download {
+    Download::new(move |request: DownloadRequest| {
+        requests.lock().unwrap().push(request.url);
+        async {
+            Ok(DownloadedFile {
+                data: VIDEO_BYTES.to_vec(),
+                media_type: None,
+            })
+        }
+    })
 }
 
 async fn mock_job_and_result(server: &MockServer, result: &Value) {

@@ -23,11 +23,11 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * This keeps transport and response failures self-contained and matches the
  * AI SDK's `APICallError` contract.
  */
-export type ApiCallError = {
+export type ApiCallError = { 
 /**
  * Sanitized request URL. Required for every API-derived failure.
  */
-url: string,
+url: string, 
 /**
  * Sanitized request values used to create the API request.
  */
@@ -53,7 +53,7 @@ providerCode?: string,
  * locally detected transport/parse failures include their source detail.
  * Never includes an HTTP status prefix.
  */
-message: string,
+message: string, 
 /**
  * The raw response body, verbatim (`APICallError.responseBody`) — the
  * lossless evidence when `message`/`provider_code` are extractions.

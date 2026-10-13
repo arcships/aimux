@@ -141,13 +141,13 @@ fn opts() -> CallOptions {
 fn opts_with_tools(tools: Vec<Tool>) -> CallOptions {
     let mut o = opts();
     o.tools = Some(tools);
-    o.tool_choice = Some(aimux_core::tool::ToolChoice::Auto);
+    o.tool_choice = Some(aimux_core::tool::LanguageModelV4ToolChoice::Auto);
     o
 }
 
 fn provider_tool(id: &str, name: &str) -> Tool {
     Tool::Provider(ProviderTool {
-        id: id.to_string(),
+        id: id.parse().unwrap(),
         name: name.to_string(),
         args: serde_json::Map::new(),
     })
@@ -393,7 +393,7 @@ async fn generated_file_reaches_response_messages_as_a_base64_file_part() {
     .await
     .expect("generate_text should succeed");
 
-    let message = serde_json::to_value(&result.response_messages[0]).unwrap();
+    let message = serde_json::to_value(result.response_messages()[0]).unwrap();
     let file = &message["content"][1];
     assert_eq!(file["type"], "file");
     assert_eq!(file["mediaType"], "image/png");

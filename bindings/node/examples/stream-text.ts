@@ -19,7 +19,7 @@ async function main() {
     if (part.type === 'text-delta') {
       process.stdout.write(part.text)
     } else if (part.type === 'finish') {
-      console.log('\n\n[done]')
+      console.log(`\n\n[done: ${part.finishReason}]`)
     }
   }
 }

@@ -64,12 +64,15 @@ async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMu
 
     // Resolve the key for provider rebuild: the request spec first, then the
     // Settings key store; otherwise the provider's registered env var is read
-    // (RFC-0029 §5.5). The recording stores no credential source.
+    // (RFC-0029 §5.5). The recording stores no credential source and no base
+    // URL (only the provider identity), so the replay goes to the provider's
+    // default endpoint: never a custom base URL.
     let key = wire::resolve_api_key(
         req.api_key.as_deref(),
         &recording.provider.provider_id,
         &state.keys,
         state.loopback,
+        false,
     )?;
 
     let mut providers = aimux_providers::default_providers();
@@ -102,17 +105,21 @@ async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMu
                     "prompt override must be a message list".into(),
                 ));
             };
-            overrides.prompt = Some(convert_to_language_model_prompt(&list, None)?);
+            overrides.prompt = Some(convert_to_language_model_prompt(
+                &list,
+                None,
+                model.provider().split('.').next(),
+            )?);
         }
     }
 
     let result = replay_with_model(&recording, &*model, Some(&overrides)).await?;
     Ok(Json(json!({
         "callId": recording.call_id,
-        "text": result.text,
-        "finishReason": serde_json::to_value(result.finish_reason.unified).unwrap_or_default(),
-        "usage": serde_json::to_value(&result.usage).unwrap_or_default(),
-        "toolCalls": serde_json::to_value(&result.tool_calls).unwrap_or_default(),
+        "text": result.text(),
+        "finishReason": serde_json::to_value(result.finish_reason()).unwrap_or_default(),
+        "usage": serde_json::to_value(result.usage()).unwrap_or_default(),
+        "toolCalls": serde_json::to_value(result.tool_calls()).unwrap_or_default(),
         "meta": state.last_meta(recording.session_id.as_deref()),
     }))
     .into_response())

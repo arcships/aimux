@@ -6,17 +6,13 @@
 //! `build_request_body` / `parse_stop_reason` helpers used by the language
 //! models.
 //!
-//! Two public prompt-conversion entry points are exposed:
-//! - [`convert_prompt_to_anthropic_full`] — the complete conversion, returning
-//!   the Anthropic `system` + `messages` shape alongside the beta headers and
-//!   warnings produced during conversion. Supports mid-conversation system
-//!   messages, trailing-whitespace trimming on the final assistant message,
-//!   reasoning/thinking parts, URL & base64 file parts (with PDF beta and
-//!   top-level media-type sniffing), and provider-referenced files.
-//! - [`convert_prompt_to_anthropic`] — the legacy two-tuple `(system, messages)`
-//!   return form used by [`build_request_body`]. It is equivalent to the full
-//!   conversion with `send_reasoning = false`, discarding the betas and
-//!   warnings.
+//! The prompt-conversion entry point is
+//! [`convert_prompt_to_anthropic_full_fallible`]: the complete conversion,
+//! returning the Anthropic `system` + `messages` shape alongside the beta
+//! headers and warnings produced during conversion. It supports
+//! mid-conversation system messages, trailing-whitespace trimming on the final
+//! assistant message, reasoning/thinking parts, URL & base64 file parts (with
+//! PDF beta and top-level media-type sniffing), and provider-referenced files.
 
 use std::collections::{BTreeSet, HashSet};
 
@@ -25,7 +21,9 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, FunctionTool, ResponseFormat, Tool, ToolChoice};
+use aimux_core::options::{
+    CallOptions, FunctionTool, LanguageModelV4ToolChoice, ResponseFormat, Tool,
+};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
 use aimux_provider_utils::{
@@ -47,7 +45,7 @@ const BETA_MID_CONVERSATION_SYSTEM: &str = "mid-conversation-system-2026-04-07";
 /// Beta header emitted when a provider-referenced file part is present.
 const BETA_FILES_API: &str = "files-api-2025-04-14";
 
-/// Result of [`convert_prompt_to_anthropic_full`].
+/// Result of [`convert_prompt_to_anthropic_full_fallible`].
 #[derive(Debug, Clone)]
 pub struct AnthropicPromptConversion {
     /// Anthropic `system` blocks, or `None` when there is no system prompt.
@@ -432,51 +430,6 @@ fn convert_prompt_with_validator(
         betas,
         warnings,
     })
-}
-
-/// Convert a prompt into the full Anthropic shape.
-///
-/// Panics on conversion failure. Production paths use the fallible variant
-/// [`convert_prompt_to_anthropic_full_fallible`]; this panic wrapper exists
-/// only for integration tests under `tests/`. It is `#[doc(hidden)]` and
-/// `#[deprecated]` so it neither appears on the public API surface nor can be
-/// pulled in by accident (release uses `panic = "abort"`, so reaching a panic
-/// here via FFI would kill the host process).
-#[doc(hidden)]
-#[deprecated(
-    since = "0.2.1",
-    note = "panics on failure; use convert_prompt_to_anthropic_full_fallible instead (issue #90 R1)"
-)]
-#[must_use]
-pub fn convert_prompt_to_anthropic_full(
-    prompt: &LanguageModelPrompt,
-    send_reasoning: bool,
-) -> AnthropicPromptConversion {
-    convert_prompt_to_anthropic_full_fallible(prompt, send_reasoning)
-        .expect("convert_prompt_to_anthropic_full: conversion failed")
-}
-
-/// Convert a prompt into the Anthropic `system` + `messages` shape.
-///
-/// This is the legacy two-tuple return form used by [`build_request_body`]. It
-/// is equivalent to [`convert_prompt_to_anthropic_full`] with
-/// `send_reasoning = false`, discarding the betas and warnings. Consecutive
-/// messages that map to the same effective Anthropic role (`user`/`tool` →
-/// `user`, `assistant` → `assistant`) are merged into a single message, matching
-/// the SDK behaviour.
-#[doc(hidden)]
-#[deprecated(
-    since = "0.2.1",
-    note = "panics on failure; use convert_prompt_to_anthropic_full_fallible instead (issue #90 R1)"
-)]
-#[must_use]
-pub fn convert_prompt_to_anthropic(
-    prompt: &LanguageModelPrompt,
-) -> (Option<Vec<Value>>, Vec<Value>) {
-    match convert_prompt_to_anthropic_full_fallible(prompt, false) {
-        Ok(result) => (result.system, result.messages),
-        Err(e) => panic!("{}", e),
-    }
 }
 
 fn resolve_cache_control(
@@ -2604,7 +2557,7 @@ fn apply_anthropic_tools(
             .map(|t| match t {
                 Tool::Function(ft) => AnthropicTool::Function(ft.clone()),
                 Tool::Provider(pt) => AnthropicTool::Provider {
-                    id: pt.id.clone(),
+                    id: pt.id.to_string(),
                     name: pt.name.clone(),
                     args: pt.args.clone(),
                 },
@@ -2620,7 +2573,7 @@ fn apply_anthropic_tools(
         ));
     }
     let requested_choice = if json_schema.is_some() {
-        Some(&ToolChoice::Required)
+        Some(&LanguageModelV4ToolChoice::Required)
     } else {
         options.tool_choice.as_ref()
     };
@@ -2628,17 +2581,17 @@ fn apply_anthropic_tools(
         && !anthropic_tools.is_empty()
         && matches!(
             requested_choice,
-            Some(ToolChoice::Required | ToolChoice::Tool { .. })
+            Some(LanguageModelV4ToolChoice::Required | LanguageModelV4ToolChoice::Tool { .. })
         ) {
         warnings.push(Warning::Unsupported {
             feature: "toolChoice".to_string(),
             details: Some(match requested_choice {
-                Some(ToolChoice::Required) => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".to_string(),
-                Some(ToolChoice::Tool { tool_name }) => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
+                Some(LanguageModelV4ToolChoice::Required) => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".to_string(),
+                Some(LanguageModelV4ToolChoice::Tool { tool_name }) => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
                 _ => unreachable!(),
             }),
         });
-        Some(&ToolChoice::Auto)
+        Some(&LanguageModelV4ToolChoice::Auto)
     } else {
         requested_choice
     };
@@ -2668,7 +2621,7 @@ fn apply_anthropic_tools(
         // `undefined` args on provider-defined tools such as web_search).
         let mut defs = tool_defs;
         if caps.rejects_forced_tool_use
-            && let Some(ToolChoice::Tool { tool_name }) = requested_choice
+            && let Some(LanguageModelV4ToolChoice::Tool { tool_name }) = requested_choice
         {
             defs.retain(|tool| {
                 tool.get("name").and_then(Value::as_str) == Some(tool_name.as_str())

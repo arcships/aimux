@@ -322,8 +322,8 @@ func TestStreamPartParseRoundTrip(t *testing.T) {
 		typ  string
 	}{
 		{"text-delta", `{"type":"text-delta","id":"tx1","text":"Hello"}`, "text-delta"},
-		{"finish", `{"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`, "finish"},
-		{"stream-start", `{"type":"stream-start","warnings":[]}`, "stream-start"},
+		{"finish", `{"type":"finish","finishReason":"stop","totalUsage":{"input_tokens":3}}`, "finish"},
+		{"start-step", `{"type":"start-step","request":{},"warnings":[]}`, "start-step"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -359,6 +359,22 @@ func TestStreamPartSource(t *testing.T) {
 	src, err := sp.Source()
 	if err != nil || src.URL == nil || src.URL.URL != "https://example.com" {
 		t.Fatalf("source: %+v, %v", src, err)
+	}
+}
+
+func TestParseFinishPayload(t *testing.T) {
+	sp, _ := ParseStreamPart(`{"type":"finish","finishReason":"tool-calls","rawFinishReason":"tool_use","totalUsage":{"input_tokens":3,"input_token_details":{"cache_read_tokens":1},"output_tokens":2,"output_token_details":{},"total_tokens":5}}`)
+	var finish FinishPayload
+	if err := json.Unmarshal(sp.Raw, &finish); err != nil {
+		t.Fatal(err)
+	}
+	if finish.FinishReason != "tool-calls" || finish.RawFinishReason == nil || *finish.RawFinishReason != "tool_use" {
+		t.Errorf("finish reason: %+v", finish)
+	}
+	u := finish.TotalUsage
+	if u.InputTokens == nil || *u.InputTokens != 3 || u.TotalTokens == nil || *u.TotalTokens != 5 ||
+		u.InputTokenDetails.CacheReadTokens == nil || *u.InputTokenDetails.CacheReadTokens != 1 {
+		t.Errorf("total usage: %+v", u)
 	}
 }
 

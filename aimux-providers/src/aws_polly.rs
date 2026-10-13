@@ -397,6 +397,7 @@ impl SpeechModel for AwsPollySpeechModel {
         Ok(SpeechResult {
             audio: AudioData::Binary(audio_bytes),
             warnings,
+            usage: None,
             request: Some(SpeechRequest {
                 body: Some(Value::Object(body)),
             }),

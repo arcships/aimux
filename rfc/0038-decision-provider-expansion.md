@@ -1,6 +1,9 @@
 # RFC-0038：官方 Decision Provider 扩展
 
 状态：已实现，PR #226 验证中。资料核对日期：2026-10-08。
+
+> **修订**: Decision 已按上游 `DecisionModelV4` 改写（[aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md) §3.1、§5）。各 provider 的 wire 与限制不变；请求侧扩展都在 `provider_options.<provider>`（图片与 OpenAI 的 `choice_values` 由顶层字段移入，`safety_identifier` 与运行时 `protocol` 不变），结果侧扩展移入 `provider_metadata.<provider>`（概率来源、confidence、OpenAI 原生值、Laya 弃答、latency）。OpenAI 拒答与 vLLM 条件跳题使调用失败，因为决策必须回答每一道题；能力结构取消，限制在 HTTP 之前检查，录制不含能力快照。下文描述改写前的 contract，现行 API 见 [docs/api/decision.md](../docs/api/decision.md)。
+
 前置：[RFC-0037](0037-decision-api.md)，TypeSafe Jev 已通过 PR #221 合入。
 
 ## 目标与边界

@@ -297,6 +297,17 @@ mod tests {
         assert_eq!(attempts.load(Ordering::SeqCst), 0);
     }
 
+    #[test]
+    fn prepared_retries_use_the_fixed_delay_and_backoff() {
+        let retries = prepare_retries(Some(4), None);
+
+        assert_eq!(retries.max_retries, 4);
+        assert_eq!(retries.initial_delay_ms, DEFAULT_INITIAL_DELAY_MS);
+        assert_eq!(retries.backoff_factor, u64::from(DEFAULT_BACKOFF_FACTOR));
+        assert_eq!(prepare_retries(None, None).max_retries, DEFAULT_MAX_RETRIES);
+        assert_eq!(prepare_retries(Some(0), None).max_retries, 0);
+    }
+
     #[tokio::test]
     async fn first_non_retryable_error_is_not_wrapped() {
         let error = retry_with_exponential_backoff(
@@ -579,6 +590,9 @@ mod tests {
         assert_eq!(dropped.load(Ordering::SeqCst), 1);
     }
 
+    /// `@ai-sdk/provider-utils@5.0.53` `retry-with-exponential-backoff.ts:97`
+    /// takes `getErrorMessage(error)` for both texts (`:103`, `:138`): the
+    /// error's message, without an HTTP status or a variant label.
     #[test]
     fn retry_error_messages_match_the_ai_sdk() {
         let max = RetryError {
@@ -587,7 +601,7 @@ mod tests {
         };
         assert_eq!(
             max.to_string(),
-            "Failed after 3 attempts. Last error: API call error: retry"
+            "Failed after 3 attempts. Last error: retry"
         );
 
         let non_retryable = RetryError {
@@ -596,7 +610,17 @@ mod tests {
         };
         assert_eq!(
             non_retryable.to_string(),
-            "Failed after 2 attempts with non-retryable error: 'API call error: retry'"
+            "Failed after 2 attempts with non-retryable error: 'retry'"
+        );
+
+        // The status is a field of the error, never part of the message.
+        let with_status = RetryError {
+            reason: RetryErrorReason::MaxRetriesExceeded,
+            errors: vec![api_error_with_headers(429, &[])],
+        };
+        assert_eq!(
+            with_status.to_string(),
+            "Failed after 1 attempts. Last error: retry"
         );
     }
 }

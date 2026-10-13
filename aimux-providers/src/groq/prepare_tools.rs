@@ -3,7 +3,7 @@
 use serde_json::{Map, Value, json};
 
 use aimux_core::options::CallOptions;
-use aimux_core::tool::{Tool, ToolChoice};
+use aimux_core::tool::{LanguageModelV4ToolChoice, Tool};
 use aimux_core::types::Warning;
 
 use super::browser_search_models::{
@@ -64,10 +64,10 @@ pub(crate) fn prepare_tools(options: &CallOptions, model_id: &str) -> PreparedTo
     prepared.tools = Some(groq_tools);
 
     prepared.tool_choice = options.tool_choice.as_ref().map(|choice| match choice {
-        ToolChoice::Auto => json!("auto"),
-        ToolChoice::None => json!("none"),
-        ToolChoice::Required => json!("required"),
-        ToolChoice::Tool { tool_name } => {
+        LanguageModelV4ToolChoice::Auto => json!("auto"),
+        LanguageModelV4ToolChoice::None => json!("none"),
+        LanguageModelV4ToolChoice::Required => json!("required"),
+        LanguageModelV4ToolChoice::Tool { tool_name } => {
             json!({ "type": "function", "function": { "name": tool_name } })
         }
     });

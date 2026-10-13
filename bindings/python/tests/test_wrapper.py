@@ -55,8 +55,10 @@ class TestGenerateText:
         assert isinstance(result, GenerateTextResult)
         assert result.text == "Rust is a systems programming language."
         # Usage is parsed into a model, not left as a dict.
-        assert result.usage.input_tokens.total == 10
-        assert result.usage.output_tokens.total == 8
+        assert result.usage.input_tokens == 10
+        assert result.usage.output_tokens == 8
+        assert result.finish_reason == "stop"
+        assert len(result.steps) == 1
 
     def test_parses_tool_calls(self):
         with RecordingMockServer(OPENAI_TOOL_CALL) as mock:
@@ -84,22 +86,21 @@ class TestGenerateText:
         assert tc.tool_call_id == "call_abc"
         assert tc.input == {"location": "Tokyo"}
 
-        # raw.content carries the ToolCall variant as a typed GenerateContent.
-        assert isinstance(result.raw.content, list)
-        tool_call_parts = [c for c in result.raw.content if c.type == "tool-call"]
-        assert tool_call_parts, "raw.content must contain a tool-call variant"
+        # content carries the parsed tool call as a typed TextContent.
+        assert isinstance(result.content, list)
+        tool_call_parts = [c for c in result.content if c.type == "tool-call"]
+        assert tool_call_parts, "content must contain a tool-call part"
         assert tool_call_parts[0].tool_name == "get_weather"
         assert tool_call_parts[0].tool_call_id == "call_abc"
-        # raw content keeps the provider's argument text (see test_e2e).
-        assert tool_call_parts[0].input == '{"location":"Tokyo"}'
+        assert tool_call_parts[0].input == {"location": "Tokyo"}
 
-    def test_raw_content_is_text_variant(self):
+    def test_content_is_text_variant(self):
         with MockServer(OPENAI_CHAT) as mock:
             model = deepseek("test-key", "gpt-4o", mock.url)
             result = generate_text(model, "What is Rust?")
 
-        # raw.content[0] is a typed Text content part.
-        first = result.raw.content[0]
+        # content[0] is a typed Text content part.
+        first = result.content[0]
         assert first.type == "text"
         assert first.text == "Rust is a systems programming language."
 
@@ -407,12 +408,12 @@ class TestStandaloneTypeTags:
         :36); generate-text-result.ts:73, :78. A repair function's call is a
         tagged LanguageModelV4ToolCall (language-model-v4-tool-call.ts:7)."""
         from aimux import apply_tool_call_repair, tool_call_repair_context
-        from aimux.wrapper import RawToolCall, StreamTextResultAggregated, ToolCall
+        from aimux.wrapper import GenerateTextResult, RawToolCall, ToolCall
 
         call = {"type": "tool-call", "toolCallId": "call-1", "toolName": "weather", "input": {"city": "SG"}}
         url = {"type": "source", "sourceType": "url", "id": "s1", "url": "https://example.com"}
-        result = StreamTextResultAggregated.model_validate(
-            {"text": "", "finishReason": {"unified": "stop"}, "toolCalls": [call], "sources": [url]}
+        result = GenerateTextResult.model_validate(
+            {"text": "", "finishReason": "stop", "toolCalls": [call], "sources": [url]}
         )
         dumped = result.model_dump(by_alias=True)
         assert dumped["toolCalls"] == [call]

@@ -79,6 +79,55 @@ pub fn provider_namespace(
     Ok(IndexMap::from([(namespace.to_string(), object)]))
 }
 
+/// Deep-merge two provider option maps as the AI SDK's `mergeObjects` does
+/// (`ai` `util/merge-objects.ts:14-81`): a key of `overrides` replaces the
+/// one in `base` unless both are objects, which merge recursively; arrays and
+/// other values are replaced; a missing side yields the other. Keys keep the
+/// order of `base`, then new keys in the order of `overrides`, like the JS
+/// object spread. `__proto__`, `constructor` and `prototype` keys of
+/// `overrides` are skipped, as upstream skips them.
+pub(crate) fn merge_objects(
+    base: Option<&SharedProviderOptions>,
+    overrides: Option<&SharedProviderOptions>,
+) -> Option<SharedProviderOptions> {
+    fn merge(base: &mut JsonObject, overrides: &JsonObject) {
+        for (key, value) in overrides {
+            if matches!(key.as_str(), "__proto__" | "constructor" | "prototype") {
+                continue;
+            }
+            match (base.get_mut(key), value) {
+                (Some(Value::Object(base)), Value::Object(overrides)) => merge(base, overrides),
+                _ => {
+                    base.insert(key.clone(), value.clone());
+                }
+            }
+        }
+    }
+    match (base, overrides) {
+        (None, None) => None,
+        (Some(base), None) => Some(base.clone()),
+        (None, Some(overrides)) => Some(overrides.clone()),
+        (Some(base), Some(overrides)) => {
+            let mut result = base.clone();
+            for (namespace, value) in overrides {
+                if matches!(
+                    namespace.as_str(),
+                    "__proto__" | "constructor" | "prototype"
+                ) {
+                    continue;
+                }
+                match result.get_mut(namespace) {
+                    Some(base) => merge(base, value),
+                    None => {
+                        result.insert(namespace.clone(), value.clone());
+                    }
+                }
+            }
+            Some(result)
+        }
+    }
+}
+
 /// A mapping of provider names to provider-specific file identifiers.
 ///
 /// Allows a logical file to be referenced across providers without
@@ -462,5 +511,36 @@ mod tests {
             ["openai", "anthropic", "google"]
         );
         assert_eq!(serde_json::to_string(&reference).unwrap(), text);
+    }
+
+    // `mergeObjects` (`ai@7.0.127` `util/merge-objects.ts:14-81`): nested
+    // objects merge, other values and arrays are replaced, base keys keep
+    // their place and new keys follow in override order.
+    #[test]
+    fn merge_objects_deep_merges_like_upstream() {
+        let options =
+            |value: Value| -> SharedProviderOptions { serde_json::from_value(value).unwrap() };
+        let base = options(json!({
+            "anthropic": { "cacheControl": { "type": "ephemeral", "ttl": "5m" }, "tags": [1, 2] },
+            "openai": { "store": true }
+        }));
+        let overrides = options(json!({
+            "zeta": { "x": 1 },
+            "anthropic": { "cacheControl": { "ttl": "1h" }, "tags": [3], "__proto__": { "p": 1 } },
+            "constructor": { "c": 1 }
+        }));
+        let merged = merge_objects(Some(&base), Some(&overrides)).unwrap();
+        assert_eq!(
+            serde_json::to_string(&merged).unwrap(),
+            serde_json::to_string(&json!({
+                "anthropic": { "cacheControl": { "type": "ephemeral", "ttl": "1h" }, "tags": [3] },
+                "openai": { "store": true },
+                "zeta": { "x": 1 }
+            }))
+            .unwrap()
+        );
+        assert_eq!(merge_objects(None, Some(&base)), Some(base.clone()));
+        assert_eq!(merge_objects(Some(&base), None), Some(base));
+        assert_eq!(merge_objects(None, None), None);
     }
 }

@@ -18,7 +18,7 @@ fn decision_handles_json_errors_and_abort_follow_c_abi_contract() {
     assert_ne!(handle, 0);
     let mut out = ptr::null_mut();
     let request =
-        c(r#"{"state":"text","questions":[{"id":"q","type":"boolean","instructions":"test"}]}"#);
+        c(r#"{"state":"text","questions":{"q":{"type":"boolean","instructions":"test"}}}"#);
     let abort = aimux_abort_signal_new();
     aimux_abort_signal_abort(abort);
     let (code, _) = expect_aimux_error(
@@ -85,7 +85,7 @@ fn probability_source_survives_c_abi_round_trip() {
             "create with provenance",
         );
         let request = c(
-            r#"{"state":"text","questions":[{"id":"q","type":"boolean","instructions":"test"}],"max_retries":0,"timeout":{"total_ms":2000}}"#,
+            r#"{"state":"text","questions":{"q":{"type":"boolean","instructions":"test"}},"max_retries":0,"timeout":{"total_ms":2000}}"#,
         );
         let mut out = ptr::null_mut();
         ok(
@@ -93,7 +93,15 @@ fn probability_source_survives_c_abi_round_trip() {
             "decide with provenance",
         );
         let result: serde_json::Value = serde_json::from_str(&take(out)).unwrap();
-        assert_eq!(result["probability_source"], source);
+        assert_eq!(
+            result["provider_metadata"]["jev"]["probability_source"],
+            source
+        );
+        assert_eq!(
+            result["answers"]["q"],
+            serde_json::json!({"type": "boolean", "probability": 0.89})
+        );
+        assert_eq!(result["usage"]["total_tokens"], 11);
         aimux_drop_handle(handle);
         server.join().unwrap();
     }
@@ -113,7 +121,7 @@ fn probability_source_survives_c_abi_round_trip() {
 }
 
 #[test]
-fn decision_capabilities_are_local_and_validate_handle_lifecycle() {
+fn decision_model_description_is_local_and_validates_handle_lifecycle() {
     let mut handle = 0;
     ok(
         aimux_jev_decision_new(
@@ -129,9 +137,18 @@ fn decision_capabilities_are_local_and_validate_handle_lifecycle() {
         aimux_decision_capabilities(handle, &mut out),
         "capabilities",
     );
-    let caps: serde_json::Value = serde_json::from_str(&take(out)).unwrap();
-    assert_eq!(caps["max_choices"], 255);
-    assert_eq!(caps["rounding"]["probability_decimals"], 2);
+    // The DecisionModelV4 properties (`@ai-sdk/provider@4.0.22
+    // src/decision-model/v4/decision-model-v4.ts:6-16`).
+    let description: serde_json::Value = serde_json::from_str(&take(out)).unwrap();
+    assert_eq!(
+        description,
+        serde_json::json!({
+            "specification_version": "v4",
+            "provider": "jev",
+            "model_id": "jev-latest",
+            "supported_question_types": ["choice", "score", "boolean"]
+        })
+    );
     aimux_drop_handle(handle);
     out = ptr::null_mut();
     expect_ffi_error(

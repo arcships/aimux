@@ -117,7 +117,9 @@ fun toolCallRepairContext(toolCallJson: String, promptJson: String, optsJson: St
 
 /**
  * Resolve one invalid tool call against a repair reply, returning the final
- * `ToolCall` JSON — valid, or invalid carrying a nested `ToolCallRepair` error.
+ * `ToolCall` JSON — valid, or invalid: with its original error (`unchanged`),
+ * the replacement's own parse or validation error (`repaired`), or a nested
+ * `ToolCallRepair` error (`failed`).
  *
  * @param replyJson `{"type":"repaired","toolCall":…}` | `{"type":"unchanged"}`
  *   | `{"type":"failed","message":…}`.
@@ -134,8 +136,8 @@ fun applyToolCallRepair(toolCallJson: String, optsJson: String?, replyJson: Stri
 }
 
 /**
- * Apply a repair reply to a whole serialized result (`GenerateTextResult`,
- * `GenerateObjectResult` via its nested `raw`, or `StreamTextResultAggregated`).
+ * Apply a repair reply to a whole serialized `GenerateTextResult`, generated
+ * or consumed from a stream (a `GenerateObjectResult` has no tool calls).
  *
  * Rewrites both `toolCalls` and the matching `responseMessages` tool-call
  * part — the transcript must agree with the repaired call, or the next turn
@@ -207,9 +209,7 @@ internal fun repairToolCallsInResult(
     repair: RepairToolCall,
 ): String {
     val root = AimuxJson.parseToJsonElement(resultJson) as? JsonObject ?: return resultJson
-    // GenerateObjectResult nests the text result under `raw`.
-    val target = if (root.containsKey("toolCalls")) root else root["raw"] as? JsonObject ?: return resultJson
-    val invalid = (target["toolCalls"] as? JsonArray)
+    val invalid = (root["toolCalls"] as? JsonArray)
         ?.mapNotNull { it as? JsonObject }
         ?.filter(::isInvalid)
         ?: return resultJson

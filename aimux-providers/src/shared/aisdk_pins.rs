@@ -106,6 +106,16 @@ pub(crate) const GROQ: Package = Package {
     version: "4.0.52",
     provider_utils: "5.0.51",
 };
+/// `@ai-sdk/huggingface@2.0.62` package.json:
+/// `"@ai-sdk/provider-utils": "5.0.53"` (and `"@ai-sdk/openai-compatible":
+/// "3.0.62"`, the [`OPENAI_COMPATIBLE`] pin). Unlike the other packages it
+/// adds no `ai-sdk-huggingface/<v>` part: `createHuggingFace`'s headers are
+/// the key and the user headers only (huggingface-provider.ts:68-75).
+pub(crate) const HUGGINGFACE: Package = Package {
+    name: "huggingface",
+    version: "2.0.62",
+    provider_utils: "5.0.53",
+};
 /// `@ai-sdk/mistral@4.0.54` package.json: `"@ai-sdk/provider-utils": "5.0.51"`.
 pub(crate) const MISTRAL: Package = Package {
     name: "mistral",
@@ -135,7 +145,7 @@ mod tests {
     use super::{Package, pinned_versions};
 
     /// Every top-level package (not the nested google-vertex copy).
-    const PACKAGES: [Package; 14] = [
+    const PACKAGES: [Package; 15] = [
         super::ANTHROPIC,
         super::GOOGLE,
         super::OPENAI,
@@ -147,6 +157,7 @@ mod tests {
         super::DEEPSEEK,
         super::GOOGLE_VERTEX,
         super::GROQ,
+        super::HUGGINGFACE,
         super::MISTRAL,
         super::OPEN_RESPONSES,
         super::XAI,
@@ -202,10 +213,20 @@ mod tests {
         }
     }
 
+    /// `@ai-sdk/huggingface` is pinned at the version whose openai-compatible
+    /// dependency is the openai-compatible pin.
+    #[test]
+    fn huggingface_depends_on_the_pinned_openai_compatible() {
+        assert_eq!(
+            pinned_versions::pinned_dependency("@ai-sdk/huggingface", "@ai-sdk/openai-compatible"),
+            super::OPENAI_COMPATIBLE.version
+        );
+    }
+
     /// Every VERSIONS.json entry is the `{version, integrity}` object form.
     #[test]
     fn every_versions_entry_is_object_form() {
         // `all()` panics on any other shape.
-        assert!(pinned_versions::all().len() >= 17);
+        assert!(pinned_versions::all().len() >= 18);
     }
 }

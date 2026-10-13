@@ -142,6 +142,7 @@ impl SpeechModel for MistralSpeechModel {
         Ok(SpeechResult {
             audio: AudioData::Base64(resp.value.audio_data),
             warnings,
+            usage: None,
             request: Some(SpeechRequest {
                 body: Some(Value::String(serde_json::to_string(&body_values)?)),
             }),

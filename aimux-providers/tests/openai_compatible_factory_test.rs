@@ -28,11 +28,10 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, TextPart,
 };
-use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
+use aimux_core::tool::{FunctionTool, LanguageModelV4ToolChoice, Tool};
 use aimux_core::types::FinishReasonUnified;
 use aimux_provider_utils::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
@@ -336,21 +335,21 @@ impl Fixture {
     }
 }
 
-fn message(role: Role, text: &str) -> LanguageModelMessage {
+fn message(role: &str, text: &str) -> LanguageModelMessage {
     match role {
-        Role::System => LanguageModelMessage::System {
+        "system" => LanguageModelMessage::System {
             content: text.to_string(),
             provider_options: None,
         },
-        Role::User => LanguageModelMessage::user_text(text),
-        Role::Assistant => LanguageModelMessage::Assistant {
+        "user" => LanguageModelMessage::user_text(text),
+        "assistant" => LanguageModelMessage::Assistant {
             content: vec![AssistantPart::Text(TextPart {
                 text: text.to_string(),
                 provider_options: None,
             })],
             provider_options: None,
         },
-        Role::Tool => panic!("tool messages require tool results"),
+        other => unreachable!("fixture has no {other} messages"),
     }
 }
 
@@ -359,10 +358,10 @@ fn message(role: Role, text: &str) -> LanguageModelMessage {
 fn call_options_from(input: &Value) -> CallOptions {
     let mut prompt: LanguageModelPrompt = Vec::new();
     if let Some(system) = input.get("system").and_then(Value::as_str) {
-        prompt.push(message(Role::System, system));
+        prompt.push(message("system", system));
     }
     if let Some(text) = input.get("prompt").and_then(Value::as_str) {
-        prompt.push(message(Role::User, text));
+        prompt.push(message("user", text));
     }
     for entry in input
         .get("messages")
@@ -370,12 +369,10 @@ fn call_options_from(input: &Value) -> CallOptions {
         .into_iter()
         .flatten()
     {
-        let role = match entry["role"].as_str().unwrap() {
-            "user" => Role::User,
-            "assistant" => Role::Assistant,
-            other => panic!("unmapped role {other}"),
-        };
-        prompt.push(message(role, entry["content"].as_str().unwrap()));
+        prompt.push(message(
+            entry["role"].as_str().unwrap(),
+            entry["content"].as_str().unwrap(),
+        ));
     }
     let mut options = CallOptions::new(prompt);
     options.temperature = input.get("temperature").and_then(Value::as_f64);
@@ -404,14 +401,14 @@ fn call_options_from(input: &Value) -> CallOptions {
         );
     }
     options.tool_choice = match input.get("toolChoice").and_then(Value::as_str) {
-        Some("required") => Some(ToolChoice::Required),
-        Some("none") => Some(ToolChoice::None),
-        Some("auto") => Some(ToolChoice::Auto),
+        Some("required") => Some(LanguageModelV4ToolChoice::Required),
+        Some("none") => Some(LanguageModelV4ToolChoice::None),
+        Some("auto") => Some(LanguageModelV4ToolChoice::Auto),
         None => options
             .tools
             .as_ref()
             .filter(|tools| !tools.is_empty())
-            .map(|_| ToolChoice::Auto),
+            .map(|_| LanguageModelV4ToolChoice::Auto),
         Some(other) => panic!("unmapped toolChoice {other}"),
     };
     options.provider_options = input
@@ -654,6 +651,39 @@ async fn chat_without_an_api_key_sends_no_authorization() {
     assert_metadata_key(&fixture, &result, "local");
 }
 
+/// `supportedUrls` is read through the settings function each time, and its
+/// value may be async (openai-compatible@3.0.62
+/// `openai-compatible-chat-language-model.ts:84`, `:161-163`); completion
+/// models get none (`openai-compatible-provider.ts:189-193`).
+#[tokio::test]
+async fn chat_supported_urls_come_from_the_async_settings_function() {
+    let mock = MockFetch::new(Vec::new());
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = calls.clone();
+    let provider = create_openai_compatible(OpenAICompatibleProviderSettings {
+        supported_urls: Some(Arc::new(move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async {
+                tokio::task::yield_now().await;
+                aimux_core::language_model::SupportedUrls(HashMap::from([(
+                    "image/*".to_string(),
+                    vec![regex::Regex::new("^https://").unwrap()],
+                )]))
+            })
+        })),
+        ..groq_settings(&mock)
+    })
+    .unwrap();
+    let chat = provider.chat("m");
+    for _ in 0..2 {
+        let urls = chat.supported_urls().await;
+        assert_eq!(urls.0.keys().collect::<Vec<_>>(), ["image/*"]);
+    }
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert!(provider.completion("m").supported_urls().await.is_empty());
+    assert!(mock.seen().is_empty());
+}
+
 #[tokio::test]
 async fn chat_stream_basic() {
     let fixture = Fixture::load("chat-stream-basic");
@@ -751,4 +781,106 @@ async fn embedding_basic() {
 fn _assert_provider_is_shareable() {
     fn shareable<T: Send + Sync + 'static>() {}
     shareable::<OpenAICompatibleProvider>();
+}
+
+// ── compat request body key order ────────────────────────────────────────────
+
+/// One chat request with `options`; returns the body bytes as sent.
+async fn sent_chat_body(options: CallOptions) -> String {
+    let mock = MockFetch::new(vec![Canned::json(&json!({
+        "id": "chatcmpl-order", "object": "chat.completion", "created": 1,
+        "model": "m",
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": "x"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+    }))]);
+    let provider = create_openai_compatible(groq_settings(&mock)).unwrap();
+    provider.chat("m").do_generate(&options).await.unwrap();
+    let seen = mock.seen();
+    assert_eq!(seen.len(), 1);
+    String::from_utf8(seen[0].body.clone()).unwrap()
+}
+
+/// Byte offset of top-level key `key` in a compact JSON object.
+fn key_at(body: &str, key: &str) -> usize {
+    body.find(&format!("\"{key}\":"))
+        .unwrap_or_else(|| panic!("{key} missing in {body}"))
+}
+
+/// A user "hi" prompt with a `weather` tool, `toolChoice: auto` and the given
+/// `groq` provider options.
+fn tool_call_options(groq: Value) -> CallOptions {
+    let mut options = CallOptions::new(vec![LanguageModelMessage::user_text("hi")]);
+    options.temperature = Some(0.5);
+    options.tools = Some(vec![Tool::Function(FunctionTool::new(
+        "weather".to_string(),
+        json!({"type": "object", "properties": {}}),
+    ))]);
+    options.tool_choice = Some(LanguageModelV4ToolChoice::Auto);
+    options.provider_options = Some(serde_json::from_value(json!({ "groq": groq })).unwrap());
+    options
+}
+
+/// The body bytes follow openai-compatible@3.0.62
+/// `openai-compatible-chat-language-model.ts:270-325` (the alignment doc's
+/// "compat 请求体顺序"): model, user → sampling, response_format, stop, seed
+/// → unknown provider-namespace fields → reasoning_effort, verbosity →
+/// messages, tools, tool_choice. `serde_json::Value` ignores order, so this
+/// asserts on the bytes. Ported from li's fork PR #35 (f9c9653b).
+#[tokio::test]
+async fn compat_body_keys_follow_the_documented_order() {
+    let mut options = tool_call_options(json!({
+        "zzzUnknown": 1,
+        "user": "u1",
+        "reasoningEffort": "low",
+        "textVerbosity": "low"
+    }));
+    options.stop_sequences = Some(vec!["END".to_string()]);
+    options.seed = Some(7);
+    let body = sent_chat_body(options).await;
+    let order = [
+        "model",
+        "user",
+        "temperature",
+        "stop",
+        "seed",
+        "zzzUnknown",
+        "reasoning_effort",
+        "verbosity",
+        "messages",
+        "tools",
+        "tool_choice",
+    ];
+    let at: Vec<usize> = order.iter().map(|k| key_at(&body, k)).collect();
+    for (i, pair) in at.windows(2).enumerate() {
+        assert!(
+            pair[0] < pair[1],
+            "{} must come before {}: {body}",
+            order[i],
+            order[i + 1]
+        );
+    }
+}
+
+/// An unknown field may override earlier fields (sampling), but not the
+/// fields assigned after it: `messages` / `tools` / `tool_choice` from the
+/// provider namespace are replaced by the real ones (the same spread order).
+#[tokio::test]
+async fn unknown_fields_override_sampling_but_not_messages_or_tools() {
+    let body = sent_chat_body(tool_call_options(json!({
+        "temperature": 0.9,
+        "messages": "bogus",
+        "tools": "bogus",
+        "tool_choice": "bogus"
+    })))
+    .await;
+    let sent: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(sent["temperature"], json!(0.9), "{body}");
+    assert_eq!(sent["messages"][0]["role"], json!("user"), "{body}");
+    assert_eq!(
+        sent["tools"][0]["function"]["name"],
+        json!("weather"),
+        "{body}"
+    );
+    assert_eq!(sent["tool_choice"], json!("auto"), "{body}");
+    assert!(!body.contains("bogus"), "{body}");
 }

@@ -5,7 +5,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolPart,
     ToolResultContent, ToolResultOutput, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::shared::{FileBytes, FileData, JsonObject, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
@@ -163,7 +163,7 @@ pub struct PreparedTools {
 #[must_use]
 pub fn prepare_tools(
     tools: &Option<Vec<FunctionTool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
 ) -> PreparedTools {
     let non_empty = tools.as_ref().filter(|&t| !t.is_empty());
 
@@ -196,10 +196,10 @@ pub fn prepare_tools(
         (None, _) => None,
         (Some(_), None) => None,
         (Some(_), Some(tc)) => match tc {
-            ToolChoice::Auto => Some(json!("auto")),
-            ToolChoice::None => Some(json!("none")),
-            ToolChoice::Required => Some(json!("required")),
-            ToolChoice::Tool { tool_name } => {
+            LanguageModelV4ToolChoice::Auto => Some(json!("auto")),
+            LanguageModelV4ToolChoice::None => Some(json!("none")),
+            LanguageModelV4ToolChoice::Required => Some(json!("required")),
+            LanguageModelV4ToolChoice::Tool { tool_name } => {
                 Some(json!({ "type": "function", "function": { "name": tool_name } }))
             }
         },
@@ -213,26 +213,6 @@ pub fn prepare_tools(
 }
 
 // ── Message conversion ──────────────────────────────────────────────────────
-
-/// Convert a `LanguageModelPrompt` to OpenAI `messages` array.
-///
-/// Panics on conversion failure. Production paths use the fallible variant
-/// [`convert_prompt_to_openai_messages_with_mode_fallible`]; this panic
-/// wrapper exists only for integration tests under `tests/`. It is
-/// `#[doc(hidden)]` and `#[deprecated]` so it neither appears on the public
-/// API surface nor can be pulled in by accident (release uses
-/// `panic = "abort"`, so reaching a panic here via FFI would kill the host
-/// process).
-#[doc(hidden)]
-#[deprecated(
-    since = "0.2.1",
-    note = "panics on failure; use convert_prompt_to_openai_messages_with_mode_fallible instead (issue #90 R1)"
-)]
-#[must_use]
-pub fn convert_prompt_to_openai_messages(prompt: &LanguageModelPrompt) -> Vec<Value> {
-    convert_prompt_to_openai_messages_with_mode_fallible(prompt, SystemMessageMode::System)
-        .expect("convert_prompt_to_openai_messages: conversion failed")
-}
 
 /// Convert a `LanguageModelPrompt` to OpenAI `messages` array with a system
 /// message mode.
@@ -251,30 +231,6 @@ pub fn convert_prompt_to_openai_messages_with_mode_fallible(
         result.extend(convert_message_to_openai(msg, system_message_mode)?);
     }
     Ok(result)
-}
-
-/// Convert a `LanguageModelPrompt` to OpenAI `messages` array with a system
-/// message mode.
-///
-/// Panics on conversion failure. Production paths use the fallible variant
-/// [`convert_prompt_to_openai_messages_with_mode_fallible`]; this panic
-/// wrapper exists only for integration tests under `tests/`. It is
-/// `#[doc(hidden)]` and `#[deprecated]` so it neither appears on the public
-/// API surface nor can be pulled in by accident (release uses
-/// `panic = "abort"`, so reaching a panic here via FFI would kill the host
-/// process).
-#[doc(hidden)]
-#[deprecated(
-    since = "0.2.1",
-    note = "panics on failure; use convert_prompt_to_openai_messages_with_mode_fallible instead (issue #90 R1)"
-)]
-#[must_use]
-pub fn convert_prompt_to_openai_messages_with_mode(
-    prompt: &LanguageModelPrompt,
-    system_message_mode: SystemMessageMode,
-) -> Vec<Value> {
-    convert_prompt_to_openai_messages_with_mode_fallible(prompt, system_message_mode)
-        .expect("convert_prompt_to_openai_messages_with_mode: conversion failed")
 }
 
 /// Get the prompt cache breakpoint from provider options.

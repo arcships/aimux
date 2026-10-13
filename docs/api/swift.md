@@ -63,7 +63,7 @@ let result2 = try model.generateText(prompt: #"[{"role":"user","content":"Hello"
 print(result2)
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 The JSON is the AI SDK JSON: camelCase fields, optional fields absent (never
@@ -299,7 +299,8 @@ encoding exactly the JSON of the generated `bindings/node/src/types/*.ts`
 `doubleValue` / `intValue` / `arrayValue` / `objectValue` accessors),
 `ProviderOptions` / `ProviderMetadata` (`[String: [String: JSONValue]]`),
 `Role`, `FinishReasonUnified`, `ReasoningEffort`, `FinishReason`,
-`InputTokenUsage`, `OutputTokenUsage`, `Usage`, `ResponseMetadata`,
+`InputTokenUsage`, `OutputTokenUsage`, `Usage`, `LanguageModelUsage`
+(with `InputTokenDetails` / `OutputTokenDetails`), `ResponseMetadata`,
 `ResponseInfo`, `RequestInfo`, `Warning`, `FunctionTool`, `ProviderTool`,
 `Tool`, `ToolChoice`, `ResponseFormat`, `ContentPart`, `ToolResultOutput`,
 `ToolResultContent`, `MessageContent`, `ModelMessage`, `ModelPrompt`,
@@ -309,7 +310,8 @@ encoding exactly the JSON of the generated `bindings/node/src/types/*.ts`
 `GeneratedFileOutput` wraps it as a `file` / `reasoning-file` part and
 `LanguageModelFile` is the provider-level file), `Source`,
 `GenerateContent` (`RawGenerateContent` / `TextContent`), `GenerateResult`,
-`GenerateTextResult`, `GenerateObjectResult`, `StreamTextResultAggregated`,
+`GenerateTextResult`, `GenerateObjectResult`, `TypedToolResult`,
+`TypedToolError`, `ToolOutputDenied`, `ToolApprovalResponseOutput`,
 `GenerateTextOptions`, `TimeoutConfiguration`, `TextStreamPart`, `RawToolCall`,
 `ToolCallRepairContext`, the OpenAI-shaped `ChatCompletion` /
 `ChatCompletionChunk` (vendor shape, snake_case), and the multimodal results
@@ -340,8 +342,8 @@ Example:
 
 ```swift
 let data = result.data(using: .utf8)!
-let decoded = try JSONDecoder().decode(Usage.self, from: data)
-print(decoded.inputTokens.total ?? 0)
+let decoded = try JSONDecoder().decode(GenerateTextResult.self, from: data)
+print(decoded.usage.inputTokens ?? 0)
 ```
 
 ## Coverage

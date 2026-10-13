@@ -65,8 +65,8 @@ const MAX_POLL_ATTEMPTS: u32 = 6_000;
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://api.gladia.io";
-const API_KEY_ENV_VAR: &str = "GLADIA_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.gladia.io";
+pub(crate) const API_KEY_ENV_VAR: &str = "GLADIA_API_KEY";
 const DEFAULT_NAME: &str = "gladia";
 
 /// Settings of [`create_gladia`].
@@ -233,6 +233,7 @@ fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
             base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
                 .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))
         }
+        AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
 

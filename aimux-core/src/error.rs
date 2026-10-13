@@ -138,12 +138,31 @@ impl RetryError {
     }
 }
 
+/// The text the AI SDK's `getErrorMessage` gives for an attempt error
+/// (`@ai-sdk/provider` `errors/get-error-message.ts`), which the retry
+/// wrapper puts after "Last error:"
+/// (`@ai-sdk/provider-utils` `retry-with-exponential-backoff.ts:97`).
+///
+/// For an API failure that is the provider's message alone: the AI SDK's
+/// `APICallError.message` never carries the HTTP status, so neither does this
+/// text. (JavaScript's `Error.toString()` also prefixes the class name, such as
+/// `AI_APICallError: `; Aimux errors have no JavaScript class name, so only
+/// the message part is reproduced.) Every other variant is its own message.
+fn retry_attempt_message(error: &AiMuxError) -> String {
+    match error {
+        AiMuxError::ApiCall(api) if !api.message.is_empty() => api.message.clone(),
+        AiMuxError::ApiCall(api) => api.to_string(),
+        other => other.to_string(),
+    }
+}
+
 impl std::fmt::Display for RetryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let attempts = self.errors.len();
         let Some(last_error) = self.errors.last() else {
             return f.write_str("Retry failed without recorded errors");
         };
+        let last_error = retry_attempt_message(last_error);
         match self.reason {
             RetryErrorReason::MaxRetriesExceeded => {
                 write!(
@@ -268,6 +287,17 @@ pub enum AiMuxError {
         /// The setting's parameter name, e.g. `"region"`.
         name: String,
     },
+
+    /// The prompt has tool calls without tool results (the AI SDK's
+    /// `MissingToolResultsError`, `ai` `error/missing-tool-result-error.ts`).
+    /// Message verbatim from upstream (`:15-20`).
+    #[error("{}", missing_tool_results_message(.tool_call_ids))]
+    MissingToolResults { tool_call_ids: Vec<String> },
+
+    /// The model response did not satisfy an enforced tool choice (the AI
+    /// SDK's `ToolChoiceViolationError`).
+    #[error("{0}")]
+    ToolChoiceViolation(Box<ToolChoiceViolationError>),
 
     /// The access token has expired (or was invalidated) and must be refreshed
     /// by the caller. RFC-0018 subscription mode: the library maps a 401 from
@@ -394,6 +424,10 @@ pub enum AiMuxErrorWire {
         model_type: String,
         available_providers: Vec<String>,
     },
+    #[serde(rename = "AI_MissingToolResultsError")]
+    MissingToolResults { tool_call_ids: Vec<String> },
+    #[serde(rename = "AI_ToolChoiceViolationError")]
+    ToolChoiceViolation(Box<ToolChoiceViolationError>),
     #[serde(rename = "TimeoutError")]
     Timeout { message: String },
     #[serde(rename = "AbortError")]
@@ -433,7 +467,7 @@ macro_rules! wire_variants {
 }
 
 wire_variants! {
-    newtype: ApiCall, Retry;
+    newtype: ApiCall, Retry, ToolChoiceViolation;
     message: JsonParse, NoOutputGenerated, InvalidResponseData, InvalidArgument,
         InvalidPrompt, TokenExpired, UnsupportedFunctionality, Timeout, Aborted, Other;
     fields: ToolCallNotFoundForApproval { tool_call_id, approval_id },
@@ -443,7 +477,8 @@ wire_variants! {
         LoadApiKey { env_var, description },
         LoadSetting { env_var, name },
         NoSuchModel { model_id, model_type },
-        NoSuchProvider { provider_id, model_id, model_type, available_providers }
+        NoSuchProvider { provider_id, model_id, model_type, available_providers },
+        MissingToolResults { tool_call_ids }
 }
 
 /// `". Did you mean 'a', 'b'?"` for the names in `candidates` closest to
@@ -508,6 +543,48 @@ fn edit_distance(a: &[char], b: &[char]) -> usize {
         }
     }
     rows[a.len()][b.len()]
+}
+
+fn missing_tool_results_message(tool_call_ids: &[String]) -> String {
+    let many = tool_call_ids.len() > 1;
+    format!(
+        "Tool result{} missing for tool call{} {}.",
+        if many { "s are" } else { " is" },
+        if many { "s" } else { "" },
+        tool_call_ids.join(", ")
+    )
+}
+
+/// What [`AiMuxError::ToolChoiceViolation`] carries: the field set of the AI
+/// SDK's `ToolChoiceViolationError` (`ai` `error/tool-choice-violation-error.ts`).
+#[derive(Debug, Clone, Serialize, Deserialize, TS, Error)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[error("{}", tool_choice_violation_message(.tool_choice))]
+pub struct ToolChoiceViolationError {
+    /// The enforced tool choice (`required`, or `tool` with a name) that the
+    /// response did not satisfy.
+    pub tool_choice: crate::tool::LanguageModelV4ToolChoice,
+    /// Why the model finished.
+    pub finish_reason: crate::types::FinishReasonUnified,
+    /// The provider that returned the response.
+    pub provider: String,
+    /// The model that returned the response.
+    pub model_id: String,
+    /// The content the model returned, before tool-call parsing, so a tool
+    /// call returned as text or reasoning can be recovered.
+    pub content: Vec<crate::result::GenerateContent>,
+}
+
+/// Upstream's message (`tool-choice-violation-error.ts:56-58`).
+fn tool_choice_violation_message(tool_choice: &crate::tool::LanguageModelV4ToolChoice) -> String {
+    match tool_choice {
+        crate::tool::LanguageModelV4ToolChoice::Tool { tool_name } => {
+            format!("Model response did not contain a call to the required tool '{tool_name}'.")
+        }
+        _ => "Model response did not contain a tool call even though tool choice was required."
+            .to_owned(),
+    }
 }
 
 fn no_such_tool_availability(available_tools: &Option<Vec<String>>) -> String {
@@ -594,18 +671,23 @@ impl AiMuxError {
             return None;
         };
         let headers = detail.response_headers.as_ref()?;
+        // Rust's float parser accepts `inf`, `Infinity` and `NaN`. A
+        // non-finite value is no hint: `as i64` would saturate it to
+        // `i64::MAX`, and upstream never uses it either (it fails the
+        // `ms < 60000 || ms < backoff` window).
         headers
             .get("retry-after-ms")
             .and_then(|value| value.parse::<f64>().ok())
-            .filter(|value| !value.is_nan())
+            .filter(|value| value.is_finite())
             .map(|value| value as i64)
             .or_else(|| {
                 headers.get("retry-after").and_then(|value| {
                     value
                         .parse::<f64>()
                         .ok()
-                        .filter(|value| !value.is_nan())
-                        .map(|seconds| (seconds * 1_000.0) as i64)
+                        .map(|seconds| seconds * 1_000.0)
+                        .filter(|milliseconds| milliseconds.is_finite())
+                        .map(|milliseconds| milliseconds as i64)
                         .or_else(|| {
                             httpdate::parse_http_date(value).ok().map(|date| {
                                 match date.duration_since(SystemTime::now()) {
@@ -796,6 +878,37 @@ mod tests {
             "Retry failed without recorded errors"
         );
         assert_eq!(serde_json::to_string(&error).unwrap(), json);
+    }
+
+    fn hint_from(name: &str, value: &str) -> Option<i64> {
+        AiMuxError::ApiCall(Box::new(ApiCallError {
+            response_headers: Some(HashMap::from([(name.into(), value.into())])),
+            ..api_error("rate limited")
+        }))
+        .retry_after_hint()
+    }
+
+    /// `str::parse::<f64>` accepts `inf`, `Infinity` and `NaN`; none of them
+    /// is a delay, so the hint is absent instead of `i64::MAX`.
+    #[test]
+    fn non_finite_retry_after_is_no_hint() {
+        for value in ["Infinity", "inf", "-Infinity", "NaN"] {
+            assert_eq!(
+                hint_from("retry-after-ms", value),
+                None,
+                "retry-after-ms: {value}"
+            );
+            assert_eq!(
+                hint_from("retry-after", value),
+                None,
+                "retry-after: {value}"
+            );
+        }
+        // Finite seconds that overflow once converted to milliseconds.
+        assert_eq!(hint_from("retry-after", "1e308"), None);
+        // Finite values keep working.
+        assert_eq!(hint_from("retry-after-ms", "250"), Some(250));
+        assert_eq!(hint_from("retry-after", "1.5"), Some(1_500));
     }
 
     /// A 429 is retryable and carries its hint wherever it lives — the

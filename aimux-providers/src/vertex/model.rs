@@ -80,7 +80,7 @@ impl LanguageModel for VertexModel {
         &self.model_id
     }
 
-    fn supported_urls(&self) -> SupportedUrls {
+    async fn supported_urls(&self) -> SupportedUrls {
         (self.config.supported_urls)(&self.model_id)
     }
 

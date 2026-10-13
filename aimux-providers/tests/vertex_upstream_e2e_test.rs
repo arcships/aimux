@@ -630,6 +630,7 @@ async fn xai_sub_provider_builds_on_openai_compatible() {
     assert!(
         model
             .supported_urls()
+            .await
             .0
             .get("image/*")
             .is_some_and(|patterns| patterns[0].is_match("https://example.com/a.png"))

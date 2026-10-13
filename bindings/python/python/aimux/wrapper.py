@@ -66,8 +66,15 @@ __all__ = [
     "GeneratedFile",
     "LanguageModelFile",
     "Usage",
+    "InputTokenDetails",
+    "OutputTokenDetails",
+    "LanguageModelUsage",
     "FinishReason",
     "ResponseMetadata",
+    "StepResponseMetadata",
+    "StepResponse",
+    "StepModel",
+    "StepResult",
     "ToolCall",
     "RawToolCall",
     "ToolCallRepairContext",
@@ -80,7 +87,7 @@ __all__ = [
     "GenerateTextOptions",
     "GenerateTextResult",
     "GenerateObjectResult",
-    "StreamTextResultAggregated",
+    "GenerateObjectResponse",
     "GenerateResult",
     "GenerateResponseMetadata",
     "RequestInfo",
@@ -181,10 +188,39 @@ class OutputTokenUsage(_Wire):
 
 
 class Usage(_Wire):
-    """Token usage statistics (Rust ``Usage``)."""
+    """Provider-level token usage (Rust ``Usage``), as on :class:`GenerateResult`."""
 
     input_tokens: InputTokenUsage = Field(default_factory=InputTokenUsage)
     output_tokens: OutputTokenUsage = Field(default_factory=OutputTokenUsage)
+    raw: Optional[Dict[str, Any]] = None
+
+
+class InputTokenDetails(_Wire):
+    """Breakdown of the input tokens (Rust ``InputTokenDetails``)."""
+
+    no_cache_tokens: Optional[int] = None
+    cache_read_tokens: Optional[int] = None
+    cache_write_tokens: Optional[int] = None
+
+
+class OutputTokenDetails(_Wire):
+    """Breakdown of the output tokens (Rust ``OutputTokenDetails``)."""
+
+    text_tokens: Optional[int] = None
+    reasoning_tokens: Optional[int] = None
+
+
+class LanguageModelUsage(_Wire):
+    """Token usage of a step or a whole call (Rust ``LanguageModelUsage``,
+    the AI SDK's ``LanguageModelUsage``): flat totals plus detail objects.
+    Unknown counts are ``None``, never zero.
+    """
+
+    input_tokens: Optional[int] = None
+    input_token_details: InputTokenDetails = Field(default_factory=InputTokenDetails)
+    output_tokens: Optional[int] = None
+    output_token_details: OutputTokenDetails = Field(default_factory=OutputTokenDetails)
+    total_tokens: Optional[int] = None
     raw: Optional[Dict[str, Any]] = None
 
 
@@ -208,6 +244,21 @@ class GenerateResponseMetadata(ResponseMetadata):
 
     headers: Optional[Dict[str, str]] = None
     body: Optional[Any] = None
+
+
+class RequestInfo(_Wire):
+    body: Optional[Any] = None
+
+
+class StepResponseMetadata(_Wire):
+    """The response of a step without its messages and body (Rust
+    ``StepResponseMetadata``), carried by the ``finish-step`` stream part.
+    """
+
+    id: str = ""
+    timestamp: str = ""
+    model_id: str = ""
+    headers: Optional[Dict[str, str]] = None
 
 
 class ToolCall(_Meta):
@@ -439,6 +490,41 @@ class _ToolResultPart(_Meta):
     dynamic: Optional[bool] = None
 
 
+class _TypedToolResult(_Meta):
+    """Rust ``TypedToolResult``: a tool result with the input of the call it
+    answers (absent for a deferred provider result)."""
+
+    type: Literal["tool-result"]
+    tool_call_id: str
+    tool_name: str
+    input: Optional[Any] = None
+    output: Any
+    provider_executed: Optional[bool] = None
+    dynamic: Optional[bool] = None
+    preliminary: Optional[bool] = None
+
+
+class _TypedToolError(_Meta):
+    """Rust ``TypedToolError``: a provider-executed tool's error result, or
+    the error that follows an invalid tool call."""
+
+    type: Literal["tool-error"]
+    tool_call_id: str
+    tool_name: str
+    input: Optional[Any] = None
+    error: Any
+    provider_executed: Optional[bool] = None
+    dynamic: Optional[bool] = None
+
+
+class _ToolOutputDenied(_Wire):
+    type: Literal["tool-output-denied"]
+    tool_call_id: str
+    tool_name: str
+    provider_executed: Optional[bool] = None
+    dynamic: Optional[bool] = None
+
+
 class _RawApprovalRequest(_Meta):
     type: Literal["tool-approval-request"]
     approval_id: str
@@ -452,6 +538,15 @@ class _ApprovalRequest(_Wire):
     reason: Optional[str] = None
     is_automatic: Optional[bool] = None
     signature: Optional[str] = None
+
+
+class _ApprovalResponse(_Wire):
+    type: Literal["tool-approval-response"]
+    approval_id: str
+    tool_call: ToolCall
+    approved: bool
+    reason: Optional[str] = None
+    provider_executed: Optional[bool] = None
 
 
 #: A content item in the raw generation result (Rust ``GenerateContent``).
@@ -470,18 +565,20 @@ GenerateContent = Annotated[
     Field(discriminator="type"),
 ]
 
-#: A content item of the user-facing result (Rust ``TextContent``).
+#: A content item of a text result (Rust ``result::ContentPart``).
 TextContent = Annotated[
     Union[
         _Text,
-        _ToolCallPart,
-        _ContentSource,
-        _Reasoning,
-        _FileOutput,
-        _ReasoningFileOutput,
         _Custom,
+        _Reasoning,
+        _ReasoningFileOutput,
+        _ContentSource,
+        _FileOutput,
+        _ToolCallPart,
+        _TypedToolResult,
+        _TypedToolError,
         _ApprovalRequest,
-        _ToolResultPart,
+        _ApprovalResponse,
     ],
     Field(discriminator="type"),
 ]
@@ -515,20 +612,36 @@ class _SPTextEnd(_SPIdMeta):
     type: Literal["text-end"]
 
 
-class _SPStreamStart(_Wire):
-    type: Literal["stream-start"]
+class _SPStart(_Wire):
+    type: Literal["start"]
+
+
+class _SPStartStep(_Wire):
+    type: Literal["start-step"]
+    request: RequestInfo
     warnings: List[Warning]
 
 
-class _SPFinish(_Meta):
-    type: Literal["finish"]
-    finish_reason: FinishReason
-    usage: Usage
-
-
-class _SPFinishStep(_SPFinish):
+class _SPFinishStep(_Meta):
     type: Literal["finish-step"]
-    response: GenerateResponseMetadata
+    response: StepResponseMetadata
+    usage: LanguageModelUsage
+    # Timing of the step (Rust ``StepResultPerformance``). Weak type (Dict).
+    performance: Dict[str, Any] = Field(default_factory=dict)
+    finish_reason: FinishReasonUnified
+    raw_finish_reason: Optional[str] = None
+
+
+class _SPFinish(_Wire):
+    type: Literal["finish"]
+    finish_reason: FinishReasonUnified
+    raw_finish_reason: Optional[str] = None
+    total_usage: LanguageModelUsage
+
+
+class _SPAbort(_Wire):
+    type: Literal["abort"]
+    reason: Optional[str] = None
 
 
 class _SPError(_Wire):
@@ -570,25 +683,32 @@ class _SPRaw(_Wire):
 
 
 #: A single chunk of the stream returned by ``stream_text`` (Rust
-#: ``TextStreamPart``), e.g. ``{"type": "text-delta", "id": ..., "text": ...}``.
+#: ``TextStreamPart``, the AI SDK's full stream), e.g.
+#: ``{"type": "text-delta", "id": ..., "text": ...}``: ``start``, then per
+#: step ``start-step`` … ``finish-step``, then ``finish`` (or ``abort``).
 StreamPart = Annotated[
     Union[
         _SPTextStart,
         _SPTextDelta,
         _SPTextEnd,
-        _SPStreamStart,
+        _SPStart,
+        _SPStartStep,
         _SPFinish,
         _SPFinishStep,
+        _SPAbort,
         _SPError,
         _SPToolInputStart,
         _SPToolInputDelta,
         _SPToolInputEnd,
         _ToolCallPart,
-        _ToolResultPart,
+        _TypedToolResult,
+        _TypedToolError,
+        _ToolOutputDenied,
         _FileOutput,
         _ReasoningFileOutput,
         _Custom,
         _ApprovalRequest,
+        _ApprovalResponse,
         _SPReasoningStart,
         _SPReasoningDelta,
         _SPReasoningEnd,
@@ -849,7 +969,12 @@ class GenerateTextOptions(_Wire):
     top_k: Optional[float] = None
     presence_penalty: Optional[float] = None
     frequency_penalty: Optional[float] = None
-    response_format: Optional[ResponseFormat] = None
+    output: Optional[Dict[str, Any]] = None
+    """What the final text is parsed into (Rust ``Output``), in its wire
+    form: ``{"Text": {}}``, ``{"Object": {"schema": ...}}``,
+    ``{"Array": {"element": ...}}``, ``{"Choice": {"options": [...]}}`` or
+    ``{"Json": {}}``. The parsed value lands on ``GenerateTextResult.output``.
+    """
     seed: Optional[int] = None
     tools: Optional[List[Tool]] = None
     tool_choice: Optional[ToolChoice] = None
@@ -889,12 +1014,8 @@ class GenerateTextOptions(_Wire):
     """
 
 
-class RequestInfo(_Wire):
-    body: Optional[Any] = None
-
-
 class GenerateResult(_Wire):
-    """Raw provider result (Rust ``GenerateResult``), exposed via ``raw``."""
+    """Provider-level result of one model call (Rust ``GenerateResult``)."""
 
     content: List[GenerateContent]
     finish_reason: FinishReason
@@ -905,85 +1026,99 @@ class GenerateResult(_Wire):
     response: Optional[GenerateResponseMetadata] = None
 
 
+class StepResponse(StepResponseMetadata):
+    """The response of a step (Rust ``StepResponse``), with the step's
+    response messages."""
+
+    body: Optional[Any] = None
+    messages: List[ModelMessage] = Field(default_factory=list)
+
+
+class StepModel(_Wire):
+    """The model that ran a step (Rust ``StepModel``)."""
+
+    provider: str
+    model_id: str
+
+
+class StepResult(_Wire):
+    """One model call of a text generation (Rust ``StepResult``, the AI SDK's
+    ``StepResult``)."""
+
+    call_id: str
+    step_number: int
+    model: StepModel
+    content: List[TextContent] = Field(default_factory=list)
+    finish_reason: FinishReasonUnified
+    raw_finish_reason: Optional[str] = None
+    usage: LanguageModelUsage
+    # Timing of the step (Rust ``StepResultPerformance``). Weak type (Dict).
+    performance: Dict[str, Any] = Field(default_factory=dict)
+    warnings: List[Warning] = Field(default_factory=list)
+    request: RequestInfo = Field(default_factory=RequestInfo)
+    response: StepResponse = Field(default_factory=StepResponse)
+    provider_metadata: Optional[Dict[str, Any]] = None
+
+
 class GenerateTextResult(_Wire):
-    """Result of ``generate_text`` (user-facing, Rust ``GenerateTextResult``)."""
+    """Result of ``generate_text`` and of a consumed stream (Rust
+    ``GenerateTextResult``, the AI SDK's ``GenerateTextResult``).
+
+    ``steps`` holds every model call; the other fields are read from the final
+    step, except ``usage``/``total_usage`` (summed over the steps) and
+    ``output`` (the parsed ``options.output``, absent when not parsed).
+    """
 
     content: List[TextContent] = Field(default_factory=list)
     text: str
-    tool_calls: List[ToolCall]
-    finish_reason: FinishReason
-    usage: Usage
-    warnings: List[Warning]
-    raw: GenerateResult
-    # M7: top-level aggregation fields.
-    # reasoning/files use weak types (Dict) — use raw.content for
+    # reasoning/files/tool_results use weak types (Dict) — use content for
     # full typing; response_messages reuses ModelMessage for next-turn prompt.
     reasoning: List[Dict[str, Any]] = Field(default_factory=list)
-    reasoning_text: str = ""
-    sources: List[Source] = Field(default_factory=list)
+    reasoning_text: Optional[str] = None
     files: List[Dict[str, Any]] = Field(default_factory=list)
-    response_messages: List[ModelMessage] = Field(default_factory=list)
-    # M12: raw provider-specific finish reason string (e.g. "stop", "end_turn").
+    sources: List[Source] = Field(default_factory=list)
+    tool_calls: List[ToolCall] = Field(default_factory=list)
+    tool_results: List[Dict[str, Any]] = Field(default_factory=list)
+    finish_reason: FinishReasonUnified
+    # The provider's own finish reason (e.g. "stop", "end_turn").
     raw_finish_reason: Optional[str] = None
-    # Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
-    # raw.provider_metadata for top-level convenience. Weak type (Dict).
-    provider_metadata: Optional[Dict[str, Any]] = None
+    usage: LanguageModelUsage = Field(default_factory=LanguageModelUsage)
+    # Deprecated upstream: equal to ``usage``.
+    total_usage: LanguageModelUsage = Field(default_factory=LanguageModelUsage)
+    warnings: List[Warning] = Field(default_factory=list)
     request: RequestInfo = Field(default_factory=RequestInfo)
-    response: GenerateResponseMetadata = Field(default_factory=GenerateResponseMetadata)
-    # Total token usage across all steps. In single-step mode (aimux's
-    # default), equals usage. Provided for AI SDK parity.
-    total_usage: Usage = Field(default_factory=Usage)
+    response: StepResponse = Field(default_factory=StepResponse)
+    response_messages: List[ModelMessage] = Field(default_factory=list)
+    # Provider-specific metadata (e.g. Anthropic cache info). Weak type (Dict).
+    provider_metadata: Optional[Dict[str, Any]] = None
+    steps: List[StepResult] = Field(default_factory=list)
+    # The parsed ``options.output``; ``None`` when it was not parsed.
+    output: Optional[Any] = None
+
+
+class GenerateObjectResponse(StepResponseMetadata):
+    """The response of a ``generate_object`` call (Rust
+    ``GenerateObjectResponse``)."""
+
+    body: Optional[Any] = None
 
 
 class GenerateObjectResult(_Wire):
-    """Result of ``generate_object`` (user-facing, M12, Rust
-    ``GenerateObjectResult``). The parsed JSON object plus convenience fields
-    from the underlying ``generate_text`` call.
+    """Result of the deprecated ``generate_object`` (Rust
+    ``GenerateObjectResult``, the AI SDK's ``GenerateObjectResult``).
     """
 
     # `object` is an arbitrary JSON value — weak type (Any).
     object: Any
-    finish_reason: FinishReason
-    raw_finish_reason: Optional[str] = None
-    usage: Usage
-    warnings: List[Warning] = Field(default_factory=list)
-    # Concatenated reasoning text (if the model produced reasoning/thinking).
+    # The reasoning text, ``None`` when there is none.
     reasoning: Optional[str] = None
+    finish_reason: FinishReasonUnified
+    usage: LanguageModelUsage = Field(default_factory=LanguageModelUsage)
+    warnings: List[Warning] = Field(default_factory=list)
+    request: RequestInfo = Field(default_factory=RequestInfo)
+    response: GenerateObjectResponse = Field(default_factory=GenerateObjectResponse)
     # Provider-specific metadata (e.g. Anthropic cache info). Weak type (Dict).
     provider_metadata: Optional[Dict[str, Any]] = None
-    # Response metadata (id, timestamp, model_id).
-    response: ResponseMetadata = Field(default_factory=ResponseMetadata)
-    raw: GenerateTextResult
-
-
-class StreamTextResultAggregated(_Wire):
-    """Aggregated result of ``stream_text().consume()`` (M11, Rust
-    ``StreamTextResultAggregated``). Mirrors ``GenerateTextResult``'s
-    user-facing fields (without ``raw``, since streaming has no
-    ``GenerateResult`` equivalent).
-    """
-
-    content: List[TextContent] = Field(default_factory=list)
-    text: str = ""
-    # reasoning/files use weak types (Dict) — same strategy as
-    # GenerateTextResult.
-    reasoning: List[Dict[str, Any]] = Field(default_factory=list)
-    reasoning_text: str = ""
-    tool_calls: List[ToolCall] = Field(default_factory=list)
-    sources: List[Source] = Field(default_factory=list)
-    files: List[Dict[str, Any]] = Field(default_factory=list)
-    finish_reason: FinishReason
-    raw_finish_reason: Optional[str] = None
-    usage: Usage = Usage()
-    # Total token usage across all steps. In single-step mode (aimux's
-    # default), equals usage. Provided for AI SDK parity.
-    total_usage: Usage = Field(default_factory=Usage)
-    warnings: List[Warning] = Field(default_factory=list)
-    # Provider-specific metadata from the Finish chunk. Weak type (Dict).
-    provider_metadata: Optional[Dict[str, Any]] = None
-    request: RequestInfo = Field(default_factory=RequestInfo)
-    response: GenerateResponseMetadata = Field(default_factory=GenerateResponseMetadata)
-    response_messages: List[ModelMessage] = Field(default_factory=list)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1191,7 +1326,8 @@ def generate_text(
 
     Returns:
         A :class:`GenerateTextResult` with ``.text``, ``.tool_calls``,
-        ``.finish_reason``, ``.usage``, ``.warnings`` and ``.raw``.
+        ``.finish_reason``, ``.usage``, ``.warnings``, ``.content`` and
+        ``.steps``.
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)

@@ -16,7 +16,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
@@ -58,12 +58,12 @@ pub(crate) fn function_tool_value(tool: &aimux_core::tool::FunctionTool) -> Valu
 }
 
 /// The wire form of the tool choice.
-pub(crate) fn tool_choice_value(choice: &ToolChoice) -> Value {
+pub(crate) fn tool_choice_value(choice: &LanguageModelV4ToolChoice) -> Value {
     match choice {
-        ToolChoice::Auto => json!("auto"),
-        ToolChoice::None => json!("none"),
-        ToolChoice::Required => json!("required"),
-        ToolChoice::Tool { tool_name } => {
+        LanguageModelV4ToolChoice::Auto => json!("auto"),
+        LanguageModelV4ToolChoice::None => json!("none"),
+        LanguageModelV4ToolChoice::Required => json!("required"),
+        LanguageModelV4ToolChoice::Tool { tool_name } => {
             json!({ "type": "function", "function": { "name": tool_name } })
         }
     }

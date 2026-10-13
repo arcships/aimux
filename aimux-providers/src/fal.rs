@@ -83,8 +83,8 @@ const DOWNLOAD_RETRY_INTERVAL_MS: u64 = 1_000;
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://queue.fal.run";
-const API_KEY_ENV_VAR: &str = "FAL_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://queue.fal.run";
+pub(crate) const API_KEY_ENV_VAR: &str = "FAL_KEY";
 const DEFAULT_NAME: &str = "fal";
 
 /// Settings of [`create_fal`].
@@ -273,6 +273,7 @@ fn audio_input_to_base64(audio: &AudioInput) -> Result<String, AiMuxError> {
             &base64::engine::general_purpose::STANDARD,
             bytes,
         )),
+        AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
 

@@ -352,10 +352,10 @@ func MockReplay(recordingsJsonl string) (*Model, error) {
 	return wrapHandle(&h, C.aimux_mock_replay_new(cJsonl, &h))
 }
 
-// InitProxy sets the global proxy configuration (M6, RFC-0016). Must be called
-// before the first GenerateText / StreamText call; a no-op if the shared HTTP
-// client is already initialised. configJSON is required (pass "{}" for
-// defaults); shape:
+// InitProxy replaces the default transport with one routed by this proxy
+// configuration (M6, RFC-0016). Requests started afterwards use it; calling it
+// again replaces the previous configuration. configJSON is required (pass "{}"
+// for defaults); shape:
 // { "http_url": "...", "https_url": "...", "all_url": "...", "no_proxy": "..." }
 // (all fields optional).
 func InitProxy(configJSON string) error {
@@ -849,9 +849,9 @@ func (m *Model) GenerateText(promptJson, optsJson string) (string, error) {
 // GenerateObject generates a structured JSON object (M12, RFC-0016).
 //
 // Same signature as GenerateText; returns the JSON-serialized
-// GenerateObjectResult. Pass responseFormat: {"type":"json","schema":{...}}
-// via optsJson for schema control; the function applies JSON repair before
-// parsing.
+// GenerateObjectResult. Pass "output": {"Object": {"schema": {...}}} via
+// optsJson to describe the object; the model's text must parse as JSON and
+// match the schema.
 func (m *Model) GenerateObject(promptJson, optsJson string) (string, error) {
 	if err := checkPromptOpts(promptJson, optsJson); err != nil {
 		return "", err
@@ -881,7 +881,7 @@ func (m *Model) GenerateObject(promptJson, optsJson string) (string, error) {
 // finishes).
 //
 // Same signature as GenerateText; returns the JSON-serialized
-// StreamTextResultAggregated.
+// GenerateTextResult.
 func (m *Model) ConsumeStreamText(promptJson, optsJson string) (string, error) {
 	if err := checkPromptOpts(promptJson, optsJson); err != nil {
 		return "", err

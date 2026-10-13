@@ -163,7 +163,7 @@ Model.openai("sk-...", "gpt-4o").use { model ->
 }
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -317,12 +317,12 @@ Decoding is lenient
 | `ContentPart.ToolResult(toolCallId, toolName, output, providerOptions)` | `output` is a `ToolResultOutput`: `text`, `json` (`ToolResultOutput.JsonValue`), `execution-denied`, `error-text`, `error-json`, `content` |
 | `FileBytes` | a base64 string; `Binary` is written as base64 (also audio / image / video file data, image and file part bytes) |
 | `FileData` / `GeneratedFileData` | `type`: `data`, `url`, `reference`, `text` |
-| `GeneratedFile(base64, mediaType, providerMetadata)` | a generated file: `{"base64", "mediaType"}`; `StreamPart.File` / `ReasoningFile(file, providerMetadata)` are `{"type": "file", "file": {...}}` (provider-level `raw.content` keeps `mediaType` and tagged `data`) |
-| `GenerateContent` (provider-level `raw.content`) | `type`: `text`, `tool-call` (`input` is the raw argument text), `source`, `reasoning`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `tool-result` |
-| `StreamPart` (sealed) | `type`: `text-start/delta/end`, `stream-start`, `finish`, `finish-step`, `error`, `tool-input-start/delta/end`, `tool-call`, `tool-result`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `reasoning-start/delta/end`, `source`, `raw` |
+| `GeneratedFile(base64, mediaType, providerMetadata)` | a generated file: `{"base64", "mediaType"}`; `StreamPart.File` / `ReasoningFile(file, providerMetadata)` are `{"type": "file", "file": {...}}` (the provider-level `GenerateResult.content` keeps `mediaType` and tagged `data`) |
+| `GenerateContent` (provider-level `GenerateResult.content`) | `type`: `text`, `tool-call` (`input` is the raw argument text), `source`, `reasoning`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `tool-result` |
+| `StreamPart` (sealed) | `type`: `text-start/delta/end`, `start`, `start-step`, `finish-step`, `finish`, `abort`, `error`, `tool-input-start/delta/end`, `tool-call`, `tool-result`, `tool-error`, `tool-output-denied`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `tool-approval-response`, `reasoning-start/delta/end`, `source`, `raw` |
 | `Warning` (sealed) | `type`: `unsupported`, `compatibility`, `deprecated`, `other` |
-| `GenerateTextResult`, `GenerateObjectResult`, `StreamTextResultAggregated` | `toolCalls`, `finishReason`, `totalUsage`, `responseMessages`, `reasoningText`, `request`, `response` |
-| `GenerateTextOptions` | `maxOutputTokens`, `stopSequences`, `topP`, `providerOptions`, `responseFormat` (`ResponseFormat.Text` / `.Json(schema, name, description)`), `maxRetries`, `includeRawChunks`, `sessionId`, ... |
+| `GenerateTextResult`, `GenerateObjectResult` | `toolCalls`, `finishReason` (`FinishReasonUnified`), `usage` / `totalUsage` (`LanguageModelUsage`), `responseMessages`, `reasoningText`, `request`, `response`, `steps`, `output` |
+| `GenerateTextOptions` | `maxOutputTokens`, `stopSequences`, `topP`, `providerOptions`, `output` (the AI SDK's `output` as JSON, e.g. `{"Object":{"schema":{...}}}`), `maxRetries`, `includeRawChunks`, `sessionId`, ... |
 
 Provider options / metadata are `Map<String, Map<String, JsonElement>>`
 (`ProviderOptions` / `ProviderMetadata`).

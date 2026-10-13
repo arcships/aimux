@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeout;
  * that the typed wrapper:
  * <ol>
  *   <li>returns a {@link Types.GenerateTextResult} object (no manual JSON parsing),</li>
- *   <li>surfaces {@code .text}, {@code .toolCalls[0].toolName}, and {@code .raw.content},</li>
+ *   <li>surfaces {@code .text}, {@code .toolCalls[0].toolName}, and {@code .content},</li>
  *   <li>forwards typed {@code tools} / {@code tool_choice} onto the provider request,</li>
  *   <li>forwards multi-role {@link Types.ModelMessage} conversations,</li>
  *   <li>decodes SSE stream parts into typed {@link Types.StreamPart}s.</li>
@@ -154,6 +154,41 @@ class TypedModelTest {
     // ── Tests ───────────────────────────────────────────────────────────
 
     @Test
+    void streamPartsDecodeToolResultsAndToolErrors() throws Exception {
+        Types.StreamPart result = Types.AimuxJson.MAPPER.readValue(
+            "{\"type\":\"tool-result\",\"tool_call_id\":\"srv-1\",\"tool_name\":\"web_search\",\"input\":{\"q\":\"rust\"},"
+                + "\"output\":[{\"url\":\"https://example.com\"}],\"provider_executed\":true,\"dynamic\":true}",
+            Types.StreamPart.class);
+        assertThat(result).isInstanceOf(Types.StreamPart.ToolResult.class);
+        Types.StreamPart.ToolResult toolResult = (Types.StreamPart.ToolResult) result;
+        assertThat(toolResult.getInput().get("q").asText()).isEqualTo("rust");
+        assertThat(toolResult.getOutput().get(0).get("url").asText()).isEqualTo("https://example.com");
+        assertThat(toolResult.getProviderExecuted()).isTrue();
+
+        Types.StreamPart error = Types.AimuxJson.MAPPER.readValue(
+            "{\"type\":\"tool-error\",\"tool_call_id\":\"call-1\",\"tool_name\":\"weather\",\"input\":{\"city\":\"Paris\"},"
+                + "\"error\":\"no such tool\",\"dynamic\":true}",
+            Types.StreamPart.class);
+        assertThat(error).isInstanceOf(Types.StreamPart.ToolError.class);
+        assertThat(((Types.StreamPart.ToolError) error).getError().asText()).isEqualTo("no such tool");
+        assertThat(((Types.StreamPart.ToolError) error).getProviderExecuted()).isNull();
+
+        Types.StreamPart denied = Types.AimuxJson.MAPPER.readValue(
+            "{\"type\":\"tool-output-denied\",\"tool_call_id\":\"c\",\"tool_name\":\"t\"}", Types.StreamPart.class);
+        assertThat(denied).isEqualTo(new Types.StreamPart.ToolOutputDenied("c", "t", null, null));
+        assertThat(Types.variantTag(denied)).isEqualTo("tool-output-denied");
+        String json = Types.AimuxJson.MAPPER.writeValueAsString(denied);
+        assertThat(Types.AimuxJson.MAPPER.readValue(json, Types.StreamPart.class)).isEqualTo(denied);
+
+        Types.StreamPart response = Types.AimuxJson.MAPPER.readValue(
+            "{\"type\":\"tool-approval-response\",\"approval_id\":\"a\",\"tool_call\":{\"toolCallId\":\"c\",\"toolName\":\"t\","
+                + "\"input\":{}},\"approved\":false}",
+            Types.StreamPart.class);
+        assertThat(response).isInstanceOf(Types.StreamPart.ToolApprovalResponse.class);
+        assertThat(((Types.StreamPart.ToolApprovalResponse) response).getApproved()).isFalse();
+    }
+
+    @Test
     void topLevelToolCallProviderMetadataRoundTrips() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode metadata = mapper.createObjectNode();
@@ -189,8 +224,11 @@ class TypedModelTest {
             // A plain-text response carries no tool calls.
             assertThat(result.getToolCalls()).isEmpty();
 
-            // .raw.content is accessible as a list (no JSON digging required).
-            assertThat(result.getRaw().getContent()).isNotEmpty();
+            // .content is accessible as a list (no JSON digging required).
+            assertThat(result.getContent()).isNotEmpty();
+            // Everything else is derived from the steps.
+            assertThat(result.getSteps()).hasSize(1);
+            assertThat(result.getFinishReason()).isEqualTo(Types.FinishReasonUnified.STOP);
         }
     }
 
@@ -216,8 +254,9 @@ class TypedModelTest {
             // input is a JsonNode (tool arguments); inspect it directly.
             assertThat(call.getInput().get("location").asText()).isEqualTo("Tokyo");
 
-            // .raw.content carries the tool-call variant tag.
-            assertThat(result.getRaw().hasContentVariant("tool-call")).isTrue();
+            // .content carries the tool-call part.
+            assertThat(result.getContent()).anyMatch(part -> "tool-call".equals(part.path("type").asText()));
+            assertThat(result.getFinishReason()).isEqualTo(Types.FinishReasonUnified.TOOL_CALLS);
         }
     }
 
@@ -304,10 +343,15 @@ class TypedModelTest {
                 .as("expected a ToolCall or ToolInputDelta stream part; got: %s", parts)
                 .isTrue();
 
-            // The finish part should also be present, carrying the tool-calls
-            // finish reason.
-            boolean hasFinish = parts.stream().anyMatch(p -> p instanceof Types.StreamPart.Finish);
-            assertThat(hasFinish).isTrue();
+            // The stream opens with Start and StartStep and closes with
+            // FinishStep and Finish, carrying the tool-calls finish reason.
+            assertThat(parts.get(0)).isInstanceOf(Types.StreamPart.Start.class);
+            assertThat(parts.get(1)).isInstanceOf(Types.StreamPart.StartStep.class);
+            assertThat(parts.get(parts.size() - 2)).isInstanceOf(Types.StreamPart.FinishStep.class);
+            Types.StreamPart last = parts.get(parts.size() - 1);
+            assertThat(last).isInstanceOf(Types.StreamPart.Finish.class);
+            assertThat(((Types.StreamPart.Finish) last).getFinishReason())
+                .isEqualTo(Types.FinishReasonUnified.TOOL_CALLS);
         }
     }
 

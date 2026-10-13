@@ -327,23 +327,21 @@ func TestE2E_GenerateTextParsesToolCalls(t *testing.T) {
 		t.Errorf("expected location Tokyo, got %v", input["location"])
 	}
 
-	// raw.content should contain a "tool-call" part.
-	var rawWrap struct {
-		Raw struct {
-			Content []struct {
-				Type string `json:"type"`
-			} `json:"content"`
-		} `json:"raw"`
+	// content should contain a "tool-call" part.
+	var contentWrap struct {
+		Content []struct {
+			Type string `json:"type"`
+		} `json:"content"`
 	}
-	json.Unmarshal([]byte(result), &rawWrap)
+	json.Unmarshal([]byte(result), &contentWrap)
 	hasToolCallPart := false
-	for _, part := range rawWrap.Raw.Content {
+	for _, part := range contentWrap.Content {
 		if part.Type == "tool-call" {
 			hasToolCallPart = true
 		}
 	}
 	if !hasToolCallPart {
-		t.Error("expected raw.content to contain a tool-call part")
+		t.Error("expected content to contain a tool-call part")
 	}
 }
 
@@ -442,6 +440,7 @@ func TestE2E_StreamTextParsesToolCallStreamParts(t *testing.T) {
 		t.Fatal("expected at least one stream part")
 	}
 
+	// The stream opens with Start and StartStep parts.
 	var gotToolCall, gotFinish bool
 	for _, p := range parts {
 		sp, err := ParseStreamPart(p)
@@ -864,10 +863,10 @@ func TestE2E_ResponseTimestampIsToISOString(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
-	if parsed.Response.Timestamp == nil || *parsed.Response.Timestamp != "2025-03-06T13:50:19.000Z" {
+	if parsed.Response.Timestamp != "2025-03-06T13:50:19.000Z" {
 		t.Fatalf("timestamp: %v", parsed.Response.Timestamp)
 	}
-	if _, err := time.Parse(time.RFC3339, *parsed.Response.Timestamp); err != nil {
+	if _, err := time.Parse(time.RFC3339, parsed.Response.Timestamp); err != nil {
 		t.Errorf("not RFC 3339: %v", err)
 	}
 }

@@ -219,7 +219,7 @@ final result = model.generateText('What is Rust?');
 model.close();
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -322,7 +322,7 @@ and writes exactly the shapes of the generated TypeScript types
   `file-base64` / `file-url` / `file-reference` part;
 - a generated file is a `GeneratedFile` (`{base64, mediaType}`, `bytes`
   decodes it); `StreamPartFile` / `StreamPartReasoningFile` carry it as
-  `{type: 'file', file: {...}}`, while the provider-level `raw.content` keeps
+  `{type: 'file', file: {...}}`, while the provider-level `GenerateResult.content` keeps
   a `LanguageModelFile` (`mediaType` and tagged `data`);
 - optional fields are absent, never `null`, except an `unknown` value
   (`body`, `inputSchemaInput`): a JSON `null` there is kept, and `hasBody` /
@@ -362,7 +362,7 @@ so is `registerProviders`. Use `Model.provider` / `createProvider` with a
 `FinishReason`, `ToolCall`, `FunctionTool`, `Tool`, `ToolChoice`,
 `RequestInfo` / `ResponseInfo` / `ResponseMetadata`, `GeneratedFile`,
 `Source`, `ToolResult`, `GenerateContent` (sealed), `GenerateResult`,
-`GenerateTextResult`, `GenerateObjectResult`, `StreamTextResultAggregated`,
+`LanguageModelUsage`, `GenerateTextResult`, `GenerateObjectResult`,
 `GenerateTextOptions`, `ModelMessage`, `StreamPart` (sealed; the
 `TextStreamPart` shapes the stream emits), `FileBytes`, `FileData`,
 `ContentPart` (sealed), `ToolResultOutput`, and `RawToolCall` /

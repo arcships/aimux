@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test
 // Like StructuredE2ETest, these spin up the shared [MockProviderServer]
 // (OpenAI chat-completions wire format) and assert that the typed wrapper:
 //   1. returns a [GenerateTextResult] object (no manual JSON parsing),
-//   2. surfaces `.text`, `.toolCalls[0].toolName`, and `.raw.content`,
+//   2. surfaces `.text`, `.toolCalls[0].toolName`, and `.content`,
 //   3. forwards typed `tools` / `toolChoice` onto the provider request,
 //   4. forwards multi-role [ModelMessage] conversations.
 //
@@ -155,8 +155,11 @@ class TypedModelTest {
             // A plain-text response carries no tool calls.
             assertThat(result.toolCalls).isEmpty()
 
-            // .raw.content is accessible as a list (no JSON digging required).
-            assertThat(result.raw.content).isNotEmpty
+            // .content is accessible as a list (no JSON digging required).
+            assertThat(result.content).isNotEmpty
+            // Everything else is derived from the steps.
+            assertThat(result.steps).hasSize(1)
+            assertThat(result.finishReason).isEqualTo(FinishReasonUnified.STOP)
         }
     }
 
@@ -181,8 +184,9 @@ class TypedModelTest {
             assertThat(call.input.jsonObject["location"]!!.jsonPrimitive.content)
                 .isEqualTo("Tokyo")
 
-            // .raw.content carries the tool-call item (input is the raw argument text).
-            assertThat(result.raw.content.any { it is GenerateContent.ToolCall }).isTrue()
+            // .content carries the tool-call item.
+            assertThat(result.content.any { (it as JsonObject)["type"]?.jsonPrimitive?.content == "tool-call" }).isTrue()
+            assertThat(result.finishReason).isEqualTo(FinishReasonUnified.TOOL_CALLS)
         }
     }
 
@@ -469,9 +473,7 @@ class TypedModelRoundTripTest {
         val url = """{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"}"""
         val result = AimuxJson.decodeFromString(
             GenerateTextResult.serializer(),
-            """{"text":"","toolCalls":[$call],"sources":[$url],"finishReason":{"unified":"stop"},""" +
-                """"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[],""" +
-                """"raw":{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}}""",
+            """{"text":"","toolCalls":[$call],"sources":[$url],"finishReason":"stop","warnings":[]}""",
         )
         val written = AimuxJson.parseToJsonElement(AimuxJson.encodeToString(GenerateTextResult.serializer(), result))
             .jsonObject
@@ -576,6 +578,59 @@ class TypedModelRoundTripTest {
     }
 
     // ── GenerateResult (integration: mixed content variants) ───────────
+
+    @Test
+    fun `stream parts decode the call-level framing`() {
+        val decode = { json: String -> AimuxJson.decodeFromString(StreamPart.serializer(), json) }
+        assertThat(decode("""{"type":"start"}""")).isEqualTo(StreamPart.Start())
+        assertThat(decode("""{"type":"start-step","request":{},"warnings":[]}"""))
+            .isInstanceOf(StreamPart.StartStep::class.java)
+        assertThat(decode("""{"type":"text-delta","id":"t","text":"Hi"}"""))
+            .isEqualTo(StreamPart.TextDelta(id = "t", text = "Hi"))
+        val finish = decode(
+            """{"type":"finish","finishReason":"tool-calls","rawFinishReason":"tool_use",""" +
+                """"totalUsage":{"input_tokens":3,"input_token_details":{"cache_read_tokens":1},""" +
+                """"output_tokens":2,"output_token_details":{},"total_tokens":5}}""",
+        ) as StreamPart.Finish
+        assertThat(finish.finishReason).isEqualTo(FinishReasonUnified.TOOL_CALLS)
+        assertThat(finish.rawFinishReason).isEqualTo("tool_use")
+        assertThat(finish.totalUsage.totalTokens).isEqualTo(5L)
+        assertThat(finish.totalUsage.inputTokenDetails.cacheReadTokens).isEqualTo(1L)
+        assertThat(decode("""{"type":"abort","reason":"stop"}""")).isEqualTo(StreamPart.Abort("stop"))
+        // Encoding writes the type tag back.
+        assertThat(AimuxJson.encodeToString(StreamPart.serializer(), StreamPart.Start()))
+            .isEqualTo("""{"type":"start"}""")
+    }
+
+    @Test
+    fun `stream parts decode tool results and tool errors`() {
+        val decode = { json: String -> AimuxJson.decodeFromString(StreamPart.serializer(), json) }
+        val result = decode(
+            """{"type":"tool-result","tool_call_id":"srv-1","tool_name":"web_search","input":{"q":"rust"},""" +
+                """"output":[{"url":"https://example.com"}],"provider_executed":true,"dynamic":true}""",
+        ) as StreamPart.ToolResult
+        assertThat(result.toolCallId).isEqualTo("srv-1")
+        assertThat(result.input.toString()).isEqualTo("""{"q":"rust"}""")
+        assertThat(result.output.toString()).isEqualTo("""[{"url":"https://example.com"}]""")
+        assertThat(result.providerExecuted).isTrue()
+        val deferred = decode(
+            """{"type":"tool-result","tool_call_id":"srv-0","tool_name":"code_execution","output":{"stdout":"2"},"provider_executed":true}""",
+        ) as StreamPart.ToolResult
+        assertThat(deferred.input).isNull()
+        val error = decode(
+            """{"type":"tool-error","tool_call_id":"call-1","tool_name":"weather","input":{"city":"Paris"},""" +
+                """"error":"no such tool","dynamic":true}""",
+        ) as StreamPart.ToolError
+        assertThat(error.error.toString()).isEqualTo("\"no such tool\"")
+        assertThat(error.providerExecuted).isNull()
+        assertThat(error.dynamic).isTrue()
+        assertThat(decode("""{"type":"tool-output-denied","tool_call_id":"c","tool_name":"t"}"""))
+            .isEqualTo(StreamPart.ToolOutputDenied(toolCallId = "c", toolName = "t"))
+        val response = decode(
+            """{"type":"tool-approval-response","approval_id":"a","tool_call":{"toolCallId":"c","toolName":"t","input":{}},"approved":false}""",
+        ) as StreamPart.ToolApprovalResponse
+        assertThat(response.approved).isFalse()
+    }
 
     @Test
     fun `GenerateResult round-trips with mixed content variants`() {

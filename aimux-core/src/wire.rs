@@ -136,6 +136,10 @@ pub trait TypeTag {
     const TYPE: &'static str;
 }
 
+impl<T: TypeTag + ?Sized> TypeTag for &T {
+    const TYPE: &'static str = T::TYPE;
+}
+
 /// Serializes the borrowed value as a JSON object whose first field is
 /// `"type": T::TYPE`, followed by the value's own fields, as the AI SDK's
 /// objects list them (`{type: 'tool-call', toolCallId, ...}`).

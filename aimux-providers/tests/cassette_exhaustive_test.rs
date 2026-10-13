@@ -254,7 +254,7 @@ async fn replay_single_cassette(cass: &Cassette) -> Result<(), String> {
         match result {
             Ok(r) => {
                 // Got a valid response — verify it has some content
-                if r.text.is_empty() && r.tool_calls.is_empty() {
+                if r.text().is_empty() && r.tool_calls().is_empty() {
                     // Some cassettes return only reasoning or metadata — OK
                 }
             }

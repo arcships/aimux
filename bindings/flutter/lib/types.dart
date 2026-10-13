@@ -154,6 +154,79 @@ class Usage {
       };
 }
 
+/// Input-token breakdown of a [LanguageModelUsage]. Mirrors `InputTokenDetails.ts`.
+class InputTokenDetails {
+  final int? noCacheTokens;
+  final int? cacheReadTokens;
+  final int? cacheWriteTokens;
+  const InputTokenDetails({this.noCacheTokens, this.cacheReadTokens, this.cacheWriteTokens});
+  factory InputTokenDetails.fromJson(Json j) => InputTokenDetails(
+      noCacheTokens: j['no_cache_tokens'] as int?,
+      cacheReadTokens: j['cache_read_tokens'] as int?,
+      cacheWriteTokens: j['cache_write_tokens'] as int?);
+  Json toJson() => {
+        'no_cache_tokens': noCacheTokens,
+        'cache_read_tokens': cacheReadTokens,
+        'cache_write_tokens': cacheWriteTokens,
+      };
+}
+
+/// Output-token breakdown of a [LanguageModelUsage]. Mirrors `OutputTokenDetails.ts`.
+class OutputTokenDetails {
+  final int? textTokens;
+  final int? reasoningTokens;
+  const OutputTokenDetails({this.textTokens, this.reasoningTokens});
+  factory OutputTokenDetails.fromJson(Json j) => OutputTokenDetails(
+      textTokens: j['text_tokens'] as int?,
+      reasoningTokens: j['reasoning_tokens'] as int?);
+  Json toJson() => {
+        'text_tokens': textTokens,
+        'reasoning_tokens': reasoningTokens,
+      };
+}
+
+/// Call-level token usage, the AI SDK's `LanguageModelUsage`: flat counts,
+/// unknown counts `null`. Provider results keep [Usage]. Mirrors
+/// `LanguageModelUsage.ts`.
+class LanguageModelUsage {
+  final int? inputTokens;
+  final InputTokenDetails inputTokenDetails;
+  final int? outputTokens;
+  final OutputTokenDetails outputTokenDetails;
+  final int? totalTokens;
+
+  /// Raw usage information from the provider (opaque JSON).
+  final Json? raw;
+
+  const LanguageModelUsage({
+    this.inputTokens,
+    this.inputTokenDetails = const InputTokenDetails(),
+    this.outputTokens,
+    this.outputTokenDetails = const OutputTokenDetails(),
+    this.totalTokens,
+    this.raw,
+  });
+  factory LanguageModelUsage.fromJson(Json j) => LanguageModelUsage(
+      inputTokens: j['input_tokens'] as int?,
+      inputTokenDetails: j['input_token_details'] == null
+          ? const InputTokenDetails()
+          : InputTokenDetails.fromJson(j['input_token_details'] as Json),
+      outputTokens: j['output_tokens'] as int?,
+      outputTokenDetails: j['output_token_details'] == null
+          ? const OutputTokenDetails()
+          : OutputTokenDetails.fromJson(j['output_token_details'] as Json),
+      totalTokens: j['total_tokens'] as int?,
+      raw: _opt(j['raw']));
+  Json toJson() => {
+        'input_tokens': inputTokens,
+        'input_token_details': inputTokenDetails.toJson(),
+        'output_tokens': outputTokens,
+        'output_token_details': outputTokenDetails.toJson(),
+        'total_tokens': totalTokens,
+        if (raw != null) 'raw': raw,
+      };
+}
+
 /// Why generation stopped. Mirrors `FinishReason.ts`.
 ///
 /// [unified] is the kebab-case unified reason ([FinishReasonUnified]);
@@ -249,8 +322,9 @@ Json _checkTypeTag(Json j, String expected) {
 /// ([ToolCallRepairContext.toolCall]) and the replacement it returns. The
 /// replacement is re-parsed and re-validated against the tool's schema, so
 /// [input] must be the argument text the tool expects (usually a JSON object
-/// literal); returning text that still fails validation leaves the call
-/// invalid, now carrying a `ToolCallRepairError`.
+/// literal); returning text that still fails validation leaves the original
+/// call invalid, now carrying that parse or validation error (not a
+/// `ToolCallRepairError`).
 class RawToolCall {
   final String toolCallId;
   final String toolName;
@@ -1380,220 +1454,170 @@ class GenerateResult {
 // Results / options
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Result of `generate_text`. Mirrors `GenerateTextResult.ts`. The typed-union
-/// fields (`content`, `reasoning`, `files`, `warnings`) stay weak-typed maps.
+/// Result of `generate_text` and of a consumed stream (user-facing), the AI
+/// SDK's `GenerateTextResult`. Mirrors `GenerateTextResult.ts`.
+///
+/// [steps] holds every step (weak type); the other fields are derived from
+/// them: the last step's text, finish reason, reasoning, request, response
+/// and provider metadata, every step's content, files, sources, tool calls,
+/// tool results and warnings, and the usage summed over the steps.
+/// [reasoning], [reasoningText] (`null` when there is none), [totalUsage]
+/// (equal to [usage]), [request], [response] and [providerMetadata] are
+/// deprecated upstream. The typed-union fields (`content`, `reasoning`,
+/// `files`, `toolResults`, `warnings`, `steps`) stay weak-typed maps.
 class GenerateTextResult {
-  final String text;
   final List<Json> content;
-  final List<ToolCall> toolCalls;
-  final FinishReason finishReason;
-  final Usage usage;
-  final List<Json> warnings;
-  final GenerateResult raw;
+  final String text;
   final List<Json> reasoning;
-  final String reasoningText;
-  final List<Source> sources;
+  final String? reasoningText;
   final List<Json> files;
+  final List<Source> sources;
+  final List<ToolCall> toolCalls;
+  final List<Json> toolResults;
+
+  /// The unified finish reason of the last step (`"stop"`, `"length"`,
+  /// `"content-filter"`, `"tool-calls"`, `"error"`, `"other"`).
+  final String finishReason;
+
+  /// Raw provider-specific finish reason string (e.g. "end_turn").
+  final String? rawFinishReason;
+  final LanguageModelUsage usage;
+  final LanguageModelUsage totalUsage;
+  final List<Json> warnings;
+  final RequestInfo request;
+
+  /// The last step's response id, timestamp and model id.
+  final ResponseMetadata response;
 
   /// Assistant messages ready to append to the prompt for the next turn.
   final List<ModelMessage> responseMessages;
-  final String? rawFinishReason;
   final Json? providerMetadata;
-  final RequestInfo request;
-  final ResponseInfo response;
 
-  /// Total token usage across all steps (equals [usage] in single-step mode).
-  final Usage totalUsage;
+  /// Every step of the call. Weak type.
+  final List<Json> steps;
+
+  /// The value parsed by the `output` option, `null` when it was not parsed.
+  final Object? output;
 
   const GenerateTextResult({
-    required this.text,
     this.content = const [],
-    required this.toolCalls,
-    required this.finishReason,
-    required this.usage,
-    this.warnings = const [],
-    required this.raw,
+    required this.text,
     this.reasoning = const [],
-    this.reasoningText = '',
-    this.sources = const [],
+    this.reasoningText,
     this.files = const [],
-    this.responseMessages = const [],
+    this.sources = const [],
+    this.toolCalls = const [],
+    this.toolResults = const [],
+    required this.finishReason,
     this.rawFinishReason,
-    this.providerMetadata,
-    required this.request,
-    required this.response,
+    required this.usage,
     required this.totalUsage,
+    this.warnings = const [],
+    this.request = const RequestInfo(),
+    required this.response,
+    this.responseMessages = const [],
+    this.providerMetadata,
+    this.steps = const [],
+    this.output,
   });
 
   factory GenerateTextResult.fromJson(Json j) => GenerateTextResult(
-        text: j['text'] as String,
         content: _maps(j['content']),
-        toolCalls: _list(j['toolCalls'], ToolCall.fromJson),
-        finishReason: FinishReason.fromJson(j['finishReason'] as Json),
-        usage: Usage.fromJson(j['usage'] as Json),
-        warnings: _maps(j['warnings']),
-        raw: GenerateResult.fromJson(j['raw'] as Json),
+        text: j['text'] as String,
         reasoning: _maps(j['reasoning']),
-        reasoningText: j['reasoningText'] as String,
-        sources: _list(j['sources'], Source.fromJson),
+        reasoningText: j['reasoningText'] as String?,
         files: _maps(j['files']),
-        responseMessages: _list(j['responseMessages'], ModelMessage.fromJson),
+        sources: _list(j['sources'], Source.fromJson),
+        toolCalls: _list(j['toolCalls'], ToolCall.fromJson),
+        toolResults: _maps(j['toolResults']),
+        finishReason: j['finishReason'] as String,
         rawFinishReason: j['rawFinishReason'] as String?,
-        providerMetadata: _opt(j['providerMetadata']),
+        usage: LanguageModelUsage.fromJson(j['usage'] as Json),
+        totalUsage: LanguageModelUsage.fromJson(j['totalUsage'] as Json),
+        warnings: _maps(j['warnings']),
         request: RequestInfo.fromJson(j['request'] as Json),
-        response: ResponseInfo.fromJson(j['response'] as Json),
-        totalUsage: Usage.fromJson(j['totalUsage'] as Json),
+        response: ResponseMetadata.fromJson(j['response'] as Json),
+        responseMessages: _list(j['responseMessages'], ModelMessage.fromJson),
+        providerMetadata: _opt(j['providerMetadata']),
+        steps: _maps(j['steps']),
+        output: j['output'],
       );
 
   Json toJson() => {
         'content': content,
         'text': text,
-        'toolCalls': [for (final c in toolCalls) c.toJson()],
-        'finishReason': finishReason.toJson(),
-        'usage': usage.toJson(),
-        'warnings': warnings,
-        'raw': raw.toJson(),
         'reasoning': reasoning,
-        'reasoningText': reasoningText,
-        'sources': [for (final s in sources) s.toJson()],
+        if (reasoningText != null) 'reasoningText': reasoningText,
         'files': files,
-        'responseMessages': [for (final m in responseMessages) m.toJson()],
+        'sources': [for (final s in sources) s.toJson()],
+        'toolCalls': [for (final c in toolCalls) c.toJson()],
+        'toolResults': toolResults,
+        'finishReason': finishReason,
         if (rawFinishReason != null) 'rawFinishReason': rawFinishReason,
-        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+        'usage': usage.toJson(),
+        'totalUsage': totalUsage.toJson(),
+        'warnings': warnings,
         'request': request.toJson(),
         'response': response.toJson(),
-        'totalUsage': totalUsage.toJson(),
+        'responseMessages': [for (final m in responseMessages) m.toJson()],
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+        'steps': steps,
+        if (output != null) 'output': output,
       };
 }
 
-/// Result of `generate_object`. Mirrors `GenerateObjectResult.ts`; [object] is
-/// an arbitrary JSON value.
+/// Result of `generate_object`, the AI SDK's `GenerateObjectResult`: the
+/// parsed JSON object and the call's reasoning, finish reason, usage,
+/// warnings, request, response and provider metadata. The AI SDK deprecates
+/// `generateObject` for `generateText` with an `output`. Mirrors
+/// `GenerateObjectResult.ts`; [object] is an arbitrary JSON value.
 class GenerateObjectResult {
   final Object? object;
-  final FinishReason finishReason;
-  final String? rawFinishReason;
-  final Usage usage;
-  final List<Json> warnings;
 
   /// Concatenated reasoning text, if the model produced any.
   final String? reasoning;
-  final Json? providerMetadata;
+
+  /// The unified finish reason (`"stop"`, `"length"`, ...).
+  final String finishReason;
+  final LanguageModelUsage usage;
+  final List<Json> warnings;
+  final RequestInfo request;
+
+  /// Response metadata (id, timestamp, modelId).
   final ResponseMetadata response;
-  final GenerateTextResult raw;
+  final Json? providerMetadata;
 
   const GenerateObjectResult({
     this.object,
+    this.reasoning,
     required this.finishReason,
-    this.rawFinishReason,
     required this.usage,
     this.warnings = const [],
-    this.reasoning,
-    this.providerMetadata,
+    this.request = const RequestInfo(),
     required this.response,
-    required this.raw,
+    this.providerMetadata,
   });
 
   factory GenerateObjectResult.fromJson(Json j) => GenerateObjectResult(
         object: j['object'],
-        finishReason: FinishReason.fromJson(j['finishReason'] as Json),
-        rawFinishReason: j['rawFinishReason'] as String?,
-        usage: Usage.fromJson(j['usage'] as Json),
-        warnings: _maps(j['warnings']),
         reasoning: j['reasoning'] as String?,
-        providerMetadata: _opt(j['providerMetadata']),
+        finishReason: j['finishReason'] as String,
+        usage: LanguageModelUsage.fromJson(j['usage'] as Json),
+        warnings: _maps(j['warnings']),
+        request: RequestInfo.fromJson(j['request'] as Json),
         response: ResponseMetadata.fromJson(j['response'] as Json),
-        raw: GenerateTextResult.fromJson(j['raw'] as Json),
+        providerMetadata: _opt(j['providerMetadata']),
       );
 
   Json toJson() => {
         'object': object,
-        'finishReason': finishReason.toJson(),
-        if (rawFinishReason != null) 'rawFinishReason': rawFinishReason,
-        'usage': usage.toJson(),
-        'warnings': warnings,
         if (reasoning != null) 'reasoning': reasoning,
-        if (providerMetadata != null) 'providerMetadata': providerMetadata,
-        'response': response.toJson(),
-        'raw': raw.toJson(),
-      };
-}
-
-/// Aggregated result of `consume_stream_text`. Mirrors
-/// `StreamTextResultAggregated.ts` (the fields of [GenerateTextResult] except
-/// `raw`).
-class StreamTextResultAggregated {
-  final String text;
-  final List<Json> content;
-  final List<Json> reasoning;
-  final String reasoningText;
-  final List<ToolCall> toolCalls;
-  final List<Source> sources;
-  final List<Json> files;
-  final FinishReason finishReason;
-  final String? rawFinishReason;
-  final Usage usage;
-  final Usage totalUsage;
-  final List<Json> warnings;
-  final Json? providerMetadata;
-  final RequestInfo request;
-  final ResponseInfo response;
-  final List<ModelMessage> responseMessages;
-
-  const StreamTextResultAggregated({
-    required this.text,
-    this.content = const [],
-    this.reasoning = const [],
-    this.reasoningText = '',
-    this.toolCalls = const [],
-    this.sources = const [],
-    this.files = const [],
-    required this.finishReason,
-    this.rawFinishReason,
-    required this.usage,
-    required this.totalUsage,
-    this.warnings = const [],
-    this.providerMetadata,
-    required this.request,
-    required this.response,
-    this.responseMessages = const [],
-  });
-
-  factory StreamTextResultAggregated.fromJson(Json j) => StreamTextResultAggregated(
-        text: j['text'] as String,
-        content: _maps(j['content']),
-        reasoning: _maps(j['reasoning']),
-        reasoningText: j['reasoningText'] as String,
-        toolCalls: _list(j['toolCalls'], ToolCall.fromJson),
-        sources: _list(j['sources'], Source.fromJson),
-        files: _maps(j['files']),
-        finishReason: FinishReason.fromJson(j['finishReason'] as Json),
-        rawFinishReason: j['rawFinishReason'] as String?,
-        usage: Usage.fromJson(j['usage'] as Json),
-        totalUsage: Usage.fromJson(j['totalUsage'] as Json),
-        warnings: _maps(j['warnings']),
-        providerMetadata: _opt(j['providerMetadata']),
-        request: RequestInfo.fromJson(j['request'] as Json),
-        response: ResponseInfo.fromJson(j['response'] as Json),
-        responseMessages: _list(j['responseMessages'], ModelMessage.fromJson),
-      );
-
-  Json toJson() => {
-        'content': content,
-        'text': text,
-        'reasoning': reasoning,
-        'reasoningText': reasoningText,
-        'toolCalls': [for (final c in toolCalls) c.toJson()],
-        'sources': [for (final s in sources) s.toJson()],
-        'files': files,
-        'finishReason': finishReason.toJson(),
-        if (rawFinishReason != null) 'rawFinishReason': rawFinishReason,
+        'finishReason': finishReason,
         'usage': usage.toJson(),
-        'totalUsage': totalUsage.toJson(),
         'warnings': warnings,
-        if (providerMetadata != null) 'providerMetadata': providerMetadata,
         'request': request.toJson(),
         'response': response.toJson(),
-        'responseMessages': [for (final m in responseMessages) m.toJson()],
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
 
@@ -1632,8 +1656,11 @@ class GenerateTextOptions {
   final double? presencePenalty;
   final double? frequencyPenalty;
 
-  /// `{"type": "text"}` or `{"type": "json", "schema"?, "name"?, "description"?}`.
-  final Json? responseFormat;
+  /// Structured output, the AI SDK's `output`: for example
+  /// `{'Object': {'schema': {...}}}`, `{'Array': {'element': {...}}}`,
+  /// `{'Choice': {'options': [...]}}` or `{'Json': {}}`. The parsed value is
+  /// [GenerateTextResult.output].
+  final Json? output;
   final int? seed;
   final List<Tool>? tools;
   final ToolChoice? toolChoice;
@@ -1671,7 +1698,7 @@ class GenerateTextOptions {
     this.topK,
     this.presencePenalty,
     this.frequencyPenalty,
-    this.responseFormat,
+    this.output,
     this.seed,
     this.tools,
     this.toolChoice,
@@ -1694,7 +1721,7 @@ class GenerateTextOptions {
         topK: (j['topK'] as num?)?.toDouble(),
         presencePenalty: (j['presencePenalty'] as num?)?.toDouble(),
         frequencyPenalty: (j['frequencyPenalty'] as num?)?.toDouble(),
-        responseFormat: _opt(j['responseFormat']),
+        output: _opt(j['output']),
         seed: j['seed'] as int?,
         tools: _optList(j['tools'], Tool.fromJson),
         toolChoice:
@@ -1721,7 +1748,7 @@ class GenerateTextOptions {
         if (topK != null) 'topK': topK,
         if (presencePenalty != null) 'presencePenalty': presencePenalty,
         if (frequencyPenalty != null) 'frequencyPenalty': frequencyPenalty,
-        if (responseFormat != null) 'responseFormat': responseFormat,
+        if (output != null) 'output': output,
         if (seed != null) 'seed': seed,
         if (tools != null) 'tools': [for (final t in tools!) t.toJson()],
         if (toolChoice != null) 'toolChoice': toolChoice!.toJson(),
@@ -1741,14 +1768,17 @@ class GenerateTextOptions {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// A single part of the stream returned by `stream_text`. Mirrors
-/// `TextStreamPart.ts`: `{"type": "text-delta", "id": ..., "delta": ...}` —
-/// the tag values are `text-start`, `text-delta`, `text-end`, `stream-start`,
-/// `finish`, `finish-step`, `error`, `tool-input-start`, `tool-input-delta`,
-/// `tool-input-end`, `tool-call`, `tool-result`, `file`, `reasoning-file`,
-/// `custom`, `tool-approval-request`, `reasoning-start`, `reasoning-delta`,
-/// `reasoning-end`, `source` and `raw`. A `type` this binding does not model
-/// becomes [StreamPartUnknown] and passes through verbatim. Narrow via
-/// `switch` / `is` / `whereType`.
+/// `TextStreamPart.ts`, the AI SDK's full stream: `start`, then per step
+/// `start-step` … `finish-step`, then `finish` (or `abort`).
+/// `{"type": "text-delta", "id": ..., "text": ...}` — the tag values are
+/// `text-start`, `text-delta`, `text-end`, `start`, `start-step`,
+/// `finish-step`, `finish`, `abort`, `error`, `tool-input-start`,
+/// `tool-input-delta`, `tool-input-end`, `tool-call`, `tool-result`,
+/// `tool-error`, `tool-output-denied`, `file`, `reasoning-file`, `custom`,
+/// `tool-approval-request`, `tool-approval-response`, `reasoning-start`,
+/// `reasoning-delta`, `reasoning-end`, `source` and `raw`. A `type` this
+/// binding does not model becomes [StreamPartUnknown] and passes through
+/// verbatim. Narrow via `switch` / `is` / `whereType`.
 sealed class StreamPart {
   const StreamPart();
 
@@ -1765,16 +1795,22 @@ sealed class StreamPart {
       'text-delta' => StreamPartTextDelta(
           id: id(), text: j['text'] as String, providerMetadata: meta()),
       'text-end' => StreamPartTextEnd(id: id(), providerMetadata: meta()),
-      'stream-start' => StreamPartStreamStart(warnings: _maps(j['warnings'])),
-      'finish' => StreamPartFinish(
-          finishReason: FinishReason.fromJson(j['finishReason'] as Json),
-          usage: Usage.fromJson(j['usage'] as Json),
-          providerMetadata: meta()),
+      'start' => const StreamPartStart(),
+      'start-step' => StreamPartStartStep(
+          request: RequestInfo.fromJson(j['request'] as Json),
+          warnings: _maps(j['warnings'])),
       'finish-step' => StreamPartFinishStep(
-          finishReason: FinishReason.fromJson(j['finishReason'] as Json),
-          usage: Usage.fromJson(j['usage'] as Json),
-          providerMetadata: meta(),
-          response: ResponseInfo.fromJson(j['response'] as Json)),
+          response: ResponseMetadata.fromJson(j['response'] as Json),
+          usage: LanguageModelUsage.fromJson(j['usage'] as Json),
+          performance: _opt(j['performance']),
+          finishReason: j['finishReason'] as String,
+          rawFinishReason: j['rawFinishReason'] as String?,
+          providerMetadata: meta()),
+      'finish' => StreamPartFinish(
+          finishReason: j['finishReason'] as String,
+          rawFinishReason: j['rawFinishReason'] as String?,
+          totalUsage: LanguageModelUsage.fromJson(j['totalUsage'] as Json)),
+      'abort' => StreamPartAbort(reason: j['reason'] as String?),
       'error' => StreamPartError(error: j['error'] as Json),
       'tool-input-start' => StreamPartToolInputStart(
           id: id(),
@@ -1787,7 +1823,9 @@ sealed class StreamPart {
           id: id(), delta: j['delta'] as String, providerMetadata: meta()),
       'tool-input-end' => StreamPartToolInputEnd(id: id(), providerMetadata: meta()),
       'tool-call' => StreamPartToolCall(ToolCall.fromJson(j)),
-      'tool-result' => StreamPartToolResult(ToolResult.fromJson(j)),
+      'tool-result' => StreamPartToolResult.fromJson(j),
+      'tool-error' => StreamPartToolError.fromJson(j),
+      'tool-output-denied' => StreamPartToolOutputDenied.fromJson(j),
       'file' => StreamPartFile(
           file: GeneratedFile.fromJson(j['file'] as Json), providerMetadata: meta()),
       'reasoning-file' => StreamPartReasoningFile(
@@ -1799,6 +1837,7 @@ sealed class StreamPart {
           reason: j['reason'] as String?,
           isAutomatic: j['isAutomatic'] as bool?,
           signature: j['signature'] as String?),
+      'tool-approval-response' => StreamPartToolApprovalResponse.fromJson(j),
       'reasoning-start' => StreamPartReasoningStart(id: id(), providerMetadata: meta()),
       'reasoning-delta' => StreamPartReasoningDelta(
           id: id(), text: j['text'] as String, providerMetadata: meta()),
@@ -1855,50 +1894,75 @@ final class StreamPartTextEnd extends StreamPart {
       };
 }
 
-/// First part — carries the provider's warnings.
-final class StreamPartStreamStart extends StreamPart {
+/// Opens the stream (the AI SDK's `start` part).
+final class StreamPartStart extends StreamPart {
+  const StreamPartStart();
+  @override
+  Json toJson() => {'type': 'start'};
+}
+
+/// Opens a step: the step's request and the provider's call warnings.
+final class StreamPartStartStep extends StreamPart {
+  final RequestInfo request;
   final List<Json> warnings;
-  const StreamPartStreamStart({this.warnings = const []});
+  const StreamPartStartStep({this.request = const RequestInfo(), this.warnings = const []});
   @override
-  Json toJson() => {'type': 'stream-start', 'warnings': warnings};
+  Json toJson() => {'type': 'start-step', 'request': request.toJson(), 'warnings': warnings};
 }
 
-/// Final part — carries usage, finish reason and metadata.
-final class StreamPartFinish extends StreamPart {
-  final FinishReason finishReason;
-  final Usage usage;
-  final Json? providerMetadata;
-  const StreamPartFinish(
-      {required this.finishReason, required this.usage, this.providerMetadata});
-  @override
-  Json toJson() => {
-        'type': 'finish',
-        'finishReason': finishReason.toJson(),
-        'usage': usage.toJson(),
-        if (providerMetadata != null) 'providerMetadata': providerMetadata,
-      };
-}
-
-/// End of one generation step.
+/// Closes a step: its response metadata, usage, performance and finish reason.
 final class StreamPartFinishStep extends StreamPart {
-  final FinishReason finishReason;
-  final Usage usage;
+  final ResponseMetadata response;
+  final LanguageModelUsage usage;
+
+  /// Timing of the step (Rust `StepResultPerformance`). Weak type.
+  final Json? performance;
+  final String finishReason;
+  final String? rawFinishReason;
   final Json? providerMetadata;
-  final ResponseInfo response;
   const StreamPartFinishStep({
-    required this.finishReason,
-    required this.usage,
-    this.providerMetadata,
     required this.response,
+    required this.usage,
+    this.performance,
+    required this.finishReason,
+    this.rawFinishReason,
+    this.providerMetadata,
   });
   @override
   Json toJson() => {
         'type': 'finish-step',
-        'finishReason': finishReason.toJson(),
-        'usage': usage.toJson(),
-        if (providerMetadata != null) 'providerMetadata': providerMetadata,
         'response': response.toJson(),
+        'usage': usage.toJson(),
+        if (performance != null) 'performance': performance,
+        'finishReason': finishReason,
+        if (rawFinishReason != null) 'rawFinishReason': rawFinishReason,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
+}
+
+/// Closes the stream: the last step's finish reason and the usage summed over
+/// the steps.
+final class StreamPartFinish extends StreamPart {
+  final String finishReason;
+  final String? rawFinishReason;
+  final LanguageModelUsage totalUsage;
+  const StreamPartFinish(
+      {required this.finishReason, this.rawFinishReason, required this.totalUsage});
+  @override
+  Json toJson() => {
+        'type': 'finish',
+        'finishReason': finishReason,
+        if (rawFinishReason != null) 'rawFinishReason': rawFinishReason,
+        'totalUsage': totalUsage.toJson(),
+      };
+}
+
+/// Ends a stream whose call was aborted.
+final class StreamPartAbort extends StreamPart {
+  final String? reason;
+  const StreamPartAbort({this.reason});
+  @override
+  Json toJson() => {'type': 'abort', if (reason != null) 'reason': reason};
 }
 
 /// An error mid-stream: an `AiMuxError` object keyed by `name`
@@ -1975,12 +2039,118 @@ final class StreamPartToolCall extends StreamPart {
   Json toJson() => {'type': 'tool-call', ...call.toJson()};
 }
 
-/// A provider-executed tool's result.
+/// A provider-executed tool's result (Rust `TypedToolResult`), with the
+/// input of the call it answers (`null` for a deferred result).
 final class StreamPartToolResult extends StreamPart {
-  final ToolResult result;
-  const StreamPartToolResult(this.result);
+  final String toolCallId;
+  final String toolName;
+  final dynamic input;
+  final dynamic output;
+  final bool? providerExecuted;
+  final Json? providerMetadata;
+  final bool? isDynamic;
+  final bool? preliminary;
+  const StreamPartToolResult({
+    required this.toolCallId,
+    required this.toolName,
+    this.input,
+    required this.output,
+    this.providerExecuted,
+    this.providerMetadata,
+    this.isDynamic,
+    this.preliminary,
+  });
+  factory StreamPartToolResult.fromJson(Json j) => StreamPartToolResult(
+        toolCallId: j['tool_call_id'] as String,
+        toolName: j['tool_name'] as String,
+        input: j['input'],
+        output: j['output'],
+        providerExecuted: j['provider_executed'] as bool?,
+        providerMetadata: _opt(j['provider_metadata']),
+        isDynamic: j['dynamic'] as bool?,
+        preliminary: j['preliminary'] as bool?,
+      );
   @override
-  Json toJson() => {'type': 'tool-result', ...result.toJson()};
+  Json toJson() => {
+        'type': 'tool-result',
+        'tool_call_id': toolCallId,
+        'tool_name': toolName,
+        if (input != null) 'input': input,
+        'output': output,
+        if (providerExecuted != null) 'provider_executed': providerExecuted,
+        if (providerMetadata != null) 'provider_metadata': providerMetadata,
+        if (isDynamic != null) 'dynamic': isDynamic,
+        if (preliminary != null) 'preliminary': preliminary,
+      };
+}
+
+/// A provider-executed tool's error result, or the error that follows an
+/// invalid tool call (Rust `TypedToolError`).
+final class StreamPartToolError extends StreamPart {
+  final String toolCallId;
+  final String toolName;
+  final dynamic input;
+  final dynamic error;
+  final bool? providerExecuted;
+  final Json? providerMetadata;
+  final bool? isDynamic;
+  const StreamPartToolError({
+    required this.toolCallId,
+    required this.toolName,
+    this.input,
+    required this.error,
+    this.providerExecuted,
+    this.providerMetadata,
+    this.isDynamic,
+  });
+  factory StreamPartToolError.fromJson(Json j) => StreamPartToolError(
+        toolCallId: j['tool_call_id'] as String,
+        toolName: j['tool_name'] as String,
+        input: j['input'],
+        error: j['error'],
+        providerExecuted: j['provider_executed'] as bool?,
+        providerMetadata: _opt(j['provider_metadata']),
+        isDynamic: j['dynamic'] as bool?,
+      );
+  @override
+  Json toJson() => {
+        'type': 'tool-error',
+        'tool_call_id': toolCallId,
+        'tool_name': toolName,
+        if (input != null) 'input': input,
+        'error': error,
+        if (providerExecuted != null) 'provider_executed': providerExecuted,
+        if (providerMetadata != null) 'provider_metadata': providerMetadata,
+        if (isDynamic != null) 'dynamic': isDynamic,
+      };
+}
+
+/// A tool whose execution was denied (Rust `ToolOutputDenied`).
+final class StreamPartToolOutputDenied extends StreamPart {
+  final String toolCallId;
+  final String toolName;
+  final bool? providerExecuted;
+  final bool? isDynamic;
+  const StreamPartToolOutputDenied({
+    required this.toolCallId,
+    required this.toolName,
+    this.providerExecuted,
+    this.isDynamic,
+  });
+  factory StreamPartToolOutputDenied.fromJson(Json j) => StreamPartToolOutputDenied(
+        toolCallId: j['tool_call_id'] as String,
+        toolName: j['tool_name'] as String,
+        providerExecuted: j['provider_executed'] as bool?,
+        isDynamic: j['dynamic'] as bool?,
+      );
+  @override
+  Json toJson() => {
+        'type': 'tool-output-denied',
+        'tool_call_id': toolCallId,
+        'tool_name': toolName,
+        if (providerExecuted != null) 'provider_executed': providerExecuted,
+        if (isDynamic != null) 'dynamic': isDynamic,
+      };
 }
 
 /// A file generated by the model: `{"type": "file", "file": GeneratedFile,
@@ -2044,6 +2214,38 @@ final class StreamPartToolApprovalRequest extends StreamPart {
         if (reason != null) 'reason': reason,
         if (isAutomatic != null) 'isAutomatic': isAutomatic,
         if (signature != null) 'signature': signature,
+      };
+}
+
+/// The answer to a tool approval request (Rust `ToolApprovalResponseOutput`).
+final class StreamPartToolApprovalResponse extends StreamPart {
+  final String approvalId;
+  final ToolCall toolCall;
+  final bool approved;
+  final String? reason;
+  final bool? providerExecuted;
+  const StreamPartToolApprovalResponse({
+    required this.approvalId,
+    required this.toolCall,
+    required this.approved,
+    this.reason,
+    this.providerExecuted,
+  });
+  factory StreamPartToolApprovalResponse.fromJson(Json j) => StreamPartToolApprovalResponse(
+        approvalId: j['approval_id'] as String,
+        toolCall: ToolCall.fromJson(j['tool_call'] as Json),
+        approved: j['approved'] as bool,
+        reason: j['reason'] as String?,
+        providerExecuted: j['provider_executed'] as bool?,
+      );
+  @override
+  Json toJson() => {
+        'type': 'tool-approval-response',
+        'approval_id': approvalId,
+        'tool_call': toolCall.toJson(),
+        'approved': approved,
+        if (reason != null) 'reason': reason,
+        if (providerExecuted != null) 'provider_executed': providerExecuted,
       };
 }
 

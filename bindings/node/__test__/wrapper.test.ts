@@ -2,7 +2,7 @@
 //
 // Verifies that `generateText` / `streamText` (from src/index.ts) erase the
 // JSON-string boundary: inputs are typed objects and outputs are parsed into
-// typed objects (`.text`, `.toolCalls`, `.raw.content`, stream `text-delta` /
+// typed objects (`.text`, `.toolCalls`, `.content`, stream `text-delta` /
 // `tool-call`). Uses the same mock-HTTP-server pattern as e2e.test.ts — no real
 // API calls.
 
@@ -137,7 +137,7 @@ const weatherTool: Tool = {
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
-test('wrapper: generateText returns a typed object (.text / .usage / .finishReason / .raw.content)', async (t) => {
+test('wrapper: generateText returns a typed object (.text / .usage / .finishReason / .content)', async (t) => {
   const { server, url } = await startMockServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(OPENAI_CHAT_RESPONSE)
@@ -150,21 +150,22 @@ test('wrapper: generateText returns a typed object (.text / .usage / .finishReas
 
     // Top-level convenience fields are typed and present.
     t.is(result.text, 'Rust is a systems programming language.')
-    t.truthy(result.usage, 'usage is present')
-    t.truthy(result.finishReason, 'finishReason is present')
+    t.is(result.usage.input_tokens, 10)
+    t.is(result.usage.output_tokens, 8)
+    t.is(result.finishReason, 'stop')
     t.true(Array.isArray(result.warnings))
 
-    // raw is the provider-facing GenerateResult; .content is a typed array.
-    t.truthy(result.raw, 'raw provider result is present')
-    t.true(Array.isArray(result.raw.content), 'raw.content is a typed array')
-    const textPart = result.raw.content.find((c) => c.type === 'text')
-    t.truthy(textPart, 'raw.content contains a text content part')
+    // .content is the final step's typed content; .steps holds every step.
+    t.is(result.steps.length, 1)
+    t.true(Array.isArray(result.content), 'content is a typed array')
+    const textPart = result.content.find((c) => c.type === 'text')
+    t.truthy(textPart, 'content contains a text content part')
   } finally {
     await closeServer(server)
   }
 })
 
-test('wrapper: generateText parses toolCalls + raw.content tool-call', async (t) => {
+test('wrapper: generateText parses toolCalls + content tool-call', async (t) => {
   const { server, url } = await startMockServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(OPENAI_TOOL_CALL_RESPONSE)
@@ -183,14 +184,13 @@ test('wrapper: generateText parses toolCalls + raw.content tool-call', async (t)
     t.is(result.toolCalls[0].toolCallId, 'call_abc')
     t.deepEqual(result.toolCalls[0].input, { location: 'Tokyo' })
 
-    // Structured content: raw.content carries the tool-call variant.
-    const tc = result.raw.content.find((c) => c.type === 'tool-call')
-    t.truthy(tc, 'raw.content contains a tool-call content part')
+    // Structured content: content carries the parsed tool-call part.
+    const tc = result.content.find((c) => c.type === 'tool-call')
+    t.truthy(tc, 'content contains a tool-call content part')
     if (tc && tc.type === 'tool-call') {
       t.is(tc.toolName, 'get_weather')
       t.is(tc.toolCallId, 'call_abc')
-      // raw content keeps the provider's argument text (see e2e.test.ts).
-      t.is(tc.input, '{"location":"Tokyo"}')
+      t.deepEqual(tc.input, { location: 'Tokyo' })
     }
   } finally {
     await closeServer(server)
@@ -269,7 +269,7 @@ test('wrapper: streamText yields typed text-delta parts', async (t) => {
   try {
     const model = await deepseek('test-key', 'gpt-4o', url)
     const parts: TextStreamPart[] = []
-    // streamText is an async generator of typed StreamParts — no JSON.parse.
+    // streamText is an async generator of typed TextStreamParts — no JSON.parse.
     for await (const part of streamText(model, 'Say hello')) {
       parts.push(part)
     }
@@ -360,7 +360,7 @@ test('wrapper: streamText yields typed tool-call parts', async (t) => {
     // The stream must contain a tool-related part.
     t.true(
       parts.some((p) => ['tool-call', 'tool-input-start', 'tool-input-delta'].includes(p.type)),
-      'stream contained a tool-related StreamPart',
+      'stream contained a tool-related TextStreamPart',
     )
 
     // A complete tool-call part carries the parsed tool name + input (typed).

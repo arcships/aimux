@@ -4,34 +4,36 @@ use serde_json::{Value, json};
 
 use crate::AiMuxError;
 use crate::decision_model::{
-    DecisionCallOptions, DecisionCapabilities, DecisionModel, DecisionResult, decide,
+    DecideOptions, DecideResult, DecisionCallOptions, DecisionModel, DecisionQuestionType,
+    DecisionResult, DecisionUsage, decide,
 };
 use crate::recording::{OutcomeStatus, Recording, RecordingOperation};
 
+/// What identifies a request: the call options a model receives. Operation
+/// settings (retries, timeout) are not part of it.
 fn key(options: &Value) -> Value {
     json!({
         "state": options["state"],
-        // Missing images in older recordings are equivalent to an empty list.
-        "images": options.get("images").cloned().unwrap_or_else(|| json!([])),
         "questions": options["questions"],
-        "headers": options["headers"],
-        "provider_options": options["provider_options"],
+        "headers": options.get("headers").cloned().unwrap_or(Value::Null),
+        "provider_options": options.get("provider_options").cloned().unwrap_or(Value::Null),
     })
 }
 
 /// Offline replay with exact input matching; transport controls are ignored.
-/// The normalized result is recorded by Core, so replay needs no wire decoder.
+/// The result `decide` returned is recorded by Core, so replay needs no wire
+/// decoder. Recordings hold no capability snapshot: the offline model accepts
+/// every question type, and a request must match a recorded input exactly.
 pub struct MockDecisionReplayModel {
     provider: String,
     model_id: String,
-    capabilities: DecisionCapabilities,
     recordings: Vec<Recording>,
 }
 
 impl MockDecisionReplayModel {
     /// Build from unified recordings, selecting the named provider/model.
     /// # Errors
-    /// Returns an error if no decision or capability snapshot is available.
+    /// Returns an error if no decision recording is available.
     pub fn new(
         provider: impl Into<String>,
         model_id: impl Into<String>,
@@ -39,25 +41,18 @@ impl MockDecisionReplayModel {
     ) -> Result<Self, AiMuxError> {
         let provider = provider.into();
         let model_id = model_id.into();
-        let first = recordings
-            .iter()
-            .find(|rec| {
-                rec.input.operation == RecordingOperation::Decision
-                    && rec.provider.provider == provider
-                    && rec.provider.model_id == model_id
-            })
-            .ok_or_else(|| {
-                AiMuxError::InvalidArgument(
-                    "decision replay: no matching provider/model recording".into(),
-                )
-            })?;
-        let capabilities = first.input.decision_capabilities.clone().ok_or_else(|| {
-            AiMuxError::InvalidArgument("decision replay: missing decision capabilities".into())
-        })?;
+        if !recordings.iter().any(|rec| {
+            rec.input.operation == RecordingOperation::Decision
+                && rec.provider.provider == provider
+                && rec.provider.model_id == model_id
+        }) {
+            return Err(AiMuxError::InvalidArgument(
+                "decision replay: no matching provider/model recording".into(),
+            ));
+        }
         Ok(Self {
             provider,
             model_id,
-            capabilities,
             recordings,
         })
     }
@@ -97,8 +92,8 @@ impl DecisionModel for MockDecisionReplayModel {
     fn model_id(&self) -> &str {
         &self.model_id
     }
-    fn capabilities(&self) -> DecisionCapabilities {
-        self.capabilities.clone()
+    fn supported_question_types(&self) -> &[DecisionQuestionType] {
+        DecisionQuestionType::ALL
     }
     async fn do_decide(&self, options: &DecisionCallOptions) -> Result<DecisionResult, AiMuxError> {
         let requested =
@@ -133,13 +128,22 @@ impl DecisionModel for MockDecisionReplayModel {
                     )
                 }));
         }
-        let result: DecisionResult =
+        let recorded: DecideResult =
             serde_json::from_value(rec.outcome.decision_result.clone().ok_or_else(|| {
-                AiMuxError::InvalidResponseData("decision replay: missing normalized result".into())
+                AiMuxError::InvalidResponseData("decision replay: missing recorded result".into())
             })?)
             .map_err(|e| AiMuxError::InvalidResponseData(format!("decision replay result: {e}")))?;
-        result.validate(options)?;
-        Ok(result)
+        Ok(DecisionResult {
+            answers: recorded.answers,
+            rounding: recorded.rounding,
+            usage: Some(DecisionUsage {
+                input_tokens: recorded.usage.input_tokens,
+                output_tokens: recorded.usage.output_tokens,
+            }),
+            warnings: recorded.warnings,
+            provider_metadata: recorded.provider_metadata,
+            response: Some(recorded.response),
+        })
     }
 }
 
@@ -150,13 +154,13 @@ impl DecisionModel for MockDecisionReplayModel {
 pub async fn replay_decision_with_model(
     recording: &Recording,
     model: &dyn DecisionModel,
-) -> Result<DecisionResult, AiMuxError> {
+) -> Result<DecideResult, AiMuxError> {
     if recording.input.operation != RecordingOperation::Decision {
         return Err(AiMuxError::InvalidArgument(
             "decision replay requires a decision recording".into(),
         ));
     }
-    let options = serde_json::from_value(recording.input.options.clone())
+    let options: DecideOptions = serde_json::from_value(recording.input.options.clone())
         .map_err(|e| AiMuxError::JsonParse(e.to_string()))?;
     decide(model, options).await
 }

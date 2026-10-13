@@ -335,7 +335,7 @@ high-level range. Any fallible call can additionally return 200..206.
 | `aimux_get_model_specs(source_url, char **out_specs_json)` | [AiMuxError] Community catalogue (`source_url` may be NULL) |
 | `aimux_generate_text(handle, prompt_json, opts_json, char **out_json)` | [AiMuxError] Non-streaming (`GenerateTextResult` JSON) |
 | `aimux_generate_object(handle, prompt_json, opts_json, char **out_json)` | [AiMuxError] `GenerateObjectResult` JSON |
-| `aimux_consume_stream_text(handle, prompt_json, opts_json, char **out_json)` | [AiMuxError] Aggregated stream result JSON |
+| `aimux_consume_stream_text(handle, prompt_json, opts_json, char **out_json)` | [AiMuxError] The consumed stream's `GenerateTextResult` JSON |
 | `aimux_stream_text(handle, prompt_json, opts_json, on_part, on_done, stream_ctx)` | [AiMuxError] Streaming (push callbacks); no out-param |
 | `aimux_stream_text_with_abort(handle, abort_handle, prompt_json, opts_json, on_part, on_done, stream_ctx)` | [AiMuxError] Cancelable stream (`AIMUX_E_ABORTED` on abort) |
 | `aimux_generate_text_as_openai(handle, prompt_json, opts_json, char **out_json)` | [AiMuxError] `ChatCompletion` JSON (RFC-0026) |
@@ -382,7 +382,7 @@ its error becomes `ToolCallRepair { original_error, cause }`. `failed` reports
 |------|------|
 | `aimux_tool_call_repair_context(tool_call_json, prompt_json, opts_json, char **out_json)` | [AiMuxError] `{toolCall, error, inputSchema, tools, messages, instructions}` — the AI SDK `repairToolCall` argument, its `toolCall` tagged `"type":"tool-call"` — **or the JSON literal `null`** |
 | `aimux_apply_tool_call_repair(tool_call_json, opts_json, reply_json, char **out_json)` | [AiMuxError] Resolve one call; writes the resulting `ToolCall` JSON, tagged `"type":"tool-call"` like a result's `toolCalls[]` entry |
-| `aimux_apply_tool_call_repair_to_result(result_json, opts_json, tool_call_id, reply_json, char **out_json)` | [AiMuxError] Patch a `GenerateTextResult` / `GenerateObjectResult` / `StreamTextResultAggregated`: rewrites `tool_calls` **and** the matching `response_messages` tool-call part (its `tool_call_id` included — a repair may rename the call) |
+| `aimux_apply_tool_call_repair_to_result(result_json, opts_json, tool_call_id, reply_json, char **out_json)` | [AiMuxError] Patch a `GenerateTextResult` (of `aimux_generate_text` or `aimux_consume_stream_text`): rewrites the call in the steps' content **and** the matching response-message tool-call part (its `toolCallId` included — a repair may rename the call); the top-level `toolCalls` and `responseMessages` follow |
 
 **`opts_json` with no `tools` is not an error for the context call**: it writes
 the JSON literal `null`, which means "this call is not repairable — skip it".
@@ -453,6 +453,7 @@ A pull timeout is a **state**, not an error.
 | Function | Description |
 |------|------|
 | `void aimux_drop_handle(handle)` | Free a handle (`0` is a no-op) |
+| `void aimux_drop_handle_ptr(void *handle)` | Same, with the handle cast to a pointer: the `void (*)(void *)` callback a finalizer (Dart `NativeFinalizer`) needs. Never call `aimux_drop_handle` through that signature |
 | `void aimux_free_string(ptr)` | Free a result / getter string (`NULL` is safe) |
 | `void aimux_error_free(err)` | Release a returned error (`NULL` is safe); never `aimux_drop_handle` / `aimux_free_string` |
 | `aimux_error_code` / `aimux_error_message` / `aimux_error_*` | Read an error (see aimux-error.h) |
@@ -486,7 +487,7 @@ Pass `"session_id": "..."` inside `opts_json` of generate/stream to group a call
 |------|------|
 | `aimux_init_logging(level)` | [C ABI] `"off"…"trace"`, NULL = `"warn"` |
 | `aimux_register_providers(config_json)` | [AiMuxError] External OpenAI-compatible providers (RFC-0020) |
-| `aimux_init_proxy(config_json)` | [AiMuxError] Global proxy (before first call) |
+| `aimux_init_proxy(config_json)` | [AiMuxError] Replace the default transport's proxy (later requests) |
 | `aimux_router_new(const uint64_t *handles, size_t len, config_json, uint64_t *out_handle)` | [AiMuxError] RouterModel (RFC-0021) |
 | `aimux_moa_new(const uint64_t *reference_handles, size_t ref_len, aggregator, config_json, uint64_t *out_handle)` | [AiMuxError] MoaModel (RFC-0022) |
 

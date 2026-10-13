@@ -67,9 +67,9 @@ class TypedModel {
   /// Generate a structured JSON object from a string [prompt] (M12).
   ///
   /// Same signature as [generateText]; returns a typed
-  /// [GenerateObjectResult]. Pass `responseFormat: {"type": "json", ...}`
-  /// via [options] for schema control; the engine applies JSON repair
-  /// before parsing.
+  /// [GenerateObjectResult]. Pass `output: {'Object': {'schema': ...}}` via
+  /// [options] to describe the object; the model's text must parse as JSON
+  /// and match the schema.
   GenerateObjectResult generateObject(
     String prompt, [
     GenerateTextOptions? options,
@@ -95,24 +95,24 @@ class TypedModel {
 
   /// Consume a stream to completion from a string [prompt] and return the
   /// aggregated result (M11). Synchronous (blocks until the stream finishes).
-  StreamTextResultAggregated consumeStreamText(
+  GenerateTextResult consumeStreamText(
     String prompt, [
     GenerateTextOptions? options,
   ]) {
     final result = _raw.consumeStreamText(prompt, options?.toJson());
-    return StreamTextResultAggregated.fromJson(
+    return GenerateTextResult.fromJson(
         repairResultToolCalls(result, prompt, options));
   }
 
   /// Consume a stream to completion from a list of typed [ModelMessage]s
   /// and return the aggregated result (M11).
-  StreamTextResultAggregated consumeStreamTextMessages(
+  GenerateTextResult consumeStreamTextMessages(
     List<ModelMessage> messages, [
     GenerateTextOptions? options,
   ]) {
     final prompt = messages.map((m) => m.toJson()).toList();
     final result = _raw.consumeStreamText(prompt, options?.toJson());
-    return StreamTextResultAggregated.fromJson(
+    return GenerateTextResult.fromJson(
         repairResultToolCalls(result, prompt, options));
   }
 

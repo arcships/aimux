@@ -207,7 +207,7 @@ if err != nil {
 fmt.Println(result)
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -398,7 +398,8 @@ if err != nil {
 
 ## Video Generation
 
-Video generation typically returns a URL (not binary).
+Most video models return a URL; `Generate` downloads it, as the AI SDK's
+`generateVideo` does, and returns the video's bytes.
 
 ```go
 prompt := "A cat playing piano"
@@ -427,7 +428,7 @@ result, err := aimux.ParseVideoResult(resultJSON)
 if err != nil {
     log.Fatal(err)
 }
-// result.Videos[0].URL — video URL (Type "url"; "base64"/"binary" carry Data)
+// result.Videos[0].Data — the downloaded video (Type "binary": a video returned as a URL is downloaded)
 ```
 
 ## Reranking
@@ -581,8 +582,9 @@ Typed structs live in `bindings/go/types.go` (text) and
 `bindings/go/multimodal_types.go` (multimodal): `GenerateTextOptions`,
 `GenerateTextResult`, `StreamPart`, `ModelMessage`, `Tool`, `ToolChoice`
 (with helpers `ToolChoiceAuto()` / `ToolChoiceNone()`), `ToolCall`,
-`ToolResult`, `Usage`, `FinishReason`, `Role`, `MessageContent`, `ContentPart`,
-`ResponseFormat`, `ReasoningEffort`, `Warning`, `GenerateResult`,
+`ToolResult`, `LanguageModelUsage`, `StepResult`, `FinishReasonUnified`,
+`Usage`, `FinishReason`, `Role`, `MessageContent`, `ContentPart`,
+`ReasoningEffort`, `Warning`, `GenerateResult`, `GenerateObjectResult`,
 `RawToolCall`, `ToolCallRepairContext`, `RepairToolCallFunc`, `GeneratedFile`, plus
 `EmbeddingCallOptions/Result`, `SpeechCallOptions/Result`,
 `ImageCallOptions/Result`, `TranscriptionCallOptions/Result`,
@@ -615,7 +617,7 @@ A generated file (`GenerateTextResult.Files`) is a `GeneratedFile`, the AI
 SDK's `{"base64", "mediaType", "providerMetadata"?}`; `Bytes()` decodes it.
 A `file` / `reasoning-file` content or stream part wraps it as
 `{"type": "file", "file": {...}, "providerMetadata"?}`; the provider-level
-`raw.content` keeps `{"type": "file", "mediaType", "data": {"type": "data" | "url", ...}}`.
+`GenerateResult.Content` keeps `{"type": "file", "mediaType", "data": {"type": "data" | "url", ...}}`.
 
 A tool result goes back to the model as a `tool-result` content part in a
 `tool` message; its `output` is a union:

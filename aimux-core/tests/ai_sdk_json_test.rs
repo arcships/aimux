@@ -6,26 +6,26 @@
 //! test cites the upstream type it pins (`ai@7.0.127`,
 //! `@ai-sdk/provider@4.0.21`, `@ai-sdk/provider-utils@5.0.53`).
 
-use aimux_core::content::{ContentPart, FilePartData};
-use aimux_core::decision_model::DecisionImage;
+use aimux_core::content::{AssistantContentPart, FilePartData, UserContentPart};
 use aimux_core::error::ApiCallError;
 use aimux_core::generate::GenerateTextResult;
 use aimux_core::image_model::ImageOutputs;
 use aimux_core::language_model_message::{
     convert_file_part_data, convert_to_language_model_prompt,
 };
-use aimux_core::message::{MessageContent, ModelMessage, Role};
+use aimux_core::message::ModelMessage;
 use aimux_core::result::{
-    GenerateContent, GeneratedFile, GeneratedFileOutput, LanguageModelFile,
-    StreamTextResultAggregated, TextContent, ToolApprovalRequestOutput,
+    ContentPart, GenerateContent, GeneratedFile, GeneratedFileOutput, LanguageModelFile,
+    ToolApprovalRequestOutput,
 };
 use aimux_core::shared::{FileBytes, FileData, GeneratedFileData, RequestInfo, ResponseInfo};
 use aimux_core::speech_model::AudioData;
+use aimux_core::step_result::{StepModel, StepResponse, StepResult, StepResultPerformance};
 use aimux_core::stream_part::{StreamPart, TextStreamPart};
 use aimux_core::timestamp::Timestamp;
 use aimux_core::tool::ToolCall;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
+    FinishReasonUnified, LanguageModelUsage, ProviderMetadata, ResponseMetadata,
 };
 use aimux_core::video_model::VideoData;
 use serde::Serialize;
@@ -46,14 +46,14 @@ fn assert_json<T: Serialize + DeserializeOwned>(value: &T, wire: Value) -> T {
 /// array of numbers.
 #[test]
 fn prompt_bytes_are_base64_strings() {
-    let image = ContentPart::image(vec![137, 80, 78, 71], "image/png");
+    let image = UserContentPart::image(vec![137, 80, 78, 71], "image/png");
     let back = assert_json(
         &image,
         json!({ "type": "image", "image": "iVBORw==", "mediaType": "image/png" }),
     );
     assert_eq!(back, image);
 
-    let file = ContentPart::file(vec![0, 1, 2, 250, 255], "application/pdf");
+    let file = UserContentPart::file(vec![0, 1, 2, 250, 255], "application/pdf");
     let back = assert_json(
         &file,
         json!({
@@ -66,7 +66,7 @@ fn prompt_bytes_are_base64_strings() {
 
     // An array of numbers is not the AI SDK's JSON for bytes.
     assert!(
-        serde_json::from_value::<ContentPart>(
+        serde_json::from_value::<UserContentPart>(
             json!({ "type": "image", "image": [1, 2], "mediaType": "image/png" })
         )
         .is_err()
@@ -136,30 +136,6 @@ fn model_result_bytes_are_base64_strings() {
     ));
 }
 
-/// A decision image is an inline image like `ImagePart.image` (`DataContent`,
-/// `provider-utils` `types/content-part.ts:42`): its bytes are one base64
-/// string in the JSON (`uint8-utils.ts:12-23`), never an array of numbers.
-#[test]
-fn decision_image_bytes_are_a_base64_string() {
-    let image = DecisionImage {
-        data: FileBytes::Binary(vec![137, 80, 78, 71]),
-        media_type: "image/png".into(),
-        detail: Some("low".into()),
-    };
-    let back: DecisionImage = assert_json(
-        &image,
-        json!({ "data": "iVBORw==", "media_type": "image/png", "detail": "low" }),
-    );
-    assert_eq!(back.data, FileBytes::Base64("iVBORw==".into()));
-    assert_eq!(back.data, image.data);
-    assert!(
-        serde_json::from_value::<DecisionImage>(
-            json!({ "data": [137, 80, 78, 71], "media_type": "image/png" })
-        )
-        .is_err()
-    );
-}
-
 // ── null and undefined (#232 C34) ───────────────────────────────────────────
 
 /// `unknown` fields keep `null` apart from a missing value, as the AI SDK's
@@ -197,10 +173,10 @@ fn unknown_fields_keep_null_apart_from_missing() {
         "toolCallId": "c1",
         "inputSchemaInput": null,
     });
-    let part: ContentPart = assert_json_back(approval);
+    let part: AssistantContentPart = assert_json_back(approval);
     assert!(matches!(
         part,
-        ContentPart::ToolApprovalRequest {
+        AssistantContentPart::ToolApprovalRequest {
             input_schema_input: Some(serde_json::Value::Null),
             ..
         }
@@ -224,10 +200,15 @@ fn file_parts_are_the_ai_sdk_file_part() {
         json!({ "type": "file", "data": "aGk=", "mediaType": "text/plain" }),
         json!({ "type": "file", "data": "https://example.com/a.pdf", "mediaType": "application/pdf" }),
         json!({ "type": "file", "data": { "openai": "file-abc" }, "mediaType": "application/pdf" }),
+    ] {
+        let _: UserContentPart = assert_json_back(wire.clone());
+        let _: AssistantContentPart = assert_json_back(wire);
+    }
+    for wire in [
         json!({ "type": "reasoning-file", "data": "aGk=", "mediaType": "image/png" }),
         json!({ "type": "reasoning-file", "data": { "type": "url", "url": "https://example.com/a.png" }, "mediaType": "image/png" }),
     ] {
-        let _: ContentPart = assert_json_back(wire);
+        let _: AssistantContentPart = assert_json_back(wire);
     }
     for removed in ["file-base64", "file-url", "file-reference"] {
         let wire = json!({
@@ -238,18 +219,22 @@ fn file_parts_are_the_ai_sdk_file_part() {
             "mediaType": "application/pdf",
         });
         assert!(
-            serde_json::from_value::<ContentPart>(wire).is_err(),
+            serde_json::from_value::<UserContentPart>(wire.clone()).is_err(),
+            "{removed}"
+        );
+        assert!(
+            serde_json::from_value::<AssistantContentPart>(wire).is_err(),
             "{removed}"
         );
     }
 
     // The constructors write the tagged form the AI SDK documents.
     assert_eq!(
-        serde_json::to_value(ContentPart::file_base64("aGk=", "text/plain")).unwrap(),
+        serde_json::to_value(UserContentPart::file_base64("aGk=", "text/plain")).unwrap(),
         json!({ "type": "file", "data": { "type": "data", "data": "aGk=" }, "mediaType": "text/plain" })
     );
     assert_eq!(
-        serde_json::to_value(ContentPart::file_url(
+        serde_json::to_value(UserContentPart::file_url(
             "https://example.com/a.pdf",
             "application/pdf"
         ))
@@ -260,7 +245,11 @@ fn file_parts_are_the_ai_sdk_file_part() {
         .into_iter()
         .collect();
     assert_eq!(
-        serde_json::to_value(ContentPart::file_reference("application/pdf", reference)).unwrap(),
+        serde_json::to_value(UserContentPart::file_reference(
+            "application/pdf",
+            reference
+        ))
+        .unwrap(),
         json!({ "type": "file", "data": { "type": "reference", "reference": { "openai": "file-abc" } }, "mediaType": "application/pdf" })
     );
 }
@@ -330,15 +319,13 @@ fn file_part_data_converts_as_the_ai_sdk_does() {
 
     // In the prompt, the data URL's media type wins over the part's.
     let prompt = convert_to_language_model_prompt(
-        &[ModelMessage {
-            role: Role::User,
-            content: MessageContent::Parts(vec![ContentPart::File {
-                data: FilePartData::String("data:image/png;base64,iVBORw==".into()),
-                media_type: "image".into(),
-                filename: None,
-                provider_options: None,
-            }]),
-        }],
+        &[ModelMessage::user_parts(vec![UserContentPart::File {
+            data: FilePartData::String("data:image/png;base64,iVBORw==".into()),
+            media_type: "image".into(),
+            filename: None,
+            provider_options: None,
+        }])],
+        None,
         None,
     )
     .unwrap();
@@ -394,9 +381,15 @@ fn generated_files_are_base64_and_media_type() {
             "providerMetadata": { "google": { "thoughtSignature": "sig" } },
         })
     };
-    assert_json(&TextContent::File(output.clone()), wire("file"));
     assert_json(
-        &TextContent::ReasoningFile(output.clone()),
+        &ContentPart::File {
+            file: output.file.clone(),
+            provider_metadata: output.provider_metadata.clone(),
+        },
+        wire("file"),
+    );
+    assert_json(
+        &ContentPart::ReasoningFile(output.clone()),
         wire("reasoning-file"),
     );
     assert_json(&TextStreamPart::File(output.clone()), wire("file"));
@@ -551,21 +544,34 @@ fn standalone_tool_calls_and_sources_are_tagged() {
         "mediaType": "application/pdf",
         "title": "Doc",
     });
-    let finish = serde_json::to_value(FinishReason {
-        unified: FinishReasonUnified::ToolCalls,
-        raw: None,
-    })
-    .unwrap();
-    let usage = serde_json::to_value(Usage::default()).unwrap();
-
+    // A one-step result whose content holds the call and the sources.
+    let step = StepResult {
+        call_id: "call".into(),
+        step_number: 0,
+        model: StepModel {
+            provider: "test".into(),
+            model_id: "model".into(),
+        },
+        content: serde_json::from_value(json!([call, url, document])).unwrap(),
+        finish_reason: FinishReasonUnified::ToolCalls,
+        raw_finish_reason: None,
+        usage: LanguageModelUsage::default(),
+        performance: StepResultPerformance::default(),
+        warnings: Vec::new(),
+        request: RequestInfo::default(),
+        response: StepResponse {
+            id: "response".into(),
+            timestamp: Timestamp::from_unix_millis(0).unwrap(),
+            model_id: "model".into(),
+            headers: None,
+            body: None,
+            messages: Vec::new(),
+        },
+        provider_metadata: None,
+    };
     let generated: GenerateTextResult = serde_json::from_value(json!({
-        "text": "",
-        "toolCalls": [call],
-        "finishReason": finish,
-        "usage": usage,
-        "warnings": [],
-        "raw": { "content": [], "finishReason": finish, "usage": usage, "warnings": [] },
-        "sources": [url, document],
+        "steps": [step],
+        "totalUsage": LanguageModelUsage::default(),
     }))
     .unwrap();
     let written = serde_json::to_value(&generated).unwrap();
@@ -582,26 +588,15 @@ fn standalone_tool_calls_and_sources_are_tagged() {
         "{text}"
     );
 
-    let streamed: StreamTextResultAggregated = serde_json::from_value(json!({
-        "text": "",
-        "finishReason": finish,
-        "toolCalls": [call],
-        "sources": [document],
-    }))
-    .unwrap();
-    let written = serde_json::to_value(&streamed).unwrap();
-    assert_eq!(written["toolCalls"], json!([call]));
-    assert_eq!(written["sources"], json!([document]));
-
     // An approval request's call is tagged, standalone and in `content`.
     assert_json_back::<ToolApprovalRequestOutput>(json!({ "approvalId": "a1", "toolCall": call }));
-    assert_json_back::<TextContent>(json!({
+    assert_json_back::<ContentPart>(json!({
         "type": "tool-approval-request",
         "approvalId": "a1",
         "toolCall": call,
     }));
     // In `content` the union writes a tool call's tag, once.
-    let part = assert_json_back::<TextContent>(call.clone());
+    let part = assert_json_back::<ContentPart>(call.clone());
     assert_eq!(
         serde_json::to_string(&part)
             .unwrap()
@@ -624,14 +619,6 @@ fn standalone_tool_calls_and_sources_are_tagged() {
         serde_json::from_value::<ToolApprovalRequestOutput>(
             json!({ "approvalId": "a1", "toolCall": mistagged })
         )
-        .is_err()
-    );
-    assert!(
-        serde_json::from_value::<StreamTextResultAggregated>(json!({
-            "text": "",
-            "finishReason": finish,
-            "sources": [{ "type": "tool-call", "sourceType": "url", "id": "s", "url": "u" }],
-        }))
         .is_err()
     );
 }

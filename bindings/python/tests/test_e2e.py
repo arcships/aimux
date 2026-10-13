@@ -3,9 +3,9 @@
 Verifies the FULL chain: Python → PyO3 → aimux-core → HTTP mock →
 response parsing → typed result.
 
-The mock server runs in a separate process (multiprocessing) because
-PyO3's block_on blocks the calling thread — a threading-based server
-would deadlock.
+The mock server runs in a separate process (multiprocessing). Native calls
+release the GIL, so a server thread in this process works too
+(test_gil.py relies on it).
 """
 
 import json
@@ -396,16 +396,14 @@ class TestStructuredContent:
             assert result["toolCalls"][0]["toolCallId"] == "call_abc"
             assert result["toolCalls"][0]["input"] == {"location": "Tokyo"}
 
-            # Structured content: raw.content contains the ToolCall variant
-            assert "raw" in result
-            assert isinstance(result["raw"]["content"], list)
-            tc = next((c for c in result["raw"]["content"] if c["type"] == "tool-call"), None)
-            assert tc is not None, "raw.content must contain a tool-call variant"
+            # Structured content: the final step's content holds the parsed
+            # tool call
+            assert isinstance(result["content"], list)
+            tc = next((c for c in result["content"] if c["type"] == "tool-call"), None)
+            assert tc is not None, "content must contain a tool-call part"
             assert tc["toolName"] == "get_weather"
             assert tc["toolCallId"] == "call_abc"
-            # raw content keeps the provider's argument text; parsing happens
-            # at the Core boundary (top-level toolCalls carry the object).
-            assert tc["input"] == '{"location":"Tokyo"}'
+            assert tc["input"] == {"location": "Tokyo"}
 
     def test_multi_role_messages_reach_provider(self):
         with RecordingMockServer(OPENAI_CHAT) as mock:

@@ -376,18 +376,22 @@ impl Provider for OpenAICompatibleProvider {
     }
 
     /// Native decisions of the official runtimes (Ollama, llama.cpp, LocalAI,
-    /// Laya, vLLM, SGLang, Cloudflare); any other preset has none.
+    /// Laya, vLLM, SGLang, Cloudflare); any other preset offers none.
     fn decision_model(
         &self,
         model_id: &str,
-    ) -> Result<Box<dyn aimux_core::DecisionModel>, AiMuxError> {
-        Ok(Box::new(
+    ) -> Option<Result<Arc<dyn aimux_core::DecisionModel>, AiMuxError>> {
+        if !crate::runtime_decision::supported(&self.name) {
+            return None;
+        }
+        Some(
             crate::runtime_decision::RuntimeDecisionModel::new(
                 &self.name,
                 model_id,
                 self.model_config("decision"),
-            )?,
-        ))
+            )
+            .map(|model| Arc::new(model) as Arc<dyn aimux_core::DecisionModel>),
+        )
     }
 }
 

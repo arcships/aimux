@@ -3,34 +3,19 @@
   "source": "https://developers.openai.com/api/reference/resources/decisions/methods/create",
   "options": {
     "state": "Classify the picture",
-    "images": [
-      {
-        "media_type": "image/png",
-        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1sAAAAASUVORK5CYII=",
-        "detail": "low"
-      }
-    ],
-    "questions": [
-      {
-        "id": "choice",
+    "questions": {
+      "choice": {
         "type": "choice",
         "instructions": "Select a native value",
-        "options": [
-          {
-            "label": "boolean_true",
-            "value": true
-          },
-          {
-            "label": "text_true",
-            "value": "true"
-          }
-        ]
+        "criteria": {
+          "boolean_true": null,
+          "text_true": null
+        }
       },
-      {
-        "id": "score",
+      "score": {
         "type": "score",
         "instructions": "Rate it",
-        "levels": [
+        "criteria": [
           {
             "label": "low",
             "description": "Small amount"
@@ -41,8 +26,25 @@
           }
         ]
       }
-    ],
-    "max_retries": 0
+    },
+    "max_retries": 0,
+    "provider_options": {
+      "openai": {
+        "images": [
+          {
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1sAAAAASUVORK5CYII=",
+            "media_type": "image/png",
+            "detail": "low"
+          }
+        ],
+        "choice_values": {
+          "choice": {
+            "boolean_true": true,
+            "text_true": "true"
+          }
+        }
+      }
+    }
   },
   "request": {
     "model": "gpt-6-luna",

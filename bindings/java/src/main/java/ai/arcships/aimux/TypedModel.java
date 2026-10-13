@@ -171,9 +171,9 @@ public class TypedModel implements Closeable {
      * the aggregated result (M11).
      *
      * @param prompt Plain text prompt.
-     * @return Decoded {@link Types.StreamTextResultAggregated}.
+     * @return Decoded {@link Types.GenerateTextResult}.
      */
-    public Types.StreamTextResultAggregated consumeStreamText(String prompt) {
+    public Types.GenerateTextResult consumeStreamText(String prompt) {
         return consumeStreamText(prompt, null);
     }
 
@@ -183,12 +183,12 @@ public class TypedModel implements Closeable {
      *
      * @param prompt  Plain text prompt.
      * @param options Optional typed {@link Types.GenerateTextOptions}, or {@code null}.
-     * @return Decoded {@link Types.StreamTextResultAggregated}.
+     * @return Decoded {@link Types.GenerateTextResult}.
      */
-    public Types.StreamTextResultAggregated consumeStreamText(String prompt, Types.GenerateTextOptions options) {
+    public Types.GenerateTextResult consumeStreamText(String prompt, Types.GenerateTextOptions options) {
         String promptJson = encode(prompt);
         String optsJson = encodeOptions(options);
-        return decodeAggregated(repaired(raw.consumeStreamText(promptJson, optsJson), promptJson, optsJson, options));
+        return decodeResult(repaired(raw.consumeStreamText(promptJson, optsJson), promptJson, optsJson, options));
     }
 
     /**
@@ -196,9 +196,9 @@ public class TypedModel implements Closeable {
      * return the aggregated result (M11).
      *
      * @param messages Conversation as a list of {@link Types.ModelMessage}s.
-     * @return Decoded {@link Types.StreamTextResultAggregated}.
+     * @return Decoded {@link Types.GenerateTextResult}.
      */
-    public Types.StreamTextResultAggregated consumeStreamText(List<Types.ModelMessage> messages) {
+    public Types.GenerateTextResult consumeStreamText(List<Types.ModelMessage> messages) {
         return consumeStreamText(messages, null);
     }
 
@@ -208,20 +208,12 @@ public class TypedModel implements Closeable {
      *
      * @param messages Conversation as a list of {@link Types.ModelMessage}s.
      * @param options  Optional typed {@link Types.GenerateTextOptions}, or {@code null}.
-     * @return Decoded {@link Types.StreamTextResultAggregated}.
+     * @return Decoded {@link Types.GenerateTextResult}.
      */
-    public Types.StreamTextResultAggregated consumeStreamText(List<Types.ModelMessage> messages, Types.GenerateTextOptions options) {
+    public Types.GenerateTextResult consumeStreamText(List<Types.ModelMessage> messages, Types.GenerateTextOptions options) {
         String promptJson = encode(messages);
         String optsJson = encodeOptions(options);
-        return decodeAggregated(repaired(raw.consumeStreamText(promptJson, optsJson), promptJson, optsJson, options));
-    }
-
-    private Types.StreamTextResultAggregated decodeAggregated(String resultJson) {
-        try {
-            return Types.AimuxJson.MAPPER.readValue(resultJson, Types.StreamTextResultAggregated.class);
-        } catch (IOException e) {
-            throw new IllegalStateException("aimux: failed to decode StreamTextResultAggregated: " + e.getMessage(), e);
-        }
+        return decodeResult(repaired(raw.consumeStreamText(promptJson, optsJson), promptJson, optsJson, options));
     }
 
     // ── streamText (callback version) ─────────────────────────────────────

@@ -1,12 +1,12 @@
 import test from 'ava'
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
-import { APICallError, InvalidArgumentError, RequestAbortedError, jevDecision, decide, decisionCapabilities, createProvider } from '../src/index.ts'
-import type { DecisionCallOptions } from '../src/index.ts'
+import { APICallError, InvalidArgumentError, RequestAbortedError, jevDecision, decide, describeDecisionModel, createProvider } from '../src/index.ts'
+import type { DecideOptions } from '../src/index.ts'
 
 const fixture = JSON.parse(readFileSync(new URL('../../../aimux-providers/tests/fixtures/jev_systemone.json', import.meta.url), 'utf8')).response
 
-test('provider handle creates native OpenAI decisions and preserves partial refusals', async t => {
+test('provider handle creates native OpenAI decisions that answer every question', async t => {
   const contract = JSON.parse(readFileSync(new URL('../../../aimux-providers/tests/fixtures/openai_decisions.json', import.meta.url), 'utf8'))
   let captured: any
   const server = createServer((req, res) => {
@@ -25,19 +25,24 @@ test('provider handle creates native OpenAI decisions and preserves partial refu
   const address = server.address() as { port: number }
   const provider = await createProvider('openai', 'test-key', { baseUrl: `http://127.0.0.1:${address.port}/v1` })
   const model = await provider.decisionModel('gpt-6-luna')
-  t.is(decisionCapabilities(model).min_choices, 2)
+  t.deepEqual(describeDecisionModel(model), {
+    specification_version: 'v4',
+    provider: 'openai',
+    model_id: 'gpt-6-luna',
+    supported_question_types: ['choice', 'score', 'boolean'],
+  })
   const result = await decide(model, contract.options)
   t.deepEqual(captured, contract.request)
-  t.deepEqual(result.answers.restricted, { type: 'refusal' })
-  t.deepEqual(result.answers.urgent, { type: 'boolean', probability_true: 0.925 })
+  t.deepEqual(Object.keys(result.answers), ['urgent', 'team', 'severity'])
+  t.deepEqual(result.answers.urgent, { type: 'boolean', probability: 0.925 })
 })
-const options: DecisionCallOptions = {
+const options: DecideOptions = {
   state: { message: 'Billed twice' },
-  questions: [
-    { id: 'is_urgent', type: 'boolean', instructions: 'The message conveys urgency or time-sensitivity' },
-    { id: 'department', type: 'choice', instructions: 'Which team should handle this', options: ['billing', 'technical', 'sales'].map(label => ({ label })) },
-    { id: 'frustration', type: 'score', instructions: 'How frustrated the customer appears', levels: ['Calm, just stating facts', 'Frustrated but civil', 'Very angry, strong language'] },
-  ],
+  questions: {
+    is_urgent: { type: 'boolean', instructions: 'The message conveys urgency or time-sensitivity' },
+    department: { type: 'choice', instructions: 'Which team should handle this', criteria: { billing: null, technical: null, sales: null } },
+    frustration: { type: 'score', instructions: 'How frustrated the customer appears', criteria: ['Calm, just stating facts', 'Frustrated but civil', 'Very angry, strong language'] },
+  },
   max_retries: 0,
 }
 
@@ -57,10 +62,10 @@ test('missing or null usage counts preserve valid decision answers', async t => 
     usage = counts
     const result = await decide(model, options)
     t.is(Object.keys(result.answers).length, 3)
-    // Unknown counts are omitted, never null (AI SDK `total: number | undefined`).
-    t.is(result.usage?.inputTokens.total, counts.input_tokens ?? undefined)
-    t.is(result.usage?.outputTokens.total, counts.output_tokens ?? undefined)
-    t.deepEqual(result.usage?.raw, counts)
+    t.is(result.usage.input_tokens, counts.input_tokens ?? null)
+    t.is(result.usage.output_tokens, counts.output_tokens ?? null)
+    t.is(result.usage.total_tokens, null)
+    t.deepEqual((result.response.body as any).usage, counts)
   }
 })
 
@@ -90,11 +95,12 @@ test('typed decide maps all question types and preserves response metadata', asy
   t.is(body.questions.is_urgent.type, 'noul')
   t.deepEqual(body.questions.department.criteria, { billing: null, technical: null, sales: null })
   t.deepEqual(body.questions.frustration.criteria, ['Calm, just stating facts', 'Frustrated but civil', 'Very angry, strong language'])
-  t.deepEqual(result.answers.is_urgent, { type: 'boolean', probability_true: 1.0 })
-  t.like(result.answers.department, { type: 'choice', selected: 'technical' })
-  t.like(result.answers.frustration, { type: 'score', expected_value: 1.0, probabilities: [0, 1.0, 0] })
-  t.deepEqual(result.response?.body, fixture)
-  t.is(result.probability_source, 'native')
+  t.deepEqual(result.answers.is_urgent, { type: 'boolean', probability: 1.0 })
+  t.like(result.answers.department, { type: 'choice', choice: 'technical' })
+  t.deepEqual(result.answers.frustration, { type: 'score', score: 1.0, probabilities: { 0: 0, 1: 1.0, 2: 0 } })
+  t.deepEqual(result.usage, { input_tokens: 392, output_tokens: 65, total_tokens: 457 })
+  t.deepEqual(result.response.body, fixture)
+  t.is((result.provider_metadata?.jev as any).probability_source, 'native')
 })
 
 test('decision abort uses the canonical JavaScript error class', async t => {
@@ -138,7 +144,8 @@ test('self-hosted probability provenance survives the Node boundary', async t =>
   const address = server.address() as { port: number }
   for (const source of ['native', 'logit_scoring', 'model_estimate'] as const) {
     const model = await jevDecision('test-key', 'jev-latest', `http://127.0.0.1:${address.port}/v1/systemone`, source)
-    t.is((await decide(model, options)).probability_source, source)
+    const result = await decide(model, options)
+    t.is((result.provider_metadata?.jev as any).probability_source, source)
   }
 })
 
@@ -148,8 +155,7 @@ test('unknown probability source is rejected at model construction', async t => 
   await t.throwsAsync(rawJevDecision('test-key', 'jev-latest', undefined, 'unknown'), { instanceOf: InvalidArgumentError })
 })
 
-
-test('official structured fields and capabilities preserve the native contract', async t => {
+test('official structured fields and the model description preserve the native contract', async t => {
   const fixture = JSON.parse(readFileSync(new URL('../../../contract-tests/fixtures/decision-native.json', import.meta.url), 'utf8'))
   const requests: any[] = []
   const server = createServer((req, res) => {
@@ -165,19 +171,18 @@ test('official structured fields and capabilities preserve the native contract',
   t.teardown(() => server.close())
   const address = server.address() as { port: number }
   const model = await jevDecision('test-key', 'jev-latest', `http://127.0.0.1:${address.port}/v1/systemone`)
-  const caps = decisionCapabilities(model)
-  t.is(caps.max_choices, 255)
-  t.deepEqual(caps.rounding, { probability_decimals: 2, score_decimals: 2 })
+  t.is(describeDecisionModel(model).provider, 'jev')
   t.is(requests.length, 0)
   const result = await decide(model, fixture.request)
   t.is(requests.length, 1)
-  t.deepEqual(requests[0].questions.urgent.criteria, fixture.request.questions[0].criteria)
-  t.deepEqual(requests[0].questions.department.instructions, fixture.request.questions[1].instructions)
-  t.like(result.answers.severity, { levels: fixture.request.questions[2].levels })
-  t.deepEqual(result.rounding, caps.rounding)
+  t.deepEqual(requests[0].questions.urgent.criteria, fixture.request.questions.urgent.criteria)
+  t.deepEqual(requests[0].questions.department.instructions, fixture.request.questions.department.instructions)
+  t.deepEqual(requests[0].questions.severity.criteria, fixture.request.questions.severity.criteria)
+  t.deepEqual(result.answers.severity, { type: 'score', score: 0.25, probabilities: { 0: 0.75, 1: 0.25 } })
+  t.deepEqual(result.rounding, { probability_decimals: 2, score_decimals: 2 })
 })
 
-test('OpenAI media, boolean choice values and score descriptions cross the typed boundary', async t => {
+test('OpenAI images, typed choice values and score descriptions cross the typed boundary', async t => {
   const contract = JSON.parse(readFileSync(new URL('../../../contract-tests/fixtures/decision-openai-full.json', import.meta.url), 'utf8'))
   let captured: unknown
   const server = createServer((req, res) => {
@@ -194,15 +199,12 @@ test('OpenAI media, boolean choice values and score descriptions cross the typed
   const address = server.address() as { port: number }
   const provider = await createProvider('openai', 'test-key', { baseUrl: `http://127.0.0.1:${address.port}/v1` })
   const model = await provider.decisionModel('gpt-6-luna')
-  const request: DecisionCallOptions = contract.options
+  const request: DecideOptions = contract.options
   const result = await decide(model, request)
   t.deepEqual(captured, contract.request)
-  t.true(decisionCapabilities(model).supports_images)
-  if (result.answers.choice.type !== 'choice') return t.fail('choice result required')
-  t.is(result.answers.choice.value, true)
-  t.is(result.answers.choice.selected, 'boolean_true')
-  t.deepEqual(result.answers.choice.probabilities, { boolean_true: 0.75, text_true: 0.25 })
-  t.like(result.answers.score, { levels: contract.options.questions[1].levels })
+  t.deepEqual(result.answers.choice, { type: 'choice', choice: 'boolean_true', probabilities: { boolean_true: 0.75, text_true: 0.25 } })
+  t.is((result.provider_metadata?.openai as any).answers.choice.value, true)
+  t.deepEqual(result.answers.score, { type: 'score', score: 0.75, probabilities: { 0: 0.25, 1: 0.75 } })
 })
 
 test('local runtime factory preserves provider identity with no API key', async t => {
@@ -217,6 +219,9 @@ test('local runtime factory preserves provider identity with no API key', async 
   t.teardown(() => server.close())
   const address = server.address() as { port: number }
   const provider = await createProvider('ollama', undefined, { baseUrl: `http://127.0.0.1:${address.port}/v1` })
-  const result = await decide(await provider.decisionModel('served-decision'), contract.options)
-  t.is(result.provider, 'ollama')
+  const model = await provider.decisionModel('served-decision')
+  t.is(describeDecisionModel(model).provider, 'ollama')
+  const result = await decide(model, contract.options)
+  t.is((result.provider_metadata?.ollama as any).probability_source, 'native')
+  t.is(result.response.modelId, 'served-decision')
 })

@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
 use aimux_providers::groq::{GroqProviderSettings, create_groq};
 
@@ -20,10 +21,7 @@ const AUDIO: [u8; 4] = [0x49, 0x44, 0x33, 0x04];
 fn call(media_type: &str, groq: Option<Value>) -> TranscriptionCallOptions {
     let mut options = TranscriptionCallOptions::new(AudioInput::Binary(AUDIO.to_vec()), media_type);
     if let Some(Value::Object(groq)) = groq {
-        options.provider_options = Some(aimux_core::shared::NamespaceMap::from([(
-            "groq".to_string(),
-            groq,
-        )]));
+        options.provider_options = Some(SharedProviderOptions::from([("groq".to_string(), groq)]));
     }
     options
 }
@@ -284,4 +282,59 @@ async fn should_fallback_to_words_when_segments_are_not_available() {
         .map(|s| (s.text.as_str(), s.start_second, s.end_second))
         .collect();
     assert_eq!(segments, [("Hello", 0.0, 1.0), ("world", 1.0, 2.0)]);
+}
+
+/// Upstream's `GroqTranscriptionModel` has `doGenerate` only
+/// (`groq-transcription-model.ts:30`, `:123`), and `doStream` is optional on
+/// `TranscriptionModelV4` (`@ai-sdk/provider@4.0.22
+/// src/transcription-model/v4/transcription-model-v4.ts:44-46`). Streaming is
+/// therefore unsupported before any request is sent.
+#[tokio::test]
+async fn the_model_has_no_streaming_method() {
+    use aimux_core::error::AiMuxError;
+    use aimux_core::transcription_model::{
+        InputAudioFormat, TranscriptionStreamOptions, stream_transcribe,
+    };
+
+    let server = serve(ResponseTemplate::new(200).set_body_json(json_body())).await;
+    let model = model_on(&server, None, "whisper-large-v3");
+    let options = || TranscriptionStreamOptions {
+        audio: Box::pin(futures::stream::empty()),
+        input_audio_format: InputAudioFormat {
+            format_type: "audio/pcm".to_string(),
+            rate: Some(16_000),
+        },
+        provider_options: None,
+        abort_signal: None,
+        headers: None,
+        include_raw_chunks: false,
+        timeout: None,
+    };
+
+    assert!(model.do_stream(options()).is_none());
+    let error = stream_transcribe(&model, options()).await.unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::UnsupportedFunctionality(message)
+            if message == "The groq.transcription model \"whisper-large-v3\" does not support streaming transcription."),
+        "{error:?}"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+/// Only `transcribe` downloads an audio URL (layer 5's `AudioInput::Url`);
+/// the model itself refuses one before any request, as every transcription
+/// model does.
+#[tokio::test]
+async fn url_audio_is_refused_before_any_request() {
+    let server = serve(ResponseTemplate::new(200).set_body_json(json_body())).await;
+    let options = TranscriptionCallOptions::new(
+        AudioInput::Url("https://cdn.test/a.wav".into()),
+        "audio/wav",
+    );
+    let error = model_on(&server, None, "whisper-large-v3-turbo")
+        .do_generate(&options)
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), AudioInput::url_error().to_string());
+    assert!(server.received_requests().await.unwrap().is_empty());
 }

@@ -19,11 +19,15 @@ const _file = {
 // (`generate-text/generated-file.ts:10-32`); a stream file part is
 // {type, file, providerMetadata?} (`stream-language-model-call.ts:569-590`).
 const _generatedFile = {'base64': 'aGk=', 'mediaType': 'image/png'};
-const _usage = {
-  'inputTokens': {'total': 5, 'noCache': 5},
-  'outputTokens': {'total': 2},
+// The call-level LanguageModelUsage of a result and of the stream's
+// finish-step / finish parts.
+const _lmUsage = {
+  'input_tokens': 3,
+  'input_token_details': {'no_cache_tokens': null, 'cache_read_tokens': 1, 'cache_write_tokens': null},
+  'output_tokens': 2,
+  'output_token_details': {'text_tokens': null, 'reasoning_tokens': null},
+  'total_tokens': 5,
 };
-const _finish = {'unified': 'stop', 'raw': 'stop'};
 
 void main() {
   group('ToolCall', () {
@@ -169,19 +173,24 @@ void main() {
       {'type': 'text-start', 'id': 't'},
       {'type': 'text-delta', 'id': 't', 'text': 'hel', 'providerMetadata': _meta},
       {'type': 'text-end', 'id': 't'},
+      {'type': 'start'},
       {
-        'type': 'stream-start',
+        'type': 'start-step',
+        'request': {},
         'warnings': [
           {'type': 'other', 'message': 'm'}
         ]
       },
-      {'type': 'finish', 'finishReason': _finish, 'usage': _usage},
       {
         'type': 'finish-step',
-        'finishReason': _finish,
-        'usage': _usage,
         'response': {'id': 'r', 'modelId': 'gpt-4o'},
+        'usage': _lmUsage,
+        'performance': {'step_time_ms': 1.0},
+        'finishReason': 'tool-calls',
+        'rawFinishReason': 'tool_calls',
       },
+      {'type': 'finish', 'finishReason': 'stop', 'totalUsage': _lmUsage},
+      {'type': 'abort', 'reason': 'stop'},
       {
         'type': 'error',
         'error': {'name': 'AI_APICallError', 'message': 'boom', 'isRetryable': false},
@@ -199,10 +208,23 @@ void main() {
       {'type': 'tool-call', ...call},
       {
         'type': 'tool-result',
-        'toolCallId': 'c1',
-        'toolName': 'w',
-        'result': {'count': 3},
+        'tool_call_id': 'c1',
+        'tool_name': 'w',
+        'input': {'q': 'rust'},
+        'output': {'count': 3},
+        'provider_executed': true,
       },
+      // A deferred result has no input.
+      {'type': 'tool-result', 'tool_call_id': 'srv-0', 'tool_name': 'code_execution', 'output': 'done'},
+      {
+        'type': 'tool-error',
+        'tool_call_id': 'srv-2',
+        'tool_name': 'code_execution',
+        'input': {'code': '1/0'},
+        'error': {'error_code': 'unavailable'},
+        'provider_executed': true,
+      },
+      {'type': 'tool-output-denied', 'tool_call_id': 'c', 'tool_name': 't'},
       {'type': 'file', 'file': _generatedFile, 'providerMetadata': _meta},
       {'type': 'reasoning-file', 'file': _generatedFile},
       {'type': 'custom', 'kind': 'k'},
@@ -211,6 +233,12 @@ void main() {
         'approvalId': 'a',
         'toolCall': call,
         'reason': 'r',
+      },
+      {
+        'type': 'tool-approval-response',
+        'approval_id': 'a',
+        'tool_call': call,
+        'approved': false,
       },
       {'type': 'reasoning-start', 'id': 'r1'},
       {'type': 'reasoning-delta', 'id': 'r1', 'text': 'thi'},
@@ -289,36 +317,49 @@ void main() {
           {'type': 'text', 'text': 'hi'}
         ],
         'text': 'hi',
+        'reasoning': [],
+        'files': [],
+        'sources': [],
         'toolCalls': [
           {'type': 'tool-call', 'toolCallId': 'c', 'toolName': 't', 'input': {}}
         ],
-        'finishReason': _finish,
-        'usage': _usage,
+        'toolResults': [],
+        'finishReason': 'tool-calls',
+        'rawFinishReason': 'tool_calls',
+        'usage': _lmUsage,
+        'totalUsage': _lmUsage,
         'warnings': [],
-        'raw': {
-          'content': [
-            {'type': 'text', 'text': 'hi'}
-          ],
-          'finishReason': _finish,
-          'usage': _usage,
-          'warnings': [],
-        },
-        'reasoning': [],
-        'reasoningText': '',
-        'sources': [],
-        'files': [],
+        'request': {},
+        'response': {'id': 'r'},
         'responseMessages': [
           {'role': 'assistant', 'content': 'hi'}
         ],
-        'rawFinishReason': 'stop',
-        'request': {},
-        'response': {'id': 'r'},
-        'totalUsage': _usage,
+        'steps': [
+          {'call_id': 'c1', 'step_number': 0}
+        ],
       })) as Map<String, dynamic>;
       final result = GenerateTextResult.fromJson(json);
-      expect(result.finishReason.unified, 'stop');
-      expect(result.totalUsage.inputTokens.total, 5);
-      expect(result.raw.content.single, isA<GenerateContentText>());
+      expect(result.finishReason, 'tool-calls');
+      expect(result.usage.totalTokens, 5);
+      expect(result.totalUsage.inputTokenDetails.cacheReadTokens, 1);
+      expect(result.reasoningText, isNull);
+      expect(result.output, isNull);
+      expect(result.steps, hasLength(1));
+      expect(jsonDecode(jsonEncode(result)), json);
+    });
+
+    test('GenerateObjectResult round-trips', () {
+      final json = jsonDecode(jsonEncode({
+        'object': {'answer': 42},
+        'finishReason': 'stop',
+        'usage': _lmUsage,
+        'warnings': [],
+        'request': {},
+        'response': {'id': 'r', 'timestamp': '2026-01-01T00:00:00.000Z', 'modelId': 'gpt-4o'},
+      })) as Map<String, dynamic>;
+      final result = GenerateObjectResult.fromJson(json);
+      expect((result.object as Map<String, dynamic>)['answer'], 42);
+      expect(result.response.modelId, 'gpt-4o');
       expect(jsonDecode(jsonEncode(result)), json);
     });
   });

@@ -59,7 +59,7 @@ pub type AzureChatModel = OpenAIModel;
 /// Azure.
 pub type AzureResponsesModel = OpenAIResponsesModel;
 
-const API_KEY_ENV_VAR: &str = "AZURE_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "AZURE_API_KEY";
 const RESOURCE_NAME_ENV_VAR: &str = "AZURE_RESOURCE_NAME";
 /// The `api-version` of the AI SDK's v1 URL form.
 const DEFAULT_API_VERSION: &str = "v1";

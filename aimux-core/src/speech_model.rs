@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::shared::{SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning};
+use crate::shared::{
+    JsonObject, SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning,
+};
 use crate::{AbortSignal, retry, timeout};
 
 /// Generated audio: a base64-encoded string or raw binary bytes.
@@ -76,7 +78,8 @@ pub struct SpeechCallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
-    /// Per-call retry override. `None` uses the model default.
+    /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
+    /// retrying. `None` uses 2, the AI SDK default.
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
@@ -123,6 +126,11 @@ pub struct SpeechResult {
 
     /// Warnings for the call, e.g. unsupported settings.
     pub warnings: Vec<Warning>,
+
+    /// Usage information reported by the provider, in the provider's native
+    /// JSON shape (`SpeechModelV4Result.usage?: JSONObject`,
+    /// `@ai-sdk/provider@4.0.22 src/speech-model/v4/speech-model-v4-result.ts:23-27`).
+    pub usage: Option<JsonObject>,
 
     /// Optional request information for telemetry and debugging.
     #[ts(optional)]

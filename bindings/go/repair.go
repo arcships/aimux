@@ -185,24 +185,17 @@ func repairReply(repair RepairToolCallFunc, contextJSON string) (string, error) 
 }
 
 // invalidToolCalls lists the invalid tool calls of a result document, in
-// order, as (id, JSON) pairs. A GenerateObjectResult carries the text result
-// under `raw`; a GenerateTextResult's own `raw` has no toolCalls, so the
-// same lookup covers both — and StreamTextResultAggregated, whose toolCalls
-// are top-level.
+// order, as (id, JSON) pairs: the top-level toolCalls of a
+// GenerateTextResult, generated or consumed from a stream. A
+// GenerateObjectResult has none.
 func invalidToolCalls(resultJSON string) [][2]string {
 	var doc struct {
 		ToolCalls []json.RawMessage `json:"toolCalls"`
-		Raw       struct {
-			ToolCalls []json.RawMessage `json:"toolCalls"`
-		} `json:"raw"`
 	}
 	if json.Unmarshal([]byte(resultJSON), &doc) != nil {
 		return nil
 	}
 	calls := doc.ToolCalls
-	if calls == nil {
-		calls = doc.Raw.ToolCalls
-	}
 	var invalid [][2]string
 	for _, call := range calls {
 		var head struct {

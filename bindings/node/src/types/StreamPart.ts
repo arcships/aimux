@@ -2,6 +2,7 @@
 import type { AiMuxError } from "./AiMuxError";
 import type { FinishReason } from "./FinishReason";
 import type { LanguageModelFile } from "./LanguageModelFile";
+import type { NamespacedKind } from "./NamespacedKind";
 import type { RawToolApprovalRequest } from "./RawToolApprovalRequest";
 import type { RawToolCall } from "./RawToolCall";
 import type { ResponseMetadata } from "./ResponseMetadata";
@@ -30,7 +31,7 @@ dynamic?: boolean,
 /**
  * Optional title for the tool call.
  */
-title?: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-input-delta", id: string, delta: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-input-end", id: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-call" } & RawToolCall | { "type": "tool-result" } & ToolResult | { "type": "file" } & LanguageModelFile | { "type": "reasoning-file" } & LanguageModelFile | { "type": "custom", kind: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-approval-request" } & RawToolApprovalRequest | { "type": "reasoning-start", id: string, 
+title?: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-input-delta", id: string, delta: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-input-end", id: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-call" } & RawToolCall | { "type": "tool-result" } & ToolResult | { "type": "file" } & LanguageModelFile | { "type": "reasoning-file" } & LanguageModelFile | { "type": "custom", kind: NamespacedKind, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "tool-approval-request" } & RawToolApprovalRequest | { "type": "reasoning-start", id: string, 
 /**
  * Provider-specific metadata (e.g. xAI `itemId`).
  */

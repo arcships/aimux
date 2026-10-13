@@ -56,7 +56,8 @@ pub struct SearchCallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
-    /// Per-call retry override. `None` uses the model default.
+    /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
+    /// retrying. `None` uses 2, the AI SDK default.
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,

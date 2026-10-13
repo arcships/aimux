@@ -207,6 +207,7 @@ fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
             base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
                 .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))
         }
+        AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
 
@@ -394,13 +395,29 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         })
     }
 
+    /// The model has a streaming method, as upstream; the session itself is
+    /// [`OpenAITranscriptionModel::stream_transcription`].
+    fn do_stream(
+        &self,
+        options: aimux_core::transcription_model::TranscriptionStreamOptions,
+    ) -> Option<
+        futures::future::BoxFuture<
+            '_,
+            Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError>,
+        >,
+    > {
+        Some(Box::pin(self.stream_transcription(options)))
+    }
+}
+
+impl OpenAITranscriptionModel {
     /// Streaming transcription over the realtime WebSocket (RFC-0028 §3.2).
     ///
     /// Only realtime model IDs (`gpt-realtime-whisper*`) support streaming;
     /// other models return `UnsupportedFunctionality` (inverse of the
     /// `do_generate` gating).
     #[cfg(feature = "realtime")]
-    async fn do_stream(
+    async fn stream_transcription(
         &self,
         options: aimux_core::transcription_model::TranscriptionStreamOptions,
     ) -> Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError> {
@@ -662,7 +679,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
 
     /// Without the `realtime` feature the WebSocket path is compiled out.
     #[cfg(not(feature = "realtime"))]
-    async fn do_stream(
+    async fn stream_transcription(
         &self,
         _options: aimux_core::transcription_model::TranscriptionStreamOptions,
     ) -> Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError> {

@@ -6,6 +6,32 @@
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
+/// `deepSeekErrorSchema` turned into the failed-response handler, as the
+/// chat model builds it (deepseek@3.0.56 `deepseek-chat-api-types.ts:117-124`,
+/// `deepseek-chat-language-model.ts:213-217`): the message is
+/// `error.message`; `error.code` (a string or a number), else `error.type`,
+/// is the provider code.
+pub(crate) fn deepseek_failed_response_handler()
+-> aimux_provider_utils::ResponseHandler<aimux_core::error::AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error");
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .and_then(|error| error.get("message"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: error
+                .and_then(|error| error.get("code").or_else(|| error.get("type")))
+                .and_then(|value| match value {
+                    Value::String(value) => Some(value.clone()),
+                    Value::Number(value) => Some(value.to_string()),
+                    _ => None,
+                }),
+        }
+    })
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct ChatResponse {
     pub id: Option<String>,

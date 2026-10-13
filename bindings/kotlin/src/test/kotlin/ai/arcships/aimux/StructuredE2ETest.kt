@@ -257,10 +257,10 @@ class StructuredE2ETest {
             assertThat(firstCall.getString("toolCallId")).isEqualTo("call_abc")
             assertThat(firstCall.getJSONObject("input").getString("location")).isEqualTo("Tokyo")
 
-            // raw.content contains a `tool-call` item.
-            val rawContent = result.getJSONObject("raw").getJSONArray("content")
-            val hasToolCallVariant = (0 until rawContent.length()).any {
-                rawContent.getJSONObject(it).getString("type") == "tool-call"
+            // content contains a `tool-call` item.
+            val content = result.getJSONArray("content")
+            val hasToolCallVariant = (0 until content.length()).any {
+                content.getJSONObject(it).getString("type") == "tool-call"
             }
             assertThat(hasToolCallVariant).isTrue()
         }

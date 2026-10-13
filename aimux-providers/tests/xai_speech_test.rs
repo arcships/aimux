@@ -17,7 +17,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::Warning;
+use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{AudioData, SpeechCallOptions, SpeechModel, SpeechResult};
 use aimux_providers::{XAIProviderSettings, XaiSpeechModel, create_xai};
 
@@ -79,7 +79,7 @@ fn options(text: &str) -> SpeechCallOptions {
 
 /// `providerOptions: { xai: {...} }`.
 fn with_xai(mut options: SpeechCallOptions, xai: Value) -> SpeechCallOptions {
-    options.provider_options = Some(aimux_core::shared::NamespaceMap::from([(
+    options.provider_options = Some(SharedProviderOptions::from([(
         "xai".to_string(),
         xai.as_object().expect("an object").clone(),
     )]));

@@ -38,7 +38,9 @@ exchanges: Array<HttpExchange>,
  */
 outcome: OutcomeRecord, 
 /**
- * wire 是否完整(流式 body 未补全时为 false;由 writer 标记)。
+ * wire 是否完整(流式 body 未补全时为 false;由 writer 标记)。A call
+ * that lost an event (full queue, writer gone) or was marked
+ * inconsistent (duplicate attempt, unmatched update) is never complete.
  */
 complete: boolean, 
 /**

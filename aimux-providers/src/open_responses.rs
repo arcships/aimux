@@ -16,12 +16,12 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
-use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart,
     ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
@@ -293,6 +293,13 @@ impl LanguageModel for OpenResponsesModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    /// Image URLs go to the API as they are
+    /// (open-responses-language-model.ts:101-103).
+    async fn supported_urls(&self) -> SupportedUrls {
+        let http = regex::Regex::new(r"^https?://.*$").expect("static pattern");
+        SupportedUrls(std::iter::once(("image/*".to_string(), vec![http])).collect())
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
@@ -917,10 +924,10 @@ fn build_request_body(
 
     let converted_tool_choice: Option<Value> = match &options.tool_choice {
         None => None,
-        Some(ToolChoice::Auto) => Some(json!("auto")),
-        Some(ToolChoice::None) => Some(json!("none")),
-        Some(ToolChoice::Required) => Some(json!("required")),
-        Some(ToolChoice::Tool { tool_name }) => Some(json!({
+        Some(LanguageModelV4ToolChoice::Auto) => Some(json!("auto")),
+        Some(LanguageModelV4ToolChoice::None) => Some(json!("none")),
+        Some(LanguageModelV4ToolChoice::Required) => Some(json!("required")),
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => Some(json!({
             "type": "function",
             "name": tool_name,
         })),

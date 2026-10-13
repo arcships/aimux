@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use aimux_core::{AiMuxError, tool::ProviderTool};
+use aimux_core::{AiMuxError, tool::ProviderTool, types::NamespacedKind};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -515,12 +515,17 @@ pub struct ToolSearchArgs {
     pub parameters: Option<BTreeMap<String, Value>>,
 }
 
+/// The `openai.<kind>` id of a provider tool.
+fn openai_id(kind: &str) -> NamespacedKind {
+    NamespacedKind::new(format!("openai.{kind}")).expect("openai.<kind> is namespaced")
+}
+
 fn provider_tool(kind: &str, args: impl Serialize) -> Result<ProviderTool, AiMuxError> {
     let args = serde_json::to_value(args)
         .map_err(|error| AiMuxError::InvalidArgument(error.to_string()))?;
     super::responses::tool_args::validate_tool_args(kind, &args)?;
     Ok(ProviderTool {
-        id: format!("openai.{kind}"),
+        id: openai_id(kind),
         name: kind.to_owned(),
         args: args.as_object().cloned().ok_or_else(|| {
             AiMuxError::InvalidArgument("provider tool arguments must be an object".into())
@@ -604,7 +609,7 @@ pub fn tool_search(args: ToolSearchArgs) -> Result<ProviderTool, AiMuxError> {
 #[must_use]
 pub fn apply_patch() -> ProviderTool {
     ProviderTool {
-        id: "openai.apply_patch".into(),
+        id: openai_id("apply_patch"),
         name: "apply_patch".into(),
         args: serde_json::Map::new(),
     }
@@ -614,7 +619,7 @@ pub fn apply_patch() -> ProviderTool {
 #[must_use]
 pub fn computer() -> ProviderTool {
     ProviderTool {
-        id: "openai.computer".into(),
+        id: openai_id("computer"),
         name: "computer".into(),
         args: serde_json::Map::new(),
     }
@@ -624,7 +629,7 @@ pub fn computer() -> ProviderTool {
 #[must_use]
 pub fn local_shell() -> ProviderTool {
     ProviderTool {
-        id: "openai.local_shell".into(),
+        id: openai_id("local_shell"),
         name: "local_shell".into(),
         args: serde_json::Map::new(),
     }
@@ -634,7 +639,7 @@ pub fn local_shell() -> ProviderTool {
 #[must_use]
 pub fn programmatic_tool_calling() -> ProviderTool {
     ProviderTool {
-        id: "openai.programmatic_tool_calling".into(),
+        id: openai_id("programmatic_tool_calling"),
         name: "programmatic_tool_calling".into(),
         args: serde_json::Map::new(),
     }

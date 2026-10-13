@@ -2,7 +2,7 @@
 import type { ChatCompletionMessage } from "./ChatCompletionMessage";
 import type { JsonValue } from "./serde_json/JsonValue";
 
-export type ChatCompletionChoice = { index: number, message: ChatCompletionMessage, finish_reason: string | null,
+export type ChatCompletionChoice = { index: number, message: ChatCompletionMessage, finish_reason: string | null, 
 /**
  * The Chat Completions logprobs object, `{ "content": [...], "refusal":
  * null }`, each entry `{ token, logprob, bytes, top_logprobs }`, when

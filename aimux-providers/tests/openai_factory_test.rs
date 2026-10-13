@@ -30,11 +30,10 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, TextPart,
 };
-use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
+use aimux_core::tool::{FunctionTool, LanguageModelV4ToolChoice, Tool};
 use aimux_core::types::FinishReasonUnified;
 use aimux_provider_utils::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
@@ -325,21 +324,21 @@ impl Fixture {
     }
 }
 
-fn message(role: Role, text: &str) -> LanguageModelMessage {
+fn message(role: &str, text: &str) -> LanguageModelMessage {
     match role {
-        Role::System => LanguageModelMessage::System {
-            content: text.to_string(),
+        "system" => LanguageModelMessage::System {
+            content: text.into(),
             provider_options: None,
         },
-        Role::User => LanguageModelMessage::user_text(text),
-        Role::Assistant => LanguageModelMessage::Assistant {
+        "user" => LanguageModelMessage::user_text(text),
+        "assistant" => LanguageModelMessage::Assistant {
             content: vec![AssistantPart::Text(TextPart {
                 text: text.to_string(),
                 provider_options: None,
             })],
             provider_options: None,
         },
-        Role::Tool => panic!("tool messages require tool results"),
+        other => panic!("unmapped role {other}"),
     }
 }
 
@@ -348,10 +347,10 @@ fn message(role: Role, text: &str) -> LanguageModelMessage {
 fn call_options_from(input: &Value) -> CallOptions {
     let mut prompt: LanguageModelPrompt = Vec::new();
     if let Some(system) = input.get("system").and_then(Value::as_str) {
-        prompt.push(message(Role::System, system));
+        prompt.push(message("system", system));
     }
     if let Some(text) = input.get("prompt").and_then(Value::as_str) {
-        prompt.push(message(Role::User, text));
+        prompt.push(message("user", text));
     }
     for entry in input
         .get("messages")
@@ -359,12 +358,10 @@ fn call_options_from(input: &Value) -> CallOptions {
         .into_iter()
         .flatten()
     {
-        let role = match entry["role"].as_str().unwrap() {
-            "user" => Role::User,
-            "assistant" => Role::Assistant,
-            other => panic!("unmapped role {other}"),
-        };
-        prompt.push(message(role, entry["content"].as_str().unwrap()));
+        prompt.push(message(
+            entry["role"].as_str().unwrap(),
+            entry["content"].as_str().unwrap(),
+        ));
     }
     let mut options = CallOptions::new(prompt);
     options.temperature = input.get("temperature").and_then(Value::as_f64);
@@ -393,14 +390,14 @@ fn call_options_from(input: &Value) -> CallOptions {
         );
     }
     options.tool_choice = match input.get("toolChoice").and_then(Value::as_str) {
-        Some("required") => Some(ToolChoice::Required),
-        Some("none") => Some(ToolChoice::None),
-        Some("auto") => Some(ToolChoice::Auto),
+        Some("required") => Some(LanguageModelV4ToolChoice::Required),
+        Some("none") => Some(LanguageModelV4ToolChoice::None),
+        Some("auto") => Some(LanguageModelV4ToolChoice::Auto),
         None => options
             .tools
             .as_ref()
             .filter(|tools| !tools.is_empty())
-            .map(|_| ToolChoice::Auto),
+            .map(|_| LanguageModelV4ToolChoice::Auto),
         Some(other) => panic!("unmapped toolChoice {other}"),
     };
     options.provider_options = input
@@ -660,14 +657,55 @@ async fn chat_stream_basic() {
     let sent = seen.remove(0);
     fixture.assert_request(&sent, &bearer(KEY));
 
-    let text: String = parts
+    // Compare the text parts one by one with the recorded AI SDK
+    // `result.parts`: only text-start/delta/end are kept (which also drops
+    // the ai-layer-only start, start-step and finish-step), compared by id
+    // and text in order; finish is compared by finishReason and usage.
+    let expected = &fixture.json["result"]["parts"];
+    let expected = expected.as_array().expect("result.parts");
+    let expected_text: Vec<(String, String, Option<String>)> = expected
+        .iter()
+        .filter_map(|part| {
+            let kind = part["type"].as_str()?;
+            kind.starts_with("text-").then(|| {
+                (
+                    kind.to_string(),
+                    part["id"].as_str().unwrap().to_string(),
+                    part["text"].as_str().map(str::to_string),
+                )
+            })
+        })
+        .collect();
+    let actual_text: Vec<(String, String, Option<String>)> = parts
         .iter()
         .filter_map(|part| match part {
-            StreamPart::TextDelta { delta, .. } => Some(delta.as_str()),
+            StreamPart::TextStart { id, .. } => Some(("text-start".into(), id.clone(), None)),
+            // The ai layer drops empty deltas without provider metadata
+            // (ai@7.0.127 stream-text.ts:2881-2891); the provider layer emits
+            // them (openai@4.0.83 openai-chat-language-model.ts:623-633), and
+            // so does aimux for the first `"content":""` chunk.
+            StreamPart::TextDelta {
+                id,
+                delta,
+                provider_metadata,
+            } if !delta.is_empty() || provider_metadata.is_some() => {
+                Some(("text-delta".into(), id.clone(), Some(delta.clone())))
+            }
+            StreamPart::TextEnd { id, .. } => Some(("text-end".into(), id.clone(), None)),
             _ => None,
         })
         .collect();
-    assert_eq!(text, "Hello world");
+    assert!(
+        parts
+            .iter()
+            .any(|part| matches!(part, StreamPart::TextDelta { delta, .. } if delta.is_empty()))
+    );
+    assert_eq!(actual_text, expected_text);
+
+    let expected_finish = expected
+        .iter()
+        .find(|part| part["type"] == "finish")
+        .expect("a recorded finish part");
     let finish = parts.iter().find_map(|part| match part {
         StreamPart::Finish {
             finish_reason,
@@ -678,8 +716,79 @@ async fn chat_stream_basic() {
     });
     let (reason, usage) = finish.expect("a finish part");
     assert_eq!(reason.unified, FinishReasonUnified::Stop);
-    assert_eq!(usage.input_tokens.total, Some(12));
-    assert_eq!(usage.output_tokens.total, Some(2));
+    assert_eq!(json!(reason.unified), expected_finish["finishReason"]);
+    assert_eq!(
+        reason.raw.as_deref(),
+        expected_finish["rawFinishReason"].as_str()
+    );
+    let total = &expected_finish["totalUsage"];
+    let n = |v: &Value| v.as_u64().map(|n| u32::try_from(n).unwrap());
+    assert_eq!(usage.input_tokens.total, n(&total["inputTokens"]));
+    assert_eq!(
+        usage.input_tokens.no_cache,
+        n(&total["inputTokenDetails"]["noCacheTokens"])
+    );
+    assert_eq!(
+        usage.input_tokens.cache_read,
+        n(&total["inputTokenDetails"]["cacheReadTokens"])
+    );
+    assert_eq!(usage.output_tokens.total, n(&total["outputTokens"]));
+    assert_eq!(
+        usage.output_tokens.text,
+        n(&total["outputTokenDetails"]["textTokens"])
+    );
+    assert_eq!(
+        usage.output_tokens.reasoning,
+        n(&total["outputTokenDetails"]["reasoningTokens"])
+    );
+    assert_eq!(
+        usage.input_tokens.total.unwrap() + usage.output_tokens.total.unwrap(),
+        n(&total["totalTokens"]).unwrap()
+    );
+}
+
+async fn chat_error(status: u16, body: &Value) -> Box<aimux_core::ApiCallError> {
+    let mut canned = Canned::json(body);
+    canned.status = status;
+    let mock = MockFetch::new(vec![canned]);
+    let error = create_openai(settings(&mock))
+        .unwrap()
+        .chat("test-model")
+        .do_generate(&CallOptions::new(vec![LanguageModelMessage::user_text(
+            "Hello",
+        )]))
+        .await
+        .unwrap_err();
+    let AiMuxError::ApiCall(error) = error else {
+        panic!("expected an API call error, got {error:?}")
+    };
+    error
+}
+
+/// openai@4.0.83 `openai-error.test.ts` "should parse OpenRouter resource
+/// exhausted error": the message is `error.message`, a numeric `code` is
+/// accepted, and a 429 is retryable (provider@4.0.21
+/// `api-call-error.ts:28-32`: 408, 409, 429 and 5xx).
+#[tokio::test]
+async fn chat_error_429_is_retryable() {
+    let message = "{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"Resource has been exhausted (e.g. check quota).\",\n    \"status\": \"RESOURCE_EXHAUSTED\"\n  }\n}\n";
+    let response = json!({"error":{"message":message,"code":429}});
+    let error = chat_error(429, &response).await;
+    assert_eq!(error.message, message);
+    assert_eq!(error.status_code, Some(429));
+    assert_eq!(error.data, Some(response));
+    assert!(error.is_retryable);
+}
+
+/// A 400 is not retryable (provider@4.0.21 `api-call-error.ts:28-32`).
+#[tokio::test]
+async fn chat_error_400_is_not_retryable() {
+    let response =
+        json!({"error":{"message":"Invalid request","type":"invalid_request_error","code":null}});
+    let error = chat_error(400, &response).await;
+    assert_eq!(error.message, "Invalid request");
+    assert_eq!(error.status_code, Some(400));
+    assert!(!error.is_retryable);
 }
 
 #[tokio::test]

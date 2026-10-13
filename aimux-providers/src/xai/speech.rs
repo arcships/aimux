@@ -214,6 +214,7 @@ impl SpeechModel for XaiSpeechModel {
         Ok(SpeechResult {
             audio: AudioData::Binary(audio),
             warnings,
+            usage: None,
             request: Some(SpeechRequest { body: Some(body) }),
             response: SpeechResponse {
                 timestamp: Some(aimux_core::Timestamp::now()),

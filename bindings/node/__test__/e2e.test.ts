@@ -361,16 +361,13 @@ test('e2e: OpenAI generateText parses toolCalls (structured content)', async (t)
     t.is(r.toolCalls[0].toolCallId, 'call_abc')
     t.deepEqual(r.toolCalls[0].input, { location: 'Tokyo' })
 
-    // Structured content: raw.content contains the tool-call variant
-    t.truthy(r.raw)
-    t.true(Array.isArray(r.raw.content))
-    const tc = r.raw.content.find((c: any) => c.type === 'tool-call')
-    t.truthy(tc, 'raw.content contains a tool-call variant')
+    // Structured content: the final step's content holds the parsed tool call
+    t.true(Array.isArray(r.content))
+    const tc = r.content.find((c: any) => c.type === 'tool-call')
+    t.truthy(tc, 'content contains a tool-call part')
     t.is(tc.toolName, 'get_weather')
     t.is(tc.toolCallId, 'call_abc')
-    // raw content keeps the provider's argument text; the parsed object
-    // lives on the top-level toolCalls.
-    t.is(tc.input, '{"location":"Tokyo"}')
+    t.deepEqual(tc.input, { location: 'Tokyo' })
   } finally {
     await closeServer(server)
   }

@@ -10,37 +10,37 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * Only the TypeScript type is generated from this struct; Rust fields hold a
  * [`ToolCall`] and serde writes the tag ([`crate::wire::typed`]).
  */
-export type TypedToolCall = { type: "tool-call",
+export type TypedToolCall = { type: "tool-call", 
 /**
  * Provider-assigned call id.
  */
-toolCallId: string,
+toolCallId: string, 
 /**
  * Tool name.
  */
-toolName: string,
+toolName: string, 
 /**
  * Parsed arguments, or the original string when `invalid` is true and the
  * provider input was not valid JSON.
  */
-input: JsonValue,
+input: JsonValue, 
 /**
  * Whether the tool call will be executed by the provider.
  */
-providerExecuted?: boolean,
+providerExecuted?: boolean, 
 /**
  * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
  */
-dynamic?: boolean,
+dynamic?: boolean, 
 /**
  * Additional provider-specific metadata associated with this call.
  */
-providerMetadata?: { [key in string]: { [key in string]: JsonValue } },
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Set when lookup, JSON parsing, or schema validation still failed after
  * the optional repair attempt.
  */
-invalid?: boolean,
+invalid?: boolean, 
 /**
  * Typed failure associated with an invalid tool call.
  */

@@ -69,7 +69,7 @@ print(result["usage"])
 print(result["finishReason"])
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -84,7 +84,7 @@ for part in stream_text(model, "Write a haiku about Rust."):
     if part["type"] == "text-delta":
         print(part["text"], end="")
     if part["type"] == "finish":
-        print("\n[done]")
+        print(f"\n[done: {part['finishReason']}]")
 ```
 
 > Stream part variants are documented in the [API overview](../API.md#streaming-generation).
@@ -258,10 +258,12 @@ with open("out.png", "wb") as f:
 
 ## Video Generation
 
-Video generation typically returns a URL (not binary).
+Most video models return a URL; `generate` downloads it, as the AI SDK's
+`generateVideo` does, and returns the video's bytes (`Binary`).
 
 ```python
 from aimux import google_video
+import base64
 import json
 
 videor = google_video("sk-...", "veo-3.0")
@@ -271,9 +273,10 @@ result = json.loads(videor.generate(json.dumps({
     "providerOptions": {},
 })))
 
-# result["videos"] is usually [{"type": "url", "url": "...", "mediaType": "..."}]
-if result["videos"][0]["type"] == "url":
-    print(result["videos"][0]["url"])
+# result["videos"] is usually [{"type": "binary", "data": "<base64>", "mediaType": "..."}]
+if result["videos"][0]["type"] == "binary":
+    with open("video.mp4", "wb") as f:
+        f.write(base64.b64decode(result["videos"][0]["data"]))
 ```
 
 ## Reranking
@@ -378,13 +381,15 @@ The wrapper's types are pydantic models in `bindings/python/python/aimux/wrapper
 from aimux.wrapper import (
     # type aliases
     Role, FinishReasonUnified, ReasoningEffort, MessageContent, ContentPart,
-    Tool, ToolChoice, ResponseFormat, StreamPart, GenerateContent,
+    Tool, ToolChoice, ResponseFormat, StreamPart, GenerateContent, TextContent,
     FileData, FilePartData, ReasoningFilePartData, FileBytes, Warning, AiMuxErrorValue,
     GeneratedFile, LanguageModelFile,
     # pydantic models
-    InputTokenUsage, OutputTokenUsage, Usage, FinishReason, ResponseMetadata, ToolCall,
+    InputTokenUsage, OutputTokenUsage, Usage, FinishReason, ResponseMetadata,
+    LanguageModelUsage, InputTokenDetails, OutputTokenDetails, ToolCall,
     ModelMessage, FunctionTool, ProviderTool, TextContentPart,
-    GenerateTextOptions, GenerateTextResult, GenerateResult,
+    GenerateTextOptions, GenerateTextResult, StepResult, StepResponse,
+    GenerateObjectResult,
     RawToolCall, ToolCallRepairContext, RepairToolCall,
     # functions
     generate_text, stream_text, parse_stream_part,
@@ -399,7 +404,7 @@ string (base64 or a URL; `bytes` are encoded as base64) or a bare
 
 A generated file is a `GeneratedFile`, the AI SDK's `{"base64": ...,
 "mediaType": ...}` (`to_bytes()` decodes it); a `file` / `reasoning-file` content or stream part wraps
-it as `{"type": "file", "file": {...}}`. The provider-level `raw.content`
+it as `{"type": "file", "file": {...}}`. The provider-level `GenerateResult.content`
 keeps a `LanguageModelFile` (`mediaType` and tagged `data`).
 
 `AiMuxError` and recorder failures raise an **exception hierarchy** (explicit types —
@@ -497,17 +502,21 @@ Key shapes (mirroring the shared JSON schema):
 
 ```python
 class GenerateTextResult(BaseModel):
+    content: list[TextContent]          # the final step's parts
     text: str
     tool_calls: list[ToolCall]
-    finish_reason: FinishReason
-    usage: Usage
+    finish_reason: FinishReasonUnified  # "stop", "tool-calls", ...
+    raw_finish_reason: Optional[str]
+    usage: LanguageModelUsage           # summed over the steps
     warnings: list[Warning]
-    raw: GenerateResult
-    request: RequestInfo
-    response: ResponseInfo
+    steps: list[StepResult]
+    response_messages: list[ModelMessage]
+    output: Optional[Any]               # the value parsed by options.output
+    ...
 ```
 
-`stream_text` emits the Rust call-layer `TextStreamPart` JSON: a dict tagged by
+`stream_text` emits the Rust call-layer `TextStreamPart` JSON, the AI SDK's
+full stream (`start`, `start-step` … `finish-step`, `finish`): a dict tagged by
 `type`, e.g. `{"type": "text-delta", "id": ..., "text": ...}`. Iterate dicts with
 `if part["type"] == "text-delta":` (as in [Streaming Generation](#streaming-generation))
 or validate them with `parse_stream_part(part)` for attribute access (the

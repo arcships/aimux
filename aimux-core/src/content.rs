@@ -1,17 +1,28 @@
-//! Content parts shared between user-facing and provider-facing messages.
+//! User-facing message content: the parts a [`ModelMessage`] holds.
+//!
+//! The AI SDK's `@ai-sdk/provider-utils` content parts
+//! (`types/content-part.ts`, `tool-approval-request.ts`,
+//! `tool-approval-response.ts`), grouped into one union per message role as
+//! upstream's `UserContent`, `AssistantContent` and `ToolContent` group them
+//! (`user-model-message.ts:22`, `assistant-model-message.ts:32`,
+//! `tool-model-message.ts:23`). `convert_to_language_model_prompt` turns them
+//! into the provider-facing parts of `language_model_message`.
+//!
+//! The JSON is the AI SDK's: kebab-case `type` tags, camelCase fields, and
+//! one `file` part whose `data` is upstream's `FilePart.data` ([`FilePartData`]).
+//!
+//! [`ModelMessage`]: crate::message::ModelMessage
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-use crate::language_model_message::ToolResultOutput;
 use crate::shared::{
     FileBytes, FileData, GeneratedFileData, SharedProviderOptions, SharedProviderReference,
 };
+use crate::types::NamespacedKind;
 
-/// A part of a multi-part message.
-///
-/// Shared between `ModelMessage` (user-facing) and `LanguageModelPrompt` (provider-facing).
+/// A part of a user message: upstream's `TextPart | ImagePart | FilePart`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(
     tag = "type",
@@ -19,7 +30,7 @@ use crate::shared::{
     rename_all_fields = "camelCase"
 )]
 #[ts(export)]
-pub enum ContentPart {
+pub enum UserContentPart {
     /// A text segment.
     Text {
         text: String,
@@ -29,48 +40,12 @@ pub enum ContentPart {
         provider_options: Option<SharedProviderOptions>,
     },
 
-    /// Provider-specific custom content.
-    Custom {
-        kind: String,
-        #[ts(optional)]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<SharedProviderOptions>,
-    },
-
-    /// A file generated during reasoning (upstream `ReasoningFilePart`,
-    /// `types/content-part.ts:146-180`).
-    ReasoningFile {
-        data: ReasoningFilePartData,
-        media_type: String,
-        #[ts(optional)]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<SharedProviderOptions>,
-    },
-
-    /// A request to approve a tool call on a later turn.
-    ToolApprovalRequest {
-        approval_id: String,
-        tool_call_id: String,
-        #[ts(optional)]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        reason: Option<String>,
-        #[ts(optional)]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        is_automatic: Option<bool>,
-        #[ts(optional)]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        signature: Option<String>,
-        #[ts(optional)]
-        #[serde(
-            default,
-            deserialize_with = "crate::wire::present",
-            skip_serializing_if = "Option::is_none"
-        )]
-        input_schema_input: Option<Value>,
-    },
-
-    /// An image (raw bytes + MIME type). The JSON holds the bytes as a
-    /// base64 string.
+    /// An image (raw bytes + MIME type).
+    ///
+    /// Deprecated upstream (`provider-utils` `types/content-part.ts:26-29`):
+    /// use a `file` part with an `image` media type. The prompt conversion
+    /// turns it into one and logs a deprecation warning. The JSON holds the
+    /// bytes as a base64 string.
     Image {
         #[ts(type = "string")]
         #[serde(with = "crate::wire::base64_bytes")]
@@ -95,22 +70,72 @@ pub enum ContentPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
+}
+
+/// A part of an assistant message: upstream's `TextPart | CustomPart |
+/// FilePart | ReasoningPart | ReasoningFilePart | ToolCallPart |
+/// ToolResultPart | ToolApprovalRequest`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
+#[ts(export)]
+pub enum AssistantContentPart {
+    /// A text segment.
+    Text {
+        text: String,
+        /// Provider-specific options for this part.
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+
+    /// Provider-specific custom content.
+    Custom {
+        kind: NamespacedKind,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+
+    /// A file (upstream `FilePart`, `provider-utils` `types/content-part.ts:62-102`):
+    /// `data` is tagged `FileData` or a bare base64 string, URL string or
+    /// provider reference, and a `data:` URL's media type wins over
+    /// `media_type` when the prompt is converted.
+    File {
+        data: FilePartData,
+        media_type: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filename: Option<String>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
 
     /// A reasoning / thinking segment produced by the model.
     ///
-    /// Mirrors the Vercel AI SDK `reasoning` part. `signature` is the Anthropic
-    /// thinking-block signature (from `providerOptions.anthropic.signature`);
-    /// when absent the part is treated as having unsupported metadata (unless
-    /// `providerOptions.anthropic.redactedData` is present, in which case a
-    /// `redacted_thinking` block is emitted).
+    /// The AI SDK `ReasoningPart` has only `text` and `providerOptions`: a
+    /// provider's reasoning signature travels in its namespace (e.g.
+    /// `anthropic.signature`, `bedrock.signature`), as the provider wrote it
+    /// into the response's provider metadata.
     Reasoning {
         text: String,
-        #[ts(optional)]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        signature: Option<String>,
         /// Provider-specific options for this part (e.g.
         /// `anthropic.signature`, `anthropic.redactedData`,
         /// `anthropic.cacheControl`).
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+
+    /// A file generated during reasoning (upstream `ReasoningFilePart`,
+    /// `types/content-part.ts:146-180`).
+    ReasoningFile {
+        data: ReasoningFilePartData,
+        media_type: String,
         #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
@@ -123,8 +148,8 @@ pub enum ContentPart {
         /// Arguments as a JSON value (usually an object).
         input: Value,
         /// Whether the tool call is executed by the provider rather than by
-        /// the client. This is part of the prompt contract because providers
-        /// need it to replay server tool calls on a later turn.
+        /// the client. Providers need it to replay server tool calls on a
+        /// later turn.
         #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_executed: Option<bool>,
@@ -135,63 +160,84 @@ pub enum ContentPart {
         provider_options: Option<SharedProviderOptions>,
     },
 
-    /// The result of executing a tool call (upstream `ToolResultPart`).
-    ToolResult {
+    /// The result of a provider-executed tool call.
+    ToolResult(ToolResultPart),
+
+    /// A request to approve a tool call (upstream `ToolApprovalRequest`).
+    /// Never sent to a provider: the conversion drops it and uses it to match
+    /// the user's [`ToolContentPart::ToolApprovalResponse`] to its tool call.
+    ToolApprovalRequest {
+        approval_id: String,
         tool_call_id: String,
-        tool_name: String,
-        output: ToolResultOutput,
-        /// Provider-specific options for this part (e.g.
-        /// `anthropic.cacheControl`).
         #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<SharedProviderOptions>,
+        reason: Option<String>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        is_automatic: Option<bool>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
+        #[ts(optional)]
+        #[serde(
+            default,
+            deserialize_with = "crate::wire::present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        input_schema_input: Option<Value>,
     },
 }
 
-impl ContentPart {
-    /// Convenience constructor for a text part (no provider options).
+/// A part of a tool message: upstream's `ToolResultPart | ToolApprovalResponse`.
+// Prompt content is built once per call and converted, not held in bulk, so
+// the size gap between the two parts is not worth a box.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
+#[ts(export)]
+pub enum ToolContentPart {
+    /// The result of a tool call.
+    ToolResult(ToolResultPart),
+
+    /// The user's answer to an [`AssistantContentPart::ToolApprovalRequest`]
+    /// (upstream `ToolApprovalResponse`). The conversion passes it to the
+    /// provider only when `provider_executed` is set; for any other tool it
+    /// only marks the call as answered.
+    ToolApprovalResponse {
+        approval_id: String,
+        approved: bool,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_executed: Option<bool>,
+    },
+}
+
+impl UserContentPart {
+    /// A text part (no provider options).
     pub fn text(text: impl Into<String>) -> Self {
-        ContentPart::Text {
+        Self::Text {
             text: text.into(),
             provider_options: None,
         }
     }
 
-    /// Convenience constructor for a tool-call part (no provider options).
-    pub fn tool_call(
-        tool_call_id: impl Into<String>,
-        tool_name: impl Into<String>,
-        input: Value,
-    ) -> Self {
-        ContentPart::ToolCall {
-            tool_call_id: tool_call_id.into(),
-            tool_name: tool_name.into(),
-            input,
-            provider_executed: None,
-            provider_options: None,
-        }
-    }
-
-    /// Convenience constructor for a reasoning/thinking part (no provider
-    /// options, no signature).
-    pub fn reasoning(text: impl Into<String>) -> Self {
-        ContentPart::Reasoning {
-            text: text.into(),
-            signature: None,
-            provider_options: None,
-        }
-    }
-
-    /// Convenience constructor for an image part (no provider options).
+    /// An image part (no provider options).
     pub fn image(image: Vec<u8>, media_type: impl Into<String>) -> Self {
-        ContentPart::Image {
+        Self::Image {
             image,
             media_type: media_type.into(),
             provider_options: None,
         }
     }
 
-    /// Convenience constructor for a file part with inline bytes, written as
+    /// A file part with inline bytes, written as
     /// `data: { type: 'data', data: '<base64>' }` (no provider options, no
     /// filename).
     pub fn file(data: Vec<u8>, media_type: impl Into<String>) -> Self {
@@ -203,9 +249,8 @@ impl ContentPart {
         )
     }
 
-    /// Convenience constructor for a file part whose inline data is an
-    /// already-base64-encoded string, passed on verbatim (no provider options,
-    /// no filename).
+    /// A file part whose inline data is an already-base64-encoded string,
+    /// passed on verbatim (no provider options, no filename).
     pub fn file_base64(data: impl Into<String>, media_type: impl Into<String>) -> Self {
         Self::file_data(
             FileData::Data {
@@ -215,8 +260,8 @@ impl ContentPart {
         )
     }
 
-    /// Convenience constructor for a file part referenced by URL,
-    /// `data: { type: 'url', url }` (no provider options).
+    /// A file part referenced by URL, `data: { type: 'url', url }` (no
+    /// provider options).
     pub fn file_url(url: impl Into<String>, media_type: impl Into<String>) -> Self {
         Self::file_data(
             FileData::Url {
@@ -227,9 +272,9 @@ impl ContentPart {
         )
     }
 
-    /// Convenience constructor for a file part referenced by a provider
-    /// reference, `data: { type: 'reference', reference: { [provider]: id } }`
-    /// (no provider options, no filename).
+    /// A file part referenced by a provider reference,
+    /// `data: { type: 'reference', reference: { [provider]: id } }` (no
+    /// provider options, no filename).
     pub fn file_reference(
         media_type: impl Into<String>,
         reference: SharedProviderReference,
@@ -238,13 +283,277 @@ impl ContentPart {
     }
 
     fn file_data(data: FileData, media_type: impl Into<String>) -> Self {
-        ContentPart::File {
+        Self::File {
             data: FilePartData::Tagged(data),
             media_type: media_type.into(),
             filename: None,
             provider_options: None,
         }
     }
+}
+
+impl AssistantContentPart {
+    /// A text part (no provider options).
+    pub fn text(text: impl Into<String>) -> Self {
+        Self::Text {
+            text: text.into(),
+            provider_options: None,
+        }
+    }
+
+    /// A tool-call part (no provider options).
+    pub fn tool_call(
+        tool_call_id: impl Into<String>,
+        tool_name: impl Into<String>,
+        input: Value,
+    ) -> Self {
+        Self::ToolCall {
+            tool_call_id: tool_call_id.into(),
+            tool_name: tool_name.into(),
+            input,
+            provider_executed: None,
+            provider_options: None,
+        }
+    }
+}
+
+impl ToolContentPart {
+    /// A tool-result part (no provider options).
+    pub fn tool_result(
+        tool_call_id: impl Into<String>,
+        tool_name: impl Into<String>,
+        output: ToolResultOutput,
+    ) -> Self {
+        Self::ToolResult(ToolResultPart {
+            tool_call_id: tool_call_id.into(),
+            tool_name: Some(tool_name.into()),
+            output,
+            provider_options: None,
+        })
+    }
+}
+
+/// The result of a tool call (upstream `ToolResultPart`,
+/// `provider-utils` `types/content-part.ts:240-268`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ToolResultPart {
+    pub tool_call_id: String,
+    /// The tool name. Required upstream; when absent here, the conversion
+    /// takes it from the preceding tool call with the same id.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    pub output: ToolResultOutput,
+    /// Provider-specific options for this part (e.g. `anthropic.cacheControl`).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_options: Option<SharedProviderOptions>,
+}
+
+/// The output of a tool call (upstream `ToolResultOutput`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
+#[ts(export)]
+pub enum ToolResultOutput {
+    /// Text for the model.
+    Text {
+        value: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// JSON for the model.
+    Json {
+        value: Value,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// The user denied the tool call.
+    ExecutionDenied {
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// An error message.
+    ErrorText {
+        value: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// An error as JSON.
+    ErrorJson {
+        value: Value,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// Multi-part content: text, files, custom parts.
+    Content { value: Vec<ToolResultContentPart> },
+}
+
+impl ToolResultOutput {
+    /// The output for a raw tool result value, as the AI SDK's
+    /// `createToolModelOutput` builds it for a tool without `toModelOutput`
+    /// (`ai` `prompt/create-tool-model-output.ts:4`): a string is `text`,
+    /// anything else `json`; an error is `error-text` holding
+    /// `getErrorMessage(value)`, where `null` reads `unknown error`, a string
+    /// is itself and anything else is its JSON.
+    #[must_use]
+    pub fn from_result(value: Value, is_error: bool) -> Self {
+        match (value, is_error) {
+            (Value::Null, true) => Self::ErrorText {
+                value: "unknown error".into(),
+                provider_options: None,
+            },
+            (Value::String(value), true) => Self::ErrorText {
+                value,
+                provider_options: None,
+            },
+            (value, true) => Self::ErrorText {
+                value: value.to_string(),
+                provider_options: None,
+            },
+            (Value::String(value), false) => Self::Text {
+                value,
+                provider_options: None,
+            },
+            (value, false) => Self::Json {
+                value,
+                provider_options: None,
+            },
+        }
+    }
+}
+
+/// One item of a `content` [`ToolResultOutput`] (upstream
+/// `content-part.ts:303-546`).
+///
+/// The `file-*` and `image-*` items are deprecated upstream in favour of
+/// `file` (`content-part.ts:361-532`); they are accepted on input and the
+/// conversion turns each into a `file` part with a deprecation warning, as
+/// upstream's `mapToolResultOutput` does.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
+#[ts(export)]
+pub enum ToolResultContentPart {
+    /// Text.
+    Text {
+        text: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// A file.
+    File {
+        data: crate::shared::FileData,
+        media_type: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filename: Option<String>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// Base64 file data. Deprecated: use `file` with `{ type: 'data' }` data.
+    FileData {
+        data: String,
+        media_type: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filename: Option<String>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// A file URL. Deprecated: use `file` with `{ type: 'url' }` data.
+    FileUrl {
+        url: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        media_type: Option<String>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// A provider file id. Deprecated: use `file` with `{ type: 'reference' }`
+    /// data.
+    FileId {
+        file_id: ToolResultFileId,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// A provider reference. Deprecated: use `file` with
+    /// `{ type: 'reference' }` data.
+    FileReference {
+        provider_reference: SharedProviderReference,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// Base64 image data. Deprecated: use `file` with an `image` media type.
+    ImageData {
+        data: String,
+        media_type: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// An image URL. Deprecated: use `file` with an `image` media type.
+    ImageUrl {
+        url: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// A provider image file id. Deprecated: use `file` with an `image`
+    /// media type.
+    ImageFileId {
+        file_id: ToolResultFileId,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// A provider image reference. Deprecated: use `file` with an `image`
+    /// media type.
+    ImageFileReference {
+        provider_reference: SharedProviderReference,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// Provider-specific content.
+    Custom {
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+}
+
+/// The `fileId` of a deprecated `file-id` / `image-file-id` tool output item:
+/// an id for the called provider, or ids keyed by provider
+/// (`string | Record<string, string>`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(untagged)]
+#[ts(export)]
+pub enum ToolResultFileId {
+    Id(String),
+    ByProvider(SharedProviderReference),
 }
 
 /// `FilePart.data` (`provider-utils` `types/content-part.ts:75`):

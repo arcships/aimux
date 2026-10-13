@@ -240,17 +240,19 @@ aimux_error_t *aimux_generate_text(uint64_t handle,
                                        const char *prompt_json,
                                        const char *opts_json, char **out_json);
 
-/* [AiMuxError] Generate a structured JSON object (M12, RFC-0016). Same signature
-   as aimux_generate_text; writes serialized GenerateObjectResult JSON.
-   Pass response_format: { "Json": { ... } } via opts_json for schema control. */
+/* [AiMuxError] Generate a structured JSON object (M12, RFC-0016) with the core's
+   deprecated generate_object wrapper. Same signature as aimux_generate_text;
+   writes serialized GenerateObjectResult JSON. Pass
+   output: { "Object": { "schema": ... } } via opts_json to describe the value;
+   the model's text must parse and match the schema. */
 aimux_error_t *aimux_generate_object(uint64_t handle,
                                          const char *prompt_json,
                                          const char *opts_json, char **out_json);
 
-/* [AiMuxError] Consume a stream to completion and write the aggregated result
+/* [AiMuxError] Consume a stream to completion and write its result
    (M11, RFC-0016). Synchronous (blocks until the stream finishes). Same
-   signature as aimux_generate_text; writes serialized
-   StreamTextResultAggregated JSON. */
+   signature as aimux_generate_text; writes serialized GenerateTextResult
+   JSON, the same result aimux_generate_text writes. */
 aimux_error_t *aimux_consume_stream_text(uint64_t handle,
                                              const char *prompt_json,
                                              const char *opts_json, char **out_json);
@@ -433,11 +435,11 @@ aimux_error_t *aimux_apply_tool_call_repair(const char *tool_call_json,
                                                 const char *reply_json, char **out_json);
 
 /**
- * [AiMuxError] Apply a repair reply to a serialized GenerateTextResult,
- * GenerateObjectResult, or StreamTextResultAggregated (the output of
- * aimux_consume_stream_text). Both tool_calls and the matching response_messages
- * tool-call part are rewritten (tool_call_id included — a repair may rename
- * the call); everything else is left as-is.
+ * [AiMuxError] Apply a repair reply to a serialized GenerateTextResult (the
+ * output of aimux_generate_text or aimux_consume_stream_text). The call in
+ * the steps' content and the matching response-message tool-call part are
+ * rewritten (tool_call_id included — a repair may rename the call), and the
+ * top-level tool_calls and response_messages follow.
  */
 aimux_error_t *aimux_apply_tool_call_repair_to_result(const char *result_json,
                                                           const char *opts_json,
@@ -453,6 +455,16 @@ aimux_error_t *aimux_apply_tool_call_repair_to_result(const char *result_json,
  * @param handle Handle from aimux_*_new.
  */
 void aimux_drop_handle(uint64_t handle);
+
+/**
+ * aimux_drop_handle with the handle passed as a pointer-sized value, for a
+ * finalizer that can only call `void (*)(void *)` (Dart NativeFinalizer).
+ * The pointer is never dereferenced: its address is the handle. Safe to call
+ * with NULL or an unknown handle (no-op).
+ *
+ * @param handle Handle from aimux_*_new, cast to a pointer.
+ */
+void aimux_drop_handle_ptr(void *handle);
 
 /**
  * Free a string written by any aimux function (`*out_json`, error getters).
@@ -586,8 +598,10 @@ aimux_error_t *aimux_tavily_search_new_with_base(const char *api_key, const char
    query — not just options); NULL or empty is a C ABI failure. */
 aimux_error_t *aimux_search(uint64_t handle, const char *opts_json, char **out_json);
 
-/* Typed decisions.
- * opts_json requires state and questions (array of tagged questions with IDs).
+/* Typed decisions (DecisionModelV4).
+ * opts_json is DecideOptions JSON: state and questions (an object keyed by
+ * question ID), plus optional max_retries, timeout, headers and
+ * provider_options. The result is DecideResult JSON.
  * Free model handles with aimux_drop_handle and results with aimux_free_string.
  * abort_handle=0 means no caller cancellation. */
 /* Build a decision model using an existing provider handle. */
@@ -602,7 +616,8 @@ aimux_error_t *aimux_jev_decision_new_with_probability_source(
     const char *api_key, const char *model_id, const char *endpoint,
     const char *probability_source, uint64_t *out_handle);
 aimux_error_t *aimux_decide(uint64_t handle, const char *opts_json, char **out_json);
-/* Owned DecisionCapabilities JSON; no network request. */
+/* Owned JSON {specification_version, provider, model_id,
+   supported_question_types}; no network request. */
 aimux_error_t *aimux_decision_capabilities(uint64_t handle, char **out_json);
 aimux_error_t *aimux_decide_with_abort(uint64_t handle, const char *opts_json,
                                      uint64_t abort_handle, char **out_json);
@@ -724,10 +739,10 @@ aimux_error_t *aimux_recording_try_flush(void);
    rejects (bad schema, unknown protocol) is AiMuxError AIMUX_E_INVALID_ARGUMENT. */
 aimux_error_t *aimux_register_providers(const char *config_json);
 
-/* [AiMuxError] Set the global proxy configuration (M6, RFC-0016). Must be called
-   before the first generate_text / stream_text call; a no-op if the shared
-   HTTP client is already initialised. config_json is a serialized
-   ProxyConfig: { "http_url", "https_url", "all_url", "no_proxy" } (all
+/* [AiMuxError] Replace the default transport with one routed by this proxy
+   configuration (M6, RFC-0016). Requests started afterwards (HTTP, built-in
+   WebSocket connects, download hops) use it; calling it again replaces the
+   previous configuration. config_json is a serialized ProxyConfig: { "http_url", "https_url", "all_url", "no_proxy" } (all
    optional). Malformed text is a C ABI failure; wrong shape is AiMuxError
    AIMUX_E_INVALID_ARGUMENT. */
 aimux_error_t *aimux_init_proxy(const char *config_json);
