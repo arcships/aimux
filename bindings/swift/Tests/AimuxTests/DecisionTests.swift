@@ -57,8 +57,9 @@ final class DecisionTests: XCTestCase {
     func testOpenAIMediaAndTypedValues() throws {
         var root = URL(fileURLWithPath: #filePath)
         for _ in 0..<5 { root.deleteLastPathComponent() }
-        let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf:
-            root.appendingPathComponent("contract-tests/fixtures/decision-openai-full.json"))) as! [String: Any]
+        let fixtureData = try Data(contentsOf:
+            root.appendingPathComponent("contract-tests/fixtures/decision-openai-full.json"))
+        let fixture = try JSONSerialization.jsonObject(with: fixtureData) as! [String: Any]
         func encode(_ value: Any) throws -> String {
             String(data: try JSONSerialization.data(withJSONObject: value), encoding: .utf8)!
         }
@@ -69,7 +70,11 @@ final class DecisionTests: XCTestCase {
             configJson: encode(["base_url": server.baseURL + "/v1"]))
         let model = try provider.decisionModel("gpt-6-luna")
         defer { model.close() }
-        let result = try JSONSerialization.jsonObject(with: Data(model.decide(options: encode(fixture["options"]!)).utf8)) as! [String: Any]
+        // The questions and criteria are maps whose order is the request's
+        // order, and JSONSerialization keeps no key order: send the fixture's
+        // own text for the options.
+        let options = rawObject(String(decoding: fixtureData, as: UTF8.self), key: "options")
+        let result = try JSONSerialization.jsonObject(with: Data(model.decide(options: options).utf8)) as! [String: Any]
         let actual = try JSONSerialization.jsonObject(with: Data(server.lastRequestBody.utf8)) as! NSDictionary
         XCTAssertEqual(actual, fixture["request"] as! NSDictionary)
         XCTAssertEqual(server.lastRequestPath, "/v1/decisions")
@@ -80,4 +85,35 @@ final class DecisionTests: XCTestCase {
         XCTAssertEqual(choice["value"] as? Bool, true)
         XCTAssertEqual((answers["score"] as! [String: Any])["score"] as? Double, 0.75)
     }
+}
+
+/// The raw text of the top-level `key` object in the JSON `text`.
+private func rawObject(_ text: String, key: String) -> String {
+    let marker = text.range(of: "\"\(key)\":")!
+    let start = text[marker.upperBound...].firstIndex(of: "{")!
+    var depth = 0
+    var inString = false
+    var escaped = false
+    var index = start
+    while index < text.endIndex {
+        let c = text[index]
+        if inString {
+            if escaped {
+                escaped = false
+            } else if c == "\\" {
+                escaped = true
+            } else if c == "\"" {
+                inString = false
+            }
+        } else if c == "\"" {
+            inString = true
+        } else if c == "{" {
+            depth += 1
+        } else if c == "}" {
+            depth -= 1
+            if depth == 0 { return String(text[start...index]) }
+        }
+        index = text.index(after: index)
+    }
+    fatalError("no balanced object for \(key)")
 }
