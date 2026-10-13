@@ -529,8 +529,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The native Decision/Jev extension from master is retained. Its typed
   `JevConfig` / `JevProvider::new` entry point and `Provider::decision_model`
   remain available. Decision replay now takes the caller's registry;
-  recordings contain provider identity only and keep decision capabilities
-  separately under input. Decision retries use the core call-level policy.
+  recordings contain provider identity only and no capability snapshot
+  (see the DecisionModelV4 entry). Decision retries use the core call-level
+  policy.
 
 - `OpenAIProvider::language_model(id)` (and so `create_provider("openai", ..)`
   and the registry id `openai:<model>`) returns the **Responses** model, as
