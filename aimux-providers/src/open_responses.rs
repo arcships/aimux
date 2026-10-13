@@ -16,7 +16,7 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
-use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart,
     ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
@@ -293,6 +293,13 @@ impl LanguageModel for OpenResponsesModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    /// Image URLs go to the API as they are
+    /// (open-responses-language-model.ts:101-103).
+    async fn supported_urls(&self) -> SupportedUrls {
+        let http = regex::Regex::new(r"^https?://.*$").expect("static pattern");
+        SupportedUrls(std::iter::once(("image/*".to_string(), vec![http])).collect())
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {

@@ -121,8 +121,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before the call and download each prompt file URL it does not cover (user
   `FileUrl` parts and `file` items of tool outputs; not `data:` URLs), which
   then reaches the provider as inline data; they used to pass every URL
-  through. `GenerateTextOptions::download` takes a `DownloadFunction` (the AI
-  SDK's `experimental_download`) instead. `AudioInput::Url` is new:
+  through. The Cohere chat, Open Responses and xAI Responses models declare
+  the URLs their packages declare (HTTP(S) images; for xAI also PDF and
+  text), so those still reach the API as URLs.
+  `GenerateTextOptions::download` takes a `DownloadFunction` (the AI SDK's
+  `experimental_download`) instead. `AudioInput::Url` is new:
   `transcribe` downloads it with `TranscriptionCallOptions::download`, and a
   transcription model given one returns `AudioInput::url_error()`.
   `generate_video` downloads every video returned as a URL with

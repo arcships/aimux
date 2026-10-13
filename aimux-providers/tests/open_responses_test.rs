@@ -2255,3 +2255,14 @@ provider_options: None
         let _parts = collect_stream(result).await;
     }
 }
+
+/// TS: `supportedUrls` (open-responses-language-model.ts:101-103): image URLs
+/// go to the API as they are; other URLs are downloaded by the operation.
+#[tokio::test]
+async fn supports_http_image_urls() {
+    let server = MockServer::start().await;
+    let urls = make_model(&server, "gpt-4o").supported_urls().await;
+    assert_eq!(urls.0.len(), 1);
+    assert!(urls.0["image/*"][0].is_match("https://example.com/a.png"));
+    assert!(!urls.0["image/*"][0].is_match("ftp://example.com/a.png"));
+}
