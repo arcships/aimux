@@ -322,7 +322,8 @@ finally:
 ```
 
 标准 `recordings.jsonl` 每行记录一次逻辑调用：`input.operation = "decision"`，
-`input.options` 保留 state/questions/images 以及协议、编码 options，`input.decision_capabilities` 保留能力声明；
+`input.options` 保留 state/questions/images 以及协议、编码 options；不保存能力快照，
+能力属于 model，回放时由调用方 registry 重建的 model 提供；
 provider 只记录 provider_id/provider/model_id，endpoint 与凭证来自调用方配置；
 exchanges 记录各重试 attempt 的 HTTP 请求、响应和时延；
 `outcome.decision_result` 保存规范化结果。凭据沿用统一脱敏规则。
@@ -338,6 +339,7 @@ aimux-replay ./recordings/recordings.jsonl --dry-run
 Rust 可用 `aimux_core::replay::MockDecisionReplayModel::from_jsonl` 加载录制，
 再通过 `decide` 或 `replay_decision_with_model` 离线回放。匹配 provider/model、
 state/questions/images、headers 和 provider_options；timeout/retry 控制不参与匹配。
+mock 接受任意题型和规模，舍入与概率来源取自录制结果。
 输入未命中或记录不完整时返回错误。请求回放可通过
 `aimux_providers::rebuild_decision_provider` 从调用方 registry 重建上述任一官方 provider 的 decision model，再调用
 `replay_decision_with_model` 发出真实请求；CLI 不带 `--mock` 时也走这条路径。

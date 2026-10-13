@@ -608,7 +608,6 @@ pub async fn decide(
             &options,
             model.provider(),
             model.model_id(),
-            &capabilities,
         );
         ctx.recorder.record_provider(
             &ctx.call_id,

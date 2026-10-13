@@ -81,7 +81,14 @@ async fn ring_records_one_complete_call_and_replays_exact_inputs_with_redaction(
     assert!(records[0].complete && records[0].transport_closed);
     assert_eq!(records[0].input.operation, RecordingOperation::Decision);
     assert!(records[0].input.prompt.is_empty());
-    assert!(records[0].input.decision_capabilities.is_some());
+    // Supported question types are a model property, looked up again on
+    // replay (`@ai-sdk/provider@4.0.22
+    // src/decision-model/v4/decision-model-v4.ts:11`): the input holds no
+    // capability snapshot.
+    let input = serde_json::to_value(&records[0].input).unwrap();
+    let mut keys: Vec<_> = input.as_object().unwrap().keys().collect();
+    keys.sort();
+    assert_eq!(keys, ["operation", "options", "prompt"]);
     assert_eq!(
         serde_json::to_value(&records[0].provider).unwrap(),
         json!({
@@ -243,6 +250,7 @@ async fn recorded_native_calls_replay_offline_and_rebuild_uses_registered_endpoi
         .join("tests/fixtures/jev_systemone_live.jsonl");
     let mock = MockDecisionReplayModel::from_jsonl(file).unwrap();
     for line in include_str!("fixtures/jev_systemone_live.jsonl").lines() {
+        assert!(!line.contains("decision_capabilities"));
         let rec: Recording = serde_json::from_str(line).unwrap();
         let result = replay_decision_with_model(&rec, &mock).await.unwrap();
         assert_eq!(

@@ -4,7 +4,8 @@ use serde_json::{Value, json};
 
 use crate::AiMuxError;
 use crate::decision_model::{
-    DecisionCallOptions, DecisionCapabilities, DecisionModel, DecisionResult, decide,
+    DecisionCallOptions, DecisionCapabilities, DecisionModel, DecisionProbabilitySource,
+    DecisionResult, decide,
 };
 use crate::recording::{OutcomeStatus, Recording, RecordingOperation};
 
@@ -19,6 +20,33 @@ fn key(options: &Value) -> Value {
     })
 }
 
+/// What the offline model accepts. Recordings hold no capability snapshot:
+/// replay accepts every question type and size, so a request reaches the exact
+/// match against the recorded input. Rounding and the probability source are
+/// part of the recorded result, so they come from it.
+fn replay_capabilities(recording: &Recording) -> DecisionCapabilities {
+    let result = recording.outcome.decision_result.as_ref();
+    DecisionCapabilities {
+        supports_images: true,
+        max_images: None,
+        supports_typed_choices: true,
+        rounding: result
+            .and_then(|result| serde_json::from_value(result["rounding"].clone()).ok())
+            .unwrap_or_default(),
+        probability_source: result
+            .and_then(|result| serde_json::from_value(result["probability_source"].clone()).ok())
+            .unwrap_or(DecisionProbabilitySource::Native),
+        supports_boolean: true,
+        supports_choice: true,
+        supports_score: true,
+        returns_distributions: false,
+        max_questions: None,
+        min_choices: None,
+        max_choices: None,
+        max_score_levels: None,
+    }
+}
+
 /// Offline replay with exact input matching; transport controls are ignored.
 /// The normalized result is recorded by Core, so replay needs no wire decoder.
 pub struct MockDecisionReplayModel {
@@ -31,7 +59,7 @@ pub struct MockDecisionReplayModel {
 impl MockDecisionReplayModel {
     /// Build from unified recordings, selecting the named provider/model.
     /// # Errors
-    /// Returns an error if no decision or capability snapshot is available.
+    /// Returns an error if no decision recording is available.
     pub fn new(
         provider: impl Into<String>,
         model_id: impl Into<String>,
@@ -51,9 +79,7 @@ impl MockDecisionReplayModel {
                     "decision replay: no matching provider/model recording".into(),
                 )
             })?;
-        let capabilities = first.input.decision_capabilities.clone().ok_or_else(|| {
-            AiMuxError::InvalidArgument("decision replay: missing decision capabilities".into())
-        })?;
+        let capabilities = replay_capabilities(first);
         Ok(Self {
             provider,
             model_id,

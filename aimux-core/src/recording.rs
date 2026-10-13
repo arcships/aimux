@@ -152,10 +152,6 @@ impl Recording {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct InputRecord {
-    /// Decision contract used for validation and deterministic offline replay.
-    /// Connection settings remain outside the recording.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decision_capabilities: Option<crate::decision_model::DecisionCapabilities>,
     #[serde(default, skip_serializing_if = "RecordingOperation::is_language_model")]
     pub operation: RecordingOperation,
     /// 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
@@ -171,20 +167,20 @@ impl InputRecord {
     pub fn from_call_options(options: &CallOptions) -> Self {
         let value = serde_json::to_value(options).unwrap_or(serde_json::Value::Null);
         Self {
-            decision_capabilities: None,
             operation: RecordingOperation::LanguageModel,
             prompt: options.prompt.clone(),
             options: redact_json(value),
         }
     }
 
+    /// The input of a decision: its call options only. What a model supports
+    /// is a property of the model, looked up again on replay (as
+    /// `DecisionModelV4.supportedQuestionTypes`,
+    /// `@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4.ts:11`),
+    /// so no capability snapshot is recorded.
     #[must_use]
-    pub fn from_decision_options(
-        options: &crate::decision_model::DecisionCallOptions,
-        capabilities: &crate::decision_model::DecisionCapabilities,
-    ) -> Self {
+    pub fn from_decision_options(options: &crate::decision_model::DecisionCallOptions) -> Self {
         Self {
-            decision_capabilities: Some(capabilities.clone()),
             operation: RecordingOperation::Decision,
             prompt: Vec::new(),
             options: redact_json(serde_json::to_value(options).unwrap_or_default()),
@@ -415,7 +411,6 @@ pub trait Recorder: Send + Sync {
         _options: &crate::decision_model::DecisionCallOptions,
         _provider: &str,
         _model_id: &str,
-        _capabilities: &crate::decision_model::DecisionCapabilities,
     ) {
     }
     /// 录制会话归组信息(RFC-0024 P3):session_id + 会话内步号。
@@ -842,11 +837,10 @@ impl Recorder for JsonlRecorder {
         options: &crate::decision_model::DecisionCallOptions,
         provider: &str,
         model_id: &str,
-        capabilities: &crate::decision_model::DecisionCapabilities,
     ) {
         self.send_ev(RecordEvent::Input {
             call_id: call_id.to_owned(),
-            input: InputRecord::from_decision_options(options, capabilities),
+            input: InputRecord::from_decision_options(options),
             provider: ProviderRecord::from_model(provider, model_id),
         });
     }
@@ -930,7 +924,6 @@ fn entry_or_init<'a>(
         Recording::new(
             call_id,
             InputRecord {
-                decision_capabilities: None,
                 operation: Default::default(),
                 prompt: Vec::new(),
                 options: serde_json::Value::Null,
@@ -1403,7 +1396,6 @@ impl RingInner {
                 Recording::new(
                     call_id,
                     InputRecord {
-                        decision_capabilities: None,
                         operation: Default::default(),
                         prompt: Vec::new(),
                         options: serde_json::Value::Null,
@@ -1481,11 +1473,10 @@ impl Recorder for RingRecorder {
         options: &crate::decision_model::DecisionCallOptions,
         provider: &str,
         model_id: &str,
-        capabilities: &crate::decision_model::DecisionCapabilities,
     ) {
         let mut inner = self.inner.lock().unwrap();
         let rec = inner.entry_or_init_bounded(call_id);
-        rec.input = InputRecord::from_decision_options(options, capabilities);
+        rec.input = InputRecord::from_decision_options(options);
         if rec.provider.provider.is_empty() {
             rec.provider = ProviderRecord::from_model(provider, model_id);
         }
@@ -2082,7 +2073,6 @@ mod tests {
         let mut rec = Recording::new(
             "call-x",
             InputRecord {
-                decision_capabilities: None,
                 operation: Default::default(),
                 prompt: Vec::new(),
                 options: serde_json::Value::Null,
@@ -2857,7 +2847,6 @@ mod tests {
         Recording::new(
             call_id,
             InputRecord {
-                decision_capabilities: None,
                 operation: Default::default(),
                 prompt: Vec::new(),
                 options: serde_json::Value::Null,

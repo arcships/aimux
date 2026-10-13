@@ -1062,7 +1062,6 @@ mod tests {
             call_id: trace_id.to_string(),
             recorded_at: "2026-08-06T00:00:00Z".to_string(),
             input: InputRecord {
-                decision_capabilities: None,
                 operation: Default::default(),
                 prompt: input_prompt,
                 options: serde_json::json!({ "temperature": 0.7 }),

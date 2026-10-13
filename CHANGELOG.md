@@ -402,6 +402,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   native shape, as the AI SDK's `SpeechModelV4Result.usage`. Google speech
   passes its `usageMetadata` through; other vendors report `None`. Speech
   model implementors set the field.
+- Decision recordings no longer store a capability snapshot:
+  `InputRecord::decision_capabilities` is removed, and
+  `InputRecord::from_decision_options` and `Recorder::record_decision_input`
+  no longer take capabilities. `MockDecisionReplayModel` does not read the
+  field; replay rebuilds the model from the host registry. The recording
+  schema stays 3, and older recordings with the field still load.
 
 **C ABI**
 
