@@ -24,7 +24,7 @@ use crate::options::{CallOptions, ResponseFormat, ToolChoice, prepare_tool_choic
 use crate::parse_tool_call::{ToolCallRepair, parse_tool_call};
 use crate::result::{
     GenerateContent, GenerateResult, GeneratedFile, ReasoningFileOutput, ReasoningPart, Source,
-    StreamResult, StreamTextResultAggregated, TextContent, ToolApprovalRequestOutput,
+    StreamResult, StreamTextResultAggregated, ToolApprovalRequestOutput,
 };
 use crate::shared::SharedProviderOptions;
 use crate::stream_part::{StreamPart, TextStreamPart};
@@ -158,9 +158,10 @@ impl GenerateTextOptions {
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct GenerateTextResult {
-    /// Ordered generated content with parsed tool calls.
+    /// Ordered generated content with parsed tool calls (the core
+    /// [`ContentPart`](crate::result::ContentPart)).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub content: Vec<TextContent>,
+    pub content: Vec<crate::result::ContentPart>,
     /// The generated text (concatenated from all text content parts).
     pub text: String,
     /// Tool calls requested by the model.
@@ -730,6 +731,29 @@ pub(crate) async fn generate_text_from_language_model_prompt(
                 });
             }
             GenerateContent::ToolResult(result) => rm.tool_result(result.clone()),
+        }
+    }
+    // A tool call that could not be parsed gets a tool error, after the
+    // model's content (`generate-text.ts:1303-1323`,
+    // `convert-language-model-content.ts:208-214`).
+    for call in &tool_calls {
+        if call.invalid == Some(true)
+            && call.dynamic == Some(true)
+            && call.provider_executed != Some(true)
+        {
+            rm.tool_error(crate::result::TypedToolError {
+                tool_call_id: call.tool_call_id.clone(),
+                tool_name: call.tool_name.clone(),
+                input: Some(call.input.clone()),
+                error: Value::String(
+                    call.error
+                        .as_ref()
+                        .map_or_else(|| "unknown error".to_owned(), ToString::to_string),
+                ),
+                provider_executed: None,
+                provider_metadata: None,
+                dynamic: Some(true),
+            });
         }
     }
 

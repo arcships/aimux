@@ -101,6 +101,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as `AIMUX_E_INVALID_RESPONSE_DATA`; Node and Python raise them as
   `InvalidPromptError` and `InvalidResponseDataError`.
 
+- Text results carry the AI SDK's core `ContentPart` (`aimux-core`), eleven
+  kinds, instead of the provider's `GenerateContent`: `GenerateTextResult`
+  and `StreamTextResultAggregated` `content` is `Vec<ContentPart>`
+  (`TextContent` is removed; Node exports `ContentPart`, Python keeps the
+  `TextContent` model name). New kinds: `ToolError(TypedToolError)` and
+  `ToolApprovalResponse(ToolApprovalResponseOutput)`. A provider tool result
+  is `ToolResult(TypedToolResult { tool_call_id, tool_name, input, output,
+  provider_executed, provider_metadata, dynamic, preliminary })`, with the
+  input of the call it answers, or `ToolError(TypedToolError { .., error,
+  .. })` when the provider marks it as an error. A tool call that could not
+  be parsed is followed by a `ToolError` holding its error message, which
+  the response messages replay in a tool message as error text. Wire
+  format: `{"File": {"file": GeneratedFile, "provider_metadata": ..}}` (was
+  the bare `GeneratedFile`), `{"ToolResult": {.., "input", "output",
+  "provider_executed"}}` (was `result` / `is_error`), and the new
+  `ToolError` / `ToolApprovalResponse` tags. `GenerateContent` is no longer
+  generic.
+
 - Tool-call and tool-result types are unified, one per protocol layer
   (`aimux-core`). A provider emits `tool::RawToolCall` (`input` is the raw
   argument text) in `GenerateContent::ToolCall(..)` and

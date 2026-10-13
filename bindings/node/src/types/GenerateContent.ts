@@ -8,6 +8,7 @@ import type { ToolResult } from "./ToolResult";
 import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
- * A content item in the generation result.
+ * A content item a provider returns (V4 `LanguageModelV4Content`). Text
+ * generation turns it into the core [`ContentPart`].
  */
-export type GenerateContent<C = RawToolCall, A = RawToolApprovalRequest, R = GeneratedFile> = { "Text": { text: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolCall": C } | { "Source": Source } | { "Reasoning": ReasoningOutput } | { "File": GeneratedFile } | { "ReasoningFile": R } | { "Custom": { kind: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolApprovalRequest": A } | { "ToolResult": ToolResult };
+export type GenerateContent = { "Text": { text: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolCall": RawToolCall } | { "Source": Source } | { "Reasoning": ReasoningOutput } | { "File": GeneratedFile } | { "ReasoningFile": GeneratedFile } | { "Custom": { kind: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolApprovalRequest": RawToolApprovalRequest } | { "ToolResult": ToolResult };
