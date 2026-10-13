@@ -21,9 +21,10 @@ use crate::shared::{SharedHeaders, SharedProviderMetadata, SharedProviderOptions
 use crate::{AbortSignal, retry, timeout};
 
 /// Audio input: raw bytes or a base64-encoded string.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(untagged)]
-#[ts(export)]
+///
+/// The JSON is a base64 string either way, as in the AI SDK's JSON.
+#[derive(Debug, Clone, TS)]
+#[ts(export, type = "string")]
 pub enum AudioInput {
     /// Raw binary bytes.
     Binary(Vec<u8>),
@@ -32,15 +33,18 @@ pub enum AudioInput {
 }
 
 /// A chunk of audio in a streaming transcription request.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(untagged)]
-#[ts(export)]
+///
+/// The JSON is a base64 string either way, as in the AI SDK's JSON.
+#[derive(Debug, Clone, TS)]
+#[ts(export, type = "string")]
 pub enum AudioChunk {
     /// Raw binary bytes.
     Binary(Vec<u8>),
     /// A base64-encoded string.
     Base64(String),
 }
+
+crate::wire::base64_wire_enum!(AudioInput, AudioChunk);
 
 /// A transcript segment with timing information.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

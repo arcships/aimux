@@ -45,15 +45,18 @@ pub enum VideoFile {
 }
 
 /// File payload for a [`VideoFile::File`]: base64 string or raw bytes.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(untagged)]
-#[ts(export)]
+///
+/// The JSON is a base64 string either way, as in the AI SDK's JSON.
+#[derive(Debug, Clone, TS)]
+#[ts(export, type = "string")]
 pub enum VideoFileData {
     /// Base64-encoded string.
     Base64(String),
     /// Raw binary bytes.
     Binary(Vec<u8>),
 }
+
+crate::wire::base64_wire_enum!(VideoFileData);
 
 /// The role a frame image plays in video generation.
 ///
@@ -97,8 +100,13 @@ pub enum VideoData {
     Url { url: String, media_type: String },
     /// Video as a base64-encoded string.
     Base64 { data: String, media_type: String },
-    /// Video as binary data.
-    Binary { data: Vec<u8>, media_type: String },
+    /// Video as binary data (a base64 string in the JSON).
+    Binary {
+        #[ts(type = "string")]
+        #[serde(with = "crate::wire::base64_bytes")]
+        data: Vec<u8>,
+        media_type: String,
+    },
 }
 
 /// Options passed to [`VideoModel::do_start`] and [`VideoModel::do_status`].

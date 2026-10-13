@@ -312,14 +312,72 @@ object ToolChoiceSerializer : KSerializer<ToolChoice> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Raw bytes or a base64 string. Mirrors `FileBytes.ts`: `Array<number> | string`
- * (untagged — a JSON array is binary, a JSON string is base64). Also the shape
- * of every `Array<number> | string` field (audio input, image / video file data).
+ * Bytes in the AI SDK's JSON: a `Uint8Array` is a base64 string there
+ * (`@ai-sdk/provider-utils` `uint8-utils.ts:12-23`), never an array of numbers.
+ * Byte values (0–255) are encoded and decoded at the JSON boundary.
+ */
+object Base64Bytes {
+    /** Standard, padded base64, as `btoa`. */
+    fun encode(bytes: List<Int>): String =
+        java.util.Base64.getEncoder().encodeToString(ByteArray(bytes.size) { bytes[it].toByte() })
+
+    /**
+     * Decodes as `convertBase64ToUint8Array` (`uint8-utils.ts:6-10`): `-` and `_`
+     * read as `+` and `/`, padding optional, ASCII whitespace ignored.
+     */
+    fun decode(text: String): List<Int> {
+        val normalized = buildString {
+            for (c in text) {
+                when (c) {
+                    ' ', '\t', '\n', '\u000C', '\r', '=' -> Unit
+                    '-' -> append('+')
+                    '_' -> append('/')
+                    else -> append(c)
+                }
+            }
+        }
+        val raw = try {
+            java.util.Base64.getDecoder().decode(normalized)
+        } catch (e: IllegalArgumentException) {
+            throw SerializationException("invalid base64 data: ${e.message}")
+        }
+        return raw.map { it.toInt() and 0xff }
+    }
+
+    internal fun decode(el: JsonElement, what: String): List<Int> {
+        val text = (el as? JsonPrimitive)?.takeIf { it.isString }?.content
+            ?: throw SerializationException("$what must be a base64 string, got: $el")
+        return decode(text)
+    }
+}
+
+/** (De)serializer for a byte list field: a base64 string on the wire. */
+object Base64ByteListSerializer : KSerializer<List<Int>> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("aimux.Base64Bytes")
+
+    override fun deserialize(decoder: Decoder): List<Int> {
+        val json = decoder as? JsonDecoder
+            ?: throw SerializationException("bytes can only be decoded from JSON")
+        return Base64Bytes.decode(json.decodeJsonElement(), "bytes")
+    }
+
+    override fun serialize(encoder: Encoder, value: List<Int>) {
+        val json = encoder as? JsonEncoder
+            ?: throw SerializationException("bytes can only be encoded to JSON")
+        json.encodeJsonElement(JsonPrimitive(Base64Bytes.encode(value)))
+    }
+}
+
+/**
+ * Raw bytes or a base64 string. Mirrors `FileBytes.ts`: `string`, the AI SDK's
+ * `Uint8Array | string` in JSON (`shared-v4-file-data.ts:7-10`). [Binary] is
+ * written as base64; parsing yields [Base64]. Also the shape of every
+ * `Uint8Array | string` field (audio input, image / video file data).
  */
 @Serializable(with = FileBytesSerializer::class)
 sealed interface FileBytes {
 
-    /** Raw binary bytes (a JSON array of 0–255 ints on the wire). */
+    /** Raw binary bytes (0–255 ints), written as a base64 string. */
     data class Binary(val data: List<Int> = emptyList()) : FileBytes
 
     /** A base64-encoded string. */
@@ -332,11 +390,10 @@ object FileBytesSerializer : KSerializer<FileBytes> {
     override fun deserialize(decoder: Decoder): FileBytes {
         val json = decoder as? JsonDecoder
             ?: throw SerializationException("FileBytes can only be decoded from JSON")
-        return when (val el = json.decodeJsonElement()) {
-            is JsonArray -> FileBytes.Binary(el.map { it.jsonPrimitive.content.toInt() })
-            is JsonPrimitive -> FileBytes.Base64(el.content)
-            else -> throw SerializationException("FileBytes must be a byte array or a base64 string, got: $el")
-        }
+        val el = json.decodeJsonElement()
+        val text = (el as? JsonPrimitive)?.takeIf { it.isString }?.content
+            ?: throw SerializationException("FileBytes must be a base64 string, got: $el")
+        return FileBytes.Base64(text)
     }
 
     override fun serialize(encoder: Encoder, value: FileBytes) {
@@ -344,7 +401,7 @@ object FileBytesSerializer : KSerializer<FileBytes> {
             ?: throw SerializationException("FileBytes can only be encoded to JSON")
         json.encodeJsonElement(
             when (value) {
-                is FileBytes.Binary -> JsonArray(value.data.map { JsonPrimitive(it) })
+                is FileBytes.Binary -> JsonPrimitive(Base64Bytes.encode(value.data))
                 is FileBytes.Base64 -> JsonPrimitive(value.data)
             }
         )
@@ -488,6 +545,8 @@ sealed interface ContentPart {
     @Serializable
     @SerialName("image")
     data class Image(
+        /** Image bytes (0–255), a base64 string on the wire. */
+        @Serializable(with = Base64ByteListSerializer::class)
         val image: List<Int> = emptyList(),
         val mediaType: String = "",
         val providerOptions: ProviderOptions? = null,
@@ -496,6 +555,8 @@ sealed interface ContentPart {
     @Serializable
     @SerialName("file")
     data class File(
+        /** File bytes (0–255), a base64 string on the wire. */
+        @Serializable(with = Base64ByteListSerializer::class)
         val data: List<Int> = emptyList(),
         val mediaType: String = "",
         val filename: String? = null,

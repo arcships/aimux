@@ -18,6 +18,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
@@ -1037,7 +1039,10 @@ public final class Types {
         }
 
         public static class Image extends ContentPart {
-            @JsonProperty("image") private List<Integer> image = new ArrayList<>();
+            /** Image bytes (0–255), a base64 string on the wire. */
+            @JsonProperty("image")
+            @JsonSerialize(using = Base64BytesSerializer.class) @JsonDeserialize(using = Base64BytesDeserializer.class)
+            private List<Integer> image = new ArrayList<>();
             @JsonProperty("mediaType") private String mediaType = "";
             @JsonProperty("providerOptions") private JsonNode providerOptions;
 
@@ -1083,7 +1088,10 @@ public final class Types {
         }
 
         public static class File extends ContentPart {
-            @JsonProperty("data") private List<Integer> data = new ArrayList<>();
+            /** File bytes (0–255), a base64 string on the wire. */
+            @JsonProperty("data")
+            @JsonSerialize(using = Base64BytesSerializer.class) @JsonDeserialize(using = Base64BytesDeserializer.class)
+            private List<Integer> data = new ArrayList<>();
             @JsonProperty("mediaType") private String mediaType = "";
             @JsonProperty("filename") private String filename;
             @JsonProperty("providerOptions") private JsonNode providerOptions;
@@ -2137,21 +2145,89 @@ public final class Types {
     // ─────────────────────────────────────────────────────────────────────────────
     // File bytes / file data (shared V4 file types).
     //
-    // `FileBytes` is untagged (an int array or a base64 string); `FileData` and
+    // `FileBytes` is one base64 string on the wire; `FileData` and
     // `GeneratedFileData` are tagged on `type` (`{"type":"data","data":...}`, ...).
     // Each is modeled with a custom serializer.
     // ─────────────────────────────────────────────────────────────────────────────
 
     /**
+     * Bytes in the AI SDK's JSON. A {@code Uint8Array} is a base64 string there
+     * ({@code @ai-sdk/provider-utils} {@code uint8-utils.ts:12-23}), never an
+     * array of numbers; the byte values (0–255) here are encoded and decoded at
+     * the JSON boundary.
+     */
+    public static final class Base64Bytes {
+        private Base64Bytes() {}
+
+        /** Standard, padded base64, as {@code btoa}. */
+        public static String encode(List<Integer> bytes) {
+            byte[] raw = new byte[bytes.size()];
+            for (int i = 0; i < raw.length; i++) {
+                raw[i] = (byte) bytes.get(i).intValue();
+            }
+            return java.util.Base64.getEncoder().encodeToString(raw);
+        }
+
+        /**
+         * Decodes as {@code convertBase64ToUint8Array} ({@code uint8-utils.ts:6-10}):
+         * {@code -} and {@code _} read as {@code +} and {@code /}, padding optional,
+         * ASCII whitespace ignored.
+         */
+        public static List<Integer> decode(String text) throws IOException {
+            StringBuilder normalized = new StringBuilder(text.length());
+            for (char c : text.toCharArray()) {
+                if (c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r' || c == '=') continue;
+                normalized.append(c == '-' ? '+' : c == '_' ? '/' : c);
+            }
+            byte[] raw;
+            try {
+                raw = java.util.Base64.getDecoder().decode(normalized.toString());
+            } catch (IllegalArgumentException e) {
+                throw new IOException("invalid base64 data: " + e.getMessage(), e);
+            }
+            List<Integer> bytes = new ArrayList<>(raw.length);
+            for (byte b : raw) {
+                bytes.add(b & 0xff);
+            }
+            return bytes;
+        }
+
+        /** Reads a JSON node that must be a base64 string. */
+        public static List<Integer> decode(JsonNode node) throws IOException {
+            if (!node.isTextual()) {
+                throw new IOException("bytes must be a base64 string, got: " + node);
+            }
+            return decode(node.asText());
+        }
+    }
+
+    /** Writes a byte list ({@code List<Integer>}) as a base64 string. */
+    public static class Base64BytesSerializer extends JsonSerializer<List<Integer>> {
+        @Override
+        public void serialize(List<Integer> value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+            gen.writeString(Base64Bytes.encode(value));
+        }
+    }
+
+    /** Reads a base64 string into a byte list ({@code List<Integer>}). */
+    public static class Base64BytesDeserializer extends JsonDeserializer<List<Integer>> {
+        @Override
+        public List<Integer> deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+            return Base64Bytes.decode((JsonNode) p.getCodec().readTree(p));
+        }
+    }
+
+    /**
      * Either raw bytes or a base64-encoded string.
      *
-     * Mirrors `FileBytes.ts`: `Array<number> | string`.
-     * The binary payload is a list of byte ints (0–255).
+     * Mirrors `FileBytes.ts`: `string`, the AI SDK's `Uint8Array | string` in
+     * JSON (`shared-v4-file-data.ts:7-10`). {@link Binary} holds byte ints
+     * (0–255) and is written as base64; parsing yields {@link Base64}.
      */
     public abstract static class FileBytes {
         private FileBytes() {}
 
-        /** Raw binary bytes (a JSON array of 0–255 ints on the wire). */
+        /** Raw binary bytes (0–255 ints), written as a base64 string. */
         public static class Binary extends FileBytes {
             private List<Integer> data = new ArrayList<>();
 
@@ -2196,16 +2272,12 @@ public final class Types {
         }
     }
 
-    /** Serializes {@link FileBytes} untagged: a JSON int array (binary) or a string (base64). */
+    /** Serializes {@link FileBytes} as one base64 string. */
     public static class FileBytesSerializer extends JsonSerializer<FileBytes> {
         @Override
         public void serialize(FileBytes value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
             if (value instanceof FileBytes.Binary) {
-                gen.writeStartArray();
-                for (Integer b : ((FileBytes.Binary) value).getData()) {
-                    gen.writeNumber(b);
-                }
-                gen.writeEndArray();
+                gen.writeString(Base64Bytes.encode(((FileBytes.Binary) value).getData()));
             } else if (value instanceof FileBytes.Base64) {
                 gen.writeString(((FileBytes.Base64) value).getData());
             } else {
@@ -2214,22 +2286,15 @@ public final class Types {
         }
     }
 
-    /** Deserializes {@link FileBytes}: a JSON array is binary, a JSON string is base64. */
+    /** Deserializes {@link FileBytes}: a base64 string. */
     public static class FileBytesDeserializer extends JsonDeserializer<FileBytes> {
         @Override
         public FileBytes deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
             JsonNode node = p.getCodec().readTree(p);
-            if (node.isArray()) {
-                List<Integer> data = new ArrayList<>();
-                for (JsonNode item : node) {
-                    data.add(item.asInt());
-                }
-                return new FileBytes.Binary(data);
-            }
             if (node.isTextual()) {
                 return new FileBytes.Base64(node.asText());
             }
-            throw new IOException("FileBytes must be an int array or a base64 string, got: " + node);
+            throw new IOException("FileBytes must be a base64 string, got: " + node);
         }
     }
 

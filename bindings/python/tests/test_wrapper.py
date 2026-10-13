@@ -10,9 +10,11 @@ SequencedMockServer) and canned provider responses from test_e2e.py.
 import json
 
 import pytest
+from pydantic import TypeAdapter
 
 from aimux import deepseek, anthropic
 from aimux.wrapper import (
+    ContentPart,
     GenerateTextOptions,
     GenerateTextResult,
     ModelMessage,
@@ -286,6 +288,24 @@ class TestPromptMessages:
         # Content is the multi-part array form (not flattened to a string).
         assert isinstance(msg["content"], list)
         assert msg["content"][0] == {"type": "text", "text": "Hello, multimodal world."}
+
+    def test_image_bytes_are_base64_on_the_wire(self):
+        """ImagePart.image is DataContent upstream (provider-utils
+        types/content-part.ts:42): bytes are a base64 string in the JSON."""
+        part = TypeAdapter(ContentPart).validate_python(
+            {"type": "image", "image": b"\x89PNG", "mediaType": "image/png"}
+        )
+        assert part.model_dump(by_alias=True, exclude_none=True) == {
+            "type": "image",
+            "image": "iVBORw==",
+            "mediaType": "image/png",
+        }
+        with RecordingMockServer(ANTHROPIC_MSG) as mock:
+            model = anthropic("test-key", "claude-3-5-sonnet-20241022", mock.url)
+            generate_text(model, [ModelMessage(role="user", content=[part])])
+            body = mock.received_body()
+        source = body["messages"][0]["content"][0]["source"]
+        assert source == {"type": "base64", "media_type": "image/png", "data": "iVBORw=="}
 
 
 # ── tool-call round trip with typed content parts ────────────────────────────

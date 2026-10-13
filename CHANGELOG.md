@@ -13,12 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   camelCase (`toolCallId`, `providerOptions`, `inputTokens`); unions carry the
   AI SDK's tag and strings (`{"type":"text-delta"}`, `"tool-call"`,
   `"reasoning-file"`, Source `sourceType`, Warning/FileData/ResponseFormat/
-  stream parts no longer externally tagged); byte payloads are untagged
-  (array of numbers or base64 string); optional fields are omitted instead of
-  `null` and generate as `field?: T`; `AiMuxError` is tagged by `name`
+  stream parts no longer externally tagged); bytes are base64 strings;
+  optional fields are omitted instead of `null` and generate as `field?: T`;
+  `AiMuxError` is tagged by `name`
   (`AI_APICallError`, `AI_RetryError`, ...). Vendor request and response types
   and the OpenAI chat-completion output keep their vendor wire formats.
   Persisted recordings and trace records change with the same rule.
+
+- Bytes are base64 strings in the public JSON, as the AI SDK writes a
+  `Uint8Array`: image part `image`, file part `data`, `FileBytes`, speech
+  `audio`, image outputs, video `binary` data and audio/image/video inputs. An
+  array of numbers is no longer read. Bindings keep their byte-valued APIs
+  (`Binary` variants, Python `bytes`) and encode them at the JSON boundary
+  (#232 C33).
 
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit

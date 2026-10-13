@@ -309,7 +309,7 @@ properties carry the same names), unions tagged on `type` (`Source` on
 | `Tool` (`Function` / `Provider`), `ToolChoice` | `{"type":"function"}`, `inputSchema`, `toolChoice` |
 | `ContentPart` (sealed) | `type`: `text`, `custom`, `reasoning`, `reasoning-file`, `image`, `file`, `file-base64`, `file-url`, `file-reference`, `tool-call`, `tool-result`, `tool-approval-request` |
 | `ContentPart.ToolResult(toolCallId, toolName, output, providerOptions)` | `output` is a `ToolResultOutput`: `text`, `json` (`ToolResultOutput.JsonValue`), `execution-denied`, `error-text`, `error-json`, `content` |
-| `FileBytes` | untagged: JSON array = binary, JSON string = base64 (also audio / image / video file data) |
+| `FileBytes` | a base64 string; `Binary` is written as base64 (also audio / image / video file data, image and file part bytes) |
 | `FileData` / `GeneratedFileData` | `type`: `data`, `url`, `reference`, `text` |
 | `GenerateContent` (provider-level `raw.content`) | `type`: `text`, `tool-call` (`input` is the raw argument text), `source`, `reasoning`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `tool-result` |
 | `StreamPart` (sealed) | `type`: `text-start/delta/end`, `stream-start`, `finish`, `finish-step`, `error`, `tool-input-start/delta/end`, `tool-call`, `tool-result`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `reasoning-start/delta/end`, `source`, `raw` |

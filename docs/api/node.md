@@ -362,9 +362,8 @@ const resultJson = await speaker.generate(JSON.stringify({
 }))
 const result = JSON.parse(resultJson)
 
-// result.audio is a base64 string or an array of byte values
-const audio = result.audio
-fs.writeFileSync('out.mp3', typeof audio === 'string' ? Buffer.from(audio, 'base64') : Buffer.from(audio))
+// result.audio is a base64 string (bytes are base64 in the JSON)
+fs.writeFileSync('out.mp3', Buffer.from(result.audio, 'base64'))
 ```
 
 ## Speech to Text (STT)
@@ -399,9 +398,8 @@ const resultJson = await imager.generate(JSON.stringify({
 }))
 const result = JSON.parse(resultJson)
 
-// result.images is an array of base64 strings, or an array of byte arrays
-const image = result.images[0]
-fs.writeFileSync('out.png', typeof image === 'string' ? Buffer.from(image, 'base64') : Buffer.from(image))
+// result.images is an array of base64 strings (bytes are base64 in the JSON)
+fs.writeFileSync('out.png', Buffer.from(result.images[0], 'base64'))
 ```
 
 Multimodal calls accept an optional `AbortBridge` as their last argument —

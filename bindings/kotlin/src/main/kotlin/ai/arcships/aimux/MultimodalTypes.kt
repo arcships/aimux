@@ -121,7 +121,9 @@ data class EmbeddingCallOptions(
 /**
  * Generated audio: a base64 string or raw binary bytes.
  *
- * Wire format (untagged, `AudioData.ts`): `"..."` (base64) | `[n,...]` (binary).
+ * Wire format (`AudioData.ts`): a base64 string (`SpeechModelV4Result.audio`,
+ * `speech-model-v4-result.ts:16`). [Binary] is written as base64; parsing
+ * yields [Base64].
  */
 @Serializable(with = AudioDataSerializer::class)
 sealed interface AudioData {
@@ -179,7 +181,9 @@ data class SpeechCallOptions(
 /**
  * Generated images: all base64 strings or all binary byte arrays.
  *
- * Wire format (untagged, `ImageOutputs.ts`): `["...", ...]` | `[[n,...], ...]`.
+ * Wire format (`ImageOutputs.ts`): base64 strings `["...", ...]`
+ * (`image-model-v4-result.ts:23`). [Binary] is written as base64; parsing
+ * yields [Base64].
  */
 @Serializable(with = ImageOutputsSerializer::class)
 sealed interface ImageOutputs {
@@ -372,10 +376,16 @@ sealed interface VideoData {
     @SerialName("base64")
     data class Base64(val data: String, override val mediaType: String) : VideoData
 
-    /** Raw binary video bytes (each element is a 0–255 byte value). */
+    /**
+     * Raw binary video bytes (each element is a 0–255 byte value), a base64
+     * string on the wire (`video-model-v4-result.ts:28-29`).
+     */
     @Serializable
     @SerialName("binary")
-    data class Binary(val data: List<Int>, override val mediaType: String) : VideoData
+    data class Binary(
+        @Serializable(with = Base64ByteListSerializer::class) val data: List<Int>,
+        override val mediaType: String,
+    ) : VideoData
 }
 
 /** An input video/image, tagged on `type`. Mirrors `VideoFile.ts`. */
@@ -529,21 +539,20 @@ data class UploadFileCallOptions(
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Custom serializers for the untagged unions.
+// Custom serializers for the byte unions (base64 strings on the wire).
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** (De)serializer for [AudioData]: `"..."` | `[n,...]`. */
+/** (De)serializer for [AudioData]: a base64 string. */
 object AudioDataSerializer : KSerializer<AudioData> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("aimux.AudioData")
 
     override fun deserialize(decoder: Decoder): AudioData {
         val json = decoder as? JsonDecoder
             ?: throw SerializationException("AudioData can only be decoded from JSON")
-        return when (val el = json.decodeJsonElement()) {
-            is JsonArray -> AudioData.Binary(el.map { it.jsonPrimitive.content.toInt() })
-            is JsonPrimitive -> AudioData.Base64(el.content)
-            else -> throw SerializationException("AudioData must be a base64 string or a byte array, got: $el")
-        }
+        val el = json.decodeJsonElement()
+        val text = (el as? JsonPrimitive)?.takeIf { it.isString }?.content
+            ?: throw SerializationException("AudioData must be a base64 string, got: $el")
+        return AudioData.Base64(text)
     }
 
     override fun serialize(encoder: Encoder, value: AudioData) {
@@ -552,13 +561,13 @@ object AudioDataSerializer : KSerializer<AudioData> {
         json.encodeJsonElement(
             when (value) {
                 is AudioData.Base64 -> JsonPrimitive(value.value)
-                is AudioData.Binary -> JsonArray(value.value.map { JsonPrimitive(it) })
+                is AudioData.Binary -> JsonPrimitive(Base64Bytes.encode(value.value))
             }
         )
     }
 }
 
-/** (De)serializer for [ImageOutputs]: `["...",...]` | `[[n,...],...]`. */
+/** (De)serializer for [ImageOutputs]: `["...",...]` (base64 strings). */
 object ImageOutputsSerializer : KSerializer<ImageOutputs> {
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("aimux.ImageOutputs")
 
@@ -566,12 +575,12 @@ object ImageOutputsSerializer : KSerializer<ImageOutputs> {
         val json = decoder as? JsonDecoder
             ?: throw SerializationException("ImageOutputs can only be decoded from JSON")
         val items = json.decodeJsonElement().jsonArray
-        // An empty list carries no evidence either way; treat it as base64.
-        return if (items.firstOrNull() is JsonArray) {
-            ImageOutputs.Binary(items.map { row -> row.jsonArray.map { it.jsonPrimitive.content.toInt() } })
-        } else {
-            ImageOutputs.Base64(items.map { it.jsonPrimitive.content })
-        }
+        return ImageOutputs.Base64(
+            items.map {
+                (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content
+                    ?: throw SerializationException("ImageOutputs must be base64 strings, got: $it")
+            },
+        )
     }
 
     override fun serialize(encoder: Encoder, value: ImageOutputs) {
@@ -580,7 +589,7 @@ object ImageOutputsSerializer : KSerializer<ImageOutputs> {
         json.encodeJsonElement(
             when (value) {
                 is ImageOutputs.Base64 -> JsonArray(value.value.map { JsonPrimitive(it) })
-                is ImageOutputs.Binary -> JsonArray(value.value.map { row -> JsonArray(row.map { JsonPrimitive(it) }) })
+                is ImageOutputs.Binary -> JsonArray(value.value.map { JsonPrimitive(Base64Bytes.encode(it)) })
             }
         )
     }

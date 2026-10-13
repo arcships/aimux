@@ -12,6 +12,7 @@
 // open (`JsonValue`, provider metadata, warnings, errors).
 
 import 'dart:async';
+import 'dart:convert' show base64;
 
 import 'package:json_annotation/json_annotation.dart';
 
@@ -25,6 +26,24 @@ List<Json> _maps(Object? v) => _list(v, (m) => m);
 Json? _opt(Object? v) => v as Json?;
 List<T>? _optList<T>(Object? v, T Function(Json) f) =>
     v == null ? null : _list(v, f);
+
+/// Bytes in the AI SDK's JSON: a `Uint8Array` is a base64 string
+/// (`@ai-sdk/provider-utils` `uint8-utils.ts:12-23`), never an array of ints.
+String encodeBase64Bytes(List<int> bytes) => base64.encode(bytes);
+
+/// Decodes base64 as `convertBase64ToUint8Array` does (`uint8-utils.ts:6-10`):
+/// `-` and `_` read as `+` and `/`, padding optional, ASCII whitespace ignored.
+List<int> decodeBase64Bytes(Object? json) {
+  if (json is! String) {
+    throw FormatException('bytes must be a base64 string, got: $json');
+  }
+  var text = json
+      .replaceAll(RegExp(r'[\t\n\f\r =]'), '')
+      .replaceAll('-', '+')
+      .replaceAll('_', '/');
+  text = text.padRight(text.length + (4 - text.length % 4) % 4, '=');
+  return base64.decode(text);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared enums
@@ -485,13 +504,14 @@ class ResponseMetadata {
 // File data, generated files, sources
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Raw bytes (a JSON array of ints) or a base64 string — `FileBytes.ts` is the
-/// untagged union `Array<number> | string`.
+/// Raw bytes or a base64 string — `FileBytes.ts` is `string`, the AI SDK's
+/// `Uint8Array | string` in JSON (`shared-v4-file-data.ts:7-10`). Binary bytes
+/// are written as base64; parsing yields [FileBytesBase64].
 sealed class FileBytes {
   const FileBytes();
   factory FileBytes.fromJson(Object json) => json is String
       ? FileBytesBase64(data: json)
-      : FileBytesBinary(data: (json as List).cast<int>());
+      : throw FormatException('FileBytes must be a base64 string, got: $json');
   Object toJson();
 }
 
@@ -499,7 +519,7 @@ final class FileBytesBinary extends FileBytes {
   final List<int> data;
   const FileBytesBinary({required this.data});
   @override
-  Object toJson() => data;
+  Object toJson() => encodeBase64Bytes(data);
 }
 
 final class FileBytesBase64 extends FileBytes {
@@ -742,11 +762,11 @@ sealed class ContentPart {
             signature: j['signature'] as String?,
             inputSchemaInput: j['inputSchemaInput']),
         'image' => ContentPartImage(
-            image: (j['image'] as List).cast<int>(),
+            image: decodeBase64Bytes(j['image']),
             mediaType: j['mediaType'] as String,
             providerOptions: _opt(j['providerOptions'])),
         'file' => ContentPartFile(
-            data: (j['data'] as List).cast<int>(),
+            data: decodeBase64Bytes(j['data']),
             mediaType: j['mediaType'] as String,
             filename: j['filename'] as String?,
             providerOptions: _opt(j['providerOptions'])),
@@ -858,7 +878,7 @@ final class ContentPartImage extends ContentPart {
   @override
   Json toJson() => {
         'type': 'image',
-        'image': image,
+        'image': encodeBase64Bytes(image),
         'mediaType': mediaType,
         if (providerOptions != null) 'providerOptions': providerOptions,
       };
@@ -877,7 +897,7 @@ final class ContentPartFile extends ContentPart {
   @override
   Json toJson() => {
         'type': 'file',
-        'data': data,
+        'data': encodeBase64Bytes(data),
         'mediaType': mediaType,
         if (filename != null) 'filename': filename,
         if (providerOptions != null) 'providerOptions': providerOptions,

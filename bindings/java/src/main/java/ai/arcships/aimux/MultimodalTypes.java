@@ -14,6 +14,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
@@ -45,7 +47,7 @@ import java.util.Objects;
  * }</pre>
  *
  * <p>The byte unions ({@link AudioData}, {@link ImageOutputs}, {@link VideoFileData})
- * are untagged on the wire (a base64 string or an int array), and
+ * are base64 strings on the wire (the AI SDK's JSON for a {@code Uint8Array}), and
  * {@link VideoData} / {@link VideoFile} are tagged on {@code type}, so each has a
  * custom serializer — the same pattern as {@link Types.FileBytes} in
  * {@code Types.java}.
@@ -324,7 +326,9 @@ public final class MultimodalTypes {
     /**
      * Generated audio: a base64 string or raw binary bytes.
      *
-     * <p>Wire format (untagged): a base64 string | {@code [n,...]}.
+     * <p>Wire format: a base64 string ({@code SpeechModelV4Result.audio},
+     * {@code speech-model-v4-result.ts:16}). {@link Binary} is written as base64;
+     * parsing yields {@link Base64}.
      */
     public abstract static class AudioData {
         private AudioData() {}
@@ -380,18 +384,14 @@ public final class MultimodalTypes {
         }
     }
 
-    /** Untagged (de)serializer for {@link AudioData}: a base64 string or an int array. */
+    /** Serializer for {@link AudioData}: a base64 string. */
     public static class AudioDataSerializer extends JsonSerializer<AudioData> {
         @Override
         public void serialize(AudioData value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
             if (value instanceof AudioData.Base64) {
                 gen.writeString(((AudioData.Base64) value).getValue());
             } else if (value instanceof AudioData.Binary) {
-                gen.writeStartArray();
-                for (Integer b : ((AudioData.Binary) value).getValue()) {
-                    gen.writeNumber(b);
-                }
-                gen.writeEndArray();
+                gen.writeString(Types.Base64Bytes.encode(((AudioData.Binary) value).getValue()));
             } else {
                 throw new IOException("Unknown AudioData: " + value);
             }
@@ -406,14 +406,7 @@ public final class MultimodalTypes {
             if (node.isTextual()) {
                 return new AudioData.Base64(node.asText());
             }
-            if (node.isArray()) {
-                List<Integer> bytes = new ArrayList<>();
-                for (JsonNode item : node) {
-                    bytes.add(item.asInt());
-                }
-                return new AudioData.Binary(bytes);
-            }
-            throw new IOException("AudioData must be a base64 string or an int array, got: " + node);
+            throw new IOException("AudioData must be a base64 string, got: " + node);
         }
     }
 
@@ -702,7 +695,9 @@ public final class MultimodalTypes {
     /**
      * Generated images: all base64 strings or all binary byte arrays.
      *
-     * <p>Wire format (untagged): {@code ["...", ...]} | {@code [[n,...], ...]}.
+     * <p>Wire format: base64 strings {@code ["...", ...]}
+     * ({@code ImageModelV4Result.images}, {@code image-model-v4-result.ts:23}).
+     * {@link Binary} is written as base64; parsing yields {@link Base64}.
      */
     public abstract static class ImageOutputs {
         private ImageOutputs() {}
@@ -758,7 +753,7 @@ public final class MultimodalTypes {
         }
     }
 
-    /** Untagged (de)serializer for {@link ImageOutputs}: an array of base64 strings or of int arrays. */
+    /** Serializer for {@link ImageOutputs}: an array of base64 strings ({@code image-model-v4-result.ts:23}). */
     public static class ImageOutputsSerializer extends JsonSerializer<ImageOutputs> {
         @Override
         public void serialize(ImageOutputs value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
@@ -769,11 +764,7 @@ public final class MultimodalTypes {
                 }
             } else if (value instanceof ImageOutputs.Binary) {
                 for (List<Integer> row : ((ImageOutputs.Binary) value).getValue()) {
-                    gen.writeStartArray();
-                    for (Integer b : row) {
-                        gen.writeNumber(b);
-                    }
-                    gen.writeEndArray();
+                    gen.writeString(Types.Base64Bytes.encode(row));
                 }
             } else {
                 throw new IOException("Unknown ImageOutputs: " + value);
@@ -790,19 +781,11 @@ public final class MultimodalTypes {
             if (!node.isArray()) {
                 throw new IOException("ImageOutputs must be an array, got: " + node);
             }
-            if (node.size() > 0 && node.get(0).isArray()) {
-                List<List<Integer>> rows = new ArrayList<>();
-                for (JsonNode rowNode : node) {
-                    List<Integer> row = new ArrayList<>();
-                    for (JsonNode item : rowNode) {
-                        row.add(item.asInt());
-                    }
-                    rows.add(row);
-                }
-                return new ImageOutputs.Binary(rows);
-            }
             List<String> values = new ArrayList<>();
             for (JsonNode item : node) {
+                if (!item.isTextual()) {
+                    throw new IOException("ImageOutputs must be base64 strings, got: " + item);
+                }
                 values.add(item.asText());
             }
             return new ImageOutputs.Base64(values);
@@ -1799,7 +1782,11 @@ public final class MultimodalTypes {
 
     /** The binary variant of {@link VideoData}. */
     public static class VideoBinaryData {
-        @JsonProperty("data") private List<Integer> data = new ArrayList<>();
+        /** Video bytes (0–255), a base64 string on the wire ({@code video-model-v4-result.ts:28-29}). */
+        @JsonProperty("data")
+        @JsonSerialize(using = Types.Base64BytesSerializer.class)
+        @JsonDeserialize(using = Types.Base64BytesDeserializer.class)
+        private List<Integer> data = new ArrayList<>();
         @JsonProperty("mediaType") private String mediaType = "";
 
         @JsonCreator
@@ -2090,7 +2077,8 @@ public final class MultimodalTypes {
     /**
      * File payload for a {@link VideoFile}: a base64 string or raw binary bytes.
      *
-     * <p>Wire format (untagged): a base64 string | {@code [n,...]}.
+     * <p>Wire format: a base64 string. {@link Binary} is written as base64; parsing
+     * yields {@link Base64}.
      */
     public abstract static class VideoFileData {
         private VideoFileData() {}
@@ -2146,18 +2134,14 @@ public final class MultimodalTypes {
         }
     }
 
-    /** Untagged (de)serializer for {@link VideoFileData}: a base64 string or an int array. */
+    /** Serializer for {@link VideoFileData}: a base64 string. */
     public static class VideoFileDataSerializer extends JsonSerializer<VideoFileData> {
         @Override
         public void serialize(VideoFileData value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
             if (value instanceof VideoFileData.Base64) {
                 gen.writeString(((VideoFileData.Base64) value).getValue());
             } else if (value instanceof VideoFileData.Binary) {
-                gen.writeStartArray();
-                for (Integer b : ((VideoFileData.Binary) value).getValue()) {
-                    gen.writeNumber(b);
-                }
-                gen.writeEndArray();
+                gen.writeString(Types.Base64Bytes.encode(((VideoFileData.Binary) value).getValue()));
             } else {
                 throw new IOException("Unknown VideoFileData: " + value);
             }
@@ -2172,14 +2156,7 @@ public final class MultimodalTypes {
             if (node.isTextual()) {
                 return new VideoFileData.Base64(node.asText());
             }
-            if (node.isArray()) {
-                List<Integer> bytes = new ArrayList<>();
-                for (JsonNode item : node) {
-                    bytes.add(item.asInt());
-                }
-                return new VideoFileData.Binary(bytes);
-            }
-            throw new IOException("VideoFileData must be a base64 string or an int array, got: " + node);
+            throw new IOException("VideoFileData must be a base64 string, got: " + node);
         }
     }
 

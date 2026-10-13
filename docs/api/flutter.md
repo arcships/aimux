@@ -316,8 +316,8 @@ and writes exactly the shapes of the generated TypeScript types
   `file-base64`, ...); sources use `sourceType`; errors use `name`
   (`{"name": "AI_APICallError", ...}`);
 - optional fields are absent, never `null`;
-- `FileBytes`, audio and image outputs are untagged (a byte array or a base64
-  string);
+- bytes (`FileBytes`, image and file parts, audio and image outputs) are
+  base64 strings, as the AI SDK's JSON carries a `Uint8Array`;
 - image `size` is a `"WxH"` string and `aspectRatio` a `"W:H"` string.
 
 A tool result in a message is a `ContentPartToolResult(toolCallId, toolName,

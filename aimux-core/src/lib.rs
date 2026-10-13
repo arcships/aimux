@@ -67,6 +67,7 @@ pub mod transcription_model;
 pub mod types;
 pub mod util;
 pub mod video_model;
+pub mod wire;
 
 /// Convenience re-exports.
 pub mod prelude {

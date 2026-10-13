@@ -343,7 +343,7 @@ result, err := aimux.ParseSpeechResult(resultJSON)
 if err != nil {
     log.Fatal(err)
 }
-// audio bytes: []byte(result.Audio) (base64 string or byte array on the wire)
+// audio bytes: []byte(result.Audio) (a base64 string on the wire)
 ```
 
 ## Speech to Text (STT)
@@ -593,7 +593,7 @@ The multimodal methods return JSON strings through the C ABI; the
 pointer fields (`*string`, `*bool`, `*int`) are optional — pass `nil` to omit.
 Image `Size` and video `Resolution` are `"WxH"` strings (`"1024x1024"`);
 `AspectRatio` is `"W:H"` (`"16:9"`). Binary data (`Audio`, `Images`, `VideoData.Data`) is `aimux.Bytes`: a
-base64 string or a byte array on the wire, always `[]byte` in Go.
+base64 string on the wire (the AI SDK's JSON for a `Uint8Array`), always `[]byte` in Go.
 
 ### Wire format
 

@@ -434,8 +434,8 @@ custom serializer for the scalar-or-object wire form), `ContentPart` (sealed),
 are the AI SDK's camelCase (`toolCallId`, `providerOptions`, `finishReason`, ...)
 and optional fields are absent, never `null`. Sealed hierarchies are tagged on
 `type` with the upstream kebab-case names (e.g. `{"type":"text-delta",...}`,
-`{"type":"tool-call",...}`); `FileBytes` is untagged (an int array or a base64
-string).
+`{"type":"tool-call",...}`); bytes (`FileBytes`, image and file parts) are
+base64 strings, as the AI SDK's JSON carries a `Uint8Array`.
 
 A `ContentPart.ToolResult` (`type: "tool-result"`) carries `toolCallId`,
 `toolName`, `output` and `providerOptions`; `output` is a `ToolResultOutput`
@@ -464,7 +464,8 @@ validation fails, even after repair) and `getError()` (the serialized
 `TranscriptionResult`, `RerankingCallOptions` / `RerankingResult`,
 `VideoCallOptions` / `VideoPollOptions` / `VideoResult`, `SearchCallOptions` / `SearchResult`,
 `UploadFileCallOptions` / `UploadFileResult`. Sealed unions (`AudioData`,
-`ImageOutputs`, `VideoFileData`) are untagged (a base64 string or an int array)
+`ImageOutputs`, `VideoFileData`) are base64 strings on the wire (a `Binary`
+value is written as base64)
 and `VideoData` / `VideoFile` are tagged on `type`, all with custom Jackson
 serializers. Response types (`EmbeddingResponse`, etc.) match
 the `aimux-core` `.ts` wire definitions exactly (`{headers, body, ...}`).

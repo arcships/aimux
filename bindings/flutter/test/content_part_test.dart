@@ -4,10 +4,14 @@ import 'package:aimux/types.dart';
 import 'package:test/test.dart';
 
 void main() {
-  group('FileBytes (untagged: number[] | string)', () {
-    test('binary is a bare array', () {
-      expect(FileBytesBinary(data: [104, 105]).toJson(), [104, 105]);
-      expect(FileBytes.fromJson([104, 105]), isA<FileBytesBinary>());
+  group('FileBytes (a base64 string)', () {
+    // SharedV4FileDataData.data is Uint8Array | string upstream
+    // (shared-v4-file-data.ts:7-10): one base64 string in the JSON
+    // (uint8-utils.ts:12-23), never an array of ints.
+    test('binary is written as base64', () {
+      expect(FileBytesBinary(data: [0, 1, 2, 250, 255]).toJson(), 'AAEC+v8=');
+      expect(() => FileBytes.fromJson([104, 105]), throwsFormatException);
+      expect(decodeBase64Bytes('AAEC-v8'), [0, 1, 2, 250, 255]);
     });
 
     test('base64 is a bare string', () {
@@ -38,10 +42,12 @@ void main() {
     // One wire document per variant; optional fields are absent, not null.
     final cases = <String, Map<String, dynamic>>{
       'text': {'type': 'text', 'text': 'hello'},
-      'image': {'type': 'image', 'image': [1, 2, 3], 'mediaType': 'image/png'},
+      // ImagePart.image / FilePart.data are DataContent (provider-utils
+      // types/content-part.ts:42, :75): base64 strings.
+      'image': {'type': 'image', 'image': 'AQID', 'mediaType': 'image/png'},
       'file': {
         'type': 'file',
-        'data': [104, 105],
+        'data': 'aGk=',
         'mediaType': 'application/pdf',
         'filename': 'doc.pdf',
       },

@@ -2,5 +2,7 @@
 
 /**
  * Audio input: raw bytes or a base64-encoded string.
+ *
+ * The JSON is a base64 string either way, as in the AI SDK's JSON.
  */
-export type AudioInput = Array<number> | string;
+export type AudioInput = string;

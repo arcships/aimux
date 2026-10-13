@@ -104,7 +104,9 @@ test('e2e: OpenAI embedding via mock server', async (t) => {
 
 test('e2e: OpenAI speech (TTS) via mock server returns binary audio', async (t) => {
   // The speech provider returns AudioData::Binary with the raw response bytes.
-  // The mock serves raw bytes with an audio content-type (not JSON).
+  // The mock serves raw bytes with an audio content-type (not JSON). The JSON
+  // carries them as a base64 string, as the AI SDK's JSON does for a
+  // `Uint8Array` (SpeechModelV4Result.audio: string | Uint8Array).
   const audioBytes = Buffer.from('fake-mp3-audio-data')
   const { server, url } = await startMockServer((req, res) => {
     res.writeHead(200, { 'content-type': 'audio/mpeg' })
@@ -117,8 +119,7 @@ test('e2e: OpenAI speech (TTS) via mock server returns binary audio', async (t) 
       await speaker.generate(JSON.stringify({ text: 'Hi', voice: 'alloy', outputFormat: 'mp3' })),
     )
 
-    t.true(Array.isArray(r.audio), 'audio comes back as AudioData::Binary (a byte array)')
-    t.true(r.audio.length > 0, 'binary audio is non-empty')
+    t.is(r.audio, audioBytes.toString('base64'), 'binary audio is a base64 string')
   } finally {
     await closeServer(server)
   }

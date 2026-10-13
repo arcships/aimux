@@ -21,10 +21,11 @@ serialization uses the camelCase form.
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import Annotated, Any, Callable, Dict, Iterator, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
 
 from . import _repair
@@ -240,8 +241,18 @@ Warning = Annotated[
 
 # ── FileBytes / FileData ────────────────────────────────────────────────────
 
-#: Raw bytes (a JSON number array) or a base64 string (Rust ``FileBytes``).
-FileBytes = Union[List[int], str]
+def _bytes_to_base64(value: Any) -> Any:
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return base64.b64encode(bytes(value)).decode("ascii")
+    return value
+
+
+#: Bytes as the AI SDK's JSON carries a ``Uint8Array``: a base64 string.
+#: ``bytes`` given here are encoded (Rust ``wire::base64_bytes``).
+Base64Bytes = Annotated[str, BeforeValidator(_bytes_to_base64)]
+
+#: File bytes: one base64 string on the wire (Rust ``FileBytes``).
+FileBytes = Base64Bytes
 
 
 class _FileDataData(_Wire):
@@ -586,13 +597,13 @@ class TextContentPart(_PartOptions):
 
 class _ImageContentPart(_PartOptions):
     type: Literal["image"] = "image"
-    image: List[int]
+    image: Base64Bytes
     media_type: str
 
 
 class _FileContentPart(_PartOptions):
     type: Literal["file"] = "file"
-    data: List[int]
+    data: Base64Bytes
     media_type: str
     filename: Optional[str] = None
 

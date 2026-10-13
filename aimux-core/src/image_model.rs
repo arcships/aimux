@@ -39,15 +39,18 @@ pub enum ImageFile {
 }
 
 /// File payload for an [`ImageFile::File`]: base64 string or raw bytes.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(untagged)]
-#[ts(export)]
+///
+/// The JSON is a base64 string either way, as in the AI SDK's JSON.
+#[derive(Debug, Clone, TS)]
+#[ts(export, type = "string")]
 pub enum ImageFileData {
     /// Base64-encoded string.
     Base64(String),
     /// Raw binary bytes.
     Binary(Vec<u8>),
 }
+
+crate::wire::base64_wire_enum!(ImageFileData);
 
 /// The generated images, returned as a homogeneous collection.
 ///
@@ -56,14 +59,33 @@ pub enum ImageFileData {
 /// union. Providers should return data without unnecessary conversion: if the
 /// upstream API returns base64, return [`ImageOutputs::Base64`]; if binary,
 /// return [`ImageOutputs::Binary`].
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(untagged)]
-#[ts(export)]
+///
+/// The JSON is an array of base64 strings either way, as in the AI SDK's
+/// JSON; parsing yields `Base64`.
+#[derive(Debug, Clone, TS)]
+#[ts(export, type = "Array<string>")]
 pub enum ImageOutputs {
     /// Images as base64-encoded strings.
     Base64(Vec<String>),
     /// Images as raw binary bytes.
     Binary(Vec<Vec<u8>>),
+}
+
+impl Serialize for ImageOutputs {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Base64(images) => images.serialize(serializer),
+            Self::Binary(images) => {
+                serializer.collect_seq(images.iter().map(|image| crate::wire::encode_base64(image)))
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ImageOutputs {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Vec::<String>::deserialize(deserializer).map(Self::Base64)
+    }
 }
 
 /// Token usage for an image generation call (if the provider reports it).

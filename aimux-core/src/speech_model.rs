@@ -15,15 +15,18 @@ use crate::{AbortSignal, retry, timeout};
 ///
 /// The TS result type is `string | Uint8Array`. Providers should return data
 /// without unnecessary conversion.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(untagged)]
-#[ts(export)]
+///
+/// The JSON is a base64 string either way, as in the AI SDK's JSON.
+#[derive(Debug, Clone, TS)]
+#[ts(export, type = "string")]
 pub enum AudioData {
     /// Audio as a base64-encoded string.
     Base64(String),
     /// Audio as raw binary bytes.
     Binary(Vec<u8>),
 }
+
+crate::wire::base64_wire_enum!(AudioData);
 
 /// Options passed to [`SpeechModel::do_generate`].
 ///

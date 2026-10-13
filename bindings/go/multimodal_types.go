@@ -10,26 +10,33 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
-// Bytes is binary data on the wire: a base64 string or an array of byte
-// values. It decodes either form; it encodes as a base64 string.
+// Bytes is binary data on the wire. The AI SDK's JSON carries a Uint8Array as
+// a base64 string (@ai-sdk/provider-utils uint8-utils.ts:12-23), so Bytes
+// encodes as a standard base64 string and decodes a base64 string as
+// convertBase64ToUint8Array does: "-" and "_" read as "+" and "/", padding
+// optional, ASCII whitespace ignored.
 type Bytes []byte
 
 func (b *Bytes) UnmarshalJSON(data []byte) error {
-	if len(data) > 0 && data[0] == '[' {
-		var values []uint8
-		if err := json.Unmarshal(data, &values); err != nil {
-			return err
-		}
-		*b = values
-		return nil
-	}
 	var text string
 	if err := json.Unmarshal(data, &text); err != nil {
-		return fmt.Errorf("aimux: bytes must be a base64 string or an array of numbers: %w", err)
+		return fmt.Errorf("aimux: bytes must be a base64 string: %w", err)
 	}
-	decoded, err := base64.StdEncoding.DecodeString(text)
+	normalized := strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\t', '\n', '\f', '\r', '=':
+			return -1
+		case '-':
+			return '+'
+		case '_':
+			return '/'
+		}
+		return r
+	}, text)
+	decoded, err := base64.RawStdEncoding.DecodeString(normalized)
 	if err != nil {
 		return fmt.Errorf("aimux: invalid base64: %w", err)
 	}
@@ -75,8 +82,7 @@ type EmbeddingCallOptions struct {
 
 // ── Speech (TTS) ──────────────────────────────────────────────────────────────
 
-// AudioData is generated audio: a base64 string or an array of bytes on the
-// wire, decoded to bytes.
+// AudioData is generated audio: a base64 string on the wire, decoded to bytes.
 type AudioData = Bytes
 
 // SpeechRequest is request metadata for speech generation.
@@ -119,8 +125,8 @@ type SpeechCallOptions struct {
 
 // ── Image ─────────────────────────────────────────────────────────────────────
 
-// ImageOutputs is the generated images: base64 strings or byte arrays on the
-// wire, decoded to bytes.
+// ImageOutputs is the generated images: base64 strings on the wire, decoded
+// to bytes.
 type ImageOutputs = []Bytes
 
 // ImageUsage is token usage for image generation (if reported).
@@ -350,7 +356,7 @@ type UploadFileResult struct {
 
 // UploadFileCallOptions is the options for a file upload.
 type UploadFileCallOptions struct {
-	// Data is {"type":"data","data":<base64 or bytes>} or {"type":"text","text":...}.
+	// Data is {"type":"data","data":"<base64>"} or {"type":"text","text":...}.
 	Data            json.RawMessage `json:"data"`
 	MediaType       string          `json:"mediaType"`
 	Filename        *string         `json:"filename,omitempty"`

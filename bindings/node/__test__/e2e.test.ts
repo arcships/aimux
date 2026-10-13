@@ -184,6 +184,42 @@ test('e2e: OpenAI generateText with options (maxOutputTokens, temperature)', asy
   }
 })
 
+test('e2e: image bytes are a base64 string in the prompt JSON', async (t) => {
+  // ImagePart.image is DataContent upstream (provider-utils
+  // types/content-part.ts:42): a base64 string in the JSON, never an array.
+  let receivedBody: any = null
+  const { server, url } = await startMockServer((req, res) => {
+    let body = ''
+    req.on('data', (chunk: Buffer) => (body += chunk))
+    req.on('end', () => {
+      receivedBody = JSON.parse(body)
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(ANTHROPIC_MESSAGE_RESPONSE)
+    })
+  })
+
+  try {
+    const model = await anthropic('test-key', 'claude-3-5-sonnet-20241022', url)
+    const image = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64')
+    const prompt = [{ role: 'user', content: [{ type: 'image', image, mediaType: 'image/png' }] }]
+    await model.generateText(JSON.stringify(prompt))
+
+    t.deepEqual(receivedBody.messages[0].content[0].source, {
+      type: 'base64',
+      media_type: 'image/png',
+      data: 'iVBORw==',
+    })
+    const err = await t.throwsAsync(
+      model.generateText(
+        JSON.stringify([{ role: 'user', content: [{ type: 'image', image: [1, 2], mediaType: 'image/png' }] }]),
+      ),
+    )
+    t.truthy(err)
+  } finally {
+    await closeServer(server)
+  }
+})
+
 // ── Tool-call parsing ───────────────────────────────────────────────────────
 
 const OPENAI_TOOL_CALL_RESPONSE = JSON.stringify({

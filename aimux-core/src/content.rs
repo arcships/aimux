@@ -62,8 +62,11 @@ pub enum ContentPart {
         input_schema_input: Option<Value>,
     },
 
-    /// An image (raw bytes + MIME type).
+    /// An image (raw bytes + MIME type). The JSON holds the bytes as a
+    /// base64 string.
     Image {
+        #[ts(type = "string")]
+        #[serde(with = "crate::wire::base64_bytes")]
         image: Vec<u8>,
         media_type: String,
         #[ts(optional)]
@@ -71,8 +74,11 @@ pub enum ContentPart {
         provider_options: Option<SharedProviderOptions>,
     },
 
-    /// A file (raw bytes + MIME type).
+    /// A file (raw bytes + MIME type). The JSON holds the bytes as a base64
+    /// string.
     File {
+        #[ts(type = "string")]
+        #[serde(with = "crate::wire::base64_bytes")]
         data: Vec<u8>,
         media_type: String,
         #[ts(optional)]

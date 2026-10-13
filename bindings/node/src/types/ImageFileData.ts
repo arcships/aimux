@@ -2,5 +2,7 @@
 
 /**
  * File payload for an [`ImageFile::File`]: base64 string or raw bytes.
+ *
+ * The JSON is a base64 string either way, as in the AI SDK's JSON.
  */
-export type ImageFileData = string | Array<number>;
+export type ImageFileData = string;

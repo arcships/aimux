@@ -374,23 +374,65 @@ public enum ResponseFormat: Codable, Equatable {
 
 // MARK: - File data
 
-/// Either raw bytes or a base64-encoded string. Wire: untagged
-/// (`[…]` | `"…"`).
+/// Bytes in the AI SDK's JSON: a `Uint8Array` is a base64 string there
+/// (`@ai-sdk/provider-utils` `uint8-utils.ts:12-23`), never an array of numbers.
+public enum Base64Bytes {
+    /// Standard, padded base64, as `btoa`.
+    public static func encode(_ bytes: [UInt8]) -> String {
+        Data(bytes).base64EncodedString()
+    }
+
+    /// Decodes as `convertBase64ToUint8Array` (`uint8-utils.ts:6-10`): `-` and
+    /// `_` read as `+` and `/`, padding optional, ASCII whitespace ignored.
+    public static func decode(_ text: String) -> [UInt8]? {
+        var normalized = String(text.unicodeScalars.compactMap { scalar -> Character? in
+            switch scalar {
+            case " ", "\t", "\n", "\u{0C}", "\r", "=": return nil
+            case "-": return "+"
+            case "_": return "/"
+            default: return Character(scalar)
+            }
+        })
+        if normalized.count % 4 == 1 { return nil }
+        normalized += String(repeating: "=", count: (4 - normalized.count % 4) % 4)
+        return Data(base64Encoded: normalized).map { [UInt8]($0) }
+    }
+
+    static func decode(_ c: SingleValueDecodingContainer) throws -> [UInt8] {
+        guard let text = try? c.decode(String.self), let bytes = decode(text) else {
+            throw aimuxDecodingError(c.codingPath, "expected a base64 string")
+        }
+        return bytes
+    }
+
+    static func decode<K: CodingKey>(_ c: KeyedDecodingContainer<K>, forKey key: K) throws -> [UInt8] {
+        let text = try c.decode(String.self, forKey: key)
+        guard let bytes = decode(text) else {
+            throw DecodingError.dataCorruptedError(forKey: key, in: c, debugDescription: "invalid base64 data")
+        }
+        return bytes
+    }
+}
+
+/// Either raw bytes or a base64-encoded string. Wire: one base64 string, the
+/// AI SDK's `Uint8Array | string` in JSON (`shared-v4-file-data.ts:7-10`).
+/// `.binary` is written as base64; parsing yields `.base64`.
 public enum FileBytes: Codable, Equatable {
     case binary([UInt8])
     case base64(String)
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
-        if let bytes = try? c.decode([UInt8].self) { self = .binary(bytes); return }
-        if let s = try? c.decode(String.self) { self = .base64(s); return }
-        throw aimuxDecodingError(c.codingPath, "expected a byte array or a base64 string")
+        guard let s = try? c.decode(String.self) else {
+            throw aimuxDecodingError(c.codingPath, "expected a base64 string")
+        }
+        self = .base64(s)
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.singleValueContainer()
         switch self {
-        case .binary(let bytes): try c.encode(bytes)
+        case .binary(let bytes): try c.encode(Base64Bytes.encode(bytes))
         case .base64(let s): try c.encode(s)
         }
     }
@@ -663,10 +705,10 @@ public enum ContentPart: Codable, Equatable {
         case "text":
             self = .text(text: try c.decode(String.self, forKey: .text), providerOptions: po)
         case "image":
-            self = .image(image: try c.decode([UInt8].self, forKey: .image),
+            self = .image(image: try Base64Bytes.decode(c, forKey: .image),
                           mediaType: try c.decode(String.self, forKey: .mediaType), providerOptions: po)
         case "file":
-            self = .file(data: try c.decode([UInt8].self, forKey: .data),
+            self = .file(data: try Base64Bytes.decode(c, forKey: .data),
                          mediaType: try c.decode(String.self, forKey: .mediaType),
                          filename: try c.decodeIfPresent(String.self, forKey: .filename), providerOptions: po)
         case "file-base64":
@@ -718,9 +760,11 @@ public enum ContentPart: Codable, Equatable {
         case .text(let text, let po):
             try tag("text", po); try c.encode(text, forKey: .text)
         case .image(let image, let mediaType, let po):
-            try tag("image", po); try c.encode(image, forKey: .image); try c.encode(mediaType, forKey: .mediaType)
+            try tag("image", po); try c.encode(Base64Bytes.encode(image), forKey: .image)
+            try c.encode(mediaType, forKey: .mediaType)
         case .file(let data, let mediaType, let filename, let po):
-            try tag("file", po); try c.encode(data, forKey: .data); try c.encode(mediaType, forKey: .mediaType)
+            try tag("file", po); try c.encode(Base64Bytes.encode(data), forKey: .data)
+            try c.encode(mediaType, forKey: .mediaType)
             try c.encodeIfPresent(filename, forKey: .filename)
         case .fileBase64(let data, let mediaType, let filename, let po):
             try tag("file-base64", po); try c.encode(data, forKey: .data); try c.encode(mediaType, forKey: .mediaType)

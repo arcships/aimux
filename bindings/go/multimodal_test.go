@@ -153,10 +153,19 @@ func TestE2E_SpeechResultParsing(t *testing.T) {
 	if string(result.Audio) != "hello" {
 		t.Errorf("audio mismatch: %q", result.Audio)
 	}
-	// The byte-array form decodes to the same bytes.
-	result, err = ParseSpeechResult(`{"audio": [104,105], "warnings": [], "response": {}}`)
-	if err != nil || string(result.Audio) != "hi" {
-		t.Errorf("binary audio: %q, %v", result.Audio, err)
+	// SpeechModelV4Result.audio is a Uint8Array upstream
+	// (speech-model-v4-result.ts:16): a base64 string in the JSON, read as
+	// atob reads it (URL-safe characters, no padding), never a number array.
+	result, err = ParseSpeechResult(`{"audio": "AAEC-v8", "warnings": [], "response": {}}`)
+	if err != nil || string(result.Audio) != "\x00\x01\x02\xfa\xff" {
+		t.Errorf("unpadded url-safe audio: %q, %v", result.Audio, err)
+	}
+	if _, err = ParseSpeechResult(`{"audio": [104,105], "warnings": [], "response": {}}`); err == nil {
+		t.Error("a number array is not the AI SDK's JSON for bytes")
+	}
+	encoded, _ := json.Marshal(SpeechResult{Audio: Bytes{0, 1, 2, 250, 255}})
+	if !strings.Contains(string(encoded), `"audio":"AAEC+v8="`) {
+		t.Errorf("audio must encode as base64: %s", encoded)
 	}
 }
 

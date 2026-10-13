@@ -26,8 +26,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>Special attention is paid to the three hand-written
  * {@code JsonSerializer}/{@code JsonDeserializer} pairs —
- * {@link MultimodalTypes.AudioData} (Base64/Binary, untagged),
- * {@link MultimodalTypes.ImageOutputs} (Base64/Binary, untagged) and
+ * {@link MultimodalTypes.AudioData} (Base64/Binary, a base64 string),
+ * {@link MultimodalTypes.ImageOutputs} (Base64/Binary, base64 strings) and
  * {@link MultimodalTypes.VideoData} (Url/Base64/Binary, tagged on {@code type})
  * — which are the most bug-prone part of the file. Dedicated tests below exercise every
  * variant of each union.
@@ -337,19 +337,55 @@ class MultimodalTypesTest {
         assertThat(((MultimodalTypes.AudioData.Base64) base64Back).getValue())
             .isEqualTo("aGVsbG8=");
 
-        // Binary variant (each element a 0–255 byte value).
+        // Binary variant (each element a 0–255 byte value): the AI SDK's
+        // Uint8Array (speech-model-v4-result.ts:16), a base64 string in JSON.
         MultimodalTypes.AudioData binary =
-            new MultimodalTypes.AudioData.Binary(Arrays.asList(72, 101, 108, 108, 111));
+            new MultimodalTypes.AudioData.Binary(Arrays.asList(0, 1, 2, 250, 255));
         String binaryJson = M.writeValueAsString(binary);
-        assertThat(binaryJson).isEqualTo("[72,101,108,108,111]");
+        assertThat(binaryJson).isEqualTo("\"AAEC+v8=\"");
         MultimodalTypes.AudioData binaryBack =
             M.readValue(binaryJson, MultimodalTypes.AudioData.class);
-        assertThat(binaryBack).isInstanceOf(MultimodalTypes.AudioData.Binary.class);
-        assertThat(((MultimodalTypes.AudioData.Binary) binaryBack).getValue())
-            .isEqualTo(Arrays.asList(72, 101, 108, 108, 111));
+        assertThat(binaryBack).isEqualTo(new MultimodalTypes.AudioData.Base64("AAEC+v8="));
+        assertThat(Types.Base64Bytes.decode("AAEC-v8"))
+            .isEqualTo(Arrays.asList(0, 1, 2, 250, 255));
+
+        // A number array is not the AI SDK's JSON for bytes.
+        assertThatThrownBy(() -> M.readValue("[72,101]", MultimodalTypes.AudioData.class))
+            .isInstanceOf(IOException.class);
 
         // Neither a string nor an array → the deserializer rejects it.
         assertThatThrownBy(() -> M.readValue("{\"Quux\":\"x\"}", MultimodalTypes.AudioData.class))
+            .isInstanceOf(IOException.class);
+    }
+
+    @Test
+    void promptAndFileBytesAreBase64Strings() throws Exception {
+        // ImagePart.image and FilePart.data are DataContent (provider-utils
+        // types/content-part.ts:42, :75) and SharedV4FileDataData.data is
+        // Uint8Array | string (shared-v4-file-data.ts:7-10): base64 strings in
+        // the JSON (uint8-utils.ts:12-23), never arrays of numbers.
+        ObjectMapper t = Types.AimuxJson.MAPPER;
+        Types.ContentPart image = Types.ContentPart.Image.builder()
+            .image(Arrays.asList(137, 80, 78, 71)).mediaType("image/png").build();
+        String imageJson = t.writeValueAsString(image);
+        assertThat(imageJson)
+            .isEqualTo("{\"type\":\"image\",\"image\":\"iVBORw==\",\"mediaType\":\"image/png\"}");
+        assertThat(t.readValue(imageJson, Types.ContentPart.class)).isEqualTo(image);
+        assertThatThrownBy(() -> t.readValue(
+                "{\"type\":\"image\",\"image\":[1,2],\"mediaType\":\"image/png\"}",
+                Types.ContentPart.class))
+            .hasMessageContaining("bytes must be a base64 string");
+
+        Types.ContentPart file = Types.ContentPart.File.builder()
+            .data(Arrays.asList(0, 1, 2, 250, 255)).mediaType("application/pdf").build();
+        assertThat(t.writeValueAsString(file))
+            .isEqualTo("{\"type\":\"file\",\"data\":\"AAEC+v8=\",\"mediaType\":\"application/pdf\"}");
+
+        assertThat(t.writeValueAsString(new Types.FileBytes.Binary(Arrays.asList(104, 105))))
+            .isEqualTo("\"aGk=\"");
+        assertThat(t.readValue("\"aGk=\"", Types.FileBytes.class))
+            .isEqualTo(new Types.FileBytes.Base64("aGk="));
+        assertThatThrownBy(() -> t.readValue("[104,105]", Types.FileBytes.class))
             .isInstanceOf(IOException.class);
     }
 
@@ -366,16 +402,18 @@ class MultimodalTypesTest {
         assertThat(((MultimodalTypes.ImageOutputs.Base64) base64Back).getValue())
             .isEqualTo(Arrays.asList("aW1hZ2Ux", "aW1hZ2Uy"));
 
-        // Binary variant (list of byte arrays).
+        // Binary variant (list of byte arrays): Array<Uint8Array> upstream
+        // (image-model-v4-result.ts:23), base64 strings in JSON.
         MultimodalTypes.ImageOutputs binary = new MultimodalTypes.ImageOutputs.Binary(
-            Arrays.asList(Arrays.asList(1, 2, 3), Arrays.asList(4, 5, 6)));
+            Arrays.asList(Arrays.asList(1), Arrays.asList(2, 3)));
         String binaryJson = M.writeValueAsString(binary);
-        assertThat(binaryJson).isEqualTo("[[1,2,3],[4,5,6]]");
+        assertThat(binaryJson).isEqualTo("[\"AQ==\",\"AgM=\"]");
         MultimodalTypes.ImageOutputs binaryBack =
             M.readValue(binaryJson, MultimodalTypes.ImageOutputs.class);
-        assertThat(binaryBack).isInstanceOf(MultimodalTypes.ImageOutputs.Binary.class);
-        assertThat(((MultimodalTypes.ImageOutputs.Binary) binaryBack).getValue())
-            .isEqualTo(Arrays.asList(Arrays.asList(1, 2, 3), Arrays.asList(4, 5, 6)));
+        assertThat(binaryBack).isEqualTo(
+            new MultimodalTypes.ImageOutputs.Base64(Arrays.asList("AQ==", "AgM=")));
+        assertThatThrownBy(() -> M.readValue("[[1,2,3]]", MultimodalTypes.ImageOutputs.class))
+            .isInstanceOf(IOException.class);
 
         assertThatThrownBy(() -> M.readValue("{\"Quux\":[1]}", MultimodalTypes.ImageOutputs.class))
             .isInstanceOf(IOException.class);
@@ -410,8 +448,10 @@ class MultimodalTypesTest {
         MultimodalTypes.VideoData binary = new MultimodalTypes.VideoData.Binary(
             MultimodalTypes.VideoBinaryData.of(Arrays.asList(1, 2, 3), "video/mp4"));
         String binaryJson = M.writeValueAsString(binary);
+        // video-model-v4-result.ts:28-29: { type: 'binary', data: Uint8Array },
+        // a base64 string in JSON.
         assertThat(binaryJson).isEqualTo(
-            "{\"type\":\"binary\",\"data\":[1,2,3],\"mediaType\":\"video/mp4\"}");
+            "{\"type\":\"binary\",\"data\":\"AQID\",\"mediaType\":\"video/mp4\"}");
         MultimodalTypes.VideoData binaryBack =
             M.readValue(binaryJson, MultimodalTypes.VideoData.class);
         assertThat(binaryBack).isInstanceOf(MultimodalTypes.VideoData.Binary.class);

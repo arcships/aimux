@@ -210,9 +210,8 @@ result = json.loads(speaker.generate(json.dumps({
     "outputFormat": "mp3",
 })))
 
-# result["audio"] is a list of byte values, or a base64 string
-audio = result["audio"]
-audio_bytes = bytes(audio) if isinstance(audio, list) else base64.b64decode(audio)
+# result["audio"] is a base64 string (bytes are base64 in the JSON)
+audio_bytes = base64.b64decode(result["audio"])
 if audio_bytes:
     with open("out.mp3", "wb") as f:
         f.write(audio_bytes)
@@ -247,10 +246,9 @@ result = json.loads(imager.generate(json.dumps({
     "providerOptions": {},
 })))
 
-# result["images"] is a list of base64 strings, or a list of byte arrays
-image = result["images"][0]
+# result["images"] is a list of base64 strings (bytes are base64 in the JSON)
 with open("out.png", "wb") as f:
-    f.write(base64.b64decode(image) if isinstance(image, str) else bytes(image))
+    f.write(base64.b64decode(result["images"][0]))
 ```
 
 ## Video Generation

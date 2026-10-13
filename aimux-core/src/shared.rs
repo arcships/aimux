@@ -76,19 +76,38 @@ pub fn provider_namespace(
 /// ```
 pub type SharedProviderReference = HashMap<String, String>;
 
-/// Either raw bytes or a base64-encoded string.
+/// Either raw bytes or a base64-encoded string (the AI SDK's
+/// `Uint8Array | string`).
 ///
 /// Providers should pass file data through without unnecessary conversion: if
 /// the upstream API returns base64, return [`FileBytes::Base64`]; if it
 /// returns binary, return [`FileBytes::Binary`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(untagged)]
-#[ts(export)]
+///
+/// The JSON is a base64 string either way, as in the AI SDK's JSON: `Binary`
+/// is written as base64 and parsing yields `Base64`. Two values are equal when
+/// they hold the same bytes, whatever their form.
+#[derive(Debug, Clone, TS)]
+#[ts(export, type = "string")]
 pub enum FileBytes {
     /// Raw binary bytes.
     Binary(Vec<u8>),
     /// A base64-encoded string.
     Base64(String),
+}
+
+crate::wire::base64_wire_enum!(FileBytes);
+
+impl PartialEq for FileBytes {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Binary(a), Self::Binary(b)) => a == b,
+            (Self::Base64(a), Self::Base64(b)) => a == b,
+            (Self::Binary(bytes), Self::Base64(text))
+            | (Self::Base64(text), Self::Binary(bytes)) => {
+                crate::wire::decode_base64(text).is_ok_and(|decoded| decoded == *bytes)
+            }
+        }
+    }
 }
 
 /// File data as a tagged discriminated union.

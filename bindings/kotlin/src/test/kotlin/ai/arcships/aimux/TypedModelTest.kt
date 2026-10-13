@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.jupiter.api.AfterEach
@@ -369,15 +370,34 @@ class TypedModelRoundTripTest {
         assertThat(decoded).isEqualTo(original)
     }
 
-    // ── FileBytes (untagged) / FileData (tagged on `type`) ────────────────────────
+    // ── FileBytes (a base64 string) / FileData (tagged on `type`) ─────────────────
 
     @Test
-    fun `FileBytes Binary round-trips`() {
-        val original = FileBytes.Binary(data = listOf(1, 2, 3, 255))
+    fun `FileBytes Binary is a base64 string`() {
+        // SharedV4FileDataData.data is Uint8Array | string upstream
+        // (shared-v4-file-data.ts:7-10): one base64 string in the JSON
+        // (uint8-utils.ts:12-23), never an array of numbers.
+        val original = FileBytes.Binary(data = listOf(0, 1, 2, 250, 255))
         val json = AimuxJson.encodeToString(FileBytes.serializer(), original)
+        assertThat(json).isEqualTo("\"AAEC+v8=\"")
         val decoded = AimuxJson.decodeFromString(FileBytes.serializer(), json)
-        assertThat(decoded).isEqualTo(original)
-        assertThat(json).isEqualTo("[1,2,3,255]")
+        assertThat(decoded).isEqualTo(FileBytes.Base64("AAEC+v8="))
+        assertThat(Base64Bytes.decode("AAEC-v8")).isEqualTo(original.data)
+        assertThatThrownBy { AimuxJson.decodeFromString(FileBytes.serializer(), "[1,2,3,255]") }
+            .isInstanceOf(kotlinx.serialization.SerializationException::class.java)
+    }
+
+    @Test
+    fun `image and file part bytes are base64 strings`() {
+        // ImagePart.image / FilePart.data are DataContent (provider-utils
+        // types/content-part.ts:42, :75): base64 strings in the JSON.
+        val image = ContentPart.Image(image = listOf(137, 80, 78, 71), mediaType = "image/png")
+        val json = AimuxJson.encodeToString(ContentPart.serializer(), image)
+        assertThat(json).isEqualTo("{\"type\":\"image\",\"image\":\"iVBORw==\",\"mediaType\":\"image/png\"}")
+        assertThat(AimuxJson.decodeFromString(ContentPart.serializer(), json)).isEqualTo(image)
+        val file = ContentPart.File(data = listOf(0, 1, 2, 250, 255), mediaType = "application/pdf")
+        assertThat(AimuxJson.encodeToString(ContentPart.serializer(), file))
+            .isEqualTo("{\"type\":\"file\",\"data\":\"AAEC+v8=\",\"mediaType\":\"application/pdf\"}")
     }
 
     @Test
