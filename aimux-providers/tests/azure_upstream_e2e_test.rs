@@ -423,3 +423,31 @@ async fn token_provider_bearer_is_not_sent_across_a_cross_origin_redirect() {
             .contains("ai-sdk-azure/")
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-language-model.ts:324
+/// and :1062-1080 write Azure's responses logprobs under `azure`, the
+/// provider's own key; the OpenAI wire output reads them from there.
+#[tokio::test]
+async fn responses_logprobs_reach_the_openai_output_under_the_azure_key() {
+    let mut fixture = text_fixture();
+    let logprobs = json!([{"token":"Word","logprob":-0.25,"top_logprobs":[]}]);
+    fixture["output"][0]["content"][0]["logprobs"] = logprobs.clone();
+    let fetch = MockFetch::new(vec![Canned::json(&fixture)]);
+    let options = CallOptions {
+        provider_options: Some(
+            aimux_core::shared::provider_namespace("azure", json!({"logprobs": true})).unwrap(),
+        ),
+        ..prompt()
+    };
+    let result = provider(&fetch)
+        .responses("test-deployment")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    let metadata = result.provider_metadata.as_ref().unwrap();
+    assert!(!metadata.contains_key("openai"));
+    assert_eq!(metadata["azure"]["logprobs"], json!([logprobs]));
+
+    let completion = aimux_core::openai_output::to_chat_completion(&result, "test-deployment");
+    assert_eq!(completion.choices[0].logprobs, Some(json!([logprobs])));
+}
