@@ -41,3 +41,27 @@ pub fn pinned(package: &str) -> String {
         .unwrap_or_else(|| panic!("{package} is not pinned in VERSIONS.json"))
         .1
 }
+
+/// The exact version the pinned `package` depends on for `dependency`, read
+/// from the recorder's `scripts/aisdk-fixtures/package-lock.json` (the
+/// published package.json `dependencies`; npm installs that exact version
+/// for it). The lock's copy of `package` must be the pinned version.
+#[allow(dead_code)] // not every crate that includes this file reads it
+pub fn pinned_dependency(package: &str, dependency: &str) -> String {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../scripts/aisdk-fixtures/package-lock.json"
+    );
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let lock: serde_json::Value = serde_json::from_str(&text).expect("package-lock.json is JSON");
+    let entry = &lock["packages"][format!("node_modules/{package}")];
+    assert_eq!(
+        entry["version"].as_str(),
+        Some(pinned(package).as_str()),
+        "{package}: package-lock.json and VERSIONS.json disagree"
+    );
+    entry["dependencies"][dependency]
+        .as_str()
+        .unwrap_or_else(|| panic!("{package}: no dependency {dependency} in package-lock.json"))
+        .to_string()
+}

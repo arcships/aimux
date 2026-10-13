@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Mistral has no `transform_request_body` setting; the deprecated
   `text_embedding` and `text_embedding_model` provider methods are removed.
 
+- `SigV4Fetch::new` takes a required `SigV4Signing`. `Aws4Fetch` signs like
+  aws4fetch 1.0.20, the signer of the AI SDK's AWS packages: `user-agent`,
+  `content-type` and its other `UNSIGNABLE_HEADERS` are sent but not signed,
+  and no `x-amz-content-sha256` is sent. `AllHeaders` is the previous rule.
+  Bedrock and Anthropic-AWS sign with `Aws4Fetch`, Polly with `AllHeaders`.
+  Bedrock, Bedrock Mantle and Anthropic-AWS send the user-agents of
+  `@ai-sdk/amazon-bedrock` 5.0.100 and `@ai-sdk/anthropic-aws` 2.0.63 (the
+  package part is appended again by the transport).
+
 - Public surface (`aimux-core`, `aimux-provider-utils`): removed
   `recording::init_recording_from_env`; made private the retry preparation
   helpers and default constants, `composite::{add_usage,

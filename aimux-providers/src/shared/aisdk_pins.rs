@@ -9,6 +9,14 @@ pub(crate) const GOOGLE: &str = "4.0.87";
 pub(crate) const OPENAI: &str = "4.0.83";
 pub(crate) const OPENAI_COMPATIBLE: &str = "3.0.62";
 pub(crate) const AMAZON_BEDROCK: &str = "5.0.100";
+/// The `@ai-sdk/provider-utils` that `@ai-sdk/amazon-bedrock@5.0.100` pins
+/// exactly, so the version its `ai-sdk-provider-utils/<v>` part names. Not
+/// the workspace-wide `@ai-sdk/provider-utils` pin.
+pub(crate) const AMAZON_BEDROCK_PROVIDER_UTILS: &str = "5.0.51";
+pub(crate) const ANTHROPIC_AWS: &str = "2.0.63";
+/// The `@ai-sdk/provider-utils` that `@ai-sdk/anthropic-aws@2.0.63` pins
+/// exactly.
+pub(crate) const ANTHROPIC_AWS_PROVIDER_UTILS: &str = "5.0.53";
 pub(crate) const AZURE: &str = "4.0.84";
 pub(crate) const COHERE: &str = "4.0.52";
 pub(crate) const DEEPSEEK: &str = "3.0.56";
@@ -33,6 +41,7 @@ mod tests {
             ("@ai-sdk/openai", super::OPENAI),
             ("@ai-sdk/openai-compatible", super::OPENAI_COMPATIBLE),
             ("@ai-sdk/amazon-bedrock", super::AMAZON_BEDROCK),
+            ("@ai-sdk/anthropic-aws", super::ANTHROPIC_AWS),
             ("@ai-sdk/azure", super::AZURE),
             ("@ai-sdk/cohere", super::COHERE),
             ("@ai-sdk/deepseek", super::DEEPSEEK),
@@ -45,10 +54,29 @@ mod tests {
         }
     }
 
+    /// A package that names its own provider-utils in the user-agent: the
+    /// exact dependency of its pinned version (package-lock.json).
+    #[test]
+    fn package_provider_utils_equal_their_pinned_dependency() {
+        for (package, version) in [
+            (
+                "@ai-sdk/amazon-bedrock",
+                super::AMAZON_BEDROCK_PROVIDER_UTILS,
+            ),
+            ("@ai-sdk/anthropic-aws", super::ANTHROPIC_AWS_PROVIDER_UTILS),
+        ] {
+            assert_eq!(
+                pinned_versions::pinned_dependency(package, "@ai-sdk/provider-utils"),
+                version,
+                "{package}"
+            );
+        }
+    }
+
     /// Every VERSIONS.json entry is the `{version, integrity}` object form.
     #[test]
     fn every_versions_entry_is_object_form() {
         // `all()` panics on any other shape.
-        assert!(pinned_versions::all().len() >= 15);
+        assert!(pinned_versions::all().len() >= 16);
     }
 }

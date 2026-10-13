@@ -7,6 +7,10 @@
     "version": "4.0.71",
     "integrity": "sha512-wiv3jhUH0RrvGzSolJMZfZ2cI9As45LhwYmcAoWvNivXjC7wzJ4W/Udq9/u7EGnGsT8lpmFKEKBrMXVeUO97Dg=="
   },
+  "@ai-sdk/anthropic-aws": {
+    "version": "2.0.63",
+    "integrity": "sha512-IrTFCzHiNnQ4Gns9+tLuQBolU0B8qLOwkgya3ztAZuvnMHQyoChPBe0JWav5Dhm0WWW4o1AtQ5GfKTaHeYMRfQ=="
+  },
   "@ai-sdk/azure": {
     "version": "4.0.84",
     "integrity": "sha512-7sDolS6K+qbKB4CPixFM4p5rVWB3KdmLmjLQ2HMHgTHfPHD+Tf33R8zzy7cHLv+xOfsceXHl9m855thcV9H6sA=="

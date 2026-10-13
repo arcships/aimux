@@ -153,6 +153,7 @@ pub fn create_openai_compatible(
         query_params: settings.query_params,
         fetch: settings.fetch,
         transform_request_body: settings.transform_request_body,
+        user_agent: OPENAI_COMPATIBLE_USER_AGENT,
         profile: ChatProfile {
             include_usage: settings.include_usage.unwrap_or(false),
             supports_structured_outputs: settings.supports_structured_outputs.unwrap_or(false),
@@ -196,7 +197,15 @@ pub(crate) struct Assembly {
     pub fetch: Option<FetchFunction>,
     pub transform_request_body: Option<TransformRequestBody>,
     pub profile: ChatProfile,
+    /// `(package, version)` of the provider headers' user-agent suffix.
+    pub user_agent: (&'static str, &'static str),
 }
+
+/// The user-agent part of the `@ai-sdk/openai-compatible` package.
+pub(crate) const OPENAI_COMPATIBLE_USER_AGENT: (&str, &str) = (
+    "openai-compatible",
+    crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
+);
 
 /// An OpenAI-compatible provider (the AI SDK's `OpenAICompatibleProvider`).
 /// Cheap to take models out of; it holds no HTTP client.
@@ -245,8 +254,8 @@ impl OpenAICompatibleProvider {
                     assembly.fixed_headers,
                     assembly.headers,
                 ),
-                "openai-compatible",
-                crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
+                assembly.user_agent.0,
+                assembly.user_agent.1,
             ),
             fetch: assembly.fetch,
             transform_request_body: assembly.transform_request_body,

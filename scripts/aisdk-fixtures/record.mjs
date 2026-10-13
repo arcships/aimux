@@ -23,6 +23,7 @@ const PACKAGES = [
 // (aimux-providers/src/shared/aisdk_pins.rs).
 const PINNED_ONLY = [
   '@ai-sdk/amazon-bedrock',
+  '@ai-sdk/anthropic-aws',
   '@ai-sdk/azure',
   '@ai-sdk/cohere',
   '@ai-sdk/deepseek',

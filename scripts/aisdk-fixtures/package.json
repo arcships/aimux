@@ -10,6 +10,7 @@
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "5.0.100",
     "@ai-sdk/anthropic": "4.0.71",
+    "@ai-sdk/anthropic-aws": "2.0.63",
     "@ai-sdk/azure": "4.0.84",
     "@ai-sdk/cohere": "4.0.52",
     "@ai-sdk/deepseek": "3.0.56",

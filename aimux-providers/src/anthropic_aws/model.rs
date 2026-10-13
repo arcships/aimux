@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, SigV4Fetch, default_fetch,
+    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, SigV4Fetch, SigV4Signing, default_fetch,
 };
 
 use crate::anthropic::AnthropicMessagesModel;
@@ -48,11 +48,16 @@ pub(super) fn authenticated(
     match auth {
         Some(AnthropicAwsAuth::SigV4(credentials)) => {
             let inner = fetch.unwrap_or_else(default_fetch);
-            let signing: FetchFunction =
-                Arc::new(SigV4Fetch::new(inner, credentials, SIGV4_SERVICE));
+            // aws4fetch, like anthropic-aws-fetch.ts:73-83.
+            let signing: FetchFunction = Arc::new(SigV4Fetch::new(
+                inner,
+                credentials,
+                SIGV4_SERVICE,
+                SigV4Signing::Aws4Fetch,
+            ));
             (
                 credential_headers(Credential::None, AuthScheme::Bearer, fixed, user_headers),
-                Some(signing),
+                Some(with_user_agent(signing)),
             )
         }
         key => {
@@ -67,8 +72,22 @@ pub(super) fn authenticated(
                     fixed,
                     user_headers,
                 ),
-                fetch,
+                Some(with_user_agent(fetch.unwrap_or_else(default_fetch))),
             )
         }
     }
+}
+
+/// The transport's `ai-sdk-anthropic-aws/<v>` user-agent part, after the
+/// helper's `ai-sdk-provider-utils/<v>` and before any signing, on the
+/// API-key and SigV4 paths alike (anthropic-aws-fetch.ts:42-46, :126-130).
+fn with_user_agent(inner: FetchFunction) -> FetchFunction {
+    Arc::new(crate::shared::UserAgentFetch {
+        inner,
+        suffix: format!(
+            "ai-sdk-anthropic-aws/{}",
+            crate::shared::aisdk_pins::ANTHROPIC_AWS
+        ),
+        provider_utils: Some(crate::shared::aisdk_pins::ANTHROPIC_AWS_PROVIDER_UTILS),
+    })
 }
