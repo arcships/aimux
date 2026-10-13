@@ -10,6 +10,7 @@
 
 use std::collections::HashMap;
 
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
@@ -24,21 +25,33 @@ pub use crate::types::Warning;
 /// Aligned with V4 `SharedV4Headers` (`Record<string, string>`).
 pub type SharedHeaders = HashMap<String, String>;
 
+/// A provider namespace map: provider name to a JSON object of
+/// provider-specific keys.
+///
+/// The AI SDK types these as `Record<string, JSONObject>`, i.e. JS objects,
+/// which keep their (non-integer) keys in insertion order. The map keeps that
+/// order on both the outer namespace keys and (through serde_json's
+/// `preserve_order`) the inner keys, so a value serializes the way it was
+/// built or parsed.
+pub type NamespaceMap = IndexMap<String, JsonObject>;
+
 /// Additional provider-specific options (inputs), keyed by provider name.
 ///
-/// The inner value is a JSON object whose keys are provider-specific option
-/// names. Aligned with V4 `SharedV4ProviderOptions`
-/// (`Record<string, JSONObject>`).
+/// Aligned with V4 `SharedV4ProviderOptions`
+/// (`@ai-sdk/provider` `shared/v4/shared-v4-provider-options.ts:24`).
 ///
 /// ```json
 /// { "anthropic": { "cacheControl": { "type": "ephemeral" } } }
 /// ```
-pub type SharedProviderOptions = HashMap<String, JsonObject>;
+pub type SharedProviderOptions = NamespaceMap;
 
 /// Additional provider-specific metadata (outputs), keyed by provider name.
 ///
-/// Aligned with V4 `SharedV4ProviderMetadata` (`Record<string, JSONObject>`).
-pub type SharedProviderMetadata = HashMap<String, JsonObject>;
+/// Aligned with V4 `SharedV4ProviderMetadata`
+/// (`shared/v4/shared-v4-provider-metadata.ts:24`). The same structure as
+/// [`SharedProviderOptions`], as upstream: replay passes
+/// `providerOptions: part.providerMetadata` unchanged.
+pub type SharedProviderMetadata = NamespaceMap;
 
 /// A JSON object (`JSONObject` in the AI SDK).
 pub type JsonObject = serde_json::Map<String, Value>;
@@ -63,18 +76,20 @@ pub fn provider_namespace(
             "invalid {namespace} provider options: expected a JSON object"
         )));
     };
-    Ok(HashMap::from([(namespace.to_string(), object)]))
+    Ok(IndexMap::from([(namespace.to_string(), object)]))
 }
 
 /// A mapping of provider names to provider-specific file identifiers.
 ///
 /// Allows a logical file to be referenced across providers without
-/// re-uploading. Aligned with V4 `SharedV4ProviderReference`.
+/// re-uploading. Aligned with V4 `SharedV4ProviderReference`
+/// (`shared/v4/shared-v4-provider-reference.ts:20`), a JS object, so the
+/// entries keep their insertion order.
 ///
 /// ```json
 /// { "openai": "file-abc123", "anthropic": "file-xyz789" }
 /// ```
-pub type SharedProviderReference = HashMap<String, String>;
+pub type SharedProviderReference = IndexMap<String, String>;
 
 /// Either raw bytes or a base64-encoded string (the AI SDK's
 /// `Uint8Array | string`).
@@ -403,5 +418,49 @@ impl From<ResponseInfo> for crate::types::ResponseMetadata {
             timestamp: response.timestamp,
             model_id: response.model_id,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // The AI SDK's namespace maps are JS objects
+    // (`@ai-sdk/provider@4.0.21` `shared-v4-provider-options.ts:24`,
+    // `shared-v4-provider-metadata.ts:24`, `shared-v4-provider-reference.ts:20`),
+    // so `JSON.stringify` writes their keys in insertion order. Keys here are
+    // deliberately out of alphabetical order.
+
+    #[test]
+    fn provider_options_keep_insertion_order_through_serde() {
+        let mut options = SharedProviderOptions::new();
+        options.insert(
+            "zeta".to_string(),
+            json!({ "z": 1, "a": 2 }).as_object().unwrap().clone(),
+        );
+        options.insert("alpha".to_string(), JsonObject::new());
+        options.insert("mid".to_string(), JsonObject::new());
+
+        let text = serde_json::to_string(&options).unwrap();
+        assert_eq!(text, r#"{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}}"#);
+
+        let parsed: SharedProviderMetadata = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            parsed.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["zeta", "alpha", "mid"]
+        );
+        assert_eq!(serde_json::to_string(&parsed).unwrap(), text);
+    }
+
+    #[test]
+    fn provider_reference_keeps_insertion_order_through_serde() {
+        let text = r#"{"openai":"file-abc123","anthropic":"file-xyz789","google":"files/1"}"#;
+        let reference: SharedProviderReference = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            reference.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["openai", "anthropic", "google"]
+        );
+        assert_eq!(serde_json::to_string(&reference).unwrap(), text);
     }
 }

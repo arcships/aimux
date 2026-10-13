@@ -3,8 +3,6 @@
 //! Mirrors `supports-reasoning-effort.ts` and the provider-reference helper
 //! used by upstream input conversion.
 
-use std::collections::HashMap;
-
 use aimux_core::{
     error::AiMuxError,
     language_model_message::FilePart,
@@ -48,7 +46,7 @@ pub fn supports_reasoning_effort(model_id: &str) -> bool {
 /// Returns a `String` listing the available providers when the requested key
 /// is absent.
 pub fn resolve_provider_reference(
-    reference: &HashMap<String, String>,
+    reference: &aimux_core::shared::SharedProviderReference,
     provider: &str,
 ) -> Result<String, String> {
     if let Some(value) = reference.get(provider) {

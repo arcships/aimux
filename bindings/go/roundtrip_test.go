@@ -396,3 +396,61 @@ func contains(s, sub string) bool {
 		return false
 	})()
 }
+
+// ── Provider namespace order (#229 NP2-1) ───────────────────────────────────
+
+// Provider options, provider metadata and provider references are JS objects
+// upstream (@ai-sdk/provider shared-v4-provider-options.ts:24,
+// shared-v4-provider-metadata.ts:24, shared-v4-provider-reference.ts:20), so
+// their keys keep insertion order. They go through Rust as ordered maps and
+// stay raw JSON in Go, never a sorting Go map.
+func TestNamespaceMapsKeepInsertionOrder(t *testing.T) {
+	const metadata = `{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}}`
+	invalid := `{"toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},"dynamic":true,` +
+		`"invalid":true,"providerMetadata":` + metadata + `,"error":{"name":"AI_InvalidToolInputError",` +
+		`"toolName":"weather","toolInput":"{\"town\":\"SG\"}","cause":"missing city"}}`
+	opts := `{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}`
+	out, err := applyToolCallRepairJSON(invalid, opts, `{"type":"unchanged"}`)
+	if err != nil {
+		t.Fatalf("apply repair: %v", err)
+	}
+	var call ToolCall
+	if err := json.Unmarshal([]byte(out), &call); err != nil {
+		t.Fatalf("decode %s: %v", out, err)
+	}
+	if got := string(call.ProviderMetadata); got != metadata {
+		t.Errorf("providerMetadata through Rust: got %s, want %s", got, metadata)
+	}
+
+	tool, err := json.Marshal(Tool{
+		Type:            "function",
+		Name:            "weather",
+		ProviderOptions: json.RawMessage(`{"zeta":{},"alpha":{}}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(tool), `"providerOptions":{"zeta":{},"alpha":{}}`) {
+		t.Errorf("tool providerOptions reordered: %s", tool)
+	}
+
+	const reference = `{"openai":"file-abc123","anthropic":"file-xyz789","google":"files/1"}`
+	var upload UploadFileResult
+	if err := json.Unmarshal([]byte(`{"providerReference":`+reference+`}`), &upload); err != nil {
+		t.Fatal(err)
+	}
+	if id, ok := upload.ProviderReference.Get("anthropic"); !ok || id != "file-xyz789" {
+		t.Errorf("Get(anthropic) = %q, %v", id, ok)
+	}
+	if _, ok := upload.ProviderReference.Get("mistral"); ok {
+		t.Error("Get(mistral) found an id")
+	}
+	encoded, _ := json.Marshal(upload)
+	if !strings.HasPrefix(string(encoded), `{"providerReference":`+reference) {
+		t.Errorf("providerReference reordered: %s", encoded)
+	}
+	empty, _ := json.Marshal(UploadFileResult{})
+	if !strings.HasPrefix(string(empty), `{"providerReference":{}`) {
+		t.Errorf("empty providerReference: %s", empty)
+	}
+}

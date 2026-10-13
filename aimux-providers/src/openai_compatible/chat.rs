@@ -293,7 +293,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
             |convert| convert(raw.get("usage")),
         );
 
-        let mut metadata = HashMap::new();
+        let mut metadata = aimux_core::shared::NamespaceMap::new();
         metadata.insert(metadata_key.clone(), Map::new());
         if let Some(extractor) = &dialect.metadata_extractor
             && let Some(extra) = extractor.extract_metadata(&raw)
@@ -619,7 +619,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                 yield Ok(part);
             }
 
-            let mut metadata = HashMap::new();
+            let mut metadata = aimux_core::shared::NamespaceMap::new();
             metadata.insert(metadata_key.clone(), Map::new());
             if let Some(extractor) = &metadata_extractor
                 && let Some(extra) = extractor.build_metadata()

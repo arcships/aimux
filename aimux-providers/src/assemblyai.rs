@@ -13,7 +13,6 @@
 //! there: it is loaded for every request, from the setting or from `ASSEMBLYAI_API_KEY`.
 //! [`assemblyai()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -420,7 +419,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
 
         // Build provider metadata from extra fields.
         let mut provider_metadata: Option<SharedProviderMetadata> = None;
-        let mut md = HashMap::new();
+        let mut md = aimux_core::shared::NamespaceMap::new();
         let mut aai_meta = Map::new();
         if parsed.utterances.is_some() {
             aai_meta.insert(

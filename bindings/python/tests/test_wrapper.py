@@ -396,6 +396,34 @@ class TestGeneratedFiles:
         assert adapter.dump_python(adapter.validate_python(raw), by_alias=True) == raw
 
 
+# ── Provider namespace order (#229 NP2-1) ────────────────────────────────────
+
+class TestNamespaceOrder:
+
+    def test_namespace_maps_keep_insertion_order(self):
+        """Provider options, provider metadata and provider references are JS
+        objects upstream (@ai-sdk/provider shared-v4-provider-options.ts:24,
+        shared-v4-provider-metadata.ts:24, shared-v4-provider-reference.ts:20),
+        so their keys keep insertion order, through Rust and back."""
+        from aimux import apply_tool_call_repair
+        from aimux.wrapper import ToolCall
+
+        metadata = '{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}}'
+        invalid = (
+            '{"toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},'
+            '"dynamic":true,"invalid":true,"providerMetadata":' + metadata + ','
+            '"error":{"name":"AI_InvalidToolInputError","toolName":"weather",'
+            '"toolInput":"{\\"town\\":\\"SG\\"}","cause":"missing city"}}'
+        )
+        opts = '{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}'
+        out = apply_tool_call_repair(invalid, opts, '{"type":"unchanged"}')
+        assert json.dumps(json.loads(out)["providerMetadata"], separators=(",", ":")) == metadata
+
+        call = ToolCall.model_validate_json(out)
+        assert list(call.provider_metadata) == ["zeta", "alpha", "mid"]
+        assert '"providerMetadata":' + metadata in call.model_dump_json(by_alias=True)
+
+
 # ── JSON null and undefined (#232 C34) ───────────────────────────────────────
 
 class TestNullIsKeptApartFromMissing:

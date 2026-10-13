@@ -323,6 +323,14 @@ fails, even after repair) and `error` (the `AiMuxError` object for that
 failure, tagged by `name`, e.g. `"AI_InvalidToolInputError"`; held as a
 `JSONValue`, as is `TextStreamPart.error`).
 
+Key order: the AI SDK's provider options, provider metadata and provider
+references are JS objects, which keep their keys in insertion order, and the
+JSON strings the Swift APIs return keep that order. The typed values do not:
+`ProviderOptions`, `ProviderMetadata`, `UploadFileResult.providerReference`
+and `JSONValue.object` are Swift `Dictionary` values, so a value decoded and
+encoded again may list its keys in another order. Pass the JSON string
+through unchanged when the order matters.
+
 Example:
 
 ```swift

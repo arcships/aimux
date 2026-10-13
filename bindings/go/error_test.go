@@ -408,7 +408,7 @@ func TestMarshalledOptionsRejectRawPassThrough(t *testing.T) {
 		}, "opts: invalid JSON"},
 		{"transcription session opts lone surrogate", func() error {
 			b, e := marshalJSON("opts", &TranscriptionSessionOpts{
-				ProviderOptions: map[string]json.RawMessage{"x": json.RawMessage(`"\ud800"`)},
+				ProviderOptions: json.RawMessage(`{"x":"\ud800"}`),
 			})
 			_ = b
 			return e

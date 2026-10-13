@@ -23,7 +23,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -2903,7 +2903,7 @@ public final class MultimodalTypes {
 
     /** Result of a file upload. */
     public static class UploadFileResult {
-        @JsonProperty("providerReference") private Map<String, String> providerReference = new HashMap<>();
+        @JsonProperty("providerReference") private Map<String, String> providerReference = new LinkedHashMap<>();
         @JsonProperty("mediaType") private String mediaType;
         @JsonProperty("filename") private String filename;
         @JsonProperty("providerMetadata") private JsonNode providerMetadata;
@@ -2934,7 +2934,7 @@ public final class MultimodalTypes {
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
-            private Map<String, String> providerReference = new HashMap<>();
+            private Map<String, String> providerReference = new LinkedHashMap<>();
             private String mediaType;
             private String filename;
             private JsonNode providerMetadata;

@@ -297,7 +297,7 @@ fn get_image_detail(provider_options: &Option<SharedProviderOptions>) -> Option<
 
 /// Resolve a provider reference, throwing if the provider is not found.
 fn resolve_provider_reference(
-    reference: &std::collections::HashMap<String, String>,
+    reference: &aimux_core::shared::SharedProviderReference,
     provider: &str,
 ) -> Result<String, String> {
     reference.get(provider).cloned().ok_or_else(|| {
@@ -1105,7 +1105,7 @@ pub(crate) fn build_request_body_with_chat_options(
         parse,
     )?
     .map(|parsed| {
-        std::collections::HashMap::from([(super::options::NAMESPACE.to_string(), parsed)])
+        aimux_core::shared::NamespaceMap::from([(super::options::NAMESPACE.to_string(), parsed)])
     });
     let provider_opts = &parsed_provider_opts;
 

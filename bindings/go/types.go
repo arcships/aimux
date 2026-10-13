@@ -423,12 +423,14 @@ type FunctionToolInputExample struct {
 // Tool is a tool definition: a function tool (Type "function": Name,
 // InputSchema, ...) or a provider-defined tool (Type "provider": ID, Name, Args).
 type Tool struct {
-	Type            string                     `json:"type"` // "function" or "provider"
-	Name            string                     `json:"name"`
-	Description     *string                    `json:"description,omitempty"`
-	InputSchema     json.RawMessage            `json:"inputSchema,omitempty"`
-	Strict          *bool                      `json:"strict,omitempty"`
-	ProviderOptions map[string]json.RawMessage `json:"providerOptions,omitempty"`
+	Type        string          `json:"type"` // "function" or "provider"
+	Name        string          `json:"name"`
+	Description *string         `json:"description,omitempty"`
+	InputSchema json.RawMessage `json:"inputSchema,omitempty"`
+	Strict      *bool           `json:"strict,omitempty"`
+	// ProviderOptions is a JSON object of provider namespaces. It is raw JSON
+	// so that its keys keep their order: a Go map would sort them.
+	ProviderOptions json.RawMessage            `json:"providerOptions,omitempty"`
 	InputExamples   []FunctionToolInputExample `json:"inputExamples,omitempty"`
 	// ID and Args are the provider tool's id ("<provider>.<tool>") and arguments.
 	ID   string                     `json:"id,omitempty"`

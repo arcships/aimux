@@ -79,7 +79,7 @@ fn options(text: &str) -> SpeechCallOptions {
 
 /// `providerOptions: { xai: {...} }`.
 fn with_xai(mut options: SpeechCallOptions, xai: Value) -> SpeechCallOptions {
-    options.provider_options = Some(HashMap::from([(
+    options.provider_options = Some(aimux_core::shared::NamespaceMap::from([(
         "xai".to_string(),
         xai.as_object().expect("an object").clone(),
     )]));

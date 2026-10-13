@@ -8,8 +8,6 @@
 //!
 //! Both endpoints return the same JSON response shape (`openaiImageResponseSchema`).
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -573,7 +571,7 @@ fn distribute_token_details(details: Option<&Value>, index: usize, total: usize)
 /// `outputFormat`, and distributed token details. Fields with null/absent
 /// values are omitted (matching JSON serialization of TS `undefined`).
 fn extract_provider_metadata(response: &Value) -> SharedProviderMetadata {
-    let mut metadata = HashMap::new();
+    let mut metadata = aimux_core::shared::NamespaceMap::new();
 
     let data = response.get("data").and_then(|d| d.as_array());
     let created = response.get("created").and_then(serde_json::Value::as_u64);

@@ -20,7 +20,10 @@ const AUDIO: [u8; 4] = [0x49, 0x44, 0x33, 0x04];
 fn call(media_type: &str, groq: Option<Value>) -> TranscriptionCallOptions {
     let mut options = TranscriptionCallOptions::new(AudioInput::Binary(AUDIO.to_vec()), media_type);
     if let Some(Value::Object(groq)) = groq {
-        options.provider_options = Some(HashMap::from([("groq".to_string(), groq)]));
+        options.provider_options = Some(aimux_core::shared::NamespaceMap::from([(
+            "groq".to_string(),
+            groq,
+        )]));
     }
     options
 }

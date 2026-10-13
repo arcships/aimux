@@ -395,4 +395,30 @@ class TypedModelTest {
     // Note: mid-stream provider errors are not deterministically triggerable
     // via a single-response mock; terminal stream failures throw AimuxException
     // from the C return/err path (same as raw Model.streamTextStream).
+
+    @Test
+    void namespaceMapsKeepInsertionOrder() throws Exception {
+        // Provider options, provider metadata and provider references are JS
+        // objects upstream (@ai-sdk/provider shared-v4-provider-options.ts:24,
+        // shared-v4-provider-metadata.ts:24, shared-v4-provider-reference.ts:20),
+        // so their keys keep insertion order, through Rust and back (#229 NP2-1).
+        String metadata = "{\"zeta\":{\"z\":1,\"a\":2},\"alpha\":{},\"mid\":{}}";
+        String invalid = "{\"toolCallId\":\"call-1\",\"toolName\":\"weather\",\"input\":{\"town\":\"SG\"},"
+            + "\"dynamic\":true,\"invalid\":true,\"providerMetadata\":" + metadata + ","
+            + "\"error\":{\"name\":\"AI_InvalidToolInputError\",\"toolName\":\"weather\","
+            + "\"toolInput\":\"{\\\"town\\\":\\\"SG\\\"}\",\"cause\":\"missing city\"}}";
+        String opts = "{\"tools\":[{\"type\":\"function\",\"name\":\"weather\","
+            + "\"inputSchema\":{\"type\":\"object\"}}]}";
+        String out = ToolCallRepairs.apply(invalid, opts, "{\"type\":\"unchanged\"}");
+        ObjectMapper t = Types.AimuxJson.MAPPER;
+        Types.ToolCall call = t.readValue(out, Types.ToolCall.class);
+        assertThat(t.writeValueAsString(call.getProviderMetadata())).isEqualTo(metadata);
+
+        ObjectMapper m = MultimodalTypes.AimuxJson.MAPPER;
+        String reference = "{\"openai\":\"file-abc123\",\"anthropic\":\"file-xyz789\",\"google\":\"files/1\"}";
+        MultimodalTypes.UploadFileResult upload =
+            m.readValue("{\"providerReference\":" + reference + "}", MultimodalTypes.UploadFileResult.class);
+        assertThat(upload.getProviderReference().keySet()).containsExactly("openai", "anthropic", "google");
+        assertThat(m.writeValueAsString(upload)).startsWith("{\"providerReference\":" + reference);
+    }
 }

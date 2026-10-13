@@ -11,7 +11,6 @@
 //! there: it is loaded for every request, from the setting or from `FAL_KEY`.
 //! [`fal()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -646,7 +645,7 @@ impl ImageModel for FalImageModel {
             }
         }
 
-        let mut metadata = HashMap::new();
+        let mut metadata = aimux_core::shared::NamespaceMap::new();
         let mut fm = Map::new();
         let im: Vec<Value> = target_images
             .iter()

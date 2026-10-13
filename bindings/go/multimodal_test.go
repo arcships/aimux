@@ -321,7 +321,7 @@ func TestE2E_UploadFileResultParsing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
-	if result.ProviderReference["openai"] != "file-abc123" {
+	if id, _ := result.ProviderReference.Get("openai"); id != "file-abc123" {
 		t.Error("provider reference mismatch")
 	}
 	if result.MediaType == nil || *result.MediaType != "application/pdf" {

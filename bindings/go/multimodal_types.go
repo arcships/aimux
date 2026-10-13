@@ -347,11 +347,42 @@ type SearchCallOptions struct {
 
 // UploadFileResult is the result of a file upload.
 type UploadFileResult struct {
-	ProviderReference map[string]string `json:"providerReference"`
+	ProviderReference ProviderReference `json:"providerReference"`
 	MediaType         *string           `json:"mediaType,omitempty"`
 	Filename          *string           `json:"filename,omitempty"`
 	ProviderMetadata  json.RawMessage   `json:"providerMetadata,omitempty"`
 	Warnings          []Warning         `json:"warnings,omitempty"`
+}
+
+// ProviderReference is the AI SDK's SharedV4ProviderReference, a JSON object
+// mapping provider names to the provider's file id, e.g.
+// {"openai":"file-abc123"}. It is kept as raw JSON so that its keys keep the
+// order the provider wrote them in; a Go map would sort them. Get reads one
+// provider's id.
+type ProviderReference json.RawMessage
+
+// Get returns the file id recorded for provider, if any.
+func (r ProviderReference) Get(provider string) (string, bool) {
+	var ids map[string]string
+	if len(r) == 0 || json.Unmarshal(r, &ids) != nil {
+		return "", false
+	}
+	id, ok := ids[provider]
+	return id, ok
+}
+
+// MarshalJSON writes the reference as it was read; an empty one is {}.
+func (r ProviderReference) MarshalJSON() ([]byte, error) {
+	if len(r) == 0 {
+		return []byte("{}"), nil
+	}
+	return []byte(r), nil
+}
+
+// UnmarshalJSON keeps a copy of the JSON object.
+func (r *ProviderReference) UnmarshalJSON(data []byte) error {
+	*r = ProviderReference(append([]byte(nil), data...))
+	return nil
 }
 
 // UploadFileCallOptions is the options for a file upload.
@@ -364,8 +395,9 @@ type UploadFileCallOptions struct {
 }
 
 // jsonObj is a json.RawMessage that serializes as {} when nil (instead of null).
-// This is needed because Rust's SharedProviderOptions (HashMap) requires a map,
-// not null, in the JSON wire format.
+// This is needed because Rust's SharedProviderOptions requires a JSON object,
+// not null, in the JSON wire format. Being raw JSON, it keeps the order of the
+// provider namespaces.
 type jsonObj json.RawMessage
 
 func (o jsonObj) MarshalJSON() ([]byte, error) {

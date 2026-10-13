@@ -165,7 +165,7 @@ pub(crate) fn response_metadata(
     let object = raw.as_object().cloned().ok_or_else(|| {
         AiMuxError::InvalidResponseData(format!("{provider} response must be an object"))
     })?;
-    Ok(HashMap::from([(provider.into(), object)]))
+    Ok(SharedProviderMetadata::from([(provider.into(), object)]))
 }
 
 pub(crate) fn options(

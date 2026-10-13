@@ -459,6 +459,30 @@ class TypedModelRoundTripTest {
     }
 
     @Test
+    fun `namespace maps keep insertion order`() {
+        // Provider options, provider metadata and provider references are JS
+        // objects upstream (@ai-sdk/provider shared-v4-provider-options.ts:24,
+        // shared-v4-provider-metadata.ts:24, shared-v4-provider-reference.ts:20),
+        // so their keys keep insertion order, through Rust and back (#229 NP2-1).
+        val metadata = """{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}}"""
+        val invalid = """{"toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},""" +
+            """"dynamic":true,"invalid":true,"providerMetadata":$metadata,""" +
+            """"error":{"name":"AI_InvalidToolInputError","toolName":"weather",""" +
+            """"toolInput":"{\"town\":\"SG\"}","cause":"missing city"}}"""
+        val opts = """{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}"""
+        val out = applyToolCallRepair(invalid, opts, """{"type":"unchanged"}""")
+        val call = AimuxJson.decodeFromString(ToolCall.serializer(), out)
+        assertThat(call.providerMetadata!!.keys).containsExactly("zeta", "alpha", "mid")
+        assertThat(AimuxJson.encodeToString(ToolCall.serializer(), call)).contains(""""providerMetadata":$metadata""")
+
+        val reference = """{"openai":"file-abc123","anthropic":"file-xyz789","google":"files/1"}"""
+        val upload = AimuxJson.decodeFromString(UploadFileResult.serializer(), """{"providerReference":$reference}""")
+        assertThat(upload.providerReference.keys).containsExactly("openai", "anthropic", "google")
+        assertThat(AimuxJson.encodeToString(UploadFileResult.serializer(), upload))
+            .startsWith("""{"providerReference":$reference""")
+    }
+
+    @Test
     fun `file parts are the AI SDK file part`() {
         // FilePart.data is FileData | DataContent | URL | ProviderReference
         // (provider-utils types/content-part.ts:75, file-data.ts:44-48) and

@@ -18,7 +18,6 @@
 
 use aimux_core::tool::ToolResult;
 use aimux_core::tool::{FunctionTool, RawToolCall};
-use std::collections::HashMap;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -1669,7 +1668,7 @@ async fn should_send_provider_specific_options() {
     let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let mut options = default_options(test_prompt());
-    let mut po = HashMap::new();
+    let mut po = aimux_core::shared::NamespaceMap::new();
     po.insert(
         "huggingface".to_string(),
         serde_json::from_value(json!({

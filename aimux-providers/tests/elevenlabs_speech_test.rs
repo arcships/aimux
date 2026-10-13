@@ -1,4 +1,4 @@
-﻿//! Rust translation of the ElevenLabs speech (TTS) model tests.
+//! Rust translation of the ElevenLabs speech (TTS) model tests.
 //!
 //! Source: `reference/ai/packages/elevenlabs/src/elevenlabs-speech-model.test.ts`
 //!
@@ -213,7 +213,7 @@ async fn should_pass_provider_specific_options() {
     let mut options = speech_options("Hello, world!");
     options.voice = Some("test-voice-id".to_string());
 
-    let mut provider_options = HashMap::new();
+    let mut provider_options = aimux_core::shared::SharedProviderOptions::new();
     provider_options.insert(
         "elevenlabs".to_string(),
         serde_json::from_value(json!({

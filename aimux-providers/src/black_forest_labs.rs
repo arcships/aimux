@@ -516,7 +516,7 @@ impl ImageModel for BlackForestLabsImageModel {
         let download_headers: HashMap<String, String> = HashMap::new();
 
         // Build provider metadata
-        let mut metadata = HashMap::new();
+        let mut metadata = aimux_core::shared::NamespaceMap::new();
         let mut bfl_meta = Map::new();
         let mut img_meta = Map::new();
         if let Some(s) = result_seed {

@@ -49,7 +49,7 @@ fn model(base_url: &str, headers: Option<Headers>) -> XaiTranscriptionModel {
 }
 
 fn xai_options(value: Value) -> SharedProviderOptions {
-    HashMap::from([("xai".to_string(), value.as_object().unwrap().clone())])
+    SharedProviderOptions::from([("xai".to_string(), value.as_object().unwrap().clone())])
 }
 
 // ── doGenerate helpers ──────────────────────────────────────────────────────

@@ -99,7 +99,12 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["fs", "cors"] }
 
 # TypeScript type generation (auto-generate .d.ts from Rust types)
-ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
+ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings", "indexmap-impl"] }
+
+# Insertion-ordered maps (provider options / metadata namespaces, like the
+# AI SDK's JS objects). Already in the graph through serde_json's
+# `preserve_order`.
+indexmap = { version = "2", features = ["serde"] }
 
 # Workspace lint baseline. Member crates opt in with `[lints] workspace = true`;
 # CI additionally promotes all warnings to errors.

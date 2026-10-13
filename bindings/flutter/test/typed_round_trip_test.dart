@@ -44,6 +44,18 @@ void main() {
       expect(minimal.toJson().keys, ['toolCallId', 'toolName', 'input']);
     });
 
+    // Provider metadata is a JS object upstream (@ai-sdk/provider
+    // shared-v4-provider-metadata.ts:24), so its keys keep insertion order
+    // (#229 NP2-1); a decoded Dart map keeps them too.
+    test('provider namespaces keep insertion order', () {
+      const metadata = '{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}}';
+      final text = '{"toolCallId":"call-1","toolName":"weather","input":{},'
+          '"providerMetadata":$metadata}';
+      final call = ToolCall.fromJson(jsonDecode(text) as Map<String, dynamic>);
+      expect(call.providerMetadata!.keys, ['zeta', 'alpha', 'mid']);
+      expect(jsonEncode(call.toJson()), text);
+    });
+
     test('RawToolCall keeps every provider field through copyWith', () {
       final call = RawToolCall.fromJson({
         'toolCallId': 'call-1',

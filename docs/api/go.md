@@ -511,7 +511,8 @@ result, err := aimux.ParseUploadFileResult(resultJSON)
 if err != nil {
     log.Fatal(err)
 }
-fmt.Println(result.ProviderReference)  // map["openai":"file-xxx"]
+id, _ := result.ProviderReference.Get("openai")
+fmt.Println(id)  // file-xxx
 ```
 
 ## API Surface

@@ -1685,7 +1685,7 @@ AI SDK 两者均为 `Record<string, JSONObject>`，不是任意 JSON，也不是
 - `S4/shared-v4-provider-metadata.ts:24`
 - `U/provider-options.ts:9`
 
-需要统一的是**外层 namespace → 内层 JSON object** 的结构。`ProviderOptions` 与 `ProviderMetadata` 仍应保留不同语义名称，转换时显式表达方向。
+需要统一的是**外层 namespace → 内层 JSON object** 的结构。`ProviderOptions` 与 `ProviderMetadata` 与上游一样是同一结构的两个类型别名（上游回放直接写 `providerOptions: part.providerMetadata`，`A/generate-text/to-response-messages.ts:52`），方向由字段名和转换函数表达，不另建 newtype。
 
 `conversions`：当前协议经过以下转换点。
 
@@ -1829,16 +1829,15 @@ flowchart TD
 ```rust
 pub type JsonValue = serde_json::Value;
 pub type JsonObject = serde_json::Map<String, JsonValue>;
-pub type NamespaceMap = BTreeMap<String, JsonObject>;
-pub type ProviderReference = BTreeMap<String, String>;
+// 保持插入顺序的 map：上游是 JS 对象，键按插入顺序保留
+// （`S4/shared-v4-provider-options.ts:24`、`S4/shared-v4-provider-reference.ts:20`）。
+// 落地为 `IndexMap`（`aimux-core/src/shared.rs`）。
+pub type NamespaceMap = IndexMap<String, JsonObject>;
+pub type ProviderReference = IndexMap<String, String>;
 
-#[derive(Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct ProviderOptions(pub NamespaceMap);
-
-#[derive(Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct ProviderMetadata(pub NamespaceMap);
+// 与上游一样是同一结构的两个别名。
+pub type ProviderOptions = NamespaceMap;
+pub type ProviderMetadata = NamespaceMap;
 
 // 运行时持有 bytes；JSON 始终编码为 base64 字符串。
 #[derive(Serialize, Deserialize)]
@@ -1866,6 +1865,8 @@ pub enum Optional<T> {
 这样可以避免 `Option<Value>` 在反序列化时把“缺字段”和“值为 null”合并。普通运行时 API 可以继续用 Option；wire DTO 必须保留上游 JSONValue 的 null 语义。
 
 落地形式(#232 C34)：`Option<Value>` 字段使用 `#[serde(default, deserialize_with = "crate::wire::present", skip_serializing_if = "Option::is_none")]`，`None` 即 Missing，`Some(Value::Null)` 即显式 null，序列化时各自写回。已覆盖上游为 `unknown` 的字段：各模型结果的 response/request `body`(`language-model-v4-generate-result.ts:41, :56` 等)、`APICallError.data`(`errors/api-call-error.ts:18`)与工具审批请求的 `inputSchemaInput`(`provider-utils` `types/tool-approval-request.ts:41`)。绑定同样区分：Python 不再以 `exclude_none` 序列化，`Any` 字段显式设为 `None` 时写出 null；Go 以 `json.RawMessage` 读取这些 body；Kotlin 以 `JsonValuePresentSerializer`、Swift 以 `KeyedDecodingContainer.decodeIfPresent(JSONValue.self)` 重载、Dart 以 `hasBody`/`hasInputSchemaInput` 保留显式 null；Java 的 `JsonNode` 字段由 Jackson 读成 `NullNode`。
+
+namespace map 的顺序(#229 NP2-1)：Rust 侧 `NamespaceMap`/`SharedProviderReference` 按插入顺序读写，绑定侧也不得重排。Node(`JSON.parse`)、Python(`json.loads`/pydantic `dict`)、Java(Jackson `JsonNode`，`UploadFileResult.providerReference` 默认 `LinkedHashMap`)、Kotlin(`kotlinx.serialization` 的 `Map`)与 Dart(`jsonDecode` 的 `LinkedHashMap`)天然保序；Go 的 map 编码时按键排序，因此 `Tool.ProviderOptions`、`TranscriptionSessionOpts.ProviderOptions` 改为 `json.RawMessage`，`UploadFileResult.ProviderReference` 改为保存原始 JSON 的 `ProviderReference` 类型(以 `Get(provider)` 读取)。已知限制：Swift 的 `[String: String]` 与 `JSONValue.object` 是无序 `Dictionary`，经 `JSONEncoder` 写出时不保证顺序。
 
 生成的 JSON TypeScript DTO 对缺失属性使用 `?`。上游运行时的 `number | undefined` 可在 SDK facade 中恢复，但不能要求 JSON 对象携带不存在的 undefined。
 
@@ -2725,7 +2726,7 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 | `result::ReasoningPart/SourcePart/FilePart` | 删除有损镜像，改为规范 content 的投影 |
 | 三份 Source 字段 | 合并为一个 source payload/联合 |
 | `StreamPart::ResponseMetadata` 内联复制 | 复用统一 metadata payload |
-| `ProviderMetadata=Value`、各处 map/value options | 合并到共享 namespace map；输入/输出保留语义包装 |
+| `ProviderMetadata=Value`、各处 map/value options | 合并到共享 namespace map；输入/输出是同一结构的两个别名，与上游一致 |
 | 工厂 `ProviderOptions` | 按第一部分 §3.3 改为各包 `XxxProviderSettings`，避免与消息 options 混淆 |
 | 共用 `TokenUsage` | 拆 V4 input/output details；用户 Usage 另有显式映射 |
 | `StreamTextResultAggregated` | 删除，流完成走同一结果聚合模型 |
