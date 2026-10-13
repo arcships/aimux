@@ -312,6 +312,37 @@ async fn should_handle_base64_string_data() {
     assert!(result.provider_reference.contains_key("google"));
 }
 
+/// google-files.ts:84-92 (init) and :118-126 (upload) call the provider's
+/// plain `fetch`, not `postToApi`, so neither request carries the
+/// `ai-sdk-provider-utils/<v>` part (post-to-api.ts:100-104). The init sends
+/// the provider headers, whose user-agent is `ai-sdk-google/<v>`
+/// (google-provider.ts:258-269); the upload sends only its
+/// `X-Goog-Upload-*` headers, so no user-agent.
+#[tokio::test]
+async fn upload_requests_carry_no_provider_utils_user_agent_part() {
+    let server = MockServer::start().await;
+    mount_success_mocks(&server).await;
+    let provider = provider(&server);
+    Provider::files(&provider)
+        .unwrap()
+        .upload_file(&upload_options())
+        .await
+        .unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].url.path(), "/upload/v1beta/files");
+    assert_eq!(
+        requests[0]
+            .headers
+            .get("user-agent")
+            .and_then(|v| v.to_str().ok()),
+        Some("ai-sdk-google/4.0.87")
+    );
+    assert_eq!(requests[1].url.path(), "/resume");
+    assert_eq!(requests[1].headers.get("user-agent"), None);
+}
+
 // -- polling tests -----------------------------------------------------------
 
 #[tokio::test]

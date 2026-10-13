@@ -484,6 +484,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of an untrusted URL through the download guard with no headers, so no
   `user-agent`. OpenAI-compatible image edits download URL files with it, as
   upstream does, and no longer send `ai-sdk-provider-utils/5.0.53` there.
+- `HttpRequest::omit_provider_utils_user_agent` (`aimux-provider-utils`):
+  sends the `user-agent` as given, without the `ai-sdk-provider-utils/<v>`
+  part, for an exchange the AI SDK makes with a plain `fetch`. A struct
+  literal of `HttpRequest` must now set it or use `..Default::default()`.
+  The Google Files upload uses it: the init request sends the provider
+  headers (`ai-sdk-google/4.0.87`) and the byte upload sends no
+  `user-agent`, as `@ai-sdk/google`'s `fetch` calls do.
 - `OpenAIProvider::tools` and `AzureOpenAIProvider::tools`: the provider tools
   on the provider instance, as the AI SDK's `openai.tools` and `azure.tools`
   (`openai().tools.web_search(…)`). Azure's holds its upstream subset.

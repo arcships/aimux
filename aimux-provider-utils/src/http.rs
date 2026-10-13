@@ -123,6 +123,12 @@ pub struct HttpRequest {
     /// provider-supplied URLs always use the SSRF guard's pinned transport,
     /// never a provider-injected one.
     pub fetch: Option<FetchFunction>,
+    /// Send the `user-agent` as given (or none), without the
+    /// `ai-sdk-provider-utils/<v>` part that the AI SDK's `postToApi` and
+    /// `getFromApi` append (post-to-api.ts:100-104, get-from-api.ts:77-81).
+    /// For an exchange the AI SDK makes with a plain `fetch` call or with
+    /// `downloadBlob` (google-files.ts:84-126, download-blob.ts:111-114).
+    pub omit_provider_utils_user_agent: bool,
 }
 
 /// The per-operation context every model's call options carry into an
@@ -232,10 +238,9 @@ pub(crate) struct PreparedRequest {
     /// [`RequestCredentials::Omit`] once the target is off the credentialed
     /// origin; never switched back.
     credentials: RequestCredentials,
-    /// Whether `ai-sdk-provider-utils/<v>` is appended to the `user-agent`,
-    /// as the AI SDK's `postToApi` and `getFromApi` do. `downloadBlob` sends
-    /// no headers at all ([`crate::download_blob`]).
-    pub(crate) provider_utils_user_agent: bool,
+    /// Whether `ai-sdk-provider-utils/<v>` is appended to the `user-agent`
+    /// (not [`HttpRequest::omit_provider_utils_user_agent`]).
+    provider_utils_user_agent: bool,
 }
 
 impl HttpRequest {
@@ -267,7 +272,7 @@ impl HttpRequest {
             }),
             fetch: self.fetch,
             credentials,
-            provider_utils_user_agent: true,
+            provider_utils_user_agent: !self.omit_provider_utils_user_agent,
         }
     }
 }

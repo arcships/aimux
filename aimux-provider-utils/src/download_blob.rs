@@ -3,7 +3,7 @@
 use aimux_core::{AbortSignal, AiMuxError};
 use bytes::Bytes;
 
-use crate::http::{HttpBody, HttpMethod, HttpRequest};
+use crate::http::HttpRequest;
 use crate::response_handler::{
     ResponseHandlerOutput, create_binary_response_handler,
     create_status_code_error_response_handler,
@@ -37,11 +37,11 @@ pub async fn download_blob(
 }
 
 async fn download(request: HttpRequest) -> Result<ResponseHandlerOutput<Bytes>, AiMuxError> {
-    let mut prepared = request.prepare(HttpMethod::Get, HttpBody::Empty);
-    prepared.provider_utils_user_agent = false;
-    crate::post_to_api::call_to_api(
-        prepared,
-        serde_json::json!({}),
+    crate::get_from_api(
+        HttpRequest {
+            omit_provider_utils_user_agent: true,
+            ..request
+        },
         create_binary_response_handler(),
         create_status_code_error_response_handler(),
     )
