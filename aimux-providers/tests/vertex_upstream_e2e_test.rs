@@ -4,6 +4,7 @@
 mod mock_fetch;
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
+use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
@@ -432,7 +433,6 @@ async fn gemini_transcription_generate_request_and_result() {
 /// anything is spawned and before any HTTP request is sent.
 #[tokio::test]
 async fn executable_credential_without_the_opt_in_fails_and_spawns_nothing() {
-    use aimux_core::error::AiMuxError;
     use aimux_providers::vertex::GoogleAuthOptions;
 
     for var in [
@@ -521,4 +521,147 @@ async fn image_options_under_the_legacy_vertex_key_are_read_and_metadata_written
     );
     let metadata = result.provider_metadata.unwrap();
     assert_eq!(metadata["googleVertex"], metadata["vertex"]);
+}
+
+fn prompt() -> CallOptions {
+    CallOptions::new(vec![LanguageModelMessage::user_text("Hello")])
+}
+
+fn partner_response(usage: serde_json::Value) -> Canned {
+    Canned::json(&json!({
+        "id": "chatcmpl-1", "object": "chat.completion", "created": 1, "model": "m",
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+        "usage": usage
+    }))
+}
+
+fn partner_settings(
+    fetch: &Arc<MockFetch>,
+    location: Option<&str>,
+) -> aimux_providers::VertexPartnerProviderSettings {
+    aimux_providers::VertexPartnerProviderSettings {
+        project: Some("test-project".into()),
+        location: location.map(String::from),
+        headers: Some(Resolvable::Value(
+            [("Custom-Header".into(), Some("custom-value".into()))].into(),
+        )),
+        fetch: Some(fetch.transport()),
+        generate_auth_token: Some(Resolvable::Value(Some("test-token".into()))),
+        ..Default::default()
+    }
+}
+
+/// Upstream: @ai-sdk/google-vertex 5.0.98 src/maas/google-vertex-maas-provider.ts:77-118
+/// (the project/location URL, `global` by default, the `vertex.maas` name,
+/// the llama-4 `max_tokens` default at :14-25) and
+/// google-vertex-maas-provider-node.ts:170-189 (the headers, then the bearer token).
+#[tokio::test]
+async fn maas_sub_provider_builds_on_openai_compatible() {
+    let fetch = MockFetch::new(vec![
+        partner_response(json!({"prompt_tokens": 1, "completion_tokens": 1})),
+        partner_response(json!({"prompt_tokens": 1, "completion_tokens": 1})),
+    ]);
+    let regional =
+        aimux_providers::create_google_vertex_maas(partner_settings(&fetch, Some("us-central1")))
+            .unwrap();
+    let model = regional.chat("meta/llama-4-scout-17b-16e-instruct-maas");
+    assert_eq!(model.provider(), "vertex.maas.chat");
+    model.do_generate(&prompt()).await.unwrap();
+    let global =
+        aimux_providers::create_google_vertex_maas(partner_settings(&fetch, None)).unwrap();
+    let mut options = prompt();
+    options.max_output_tokens = Some(100);
+    global
+        .chat("meta/llama-4-scout-17b-16e-instruct-maas")
+        .do_generate(&options)
+        .await
+        .unwrap();
+
+    let seen = fetch.seen();
+    assert_eq!(
+        seen[0].url,
+        "https://us-central1-aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/endpoints/openapi/chat/completions"
+    );
+    assert_eq!(
+        seen[1].url,
+        "https://aiplatform.googleapis.com/v1/projects/test-project/locations/global/endpoints/openapi/chat/completions"
+    );
+    assert_eq!(seen[0].headers["authorization"], "Bearer test-token");
+    assert_eq!(seen[0].headers["custom-header"], "custom-value");
+    assert!(seen[0].headers["user-agent"].starts_with("ai-sdk-openai-compatible/"));
+    assert_eq!(seen[0].json_body()["max_tokens"], 8192);
+    assert_eq!(seen[1].json_body()["max_tokens"], 100);
+}
+
+/// Upstream: @ai-sdk/google-vertex 5.0.98 src/xai/google-vertex-xai-provider.ts:
+/// the global host whatever the location (:159-164), the `googleVertex.xai`
+/// name with usage in streams and structured outputs (:172-184), no
+/// `reasoning_effort` (:131-134), reasoning tokens on top of
+/// `completion_tokens` (:89-129) and no embedding or image models (:203-209).
+#[tokio::test]
+async fn xai_sub_provider_builds_on_openai_compatible() {
+    let fetch = MockFetch::new(vec![partner_response(json!({
+        "prompt_tokens": 10, "completion_tokens": 30,
+        "prompt_tokens_details": {"cached_tokens": 4},
+        "completion_tokens_details": {"reasoning_tokens": 12}
+    }))]);
+    let provider =
+        aimux_providers::create_google_vertex_xai(partner_settings(&fetch, Some("us-central1")))
+            .unwrap();
+    let model = provider.chat("xai/grok-4.1-fast-reasoning");
+    assert_eq!(model.provider(), "googleVertex.xai.chat");
+    let mut options = prompt();
+    options.reasoning = Some(aimux_core::types::ReasoningEffort::High);
+    let result = model.do_generate(&options).await.unwrap();
+
+    let seen = fetch.seen();
+    assert_eq!(
+        seen[0].url,
+        "https://aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/endpoints/openapi/chat/completions"
+    );
+    assert_eq!(seen[0].headers["authorization"], "Bearer test-token");
+    assert!(seen[0].json_body().get("reasoning_effort").is_none());
+    assert_eq!(result.usage.input_tokens.total, Some(10));
+    assert_eq!(result.usage.input_tokens.no_cache, Some(6));
+    assert_eq!(result.usage.input_tokens.cache_read, Some(4));
+    assert_eq!(result.usage.output_tokens.total, Some(42));
+    assert_eq!(result.usage.output_tokens.text, Some(30));
+    assert_eq!(result.usage.output_tokens.reasoning, Some(12));
+    assert!(
+        model
+            .supported_urls()
+            .0
+            .get("image/*")
+            .is_some_and(|patterns| patterns[0].is_match("https://example.com/a.png"))
+    );
+    assert!(matches!(
+        aimux_core::provider::Provider::embedding_model(&provider, "e"),
+        Err(AiMuxError::NoSuchModel { .. })
+    ));
+}
+
+/// Upstream: both sub-providers load the project with `loadSetting`
+/// (google-vertex-maas-provider.ts:83-89): no project, no request.
+#[tokio::test]
+async fn partner_sub_providers_require_a_project() {
+    assert!(
+        std::env::var_os("GOOGLE_VERTEX_PROJECT").is_none(),
+        "the test needs GOOGLE_VERTEX_PROJECT unset"
+    );
+    let fetch = MockFetch::new(vec![]);
+    let settings = aimux_providers::VertexPartnerProviderSettings {
+        project: None,
+        ..partner_settings(&fetch, None)
+    };
+    let error = aimux_providers::create_google_vertex_maas(settings)
+        .unwrap()
+        .chat("m")
+        .do_generate(&prompt())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::LoadSetting { env_var, .. } if env_var == "GOOGLE_VERTEX_PROJECT"),
+        "{error:?}"
+    );
+    assert!(fetch.seen().is_empty());
 }

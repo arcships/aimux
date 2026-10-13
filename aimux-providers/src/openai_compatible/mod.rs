@@ -151,13 +151,26 @@ pub fn create_openai_compatible(
         .map_or(Credential::None, |key| {
             Credential::Explicit(Resolvable::Value(key))
         });
-    let user_headers = settings.headers.clone();
+    let headers = compatible_headers(credential, settings.headers.clone());
+    build(settings, BaseUrl::Fixed(base_url), headers)
+}
+
+/// [`create_openai_compatible`] for a package that builds on it with its own
+/// base URL source and provider headers (the AI SDK's sub-providers that
+/// call `createOpenAICompatible`). `settings.base_url`, `api_key` and
+/// `headers` are not read; the package user-agent part is added to
+/// `headers`.
+pub(crate) fn build(
+    settings: OpenAICompatibleProviderSettings,
+    base_url: BaseUrl,
+    headers: HeadersFn,
+) -> Result<OpenAICompatibleProvider, AiMuxError> {
     let mut provider = OpenAICompatibleProvider::assemble(Assembly {
         name: settings.name,
-        base_url: BaseUrl::Fixed(base_url),
-        credential: credential.clone(),
+        base_url,
+        credential: Credential::None,
         fixed_headers: Vec::new(),
-        headers: settings.headers,
+        headers: None,
         query_params: settings.query_params,
         fetch: settings.fetch,
         transform_request_body: settings.transform_request_body,
@@ -174,7 +187,6 @@ pub fn create_openai_compatible(
     dialect.metadata_extractor = settings.metadata_extractor;
     dialect.supported_urls = settings.supported_urls;
     dialect.convert_usage = settings.convert_usage;
-    let headers = compatible_headers(credential, user_headers);
     provider.headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
         headers,
         "openai-compatible",

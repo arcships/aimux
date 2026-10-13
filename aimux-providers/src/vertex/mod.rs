@@ -31,6 +31,7 @@ mod embedding;
 mod gemini_transcription;
 pub mod image;
 mod model;
+mod partner_provider;
 mod transcription;
 mod video;
 
@@ -44,6 +45,11 @@ pub use embedding::VertexEmbeddingModel;
 pub use gemini_transcription::VertexGeminiTranscriptionModel;
 pub use image::VertexImageModel;
 pub use model::VertexModel;
+pub use partner_provider::{
+    VertexMaasProviderSettings, VertexPartnerProviderSettings, VertexXaiProvider,
+    VertexXaiProviderSettings, create_google_vertex_maas, create_google_vertex_xai,
+    google_vertex_maas, google_vertex_xai,
+};
 pub use transcription::VertexTranscriptionModel;
 pub use video::VertexVideoModel;
 

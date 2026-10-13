@@ -439,6 +439,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`ProviderConfig` in Go and Dart) drop `max_retries` / `body_overrides` and
   gain `params`; call-level `max_retries` is unchanged.
 
+### Added
+
+- Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's
+  `/maas` and `/xai` paths: `create_google_vertex_maas` / `google_vertex_maas`
+  (an OpenAI-compatible provider named `vertex.maas`) and
+  `create_google_vertex_xai` / `google_vertex_xai` (Grok chat models named
+  `googleVertex.xai`), over the project/location `endpoints/openapi` URL with
+  a Google OAuth token.
+
 ### RFCs
 
 - `docs/aisdk-architecture-alignment.md`: the V4 migration now lands on

@@ -240,9 +240,12 @@ pub use openai::{
 };
 pub use vertex::{
     GoogleAuthOptions, GoogleAuthScopes, VertexAnthropicModel, VertexAnthropicProvider,
-    VertexAnthropicProviderSettings, VertexEmbeddingModel, VertexImageModel, VertexModel,
-    VertexProvider, VertexProviderSettings, VertexTranscriptionModel, VertexVideoModel,
-    create_google_vertex, create_google_vertex_anthropic, google_vertex, google_vertex_anthropic,
+    VertexAnthropicProviderSettings, VertexEmbeddingModel, VertexImageModel,
+    VertexMaasProviderSettings, VertexModel, VertexPartnerProviderSettings, VertexProvider,
+    VertexProviderSettings, VertexTranscriptionModel, VertexVideoModel, VertexXaiProvider,
+    VertexXaiProviderSettings, create_google_vertex, create_google_vertex_anthropic,
+    create_google_vertex_maas, create_google_vertex_xai, google_vertex, google_vertex_anthropic,
+    google_vertex_maas, google_vertex_xai,
 };
 pub use voyage::{
     VoyageEmbeddingModel, VoyageProvider, VoyageProviderSettings, VoyageRerankingModel,
