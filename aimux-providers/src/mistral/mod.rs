@@ -171,13 +171,16 @@ pub fn create_mistral(settings: MistralProviderSettings) -> Result<MistralProvid
             Vec::new(),
             settings.headers,
         ),
-        options::NAMESPACE,
-        crate::shared::aisdk_pins::MISTRAL,
+        crate::shared::aisdk_pins::MISTRAL.name,
+        crate::shared::aisdk_pins::MISTRAL.version,
     );
     Ok(MistralProvider {
         base_url,
         headers,
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::MISTRAL,
+        )),
         generate_id: settings.generate_id,
     })
 }

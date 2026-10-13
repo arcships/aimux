@@ -101,10 +101,13 @@ pub fn create_deepseek(settings: DeepSeekProviderSettings) -> Result<DeepSeekPro
                 Vec::new(),
                 settings.headers,
             ),
-            "deepseek",
-            crate::shared::aisdk_pins::DEEPSEEK,
+            crate::shared::aisdk_pins::DEEPSEEK.name,
+            crate::shared::aisdk_pins::DEEPSEEK.version,
         ),
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::DEEPSEEK,
+        )),
     })
 }
 

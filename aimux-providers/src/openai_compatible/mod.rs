@@ -56,6 +56,7 @@ use aimux_provider_utils::{
     FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, validate_base_url,
 };
 
+use crate::shared::aisdk_pins::Package;
 use crate::shared::{Credential, provider_headers};
 use config::{BaseUrl, ChatDialect, ChatSettings, CompatModelConfig};
 
@@ -152,18 +153,28 @@ pub fn create_openai_compatible(
             Credential::Explicit(Resolvable::Value(key))
         });
     let headers = compatible_headers(credential, settings.headers.clone());
-    build(settings, BaseUrl::Fixed(base_url), headers)
+    build(
+        settings,
+        BaseUrl::Fixed(base_url),
+        headers,
+        None,
+        crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
+    )
 }
 
 /// [`create_openai_compatible`] for a package that builds on it with its own
 /// base URL source and provider headers (the AI SDK's sub-providers that
 /// call `createOpenAICompatible`). `settings.base_url`, `api_key` and
-/// `headers` are not read; the package user-agent part is added to
-/// `headers`.
+/// `headers` are not read; the user-agent part of `package` (the
+/// openai-compatible version the calling package depends on) is added to
+/// `headers`. `fetch_headers` go over the per-call headers, as headers a
+/// package adds in its own fetch wrapper do.
 pub(crate) fn build(
     settings: OpenAICompatibleProviderSettings,
     base_url: BaseUrl,
     headers: HeadersFn,
+    fetch_headers: Option<HeadersFn>,
+    package: Package,
 ) -> Result<OpenAICompatibleProvider, AiMuxError> {
     let mut provider = OpenAICompatibleProvider::assemble(Assembly {
         name: settings.name,
@@ -174,7 +185,7 @@ pub(crate) fn build(
         query_params: settings.query_params,
         fetch: settings.fetch,
         transform_request_body: settings.transform_request_body,
-        user_agent: OPENAI_COMPATIBLE_USER_AGENT,
+        package,
         profile: ChatProfile {
             include_usage: settings.include_usage.unwrap_or(false),
             supports_structured_outputs: settings.supports_structured_outputs.unwrap_or(false),
@@ -189,9 +200,10 @@ pub(crate) fn build(
     dialect.convert_usage = settings.convert_usage;
     provider.headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
         headers,
-        "openai-compatible",
-        crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
+        package.name,
+        package.version,
     );
+    provider.fetch_headers = fetch_headers;
     Ok(provider)
 }
 
@@ -219,15 +231,10 @@ pub(crate) struct Assembly {
     pub fetch: Option<FetchFunction>,
     pub transform_request_body: Option<TransformRequestBody>,
     pub profile: ChatProfile,
-    /// `(package, version)` of the provider headers' user-agent suffix.
-    pub user_agent: (&'static str, &'static str),
+    /// The package the user-agent names: its `ai-sdk-{name}/{version}` part
+    /// in the provider headers, and its provider-utils in the transport.
+    pub package: Package,
 }
-
-/// The user-agent part of the `@ai-sdk/openai-compatible` package.
-pub(crate) const OPENAI_COMPATIBLE_USER_AGENT: (&str, &str) = (
-    "openai-compatible",
-    crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
-);
 
 /// An OpenAI-compatible provider (the AI SDK's `OpenAICompatibleProvider`).
 /// Cheap to take models out of; it holds no HTTP client.
@@ -236,6 +243,7 @@ pub struct OpenAICompatibleProvider {
     base_url: BaseUrl,
     query_params: Option<Arc<Vec<(String, String)>>>,
     headers: HeadersFn,
+    fetch_headers: Option<HeadersFn>,
     fetch: Option<FetchFunction>,
     transform_request_body: Option<TransformRequestBody>,
     chat: ChatSettings,
@@ -276,10 +284,14 @@ impl OpenAICompatibleProvider {
                     assembly.fixed_headers,
                     assembly.headers,
                 ),
-                assembly.user_agent.0,
-                assembly.user_agent.1,
+                assembly.package.name,
+                assembly.package.version,
             ),
-            fetch: assembly.fetch,
+            fetch_headers: None,
+            fetch: Some(crate::shared::package_fetch(
+                assembly.fetch,
+                assembly.package,
+            )),
             transform_request_body: assembly.transform_request_body,
             chat: ChatSettings {
                 include_usage: assembly.profile.include_usage,
@@ -297,6 +309,7 @@ impl OpenAICompatibleProvider {
             base_url: self.base_url.clone(),
             query_params: self.query_params.clone(),
             headers: self.headers.clone(),
+            fetch_headers: self.fetch_headers.clone(),
             fetch: self.fetch.clone(),
             transform_request_body: if method == "chat" {
                 self.transform_request_body.clone()

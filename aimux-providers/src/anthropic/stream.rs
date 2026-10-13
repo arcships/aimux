@@ -63,24 +63,39 @@ pub(crate) fn anthropic_stream_error(
         .and_then(|status| u16::try_from(status).ok())
         .or(inferred_status);
     let is_retryable = error.is_retryable.or(inferred_retryable);
-    let data = json!({
-        "type": "error",
-        "error": {
-            "type": error.error_type,
-            "message": error.message,
+    // The error as the chunk schema parses it (anthropic-api.ts:1450-1459):
+    // its known fields only.
+    let mut parsed = serde_json::Map::new();
+    if let Some(error_type) = &error.error_type {
+        parsed.insert("type".into(), json!(error_type));
+    }
+    parsed.insert("message".into(), json!(error.message));
+    for (key, value) in [
+        ("code", error.code.clone()),
+        ("statusCode", error.status_code.clone()),
+        ("isRetryable", error.is_retryable.map(Value::Bool)),
+    ] {
+        if let Some(value) = value {
+            parsed.insert(key.into(), value);
         }
-    });
+    }
+    let parsed = Value::Object(parsed);
+    // `data: 'data' in error ? error.data : error` (:91).
+    let data = error.data.clone().unwrap_or_else(|| parsed.clone());
     let mut result = aimux_provider_utils::stream_error_api_call(
         error.message.clone(),
         error.error_type.clone(),
         status_code,
-        &data,
+        &json!({ "type": "error", "error": parsed }),
         url,
         request_body_values,
         response_headers,
     );
-    if let (Some(is_retryable), AiMuxError::ApiCall(details)) = (is_retryable, &mut result) {
-        details.is_retryable = is_retryable;
+    if let AiMuxError::ApiCall(details) = &mut result {
+        if let Some(is_retryable) = is_retryable {
+            details.is_retryable = is_retryable;
+        }
+        details.data = (!data.is_null()).then(|| aimux_provider_utils::redact_error_context(data));
     }
     result
 }

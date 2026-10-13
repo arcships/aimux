@@ -141,6 +141,11 @@ fn thought_signature(extra_content: Option<&Value>) -> Option<String> {
         .map(str::to_string)
 }
 
+/// The error of an `{"error": ...}` chunk. Upstream passes the chunk's
+/// `error` value on as the error part as it is
+/// (openai-compatible-chat-language-model.ts:588-595,
+/// openai-compatible-completion-language-model.ts:320-325): no status is
+/// read from its `code`, numeric or not, so nothing makes it retryable.
 pub(super) fn stream_error(
     name: &str,
     error: &Value,
@@ -159,16 +164,10 @@ pub(super) fn stream_error(
         Value::Number(value) => Some(value.to_string()),
         _ => None,
     });
-    // Only a numeric HTTP status in the payload is a status; a string code
-    // must not be laundered into a retryable 500.
-    let status_code = code
-        .and_then(Value::as_u64)
-        .filter(|status| (400..=599).contains(status))
-        .map(|status| status as u16);
     aimux_provider_utils::stream_error_api_call(
         message,
         provider_code,
-        status_code,
+        None,
         error,
         url,
         request_body_values,

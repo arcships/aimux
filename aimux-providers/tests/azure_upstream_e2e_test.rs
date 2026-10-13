@@ -426,11 +426,14 @@ async fn token_provider_bearer_is_not_sent_across_a_cross_origin_redirect() {
 
 /// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-language-model.ts:324
 /// and :1062-1080 write Azure's responses logprobs under `azure`, the
-/// provider's own key; the OpenAI wire output reads them from there.
+/// provider's own key, one token list per text part. The OpenAI wire output
+/// reads them from there and gives the Chat Completions logprobs object: one
+/// `content` list, and `bytes: null` where the token carries none.
 #[tokio::test]
 async fn responses_logprobs_reach_the_openai_output_under_the_azure_key() {
     let mut fixture = text_fixture();
-    let logprobs = json!([{"token":"Word","logprob":-0.25,"top_logprobs":[]}]);
+    let logprobs = json!([{"token":"Word","logprob":-0.25,
+        "top_logprobs":[{"token":"Word","logprob":-0.25}]}]);
     fixture["output"][0]["content"][0]["logprobs"] = logprobs.clone();
     let fetch = MockFetch::new(vec![Canned::json(&fixture)]);
     let options = CallOptions {
@@ -449,7 +452,14 @@ async fn responses_logprobs_reach_the_openai_output_under_the_azure_key() {
     assert_eq!(metadata["azure"]["logprobs"], json!([logprobs]));
 
     let completion = aimux_core::openai_output::to_chat_completion(&result, "test-deployment");
-    assert_eq!(completion.choices[0].logprobs, Some(json!([logprobs])));
+    assert_eq!(
+        completion.choices[0].logprobs,
+        Some(json!({
+            "content": [{"token":"Word","logprob":-0.25,"bytes":null,
+                "top_logprobs":[{"token":"Word","logprob":-0.25,"bytes":null}]}],
+            "refusal": null
+        }))
+    );
 }
 
 /// Upstream: @ai-sdk/azure 4.0.84 src/azure-openai-provider.ts:434 puts

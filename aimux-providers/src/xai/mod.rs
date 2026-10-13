@@ -333,10 +333,13 @@ pub fn create_xai(settings: XAIProviderSettings) -> Result<XAIProvider, AiMuxErr
                 Vec::new(),
                 settings.headers,
             ),
-            options::NAMESPACE,
-            crate::shared::aisdk_pins::XAI,
+            crate::shared::aisdk_pins::XAI.name,
+            crate::shared::aisdk_pins::XAI.version,
         ),
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::XAI,
+        )),
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
     })

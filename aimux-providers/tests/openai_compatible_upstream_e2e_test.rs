@@ -290,6 +290,49 @@ async fn chat_stream_preserves_structured_error() {
 }
 
 /// Upstream: @ai-sdk/openai-compatible 3.0.62
+/// src/chat/openai-compatible-chat-language-model.ts:588-595 passes an error
+/// chunk's `error` on as it is: even a numeric `code` that looks like an HTTP
+/// status is no status, so the error is not retryable.
+#[tokio::test]
+async fn chat_stream_error_takes_no_status_from_a_numeric_code() {
+    for (code, provider_code) in [
+        (json!(429), "429"),
+        (json!(503), "503"),
+        (json!("429"), "429"),
+    ] {
+        let payload = json!({"message": "Slow down", "code": code});
+        let fetch = MockFetch::new(vec![stream_response(&[json!({ "error": payload })])]);
+        let parts: Vec<_> = provider(&fetch)
+            .chat("test-model")
+            .do_stream(&options())
+            .await
+            .unwrap()
+            .stream
+            .map(|part| part.unwrap())
+            .collect()
+            .await;
+        let error = parts
+            .iter()
+            .find_map(|part| match part {
+                StreamPart::Error {
+                    error: AiMuxError::ApiCall(error),
+                } => Some(error),
+                _ => None,
+            })
+            .expect("expected an API error part");
+        assert_eq!(error.message, "Slow down", "{code}");
+        assert_eq!(
+            error.provider_code.as_deref(),
+            Some(provider_code),
+            "{code}"
+        );
+        assert_eq!(error.status_code, None, "{code}");
+        assert!(!error.is_retryable, "{code}");
+        assert_eq!(error.data.as_ref(), Some(&payload), "{code}");
+    }
+}
+
+/// Upstream: @ai-sdk/openai-compatible 3.0.62
 /// src/completion/openai-compatible-completion-language-model.ts:320-324
 /// passes an error chunk on as it is (`error: value.error`): unlike
 /// @ai-sdk/openai, no status is inferred from its `code`/`type`.

@@ -35,6 +35,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@ai-sdk/amazon-bedrock` 5.0.100 and `@ai-sdk/anthropic-aws` 2.0.63 (the
   package part is appended again by the transport).
 
+- The `ai-sdk-provider-utils/<v>` part of a pinned package's user-agent names
+  the provider-utils that the package's upstream `package.json` depends on, as
+  the AI SDK sends it. That is 5.0.51 for Azure, Bedrock, Cohere, DeepSeek,
+  Groq, Mistral, xAI and Google Vertex, and 5.0.53 for OpenAI,
+  OpenAI-compatible, Anthropic, Anthropic-AWS and Google. A per-call
+  `user-agent` keeps the package's part. The Vertex MaaS and xAI
+  sub-providers send `ai-sdk-openai-compatible/3.0.59`, the version
+  google-vertex depends on. Other packages send `ai-sdk-provider-utils/5.0.53`.
+
+- `to_chat_completion` reads `choices[].logprobs` from the calling
+  provider's metadata namespace (Azure's `azure`, DeepSeek's `deepseek`)
+  and returns it in the Chat Completions wire shape, `{ "content": [...],
+  "refusal": null }`. It used to return the provider's raw token list. A
+  Responses result's per-part lists become one list, and a token without
+  `bytes` gets `"bytes": null`.
+
 - Anthropic-AWS follows `@ai-sdk/anthropic-aws` 2.0.63 settings: the region
   comes from the setting or `AWS_REGION` with no `us-east-1` default; the
   workspace id is required, from the setting or `ANTHROPIC_AWS_WORKSPACE_ID`;
@@ -462,7 +478,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (an OpenAI-compatible provider named `vertex.maas`) and
   `create_google_vertex_xai` / `google_vertex_xai` (Grok chat models named
   `googleVertex.xai`), over the project/location `endpoints/openapi` URL with
-  a Google OAuth token.
+  a Google OAuth token. As in the Node wrappers, the provider headers and the
+  token go over the per-call headers.
 - `OpenAIProvider::tools` and `AzureOpenAIProvider::tools`: the provider tools
   on the provider instance, as the AI SDK's `openai.tools` and `azure.tools`
   (`openai().tools.web_search(…)`). Azure's holds its upstream subset.

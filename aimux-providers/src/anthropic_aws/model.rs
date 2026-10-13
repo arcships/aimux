@@ -205,13 +205,11 @@ impl Fetch for AnthropicAwsFetch {
         // `ai-sdk-anthropic-aws/<v>` after the helper's
         // `ai-sdk-provider-utils/<v>` and before any signing, on the API-key
         // and SigV4 paths alike (anthropic-aws-fetch.ts:42-46, :126-130).
+        let package = crate::shared::aisdk_pins::ANTHROPIC_AWS;
         crate::shared::transport_user_agent(
             &mut request.headers,
-            Some(crate::shared::aisdk_pins::ANTHROPIC_AWS_PROVIDER_UTILS),
-            &format!(
-                "ai-sdk-anthropic-aws/{}",
-                crate::shared::aisdk_pins::ANTHROPIC_AWS
-            ),
+            Some(package.provider_utils),
+            Some(&format!("ai-sdk-{}/{}", package.name, package.version)),
         );
         if request.headers.contains_key("x-api-key") {
             self.inner.fetch(request).await

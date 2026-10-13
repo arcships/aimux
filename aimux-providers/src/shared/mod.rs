@@ -20,7 +20,9 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use aimux_core::AiMuxError;
-use aimux_provider_utils::{HeaderMapOpt, HeadersFn, Resolvable, combine_headers, load_api_key};
+use aimux_provider_utils::{
+    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, load_api_key,
+};
 
 /// A host part (a Vertex location, an Azure resource name) is one DNS label: letters, digits and hyphens, not starting or
 /// ending with a hyphen (`isValidHostnamePart`).
@@ -153,18 +155,36 @@ pub(crate) fn credential_headers(
     })
 }
 
+/// The transport of a pinned package: `fetch` (the process default, resolved
+/// per request, when `None`) behind a [`UserAgentFetch`] that names the
+/// provider-utils `package` depends on in the `ai-sdk-provider-utils/<v>` part
+/// the helper layer adds. Upstream that part comes from the provider-utils the
+/// package itself imports (provider-utils post-to-api.ts:100-104,
+/// get-from-api.ts:77-81), so it follows the package's `package.json`, not
+/// the workspace pin.
+pub(crate) fn package_fetch(
+    fetch: Option<FetchFunction>,
+    package: aisdk_pins::Package,
+) -> FetchFunction {
+    Arc::new(UserAgentFetch {
+        inner: fetch,
+        provider_utils: Some(package.provider_utils),
+        suffix: None,
+    })
+}
+
 /// A transport decorator that edits the request's `user-agent` just before
 /// forwarding it, after the helper layer has added
 /// `ai-sdk-provider-utils/<v>`: it names `provider_utils` in that part (when
-/// set; a package may pin a provider-utils other than the workspace one) and
-/// appends `suffix`. This is the AI SDK AWS transports' own
-/// `withUserAgentSuffix` (amazon-bedrock-sigv4-fetch.ts:42-46 and :126-130,
-/// anthropic-aws-fetch.ts:42-46 and :126-130); the runtime fragment they
-/// append is left out, as everywhere in aimux.
+/// set) and appends `suffix` (when set). The suffix is the AI SDK AWS
+/// transports' own `withUserAgentSuffix` (amazon-bedrock-sigv4-fetch.ts:42-46
+/// and :126-130, anthropic-aws-fetch.ts:42-46 and :126-130); the runtime
+/// fragment they append is left out, as everywhere in aimux.
 pub(crate) struct UserAgentFetch {
-    pub inner: aimux_provider_utils::FetchFunction,
-    pub suffix: String,
+    /// `None` is the process default transport, resolved per request.
+    pub inner: Option<FetchFunction>,
     pub provider_utils: Option<&'static str>,
+    pub suffix: Option<String>,
 }
 
 #[async_trait::async_trait]
@@ -173,18 +193,26 @@ impl aimux_provider_utils::Fetch for UserAgentFetch {
         &self,
         mut request: aimux_provider_utils::FetchRequest,
     ) -> Result<aimux_provider_utils::FetchResponse, aimux_provider_utils::FetchError> {
-        transport_user_agent(&mut request.headers, self.provider_utils, &self.suffix);
-        self.inner.fetch(request).await
+        transport_user_agent(
+            &mut request.headers,
+            self.provider_utils,
+            self.suffix.as_deref(),
+        );
+        let inner = self
+            .inner
+            .clone()
+            .unwrap_or_else(aimux_provider_utils::default_fetch);
+        inner.fetch(request).await
     }
 }
 
 /// Rewrite the last `ai-sdk-provider-utils/<v>` part of the `user-agent` to
-/// `provider_utils` (when set), then append `suffix` (creating the header if
-/// absent). A value that is not a valid header is left as it was.
+/// `provider_utils` (when set), then append `suffix` (when set, creating the
+/// header if absent). A value that is not a valid header is left as it was.
 pub(crate) fn transport_user_agent(
     headers: &mut reqwest::header::HeaderMap,
     provider_utils: Option<&str>,
-    suffix: &str,
+    suffix: Option<&str>,
 ) {
     let current = headers
         .get(reqwest::header::USER_AGENT)
@@ -202,8 +230,12 @@ pub(crate) fn transport_user_agent(
     if let (Some(version), Some(part)) = (provider_utils, last_utils) {
         *part = format!("ai-sdk-provider-utils/{version}");
     }
-    parts.push(suffix.to_string());
-    if let Ok(value) = reqwest::header::HeaderValue::try_from(parts.join(" ")) {
+    parts.extend(suffix.map(String::from));
+    let user_agent = parts.join(" ");
+    if user_agent == current {
+        return;
+    }
+    if let Ok(value) = reqwest::header::HeaderValue::try_from(user_agent) {
         headers.insert(reqwest::header::USER_AGENT, value);
     }
 }

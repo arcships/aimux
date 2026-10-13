@@ -82,7 +82,8 @@ impl std::fmt::Debug for VertexPartnerProviderSettings {
 }
 
 /// The parts every partner sub-provider shares: the base URL source and the
-/// authenticated provider headers.
+/// headers the Node wrapper's fetch adds over the request's own (the
+/// provider headers, then `Authorization`).
 fn partner_parts(
     settings: &VertexPartnerProviderSettings,
     regional_host: bool,
@@ -124,9 +125,11 @@ fn partner_parts(
     }
     let auth = Arc::new(GoogleAuth::new(auth_options, settings.fetch.clone()));
     let user_headers = settings.headers.clone();
-    // The Node wrapper's fetch: the resolved headers, then `Authorization`
-    // (google-vertex-maas-provider-node.ts:170-189,
-    // google-vertex-xai-provider-node.ts:33-50).
+    // The Node wrapper passes no headers to `createOpenAICompatible` and
+    // spreads the resolved headers, then `Authorization`, over the request's
+    // headers in its fetch, so they win over the per-call headers
+    // (google-vertex-maas-provider-node.ts:34-58,
+    // google-vertex-xai-provider-node.ts:33-55).
     let headers = Resolvable::from_async_fn(move || {
         let auth = auth.clone();
         let user_headers = user_headers.clone();
@@ -174,7 +177,7 @@ fn maas_request_body(mut body: Value) -> Value {
 pub fn create_google_vertex_maas(
     settings: VertexMaasProviderSettings,
 ) -> Result<OpenAICompatibleProvider, AiMuxError> {
-    let (base_url, headers) = partner_parts(&settings, true)?;
+    let (base_url, fetch_headers) = partner_parts(&settings, true)?;
     crate::openai_compatible::build(
         OpenAICompatibleProviderSettings {
             name: "vertex.maas".into(),
@@ -183,7 +186,9 @@ pub fn create_google_vertex_maas(
             ..Default::default()
         },
         base_url,
-        headers,
+        Resolvable::Value(HeaderMapOpt::new()),
+        Some(fetch_headers),
+        crate::shared::aisdk_pins::GOOGLE_VERTEX_OPENAI_COMPATIBLE,
     )
 }
 
@@ -250,7 +255,7 @@ fn xai_request_body(mut body: Value) -> Value {
 pub fn create_google_vertex_xai(
     settings: VertexXaiProviderSettings,
 ) -> Result<VertexXaiProvider, AiMuxError> {
-    let (base_url, headers) = partner_parts(&settings, false)?;
+    let (base_url, fetch_headers) = partner_parts(&settings, false)?;
     let http = Regex::new(r"^https?://.*$").expect("valid URL pattern");
     let provider = crate::openai_compatible::build(
         OpenAICompatibleProviderSettings {
@@ -268,7 +273,9 @@ pub fn create_google_vertex_xai(
             ..Default::default()
         },
         base_url,
-        headers,
+        Resolvable::Value(HeaderMapOpt::new()),
+        Some(fetch_headers),
+        crate::shared::aisdk_pins::GOOGLE_VERTEX_OPENAI_COMPATIBLE,
     )?;
     Ok(VertexXaiProvider(provider))
 }
