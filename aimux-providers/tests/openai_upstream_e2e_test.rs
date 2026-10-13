@@ -188,6 +188,38 @@ async fn chat_function_call_finish_reason_is_tool_calls() {
     assert_eq!(result.finish_reason.raw.as_deref(), Some("function_call"));
 }
 
+/// Upstream: @ai-sdk/openai 4.0.83 src/chat/convert-openai-chat-usage.ts:28
+/// reads cache reads only from the nested `prompt_tokens_details.cached_tokens`;
+/// a top-level `cached_tokens` (Moonshot's wire format) is not a cache read and
+/// only survives in `usage.raw`.
+#[tokio::test]
+async fn chat_cache_read_is_only_the_nested_cached_tokens() {
+    let usage = |usage: Value| {
+        let mut response = chat_response();
+        response["usage"] = usage;
+        response
+    };
+    let fetch = MockFetch::new(vec![
+        Canned::json(&usage(
+            json!({"prompt_tokens":100,"completion_tokens":10,"cached_tokens":7,"prompt_tokens_details":{"cached_tokens":25}}),
+        )),
+        Canned::json(&usage(
+            json!({"prompt_tokens":100,"completion_tokens":10,"cached_tokens":7}),
+        )),
+    ]);
+    let model = provider(&fetch).chat("test-model");
+
+    let nested = model.do_generate(&options()).await.unwrap().usage;
+    assert_eq!(nested.input_tokens.cache_read, Some(25));
+    assert_eq!(nested.input_tokens.no_cache, Some(75));
+    assert_eq!(nested.raw.unwrap()["cached_tokens"], json!(7));
+
+    let top_level_only = model.do_generate(&options()).await.unwrap().usage;
+    assert_eq!(top_level_only.input_tokens.cache_read, Some(0));
+    assert_eq!(top_level_only.input_tokens.no_cache, Some(100));
+    assert_eq!(top_level_only.raw.unwrap()["cached_tokens"], json!(7));
+}
+
 /// TS: "should parse OpenRouter resource exhausted error" (src/openai-error.test.ts)
 #[tokio::test]
 async fn chat_error_response() {

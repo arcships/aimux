@@ -7,8 +7,9 @@
 //! Moonshot AI is a registry preset of the OpenAI-compatible package.
 //! The TS suite has a custom usage converter that recognises a **top-level**
 //! `cached_tokens` field (Moonshot's wire format) and prioritises it over the
-//! nested `prompt_tokens_details.cached_tokens`. The shared OpenAI
-//! `convert_usage` now does the same (preferring the top-level field), so these
+//! nested `prompt_tokens_details.cached_tokens`. aimux does the same in the
+//! Moonshot preset's usage converter (the native OpenAI chat converter reads
+//! only the nested field, as upstream convert-openai-chat-usage.ts:28), so these
 //! usage-conversion tests are translated as HTTP-mocked round-trips through the
 //! provider.
 //!
