@@ -11,7 +11,7 @@
 //! checks the signature first, so any response other than a signature error
 //! means the signature was accepted.
 
-use aimux_provider_utils::sigv4_fetch::{AwsCredentials, SigV4Fetch};
+use aimux_provider_utils::sigv4_fetch::{AwsCredentials, SigV4Fetch, SigV4Signing};
 use aimux_provider_utils::{Fetch, FetchRequest, Resolvable, default_fetch};
 use futures::StreamExt;
 use http::Method;
@@ -36,7 +36,12 @@ async fn call(
         session_token: std::env::var("AWS_SESSION_TOKEN").ok(),
         region: "us-east-1".into(),
     };
-    let fetch = SigV4Fetch::new(default_fetch(), Resolvable::from(credentials), service);
+    let fetch = SigV4Fetch::new(
+        default_fetch(),
+        Resolvable::from(credentials),
+        service,
+        SigV4Signing::AllHeaders,
+    );
     let mut request = FetchRequest::new(method, url.parse().unwrap());
     if let Some(content_type) = content_type {
         request

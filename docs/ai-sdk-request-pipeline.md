@@ -172,6 +172,7 @@ Provider 不对完整 model operation 执行通用 exponential retry；上述安
 | `postFormDataToApi` | `post_form_data_to_api` |
 | `postToApi` | `post_to_api` |
 | `getFromApi` | `get_from_api` |
+| `downloadBlob` | `download_blob`（经下载防护，不带任何 header，所以没有 user-agent） |
 | `ResponseHandler<T>` | `ResponseHandler<T>` |
 | `createJsonErrorResponseHandler` | `create_json_error_response_handler` |
 | `createJsonResponseHandler` | `create_json_response_handler` |
@@ -286,6 +287,9 @@ body 类型由函数签名决定，不在运行时检查：`post_json_to_api` �
 没有 body。"`post_json_to_api` 收到非 JSON body 返回 `InvalidArgument`" 这类守卫是签名
 没设计好的补丁，不要出现。其余参数（url、headers、abort_signal、call_id、recording_context）
 沿用既有 `HttpRequest` 去掉 method/body 后的那部分。
+helper 像 `postToApi` / `getFromApi` 一样在 user-agent 后追加 `ai-sdk-provider-utils/<v>`。
+AI SDK 直接调用 `fetch` 或 `downloadBlob` 的请求（例如 Google Files 上传的两次请求）设
+`HttpRequest::omit_provider_utils_user_agent`，user-agent 原样发送（没有就不发）。
 
 handler 接口仍接收当前 request context；当它被存入 `ApiCallError` 时必须通过统一
 redaction helper。不得依赖每个 Provider 自己记得脱敏。

@@ -45,6 +45,36 @@ impl OpenAIModel {
     }
 }
 
+/// `choices[].logprobs.content` as the AI SDK's chat schemas parse it
+/// (openai-chat-api.ts:71-87, chunks :159-175): an entry keeps `token`,
+/// `logprob` and `top_logprobs[].{token, logprob}`, so `bytes` is dropped.
+/// A `null` or missing `content` sets no metadata
+/// (openai-chat-language-model.ts:459-461, :613-615).
+fn logprobs_content(logprobs: &Value) -> Option<Value> {
+    fn token(entry: &Value) -> serde_json::Map<String, Value> {
+        ["token", "logprob"]
+            .into_iter()
+            .filter_map(|key| entry.get(key).map(|value| (key.to_owned(), value.clone())))
+            .collect()
+    }
+    let content = logprobs.get("content")?.as_array()?;
+    Some(
+        content
+            .iter()
+            .map(|entry| {
+                let mut out = token(entry);
+                if let Some(top) = entry.get("top_logprobs").and_then(Value::as_array) {
+                    out.insert(
+                        "top_logprobs".to_owned(),
+                        top.iter().map(|top| Value::Object(token(top))).collect(),
+                    );
+                }
+                Value::Object(out)
+            })
+            .collect(),
+    )
+}
+
 // ── Usage conversion ─────────────────────────────────────────────────────────
 
 /// Convert an OpenAI `UsageResponse` into the core `Usage` type.
@@ -63,14 +93,15 @@ fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
     let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
     let completion_tokens = usage.completion_tokens.unwrap_or(0);
 
-    // Cache-read tokens: prefer the top-level `cached_tokens` (Moonshot format)
-    // over the nested `prompt_tokens_details.cached_tokens` (OpenAI format).
-    let nested_cached = usage
+    // Cache-read tokens: only the nested `prompt_tokens_details.cached_tokens`
+    // (upstream convert-openai-chat-usage.ts:28). A top-level `cached_tokens`
+    // (Moonshot's wire format) stays in `usage.raw`; Moonshot is an
+    // OpenAI-compatible preset with its own usage converter.
+    let cached = usage
         .prompt_tokens_details
         .as_ref()
         .and_then(|d| d.cached_tokens)
         .unwrap_or(0);
-    let cached = usage.cached_tokens.unwrap_or(nested_cached);
 
     let cache_write = usage
         .prompt_tokens_details
@@ -107,7 +138,7 @@ fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
             reasoning: Some(reasoning_tokens),
         },
         // M10 (RFC-0016): keep the provider's original usage JSON verbatim —
-        // vendor-specific fields (e.g. Moonshot `cached_tokens`, prompt-cache
+        // vendor-specific fields (e.g. a top-level `cached_tokens`, prompt-cache
         // `prompt_cache_hit_tokens`) are otherwise lost for audit/billing.
         raw: usage_raw.and_then(|value| value.as_object().cloned()),
     }
@@ -297,10 +328,8 @@ pub(crate) async fn execute_generate(
 
     // Build provider metadata: logprobs + prediction tokens.
     let mut pm_openai = serde_json::json!({});
-    if let Some(ref lp) = choice.logprobs
-        && let Some(content_lp) = lp.get("content")
-    {
-        pm_openai["logprobs"] = content_lp.clone();
+    if let Some(content) = choice.logprobs.as_ref().and_then(logprobs_content) {
+        pm_openai["logprobs"] = content;
     }
     // Accepted/rejected prediction tokens from completion_tokens_details.
     if let Some(ref details) = raw_usage.completion_tokens_details {
@@ -499,11 +528,10 @@ pub(crate) async fn execute_stream(
 
                     // Process choices.
                     for choice in chunk.choices {
-                        // Capture logprobs from the finish_reason chunk.
-                        if let Some(lp) = &choice.logprobs
-                            && let Some(content) = lp.get("content") {
-                                final_logprobs = Some(content.clone());
-                            }
+                        // The last chunk that carries logprobs sets them.
+                        if let Some(content) = choice.logprobs.as_ref().and_then(logprobs_content) {
+                            final_logprobs = Some(content);
+                        }
 
                         // Reasoning delta: prefer reasoning_content over reasoning.
                         let reasoning_delta = choice

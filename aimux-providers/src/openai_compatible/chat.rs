@@ -60,6 +60,7 @@ impl OpenAICompatibleChatModel {
                 provider_options_name: self.config.provider_options_name(),
                 include_usage: self.config.chat.include_usage,
                 supports_structured_outputs: self.config.chat.supports_structured_outputs,
+                supports_multi_part_tool_content: self.config.chat.supports_multi_part_tool_content,
                 dialect: &self.config.chat.dialect,
             },
         )
@@ -140,7 +141,12 @@ fn thought_signature(extra_content: Option<&Value>) -> Option<String> {
         .map(str::to_string)
 }
 
-fn stream_error(
+/// The error of an `{"error": ...}` chunk. Upstream passes the chunk's
+/// `error` value on as the error part as it is
+/// (openai-compatible-chat-language-model.ts:588-595,
+/// openai-compatible-completion-language-model.ts:320-325): no status is
+/// read from its `code`, numeric or not, so nothing makes it retryable.
+pub(super) fn stream_error(
     name: &str,
     error: &Value,
     url: &str,
@@ -158,16 +164,10 @@ fn stream_error(
         Value::Number(value) => Some(value.to_string()),
         _ => None,
     });
-    // Only a numeric HTTP status in the payload is a status; a string code
-    // must not be laundered into a retryable 500.
-    let status_code = code
-        .and_then(Value::as_u64)
-        .filter(|status| (400..=599).contains(status))
-        .map(|status| status as u16);
     aimux_provider_utils::stream_error_api_call(
         message,
         provider_code,
-        status_code,
+        None,
         error,
         url,
         request_body_values,
@@ -743,10 +743,11 @@ pub(crate) async fn list_models_once(
         config.with_transport(
             aimux_provider_utils::HttpRequest {
                 url,
-                headers,
+                headers: headers.list,
                 ..Default::default()
             },
             origin,
+            headers.fetch_user_agent,
         ),
         aimux_provider_utils::create_json_response_handler::<ModelsList>(),
         config.failed_response_handler(),

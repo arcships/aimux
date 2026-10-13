@@ -203,11 +203,16 @@ impl Files for GoogleFiles {
         // Nothing retries a file upload: the init, upload and poll exchanges
         // each run once, and a failure is reported as it happened (a replayed
         // upload would resend the file body).
+        // google-files.ts:84-92 starts the upload with the provider's plain
+        // `fetch`, not `postToApi`: the provider headers (their
+        // `ai-sdk-google/<v>` part included) go out with no
+        // `ai-sdk-provider-utils/<v>` part.
         let init_resp = aimux_provider_utils::post_json_to_api(
             exchange.with_transport(HttpRequest {
                 url: init_endpoint,
                 headers: init_headers,
                 abort_signal: options.abort_signal.clone(),
+                omit_provider_utils_user_agent: true,
                 ..Default::default()
             }),
             exchange.transform_body(init_body_value),
@@ -256,6 +261,8 @@ impl Files for GoogleFiles {
         // The upload URL comes from the init response's x-goog-upload-url
         // header and receives the user's file bytes; validate it. (AI SDK
         // fetches this URL unvalidated — kept stricter here deliberately.)
+        // Its plain `fetch` sends only the two `X-Goog-Upload-*` headers
+        // (google-files.ts:118-126), so there is no user-agent.
         let upload_resp = aimux_provider_utils::post_to_api(
             exchange.with_transport(HttpRequest {
                 url: upload_url,
@@ -264,6 +271,7 @@ impl Files for GoogleFiles {
                 validate_url: true,
                 trusted_origin: Some(exchange.base_url().to_string()),
                 credentialed_origin: Some(exchange.base_url().to_string()),
+                omit_provider_utils_user_agent: true,
                 ..Default::default()
             }),
             HttpBody::Bytes(file_bytes, media_type.clone()),

@@ -34,7 +34,8 @@ use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::image_model::ImageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, validate_base_url,
+    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, normalize_headers,
+    validate_base_url, with_user_agent_suffix,
 };
 
 use crate::shared::{Credential, EndpointConfig, TransformRequestBody, provider_headers};
@@ -117,6 +118,10 @@ pub struct OpenResponsesProviderSettings {
     /// Rewrites every JSON request body once, after it is serialized and
     /// before it is sent.
     pub transform_request_body: Option<TransformRequestBody>,
+    /// The package part of the user-agent (AI SDK `userAgentSuffix`).
+    /// `None` sends `ai-sdk-open-responses/<version>` of the pinned
+    /// `@ai-sdk/open-responses`.
+    pub user_agent_suffix: Option<String>,
 }
 
 impl OpenResponsesProviderSettings {
@@ -130,6 +135,7 @@ impl OpenResponsesProviderSettings {
             headers: None,
             fetch: None,
             transform_request_body: None,
+            user_agent_suffix: None,
         }
     }
 }
@@ -147,6 +153,7 @@ impl std::fmt::Debug for OpenResponsesProviderSettings {
                 "transform_request_body",
                 &self.transform_request_body.is_some(),
             )
+            .field("user_agent_suffix", &self.user_agent_suffix)
             .finish()
     }
 }
@@ -183,22 +190,36 @@ pub fn create_open_responses(
     };
     let provider_layer = provider_headers(credential, Vec::new(), None);
     let user = settings.headers;
+    // open-responses-provider.ts:114-127: the key and the user headers, then
+    // `withUserAgentSuffix(…, userAgentSuffix ?? ai-sdk-open-responses/VERSION)`.
+    let package = crate::shared::aisdk_pins::OPEN_RESPONSES;
+    let suffix: Arc<str> = settings
+        .user_agent_suffix
+        .unwrap_or_else(|| format!("ai-sdk-{}/{}", package.name, package.version))
+        .into();
     let headers: HeadersFn = Resolvable::from_async_fn(move || {
         let provider_layer = provider_layer.clone();
         let user = user.clone();
+        let suffix = suffix.clone();
         async move {
             let layer = provider_layer.resolve().await?;
-            match &user {
-                Some(user) => Ok(combine_headers(&[&layer, &user.resolve().await?])),
-                None => Ok(layer),
-            }
+            let combined = match &user {
+                Some(user) => combine_headers(&[&layer, &user.resolve().await?]),
+                None => layer,
+            };
+            let mut headers = normalize_headers(combined).into_iter().collect();
+            with_user_agent_suffix(&mut headers, &suffix);
+            Ok(headers
+                .into_iter()
+                .map(|(name, value)| (name, Some(value)))
+                .collect())
         }
     });
     Ok(OpenResponsesProvider {
         name: settings.name,
         base_url,
         headers,
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(settings.fetch, package)),
         transform_request_body: settings.transform_request_body,
     })
 }

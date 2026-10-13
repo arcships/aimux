@@ -115,6 +115,11 @@ pub struct UploadFileResult {
 /// et al.
 #[async_trait]
 pub trait Files: Send + Sync {
+    /// Specification version (always `"v4"`).
+    fn specification_version(&self) -> &'static str {
+        "v4"
+    }
+
     /// Provider ID.
     fn provider(&self) -> &str;
 

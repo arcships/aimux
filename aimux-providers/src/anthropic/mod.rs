@@ -201,10 +201,13 @@ pub fn create_anthropic(
                 vec![("anthropic-version".to_string(), API_VERSION.to_string())],
                 settings.headers,
             ),
-            options::CANONICAL,
-            "4.0.68",
+            crate::shared::aisdk_pins::ANTHROPIC.name,
+            crate::shared::aisdk_pins::ANTHROPIC.version,
         ),
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::ANTHROPIC,
+        )),
         supported_urls: supported_urls(),
         generate_id: settings.generate_id,
     })

@@ -37,6 +37,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Mistral has no `transform_request_body` setting; the deprecated
   `text_embedding` and `text_embedding_model` provider methods are removed.
 
+- `SigV4Fetch::new` takes a required `SigV4Signing`. `Aws4Fetch` signs like
+  aws4fetch 1.0.20, the signer of the AI SDK's AWS packages: `user-agent`,
+  `content-type` and its other `UNSIGNABLE_HEADERS` are sent but not signed,
+  and no `x-amz-content-sha256` is sent. `AllHeaders` is the previous rule.
+  Bedrock and Anthropic-AWS sign with `Aws4Fetch`, Polly with `AllHeaders`.
+  Bedrock, Bedrock Mantle and Anthropic-AWS send the user-agents of
+  `@ai-sdk/amazon-bedrock` 5.0.100 and `@ai-sdk/anthropic-aws` 2.0.63 (the
+  package part is appended again by the transport).
+
+- The `ai-sdk-provider-utils/<v>` part of a pinned package's user-agent names
+  the provider-utils that the package's upstream `package.json` depends on, as
+  the AI SDK sends it. That is 5.0.51 for Azure, Bedrock, Cohere, DeepSeek,
+  Groq, Mistral, xAI and Google Vertex, and 5.0.53 for OpenAI,
+  OpenAI-compatible, Open Responses, Anthropic, Anthropic-AWS and Google. A
+  per-call `user-agent` keeps the package's part. The Vertex MaaS and xAI
+  sub-providers send `ai-sdk-openai-compatible/3.0.59`, the version
+  google-vertex depends on. Other packages send `ai-sdk-provider-utils/5.0.53`.
+
+- `to_chat_completion` reads `choices[].logprobs` from the calling
+  provider's metadata namespace (Azure's `azure`, DeepSeek's `deepseek`)
+  and returns it in the Chat Completions wire shape, `{ "content": [...],
+  "refusal": null }`. It used to return the provider's raw token list. A
+  Responses result's per-part lists become one list, and a token without
+  `bytes` gets `"bytes": null`.
+
+- Security: OpenAI image edits download URL files (`files` and `mask`) with
+  `download_blob`, as `@ai-sdk/openai` does with `downloadBlob`. The download
+  goes through the download guard, so a private-network, loopback or
+  link-local URL is refused before any request, and it sends no headers. A
+  failed download is a status-code error rather than a parsed OpenAI error.
+
+- OpenAI chat `providerMetadata.openai.logprobs` holds the entries as the AI
+  SDK's chat schema parses them, `{token, logprob, top_logprobs: [{token,
+  logprob}]}`: `bytes` is dropped, so `to_chat_completion` returns it as
+  `null`. A `null` `content` sets no `logprobs`.
+
+- Anthropic-AWS follows `@ai-sdk/anthropic-aws` 2.0.63 settings: the region
+  comes from the setting or `AWS_REGION` with no `us-east-1` default; the
+  workspace id is required, from the setting or `ANTHROPIC_AWS_WORKSPACE_ID`;
+  with no `auth`, a request uses `ANTHROPIC_AWS_API_KEY` when it is set and
+  otherwise SigV4 with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
+  `AWS_SESSION_TOKEN`. All of them are read when a request is made.
+
 - Public surface (`aimux-core`, `aimux-provider-utils`): removed
   `recording::init_recording_from_env`; made private the retry preparation
   helpers and default constants, `composite::{add_usage,
@@ -229,8 +272,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `NoSuchModel { model_id, model_type }` when a vendor has no such modality;
   `transcription_model`, `speech_model`, `reranking_model` and `files` are
   optional (`None` = not offered); video and search stay aimux extensions.
+  `Provider` gains `specification_version()`, returning `"v4"` like
+  `ProviderV4` and the model traits.
   AI SDK model constructors return an `Arc<dyn …>`. Removed: `Provider::name()`,
-  `specification_version()` (from `Provider` and the nine model traits),
   `LanguageModel::config_snapshot()` and `list_models` on `Provider`.
   Discovery is the separate `ProviderDiscovery` trait, accessed through
   `Provider::discovery()`; `supported_urls()` is added to `LanguageModel`.
@@ -432,6 +476,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   have been silently ignored). The provider `config_json` helpers
   (`ProviderConfig` in Go and Dart) drop `max_retries` / `body_overrides` and
   gain `params`; call-level `max_retries` is unchanged.
+
+### Added
+
+- Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's
+  `/maas` and `/xai` paths: `create_google_vertex_maas` / `google_vertex_maas`
+  (an OpenAI-compatible provider named `vertex.maas`) and
+  `create_google_vertex_xai` / `google_vertex_xai` (Grok chat models named
+  `googleVertex.xai`), over the project/location `endpoints/openapi` URL with
+  a Google OAuth token. As in the Node wrappers, the provider headers and the
+  token go over the per-call headers, and a provider `user-agent` header is
+  sent as the whole user-agent.
+- Open Responses requests carry `ai-sdk-open-responses/2.0.58`, the package
+  part of `@ai-sdk/open-responses` (now pinned in `VERSIONS.json`).
+  `OpenResponsesProviderSettings::user_agent_suffix` replaces it, as the AI
+  SDK's `userAgentSuffix` does.
+- `aimux_provider_utils::download_blob`, the AI SDK's `downloadBlob`: a GET
+  of an untrusted URL through the download guard with no headers, so no
+  `user-agent`. OpenAI-compatible image edits download URL files with it, as
+  upstream does, and no longer send `ai-sdk-provider-utils/5.0.53` there.
+- `HttpRequest::omit_provider_utils_user_agent` (`aimux-provider-utils`):
+  sends the `user-agent` as given, without the `ai-sdk-provider-utils/<v>`
+  part, for an exchange the AI SDK makes with a plain `fetch`. A struct
+  literal of `HttpRequest` must now set it or use `..Default::default()`.
+  The Google Files upload uses it: the init request sends the provider
+  headers (`ai-sdk-google/4.0.87`) and the byte upload sends no
+  `user-agent`, as `@ai-sdk/google`'s `fetch` calls do.
+- `OpenAIProvider::tools` and `AzureOpenAIProvider::tools`: the provider tools
+  on the provider instance, as the AI SDK's `openai.tools` and `azure.tools`
+  (`openai().tools.web_search(…)`). Azure's holds its upstream subset.
+
+### RFCs
+
+- `docs/aisdk-architecture-alignment.md`: the V4 migration now lands on
+  master layer by layer, each layer CI-green with all its consumers updated,
+  instead of one atomic cutover through an integration branch (§0.4 Q3, D31,
+  §9.1). The new C ABI, codegen, the full recording schema 3 and the binding
+  migration come last; until then the existing C constructors keep their
+  signatures and call the new factories, and ts-rs stays as the interim
+  generator. No release is cut from master until every layer is merged;
+  fixes for released versions ship from a maintenance branch. `ROADMAP.md`
+  defers the ops protocol schema and L0 passthrough and no longer fixes C1
+  at nine exports.
 
 ## [0.5.0] - 2026-09-27
 

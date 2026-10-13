@@ -42,6 +42,11 @@ impl SupportedUrls {
 ///   rather than being silently dropped.
 #[async_trait]
 pub trait LanguageModel: Send + Sync {
+    /// Specification version (always `"v4"`).
+    fn specification_version(&self) -> &'static str {
+        "v4"
+    }
+
     /// Provider name, e.g. `"openai"`.
     fn provider(&self) -> &str;
 

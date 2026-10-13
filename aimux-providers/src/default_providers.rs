@@ -410,4 +410,32 @@ mod tests {
         assert_eq!(available_providers, provider_names());
         assert!(available_providers.iter().any(|name| name == "openai"));
     }
+
+    /// Providers and their models report the V4 specification version, as
+    /// the AI SDK's `ProviderV4` and model V4 interfaces do: a vendor package
+    /// and a registry row from `create_provider`, and the same providers
+    /// reached through a provider registry.
+    #[test]
+    fn providers_and_models_report_specification_version_v4() {
+        for (name, model_id) in [("openai", "gpt-4o"), ("fireworks", "some-model")] {
+            let provider = create_provider(name, PresetSettings::default()).unwrap();
+            assert_eq!(provider.specification_version(), "v4", "{name}");
+            let model = provider.language_model(model_id).unwrap();
+            assert_eq!(model.specification_version(), "v4", "{name}");
+        }
+        let openai = create_provider("openai", PresetSettings::default()).unwrap();
+        let files = openai.files().expect("openai offers files");
+        assert_eq!(files.specification_version(), "v4");
+
+        let registry = aimux_core::create_provider_registry(
+            default_providers(),
+            aimux_core::ProviderRegistryOptions::default(),
+        );
+        assert_eq!(
+            registry.provider("openai").unwrap().specification_version(),
+            "v4"
+        );
+        let model = registry.language_model("openai:gpt-4o").unwrap();
+        assert_eq!(model.specification_version(), "v4");
+    }
 }

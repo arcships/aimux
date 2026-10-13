@@ -363,6 +363,11 @@ impl std::fmt::Debug for TranscriptionStreamResult {
 /// Aligned with V4 `TranscriptionModelV4`.
 #[async_trait]
 pub trait TranscriptionModel: Send + Sync {
+    /// Specification version (always `"v4"`).
+    fn specification_version(&self) -> &'static str {
+        "v4"
+    }
+
     /// Provider name, e.g. `"openai"`.
     fn provider(&self) -> &str;
 
