@@ -104,7 +104,10 @@ pub struct GenerateTextOptions {
     pub instructions: Option<String>,
     /// Per-call request body overrides (deep-merged). See RFC-0017.
     pub body_overrides: Option<Value>,
-    /// Per-call retry count override. `None` = provider default, `Some(0)` = disable.
+    /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
+    /// retrying. `None` uses 2, the AI SDK default, unless the model's
+    /// `retry_config()` sets another count (model-level retry settings are
+    /// removed in the target design, docs/aisdk-architecture-alignment.md D14).
     pub max_retries: Option<u32>,
     /// Per-call timeout configuration (total / first-chunk / chunk idle).
     pub timeout: Option<crate::options::TimeoutConfiguration>,
