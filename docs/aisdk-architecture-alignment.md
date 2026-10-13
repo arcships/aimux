@@ -1916,7 +1916,7 @@ pub enum AssistantContent {
 | part | 字段 |
 |---|---|
 | text | `text: String, providerOptions?` |
-| image | `image: DataContent \| URL \| ProviderReference, mediaType?, providerOptions?` |
+| image | `image: DataContent \| URL \| ProviderReference, mediaType?, providerOptions?`（上游已 `@deprecated`，改用 file，见 `U/types/content-part.ts:29`；仅作为输入接受） |
 | file | `data: FileData \| DataContent \| URL \| ProviderReference, mediaType, filename?, providerOptions?` |
 | reasoning | `text, providerOptions?` |
 | reasoning-file | `data: data/url 文件数据或 DataContent/URL, mediaType, providerOptions?` |
@@ -2064,7 +2064,7 @@ pub enum V4ToolResultOutput {
 
 最后这个 custom **没有 kind 字段**，不能与消息顶层 CustomPart 合并。
 
-用户层 `ModelToolResultOutput` 的外层结构相同，但 content 数组还包含当前 SDK 声明的 `file-data/file-url/file-id/file-reference/image-data/image-url/image-file-id/image-file-reference`。这些是当前上游输入面的组成部分，应由统一转换函数归一化，不能因为“不保留 aimux 兼容”而误删上游接口。
+用户层 `ModelToolResultOutput` 的外层结构相同，但 content 数组还包含当前 SDK 声明的 `file-data/file-url/file-id/file-reference/image-data/image-url/image-file-id/image-file-reference`。这些在上游都已标 `@deprecated`（`U/types/content-part.ts:361-517`，ai 侧 `prompt/convert-to-language-model-prompt.ts:41-42` 注明 file-id、image-file-id 在 v8 移除），但仍是当前上游输入面的组成部分：应由统一转换函数归一化后接受，aimux 自己不生成；不能因为“不保留 aimux 兼容”而误删上游接口。
 
 工具定义分成两套：
 

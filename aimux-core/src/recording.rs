@@ -1884,6 +1884,7 @@ mod tests {
             crate::language_model_message::convert_to_language_model_prompt(
                 &[crate::message::ModelMessage::user("ping")],
                 None,
+                None,
             )
             .unwrap(),
         )

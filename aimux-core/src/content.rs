@@ -19,7 +19,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-use crate::shared::{GeneratedFileData, SharedProviderOptions};
+use crate::shared::{GeneratedFileData, SharedProviderOptions, SharedProviderReference};
 
 /// A part of a user message: upstream's `TextPart | ImagePart | FilePart`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -35,6 +35,10 @@ pub enum UserContentPart {
     },
 
     /// An image (raw bytes + MIME type).
+    ///
+    /// Deprecated upstream (`provider-utils` `types/content-part.ts:26-29`):
+    /// use a `file` part with an `image` media type. The prompt conversion
+    /// turns it into one and logs a deprecation warning.
     Image {
         image: Vec<u8>,
         media_type: String,
@@ -511,7 +515,13 @@ impl ToolResultOutput {
     }
 }
 
-/// One item of a `content` [`ToolResultOutput`].
+/// One item of a `content` [`ToolResultOutput`] (upstream
+/// `content-part.ts:303-546`).
+///
+/// The `file-*` and `image-*` items are deprecated upstream in favour of
+/// `file` (`content-part.ts:361-532`); they are accepted on input and the
+/// conversion turns each into a `file` part with a deprecation warning, as
+/// upstream's `mapToolResultOutput` does.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 #[ts(export)]
@@ -531,9 +541,78 @@ pub enum ToolResultContentPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
+    /// Base64 file data. Deprecated: use `file` with `{ type: 'data' }` data.
+    FileData {
+        data: String,
+        media_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filename: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// A file URL. Deprecated: use `file` with `{ type: 'url' }` data.
+    FileUrl {
+        url: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        media_type: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// A provider file id. Deprecated: use `file` with `{ type: 'reference' }`
+    /// data.
+    FileId {
+        file_id: ToolResultFileId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// A provider reference. Deprecated: use `file` with
+    /// `{ type: 'reference' }` data.
+    FileReference {
+        provider_reference: SharedProviderReference,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// Base64 image data. Deprecated: use `file` with an `image` media type.
+    ImageData {
+        data: String,
+        media_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// An image URL. Deprecated: use `file` with an `image` media type.
+    ImageUrl {
+        url: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// A provider image file id. Deprecated: use `file` with an `image`
+    /// media type.
+    ImageFileId {
+        file_id: ToolResultFileId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// A provider image reference. Deprecated: use `file` with an `image`
+    /// media type.
+    ImageFileReference {
+        provider_reference: SharedProviderReference,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
     /// Provider-specific content.
     Custom {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
+}
+
+/// The `fileId` of a deprecated `file-id` / `image-file-id` tool output item:
+/// an id for the called provider, or ids keyed by provider
+/// (`string | Record<string, string>`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(untagged)]
+#[ts(export)]
+pub enum ToolResultFileId {
+    Id(String),
+    ByProvider(SharedProviderReference),
 }

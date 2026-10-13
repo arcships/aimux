@@ -70,6 +70,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read it; response messages no longer copy it to a top-level field. A
   `signature` key in input JSON is ignored.
 
+- `convert_to_language_model_prompt` takes the called provider's id as a third
+  argument (`aimux-core`), the part of `LanguageModel::provider()` before the
+  first `.`, as the AI SDK passes it. A `content` tool output accepts the AI
+  SDK's deprecated items `file-data`, `file-url`, `file-id`,
+  `file-reference`, `image-data`, `image-url`, `image-file-id` and
+  `image-file-reference` (`ToolResultContentPart`; a `file_id` is a string or
+  a provider-to-id map, `ToolResultFileId`), and the conversion turns each
+  into a `file` part as upstream does: a `file-url` without a media type gets
+  one from the URL's extension, a URL keeps its given spelling as
+  `original_url` when normalizing changes it, and a string `file_id` becomes
+  a reference for the called provider (an error when there is none). These
+  items and a user `image` part log upstream's deprecation warning through
+  `tracing`.
+
 - Tool-call and tool-result types are unified, one per protocol layer
   (`aimux-core`). A provider emits `tool::RawToolCall` (`input` is the raw
   argument text) in `GenerateContent::ToolCall(..)` and

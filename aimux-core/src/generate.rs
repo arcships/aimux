@@ -497,6 +497,14 @@ impl StreamTextResult {
 // User-facing functions
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// The provider id the prompt conversion gets: `'openai'` for `'openai.chat'`
+/// (upstream passes `model.provider.split('.')[0]`, `ai`
+/// `generate-text/generate-text.ts:970` and
+/// `generate-text/stream-language-model-call.ts:311`).
+fn provider_id(model: &dyn LanguageModel) -> Option<&str> {
+    model.provider().split('.').next()
+}
+
 /// Generate text (non-streaming).
 ///
 /// # Example
@@ -526,7 +534,7 @@ pub async fn generate_text(
     options: GenerateTextOptions,
 ) -> Result<GenerateTextResult, AiMuxError> {
     let (messages, instructions) = split_prompt(prompt.into(), options.instructions.as_deref());
-    let lm_prompt = convert_to_language_model_prompt(&messages, instructions)?;
+    let lm_prompt = convert_to_language_model_prompt(&messages, instructions, provider_id(model))?;
     generate_text_from_language_model_prompt(model, lm_prompt, messages, options).await
 }
 
@@ -880,7 +888,7 @@ pub async fn stream_text(
     let tools = options.tools.clone();
     let operation_instructions = options.instructions.clone();
     let (messages, instructions) = split_prompt(prompt.into(), operation_instructions.as_deref());
-    let lm_prompt = convert_to_language_model_prompt(&messages, instructions)?;
+    let lm_prompt = convert_to_language_model_prompt(&messages, instructions, provider_id(model))?;
 
     // 2. Build CallOptions.
     let mut call_options = options.into_call_options(lm_prompt);

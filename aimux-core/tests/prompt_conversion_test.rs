@@ -19,7 +19,7 @@ fn messages(value: Value) -> Vec<ModelMessage> {
 }
 
 fn convert(value: Value) -> Vec<LanguageModelMessage> {
-    convert_to_language_model_prompt(&messages(value), None).expect("converts")
+    convert_to_language_model_prompt(&messages(value), None, None).expect("converts")
 }
 
 // C32: every message role carries `providerOptions`, and the conversion
@@ -352,7 +352,7 @@ fn assistant_tool_result_converts_like_a_tool_message_result() {
             provider_options: None,
         }),
     ]);
-    let prompt = convert_to_language_model_prompt(&[message], None).unwrap();
+    let prompt = convert_to_language_model_prompt(&[message], None, None).unwrap();
     let LanguageModelMessage::Assistant { content, .. } = &prompt[0] else {
         panic!()
     };

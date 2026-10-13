@@ -138,7 +138,7 @@ impl std::str::FromStr for ReasoningEffort {
 }
 
 /// A warning issued by the provider (e.g. unsupported parameter).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub enum Warning {
     /// A feature is not supported by this provider.
