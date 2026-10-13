@@ -411,7 +411,7 @@ def stream_text(
     Usage:
         for part in stream_text(model, "Write a haiku about Rust."):
             if part["type"] == "text-delta":
-                print(part["delta"], end="")
+                print(part["text"], end="")
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)

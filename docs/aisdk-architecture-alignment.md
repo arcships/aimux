@@ -2337,7 +2337,7 @@ pub enum ContentPart {
 
 | 事件 | core 形态 |
 |---|---|
-| text-delta / reasoning-delta | `id, text, providerMetadata?`，字段是 text |
+| text-delta / reasoning-delta | `id, text, providerMetadata?`，字段是 text(#229 B9 已落地；provider 层 StreamPart 仍为 delta) |
 | tool-input-delta | 仍为 `id, delta, providerMetadata?` |
 | tool-input-start | 在 V4 字段上增加 `toolMetadata?` |
 | tool-call/result/error | core 解析及执行后的类型 |

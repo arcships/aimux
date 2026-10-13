@@ -477,7 +477,7 @@ func TestE2E_StreamTextYieldsTextDeltas(t *testing.T) {
 		case "text-delta":
 			var td TextDeltaPayload
 			json.Unmarshal(sp.Raw, &td)
-			textBuilder.WriteString(td.Delta)
+			textBuilder.WriteString(td.Text)
 		case "finish":
 			gotFinish = true
 		}

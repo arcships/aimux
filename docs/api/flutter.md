@@ -229,7 +229,7 @@ model.close();
 final model = Model.openai('sk-...', 'gpt-4o');
 final stream = model.streamText('Write a haiku');
 await for (final part in stream) {
-  if (part['type'] == 'text-delta') print(part['delta']);
+  if (part['type'] == 'text-delta') print(part['text']);
 }
 model.close();
 ```
@@ -247,7 +247,7 @@ print(result.text);  // typed GenerateTextResult
 
 final stream = model.streamText('Write a haiku');
 await for (final part in stream) {
-  if (part is StreamPartTextDelta) print(part.delta);  // typed StreamPart variants
+  if (part is StreamPartTextDelta) print(part.text);  // typed StreamPart variants
 }
 model.close();
 ```

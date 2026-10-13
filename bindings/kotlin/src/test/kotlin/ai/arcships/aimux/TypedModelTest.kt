@@ -441,6 +441,24 @@ class TypedModelRoundTripTest {
     }
 
     @Test
+    fun `text stream deltas are text`() {
+        // The text stream's text-delta and reasoning-delta carry `text` (ai
+        // generate-text/stream-text-result.ts:435-440, :466-471); a
+        // tool-input-delta keeps `delta` (:496-501).
+        val wires = listOf(
+            """{"type":"text-delta","id":"t1","text":"Hello"}""",
+            """{"type":"reasoning-delta","id":"t1","text":"Hmm"}""",
+            """{"type":"tool-input-delta","id":"t1","delta":"{\"a\""}""",
+        )
+        for (wire in wires) {
+            val part = AimuxJson.decodeFromString(StreamPart.serializer(), wire)
+            assertThat(AimuxJson.encodeToString(StreamPart.serializer(), part)).isEqualTo(wire)
+        }
+        val text = AimuxJson.decodeFromString(StreamPart.serializer(), wires[0]) as StreamPart.TextDelta
+        assertThat(text.text).isEqualTo("Hello")
+    }
+
+    @Test
     fun `file parts are the AI SDK file part`() {
         // FilePart.data is FileData | DataContent | URL | ProviderReference
         // (provider-utils types/content-part.ts:75, file-data.ts:44-48) and

@@ -450,6 +450,26 @@ class MultimodalTypesTest {
     }
 
     @Test
+    void textStreamDeltasAreText() throws Exception {
+        // The text stream's text-delta and reasoning-delta carry `text` (ai
+        // generate-text/stream-text-result.ts:435-440, :466-471); a
+        // tool-input-delta keeps `delta` (:496-501).
+        ObjectMapper t = Types.AimuxJson.MAPPER;
+        String[] wires = {
+            "{\"type\":\"text-delta\",\"id\":\"t1\",\"text\":\"Hello\"}",
+            "{\"type\":\"reasoning-delta\",\"id\":\"t1\",\"text\":\"Hmm\"}",
+            "{\"type\":\"tool-input-delta\",\"id\":\"t1\",\"delta\":\"{\\\"a\\\"\"}",
+        };
+        for (String wire : wires) {
+            assertThat(t.writeValueAsString(t.readValue(wire, Types.StreamPart.class))).isEqualTo(wire);
+        }
+        Types.StreamPart.TextDelta text = (Types.StreamPart.TextDelta) t.readValue(wires[0], Types.StreamPart.class);
+        assertThat(text.getText()).isEqualTo("Hello");
+        assertThat(t.writeValueAsString(Types.StreamPart.ReasoningDelta.builder().id("t1").text("Hmm").build()))
+            .isEqualTo(wires[1]);
+    }
+
+    @Test
     void unknownFieldsKeepNullApartFromMissing() throws Exception {
         // body?: unknown (provider language-model-v4-generate-result.ts:41, :56)
         // and inputSchemaInput?: unknown (provider-utils

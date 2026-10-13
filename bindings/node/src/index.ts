@@ -411,7 +411,7 @@ export async function generateText(
  * import { openai, streamText } from 'aimux'
  * const model = await openai(apiKey, 'gpt-4o')
  * for await (const part of streamText(model, 'Write a haiku about Rust.')) {
- *   if (part.type === 'text-delta') process.stdout.write(part.delta)
+ *   if (part.type === 'text-delta') process.stdout.write(part.text)
  * }
  * ```
  */

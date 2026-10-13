@@ -486,11 +486,17 @@ class _SPDelta(_SPIdMeta):
     delta: str
 
 
+class _SPTextChunk(_SPIdMeta):
+    """A text or reasoning delta: ``text``, not ``delta``, in the text stream."""
+
+    text: str
+
+
 class _SPTextStart(_SPIdMeta):
     type: Literal["text-start"]
 
 
-class _SPTextDelta(_SPDelta):
+class _SPTextDelta(_SPTextChunk):
     type: Literal["text-delta"]
 
 
@@ -539,7 +545,7 @@ class _SPReasoningStart(_SPIdMeta):
     type: Literal["reasoning-start"]
 
 
-class _SPReasoningDelta(_SPDelta):
+class _SPReasoningDelta(_SPTextChunk):
     type: Literal["reasoning-delta"]
 
 
@@ -553,7 +559,7 @@ class _SPRaw(_Wire):
 
 
 #: A single chunk of the stream returned by ``stream_text`` (Rust
-#: ``TextStreamPart``), e.g. ``{"type": "text-delta", "id": ..., "delta": ...}``.
+#: ``TextStreamPart``), e.g. ``{"type": "text-delta", "id": ..., "text": ...}``.
 StreamPart = Annotated[
     Union[
         _SPTextStart,
@@ -1193,14 +1199,14 @@ def stream_text(
     """Stream text from a model, yielding parsed ``StreamPart`` dicts.
 
     Each yielded item is the dict form produced by the Rust core, tagged by
-    ``type``, e.g. ``{"type": "text-delta", "id": ..., "delta": ...}``. For
+    ``type``, e.g. ``{"type": "text-delta", "id": ..., "text": ...}``. For
     typed access, pass the dict through :func:`parse_stream_part`.
 
     Usage::
 
         for part in stream_text(model, "Write a haiku about Rust."):
             if part["type"] == "text-delta":
-                print(part["delta"], end="")
+                print(part["text"], end="")
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)

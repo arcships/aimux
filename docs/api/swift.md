@@ -101,7 +101,7 @@ let followUp: [ModelMessage] = [
 ## Streaming Generation
 
 `streamText(prompt:options:onPart:onDone:onError:)` delivers each part as a
-`TextStreamPart` JSON string (`{"type":"text-delta","id":…,"delta":…}`); the
+`TextStreamPart` JSON string (`{"type":"text-delta","id":…,"text":…}`); the
 typed overload decodes it into `TextStreamPart`.
 
 ```swift

@@ -143,7 +143,7 @@ fmt.Println(result)
 // streaming (typed: model.Stream(prompt, opts) yields *StreamPart values)
 stream := model.StreamText(`"Write a haiku"`, "")
 for part := range stream.Parts() {
-    fmt.Println(part) // StreamPart JSON, e.g. {"type":"text-delta","id":"0","delta":"..."}
+    fmt.Println(part) // StreamPart JSON, e.g. {"type":"text-delta","id":"0","text":"..."}
 }
 if err := stream.Err(); err != nil { // only after Parts has closed
     log.Fatal(err)
@@ -235,7 +235,7 @@ for part := range typed.Parts() {
     if part.Type == "text-delta" {
         var td aimux.TextDeltaPayload
         json.Unmarshal(part.Raw, &td)
-        fmt.Print(td.Delta)
+        fmt.Print(td.Text)
     }
 }
 ```

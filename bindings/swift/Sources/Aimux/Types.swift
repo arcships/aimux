@@ -1290,10 +1290,12 @@ public struct GenerateTextOptions: Codable, Equatable {
 /// A single chunk in the stream returned by `streamText` (the call-layer
 /// `TextStreamPart`: parsed tool calls).
 ///
-/// Wire: internally tagged by `type` — `{"type":"text-delta","id":"…","delta":"…"}`, …
+/// Wire: internally tagged by `type` — `{"type":"text-delta","id":"…","text":"…"}`, …
+/// Text and reasoning deltas carry `text`, as the AI SDK's `TextStreamPart`
+/// does; a tool-input delta keeps `delta`.
 public enum TextStreamPart: Codable, Equatable {
     case textStart(id: String, providerMetadata: ProviderMetadata?)
-    case textDelta(id: String, delta: String, providerMetadata: ProviderMetadata?)
+    case textDelta(id: String, text: String, providerMetadata: ProviderMetadata?)
     case textEnd(id: String, providerMetadata: ProviderMetadata?)
     case streamStart(warnings: [Warning])
     case finish(finishReason: FinishReason, usage: Usage, providerMetadata: ProviderMetadata?)
@@ -1313,13 +1315,13 @@ public enum TextStreamPart: Codable, Equatable {
     case custom(kind: String, providerMetadata: ProviderMetadata?)
     case toolApprovalRequest(ToolApprovalRequestOutput)
     case reasoningStart(id: String, providerMetadata: ProviderMetadata?)
-    case reasoningDelta(id: String, delta: String, providerMetadata: ProviderMetadata?)
+    case reasoningDelta(id: String, text: String, providerMetadata: ProviderMetadata?)
     case reasoningEnd(id: String, providerMetadata: ProviderMetadata?)
     case source(Source)
     case raw(rawValue: JSONValue)
 
     private enum Field: String, CodingKey {
-        case type, id, delta, warnings, finishReason, usage, providerMetadata, response, error
+        case type, id, delta, text, warnings, finishReason, usage, providerMetadata, response, error
         case toolName, providerExecuted, dynamic, title, kind, rawValue
     }
 
@@ -1329,9 +1331,10 @@ public enum TextStreamPart: Codable, Equatable {
         func pm() throws -> ProviderMetadata? { try c.decodeIfPresent(ProviderMetadata.self, forKey: .providerMetadata) }
         func id() throws -> String { try c.decode(String.self, forKey: .id) }
         func delta() throws -> String { try c.decode(String.self, forKey: .delta) }
+        func text() throws -> String { try c.decode(String.self, forKey: .text) }
         switch t {
         case "text-start": self = .textStart(id: try id(), providerMetadata: try pm())
-        case "text-delta": self = .textDelta(id: try id(), delta: try delta(), providerMetadata: try pm())
+        case "text-delta": self = .textDelta(id: try id(), text: try text(), providerMetadata: try pm())
         case "text-end": self = .textEnd(id: try id(), providerMetadata: try pm())
         case "stream-start": self = .streamStart(warnings: try c.decode([Warning].self, forKey: .warnings))
         case "finish":
@@ -1356,7 +1359,7 @@ public enum TextStreamPart: Codable, Equatable {
         case "custom": self = .custom(kind: try c.decode(String.self, forKey: .kind), providerMetadata: try pm())
         case "tool-approval-request": self = .toolApprovalRequest(try ToolApprovalRequestOutput(from: decoder))
         case "reasoning-start": self = .reasoningStart(id: try id(), providerMetadata: try pm())
-        case "reasoning-delta": self = .reasoningDelta(id: try id(), delta: try delta(), providerMetadata: try pm())
+        case "reasoning-delta": self = .reasoningDelta(id: try id(), text: try text(), providerMetadata: try pm())
         case "reasoning-end": self = .reasoningEnd(id: try id(), providerMetadata: try pm())
         case "source": self = .source(try Source(from: decoder))
         case "raw": self = .raw(rawValue: try c.decode(JSONValue.self, forKey: .rawValue))
@@ -1366,14 +1369,16 @@ public enum TextStreamPart: Codable, Equatable {
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: Field.self)
-        func head(_ t: String, id: String? = nil, delta: String? = nil, _ pm: ProviderMetadata? = nil) throws {
+        func head(_ t: String, id: String? = nil, delta: String? = nil, text: String? = nil,
+                  _ pm: ProviderMetadata? = nil) throws {
             try c.encode(t, forKey: .type)
             try c.encodeIfPresent(id, forKey: .id); try c.encodeIfPresent(delta, forKey: .delta)
+            try c.encodeIfPresent(text, forKey: .text)
             try c.encodeIfPresent(pm, forKey: .providerMetadata)
         }
         switch self {
         case .textStart(let i, let pm): try head("text-start", id: i, pm)
-        case .textDelta(let i, let d, let pm): try head("text-delta", id: i, delta: d, pm)
+        case .textDelta(let i, let d, let pm): try head("text-delta", id: i, text: d, pm)
         case .textEnd(let i, let pm): try head("text-end", id: i, pm)
         case .streamStart(let w): try head("stream-start"); try c.encode(w, forKey: .warnings)
         case .finish(let fr, let u, let pm):
@@ -1395,7 +1400,7 @@ public enum TextStreamPart: Codable, Equatable {
         case .custom(let k, let pm): try head("custom", pm); try c.encode(k, forKey: .kind)
         case .toolApprovalRequest(let v): try v.encode(to: encoder); try encoder.putTag("tool-approval-request")
         case .reasoningStart(let i, let pm): try head("reasoning-start", id: i, pm)
-        case .reasoningDelta(let i, let d, let pm): try head("reasoning-delta", id: i, delta: d, pm)
+        case .reasoningDelta(let i, let d, let pm): try head("reasoning-delta", id: i, text: d, pm)
         case .reasoningEnd(let i, let pm): try head("reasoning-end", id: i, pm)
         case .source(let v): try v.encode(to: encoder); try encoder.putTag("source")
         case .raw(let v): try head("raw"); try c.encode(v, forKey: .rawValue)

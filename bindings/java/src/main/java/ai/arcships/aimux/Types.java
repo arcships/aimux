@@ -3744,34 +3744,34 @@ public final class Types {
 
         public static class TextDelta extends StreamPart {
             @JsonProperty("id") private String id = "";
-            @JsonProperty("delta") private String delta = "";
+            @JsonProperty("text") private String text = "";
             @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             TextDelta() {}
 
-            private TextDelta(String id, String delta, JsonNode providerMetadata) {
+            private TextDelta(String id, String text, JsonNode providerMetadata) {
                 this.id = id;
-                this.delta = delta;
+                this.text = text;
                 this.providerMetadata = providerMetadata;
             }
 
             public String getId() { return id; }
-            public String getDelta() { return delta; }
+            public String getText() { return text; }
             public JsonNode getProviderMetadata() { return providerMetadata; }
 
             public static Builder builder() { return new Builder(); }
 
             public static class Builder {
                 private String id = "";
-                private String delta = "";
+                private String text = "";
                 private JsonNode providerMetadata;
 
                 public Builder id(String v) { this.id = v; return this; }
-                public Builder delta(String v) { this.delta = v; return this; }
+                public Builder text(String v) { this.text = v; return this; }
                 public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
 
-                public TextDelta build() { return new TextDelta(id, delta, providerMetadata); }
+                public TextDelta build() { return new TextDelta(id, text, providerMetadata); }
             }
 
             @Override
@@ -3780,12 +3780,12 @@ public final class Types {
                 if (!(o instanceof TextDelta)) return false;
                 TextDelta that = (TextDelta) o;
                 return Objects.equals(id, that.id)
-                    && Objects.equals(delta, that.delta)
+                    && Objects.equals(text, that.text)
                     && Objects.equals(providerMetadata, that.providerMetadata);
             }
 
             @Override
-            public int hashCode() { return Objects.hash(id, delta, providerMetadata); }
+            public int hashCode() { return Objects.hash(id, text, providerMetadata); }
         }
 
         public static class TextEnd extends StreamPart {
@@ -4321,34 +4321,34 @@ public final class Types {
 
         public static class ReasoningDelta extends StreamPart {
             @JsonProperty("id") private String id = "";
-            @JsonProperty("delta") private String delta = "";
+            @JsonProperty("text") private String text = "";
             @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
             @JsonCreator
             ReasoningDelta() {}
 
-            private ReasoningDelta(String id, String delta, JsonNode providerMetadata) {
+            private ReasoningDelta(String id, String text, JsonNode providerMetadata) {
                 this.id = id;
-                this.delta = delta;
+                this.text = text;
                 this.providerMetadata = providerMetadata;
             }
 
             public String getId() { return id; }
-            public String getDelta() { return delta; }
+            public String getText() { return text; }
             public JsonNode getProviderMetadata() { return providerMetadata; }
 
             public static Builder builder() { return new Builder(); }
 
             public static class Builder {
                 private String id = "";
-                private String delta = "";
+                private String text = "";
                 private JsonNode providerMetadata;
 
                 public Builder id(String v) { this.id = v; return this; }
-                public Builder delta(String v) { this.delta = v; return this; }
+                public Builder text(String v) { this.text = v; return this; }
                 public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
 
-                public ReasoningDelta build() { return new ReasoningDelta(id, delta, providerMetadata); }
+                public ReasoningDelta build() { return new ReasoningDelta(id, text, providerMetadata); }
             }
 
             @Override
@@ -4357,12 +4357,12 @@ public final class Types {
                 if (!(o instanceof ReasoningDelta)) return false;
                 ReasoningDelta that = (ReasoningDelta) o;
                 return Objects.equals(id, that.id)
-                    && Objects.equals(delta, that.delta)
+                    && Objects.equals(text, that.text)
                     && Objects.equals(providerMetadata, that.providerMetadata);
             }
 
             @Override
-            public int hashCode() { return Objects.hash(id, delta, providerMetadata); }
+            public int hashCode() { return Objects.hash(id, text, providerMetadata); }
         }
 
         public static class ReasoningEnd extends StreamPart {

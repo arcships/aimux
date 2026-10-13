@@ -17,7 +17,7 @@ async function main() {
   for await (const part of streamText(model, 'Write a haiku about Rust.')) {
     // TextStreamPart is a tagged union — check the type field
     if (part.type === 'text-delta') {
-      process.stdout.write(part.delta)
+      process.stdout.write(part.text)
     } else if (part.type === 'finish') {
       console.log('\n\n[done]')
     }

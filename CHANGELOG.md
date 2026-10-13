@@ -65,6 +65,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`aimux_core::Timestamp`) instead of `Option<String>`. Binding types stay
   strings (#232 C48).
 
+- The text stream's `text-delta` and `reasoning-delta` parts carry their
+  text under `text`, as the AI SDK's `TextStreamPart` does, instead of
+  `delta`. `tool-input-delta` keeps `delta`, and so does the provider-level
+  `StreamPart`. Rust matches `TextStreamPart::TextDelta { text, .. }`; the
+  bindings' typed parts rename `delta` to `text` (Go `TextDeltaPayload.Text`,
+  Java `getText()`, Kotlin/Swift/Dart `text`) (#229 B9).
+
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
   model and provider ids take precedence over middleware overrides.

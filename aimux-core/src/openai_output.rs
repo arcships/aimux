@@ -583,7 +583,7 @@ impl StreamState {
                     chunks.push(c);
                 }
             }
-            TextStreamPart::TextDelta { delta, .. } => {
+            TextStreamPart::TextDelta { text: delta, .. } => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
@@ -602,7 +602,7 @@ impl StreamState {
             TextStreamPart::TextEnd { .. } => {}
 
             TextStreamPart::ReasoningStart { .. } => {}
-            TextStreamPart::ReasoningDelta { delta, .. } => {
+            TextStreamPart::ReasoningDelta { text: delta, .. } => {
                 if include_reasoning {
                     if let Some(c) = self.ensure_started() {
                         chunks.push(c);

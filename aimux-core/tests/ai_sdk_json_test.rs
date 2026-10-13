@@ -16,11 +16,13 @@ use aimux_core::language_model_message::{
 use aimux_core::message::{MessageContent, ModelMessage, Role};
 use aimux_core::result::{
     GenerateContent, GeneratedFile, GeneratedFileOutput, LanguageModelFile, TextContent,
+    ToolApprovalRequestOutput,
 };
 use aimux_core::shared::{FileBytes, FileData, GeneratedFileData, RequestInfo, ResponseInfo};
 use aimux_core::speech_model::AudioData;
-use aimux_core::stream_part::TextStreamPart;
+use aimux_core::stream_part::{StreamPart, TextStreamPart};
 use aimux_core::timestamp::Timestamp;
+use aimux_core::tool::ToolCall;
 use aimux_core::types::{ProviderMetadata, ResponseMetadata};
 use aimux_core::video_model::VideoData;
 use serde::Serialize;
@@ -468,6 +470,49 @@ fn timestamps_are_iso_strings() {
             "{invalid} was read as a timestamp"
         );
     }
+}
+
+// ── Text stream deltas (#229 B9) ─────────────────────────────────────────────
+
+/// The text stream's `text-delta` and `reasoning-delta` carry `text`
+/// (`ai` `generate-text/stream-text-result.ts:435-440`, `:466-471`), copied
+/// from the V4 part's `delta` (`stream-language-model-call.ts:496-501`); a
+/// `tool-input-delta` keeps `delta` (`stream-text-result.ts:496-501`), and the
+/// provider-level `StreamPart` keeps V4's `delta`.
+#[test]
+fn text_stream_deltas_are_text() {
+    let provider = |tag: &str,
+                    delta: &str|
+     -> StreamPart<ToolCall, ToolApprovalRequestOutput, GeneratedFileOutput> {
+        serde_json::from_value(json!({ "type": tag, "id": "t1", "delta": delta })).unwrap()
+    };
+    let text = provider("text-delta", "Hello")
+        .into_text_stream_part()
+        .unwrap();
+    assert_json(
+        &text,
+        json!({ "type": "text-delta", "id": "t1", "text": "Hello" }),
+    );
+    let reasoning = provider("reasoning-delta", "Hmm")
+        .into_text_stream_part()
+        .unwrap();
+    assert_json(
+        &reasoning,
+        json!({ "type": "reasoning-delta", "id": "t1", "text": "Hmm" }),
+    );
+    let tool_input = provider("tool-input-delta", "{\"a\"")
+        .into_text_stream_part()
+        .unwrap();
+    assert_json(
+        &tool_input,
+        json!({ "type": "tool-input-delta", "id": "t1", "delta": "{\"a\"" }),
+    );
+    assert!(
+        serde_json::from_value::<TextStreamPart>(
+            json!({ "type": "text-delta", "id": "t1", "delta": "Hello" })
+        )
+        .is_err()
+    );
 }
 
 /// Parse `wire` and check that it serializes back unchanged.

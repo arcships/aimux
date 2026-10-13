@@ -114,7 +114,7 @@ class TestStreamText:
             parts = list(stream_text(model, "Say hello"))
 
         assert len(parts) > 0
-        text = "".join(p["delta"] for p in parts if p["type"] == "text-delta")
+        text = "".join(p["text"] for p in parts if p["type"] == "text-delta")
         assert text == "Hello world"
 
     def test_stream_part_can_be_typed(self):
@@ -125,9 +125,12 @@ class TestStreamText:
                 p for p in stream_text(model, "Say hello") if p["type"] == "text-delta"
             )
 
+        # The text stream's delta field is ``text`` (ai
+        # stream-text-result.ts:435-440); tool-input-delta keeps ``delta``.
+        assert set(first_delta) == {"type", "id", "text"}
         sp = parse_stream_part(first_delta)
         assert sp.type == "text-delta"
-        assert sp.delta == "Hello"
+        assert sp.text == "Hello"
         # Round-trips back to the wire dict form.
         assert sp.model_dump(exclude_none=True, by_alias=True) == first_delta
 

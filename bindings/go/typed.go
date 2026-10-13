@@ -147,7 +147,7 @@ func (s *TypedStream) Cancel() { s.raw.Cancel() }
 //	    if part.Type == "text-delta" {
 //	        var td TextDeltaPayload
 //	        json.Unmarshal(part.Raw, &td)
-//	        fmt.Print(td.Delta)
+//	        fmt.Print(td.Text)
 //	    }
 //	}
 func (m *Model) Stream(prompt any, opts *GenerateTextOptions) (*TypedStream, error) {

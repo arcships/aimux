@@ -125,7 +125,7 @@ test('e2e: OpenAI streamText via mock server', async (t) => {
 
     const text = parts
       .filter((p) => p.type === 'text-delta')
-      .map((p) => p.delta)
+      .map((p) => p.text)
       .join('')
 
     t.is(text, 'Hello world')
@@ -169,7 +169,7 @@ test('e2e: Anthropic streamText via mock server', async (t) => {
 
     const text = parts
       .filter((p) => p.type === 'text-delta')
-      .map((p) => p.delta)
+      .map((p) => p.text)
       .join('')
 
     t.is(text, 'Hello from Claude')

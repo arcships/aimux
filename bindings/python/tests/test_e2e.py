@@ -154,7 +154,7 @@ class TestOpenAIE2E:
             parts = list(stream_text(model, "Say hello"))
             assert len(parts) > 0
             text = "".join(
-                p["delta"] for p in parts if p["type"] == "text-delta"
+                p["text"] for p in parts if p["type"] == "text-delta"
             )
             assert text == "Hello world"
 
@@ -191,7 +191,7 @@ class TestAnthropicE2E:
             parts = list(stream_text(model, "Hello"))
             assert len(parts) > 0
             text = "".join(
-                p["delta"] for p in parts if p["type"] == "text-delta"
+                p["text"] for p in parts if p["type"] == "text-delta"
             )
             assert text == "Hello from Claude"
 

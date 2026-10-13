@@ -467,7 +467,7 @@ void main() {
     // Parsed text is unaffected.
     final text = parts
         .whereType<StreamPartTextDelta>()
-        .map((p) => p.delta)
+        .map((p) => p.text)
         .join();
     expect(text, 'Hello world');
   });

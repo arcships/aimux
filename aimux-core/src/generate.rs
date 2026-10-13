@@ -362,7 +362,7 @@ impl StreamTextResult {
                 saw_output = true;
             }
             match part {
-                TextStreamPart::TextDelta { delta, .. } => result.push_str(&delta),
+                TextStreamPart::TextDelta { text, .. } => result.push_str(&text),
                 TextStreamPart::Finish { .. } => {
                     saw_finish = true;
                     break;
@@ -451,7 +451,7 @@ impl StreamTextResult {
                 } => rm.text_start(id, provider_metadata),
                 TextStreamPart::TextDelta {
                     id,
-                    delta,
+                    text: delta,
                     provider_metadata,
                 } => {
                     text.push_str(&delta);
@@ -467,7 +467,7 @@ impl StreamTextResult {
                 } => rm.reasoning_start(id, provider_metadata),
                 TextStreamPart::ReasoningDelta {
                     id,
-                    delta,
+                    text: delta,
                     provider_metadata,
                 } => rm.reasoning_delta(id, &delta, provider_metadata),
                 TextStreamPart::ReasoningEnd {
@@ -950,8 +950,8 @@ pub async fn generate_object(
 ///
 /// let mut stream = result.stream;
 /// while let Some(part) = stream.next().await {
-///     if let TextStreamPart::TextDelta { delta, .. } = part? {
-///         print!("{}", delta);
+///     if let TextStreamPart::TextDelta { text, .. } = part? {
+///         print!("{}", text);
 ///     }
 /// }
 /// # Ok(())

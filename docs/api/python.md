@@ -82,7 +82,7 @@ from aimux import openai, stream_text
 model = openai("sk-...", "gpt-4o")
 for part in stream_text(model, "Write a haiku about Rust."):
     if part["type"] == "text-delta":
-        print(part["delta"], end="")
+        print(part["text"], end="")
     if part["type"] == "finish":
         print("\n[done]")
 ```
@@ -503,7 +503,7 @@ class GenerateTextResult(BaseModel):
 ```
 
 `stream_text` emits the Rust call-layer `TextStreamPart` JSON: a dict tagged by
-`type`, e.g. `{"type": "text-delta", "id": ..., "delta": ...}`. Iterate dicts with
+`type`, e.g. `{"type": "text-delta", "id": ..., "text": ...}`. Iterate dicts with
 `if part["type"] == "text-delta":` (as in [Streaming Generation](#streaming-generation))
 or validate them with `parse_stream_part(part)` for attribute access (the
 wrapper's `StreamPart` is a pydantic discriminated union on `type`).

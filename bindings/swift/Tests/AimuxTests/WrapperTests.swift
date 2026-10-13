@@ -185,6 +185,23 @@ final class WrapperTests: XCTestCase {
                        .file(LanguageModelFile(data: .url(url: "https://example.com/a.png"), mediaType: "image/png")))
     }
 
+    /// The text stream's text-delta and reasoning-delta carry `text` (ai
+    /// generate-text/stream-text-result.ts:435-440, :466-471); a
+    /// tool-input-delta keeps `delta` (:496-501).
+    func testTextStreamDeltasAreText() throws {
+        let cases: [(String, TextStreamPart)] = [
+            (#"{"type":"text-delta","id":"t1","text":"Hello"}"#, .textDelta(id: "t1", text: "Hello", providerMetadata: nil)),
+            (#"{"type":"reasoning-delta","id":"t1","text":"Hmm"}"#, .reasoningDelta(id: "t1", text: "Hmm", providerMetadata: nil)),
+            (#"{"type":"tool-input-delta","id":"t1","delta":"{"}"#, .toolInputDelta(id: "t1", delta: "{", providerMetadata: nil)),
+        ]
+        for (wire, part) in cases {
+            XCTAssertEqual(try JSONDecoder().decode(TextStreamPart.self, from: Data(wire.utf8)), part)
+            let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(part)) as? NSDictionary
+            XCTAssertEqual(encoded, try JSONSerialization.jsonObject(with: Data(wire.utf8)) as? NSDictionary)
+        }
+        XCTAssertThrowsError(try JSONDecoder().decode(TextStreamPart.self, from: Data(#"{"type":"text-delta","id":"t1","delta":"Hello"}"#.utf8)))
+    }
+
     /// FilePart.data is FileData | DataContent | URL | ProviderReference
     /// (provider-utils types/content-part.ts:75, file-data.ts:44-48);
     /// ReasoningFilePart.data is tagged data or a URL, or a string (:164).

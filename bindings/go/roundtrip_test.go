@@ -321,7 +321,7 @@ func TestStreamPartParseRoundTrip(t *testing.T) {
 		json string
 		typ  string
 	}{
-		{"text-delta", `{"type":"text-delta","id":"tx1","delta":"Hello"}`, "text-delta"},
+		{"text-delta", `{"type":"text-delta","id":"tx1","text":"Hello"}`, "text-delta"},
 		{"finish", `{"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`, "finish"},
 		{"stream-start", `{"type":"stream-start","warnings":[]}`, "stream-start"},
 	}
@@ -342,11 +342,15 @@ func TestStreamPartParseRoundTrip(t *testing.T) {
 }
 
 func TestParseTextDeltaPayload(t *testing.T) {
-	sp, _ := ParseStreamPart(`{"type":"text-delta","id":"tx1","delta":"Hello"}`)
+	// The text stream's delta field is "text" (ai stream-text-result.ts:435-440).
+	sp, _ := ParseStreamPart(`{"type":"text-delta","id":"tx1","text":"Hello"}`)
 	var td TextDeltaPayload
 	json.Unmarshal(sp.Raw, &td)
-	if td.ID != "tx1" || td.Delta != "Hello" {
+	if td.ID != "tx1" || td.Text != "Hello" {
 		t.Errorf("got %+v", td)
+	}
+	if out, _ := json.Marshal(td); string(out) != `{"id":"tx1","text":"Hello"}` {
+		t.Errorf("marshal: %s", out)
 	}
 }
 

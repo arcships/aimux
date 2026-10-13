@@ -54,7 +54,7 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 			}
 			var td TextDeltaPayload
 			json.Unmarshal(sp.Raw, &td)
-			textBuilder.WriteString(td.Delta)
+			textBuilder.WriteString(td.Text)
 		}
 	}
 	if err := stream.Err(); err != nil {

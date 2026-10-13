@@ -14,7 +14,7 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * A public call-layer stream chunk, with parsed tool calls.
  */
-export type TextStreamPart = { "type": "text-start", id: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "text-delta", id: string, delta: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "text-end", id: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "stream-start", warnings: Array<Warning>, } | { "type": "finish", finishReason: FinishReason, usage: Usage, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "finish-step", finishReason: FinishReason, usage: Usage, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, response: ResponseInfo, } | { "type": "error", error: AiMuxError, } | { "type": "tool-input-start", id: string, toolName: string, 
+export type TextStreamPart = { "type": "text-start", id: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "text-delta", id: string, text: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "text-end", id: string, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "stream-start", warnings: Array<Warning>, } | { "type": "finish", finishReason: FinishReason, usage: Usage, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "finish-step", finishReason: FinishReason, usage: Usage, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, response: ResponseInfo, } | { "type": "error", error: AiMuxError, } | { "type": "tool-input-start", id: string, toolName: string, 
 /**
  * Whether the tool call will be executed by the provider.
  */
@@ -30,7 +30,7 @@ title?: string, providerMetadata?: { [key in string]: { [key in string]: JsonVal
 /**
  * Provider-specific metadata (e.g. xAI `itemId`).
  */
-providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "reasoning-delta", id: string, delta: string, 
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, } | { "type": "reasoning-delta", id: string, text: string, 
 /**
  * Provider-specific metadata (e.g. xAI `itemId`).
  */

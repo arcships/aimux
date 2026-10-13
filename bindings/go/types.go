@@ -450,7 +450,7 @@ func MarshalOptions(opts *GenerateTextOptions) (string, error) {
 // ── StreamPart parsing ─────────────────────────────────────────────────────
 
 // StreamPart is a parsed stream part. The wire format is an object tagged by
-// its "type" key (e.g. {"type":"text-delta","id":"...","delta":"..."}).
+// its "type" key (e.g. {"type":"text-delta","id":"...","text":"..."}).
 type StreamPart struct {
 	// Type is the part's "type" (e.g. "text-delta", "tool-call", "finish").
 	Type string `json:"-"`
@@ -485,10 +485,12 @@ func (p *StreamPart) Source() (*Source, error) {
 	return &source, nil
 }
 
-// TextDeltaPayload is a {"type":"text-delta",...} stream part.
+// TextDeltaPayload is a {"type":"text-delta",...} or
+// {"type":"reasoning-delta",...} stream part. Its delta is under "text", as
+// in the AI SDK's TextStreamPart; a "tool-input-delta" keeps "delta".
 type TextDeltaPayload struct {
-	ID    string `json:"id,omitempty"`
-	Delta string `json:"delta"`
+	ID   string `json:"id,omitempty"`
+	Text string `json:"text"`
 }
 
 // ── Cache probing (RFC-0015) wire types ─────────────────────────────────────

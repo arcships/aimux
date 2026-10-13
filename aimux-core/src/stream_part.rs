@@ -186,10 +186,12 @@ pub enum TextStreamPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
-    /// A delta of generated text.
+    /// A delta of generated text. The field is `text`, as upstream's
+    /// `TextStreamPart` (`ai` `generate-text/stream-text-result.ts`); the
+    /// provider-level `StreamPart` keeps V4's `delta`.
     TextDelta {
         id: String,
-        delta: String,
+        text: String,
         #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
@@ -296,9 +298,10 @@ pub enum TextStreamPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
+    /// A delta of reasoning text, under `text` as for `TextDelta`.
     ReasoningDelta {
         id: String,
-        delta: String,
+        text: String,
         /// Provider-specific metadata (e.g. xAI `itemId`).
         #[allow(unused)]
         #[ts(optional)]
@@ -402,13 +405,19 @@ impl StreamPart<ToolCall, ToolApprovalRequestOutput, GeneratedFileOutput> {
                     Self::File(value) => Some(TextStreamPart::File(value)),
                     Self::ReasoningFile(value) => Some(TextStreamPart::ReasoningFile(value)),
                     Self::Source(value) => Some(TextStreamPart::Source(value)),
+                    // V4's `delta` is the text stream's `text`.
+                    Self::TextDelta { id, delta, provider_metadata } => {
+                        Some(TextStreamPart::TextDelta { id, text: delta, provider_metadata })
+                    }
+                    Self::ReasoningDelta { id, delta, provider_metadata } => {
+                        Some(TextStreamPart::ReasoningDelta { id, text: delta, provider_metadata })
+                    }
                     $(Self::$variant { $($field),* } => Some(TextStreamPart::$variant { $($field),* }),)*
                 }
             };
         }
         carry! {
             TextStart { id, provider_metadata }
-            TextDelta { id, delta, provider_metadata }
             TextEnd { id, provider_metadata }
             StreamStart { warnings }
             Error { error }
@@ -416,7 +425,6 @@ impl StreamPart<ToolCall, ToolApprovalRequestOutput, GeneratedFileOutput> {
             ToolInputDelta { id, delta, provider_metadata }
             ToolInputEnd { id, provider_metadata }
             ReasoningStart { id, provider_metadata }
-            ReasoningDelta { id, delta, provider_metadata }
             ReasoningEnd { id, provider_metadata }
             Custom { kind, provider_metadata }
             Raw { raw_value }
@@ -427,9 +435,8 @@ impl StreamPart<ToolCall, ToolApprovalRequestOutput, GeneratedFileOutput> {
 impl TextStreamPart {
     pub(crate) fn is_output_chunk(&self) -> bool {
         match self {
-            Self::TextDelta { delta, .. }
-            | Self::ReasoningDelta { delta, .. }
-            | Self::ToolInputDelta { delta, .. } => !delta.is_empty(),
+            Self::TextDelta { text, .. } | Self::ReasoningDelta { text, .. } => !text.is_empty(),
+            Self::ToolInputDelta { delta, .. } => !delta.is_empty(),
             Self::ToolCall(_) | Self::File(_) | Self::ReasoningFile(_) => true,
             _ => false,
         }

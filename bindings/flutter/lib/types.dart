@@ -1741,7 +1741,7 @@ sealed class StreamPart {
     return switch (j['type']) {
       'text-start' => StreamPartTextStart(id: id(), providerMetadata: meta()),
       'text-delta' => StreamPartTextDelta(
-          id: id(), delta: j['delta'] as String, providerMetadata: meta()),
+          id: id(), text: j['text'] as String, providerMetadata: meta()),
       'text-end' => StreamPartTextEnd(id: id(), providerMetadata: meta()),
       'stream-start' => StreamPartStreamStart(warnings: _maps(j['warnings'])),
       'finish' => StreamPartFinish(
@@ -1779,7 +1779,7 @@ sealed class StreamPart {
           signature: j['signature'] as String?),
       'reasoning-start' => StreamPartReasoningStart(id: id(), providerMetadata: meta()),
       'reasoning-delta' => StreamPartReasoningDelta(
-          id: id(), delta: j['delta'] as String, providerMetadata: meta()),
+          id: id(), text: j['text'] as String, providerMetadata: meta()),
       'reasoning-end' => StreamPartReasoningEnd(id: id(), providerMetadata: meta()),
       'source' => StreamPartSource(source: Source.fromJson(j)),
       'raw' => StreamPartRaw(rawValue: j['rawValue']),
@@ -1806,15 +1806,17 @@ final class StreamPartTextStart extends StreamPart {
 
 final class StreamPartTextDelta extends StreamPart {
   final String id;
-  final String delta;
+
+  /// The delta, under `text` as in the AI SDK's `TextStreamPart`.
+  final String text;
   final Json? providerMetadata;
   const StreamPartTextDelta(
-      {required this.id, required this.delta, this.providerMetadata});
+      {required this.id, required this.text, this.providerMetadata});
   @override
   Json toJson() => {
         'type': 'text-delta',
         'id': id,
-        'delta': delta,
+        'text': text,
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }
@@ -2038,15 +2040,17 @@ final class StreamPartReasoningStart extends StreamPart {
 
 final class StreamPartReasoningDelta extends StreamPart {
   final String id;
-  final String delta;
+
+  /// The delta, under `text` as in the AI SDK's `TextStreamPart`.
+  final String text;
   final Json? providerMetadata;
   const StreamPartReasoningDelta(
-      {required this.id, required this.delta, this.providerMetadata});
+      {required this.id, required this.text, this.providerMetadata});
   @override
   Json toJson() => {
         'type': 'reasoning-delta',
         'id': id,
-        'delta': delta,
+        'text': text,
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
       };
 }

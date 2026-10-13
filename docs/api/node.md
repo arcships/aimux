@@ -225,7 +225,7 @@ const { openai, streamText } = require('@arcships/aimux')
 const model = await openai('sk-...', 'gpt-4o')
 for await (const part of streamText(model, 'Write a haiku about Rust.')) {
   if (part.type === 'text-delta') {
-    process.stdout.write(part.delta)
+    process.stdout.write(part.text)
   }
   if (part.type === 'finish') {
     console.log('\n[done]')

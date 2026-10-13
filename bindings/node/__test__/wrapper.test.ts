@@ -279,8 +279,11 @@ test('wrapper: streamText yields typed text-delta parts', async (t) => {
     // Narrow the tagged union by its `type` tag (typed, not `any`).
     const deltas = parts
       .filter((p): p is Extract<TextStreamPart, { type: 'text-delta' }> => p.type === 'text-delta')
-      .map((p) => p.delta)
+      .map((p) => p.text)
     t.is(deltas.join(''), 'Hello world')
+    // The text stream's delta field is `text` (ai stream-text-result.ts:435-440).
+    const first = parts.find((p) => p.type === 'text-delta')
+    t.deepEqual(Object.keys(first ?? {}).sort(), ['id', 'text', 'type'])
   } finally {
     await closeServer(server)
   }

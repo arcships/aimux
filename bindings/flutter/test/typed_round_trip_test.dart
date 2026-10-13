@@ -125,7 +125,7 @@ void main() {
     };
     final cases = <Map<String, dynamic>>[
       {'type': 'text-start', 'id': 't'},
-      {'type': 'text-delta', 'id': 't', 'delta': 'hel', 'providerMetadata': _meta},
+      {'type': 'text-delta', 'id': 't', 'text': 'hel', 'providerMetadata': _meta},
       {'type': 'text-end', 'id': 't'},
       {
         'type': 'stream-start',
@@ -171,7 +171,7 @@ void main() {
         'reason': 'r',
       },
       {'type': 'reasoning-start', 'id': 'r1'},
-      {'type': 'reasoning-delta', 'id': 'r1', 'delta': 'thi'},
+      {'type': 'reasoning-delta', 'id': 'r1', 'text': 'thi'},
       {'type': 'reasoning-end', 'id': 'r1'},
       {'type': 'source', 'sourceType': 'url', 'id': 's', 'url': 'https://x'},
       {'type': 'raw', 'rawValue': {'raw': 'chunk'}},

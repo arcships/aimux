@@ -167,7 +167,7 @@ let result = stream_text(&model, "Write a haiku.", GenerateTextOptions::default(
 let mut stream = result.stream;
 while let Some(part) = stream.next().await {
     match part? {
-        TextStreamPart::TextDelta { delta, .. } => print!("{}", delta),
+        TextStreamPart::TextDelta { text, .. } => print!("{}", text),
         TextStreamPart::Finish { .. } => println!("\n[done]"),
         _ => {}
     }

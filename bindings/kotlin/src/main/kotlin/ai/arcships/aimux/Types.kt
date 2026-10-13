@@ -1157,7 +1157,8 @@ sealed interface StreamPart {
     @SerialName("text-delta")
     data class TextDelta(
         val id: String = "",
-        val delta: String = "",
+        /** The delta, under `text` as in the AI SDK's TextStreamPart. */
+        val text: String = "",
         val providerMetadata: ProviderMetadata? = null,
     ) : StreamPart
 
@@ -1285,7 +1286,8 @@ sealed interface StreamPart {
     @SerialName("reasoning-delta")
     data class ReasoningDelta(
         val id: String = "",
-        val delta: String = "",
+        /** The delta, under `text` as in the AI SDK's TextStreamPart. */
+        val text: String = "",
         val providerMetadata: ProviderMetadata? = null,
     ) : StreamPart
 
