@@ -424,3 +424,68 @@ async fn gemini_transcription_generate_request_and_result() {
         json!({"google": {"usageMetadata": usage}})
     );
 }
+
+/// Executable-sourced external-account credentials are kept (an opt-in, as in
+/// google-auth-library, which `@ai-sdk/google-vertex` uses for credentials on
+/// Node), registered in docs/aisdk-architecture-alignment.md §5. Without
+/// `GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1` the request fails before
+/// anything is spawned and before any HTTP request is sent.
+#[tokio::test]
+async fn executable_credential_without_the_opt_in_fails_and_spawns_nothing() {
+    use aimux_core::error::AiMuxError;
+    use aimux_providers::vertex::GoogleAuthOptions;
+
+    for var in [
+        "GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES",
+        "GOOGLE_VERTEX_ACCESS_TOKEN",
+    ] {
+        assert!(
+            std::env::var_os(var).is_none(),
+            "this test needs {var} unset"
+        );
+    }
+    let marker = std::env::temp_dir().join(format!(
+        "aimux-vertex-executable-marker-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&marker);
+    let credentials = json!({
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/pool/providers/exec",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+        "token_url": "https://sts.googleapis.com/v1/token",
+        "credential_source": {
+            "executable": {
+                "command": format!("touch {}", marker.display()),
+                "timeout_millis": 5000
+            }
+        }
+    });
+    let fetch = MockFetch::new(Vec::new());
+    let provider = create_google_vertex(VertexProviderSettings {
+        api_key: Some(Resolvable::Value(String::new())),
+        project: Some("test-project".into()),
+        location: Some("us-central1".into()),
+        google_auth_options: Some(GoogleAuthOptions {
+            credentials: Some(credentials),
+            ..Default::default()
+        }),
+        fetch: Some(fetch.transport()),
+        ..Default::default()
+    })
+    .unwrap();
+    let error = provider
+        .chat("gemini-2.5-flash")
+        .do_generate(&CallOptions::new(vec![LanguageModelMessage::user_text(
+            "Hello",
+        )]))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::InvalidArgument(message)
+            if message.contains("GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1")),
+        "{error:?}"
+    );
+    assert!(!marker.exists(), "the credential executable was spawned");
+    assert!(fetch.seen().is_empty(), "a request was sent");
+}

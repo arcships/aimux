@@ -1120,6 +1120,7 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 上游对齐 | OpenAI 默认 `language_model` | `language_model` 和 `call` 返回 Responses（`openai.responses`），与上游 `openai(id)` 一致；`chat(id)` 显式选择 Chat Completions。xAI、Hugging Face、Azure 的默认也为 Responses |
 | 产品选择 | Bedrock 上的 Anthropic InvokeModel | aimux 没有 `bedrock.anthropic.messages` 对应的 provider（`anthropic_aws` 是 Claude Platform on AWS，不是 Bedrock InvokeModel）；属新增能力，不在本期 |
 | 产品选择 | Azure 未移植的模型 | deepseek、completion、MAI speech 端点和 Foundry item type 未移植 |
+| 产品选择 | Vertex 外部账号凭证的可执行程序来源（`credential_source.executable`） | 保留，作为登记的例外（RFC-0040 草案 §3.1）。行为同 `@ai-sdk/google-vertex` 在 Node 下所用 google-auth-library 的 pluggable auth：仅在 `GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1` 时运行；命令按空白拆分后直接启动，不经 shell；超时限 5–120 秒。开关未设时请求以 `InvalidArgument` 失败，不启动进程，也不发请求（`vertex/auth_external.rs` `executable`；测试 `vertex_upstream_e2e_test::executable_credential_without_the_opt_in_fails_and_spawns_nothing`） |
 | 产品选择 | 视频轮询节奏 | provider 没有 poll 设置；`VideoModel::poll_config()` 保留在 core，作为包内常量的来源，调用级 `VideoCallOptions.poll` 逐字段覆盖 |
 | 产品选择 | 录制重建原生协议 provider | `rebuild_provider` 只走 registry 与 overlay；原生协议包返回 `NoSuchProvider`，回放时改用 `replay_with_model` 传入模型 |
 
