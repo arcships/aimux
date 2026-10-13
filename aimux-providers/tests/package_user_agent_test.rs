@@ -323,3 +323,38 @@ async fn openai_compatible_names_its_own_provider_utils() {
         "ai-sdk-openai-compatible/3.0.62 ai-sdk-provider-utils/5.0.53"
     );
 }
+
+fn open_responses(
+    transport: FetchFunction,
+    user_agent_suffix: Option<&str>,
+) -> aimux_providers::OpenResponsesProvider {
+    let mut settings =
+        aimux_providers::OpenResponsesProviderSettings::new("lmstudio", "http://localhost:1234/v1");
+    settings.fetch = Some(transport);
+    settings.user_agent_suffix = user_agent_suffix.map(str::to_owned);
+    aimux_providers::create_open_responses(settings).unwrap()
+}
+
+/// open-responses-provider.ts:114-127 adds `ai-sdk-open-responses/VERSION`;
+/// `@ai-sdk/open-responses@2.0.58` depends on provider-utils 5.0.53.
+#[tokio::test]
+async fn open_responses_names_its_own_provider_utils() {
+    let (fetch, transport) = transport();
+    let provider = open_responses(transport, None);
+    assert_eq!(
+        sent_user_agent(&provider, "model", &fetch).await,
+        "ai-sdk-open-responses/2.0.58 ai-sdk-provider-utils/5.0.53"
+    );
+}
+
+/// open-responses-provider.ts:126: `userAgentSuffix` replaces the package
+/// part; the provider-utils part still follows it.
+#[tokio::test]
+async fn open_responses_user_agent_suffix_replaces_the_package_part() {
+    let (fetch, transport) = transport();
+    let provider = open_responses(transport, Some("my-app/1.0"));
+    assert_eq!(
+        sent_user_agent(&provider, "model", &fetch).await,
+        "my-app/1.0 ai-sdk-provider-utils/5.0.53"
+    );
+}

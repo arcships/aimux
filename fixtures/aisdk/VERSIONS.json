@@ -39,6 +39,10 @@
     "version": "4.0.54",
     "integrity": "sha512-s3RkuUtkVvh8rmUgqBBtB7Ysttfq64Mr76G/589+IFOCp6WkBXO61lw+lCO1w61tWG5YFfMhg3RaHmKPSCWVIw=="
   },
+  "@ai-sdk/open-responses": {
+    "version": "2.0.58",
+    "integrity": "sha512-VF48lchWrMzQV0DFsaO5IrIMj6hiDFWiqhBOTxrfMKtDxrTEBNnlrns30wma79w08uKHQoi7RetPJlLdSlFwEA=="
+  },
   "@ai-sdk/openai": {
     "version": "4.0.83",
     "integrity": "sha512-NgqZVWoya7hfmtLkWyIjX9THbyYMLfxFqpShdAmvMnkoT+R9AZbdULGan8+4BiBWIZ1aHiAsc90l3SL8QU/0+Q=="

@@ -39,8 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the provider-utils that the package's upstream `package.json` depends on, as
   the AI SDK sends it. That is 5.0.51 for Azure, Bedrock, Cohere, DeepSeek,
   Groq, Mistral, xAI and Google Vertex, and 5.0.53 for OpenAI,
-  OpenAI-compatible, Anthropic, Anthropic-AWS and Google. A per-call
-  `user-agent` keeps the package's part. The Vertex MaaS and xAI
+  OpenAI-compatible, Open Responses, Anthropic, Anthropic-AWS and Google. A
+  per-call `user-agent` keeps the package's part. The Vertex MaaS and xAI
   sub-providers send `ai-sdk-openai-compatible/3.0.59`, the version
   google-vertex depends on. Other packages send `ai-sdk-provider-utils/5.0.53`.
 
@@ -464,6 +464,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `googleVertex.xai`), over the project/location `endpoints/openapi` URL with
   a Google OAuth token. As in the Node wrappers, the provider headers and the
   token go over the per-call headers.
+- Open Responses requests carry `ai-sdk-open-responses/2.0.58`, the package
+  part of `@ai-sdk/open-responses` (now pinned in `VERSIONS.json`).
+  `OpenResponsesProviderSettings::user_agent_suffix` replaces it, as the AI
+  SDK's `userAgentSuffix` does.
 - `OpenAIProvider::tools` and `AzureOpenAIProvider::tools`: the provider tools
   on the provider instance, as the AI SDK's `openai.tools` and `azure.tools`
   (`openai().tools.web_search(…)`). Azure's holds its upstream subset.

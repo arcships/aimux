@@ -112,6 +112,13 @@ pub(crate) const MISTRAL: Package = Package {
     version: "4.0.54",
     provider_utils: "5.0.51",
 };
+/// `@ai-sdk/open-responses@2.0.58` package.json:
+/// `"@ai-sdk/provider-utils": "5.0.53"`.
+pub(crate) const OPEN_RESPONSES: Package = Package {
+    name: "open-responses",
+    version: "2.0.58",
+    provider_utils: "5.0.53",
+};
 /// `@ai-sdk/xai@5.0.12` package.json: `"@ai-sdk/provider-utils": "5.0.51"`.
 pub(crate) const XAI: Package = Package {
     name: "xai",
@@ -128,7 +135,7 @@ mod tests {
     use super::{Package, pinned_versions};
 
     /// Every top-level package (not the nested google-vertex copy).
-    const PACKAGES: [Package; 13] = [
+    const PACKAGES: [Package; 14] = [
         super::ANTHROPIC,
         super::GOOGLE,
         super::OPENAI,
@@ -141,6 +148,7 @@ mod tests {
         super::GOOGLE_VERTEX,
         super::GROQ,
         super::MISTRAL,
+        super::OPEN_RESPONSES,
         super::XAI,
     ];
 
@@ -198,6 +206,6 @@ mod tests {
     #[test]
     fn every_versions_entry_is_object_form() {
         // `all()` panics on any other shape.
-        assert!(pinned_versions::all().len() >= 16);
+        assert!(pinned_versions::all().len() >= 17);
     }
 }
