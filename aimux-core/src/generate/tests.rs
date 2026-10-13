@@ -705,3 +705,55 @@ async fn an_empty_text_delta_is_forwarded_only_with_provider_metadata() {
         vec![(String::new(), true), ("hi".to_string(), false)]
     );
 }
+
+fn provider_result(id: &str, name: &str, result: Value, is_error: Option<bool>) -> ToolResult {
+    ToolResult {
+        tool_call_id: id.into(),
+        tool_name: name.into(),
+        result,
+        is_error,
+        preliminary: None,
+        dynamic: Some(true),
+        provider_metadata: None,
+    }
+}
+
+/// convert-language-model-content.ts:87-104: a provider tool result whose
+/// call is not in the response fails with `Tool call {id} not found.` unless
+/// the result belongs to a provider tool of the call (aimux: any declared
+/// provider tool of that name; upstream: one with `supportsDeferredResults`).
+#[tokio::test]
+async fn generate_text_rejects_a_tool_result_without_its_call() {
+    let deferred = GenerateContent::ToolResult(provider_result(
+        "srv-0",
+        "code_execution",
+        json!({ "stdout": "2" }),
+        None,
+    ));
+    let model = ScriptedModel::generating(generated(
+        vec![text_content("hi"), deferred.clone()],
+        FinishReasonUnified::Stop,
+    ));
+    let error = generate_text(&model, "hi", GenerateTextOptions::default())
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), "Tool call srv-0 not found.");
+
+    let model = ScriptedModel::generating(generated(
+        vec![text_content("hi"), deferred],
+        FinishReasonUnified::Stop,
+    ));
+    let options = GenerateTextOptions {
+        tools: Some(vec![Tool::Provider(crate::tool::ProviderTool {
+            id: "anthropic.code_execution_20250825".into(),
+            name: "code_execution".into(),
+            args: serde_json::Map::new(),
+        })]),
+        ..GenerateTextOptions::default()
+    };
+    let result = generate_text(&model, "hi", options).await.unwrap();
+    assert!(result.final_step().content.iter().any(|part| matches!(
+        part,
+        GenerateContent::ToolResult(result) if result.tool_call_id == "srv-0"
+    )));
+}

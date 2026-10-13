@@ -998,6 +998,7 @@ pub(crate) async fn generate_text_from_language_model_prompt(
         let content = convert_generated_content(
             &result,
             &tool_calls,
+            tools.as_deref(),
             abort_signal.as_ref(),
             operation_timeout,
         )
@@ -1035,9 +1036,17 @@ pub(crate) async fn generate_text_from_language_model_prompt(
 /// resolved files, and its response messages (the AI SDK's
 /// `convertLanguageModelContent` and `toResponseMessages`,
 /// `generate-text.ts:1437-1455`).
+///
+/// A provider tool result whose call is not in this response is a deferred
+/// result. Upstream accepts it only for a provider tool whose definition sets
+/// `supportsDeferredResults` and otherwise fails with `Tool call {id} not
+/// found.` (`convert-language-model-content.ts:87-104`). aimux's tool
+/// definitions carry no such flag, so a result for any declared provider tool
+/// of that name is accepted.
 async fn convert_generated_content(
     result: &GenerateResult,
     tool_calls: &[ToolCall],
+    tools: Option<&[Tool]>,
     abort_signal: Option<&AbortSignal>,
     operation_timeout: timeout::OperationTimeout,
 ) -> Result<crate::response_messages::ResponseMessages, AiMuxError> {
@@ -1096,7 +1105,21 @@ async fn convert_generated_content(
                     input_schema_input: None,
                 });
             }
-            GenerateContent::ToolResult(result) => rm.tool_result(result.clone()),
+            GenerateContent::ToolResult(result) => {
+                let has_call = tool_calls
+                    .iter()
+                    .any(|call| call.tool_call_id == result.tool_call_id);
+                let deferred_allowed = tools.unwrap_or_default().iter().any(
+                    |tool| matches!(tool, Tool::Provider(tool) if tool.name == result.tool_name),
+                );
+                if !has_call && !deferred_allowed {
+                    return Err(AiMuxError::Other(format!(
+                        "Tool call {} not found.",
+                        result.tool_call_id
+                    )));
+                }
+                rm.tool_result(result.clone());
+            }
         }
     }
     Ok(rm.finish())

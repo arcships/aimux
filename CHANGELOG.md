@@ -149,6 +149,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   metadata, as the AI SDK does (`aimux-core`); providers emit one, e.g. the
   opening `"content": ""` chunk of OpenAI chat.
 
+- `generate_text` fails with `Tool call {id} not found.` when the model
+  returns a provider tool result whose call is not in the response and no
+  provider tool of that name was passed (`aimux-core`,
+  convert-language-model-content.ts:87-104). A result for a passed provider
+  tool is kept as a deferred result. The stream passes such results
+  through, as upstream does.
+
 - The response messages write a tool approval request's
   `input_schema_input` only when it differs from the call's input under the
   AI SDK's `isDeepEqualData` (`aimux-core`, to-response-messages.ts:133-146).
