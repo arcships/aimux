@@ -1219,8 +1219,10 @@ func aimuxErrorFromC(e *C.aimux_error_t) *Error {
 		if s := str(C.aimux_error_response_headers(e)); s != "" {
 			_ = json.Unmarshal([]byte(s), &err.ResponseHeaders)
 		}
+		// Kept as raw JSON so a null payload stays apart from a missing one
+		// (the getter returns NULL only for a missing one).
 		if s := str(C.aimux_error_provider_data(e)); s != "" {
-			_ = json.Unmarshal([]byte(s), &err.Data)
+			err.Data = json.RawMessage(s)
 		}
 	case CodeNoSuchModel:
 		err.ModelID = str(C.aimux_error_model_id(e))

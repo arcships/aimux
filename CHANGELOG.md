@@ -35,8 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   approval request's `inputSchemaInput` read `"body": null` as a present null
   and write it back, and omit the field only when it was missing. Python
   serializes without `exclude_none` and keeps a set `None` of an `Any` field;
-  Go reads these bodies as `json.RawMessage`; Dart gains `hasBody` /
-  `hasInputSchemaInput` (#232 C34).
+  Go reads these bodies as `json.RawMessage`, and `Error.Data` changes from
+  `any` to `json.RawMessage` (`nil` when missing, `null` when null); Dart
+  gains `hasBody` / `hasInputSchemaInput` (#232 C34).
 
 - File content parts are the AI SDK's `FilePart`: one `file` tag whose `data`
   is a tagged `FileData` (`{type:"data"|"url"|"reference"|"text"}`), a string

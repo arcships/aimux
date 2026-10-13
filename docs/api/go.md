@@ -608,7 +608,7 @@ and optional fields absent rather than `null`. Go field tags follow it, so a
 typed struct marshals to exactly that JSON. An `unknown` value keeps a JSON
 `null` apart from a missing field: response and request `Body` fields are
 `json.RawMessage`, `nil` when the field was missing and `null` when the JSON
-carried `null`. `APICallError.Data` is `any` and cannot tell the two apart.
+carried `null`; so is `Error.Data`, the API call error's data.
 A response `Timestamp` is a JavaScript `Date` in the AI SDK's JSON: a
 `toISOString()` string, UTC with milliseconds (`"2025-03-06T13:50:19.000Z"`),
 which `time.Parse(time.RFC3339, ...)` reads.

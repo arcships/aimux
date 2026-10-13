@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -528,5 +530,43 @@ func TestRetryErrorHistory(t *testing.T) {
 	}
 	if c, ok := codeFromC(17); !ok || c != CodeToolCallRepair {
 		t.Fatalf("17 → %v, %v", c, ok)
+	}
+}
+
+// APICallError.data is `unknown` in the AI SDK (@ai-sdk/provider
+// errors/api-call-error.ts:18, :53): a null error body is data `null`,
+// which is not the same as no data. Error.Data keeps the raw JSON, so the
+// two stay apart (#232 C34).
+func TestAPICallDataKeepsNullApartFromMissing(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want json.RawMessage
+	}{
+		{"object", `{"error":{"message":"bad input"}}`, json.RawMessage(`{"error":{"message":"bad input"}}`)},
+		{"null", `null`, json.RawMessage(`null`)},
+		{"not json", `bad input`, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = fmt.Fprint(w, tc.body)
+			}))
+			defer server.Close()
+			m, err := NewOpenAIWithBase("sk-test-fake-key", "gpt-4o-mini", server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			_, err = m.GenerateText(`"hi"`, `{"maxRetries":0}`)
+			var e *Error
+			if !errors.As(err, &e) || e.Code != CodeAPICall {
+				t.Fatalf("expected an API call error, got %T: %v", err, err)
+			}
+			if string(e.Data) != string(tc.want) || (e.Data == nil) != (tc.want == nil) {
+				t.Fatalf("Data = %q (nil %v); want %q (nil %v)", e.Data, e.Data == nil, tc.want, tc.want == nil)
+			}
+		})
 	}
 }

@@ -165,9 +165,10 @@ type Error struct {
 	// Provider request-id evidence, when present, is a header here — there
 	// is no separate request-id field. CodeAPICall only.
 	ResponseHeaders map[string]string
-	// Data is the provider's parsed error data, decoded from JSON.
-	// CodeAPICall only.
-	Data       any
+	// Data is the provider's parsed error data as raw JSON, the AI SDK's
+	// `APICallError.data` (`unknown`): nil when the error carries none, and
+	// the JSON `null` when the data was null. CodeAPICall only.
+	Data       json.RawMessage
 	ModelID    string // CodeNoSuchModel: the model id asked for
 	ModelType  string // CodeNoSuchModel: the model type it was asked for as
 	ProviderID string // CodeNoSuchProvider: the provider id asked for
