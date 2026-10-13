@@ -13,7 +13,8 @@ use crate::shared::{
     FileBytes, FileData, GeneratedFileData, SharedProviderOptions, SharedProviderReference,
 };
 use crate::types::Warning;
-use std::collections::HashMap;
+use indexmap::IndexSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -870,14 +871,19 @@ fn convert_message(
 ///   parts and log a deprecation warning.
 /// - Empty text parts are dropped (on an assistant message only when they
 ///   have no provider options), as are assistant tool approval requests and
-///   tool approval responses for tools the provider does not execute; a tool
-///   message left empty is dropped.
+///   tool approval responses for tools the provider does not execute.
+/// - Consecutive tool messages become one; the earlier message's
+///   `provider_options` are merged into its last part (`:104-130`).
+/// - A tool message left empty is dropped.
 ///
 /// # Errors
 ///
 /// `InvalidPrompt` when a tool result has no tool name and no preceding tool
 /// call, a file reference is not a `{ provider: id }` map, a deprecated
 /// tool output URL does not parse, or a string `fileId` has no `provider`.
+/// `MissingToolResults` when a tool call the provider did not execute has
+/// no tool result and no approval response before the next user or system
+/// message, or by the end of the prompt (`:132-175`).
 pub fn convert_to_language_model_prompt(
     messages: &[ModelMessage],
     instructions: Option<&str>,
@@ -926,14 +932,17 @@ fn convert_with_warnings(
                 }
             }
         }
-        result.push(convert_message(message, &mut context)?);
+        let converted = convert_message(message, &mut context)?;
         // upstream logs each message's warnings once it is converted
         // (`:246-248`, `:364-366`, `:407-409`)
         for warning in context.warnings.drain(..) {
             log_warning(&warning);
             warnings.push(warning);
         }
+        push_combining_tool_messages(&mut result, converted);
     }
+
+    check_tool_results(&result, &approved_tool_call_ids(messages))?;
 
     // Filter out empty tool messages, e.g. one that held only tool approval
     // responses that were removed (`:177-183`).
@@ -941,6 +950,120 @@ fn convert_with_warnings(
         !matches!(message, LanguageModelMessage::Tool { content, .. } if content.is_empty())
     });
     Ok((result, warnings))
+}
+
+/// Append a converted message, combining consecutive tool messages into one
+/// (`:104-130`): the earlier message's `provider_options` are merged into its
+/// last part (the part's own options win), and the combined message takes
+/// the later message's `provider_options`.
+fn push_combining_tool_messages(
+    messages: &mut Vec<LanguageModelMessage>,
+    message: LanguageModelMessage,
+) {
+    let (
+        Some(LanguageModelMessage::Tool {
+            content: last_content,
+            provider_options: last_options,
+        }),
+        LanguageModelMessage::Tool {
+            content,
+            provider_options,
+        },
+    ) = (messages.last_mut(), &message)
+    else {
+        messages.push(message);
+        return;
+    };
+    if let (Some(last_part), Some(_)) = (last_content.last_mut(), last_options.as_ref()) {
+        let part_options = match last_part {
+            ToolPart::ToolResult(part) => &mut part.provider_options,
+            ToolPart::ToolApprovalResponse(part) => &mut part.provider_options,
+        };
+        *part_options = crate::shared::merge_objects(last_options.as_ref(), part_options.as_ref());
+    }
+    last_content.extend(content.iter().cloned());
+    last_options.clone_from(provider_options);
+}
+
+/// The tool calls that have a tool approval response, approved or not
+/// (`:57-87`).
+fn approved_tool_call_ids(messages: &[ModelMessage]) -> HashSet<&str> {
+    let mut tool_call_ids = HashMap::new();
+    for message in messages {
+        if let ModelMessage::Assistant {
+            content: AssistantContent::Parts(parts),
+            ..
+        } = message
+        {
+            for part in parts {
+                if let AssistantContentPart::ToolApprovalRequest {
+                    approval_id,
+                    tool_call_id,
+                    ..
+                } = part
+                {
+                    tool_call_ids.insert(approval_id.as_str(), tool_call_id.as_str());
+                }
+            }
+        }
+    }
+    let mut approved = HashSet::new();
+    for message in messages {
+        if let ModelMessage::Tool { content, .. } = message {
+            for part in content {
+                if let ToolContentPart::ToolApprovalResponse { approval_id, .. } = part
+                    && let Some(tool_call_id) = tool_call_ids.get(approval_id.as_str())
+                {
+                    approved.insert(*tool_call_id);
+                }
+            }
+        }
+    }
+    approved
+}
+
+/// Every tool call the provider did not execute needs a tool result (or an
+/// approval response) before the next user or system message and by the end
+/// of the prompt (`:132-175`). The ids are reported in call order.
+fn check_tool_results(
+    messages: &[LanguageModelMessage],
+    approved: &HashSet<&str>,
+) -> Result<(), AiMuxError> {
+    let mut open: IndexSet<&str> = IndexSet::new();
+    let check = |open: &mut IndexSet<&str>| {
+        open.retain(|id| !approved.contains(id));
+        if open.is_empty() {
+            Ok(())
+        } else {
+            Err(AiMuxError::MissingToolResults {
+                tool_call_ids: open.iter().map(|id| (*id).to_owned()).collect(),
+            })
+        }
+    };
+    for message in messages {
+        match message {
+            LanguageModelMessage::Assistant { content, .. } => {
+                for part in content {
+                    if let AssistantPart::ToolCall(call) = part
+                        && call.provider_executed != Some(true)
+                    {
+                        open.insert(&call.tool_call_id);
+                    }
+                }
+            }
+            LanguageModelMessage::Tool { content, .. } => {
+                for part in content {
+                    if let ToolPart::ToolResult(result) = part {
+                        open.shift_remove(result.tool_call_id.as_str());
+                    }
+                }
+            }
+            LanguageModelMessage::User { .. } | LanguageModelMessage::System { .. } => {
+                check(&mut open)?;
+            }
+        }
+    }
+    check(&mut open)
 }
 
 /// Log a conversion warning in upstream `logWarnings`' wording

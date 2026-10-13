@@ -158,7 +158,7 @@ pub mod prelude {
 pub use abort_signal::AbortSignal;
 pub use decision_model::DecisionModel;
 pub use embedding_model::EmbeddingModel;
-pub use error::{AiMuxError, ApiCallError, RetryError, RetryErrorReason};
+pub use error::{AiMuxError, ApiCallError, RetryError, RetryErrorReason, ToolChoiceViolationError};
 pub use files_model::Files;
 pub use image_model::ImageModel;
 pub use language_model::LanguageModel;

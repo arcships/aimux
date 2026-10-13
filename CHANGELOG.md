@@ -84,6 +84,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   items and a user `image` part log upstream's deprecation warning through
   `tracing`.
 
+- `generate_text` and `stream_text` check the prompt and the response as the
+  AI SDK does (`aimux-core`). An empty message list is an `InvalidPrompt`
+  error (`messages must not be empty`). The prompt conversion combines
+  consecutive tool messages into one, merging the earlier message's
+  `provider_options` into its last part, and fails with the new
+  `AiMuxError::MissingToolResults { tool_call_ids }` when a tool call the
+  provider did not execute has no tool result or approval response before
+  the next user or system message or by the end of the prompt. A response
+  that breaks a `required` or `tool` tool choice fails `generate_text` with
+  the new `AiMuxError::ToolChoiceViolation(ToolChoiceViolationError {
+  tool_choice, finish_reason, provider, model_id, content })`; `stream_text`
+  ends with that error as an `Error` part followed by a `Finish` part whose
+  unified finish reason is `error`. Error codes: the C ABI reports
+  `MissingToolResults` as `AIMUX_E_INVALID_PROMPT` and `ToolChoiceViolation`
+  as `AIMUX_E_INVALID_RESPONSE_DATA`; Node and Python raise them as
+  `InvalidPromptError` and `InvalidResponseDataError`.
+
 - Tool-call and tool-result types are unified, one per protocol layer
   (`aimux-core`). A provider emits `tool::RawToolCall` (`input` is the raw
   argument text) in `GenerateContent::ToolCall(..)` and

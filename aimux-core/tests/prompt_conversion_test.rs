@@ -3,6 +3,7 @@
 //! `prompt/convert-to-language-model-prompt.ts`, `@ai-sdk/provider-utils@5.0.53`
 //! `types/*-model-message.ts`).
 
+use aimux_core::AiMuxError;
 use aimux_core::content::{
     AssistantContentPart, ToolContentPart, ToolResultOutput, ToolResultPart, UserContentPart,
 };
@@ -340,8 +341,24 @@ fn earlier_tool_result_json_still_reads_and_writes() {
 // A provider-executed tool result replays in the assistant message.
 #[test]
 fn assistant_tool_result_converts_like_a_tool_message_result() {
+    let call = match AssistantContentPart::tool_call("c1", "web_search", json!({})) {
+        AssistantContentPart::ToolCall {
+            tool_call_id,
+            tool_name,
+            input,
+            provider_options,
+            ..
+        } => AssistantContentPart::ToolCall {
+            tool_call_id,
+            tool_name,
+            input,
+            provider_executed: Some(true),
+            provider_options,
+        },
+        _ => unreachable!(),
+    };
     let message = ModelMessage::assistant_parts(vec![
-        AssistantContentPart::tool_call("c1", "web_search", json!({})),
+        call,
         AssistantContentPart::ToolResult(ToolResultPart {
             tool_call_id: "c1".into(),
             tool_name: None,
@@ -360,4 +377,105 @@ fn assistant_tool_result_converts_like_a_tool_message_result() {
         panic!()
     };
     assert_eq!(result.tool_name, "web_search");
+}
+
+// C38: consecutive tool messages become one tool message (`:104-130`). The
+// earlier message's `providerOptions` merge into its last part with
+// `mergeObjects`, the part's own options winning, and the combined message
+// takes the later message's `providerOptions`.
+#[test]
+fn consecutive_tool_messages_are_combined() {
+    let prompt = convert(json!([
+        { "role": "assistant", "content": [
+            { "type": "tool_call", "tool_call_id": "c1", "tool_name": "t", "input": {} },
+            { "type": "tool_call", "tool_call_id": "c2", "tool_name": "t", "input": {} },
+        ] },
+        { "role": "tool", "content": [
+            { "type": "tool_result", "tool_call_id": "c1", "result": "one",
+              "provider_options": { "openai": { "b": 2, "nested": { "y": 2 } } } },
+        ], "provider_options": {
+            "anthropic": { "cacheControl": { "type": "ephemeral" } },
+            "openai": { "a": 1, "b": 1, "nested": { "x": 1 } },
+        } },
+        { "role": "tool", "content": [
+            { "type": "tool_result", "tool_call_id": "c2", "result": "two" },
+        ], "provider_options": { "openai": { "c": 3 } } },
+    ]));
+    assert_eq!(prompt.len(), 2, "{prompt:#?}");
+    let LanguageModelMessage::Tool {
+        content,
+        provider_options,
+    } = &prompt[1]
+    else {
+        panic!()
+    };
+    assert_eq!(
+        serde_json::to_value(provider_options).unwrap(),
+        json!({ "openai": { "c": 3 } })
+    );
+    let [ToolPart::ToolResult(one), ToolPart::ToolResult(two)] = &content[..] else {
+        panic!("{content:#?}")
+    };
+    assert_eq!(
+        serde_json::to_string(&one.provider_options).unwrap(),
+        serde_json::to_string(&json!({
+            "anthropic": { "cacheControl": { "type": "ephemeral" } },
+            "openai": { "a": 1, "b": 2, "nested": { "x": 1, "y": 2 } },
+        }))
+        .unwrap()
+    );
+    assert_eq!(two.provider_options, None);
+}
+
+// C38: a tool call the provider did not execute needs a tool result, or a
+// tool approval response (approved or denied), before the next user or
+// system message and by the end of the prompt (`:57-87`, `:132-175`).
+#[test]
+fn tool_calls_without_results_are_rejected() {
+    let error = |value: Value| {
+        convert_to_language_model_prompt(&messages(value), None, None)
+            .expect_err("missing tool results")
+    };
+    let call = |id: &str| json!({ "type": "tool_call", "tool_call_id": id, "tool_name": "t", "input": {} });
+    let result = |id: &str| json!({ "type": "tool_result", "tool_call_id": id, "result": "ok" });
+
+    let before_user = error(json!([
+        { "role": "assistant", "content": [call("c1"), call("c2")] },
+        { "role": "tool", "content": [result("c2")] },
+        { "role": "user", "content": "next" },
+        { "role": "assistant", "content": [call("c3")] },
+    ]));
+    assert!(
+        matches!(&before_user, AiMuxError::MissingToolResults { tool_call_ids } if tool_call_ids == &["c1"]),
+        "{before_user:?}"
+    );
+    assert_eq!(
+        before_user.to_string(),
+        "Tool result is missing for tool call c1."
+    );
+
+    let at_end = error(json!([
+        { "role": "user", "content": "go" },
+        { "role": "assistant", "content": [call("c1"), call("c2")] },
+    ]));
+    assert_eq!(
+        at_end.to_string(),
+        "Tool results are missing for tool calls c1, c2."
+    );
+
+    // A provider-executed call needs no result; an approval response counts
+    // whether it approves or denies.
+    convert(json!([
+        { "role": "user", "content": "go" },
+        { "role": "assistant", "content": [
+            { "type": "tool_call", "tool_call_id": "c1", "tool_name": "web_search",
+              "input": {}, "provider_executed": true },
+            call("c2"),
+            { "type": "tool_approval_request", "approval_id": "a2", "tool_call_id": "c2" },
+        ] },
+        { "role": "tool", "content": [
+            { "type": "tool_approval_response", "approval_id": "a2", "approved": false },
+        ] },
+        { "role": "user", "content": "next" },
+    ]));
 }
