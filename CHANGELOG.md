@@ -51,6 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Responses result's per-part lists become one list, and a token without
   `bytes` gets `"bytes": null`.
 
+- OpenAI chat `providerMetadata.openai.logprobs` holds the entries as the AI
+  SDK's chat schema parses them, `{token, logprob, top_logprobs: [{token,
+  logprob}]}`: `bytes` is dropped, so `to_chat_completion` returns it as
+  `null`. A `null` `content` sets no `logprobs`.
+
 - Anthropic-AWS follows `@ai-sdk/anthropic-aws` 2.0.63 settings: the region
   comes from the setting or `AWS_REGION` with no `us-east-1` default; the
   workspace id is required, from the setting or `ANTHROPIC_AWS_WORKSPACE_ID`;

@@ -348,6 +348,61 @@ async fn chat_cache_read_is_only_the_nested_cached_tokens() {
     assert_eq!(top_level_only.raw.unwrap()["cached_tokens"], json!(7));
 }
 
+/// openai-chat-api.ts:71-87 (response) and :159-175 (chunk) parse a logprobs
+/// entry as `{token, logprob, top_logprobs: [{token, logprob}]}`, so `bytes`
+/// never reaches `providerMetadata.openai.logprobs`
+/// (openai-chat-language-model.ts:459-461 generate, :613-615 stream), and a
+/// `null` `content` sets none.
+#[tokio::test]
+async fn chat_logprobs_metadata_has_no_bytes() {
+    let wire = json!({"content":[{"token":"Hello","logprob":-0.5,"bytes":[72,101,108,108,111],
+        "top_logprobs":[{"token":"Hello","logprob":-0.5,"bytes":[72,101,108,108,111]},
+            {"token":"Hi","logprob":-1.5,"bytes":[72,105]}]}],"refusal":null});
+    let expected = json!([{"token":"Hello","logprob":-0.5,
+        "top_logprobs":[{"token":"Hello","logprob":-0.5},{"token":"Hi","logprob":-1.5}]}]);
+    let generated_metadata = |logprobs: Value| async move {
+        let mut response = chat_response();
+        response["choices"][0]["logprobs"] = logprobs;
+        let fetch = MockFetch::new(vec![Canned::json(&response)]);
+        let result = provider(&fetch)
+            .chat("test-model")
+            .do_generate(&options())
+            .await
+            .unwrap();
+        serde_json::to_value(result.provider_metadata).unwrap()
+    };
+    assert_eq!(
+        generated_metadata(wire.clone()).await["openai"]["logprobs"],
+        expected
+    );
+    let metadata = generated_metadata(json!({"content": null})).await;
+    assert_eq!(metadata["openai"].get("logprobs"), None, "{metadata}");
+
+    let fetch = MockFetch::new(vec![sse(vec![json!({
+        "id":"chatcmpl-test","model":"test-model","created":1702657020,
+        "choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},
+            "logprobs":wire,"finish_reason":"stop"}]})])]);
+    let parts = provider(&fetch)
+        .chat("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect::<Vec<_>>()
+        .await;
+    let Some(StreamPart::Finish {
+        provider_metadata, ..
+    }) = parts.last()
+    else {
+        panic!("no finish part: {parts:?}");
+    };
+    assert_eq!(
+        serde_json::to_value(provider_metadata).unwrap()["openai"]["logprobs"],
+        expected
+    );
+}
+
 /// TS: "should parse OpenRouter resource exhausted error" (src/openai-error.test.ts)
 #[tokio::test]
 async fn chat_error_response() {
