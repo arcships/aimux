@@ -169,15 +169,11 @@ async fn bedrock_reranking_signed_headers() {
 }
 
 async fn anthropic_aws_case(token: bool) -> Sent {
-    anthropic_aws_case_with(token, Some("ws")).await
-}
-
-async fn anthropic_aws_case_with(token: bool, workspace_id: Option<&str>) -> Sent {
     let server = server().await;
     let provider = create_anthropic_aws(AnthropicAwsProviderSettings {
         base_url: Some(server.uri()),
         region: Some("us-east-1".into()),
-        workspace_id: workspace_id.map(String::from),
+        workspace_id: Some("ws".into()),
         auth: Some(AnthropicAwsAuth::SigV4(Resolvable::Value(AwsCredentials {
             access_key_id: "AKIDEXAMPLE".into(),
             secret_access_key: "secret".into(),
@@ -251,13 +247,37 @@ async fn aws_polly_signed_headers_are_locked() {
 }
 
 /// No workspace id. `@ai-sdk/anthropic-aws@2.0.63` sends no request at all
-/// here: `getHeaders` throws `AI_LoadSettingError` (workspace ID missing,
-/// anthropic-aws-provider.ts:235-240, `ANTHROPIC_AWS_WORKSPACE_ID` as the
-/// fallback), so there is no TS SignedHeaders to match. This locks what
-/// aimux, which treats the workspace id as optional, signs today.
+/// here: `getHeaders` loads the workspace id with `loadSetting` and throws
+/// `AI_LoadSettingError` (anthropic-aws-provider.ts:233-242,
+/// `ANTHROPIC_AWS_WORKSPACE_ID` as the fallback). aimux fails the same way,
+/// before anything is signed or sent.
 #[tokio::test]
 async fn anthropic_aws_signed_headers_without_workspace_id() {
-    let sent = anthropic_aws_case_with(false, None).await;
-    assert_eq!(sent.signed_headers, "anthropic-version;host;x-amz-date");
-    assert!(!sent.content_sha256);
+    assert!(
+        std::env::var_os("ANTHROPIC_AWS_WORKSPACE_ID").is_none(),
+        "the test needs ANTHROPIC_AWS_WORKSPACE_ID unset"
+    );
+    let server = server().await;
+    let provider = create_anthropic_aws(AnthropicAwsProviderSettings {
+        base_url: Some(server.uri()),
+        region: Some("us-east-1".into()),
+        auth: Some(AnthropicAwsAuth::SigV4(Resolvable::Value(AwsCredentials {
+            access_key_id: "AKIDEXAMPLE".into(),
+            secret_access_key: "secret".into(),
+            session_token: None,
+            region: "us-east-1".into(),
+        }))),
+        ..Default::default()
+    })
+    .unwrap();
+    let error = provider
+        .messages("claude-sonnet-4-5")
+        .do_generate(&prompt())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, aimux_core::AiMuxError::LoadSetting { env_var, .. } if env_var == "ANTHROPIC_AWS_WORKSPACE_ID"),
+        "{error:?}"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
 }

@@ -509,6 +509,7 @@ config 只对该包及明确的 `internal` 复用接口开放。不得提供公�
 | Google | base URL 等工厂设置 | 构造对应模型 | 求值 key |
 | Vertex | 解析 express key 等设置 | 构造所需 project/location/base URL，可能失败 | ADC headers 或 express fetch |
 | Bedrock | 选择 API key/SigV4 组合 | 构造对应模型 | region、凭证、签名及惰性 URL |
+| Anthropic-AWS | 校验显式 base URL；无 base URL 时校验显式 region | 构造 Messages model | region（设置或 `AWS_REGION`，无默认值）与惰性 URL；必填 workspace id（设置或 `ANTHROPIC_AWS_WORKSPACE_ID`）；未给 auth 时 `ANTHROPIC_AWS_API_KEY` 非空走 `x-api-key`，否则用 `AWS_*` 凭证 SigV4（aws4fetch 规则）。上游在工厂阶段读 key、取模型阶段算 base URL，aimux 统一推迟到请求阶段，默认实例不读环境 |
 | Groq/DeepSeek 等 | 包内 base URL 规则 | 独立模型实现 | headers 懒加载 key |
 | openai-compatible | 固定 apiKey、headers、queryParams | 按 name 构造模型 | 使用固定配置 |
 | aimux preset | 固定声明式适配设置 | 构造 compat 内部模型 | 懒加载 key 与必要模板设置 |

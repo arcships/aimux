@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@ai-sdk/amazon-bedrock` 5.0.100 and `@ai-sdk/anthropic-aws` 2.0.63 (the
   package part is appended again by the transport).
 
+- Anthropic-AWS follows `@ai-sdk/anthropic-aws` 2.0.63 settings: the region
+  comes from the setting or `AWS_REGION` with no `us-east-1` default; the
+  workspace id is required, from the setting or `ANTHROPIC_AWS_WORKSPACE_ID`;
+  with no `auth`, a request uses `ANTHROPIC_AWS_API_KEY` when it is set and
+  otherwise SigV4 with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
+  `AWS_SESSION_TOKEN`. All of them are read when a request is made.
+
 - Public surface (`aimux-core`, `aimux-provider-utils`): removed
   `recording::init_recording_from_env`; made private the retry preparation
   helpers and default constants, `composite::{add_usage,
