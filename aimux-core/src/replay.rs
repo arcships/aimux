@@ -999,7 +999,7 @@ fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
         top_k: o.top_k,
         presence_penalty: o.presence_penalty,
         frequency_penalty: o.frequency_penalty,
-        response_format: o.response_format,
+        output: o.response_format.map(output_for_response_format),
         seed: o.seed,
         tools: o.tools,
         tool_choice: o.tool_choice,
@@ -1014,6 +1014,30 @@ fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
         abort_signal: None,
         include_raw_chunks: o.include_raw_chunks,
         repair_tool_call: None,
+    }
+}
+
+/// The output that sends a recorded `response_format` again: a JSON format
+/// with a schema replays as an object output with that schema, one without a
+/// schema as the JSON output. The replayed request carries the same response
+/// format as the recorded one.
+fn output_for_response_format(format: crate::options::ResponseFormat) -> crate::output::Output {
+    match format {
+        crate::options::ResponseFormat::Text => crate::output::Output::Text {},
+        crate::options::ResponseFormat::Json {
+            schema: Some(schema),
+            name,
+            description,
+        } => crate::output::Output::Object {
+            schema,
+            name,
+            description,
+        },
+        crate::options::ResponseFormat::Json {
+            schema: None,
+            name,
+            description,
+        } => crate::output::Output::Json { name, description },
     }
 }
 

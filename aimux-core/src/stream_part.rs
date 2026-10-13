@@ -11,8 +11,13 @@ use crate::error::AiMuxError;
 use crate::result::{
     GeneratedFile, RawToolApprovalRequest, ReasoningFileOutput, Source, ToolApprovalRequestOutput,
 };
+use crate::shared::RequestInfo;
+use crate::step_result::{StepResponseMetadata, StepResultPerformance};
 use crate::tool::{RawToolCall, ToolCall, ToolResult};
-use crate::types::{FinishReason, ProviderMetadata, ResponseMetadata, Usage, Warning};
+use crate::types::{
+    FinishReason, FinishReasonUnified, LanguageModelUsage, ProviderMetadata, ResponseMetadata,
+    Usage, Warning,
+};
 
 /// A single chunk in the stream returned by `do_stream`.
 ///
@@ -142,21 +147,23 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = GeneratedFi
     },
 }
 
-/// A public call-layer stream chunk, with parsed tool calls.
+/// A public call-layer stream chunk: the AI SDK's `TextStreamPart`
+/// (ai@7.0.127 `generate-text/stream-text-result.ts:581-607`).
+///
+/// `stream_text` turns the provider's [`StreamPart`]s into these: tool calls
+/// are parsed, text and reasoning deltas carry `text` (the provider part's
+/// `delta`), the provider's `stream-start` and `response-metadata` become
+/// `StartStep` and the `FinishStep` response, and the call is framed by
+/// `Start` ... `Finish`. Variants for the tool-execution family
+/// (`tool-error`, `tool-output-denied`, `tool-approval-response`) arrive with
+/// the core tool-result types.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub enum TextStreamPart {
-    // ── P0: text ──
+    // ── text ──
     /// Start of a text segment.
     TextStart {
         id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_metadata: Option<ProviderMetadata>,
-    },
-    /// A delta of generated text.
-    TextDelta {
-        id: String,
-        delta: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -166,35 +173,47 @@ pub enum TextStreamPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
-
-    // ── P0: stream lifecycle ──
-    /// First chunk — carries warnings from the provider.
-    StreamStart {
-        warnings: Vec<Warning>,
-    },
-    /// Final chunk — carries usage, finish reason, and metadata.
-    Finish {
-        finish_reason: FinishReason,
-        usage: Usage,
+    /// A piece of generated text.
+    TextDelta {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
-    },
-    /// A completed model call, including its response metadata.
-    FinishStep {
-        finish_reason: FinishReason,
-        usage: Usage,
-        provider_metadata: Option<ProviderMetadata>,
-        response: crate::shared::ResponseInfo,
-    },
-    /// An error occurred mid-stream.
-    Error {
-        error: AiMuxError,
+        text: String,
     },
 
-    // ── P1: tool calls ──
+    // ── reasoning ──
+    ReasoningStart {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
+    },
+    ReasoningEnd {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
+    },
+    /// A piece of reasoning text.
+    ReasoningDelta {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
+        id: String,
+        text: String,
+    },
+
+    /// Provider-specific content.
+    Custom {
+        kind: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
+    },
+
+    // ── tool input ──
     /// Start of a tool call's input streaming.
     ToolInputStart {
         id: String,
         tool_name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
         /// Whether the tool call will be executed by the provider.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_executed: Option<bool>,
@@ -204,15 +223,6 @@ pub enum TextStreamPart {
         /// Optional title for the tool call.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         title: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_metadata: Option<ProviderMetadata>,
-    },
-    /// A delta of tool call input (partial JSON).
-    ToolInputDelta {
-        id: String,
-        delta: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_metadata: Option<ProviderMetadata>,
     },
     /// End of a tool call's input streaming.
     ToolInputEnd {
@@ -220,53 +230,65 @@ pub enum TextStreamPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
-    /// A complete tool call (alternative to the start/delta/end flow).
-    ///
-    /// The provider layer emits [`RawToolCall`] (`input` is the raw argument
-    /// text); `stream_text` re-emits the parsed [`ToolCall`] ([`TextStreamPart`]).
-    ToolCall(ToolCall),
-    /// A tool result (provider-executed tools).
-    ToolResult(ToolResult),
-
-    // ── P2: file ──
-    /// A file generated by the model (e.g. an image or document).
-    File(GeneratedFile),
-    ReasoningFile(ReasoningFileOutput),
-    Custom {
-        kind: String,
+    /// A piece of tool call input (partial JSON); the field stays `delta`.
+    ToolInputDelta {
+        id: String,
+        delta: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
-    ToolApprovalRequest(ToolApprovalRequestOutput),
 
-    // ── P2: reasoning ──
-    ReasoningStart {
-        id: String,
-        /// Provider-specific metadata (e.g. xAI `itemId`).
-        #[allow(unused)]
-        provider_metadata: Option<ProviderMetadata>,
-    },
-    ReasoningDelta {
-        id: String,
-        delta: String,
-        /// Provider-specific metadata (e.g. xAI `itemId`).
-        #[allow(unused)]
-        provider_metadata: Option<ProviderMetadata>,
-    },
-    ReasoningEnd {
-        id: String,
-        /// Provider-specific metadata (e.g. xAI `itemId`, `reasoningEncryptedContent`).
-        #[allow(unused)]
-        provider_metadata: Option<ProviderMetadata>,
-    },
-
+    // ── content ──
     /// A source / citation (e.g. URL citation from search-preview models).
     Source(Source),
+    /// A file generated by the model (e.g. an image or document).
+    File(GeneratedFile),
+    /// A file generated as part of reasoning.
+    ReasoningFile(ReasoningFileOutput),
+    /// A parsed tool call.
+    ToolCall(ToolCall),
+    /// A tool result (provider-executed tools).
+    ToolResult(ToolResult),
+    /// A request to approve a tool call.
+    ToolApprovalRequest(ToolApprovalRequestOutput),
 
-    /// A raw chunk from the provider (for debugging, when `include_raw_chunks` is set).
-    Raw {
-        raw_value: Value,
+    // ── lifecycle ──
+    /// A model call (step) begins: the request and the call's warnings.
+    StartStep {
+        request: RequestInfo,
+        warnings: Vec<Warning>,
     },
+    /// A model call (step) completed.
+    FinishStep {
+        /// Response metadata without the messages and the body.
+        response: StepResponseMetadata,
+        usage: LanguageModelUsage,
+        performance: StepResultPerformance,
+        finish_reason: FinishReasonUnified,
+        #[serde(default)]
+        raw_finish_reason: Option<String>,
+        #[serde(default)]
+        provider_metadata: Option<ProviderMetadata>,
+    },
+    /// The call begins.
+    Start {},
+    /// The call completed.
+    Finish {
+        finish_reason: FinishReasonUnified,
+        #[serde(default)]
+        raw_finish_reason: Option<String>,
+        /// Usage summed over every step.
+        total_usage: LanguageModelUsage,
+    },
+    /// The caller aborted the call; the stream ends after this part.
+    Abort {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+    /// An error occurred mid-stream.
+    Error { error: AiMuxError },
+    /// A raw chunk from the provider (for debugging, when `include_raw_chunks` is set).
+    Raw { raw_value: Value },
 }
 
 impl<C, A, R> StreamPart<C, A, R> {
@@ -335,13 +357,20 @@ impl<C, A, R> StreamPart<C, A, R> {
 }
 
 impl StreamPart<ToolCall, ToolApprovalRequestOutput, ReasoningFileOutput> {
-    /// Convert content chunks; the call layer absorbs metadata and finish chunks.
+    /// Convert content chunks. `None` for the parts the call layer absorbs
+    /// (`StreamStart`, `ResponseMetadata`, `Finish`).
     #[must_use]
     pub fn into_text_stream_part(self) -> Option<TextStreamPart> {
         macro_rules! carry {
             ($($variant:ident { $($field:ident),* })*) => {
                 match self {
-                    Self::ResponseMetadata(_) | Self::Finish { .. } => None,
+                    Self::StreamStart { .. } | Self::ResponseMetadata(_) | Self::Finish { .. } => None,
+                    Self::TextDelta { id, delta, provider_metadata } => {
+                        Some(TextStreamPart::TextDelta { id, provider_metadata, text: delta })
+                    }
+                    Self::ReasoningDelta { id, delta, provider_metadata } => {
+                        Some(TextStreamPart::ReasoningDelta { provider_metadata, id, text: delta })
+                    }
                     Self::ToolCall(value) => Some(TextStreamPart::ToolCall(value)),
                     Self::ToolApprovalRequest(value) => Some(TextStreamPart::ToolApprovalRequest(value)),
                     Self::ToolResult(value) => Some(TextStreamPart::ToolResult(value)),
@@ -354,30 +383,15 @@ impl StreamPart<ToolCall, ToolApprovalRequestOutput, ReasoningFileOutput> {
         }
         carry! {
             TextStart { id, provider_metadata }
-            TextDelta { id, delta, provider_metadata }
             TextEnd { id, provider_metadata }
-            StreamStart { warnings }
             Error { error }
             ToolInputStart { id, tool_name, provider_executed, dynamic, title, provider_metadata }
             ToolInputDelta { id, delta, provider_metadata }
             ToolInputEnd { id, provider_metadata }
             ReasoningStart { id, provider_metadata }
-            ReasoningDelta { id, delta, provider_metadata }
             ReasoningEnd { id, provider_metadata }
             Custom { kind, provider_metadata }
             Raw { raw_value }
-        }
-    }
-}
-
-impl TextStreamPart {
-    pub(crate) fn is_output_chunk(&self) -> bool {
-        match self {
-            Self::TextDelta { delta, .. }
-            | Self::ReasoningDelta { delta, .. }
-            | Self::ToolInputDelta { delta, .. } => !delta.is_empty(),
-            Self::ToolCall(_) | Self::File(_) | Self::ReasoningFile(_) => true,
-            _ => false,
         }
     }
 }

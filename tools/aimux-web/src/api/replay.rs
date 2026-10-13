@@ -107,10 +107,10 @@ async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMu
     let result = replay_with_model(&recording, &*model, Some(&overrides)).await?;
     Ok(Json(json!({
         "call_id": recording.call_id,
-        "text": result.text,
-        "finish_reason": serde_json::to_value(result.finish_reason.unified).unwrap_or_default(),
-        "usage": serde_json::to_value(&result.usage).unwrap_or_default(),
-        "tool_calls": serde_json::to_value(&result.tool_calls).unwrap_or_default(),
+        "text": result.text(),
+        "finish_reason": serde_json::to_value(result.finish_reason()).unwrap_or_default(),
+        "usage": serde_json::to_value(result.usage()).unwrap_or_default(),
+        "tool_calls": serde_json::to_value(result.tool_calls()).unwrap_or_default(),
         "meta": state.last_meta(recording.session_id.as_deref()),
     }))
     .into_response())

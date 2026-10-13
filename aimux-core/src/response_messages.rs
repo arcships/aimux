@@ -12,8 +12,8 @@ use serde_json::Value;
 use crate::content::ContentPart;
 use crate::message::{MessageContent, ModelMessage, Role};
 use crate::result::{
-    GenerateContent, GeneratedFile, ReasoningFileOutput, ReasoningOutput, ReasoningPart, Source,
-    TextContent, ToolApprovalRequestOutput,
+    GenerateContent, GeneratedFile, ReasoningFileOutput, ReasoningOutput, Source, TextContent,
+    ToolApprovalRequestOutput,
 };
 use crate::shared::{FileBytes, GeneratedFileData, SharedProviderMetadata};
 
@@ -53,7 +53,6 @@ pub(crate) struct ResponseMessageBuilder {
 pub(crate) struct ResponseMessages {
     pub messages: Vec<ModelMessage>,
     pub content: Vec<TextContent>,
-    pub reasoning: Vec<ReasoningPart>,
 }
 
 impl ResponseMessageBuilder {
@@ -179,7 +178,6 @@ impl ResponseMessageBuilder {
 
     pub fn finish(self) -> ResponseMessages {
         let mut parts = Vec::new();
-        let mut reasoning = Vec::new();
         for content in &self.content {
             parts.push(match content {
                 GenerateContent::Text {
@@ -194,14 +192,11 @@ impl ResponseMessageBuilder {
                         provider_options: provider_metadata.clone(),
                     }
                 }
-                GenerateContent::Reasoning(output) => {
-                    reasoning.push(ReasoningPart::Text(output.clone()));
-                    ContentPart::Reasoning {
-                        text: output.text.clone(),
-                        signature: extract_reasoning_signature(output.provider_metadata.as_ref()),
-                        provider_options: output.provider_metadata.clone(),
-                    }
-                }
+                GenerateContent::Reasoning(output) => ContentPart::Reasoning {
+                    text: output.text.clone(),
+                    signature: extract_reasoning_signature(output.provider_metadata.as_ref()),
+                    provider_options: output.provider_metadata.clone(),
+                },
                 GenerateContent::Custom {
                     kind,
                     provider_metadata,
@@ -222,19 +217,16 @@ impl ResponseMessageBuilder {
                         provider_options: file.provider_metadata.clone(),
                     },
                 },
-                GenerateContent::ReasoningFile(output) => {
-                    reasoning.push(ReasoningPart::File(output.clone()));
-                    ContentPart::ReasoningFile {
-                        data: match &output.file.data {
-                            GeneratedFileData::Data { data } => GeneratedFileData::Data {
-                                data: FileBytes::Base64(file_base64(data)),
-                            },
-                            url => url.clone(),
+                GenerateContent::ReasoningFile(output) => ContentPart::ReasoningFile {
+                    data: match &output.file.data {
+                        GeneratedFileData::Data { data } => GeneratedFileData::Data {
+                            data: FileBytes::Base64(file_base64(data)),
                         },
-                        media_type: output.file.media_type.clone(),
-                        provider_options: output.provider_metadata.clone(),
-                    }
-                }
+                        url => url.clone(),
+                    },
+                    media_type: output.file.media_type.clone(),
+                    provider_options: output.provider_metadata.clone(),
+                },
                 GenerateContent::ToolApprovalRequest(approval) => {
                     ContentPart::ToolApprovalRequest {
                         approval_id: approval.approval_id.clone(),
@@ -275,7 +267,6 @@ impl ResponseMessageBuilder {
         ResponseMessages {
             messages,
             content: self.content,
-            reasoning,
         }
     }
 }

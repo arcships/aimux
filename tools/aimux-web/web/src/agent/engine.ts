@@ -8,7 +8,7 @@
 
 import { api, callStream, parseStreamPart } from '../api/client'
 import type { WireCallRequest } from '../types/WireCallRequest'
-import type { StreamPart } from '../types/StreamPart'
+import type { TextStreamPart } from '../types/TextStreamPart'
 
 /** A chat message as sent to the backend (loose typing: the backend wire
  * schema's `JsonValue` is a recursive union that trips TS2589 inside
@@ -116,7 +116,7 @@ export async function runAgent(
       try {
         for await (const ev of callStream(body, controller.signal)) {
           if (ev.event === 'stream_part') {
-            const part: StreamPart = parseStreamPart(ev.data)
+            const part: TextStreamPart = parseStreamPart(ev.data)
             applyPart(view, part)
           } else if (ev.event === 'meta') {
             view.meta = JSON.parse(ev.data)
@@ -191,9 +191,9 @@ export async function runAgent(
   }
 }
 
-function applyPart(view: AgentStepView, part: StreamPart): void {
+function applyPart(view: AgentStepView, part: TextStreamPart): void {
   if ('TextDelta' in part) {
-    view.text += part.TextDelta.delta
+    view.text += part.TextDelta.text
   } else if ('ToolCall' in part) {
     view.toolCalls.push({
       id: part.ToolCall.tool_call_id,
@@ -215,6 +215,6 @@ function applyPart(view: AgentStepView, part: StreamPart): void {
       }
     }
   } else if ('Finish' in part) {
-    view.usage = part.Finish.usage
+    view.usage = part.Finish.total_usage
   }
 }

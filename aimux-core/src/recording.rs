@@ -304,18 +304,22 @@ impl OutcomeRecord {
         outcome.error_value = outcome.error_value.map(redact_json);
         outcome
     }
-    /// 非流式成功。
+    /// 成功:最终步骤的 finish reason 与用户层 usage(`LanguageModelUsage`)。
+    /// 非流式与流式共用,两条路径录制的 usage 形状一致。
     #[must_use]
-    pub fn from_generate_result(r: &crate::result::GenerateResult) -> Self {
+    pub fn success(
+        finish_reason: crate::types::FinishReasonUnified,
+        usage: &crate::types::LanguageModelUsage,
+    ) -> Self {
         Self {
             status: OutcomeStatus::Success,
-            finish_reason: serde_json::to_value(r.finish_reason.unified)
+            finish_reason: serde_json::to_value(finish_reason)
                 .ok()
                 .and_then(|v| v.as_str().map(std::string::ToString::to_string)),
             error: None,
             error_value: None,
             decision_result: None,
-            usage: serde_json::to_value(&r.usage).ok(),
+            usage: serde_json::to_value(usage).ok(),
         }
     }
 
@@ -1627,7 +1631,10 @@ impl<S> RecordingOutcomeStream<S> {
 }
 
 enum StreamOutcome<'a> {
-    Finish(&'a crate::types::FinishReason, &'a crate::types::Usage),
+    Finish(
+        crate::types::FinishReasonUnified,
+        crate::types::LanguageModelUsage,
+    ),
     Error(&'a crate::AiMuxError),
     Other,
 }
@@ -1643,7 +1650,10 @@ impl<C, A, R> RecordingStreamPart for crate::stream_part::StreamPart<C, A, R> {
                 finish_reason,
                 usage,
                 ..
-            } => StreamOutcome::Finish(finish_reason, usage),
+            } => StreamOutcome::Finish(
+                finish_reason.unified,
+                crate::types::as_language_model_usage(usage),
+            ),
             Self::Error { error } => StreamOutcome::Error(error),
             _ => StreamOutcome::Other,
         }
@@ -1655,9 +1665,9 @@ impl RecordingStreamPart for crate::stream_part::TextStreamPart {
         match self {
             Self::Finish {
                 finish_reason,
-                usage,
+                total_usage,
                 ..
-            } => StreamOutcome::Finish(finish_reason, usage),
+            } => StreamOutcome::Finish(*finish_reason, total_usage.clone()),
             Self::Error { error } => StreamOutcome::Error(error),
             _ => StreamOutcome::Other,
         }
@@ -1684,20 +1694,10 @@ where
                         let this = self.as_mut().get_mut();
                         if let Some(mut pending) = this.pending.take() {
                             // Provider error 已定性;尾随 Finish 补上 usage。
-                            pending.usage = serde_json::to_value(usage).ok();
+                            pending.usage = serde_json::to_value(&usage).ok();
                             this.record(&pending);
                         } else {
-                            let outcome = OutcomeRecord {
-                                status: OutcomeStatus::Success,
-                                finish_reason: serde_json::to_value(finish_reason.unified)
-                                    .ok()
-                                    .and_then(|v| v.as_str().map(std::string::ToString::to_string)),
-                                error: None,
-                                error_value: None,
-                                decision_result: None,
-                                usage: serde_json::to_value(usage).ok(),
-                            };
-                            this.record(&outcome);
+                            this.record(&OutcomeRecord::success(finish_reason, &usage));
                         }
                     }
                     StreamOutcome::Error(error) => {

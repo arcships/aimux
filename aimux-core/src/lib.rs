@@ -40,6 +40,7 @@ pub mod model_catalogue;
 pub mod model_id;
 pub mod openai_output;
 pub mod options;
+pub mod output;
 pub mod parse_tool_call;
 pub mod provider;
 pub mod recording;
@@ -53,6 +54,7 @@ pub mod search_model;
 pub mod session;
 pub mod shared;
 pub mod speech_model;
+pub mod step_result;
 pub mod stream_part;
 mod timeout;
 pub mod tool;
@@ -78,9 +80,11 @@ pub mod prelude {
     };
     pub use crate::error::{AiMuxError, ApiCallError};
     pub use crate::files_model::{Files, UploadFileCallOptions, UploadFileResult};
+    #[allow(deprecated)]
+    pub use crate::generate::generate_object;
     pub use crate::generate::{
-        GenerateObjectResult, GenerateTextOptions, GenerateTextResult, StreamTextResult,
-        generate_object, generate_text, generate_text_as_openai,
+        GenerateObjectResponse, GenerateObjectResult, GenerateTextOptions, GenerateTextResult,
+        StreamTextResult, generate_text, generate_text_as_openai,
         generate_text_result_to_chat_completion, stream_text, stream_text_as_openai,
     };
     pub use crate::image_model::{ImageCallOptions, ImageModel, ImageResult, generate_image};
@@ -98,6 +102,7 @@ pub mod prelude {
         encode_chunk_sse, to_chat_completion, to_chat_completion_stream,
     };
     pub use crate::options::{CallOptions, ResponseFormat, ToolChoice};
+    pub use crate::output::Output;
     pub use crate::parse_tool_call::{
         ToolCallRepair, ToolCallRepairContext, ToolCallRepairReply, apply_tool_call_repair,
         apply_tool_call_repair_to_result, tool_call_repair_context, tool_call_repair_inputs,
@@ -126,6 +131,10 @@ pub mod prelude {
         provider_namespace,
     };
     pub use crate::speech_model::{SpeechCallOptions, SpeechModel, SpeechResult, generate_speech};
+    pub use crate::step_result::{
+        OutputChunkTimingStats, StepModel, StepResponse, StepResponseMetadata, StepResult,
+        StepResultPerformance,
+    };
     pub use crate::stream_part::{StreamPart, TextStreamPart};
     pub use crate::tool::{
         FunctionTool, FunctionToolInputExample, ProviderTool, RawToolCall, Tool, ToolCall,
@@ -137,12 +146,12 @@ pub mod prelude {
         TranscriptionStreamResult, stream_transcribe, transcribe,
     };
     pub use crate::types::{
-        FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, ReasoningEffort,
-        Usage, Warning,
+        FinishReason, FinishReasonUnified, InputTokenDetails, InputTokenUsage, LanguageModelUsage,
+        OutputTokenDetails, OutputTokenUsage, ReasoningEffort, Usage, Warning,
     };
     pub use crate::video_model::{
-        VideoCallOptions, VideoModel, VideoOperationStart, VideoOperationStatus,
-        VideoPollOptions, VideoResult, generate_video,
+        VideoCallOptions, VideoModel, VideoOperationStart, VideoOperationStatus, VideoPollOptions,
+        VideoResult, generate_video,
     };
 }
 

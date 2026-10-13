@@ -60,11 +60,11 @@ async fn e2e_openai_generate_text() {
         .await
         .expect("generate_text should succeed");
 
-    assert_eq!(result.text, "Rust is a systems programming language.");
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
-    assert_eq!(result.usage.input_tokens.total, Some(10));
-    assert_eq!(result.usage.output_tokens.total, Some(8));
-    assert!(result.tool_calls.is_empty());
+    assert_eq!(result.text(), "Rust is a systems programming language.");
+    assert_eq!(result.finish_reason(), FinishReasonUnified::Stop);
+    assert_eq!(result.usage().input_tokens, Some(10));
+    assert_eq!(result.usage().output_tokens, Some(8));
+    assert!(result.tool_calls().is_empty());
 }
 
 #[tokio::test]
@@ -169,10 +169,10 @@ async fn e2e_openai_generate_with_tools() {
     .expect("generate_text should succeed");
 
     // The first call should return a tool call
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
-    assert_eq!(result.tool_calls.len(), 1);
-    assert_eq!(result.tool_calls[0].tool_name, "get_weather");
-    assert_eq!(result.tool_calls[0].input["location"], "Tokyo");
+    assert_eq!(result.finish_reason(), FinishReasonUnified::ToolCalls);
+    assert_eq!(result.tool_calls().len(), 1);
+    assert_eq!(result.tool_calls()[0].tool_name, "get_weather");
+    assert_eq!(result.tool_calls()[0].input["location"], "Tokyo");
 }
 
 #[tokio::test]
@@ -232,10 +232,10 @@ async fn e2e_anthropic_generate_text() {
     .await
     .expect("generate_text should succeed");
 
-    assert_eq!(result.text, "Rust is memory-safe.");
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
-    assert_eq!(result.usage.input_tokens.total, Some(12));
-    assert_eq!(result.usage.output_tokens.total, Some(5));
+    assert_eq!(result.text(), "Rust is memory-safe.");
+    assert_eq!(result.finish_reason(), FinishReasonUnified::Stop);
+    assert_eq!(result.usage().input_tokens, Some(12));
+    assert_eq!(result.usage().output_tokens, Some(5));
 }
 
 #[tokio::test]
@@ -353,15 +353,16 @@ async fn e2e_openai_stream_part_sequence() {
         parts.push(part.expect("stream part should be ok"));
     }
 
-    // Expected sequence: StreamStart, TextStart, TextDelta, TextEnd, FinishStep, Finish
+    // Expected sequence (the AI SDK's fullStream): Start, StartStep,
+    // TextStart, TextDelta, TextEnd, FinishStep, Finish
     assert!(
-        parts.len() >= 6,
-        "expected at least 6 parts, got {}",
+        parts.len() >= 7,
+        "expected at least 7 parts, got {}",
         parts.len()
     );
 
-    // First part must be StreamStart
-    assert!(matches!(parts[0], TextStreamPart::StreamStart { .. }));
+    assert!(matches!(parts[0], TextStreamPart::Start {}));
+    assert!(matches!(parts[1], TextStreamPart::StartStep { .. }));
 
     // Last part must be Finish
     let last = parts.last().unwrap();
@@ -370,7 +371,7 @@ async fn e2e_openai_stream_part_sequence() {
     // Must contain at least one TextDelta
     let has_text_delta = parts
         .iter()
-        .any(|p| matches!(p, TextStreamPart::TextDelta { delta, .. } if delta == "Hi"));
+        .any(|p| matches!(p, TextStreamPart::TextDelta { text: delta, .. } if delta == "Hi"));
     assert!(has_text_delta, "expected a TextDelta with 'Hi'");
 }
 
@@ -417,8 +418,8 @@ async fn e2e_anthropic_stream_part_sequence() {
         parts.push(part.expect("stream part should be ok"));
     }
 
-    // First part must be StreamStart
-    assert!(matches!(parts[0], TextStreamPart::StreamStart { .. }));
+    assert!(matches!(parts[0], TextStreamPart::Start {}));
+    assert!(matches!(parts[1], TextStreamPart::StartStep { .. }));
 
     // Last part must be Finish
     let last = parts.last().unwrap();
@@ -427,7 +428,7 @@ async fn e2e_anthropic_stream_part_sequence() {
     // Must contain at least one TextDelta
     let has_text_delta = parts
         .iter()
-        .any(|p| matches!(p, TextStreamPart::TextDelta { delta, .. } if delta == "Hi"));
+        .any(|p| matches!(p, TextStreamPart::TextDelta { text: delta, .. } if delta == "Hi"));
     assert!(has_text_delta, "expected a TextDelta with 'Hi'");
 }
 
@@ -458,7 +459,7 @@ async fn e2e_provider_interchangeability() {
     let openai_result = generate_text(&openai, "test", GenerateTextOptions::default())
         .await
         .expect("openai generate should succeed");
-    assert_eq!(openai_result.text, "from-openai");
+    assert_eq!(openai_result.text(), "from-openai");
 
     // Anthropic
     let anthropic_server = MockServer::start().await;
@@ -480,17 +481,11 @@ async fn e2e_provider_interchangeability() {
     let anthropic_result = generate_text(&anthropic, "test", GenerateTextOptions::default())
         .await
         .expect("anthropic generate should succeed");
-    assert_eq!(anthropic_result.text, "from-anthropic");
+    assert_eq!(anthropic_result.text(), "from-anthropic");
 
     // Both use the same user-facing API (generate_text) and return the same result type
-    assert_eq!(
-        openai_result.finish_reason.unified,
-        FinishReasonUnified::Stop
-    );
-    assert_eq!(
-        anthropic_result.finish_reason.unified,
-        FinishReasonUnified::Stop
-    );
+    assert_eq!(openai_result.finish_reason(), FinishReasonUnified::Stop);
+    assert_eq!(anthropic_result.finish_reason(), FinishReasonUnified::Stop);
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -569,14 +564,11 @@ async fn e2e_openai_tool_call_round_trip() {
     .await
     .expect("first generate_text should succeed");
 
-    assert_eq!(
-        result1.finish_reason.unified,
-        FinishReasonUnified::ToolCalls
-    );
-    assert_eq!(result1.tool_calls.len(), 1);
-    assert_eq!(result1.tool_calls[0].tool_name, "get_weather");
-    assert_eq!(result1.tool_calls[0].input["location"], "Tokyo");
-    assert_eq!(result1.tool_calls[0].tool_call_id, "call_abc");
+    assert_eq!(result1.finish_reason(), FinishReasonUnified::ToolCalls);
+    assert_eq!(result1.tool_calls().len(), 1);
+    assert_eq!(result1.tool_calls()[0].tool_name, "get_weather");
+    assert_eq!(result1.tool_calls()[0].input["location"], "Tokyo");
+    assert_eq!(result1.tool_calls()[0].tool_call_id, "call_abc");
 
     // Step 2: user executes the tool, then builds the full conversation:
     //   user → assistant(tool_call) → tool(result)
@@ -611,9 +603,9 @@ async fn e2e_openai_tool_call_round_trip() {
     .await
     .expect("second generate_text should succeed");
 
-    assert_eq!(result2.text, "The weather in Tokyo is sunny.");
-    assert_eq!(result2.finish_reason.unified, FinishReasonUnified::Stop);
-    assert!(result2.tool_calls.is_empty());
+    assert_eq!(result2.text(), "The weather in Tokyo is sunny.");
+    assert_eq!(result2.finish_reason(), FinishReasonUnified::Stop);
+    assert!(result2.tool_calls().is_empty());
 
     // Step 4: verify the second request carried the full tool round-trip.
     let requests = server
@@ -677,8 +669,8 @@ async fn e2e_openai_multi_turn_dialog() {
         .await
         .expect("generate_text should succeed");
 
-    assert_eq!(result.text, "Tokyo has about 14 million people.");
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
+    assert_eq!(result.text(), "Tokyo has about 14 million people.");
+    assert_eq!(result.finish_reason(), FinishReasonUnified::Stop);
 
     // Verify the full multi-turn message sequence was sent.
     let requests = server
@@ -761,8 +753,8 @@ async fn e2e_openai_tool_choice_required() {
     .expect("generate_text should succeed");
 
     // Model returned a tool call
-    assert_eq!(result.tool_calls.len(), 1);
-    assert_eq!(result.tool_calls[0].tool_name, "get_weather");
+    assert_eq!(result.tool_calls().len(), 1);
+    assert_eq!(result.tool_calls()[0].tool_name, "get_weather");
 
     // Verify the request body carries tool_choice: "required"
     let requests = server
@@ -904,10 +896,10 @@ async fn e2e_google_generate_text() {
         .await
         .expect("generate_text should succeed");
 
-    assert_eq!(result.text, "Rust is memory-safe without a GC.");
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
-    assert_eq!(result.usage.input_tokens.total, Some(10));
-    assert_eq!(result.usage.output_tokens.total, Some(8));
+    assert_eq!(result.text(), "Rust is memory-safe without a GC.");
+    assert_eq!(result.finish_reason(), FinishReasonUnified::Stop);
+    assert_eq!(result.usage().input_tokens, Some(10));
+    assert_eq!(result.usage().output_tokens, Some(8));
 
     // Request body shape: Gemini `contents[].parts[].text`.
     let body = received_json_body(&server).await;
@@ -985,10 +977,10 @@ async fn e2e_mistral_generate_text() {
         .await
         .expect("generate_text should succeed");
 
-    assert_eq!(result.text, "Rust compiles fast.");
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
-    assert_eq!(result.usage.input_tokens.total, Some(10));
-    assert_eq!(result.usage.output_tokens.total, Some(8));
+    assert_eq!(result.text(), "Rust compiles fast.");
+    assert_eq!(result.finish_reason(), FinishReasonUnified::Stop);
+    assert_eq!(result.usage().input_tokens, Some(10));
+    assert_eq!(result.usage().output_tokens, Some(8));
 
     // Request body shape: Mistral sends content as a parts array.
     let body = received_json_body(&server).await;
@@ -1071,11 +1063,11 @@ async fn e2e_cohere_generate_text() {
         .await
         .expect("generate_text should succeed");
 
-    assert_eq!(result.text, "Rust is fearless concurrency.");
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
+    assert_eq!(result.text(), "Rust is fearless concurrency.");
+    assert_eq!(result.finish_reason(), FinishReasonUnified::Stop);
     // Cohere maps the `tokens` pair (not `billed_units`) into usage.
-    assert_eq!(result.usage.input_tokens.total, Some(12));
-    assert_eq!(result.usage.output_tokens.total, Some(9));
+    assert_eq!(result.usage().input_tokens, Some(12));
+    assert_eq!(result.usage().output_tokens, Some(9));
 
     // Request body shape: Cohere sends plain-string message content.
     let body = received_json_body(&server).await;

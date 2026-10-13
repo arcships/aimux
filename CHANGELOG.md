@@ -94,6 +94,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the time left in the poll budget and a hanging check fails with `Timeout`
   "Video generation timed out after {timeoutMs}ms." as upstream.
 
+- Call-level usage and finish reasons follow the AI SDK (`aimux-core`). The
+  results of `generate_text` / `stream_text` / `generate_object` and the
+  `TextStreamPart` finish parts report usage as `LanguageModelUsage`
+  (`input_tokens`, `input_token_details { no_cache_tokens,
+  cache_read_tokens, cache_write_tokens }`, `output_tokens`,
+  `output_token_details { text_tokens, reasoning_tokens }`, `total_tokens`,
+  `raw`) and the finish reason as the unified string (`"stop"`,
+  `"tool-calls"`, ...) with `raw_finish_reason` beside it. Usage is summed
+  over steps with `add_language_model_usage`. Provider results
+  (`GenerateResult`, `StreamPart`) keep `Usage` and `FinishReason`.
+  Recordings store the call-level usage for both the generate and the
+  stream path.
+
+- `GenerateTextResult` is built from steps, as the AI SDK's
+  (`aimux-core`). It holds `steps: Vec<StepResult>`, the summed usage and the
+  parsed output; everything else is an accessor: `final_step()`, `content()`,
+  `text()`, `files()`, `sources()`, `tool_calls()`, `static_tool_calls()`,
+  `dynamic_tool_calls()`, `tool_results()` (and the static/dynamic
+  variants), `finish_reason()`, `raw_finish_reason()`, `usage()`,
+  `warnings()`, `response_messages()`, `output()`, and the deprecated
+  `reasoning()`, `reasoning_text()`, `total_usage()`, `request()`,
+  `response()`, `provider_metadata()` that the AI SDK also deprecates.
+  `StepResult` carries the step's call id, model, content, finish reason,
+  usage, performance, warnings, request, response (with its messages) and
+  provider metadata. The `raw` provider result is removed, and
+  `reasoning_text` is `None` when there is no reasoning. The JSON form is a
+  snapshot: it writes the derived values next to `steps`, `total_usage` and
+  `output`, and only those three are read back.
+
+- Structured output is the `output` option, as the AI SDK's `Output`
+  (`aimux-core`). `GenerateTextOptions::response_format` is replaced by
+  `output: Option<Output>` (`Text`, `Object`, `Array`, `Choice`, `Json`); the
+  parsed and schema-checked value is `GenerateTextResult::output()`.
+  `generate_object` is deprecated, as upstream, and is a wrapper over
+  `generate_text` with `Output::Object`; its `GenerateObjectResult` has
+  `object`, `reasoning`, `finish_reason`, `usage`, `warnings`, `request`,
+  `response` (`GenerateObjectResponse`: id, timestamp, model id, headers,
+  body) and `provider_metadata`, and no `raw`. It no longer repairs
+  malformed JSON before parsing.
+
+- `TextStreamPart` is the AI SDK's call-level stream part, its own enum and
+  no longer `StreamPart<ToolCall>` (`aimux-core`). The stream opens with
+  `Start` and `StartStep { request, warnings }` and closes with
+  `FinishStep { response, usage, performance, finish_reason,
+  raw_finish_reason, provider_metadata }` and
+  `Finish { finish_reason, raw_finish_reason, total_usage }`; the provider's
+  `StreamStart` and `ResponseMetadata` parts are not forwarded. `TextDelta`
+  and `ReasoningDelta` carry `text` (was `delta`). Aborting the call ends the
+  stream with `Abort { reason }`. `StreamTextResult::consume()` returns a
+  `GenerateTextResult`; `StreamTextResultAggregated` is removed.
+
 **Rust (aimux-stream)**
 
 - `SseStream` is now a thin adapter over the `sse-stream` crate (WHATWG

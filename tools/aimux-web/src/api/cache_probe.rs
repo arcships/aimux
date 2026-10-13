@@ -122,11 +122,11 @@ async fn run_inner(state: AppState, req: ProbeRequest) -> Result<Response, AiMux
         match result {
             Ok(r) => per_round.push(json!({
                 "round": i,
-                "cache_read_tokens": r.usage.input_tokens.cache_read.unwrap_or(0),
-                "input_total_tokens": r.usage.input_tokens.total,
-                "output_tokens": r.usage.output_tokens.total,
+                "cache_read_tokens": r.usage().input_token_details.cache_read_tokens.unwrap_or(0),
+                "input_total_tokens": r.usage().input_tokens,
+                "output_tokens": r.usage().output_tokens,
                 "elapsed_ms": elapsed_ms,
-                "text_preview": r.text.chars().take(80).collect::<String>(),
+                "text_preview": r.text().chars().take(80).collect::<String>(),
             })),
             Err(e) => per_round.push(json!({ "round": i, "error": e.to_string() })),
         }

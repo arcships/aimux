@@ -24,10 +24,11 @@ use crate::error::{
     serialize_result,
 };
 use aimux_core::AiMuxError;
+#[allow(deprecated)]
+use aimux_core::generate::generate_object;
 use aimux_core::generate::{
-    GenerateTextOptions, GenerateTextResult, generate_object, generate_text,
-    generate_text_as_openai, generate_text_result_to_chat_completion, stream_text,
-    stream_text_as_openai,
+    GenerateTextOptions, GenerateTextResult, generate_text, generate_text_as_openai,
+    generate_text_result_to_chat_completion, stream_text, stream_text_as_openai,
 };
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
@@ -249,10 +250,12 @@ impl Model {
     /// Generate a structured JSON object from the model (M12, RFC-0016).
     ///
     /// Same signature as [`Model::generate_text`]; returns a JSON-serialized
-    /// `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }`
-    /// via `options` for schema control; the function applies JSON repair
-    /// before parsing.
+    /// `GenerateObjectResult` (core's deprecated `generate_object` wrapper).
+    /// Pass `output: { "Object": { "schema": ... } }`
+    /// via `options` to describe the value; the model's text must parse and
+    /// match the schema.
     #[napi(ts_return_type = "Promise<string>")]
+    #[allow(deprecated)]
     pub async fn generate_object(
         &self,
         prompt: String,
@@ -280,7 +283,7 @@ impl Model {
     /// (M11, RFC-0016).
     ///
     /// Drives `streamText` to completion and returns a JSON-serialized
-    /// `StreamTextResultAggregated` (the fully-consumed stream summary).
+    /// `GenerateTextResult`, the same result `generateText` returns.
     #[napi(ts_return_type = "Promise<string>")]
     pub async fn consume_stream_text(
         &self,
@@ -1695,10 +1698,11 @@ pub fn apply_tool_call_repair(
     })())
 }
 
-/// Apply a repair reply to a serialized `GenerateTextResult` or
-/// `GenerateObjectResult`, rewriting both `tool_calls` and the matching
-/// `response_messages` tool-call part. `optsJson` is the same string the call
-/// was generated with.
+/// Apply a repair reply to a serialized `GenerateTextResult`: the call is
+/// repaired in the result's steps (content, approval requests and response
+/// messages) and the derived `tool_calls`, `content` and `response_messages`
+/// are written from them. `optsJson` is the same string the call was
+/// generated with.
 ///
 /// The OpenAI-shaped result has no equivalent: it carries no `invalid` /
 /// `error`, so repair is driven from the native result, which

@@ -48,7 +48,7 @@ async fn replay_openai_compat(
         .await
         .expect("{cassette_dir}: generate_text should succeed with cassette replay");
     assert!(
-        !result.text.is_empty() || !result.tool_calls.is_empty(),
+        !result.text().is_empty() || !result.tool_calls().is_empty(),
         "{cassette_dir}: expected non-empty response"
     );
 
@@ -57,18 +57,18 @@ async fn replay_openai_compat(
         .await
         .expect("{cassette_dir}: stream_text should succeed");
     let mut stream = result.stream;
-    let mut got_stream_start = false;
+    let mut got_start_step = false;
     let mut got_finish = false;
     while let Some(part) = stream.next().await {
         match part.expect("{cassette_dir}: stream part should be ok") {
-            TextStreamPart::StreamStart { .. } => got_stream_start = true,
+            TextStreamPart::StartStep { .. } => got_start_step = true,
             TextStreamPart::Finish { .. } => got_finish = true,
             _ => {}
         }
     }
     assert!(
-        got_stream_start || got_finish,
-        "{cassette_dir}: expected StreamStart or Finish in stream"
+        got_start_step || got_finish,
+        "{cassette_dir}: expected StartStep or Finish in stream"
     );
 }
 
@@ -388,11 +388,11 @@ async fn replay_anthropic() {
         .await
         .expect("anthropic: generate_text should succeed");
     assert!(
-        !result.text.is_empty(),
+        !result.text().is_empty(),
         "anthropic: expected non-empty text"
     );
     assert!(
-        result.usage.input_tokens.total.unwrap_or(0) > 0,
+        result.usage().input_tokens.unwrap_or(0) > 0,
         "anthropic: expected non-zero input tokens"
     );
 
@@ -438,7 +438,7 @@ async fn replay_gemini() {
         .await
         .expect("gemini: generate_text should succeed via OpenAI-compat endpoint");
     assert!(
-        !result.text.is_empty() || !result.tool_calls.is_empty(),
+        !result.text().is_empty() || !result.tool_calls().is_empty(),
         "gemini: expected non-empty response (text or tool_calls)"
     );
 }
@@ -463,7 +463,7 @@ async fn replay_cohere() {
     let result = generate_text(&model, "Hello", GenerateTextOptions::default())
         .await
         .expect("cohere: generate_text should succeed");
-    assert!(!result.text.is_empty(), "cohere: expected non-empty text");
+    assert!(!result.text().is_empty(), "cohere: expected non-empty text");
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -488,7 +488,7 @@ async fn replay_bedrock() {
         .await
         .expect("bedrock: generate_text should succeed");
     assert!(
-        !result.text.is_empty() || !result.tool_calls.is_empty(),
+        !result.text().is_empty() || !result.tool_calls().is_empty(),
         "bedrock: expected non-empty response"
     );
 }

@@ -82,9 +82,9 @@ async fn non_stream_response(
         Ok(r) => {
             let meta = state.last_meta(session_id);
             let resp = WireCallResponse {
-                text: r.text,
-                finish_reason: serde_json::to_value(r.finish_reason.unified).unwrap_or_default(),
-                usage: serde_json::to_value(&r.usage).unwrap_or_default(),
+                text: r.text(),
+                finish_reason: serde_json::to_value(r.finish_reason()).unwrap_or_default(),
+                usage: serde_json::to_value(r.usage()).unwrap_or_default(),
                 meta,
                 error: None,
             };
