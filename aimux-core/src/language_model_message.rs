@@ -12,7 +12,7 @@ use crate::message::{AssistantContent, ModelMessage, UserContent};
 use crate::shared::{
     FileBytes, FileData, GeneratedFileData, SharedProviderOptions, SharedProviderReference,
 };
-use crate::types::Warning;
+use crate::types::{NamespacedKind, Warning};
 use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
 
@@ -169,7 +169,7 @@ pub struct ReasoningFilePart {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct CustomPart {
-    pub kind: String,
+    pub kind: NamespacedKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }

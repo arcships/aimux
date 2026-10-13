@@ -20,6 +20,7 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::shared::{GeneratedFileData, SharedProviderOptions, SharedProviderReference};
+use crate::types::NamespacedKind;
 
 /// A part of a user message: upstream's `TextPart | ImagePart | FilePart`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -109,7 +110,7 @@ pub enum AssistantContentPart {
 
     /// Provider-specific custom content.
     Custom {
-        kind: String,
+        kind: NamespacedKind,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },

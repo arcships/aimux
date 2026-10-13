@@ -12,7 +12,9 @@ use crate::result::{
     GeneratedFile, RawToolApprovalRequest, ReasoningFileOutput, Source, ToolApprovalRequestOutput,
 };
 use crate::tool::{RawToolCall, ToolCall, ToolResult};
-use crate::types::{FinishReason, ProviderMetadata, ResponseMetadata, Usage, Warning};
+use crate::types::{
+    FinishReason, NamespacedKind, ProviderMetadata, ResponseMetadata, Usage, Warning,
+};
 
 /// A single chunk in the stream returned by `do_stream`.
 ///
@@ -102,7 +104,7 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = GeneratedFi
     File(GeneratedFile),
     ReasoningFile(R),
     Custom {
-        kind: String,
+        kind: NamespacedKind,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },

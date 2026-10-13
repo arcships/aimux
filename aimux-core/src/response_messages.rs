@@ -16,6 +16,7 @@ use crate::result::{
     ToolApprovalRequestOutput, TypedToolError, TypedToolResult,
 };
 use crate::shared::{FileBytes, GeneratedFileData, SharedProviderMetadata};
+use crate::types::NamespacedKind;
 
 /// Match the AI SDK's response-message safety rule for invalid tool calls:
 /// malformed primitive input must not be replayed as a prompt tool-call input.
@@ -125,7 +126,11 @@ impl ResponseMessageBuilder {
         self.content.push(ContentPart::Reasoning(reasoning.clone()));
     }
 
-    pub fn custom(&mut self, kind: String, provider_metadata: Option<SharedProviderMetadata>) {
+    pub fn custom(
+        &mut self,
+        kind: NamespacedKind,
+        provider_metadata: Option<SharedProviderMetadata>,
+    ) {
         self.content.push(ContentPart::Custom {
             kind,
             provider_metadata,

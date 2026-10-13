@@ -12,7 +12,9 @@ pub use crate::shared::GeneratedFileData;
 use crate::shared::RequestInfo;
 use crate::stream_part::StreamPart;
 use crate::tool::{RawToolCall, ToolResult};
-use crate::types::{FinishReason, ProviderMetadata, ResponseMetadata, Usage, Warning};
+use crate::types::{
+    FinishReason, NamespacedKind, ProviderMetadata, ResponseMetadata, Usage, Warning,
+};
 
 /// A content item a provider returns (V4 `LanguageModelV4Content`). Text
 /// generation turns it into the core [`ContentPart`].
@@ -38,7 +40,7 @@ pub enum GenerateContent {
     ReasoningFile(GeneratedFile),
     /// Provider-specific content.
     Custom {
-        kind: String,
+        kind: NamespacedKind,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -70,7 +72,7 @@ pub enum ContentPart {
     },
     /// Provider-specific content.
     Custom {
-        kind: String,
+        kind: NamespacedKind,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },

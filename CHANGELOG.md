@@ -119,6 +119,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ToolError` / `ToolApprovalResponse` tags. `GenerateContent` is no longer
   generic.
 
+- The custom content `kind` is a `types::NamespacedKind` at every layer
+  (`AssistantContentPart::Custom`, the provider `CustomPart`,
+  `GenerateContent::Custom`, `ContentPart::Custom`, `StreamPart::Custom`),
+  the AI SDK's `${string}.${string}`: a kind without a `.` (for example
+  `"compaction"` instead of `"openai.compaction"`) no longer deserializes.
+  The JSON is still a plain string; the TypeScript type is `NamespacedKind`.
+
 - Tool-call and tool-result types are unified, one per protocol layer
   (`aimux-core`). A provider emits `tool::RawToolCall` (`input` is the raw
   argument text) in `GenerateContent::ToolCall(..)` and
