@@ -135,7 +135,7 @@ impl Files for AnthropicFiles {
             metadata.insert("downloadable".to_string(), json!(downloadable));
         }
 
-        let mut provider_ref = HashMap::new();
+        let mut provider_ref = aimux_core::shared::SharedProviderReference::new();
         provider_ref.insert(CANONICAL.to_string(), data.id);
 
         let result_media_type = data

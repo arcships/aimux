@@ -139,11 +139,15 @@ pub struct VideoCallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
-    /// Per-call retry override. `None` uses the model default.
+    /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
+    /// retrying. `None` uses 2, the AI SDK default, unless the model's
+    /// `retry_config()` sets another count (model-level retry settings are
+    /// removed in the target design, docs/aisdk-architecture-alignment.md D14).
     pub max_retries: Option<u32>,
 
-    /// Per-call poll pacing override for the start/status flow. Unset fields
-    /// fall back to the model's [`VideoModel::poll_config`].
+    /// Poll pacing for the start/status flow, the AI SDK's `generateVideo`
+    /// `poll` option. Unset fields use the AI SDK defaults (5000 ms between
+    /// status checks, 600000 ms in total).
     pub poll: Option<VideoPollOptions>,
 
     /// Per-call operation timeout.
@@ -182,7 +186,9 @@ impl VideoCallOptions {
     }
 }
 
-/// Per-call poll pacing for video generation (AI SDK `generateVideo` `poll`).
+/// Per-call poll pacing for video generation (AI SDK `generateVideo` `poll`,
+/// ai@7.0.127 `generate-video/generate-video.ts:55-80`). The poll settings
+/// belong to the operation, as upstream: a video model has none of its own.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct VideoPollOptions {
@@ -251,6 +257,10 @@ pub struct VideoOperationStart {
 ///
 /// Aligned with V4 `VideoModelV4OperationStatusResult`; its `error` arm maps
 /// to `Err(AiMuxError)` (a terminally failed task should be non-retryable).
+// One value per status poll, matched at once by the poll loop: boxing the
+// completed arm would only add an allocation. Insertion-ordered metadata maps
+// (`IndexMap`) put `VideoResult` just over clippy's size threshold.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum VideoOperationStatus {
     /// The generation is still in progress; poll again later.
@@ -259,22 +269,39 @@ pub enum VideoOperationStatus {
     Completed(VideoResult),
 }
 
-/// Pacing for the Core-owned status poll loop.
+/// AI SDK `generateVideo` poll defaults (ai@7.0.127
+/// `generate-video/generate-video.ts:543-544`).
+const DEFAULT_POLL_INTERVAL_MS: u64 = 5_000;
+const DEFAULT_POLL_TIMEOUT_MS: u64 = 600_000;
+
+/// Pacing for the Core-owned status poll loop, resolved from
+/// [`VideoCallOptions::poll`].
 #[derive(Debug, Clone, Copy)]
-pub struct VideoPollConfig {
-    /// Delay between consecutive `do_status` calls.
-    pub interval: Duration,
-    /// Maximum total time to wait for the generation to complete.
-    pub timeout: Duration,
+struct PollPacing {
+    interval: Duration,
+    timeout: Duration,
+    timeout_ms: u64,
 }
 
-impl Default for VideoPollConfig {
-    fn default() -> Self {
-        // AI SDK generate-video defaults (intervalMs: 5000, timeoutMs: 600_000).
+impl PollPacing {
+    fn resolve(poll: Option<VideoPollOptions>) -> Self {
+        let poll = poll.unwrap_or_default();
+        let interval_ms = poll.interval_ms.unwrap_or(DEFAULT_POLL_INTERVAL_MS);
+        let timeout_ms = poll.timeout_ms.unwrap_or(DEFAULT_POLL_TIMEOUT_MS);
         Self {
-            interval: Duration::from_secs(5),
-            timeout: Duration::from_secs(600),
+            interval: Duration::from_millis(interval_ms),
+            timeout: Duration::from_millis(timeout_ms),
+            timeout_ms,
         }
+    }
+
+    /// The AI SDK's `pollingTimeoutError` text
+    /// (`generate-video/generate-video.ts:547-549`).
+    fn timeout_error(&self) -> AiMuxError {
+        AiMuxError::Timeout(format!(
+            "Video generation timed out after {}ms.",
+            self.timeout_ms
+        ))
     }
 }
 
@@ -297,15 +324,6 @@ pub trait VideoModel: Send + Sync {
 
     /// Provider-specific model ID, e.g. `"kling-video"`.
     fn model_id(&self) -> &str;
-
-    /// Poll pacing for this model: the package's own constants. Providers have
-    /// no poll settings (the AI SDK's `pollIntervalMs` / `pollTimeoutMs` are
-    /// per-call options, here [`VideoCallOptions::poll`], which overrides this
-    /// per field). Defaults to the AI SDK values; a package whose job runs
-    /// longer or shorter returns its own constants.
-    fn poll_config(&self) -> VideoPollConfig {
-        VideoPollConfig::default()
-    }
 
     /// Limit of how many videos can be generated in a single API call.
     ///
@@ -382,15 +400,7 @@ async fn start_and_poll(
     let abort_signal = options.abort_signal.clone();
     let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
 
-    let mut poll = model.poll_config();
-    if let Some(overrides) = options.poll {
-        if let Some(ms) = overrides.interval_ms {
-            poll.interval = Duration::from_millis(ms);
-        }
-        if let Some(ms) = overrides.timeout_ms {
-            poll.timeout = Duration::from_millis(ms);
-        }
-    }
+    let poll = PollPacing::resolve(options.poll);
 
     // Split `n` into `max_per_call`-sized batches (AI SDK `generateVideo` /
     // `generateImage`): every batch but the last is full-sized, the last one
@@ -442,7 +452,7 @@ async fn start_and_poll_one_batch(
     model: &dyn VideoModel,
     options: VideoCallOptions,
     retries: &retry::PreparedRetries,
-    poll: VideoPollConfig,
+    poll: PollPacing,
     abort_signal: Option<AbortSignal>,
 ) -> Result<VideoResult, AiMuxError> {
     // `do_start` is billable: mint one idempotency key per logical start,
@@ -467,10 +477,7 @@ async fn start_and_poll_one_batch(
     loop {
         let elapsed = poll_started.elapsed();
         if elapsed >= poll.timeout {
-            return Err(AiMuxError::Timeout(format!(
-                "Video generation timed out after {:?}.",
-                poll.timeout
-            )));
+            return Err(poll.timeout_error());
         }
         retry::delay(
             poll.interval.min(poll.timeout - elapsed),
@@ -478,19 +485,21 @@ async fn start_and_poll_one_batch(
         )
         .await?;
 
-        if poll_started.elapsed() >= poll.timeout {
-            return Err(AiMuxError::Timeout(format!(
-                "Video generation timed out after {:?}.",
-                poll.timeout
-            )));
+        let elapsed = poll_started.elapsed();
+        if elapsed >= poll.timeout {
+            return Err(poll.timeout_error());
         }
 
-        // Matching the AI SDK, the poll budget paces the loop between status
-        // checks; a hung status GET is already bounded by the per-exchange
-        // response guard in provider-utils, and the retry count is finite.
-        let status = retries
-            .retry(|| model.do_status(&start.operation, &options))
-            .await?;
+        // As the AI SDK does, each status check, retries included, races the
+        // time left in the poll budget; when the budget runs out the pending
+        // request is dropped (cancelled) and the poll fails with the polling
+        // timeout (ai@7.0.127 generate-video/generate-video.ts:586-625).
+        let status = tokio::time::timeout(
+            poll.timeout - elapsed,
+            retries.retry(|| model.do_status(&start.operation, &options)),
+        )
+        .await
+        .map_err(|_| poll.timeout_error())??;
         match status {
             VideoOperationStatus::Pending => {}
             VideoOperationStatus::Completed(mut result) => {
@@ -835,6 +844,134 @@ mod tests {
                 .expect("status key capture lock should not be poisoned")
                 .is_empty()
         );
+    }
+
+    /// A video model whose status check never answers.
+    struct HangingStatus(ScriptedVideoModel);
+
+    #[async_trait]
+    impl VideoModel for HangingStatus {
+        fn provider(&self) -> &str {
+            "test"
+        }
+        fn model_id(&self) -> &str {
+            "hanging"
+        }
+        fn max_videos_per_call(&self) -> Option<u32> {
+            Some(1)
+        }
+        async fn do_start(
+            &self,
+            options: &VideoCallOptions,
+        ) -> Result<VideoOperationStart, AiMuxError> {
+            self.0.do_start(options).await
+        }
+        async fn do_status(
+            &self,
+            _operation: &serde_json::Value,
+            _options: &VideoCallOptions,
+        ) -> Result<VideoOperationStatus, AiMuxError> {
+            self.0.statuses.fetch_add(1, Ordering::SeqCst);
+            std::future::pending().await
+        }
+    }
+
+    /// ai@7.0.127 generate-video/generate-video.ts:586-625: each status
+    /// check races the time left in the poll budget, and losing the race
+    /// fails with the polling timeout error (`:547-549`).
+    #[tokio::test]
+    async fn a_hanging_status_check_is_bounded_by_the_poll_timeout() {
+        let model = HangingStatus(ScriptedVideoModel::new(vec![]));
+        let mut options = VideoCallOptions::new("a cat");
+        options.poll = Some(VideoPollOptions {
+            interval_ms: Some(1),
+            timeout_ms: Some(50),
+        });
+
+        let error = tokio::time::timeout(Duration::from_secs(5), generate_video(&model, options))
+            .await
+            .expect("the poll timeout must end a hanging status check")
+            .unwrap_err();
+
+        assert!(
+            matches!(&error, AiMuxError::Timeout(message)
+                if message == "Video generation timed out after 50ms."),
+            "{error:?}"
+        );
+        assert_eq!(model.0.statuses.load(Ordering::SeqCst), 1);
+    }
+
+    /// The race covers the status retries too (upstream passes the status
+    /// timeout signal to `prepareRetries`, generate-video.ts:602-605): a
+    /// retry delay longer than the remaining budget ends with the polling
+    /// timeout, not after the delay.
+    #[tokio::test]
+    async fn status_retries_race_the_remaining_poll_timeout() {
+        struct SlowRetries(ScriptedVideoModel);
+        #[async_trait]
+        impl VideoModel for SlowRetries {
+            fn provider(&self) -> &str {
+                "test"
+            }
+            fn model_id(&self) -> &str {
+                "slow-retries"
+            }
+            fn retry_config(&self) -> crate::retry::RetryConfig {
+                crate::retry::RetryConfig {
+                    initial_delay: Duration::from_secs(60),
+                    ..crate::retry::RetryConfig::default()
+                }
+            }
+            fn max_videos_per_call(&self) -> Option<u32> {
+                Some(1)
+            }
+            async fn do_start(
+                &self,
+                options: &VideoCallOptions,
+            ) -> Result<VideoOperationStart, AiMuxError> {
+                self.0.do_start(options).await
+            }
+            async fn do_status(
+                &self,
+                operation: &serde_json::Value,
+                options: &VideoCallOptions,
+            ) -> Result<VideoOperationStatus, AiMuxError> {
+                self.0.do_status(operation, options).await
+            }
+        }
+        let model = SlowRetries(ScriptedVideoModel::new(vec![
+            StatusStep::RetryableFailure,
+            StatusStep::Complete,
+        ]));
+        let mut options = VideoCallOptions::new("a cat");
+        options.poll = Some(VideoPollOptions {
+            interval_ms: Some(1),
+            timeout_ms: Some(50),
+        });
+
+        let error = tokio::time::timeout(Duration::from_secs(5), generate_video(&model, options))
+            .await
+            .expect("the poll timeout must cut the retry delay short")
+            .unwrap_err();
+
+        assert!(matches!(error, AiMuxError::Timeout(_)), "{error:?}");
+        assert_eq!(model.0.statuses.load(Ordering::SeqCst), 1);
+    }
+
+    /// Without a `poll` option the AI SDK defaults apply
+    /// (generate-video.ts:543-544); the model has no poll settings.
+    #[test]
+    fn poll_pacing_defaults_to_the_ai_sdk_values() {
+        let pacing = PollPacing::resolve(None);
+        assert_eq!(pacing.interval, Duration::from_millis(5_000));
+        assert_eq!(pacing.timeout, Duration::from_millis(600_000));
+
+        let pacing = PollPacing::resolve(Some(VideoPollOptions {
+            interval_ms: Some(10),
+            timeout_ms: None,
+        }));
+        assert_eq!(pacing.interval, Duration::from_millis(10));
+        assert_eq!(pacing.timeout, Duration::from_millis(600_000));
     }
 
     #[tokio::test]

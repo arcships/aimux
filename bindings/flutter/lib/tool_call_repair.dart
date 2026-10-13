@@ -121,8 +121,9 @@ Never _asyncHookInSyncCall() => throw StateError(
 // Non-streaming: patch a whole result document
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Repair every invalid tool call in a `generate_text` / `generate_object` /
-/// aggregated-stream [result], returning the patched document.
+/// Repair every invalid tool call in a `generate_text` or consumed-stream
+/// [result], returning the patched document (a `generate_object` result has
+/// no tool calls).
 ///
 /// Returns [result] unchanged when `options.repairToolCall` is null. [prompt]
 /// and [options] must be the ones the result was generated with: the core
@@ -175,11 +176,10 @@ Map<String, dynamic> repairResultToolCalls(
   return current;
 }
 
-/// The invalid calls of a result document. `generate_object` nests the
-/// `generate_text` result under `raw`.
+/// The invalid calls of a result document: the top-level `tool_calls` of a
+/// text result. A `generate_object` result has none.
 List<Map<String, dynamic>> _invalidToolCalls(Map<String, dynamic> result) {
-  final calls = result['tool_calls'] ??
-      (result['raw'] as Map<String, dynamic>?)?['tool_calls'];
+  final calls = result['tool_calls'];
   if (calls is! List) return const [];
   return calls
       .whereType<Map<String, dynamic>>()

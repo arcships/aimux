@@ -8,10 +8,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-use aimux_core::content::ContentPart;
+use aimux_core::content::{
+    AssistantContentPart, ToolContentPart, ToolResultOutput, ToolResultPart, UserContentPart,
+};
 use aimux_core::error::AiMuxError;
 use aimux_core::generate::GenerateTextOptions;
-use aimux_core::message::{MessageContent, ModelMessage, ModelPrompt, Role};
+use aimux_core::message::{ModelMessage, ModelPrompt};
 use aimux_core::tool::{FunctionTool, Tool};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -160,10 +162,20 @@ pub struct WireMeta {
 // Conversions
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Wire content part → `ContentPart`.
-fn to_content_part(p: &WireContentPart) -> ContentPart {
+/// Wire tool result → user-facing tool result part.
+fn to_tool_result(tool_call_id: &str, result: &Value, is_error: Option<bool>) -> ToolResultPart {
+    ToolResultPart {
+        tool_call_id: tool_call_id.to_owned(),
+        tool_name: None,
+        output: ToolResultOutput::from_result(result.clone(), is_error == Some(true)),
+        provider_options: None,
+    }
+}
+
+/// Wire content part → assistant content part.
+fn to_assistant_part(p: &WireContentPart) -> AssistantContentPart {
     match p {
-        WireContentPart::Text { text } => ContentPart::Text {
+        WireContentPart::Text { text } => AssistantContentPart::Text {
             text: text.clone(),
             provider_options: None,
         },
@@ -172,7 +184,7 @@ fn to_content_part(p: &WireContentPart) -> ContentPart {
             tool_name,
             input,
             provider_executed,
-        } => ContentPart::ToolCall {
+        } => AssistantContentPart::ToolCall {
             tool_call_id: tool_call_id.clone(),
             tool_name: tool_name.clone(),
             input: input.clone(),
@@ -183,15 +195,7 @@ fn to_content_part(p: &WireContentPart) -> ContentPart {
             tool_call_id,
             result,
             is_error,
-        } => ContentPart::ToolResult {
-            tool_call_id: tool_call_id.clone(),
-            result: result.clone(),
-            tool_name: None,
-            is_error: *is_error,
-            preliminary: None,
-            dynamic: None,
-            provider_options: None,
-        },
+        } => AssistantContentPart::ToolResult(to_tool_result(tool_call_id, result, *is_error)),
     }
 }
 
@@ -199,28 +203,53 @@ fn to_content_part(p: &WireContentPart) -> ContentPart {
 pub fn to_model_prompt(messages: &[WireMessage]) -> Result<ModelPrompt, AiMuxError> {
     let mut out = Vec::with_capacity(messages.len());
     for m in messages {
-        let role = match m.role.as_str() {
-            "system" => Role::System,
-            "user" => Role::User,
-            "assistant" => Role::Assistant,
-            "tool" => Role::Tool,
+        let invalid = |what: &str| AiMuxError::InvalidPrompt(format!("{} message: {what}", m.role));
+        let message = match m.role.as_str() {
+            "system" => {
+                let [WireContentPart::Text { text }] = m.content.as_slice() else {
+                    return Err(invalid("content must be plain text"));
+                };
+                ModelMessage::system(text.clone())
+            }
+            "user" => ModelMessage::user_parts(
+                m.content
+                    .iter()
+                    .map(|part| match part {
+                        WireContentPart::Text { text } => Ok(UserContentPart::Text {
+                            text: text.clone(),
+                            provider_options: None,
+                        }),
+                        _ => Err(invalid("only text parts are allowed")),
+                    })
+                    .collect::<Result<_, _>>()?,
+            ),
+            "assistant" => {
+                ModelMessage::assistant_parts(m.content.iter().map(to_assistant_part).collect())
+            }
+            "tool" => ModelMessage::tool(
+                m.content
+                    .iter()
+                    .map(|part| match part {
+                        WireContentPart::ToolResult {
+                            tool_call_id,
+                            result,
+                            is_error,
+                        } => Ok(ToolContentPart::ToolResult(to_tool_result(
+                            tool_call_id,
+                            result,
+                            *is_error,
+                        ))),
+                        _ => Err(invalid("only tool-result parts are allowed")),
+                    })
+                    .collect::<Result<_, _>>()?,
+            ),
             other => {
                 return Err(AiMuxError::InvalidArgument(format!(
                     "unknown message role '{other}' (expected system/user/assistant/tool)"
                 )));
             }
         };
-        let content = if role == Role::System {
-            let [WireContentPart::Text { text }] = m.content.as_slice() else {
-                return Err(AiMuxError::InvalidPrompt(
-                    "system content must be plain text".into(),
-                ));
-            };
-            MessageContent::Text(text.clone())
-        } else {
-            MessageContent::Parts(m.content.iter().map(to_content_part).collect())
-        };
-        out.push(ModelMessage { role, content });
+        out.push(message);
     }
     Ok(ModelPrompt::Messages(out))
 }
@@ -242,20 +271,25 @@ pub fn to_generate_options(
     o: &WireOptions,
     session_id: Option<&str>,
 ) -> Result<GenerateTextOptions, AiMuxError> {
-    let response_format = match &o.response_format {
+    // The console's `response_format` selects the core output: a JSON
+    // format with a schema is an object output, one without is the JSON
+    // output.
+    let output = match &o.response_format {
         None => None,
         Some(Value::String(s)) if s == "text" => None,
         Some(Value::Object(obj)) => {
-            let schema = obj.get("schema").cloned();
             let name = obj.get("name").and_then(Value::as_str).map(str::to_string);
             let description = obj
                 .get("description")
                 .and_then(Value::as_str)
                 .map(str::to_string);
-            Some(aimux_core::options::ResponseFormat::Json {
-                schema,
-                name,
-                description,
+            Some(match obj.get("schema").cloned() {
+                Some(schema) => aimux_core::output::Output::Object {
+                    schema,
+                    name,
+                    description,
+                },
+                None => aimux_core::output::Output::Json { name, description },
             })
         }
         Some(other) => {
@@ -274,7 +308,7 @@ pub fn to_generate_options(
             .tools
             .as_ref()
             .map(|ts| ts.iter().map(to_function_tool).collect()),
-        response_format,
+        output,
         headers: o.headers.clone(),
         max_retries: o.max_retries,
         session_id: session_id.map(str::to_string),
@@ -619,8 +653,8 @@ mod tests {
             panic!("expected messages");
         };
         assert_eq!(list.len(), 3);
-        assert_eq!(list[1].role, Role::Assistant);
-        assert_eq!(list[2].role, Role::Tool);
+        assert_eq!(list[1].role(), "assistant");
+        assert_eq!(list[2].role(), "tool");
     }
 
     #[test]

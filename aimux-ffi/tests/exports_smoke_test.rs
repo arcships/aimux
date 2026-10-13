@@ -1118,6 +1118,16 @@ const REPAIR_TOOLS: &str = r#"[{"type":"function","name":"weather","input_schema
 const REPAIR_INVALID: &str = r#"{"tool_call_id":"call-1","tool_name":"weather","input":{"town":"SG"},"dynamic":true,"invalid":true,"error":{"InvalidToolInput":{"tool_name":"weather","tool_input":"{\"town\":\"SG\"}","cause":"missing city"}}}"#;
 const REPAIR_REPLY: &str = r#"{"type":"repaired","tool_call":{"tool_call_id":"call-1","tool_name":"weather","input":"{\"city\":\"SG\"}"}}"#;
 
+/// A serialized one-step `GenerateTextResult` whose step finished with tool
+/// calls and holds `content` (a JSON array of content parts). Only the steps
+/// and the total usage are read back from a result.
+fn tool_call_result(content: &str) -> String {
+    let usage = r#"{"input_tokens":1,"output_tokens":1,"total_tokens":2}"#;
+    format!(
+        r#"{{"steps":[{{"call_id":"","step_number":0,"model":{{"provider":"openai","model_id":"gpt-4o-mini"}},"content":{content},"finish_reason":"tool-calls","usage":{usage},"performance":{{"effective_output_tokens_per_second":0.0,"effective_total_tokens_per_second":0.0,"step_time_ms":0.0,"response_time_ms":0.0}},"response":{{"id":"","timestamp":"","model_id":""}}}}],"total_usage":{usage}}}"#
+    )
+}
+
 /// The three repair exports are pure: they take JSON, return JSON, and never
 /// touch a handle or the runtime. They also accept the very `prompt_json` /
 /// `opts_json` a caller already passed to `aimux_generate_text`.
@@ -1158,7 +1168,7 @@ fn tool_call_repair_exports_round_trip() {
         "repaired call should be valid: {repaired}"
     );
 
-    let result = format!(r#"{{"tool_calls":[{REPAIR_INVALID}],"response_messages":[]}}"#);
+    let result = tool_call_result(&format!(r#"[{{"ToolCall":{REPAIR_INVALID}}}]"#));
     let e = aimux_apply_tool_call_repair_to_result(
         c(&result).as_ptr(),
         c(&opts).as_ptr(),
@@ -1184,15 +1194,13 @@ fn tool_call_repair_exports_round_trip() {
 }
 
 /// A repaired native result converts to a ChatCompletion whose arguments are
-/// the repaired ones, not the provider's raw text (the OpenAI non-streaming
-/// path on a host). The handle only supplies the fallback model id.
+/// the step's (repaired) tool-call input; a result keeps no raw provider
+/// result to read them from (the OpenAI non-streaming path on a host). The
+/// handle only supplies the fallback model id.
 #[test]
 fn a_repaired_result_converts_to_a_chat_completion() {
-    let finish = r#"{"unified":"tool-calls","raw":null}"#;
-    let usage = r#"{"input_tokens":{"total":1},"output_tokens":{"total":1}}"#;
-    let repaired = r#"{"tool_call_id":"call-1","tool_name":"weather","input":{"city":"SG"}}"#;
-    let result = format!(
-        r#"{{"text":"","tool_calls":[{repaired}],"finish_reason":{finish},"usage":{usage},"warnings":[],"raw":{{"content":[{{"ToolCall":{{"tool_call_id":"call-1","tool_name":"weather","input":"{{\"town\":\"SG\"}}"}}}}],"finish_reason":{finish},"usage":{usage},"warnings":[],"provider_metadata":null,"response":{{"id":null,"timestamp":null,"model_id":null}},"request_body":null,"response_headers":null}}}}"#
+    let result = tool_call_result(
+        r#"[{"ToolCall":{"tool_call_id":"call-1","tool_name":"weather","input":{"city":"SG"}}}]"#,
     );
     let h = unreachable_model();
 

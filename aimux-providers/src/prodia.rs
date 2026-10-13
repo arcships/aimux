@@ -396,7 +396,7 @@ impl ImageModel for ProdiaImageModel {
         let job_result = job_result.unwrap_or(Value::Null);
 
         // Build provider metadata
-        let mut metadata = HashMap::new();
+        let mut metadata = aimux_core::shared::NamespaceMap::new();
         let mut prodia_meta = Map::new();
         prodia_meta.insert("images".into(), json!([job_result]));
         metadata.insert(options::NAMESPACE.into(), prodia_meta);

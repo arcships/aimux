@@ -5,7 +5,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolPart,
     ToolResultContent, ToolResultOutput, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::shared::{FileBytes, FileData, JsonObject, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
@@ -48,7 +48,7 @@ pub struct PreparedTools {
 #[must_use]
 pub fn prepare_tools(
     tools: &Option<Vec<FunctionTool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
 ) -> PreparedTools {
     let non_empty = tools.as_ref().filter(|&t| !t.is_empty());
 
@@ -81,10 +81,10 @@ pub fn prepare_tools(
         (None, _) => None,
         (Some(_), None) => None,
         (Some(_), Some(tc)) => match tc {
-            ToolChoice::Auto => Some(json!("auto")),
-            ToolChoice::None => Some(json!("none")),
-            ToolChoice::Required => Some(json!("required")),
-            ToolChoice::Tool { tool_name } => {
+            LanguageModelV4ToolChoice::Auto => Some(json!("auto")),
+            LanguageModelV4ToolChoice::None => Some(json!("none")),
+            LanguageModelV4ToolChoice::Required => Some(json!("required")),
+            LanguageModelV4ToolChoice::Tool { tool_name } => {
                 Some(json!({ "type": "function", "function": { "name": tool_name } }))
             }
         },
@@ -138,7 +138,7 @@ fn get_image_detail(provider_options: &Option<SharedProviderOptions>) -> Option<
 
 /// Resolve a provider reference, throwing if the provider is not found.
 fn resolve_provider_reference(
-    reference: &std::collections::HashMap<String, String>,
+    reference: &aimux_core::shared::SharedProviderReference,
     provider: &str,
 ) -> Result<String, String> {
     reference.get(provider).cloned().ok_or_else(|| {

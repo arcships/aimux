@@ -28,7 +28,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, ReasoningPart, TextPart, ToolCallPart, ToolPart,
     ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::ToolChoice;
+use aimux_core::options::LanguageModelV4ToolChoice;
 use aimux_core::tool::FunctionTool;
 
 use aimux_providers::bedrock::convert::{
@@ -1051,7 +1051,11 @@ fn func_tool(name: &str, description: Option<&str>, input_schema: Value) -> Func
 #[test]
 fn prepare_tools_tool_choice_auto() {
     let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
-    let config = prepare_tools(&tools, Some(&ToolChoice::Auto), NON_ANTHROPIC_MODEL);
+    let config = prepare_tools(
+        &tools,
+        Some(&LanguageModelV4ToolChoice::Auto),
+        NON_ANTHROPIC_MODEL,
+    );
     assert_eq!(config["toolChoice"], json!({ "auto": {} }));
 }
 
@@ -1059,7 +1063,11 @@ fn prepare_tools_tool_choice_auto() {
 #[test]
 fn prepare_tools_tool_choice_required() {
     let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
-    let config = prepare_tools(&tools, Some(&ToolChoice::Required), NON_ANTHROPIC_MODEL);
+    let config = prepare_tools(
+        &tools,
+        Some(&LanguageModelV4ToolChoice::Required),
+        NON_ANTHROPIC_MODEL,
+    );
     assert_eq!(config["toolChoice"], json!({ "any": {} }));
 }
 
@@ -1067,7 +1075,11 @@ fn prepare_tools_tool_choice_required() {
 #[test]
 fn prepare_tools_tool_choice_none_clears() {
     let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
-    let config = prepare_tools(&tools, Some(&ToolChoice::None), NON_ANTHROPIC_MODEL);
+    let config = prepare_tools(
+        &tools,
+        Some(&LanguageModelV4ToolChoice::None),
+        NON_ANTHROPIC_MODEL,
+    );
     assert_eq!(config, json!({}));
 }
 
@@ -1077,7 +1089,7 @@ fn prepare_tools_tool_choice_tool() {
     let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
     let config = prepare_tools(
         &tools,
-        Some(&ToolChoice::Tool {
+        Some(&LanguageModelV4ToolChoice::Tool {
             tool_name: "testFunction".to_string(),
         }),
         NON_ANTHROPIC_MODEL,
@@ -1101,7 +1113,7 @@ fn prepare_tools_tool_choice_filters_to_named() {
     ]);
     let config = prepare_tools(
         &tools,
-        Some(&ToolChoice::Tool {
+        Some(&LanguageModelV4ToolChoice::Tool {
             tool_name: "getWeather".to_string(),
         }),
         NON_ANTHROPIC_MODEL,

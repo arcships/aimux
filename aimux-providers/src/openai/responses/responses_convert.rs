@@ -26,7 +26,8 @@ use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Sourc
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage, Warning,
+    FinishReason, FinishReasonUnified, NamespacedKind, ProviderMetadata, ResponseMetadata, Usage,
+    Warning,
 };
 
 use super::convert::{convert_responses_usage, map_responses_finish_reason, parse_usage};
@@ -262,7 +263,8 @@ pub fn build_responses_generate_result(
             }
             Some("compaction") => {
                 content.push(GenerateContent::Custom {
-                    kind: "openai.compaction".to_string(),
+                    kind: NamespacedKind::new("openai.compaction")
+                        .expect("openai.compaction is namespaced"),
                     provider_metadata: Some(
                         provider_namespace(
                             &provider_key,
@@ -894,7 +896,7 @@ where
                                     }
                                     "compaction" => {
                                         yield Ok(StreamPart::Custom {
-                                            kind: "openai.compaction".to_string(),
+                                            kind: NamespacedKind::new("openai.compaction").expect("openai.compaction is namespaced"),
                                             provider_metadata: Some(provider_namespace(&provider_key, json!({
                                                 "type": "compaction", "itemId": item.get("id"),
                                                 "encryptedContent": item.get("encrypted_content"),

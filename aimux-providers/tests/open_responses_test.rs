@@ -21,7 +21,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart,
     ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat, Tool};
 use aimux_core::result::{GenerateContent, ReasoningOutput};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
@@ -1151,6 +1151,28 @@ mod do_generate_tests {
                 }]
             })
         );
+    }
+
+    /// `generate_text` always sends `{type:"auto"}`, and open-responses
+    /// forwards `toolChoice?.type` with or without tools
+    /// (`@ai-sdk/open-responses@2.0.58
+    /// src/responses/open-responses-language-model.ts:310, :379-380`).
+    #[tokio::test]
+    async fn tool_choice_is_sent_without_tools() {
+        let server = MockServer::start().await;
+        mock_json(&server, lmstudio_basic_json()).await;
+
+        let model = make_model(&server, "gemma-7b-it");
+        let options = CallOptions {
+            tool_choice: Some(LanguageModelV4ToolChoice::Auto),
+            ..default_options(test_prompt())
+        };
+        model.do_generate(&options).await.unwrap();
+
+        let request = &server.received_requests().await.unwrap()[0];
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["tool_choice"], "auto");
+        assert!(body.get("tools").is_none());
     }
 
     #[tokio::test]

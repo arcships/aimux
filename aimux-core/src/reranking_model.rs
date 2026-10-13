@@ -43,7 +43,10 @@ pub struct RerankingCallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
-    /// Per-call retry override. `None` uses the model default.
+    /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
+    /// retrying. `None` uses 2, the AI SDK default, unless the model's
+    /// `retry_config()` sets another count (model-level retry settings are
+    /// removed in the target design, docs/aisdk-architecture-alignment.md D14).
     pub max_retries: Option<u32>,
 
     /// Per-call operation timeout.

@@ -55,10 +55,11 @@ use serde::de::DeserializeOwned;
 
 use aimux_core::AbortSignal;
 use aimux_core::AiMuxError;
+#[allow(deprecated)]
+use aimux_core::generate::generate_object;
 use aimux_core::generate::{
-    GenerateTextOptions, GenerateTextResult, generate_object, generate_text,
-    generate_text_as_openai, generate_text_result_to_chat_completion, stream_text,
-    stream_text_as_openai,
+    GenerateTextOptions, GenerateTextResult, generate_text, generate_text_as_openai,
+    generate_text_result_to_chat_completion, stream_text, stream_text_as_openai,
 };
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
@@ -487,14 +488,19 @@ fn aimux_error_code_of(err: &AiMuxError) -> i32 {
         AiMuxError::Retry(_) => AIMUX_E_RETRY,
         AiMuxError::JsonParse(_) => AIMUX_E_JSON_PARSE,
         AiMuxError::NoOutputGenerated(_) => AIMUX_E_NO_OUTPUT_GENERATED,
-        AiMuxError::InvalidResponseData(_) | AiMuxError::ToolCallNotFoundForApproval { .. } => {
-            AIMUX_E_INVALID_RESPONSE_DATA
-        }
+        // The AI SDK's MissingToolResultsError / ToolChoiceViolationError have
+        // no code of their own yet; they join the prompt / response-data
+        // codes until the new C ABI (as ToolCallNotFoundForApproval does).
+        AiMuxError::InvalidResponseData(_)
+        | AiMuxError::ToolCallNotFoundForApproval { .. }
+        | AiMuxError::ToolChoiceViolation(_) => AIMUX_E_INVALID_RESPONSE_DATA,
         AiMuxError::NoSuchTool { .. } => AIMUX_E_NO_SUCH_TOOL,
         AiMuxError::InvalidToolInput { .. } => AIMUX_E_INVALID_TOOL_INPUT,
         AiMuxError::ToolCallRepair { .. } => AIMUX_E_TOOL_CALL_REPAIR,
         AiMuxError::InvalidArgument(_) => AIMUX_E_INVALID_ARGUMENT,
-        AiMuxError::InvalidPrompt(_) => AIMUX_E_INVALID_PROMPT,
+        AiMuxError::InvalidPrompt(_) | AiMuxError::MissingToolResults { .. } => {
+            AIMUX_E_INVALID_PROMPT
+        }
         AiMuxError::LoadApiKey { .. } => AIMUX_E_LOAD_API_KEY,
         AiMuxError::LoadSetting { .. } => AIMUX_E_LOAD_SETTING,
         AiMuxError::TokenExpired(_) => AIMUX_E_TOKEN_EXPIRED,
@@ -1753,13 +1759,16 @@ pub extern "C" fn aimux_generate_text(
     })
 }
 
-/// Generate a structured JSON object from the model (M12, RFC-0016).
+/// Generate a structured JSON object from the model (M12, RFC-0016), with the
+/// core's deprecated `generate_object` wrapper.
 ///
 /// Same signature as [`aimux_generate_text`]; writes the serialized
-/// `GenerateObjectResult`. The caller passes `response_format: { "Json": {
-/// ... } }` via `opts_json` to control the schema; the function applies JSON
-/// repair before parsing.
+/// `GenerateObjectResult`. The caller passes `output` (for example
+/// `{ "Object": { "schema": ... } }`) via `opts_json` to describe the value;
+/// without one any JSON value is accepted. The model's text must parse as
+/// JSON and match the schema.
 #[unsafe(no_mangle)]
+#[allow(deprecated)]
 pub extern "C" fn aimux_generate_object(
     handle: u64,
     prompt_json: *const c_char,
@@ -1778,7 +1787,7 @@ pub extern "C" fn aimux_generate_object(
 /// RFC-0016). Synchronous — blocks until the stream finishes.
 ///
 /// Same signature as [`aimux_generate_text`]; writes the serialized
-/// `StreamTextResultAggregated`.
+/// `GenerateTextResult`, the same result `aimux_generate_text` writes.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_consume_stream_text(
     handle: u64,
@@ -1805,8 +1814,9 @@ pub extern "C" fn aimux_consume_stream_text(
 ///
 /// Blocks the calling thread until the stream completes (synchronous +
 /// callback mode). Callbacks are invoked in the same call stack:
-/// - `on_part(json, stream_ctx)`: each `StreamPart` as JSON (valid only during
-///   the call). `StreamPart::Error` is data on this path, not a terminal fail.
+/// - `on_part(json, stream_ctx)`: each `TextStreamPart` as JSON (valid only
+///   during the call). `TextStreamPart::Error` is data on this path, not a
+///   terminal fail.
 /// - `on_done(stream_ctx)`: once on normal completion (not on failure).
 ///
 /// NULL on success (after `on_done`); a returned error otherwise (no
@@ -1967,10 +1977,12 @@ pub extern "C" fn aimux_apply_tool_call_repair(
 
 /// Apply a repair reply to a whole result document (RFC-0035).
 ///
-/// `result_json` is a serialized `GenerateTextResult` or
-/// `GenerateObjectResult`; `opts_json` is the same string the call was
-/// generated with. Both `tool_calls` and the matching `response_messages`
-/// tool-call part are rewritten. The OpenAI-shaped
+/// `result_json` is a serialized `GenerateTextResult` (from
+/// `aimux_generate_text` or `aimux_consume_stream_text`); `opts_json` is the
+/// same string the call was generated with. The call is repaired in the
+/// result's steps (content, approval requests and response messages) and
+/// the derived `tool_calls`, `content` and `response_messages` are written
+/// from them. The OpenAI-shaped
 /// `ChatCompletion` is not supported — it carries no `invalid`/`error`, so
 /// repair is driven from the native result, which
 /// [`aimux_generate_text_result_as_openai`] then converts. Same purity as
@@ -2005,8 +2017,9 @@ pub extern "C" fn aimux_apply_tool_call_repair_to_result(
 ///
 /// The conversion half of [`aimux_generate_text_as_openai`], for hosts that
 /// repair a native result themselves (RFC-0035) and then want the OpenAI
-/// shape: tool calls come from `result_json`'s `tool_calls`, so a patched
-/// result converts to a completion that reflects the repair. `handle` only
+/// shape: tool calls come from the content of `result_json`'s `steps`, so a
+/// result patched by [`aimux_apply_tool_call_repair_to_result`] converts to a
+/// completion that reflects the repair. `handle` only
 /// supplies the model id fallback for `ChatCompletion.model`; no runtime work,
 /// so this is safe from inside a stream callback.
 #[unsafe(no_mangle)]
@@ -3872,7 +3885,9 @@ mod tests {
         assert_eq!(aimux_error_retryable(h), 0);
         assert!(aimux_error_provider_code(h).is_null());
         let m = take(aimux_error_message(h)).unwrap();
-        assert!(m.contains("Failed after 2 attempts"), "{m}");
+        // getErrorMessage text (provider-utils retry-with-exponential-backoff.ts:97,
+        // :103): the last attempt's message, without its HTTP status.
+        assert_eq!(m, "Failed after 2 attempts. Last error: boom");
         let first = aimux_error_retry_error_at(h, 0);
         assert_eq!(aimux_error_code(first), AIMUX_E_OTHER);
         assert_eq!(take(aimux_error_message(first)).as_deref(), Some("first"));

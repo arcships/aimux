@@ -114,7 +114,9 @@ impl ExchangeContext for aimux_core::options::CallOptions {
         self.abort_signal.clone()
     }
     fn call_id(&self) -> Option<String> {
-        self.call_id.clone()
+        self.recording_context
+            .as_ref()
+            .map(|ctx| ctx.call_id.clone())
     }
     fn recording_context(&self) -> Option<RecordingContext> {
         self.recording_context.clone()

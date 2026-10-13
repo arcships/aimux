@@ -10,50 +10,53 @@ import type { JsonValue } from "./serde_json/JsonValue";
  *
  * Aligned with V4 `ImageModelV4CallOptions`.
  */
-export type ImageCallOptions = { 
+export type ImageCallOptions = {
 /**
  * Prompt for the image generation. `None` for operations (e.g. upscaling)
  * that do not require a prompt.
  */
-prompt: string | null, 
+prompt: string | null,
 /**
  * Number of images to generate.
  */
-n: number, 
+n: number,
 /**
  * Size of the images, in `{width}x{height}` format.
  * `None` uses the provider's default size.
  */
-size: Size | null, 
+size: Size | null,
 /**
  * Aspect ratio of the images, in `{width}:{height}` format.
  * `None` uses the provider's default aspect ratio.
  */
-aspect_ratio: AspectRatio | null, 
+aspect_ratio: AspectRatio | null,
 /**
  * Seed for deterministic generation. `None` uses the provider's default.
  */
-seed: number | null, 
+seed: number | null,
 /**
  * Images for image editing or variation generation.
  */
-files: Array<ImageFile> | null, 
+files: Array<ImageFile> | null,
 /**
  * Mask image for inpainting operations.
  */
-mask: ImageFile | null, 
+mask: ImageFile | null,
 /**
  * Additional provider-specific options, keyed by provider name.
  */
-provider_options: { [key in string]: { [key in string]: JsonValue } }, 
+provider_options: { [key in string]: { [key in string]: JsonValue } },
 /**
- * Per-call retry override. `None` uses the model default.
+ * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
+ * retrying. `None` uses 2, the AI SDK default, unless the model's
+ * `retry_config()` sets another count (model-level retry settings are
+ * removed in the target design, docs/aisdk-architecture-alignment.md D14).
  */
-max_retries: number | null, 
+max_retries: number | null,
 /**
  * Per-call operation timeout.
  */
-timeout: TimeoutConfiguration | null, 
+timeout: TimeoutConfiguration | null,
 /**
  * Additional HTTP headers to send with the request.
  */

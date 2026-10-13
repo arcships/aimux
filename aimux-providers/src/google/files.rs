@@ -349,7 +349,7 @@ impl Files for GoogleFiles {
             metadata.insert("sha256Hash".to_string(), json!(sha256_hash));
         }
 
-        let mut provider_ref = HashMap::new();
+        let mut provider_ref = aimux_core::shared::SharedProviderReference::new();
         provider_ref.insert(GOOGLE.to_string(), file.uri.clone());
 
         let result_media_type = if file.mime_type.is_empty() {
@@ -362,7 +362,10 @@ impl Files for GoogleFiles {
             provider_reference: provider_ref,
             media_type: result_media_type,
             filename: None,
-            provider_metadata: Some(HashMap::from([(GOOGLE.to_string(), metadata)])),
+            provider_metadata: Some(aimux_core::shared::NamespaceMap::from([(
+                GOOGLE.to_string(),
+                metadata,
+            )])),
             warnings,
         })
     }

@@ -320,9 +320,9 @@ func TestStreamPartParseRoundTrip(t *testing.T) {
 		json string
 		tag  string
 	}{
-		{"TextDelta", `{"TextDelta":{"id":"tx1","delta":"Hello"}}`, "TextDelta"},
-		{"Finish", `{"Finish":{"finish_reason":{"unified":{"stop":null}}}}`, "Finish"},
-		{"StreamStart", `{"StreamStart":{"warnings":[]}}`, "StreamStart"},
+		{"TextDelta", `{"TextDelta":{"id":"tx1","text":"Hello"}}`, "TextDelta"},
+		{"Finish", `{"Finish":{"finish_reason":"stop","raw_finish_reason":null,"total_usage":{"input_tokens":3}}}`, "Finish"},
+		{"StartStep", `{"StartStep":{"request":{},"warnings":[]}}`, "StartStep"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -341,11 +341,27 @@ func TestStreamPartParseRoundTrip(t *testing.T) {
 }
 
 func TestParseTextDeltaPayload(t *testing.T) {
-	sp, _ := ParseStreamPart(`{"TextDelta":{"id":"tx1","delta":"Hello"}}`)
+	sp, _ := ParseStreamPart(`{"TextDelta":{"id":"tx1","text":"Hello"}}`)
 	var td TextDeltaPayload
 	json.Unmarshal(sp.Payload, &td)
-	if td.ID != "tx1" || td.Delta != "Hello" {
+	if td.ID != "tx1" || td.Text != "Hello" {
 		t.Errorf("got %+v", td)
+	}
+}
+
+func TestParseFinishPayload(t *testing.T) {
+	sp, _ := ParseStreamPart(`{"Finish":{"finish_reason":"tool-calls","raw_finish_reason":"tool_use","total_usage":{"input_tokens":3,"input_token_details":{"cache_read_tokens":1},"output_tokens":2,"output_token_details":{},"total_tokens":5}}}`)
+	var finish FinishPayload
+	if err := json.Unmarshal(sp.Payload, &finish); err != nil {
+		t.Fatal(err)
+	}
+	if finish.FinishReason != "tool-calls" || finish.RawFinishReason == nil || *finish.RawFinishReason != "tool_use" {
+		t.Errorf("finish reason: %+v", finish)
+	}
+	u := finish.TotalUsage
+	if u.InputTokens == nil || *u.InputTokens != 3 || u.TotalTokens == nil || *u.TotalTokens != 5 ||
+		u.InputTokenDetails.CacheReadTokens == nil || *u.InputTokenDetails.CacheReadTokens != 1 {
+		t.Errorf("total usage: %+v", u)
 	}
 }
 
@@ -357,7 +373,7 @@ func TestParseStreamPartRejectsInvalid(t *testing.T) {
 		json string
 	}{
 		{"empty_object", `{}`},
-		{"multiple_keys", `{"TextDelta":{"delta":"a"},"Finish":{}}`},
+		{"multiple_keys", `{"TextDelta":{"text":"a"},"Finish":{}}`},
 		{"not_object", `[]`},
 		{"invalid_json", `{`},
 	}

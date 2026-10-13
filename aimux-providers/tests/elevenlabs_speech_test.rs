@@ -1,4 +1,4 @@
-﻿//! Rust translation of the ElevenLabs speech (TTS) model tests.
+//! Rust translation of the ElevenLabs speech (TTS) model tests.
 //!
 //! Source: `reference/ai/packages/elevenlabs/src/elevenlabs-speech-model.test.ts`
 //!
@@ -8,8 +8,6 @@
 //!
 //! Note: the TS test mounts at `https://api.elevenlabs.io/v1/text-to-speech/*`.
 //! The Rust mock server uses a wildcard path matcher to capture any voice id.
-
-use std::collections::HashMap;
 
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path_regex};
@@ -213,7 +211,7 @@ async fn should_pass_provider_specific_options() {
     let mut options = speech_options("Hello, world!");
     options.voice = Some("test-voice-id".to_string());
 
-    let mut provider_options = HashMap::new();
+    let mut provider_options = aimux_core::shared::SharedProviderOptions::new();
     provider_options.insert(
         "elevenlabs".to_string(),
         serde_json::from_value(json!({

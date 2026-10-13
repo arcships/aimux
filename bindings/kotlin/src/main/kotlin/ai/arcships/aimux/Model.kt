@@ -534,9 +534,9 @@ class Model internal constructor(handle: Long) : Closeable {
      * Generate a structured JSON object (M12, RFC-0016).
      *
      * Same signature as [generateText]; returns a JSON-serialized
-     * `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }` via
-     * [optsJson] for schema control; aimux-core applies JSON repair before
-     * parsing.
+     * `GenerateObjectResult`. Pass `"output": {"Object": {"schema": ...}}` via
+     * [optsJson] to describe the object; the model's text must parse as JSON
+     * and match the schema.
      *
      * @param promptJson JSON prompt string (bare value or {"prompt": ...}).
      * @param optsJson Optional JSON-serialized GenerateTextOptions.
@@ -559,11 +559,11 @@ class Model internal constructor(handle: Long) : Closeable {
      * (M11, RFC-0016). Synchronous (blocks until the stream finishes).
      *
      * Same signature as [generateText]; returns a JSON-serialized
-     * `StreamTextResultAggregated`.
+     * `GenerateTextResult`.
      *
      * @param promptJson JSON prompt string (bare value or {"prompt": ...}).
      * @param optsJson Optional JSON-serialized GenerateTextOptions.
-     * @return JSON-serialized StreamTextResultAggregated.
+     * @return JSON-serialized GenerateTextResult.
      * @throws AimuxException on AiMuxError.
      * @throws IllegalArgumentException when a raw JSON argument is malformed; IllegalStateException after [close].
      */

@@ -179,7 +179,7 @@ let result = stream_text(
 let mut stream = result.stream;
 while let Some(part) = stream.next().await {
     match part? {
-        TextStreamPart::TextDelta { delta, .. } => print!("{}", delta),
+        TextStreamPart::TextDelta { text, .. } => print!("{}", text),
         TextStreamPart::Finish { .. } => println!("\n[done]"),
         _ => {}
     }

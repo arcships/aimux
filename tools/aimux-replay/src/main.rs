@@ -207,10 +207,14 @@ fn run_replay(
 
     println!(
         "[{}] {} / {} → finish={:?}",
-        rec.call_id, rec.provider.provider, rec.provider.model_id, result.finish_reason.unified
+        rec.call_id,
+        rec.provider.provider,
+        rec.provider.model_id,
+        result.finish_reason()
     );
-    if !result.text.is_empty() {
-        println!("  text: {}", truncate(&result.text, 300));
+    let text = result.text();
+    if !text.is_empty() {
+        println!("  text: {}", truncate(&text, 300));
     }
     Ok(())
 }

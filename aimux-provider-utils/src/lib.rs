@@ -25,8 +25,8 @@ pub mod read_response_with_size_limit;
 pub mod resolvable;
 pub mod response_handler;
 pub mod sigv4_fetch;
-pub mod streaming_tool_call_argument_state;
-pub mod streaming_tool_call_tracker;
+mod streaming_tool_call_argument_state;
+mod streaming_tool_call_tracker;
 pub mod url;
 /// WebSocket client for realtime provider APIs (RFC-0028). Empty unless the
 /// `ws` feature is enabled.
@@ -60,9 +60,8 @@ pub use response_handler::{
     create_status_code_error_response_handler, invalid_response_api_call, stream_error_api_call,
 };
 pub use sigv4_fetch::{AwsCredentials, SigV4Fetch};
-pub use streaming_tool_call_argument_state::{
-    StreamingToolCallArgumentState, starts_with_structured_value,
-};
+// As `@ai-sdk/provider-utils` (`index.ts:115-119`): the tracker is exported
+// from the crate root, its argument state stays internal.
 pub use streaming_tool_call_tracker::{
     StreamingToolCallDelta, StreamingToolCallTracker, TrackerError, TypeValidation,
 };

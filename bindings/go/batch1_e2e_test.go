@@ -3,7 +3,7 @@ package aimux
 // RFC-0016 第一批 e2e tests (Go shell):
 //   M2 include_raw_chunks -> StreamPart.Raw emission
 //   M10 Usage.raw preservation
-//   M9 StreamStart non-empty warnings
+//   M9 StartStep non-empty warnings
 //
 // Mirrors the Rust chat-provider tests at
 // the Go binding level, driving the real FFI path against a mock SSE server.
@@ -57,7 +57,7 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 			}
 			var td TextDeltaPayload
 			json.Unmarshal(sp.Payload, &td)
-			textBuilder.WriteString(td.Delta)
+			textBuilder.WriteString(td.Text)
 		}
 	}
 	if err := stream.Err(); err != nil {
@@ -87,7 +87,7 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 	}
 }
 
-func TestE2E_StreamStartCarriesNonEmptyWarnings(t *testing.T) {
+func TestE2E_StartStepCarriesNonEmptyWarnings(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()
 	srv.SetContentType("text/event-stream")
@@ -105,19 +105,19 @@ func TestE2E_StreamStartCarriesNonEmptyWarnings(t *testing.T) {
 		TopK: f64Ptr(0.5),
 	}))
 
-	sawStreamStart := false
+	sawStartStep := false
 	for part := range stream.Parts() {
 		sp, err := ParseStreamPart(part)
 		if err != nil {
 			t.Fatalf("failed to parse: %v", err)
 		}
-		if sp.Tag == "StreamStart" {
-			sawStreamStart = true
+		if sp.Tag == "StartStep" {
+			sawStartStep = true
 			var start struct {
 				Warnings []json.RawMessage `json:"warnings"`
 			}
 			if err := json.Unmarshal(sp.Payload, &start); err != nil {
-				t.Fatalf("failed to decode StreamStart payload: %v", err)
+				t.Fatalf("failed to decode StartStep payload: %v", err)
 			}
 			if len(start.Warnings) == 0 {
 				t.Error("expected an unsupported topK warning")
@@ -127,8 +127,8 @@ func TestE2E_StreamStartCarriesNonEmptyWarnings(t *testing.T) {
 	if err := stream.Err(); err != nil {
 		t.Fatalf("stream error: %v", err)
 	}
-	if !sawStreamStart {
-		t.Fatal("no StreamStart part received")
+	if !sawStartStep {
+		t.Fatal("no StartStep part received")
 	}
 }
 

@@ -218,7 +218,7 @@ final result = model.generateText('What is Rust?');
 model.close();
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -228,7 +228,7 @@ model.close();
 final model = Model.openai('sk-...', 'gpt-4o');
 final stream = model.streamText('Write a haiku');
 await for (final part in stream) {
-  if (part.containsKey('TextDelta')) print(part['TextDelta']['delta']);
+  if (part.containsKey('TextDelta')) print(part['TextDelta']['text']);
 }
 model.close();
 ```
@@ -246,7 +246,7 @@ print(result.text);  // typed GenerateTextResult
 
 final stream = model.streamText('Write a haiku');
 await for (final part in stream) {
-  if (part is StreamPartTextDelta) print(part.delta);  // typed StreamPart variants
+  if (part is StreamPartTextDelta) print(part.text);  // typed StreamPart variants
 }
 model.close();
 ```

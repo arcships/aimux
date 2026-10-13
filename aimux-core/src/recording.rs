@@ -162,16 +162,31 @@ pub struct InputRecord {
     pub operation: RecordingOperation,
     /// 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
     pub prompt: LanguageModelPrompt,
-    /// 序列化的 CallOptions(abort_signal/call_id 已 serde skip);
-    /// headers/provider_options 已递归脱敏。
+    /// 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
+    /// 加上所在操作的 `max_retries` / `timeout` / `session_id`
+    /// (`OperationSettings`);headers/provider_options 已递归脱敏。
     pub options: serde_json::Value,
 }
 
 impl InputRecord {
     /// 从 CallOptions 提取输入侧快照(options 序列化后递归脱敏)。
+    ///
+    /// The retry count, the timeout and the session id are operation
+    /// settings, not call options. They are taken from the operation the
+    /// call runs in ([`crate::operation::OperationSettings::current`]) and
+    /// written under the keys they had as call options, so the record still
+    /// rebuilds the whole `generate_text` call.
     #[must_use]
     pub fn from_call_options(options: &CallOptions) -> Self {
-        let value = serde_json::to_value(options).unwrap_or(serde_json::Value::Null);
+        let mut value = serde_json::to_value(options).unwrap_or(serde_json::Value::Null);
+        if let (serde_json::Value::Object(map), Ok(serde_json::Value::Object(settings))) = (
+            &mut value,
+            serde_json::to_value(
+                crate::operation::OperationSettings::current().unwrap_or_default(),
+            ),
+        ) {
+            map.extend(settings);
+        }
         Self {
             decision_capabilities: None,
             operation: RecordingOperation::LanguageModel,
@@ -336,18 +351,22 @@ impl OutcomeRecord {
         outcome.error_value = outcome.error_value.map(redact_json);
         outcome
     }
-    /// 非流式成功。
+    /// 成功:最终步骤的 finish reason 与用户层 usage(`LanguageModelUsage`)。
+    /// 非流式与流式共用,两条路径录制的 usage 形状一致。
     #[must_use]
-    pub fn from_generate_result(r: &crate::result::GenerateResult) -> Self {
+    pub fn success(
+        finish_reason: crate::types::FinishReasonUnified,
+        usage: &crate::types::LanguageModelUsage,
+    ) -> Self {
         Self {
             status: OutcomeStatus::Success,
-            finish_reason: serde_json::to_value(r.finish_reason.unified)
+            finish_reason: serde_json::to_value(finish_reason)
                 .ok()
                 .and_then(|v| v.as_str().map(std::string::ToString::to_string)),
             error: None,
             error_value: None,
             decision_result: None,
-            usage: serde_json::to_value(&r.usage).ok(),
+            usage: serde_json::to_value(usage).ok(),
         }
     }
 
@@ -1717,7 +1736,10 @@ impl<S> RecordingOutcomeStream<S> {
 }
 
 enum StreamOutcome<'a> {
-    Finish(&'a crate::types::FinishReason, &'a crate::types::Usage),
+    Finish(
+        crate::types::FinishReasonUnified,
+        crate::types::LanguageModelUsage,
+    ),
     Error(&'a crate::AiMuxError),
     Other,
 }
@@ -1733,7 +1755,10 @@ impl<C, A, R> RecordingStreamPart for crate::stream_part::StreamPart<C, A, R> {
                 finish_reason,
                 usage,
                 ..
-            } => StreamOutcome::Finish(finish_reason, usage),
+            } => StreamOutcome::Finish(
+                finish_reason.unified,
+                crate::types::as_language_model_usage(usage),
+            ),
             Self::Error { error } => StreamOutcome::Error(error),
             _ => StreamOutcome::Other,
         }
@@ -1745,9 +1770,9 @@ impl RecordingStreamPart for crate::stream_part::TextStreamPart {
         match self {
             Self::Finish {
                 finish_reason,
-                usage,
+                total_usage,
                 ..
-            } => StreamOutcome::Finish(finish_reason, usage),
+            } => StreamOutcome::Finish(*finish_reason, total_usage.clone()),
             Self::Error { error } => StreamOutcome::Error(error),
             _ => StreamOutcome::Other,
         }
@@ -1774,20 +1799,10 @@ where
                         let this = self.as_mut().get_mut();
                         if let Some(mut pending) = this.pending.take() {
                             // Provider error 已定性;尾随 Finish 补上 usage。
-                            pending.usage = serde_json::to_value(usage).ok();
+                            pending.usage = serde_json::to_value(&usage).ok();
                             this.record(&pending);
                         } else {
-                            let outcome = OutcomeRecord {
-                                status: OutcomeStatus::Success,
-                                finish_reason: serde_json::to_value(finish_reason.unified)
-                                    .ok()
-                                    .and_then(|v| v.as_str().map(std::string::ToString::to_string)),
-                                error: None,
-                                error_value: None,
-                                decision_result: None,
-                                usage: serde_json::to_value(usage).ok(),
-                            };
-                            this.record(&outcome);
+                            this.record(&OutcomeRecord::success(finish_reason, &usage));
                         }
                     }
                     StreamOutcome::Error(error) => {
@@ -2008,6 +2023,7 @@ mod tests {
             crate::language_model_message::convert_to_language_model_prompt(
                 &[crate::message::ModelMessage::user("ping")],
                 None,
+                None,
             )
             .unwrap(),
         )
@@ -2029,11 +2045,15 @@ mod tests {
     #[test]
     fn input_record_serializes_options_without_internal_fields() {
         let mut opts = sample_options();
-        opts.call_id = Some("call-test".into());
-        opts.abort_signal = None;
+        opts.recording_context = Some(RecordingContext::new(
+            "call-test",
+            Arc::new(RingRecorder::new()),
+        ));
+        opts.abort_signal = Some(crate::AbortSignal::new());
         let rec = InputRecord::from_call_options(&opts);
         let v = &rec.options;
         assert!(v.get("call_id").is_none());
+        assert!(v.get("recording_context").is_none());
         assert!(v.get("abort_signal").is_none());
     }
 

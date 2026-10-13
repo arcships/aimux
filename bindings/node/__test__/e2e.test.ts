@@ -106,7 +106,7 @@ test('e2e: OpenAI streamText via mock server', async (t) => {
 
     const text = parts
       .filter((p) => p.TextDelta)
-      .map((p) => p.TextDelta.delta)
+      .map((p) => p.TextDelta.text)
       .join('')
 
     t.is(text, 'Hello world')
@@ -150,7 +150,7 @@ test('e2e: Anthropic streamText via mock server', async (t) => {
 
     const text = parts
       .filter((p) => p.TextDelta)
-      .map((p) => p.TextDelta.delta)
+      .map((p) => p.TextDelta.text)
       .join('')
 
     t.is(text, 'Hello from Claude')
@@ -232,16 +232,13 @@ test('e2e: OpenAI generateText parses tool_calls (structured content)', async (t
     t.is(r.tool_calls[0].tool_call_id, 'call_abc')
     t.deepEqual(r.tool_calls[0].input, { location: 'Tokyo' })
 
-    // Structured content: raw.content contains the ToolCall variant
-    t.truthy(r.raw)
-    t.true(Array.isArray(r.raw.content))
-    const tc = r.raw.content.find((c: any) => c.ToolCall)
-    t.truthy(tc, 'raw.content contains a ToolCall variant')
+    // Structured content: the final step's content holds the parsed ToolCall
+    t.true(Array.isArray(r.content))
+    const tc = r.content.find((c: any) => c.ToolCall)
+    t.truthy(tc, 'content contains a ToolCall variant')
     t.is(tc.ToolCall.tool_name, 'get_weather')
     t.is(tc.ToolCall.tool_call_id, 'call_abc')
-    // raw content keeps the provider's argument text; the parsed object
-    // lives on the top-level toolCalls.
-    t.is(tc.ToolCall.input, '{"location":"Tokyo"}')
+    t.deepEqual(tc.ToolCall.input, { location: 'Tokyo' })
   } finally {
     await closeServer(server)
   }

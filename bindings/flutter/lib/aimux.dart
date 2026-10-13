@@ -541,9 +541,9 @@ class Model implements Finalizable {
   /// Generate a structured JSON object (M12, RFC-0016).
   ///
   /// Same signature as [generateText]; returns the parsed
-  /// GenerateObjectResult as a Map. Pass `response_format: { "Json": { ... } }`
-  /// via [options] for schema control; aimux-core applies JSON repair before
-  /// parsing.
+  /// GenerateObjectResult as a Map. Pass `'output': {'Object': {'schema': ...}}`
+  /// via [options] to describe the object; the model's text must parse as
+  /// JSON and match the schema.
   ///
   /// [prompt] — a string or a list of message maps.
   /// [options] — optional generation options map.
@@ -558,7 +558,7 @@ class Model implements Finalizable {
   /// (M11, RFC-0016). Synchronous (blocks until the stream finishes).
   ///
   /// Same signature as [generateText]; returns the parsed
-  /// StreamTextResultAggregated as a Map.
+  /// GenerateTextResult as a Map.
   ///
   /// [prompt] — a string or a list of message maps.
   /// [options] — optional generation options map.

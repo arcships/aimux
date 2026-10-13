@@ -31,8 +31,9 @@ fn options(prompt: &str) -> VideoCallOptions {
     o
 }
 
-/// A config pointed at the mock server with a short poll interval so tests run
-/// fast. Uses a dummy, non-secret API key.
+/// A config pointed at the mock server. Poll pacing is a per-call option
+/// ([`fast_poll`]), as the AI SDK's `generateVideo` `poll`. Uses a dummy,
+/// non-secret API key.
 fn config(server_uri: String) -> RunwaymlProviderSettings {
     RunwaymlProviderSettings {
         api_key: Some(Resolvable::Value("test-api-key".to_string())),

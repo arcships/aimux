@@ -112,9 +112,10 @@ export declare class Model {
    * Generate a structured JSON object from the model (M12, RFC-0016).
    *
    * Same signature as [`Model::generate_text`]; returns a JSON-serialized
-   * `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }`
-   * via `options` for schema control; the function applies JSON repair
-   * before parsing.
+   * `GenerateObjectResult` (core's deprecated `generate_object` wrapper).
+   * Pass `output: { "Object": { "schema": ... } }`
+   * via `options` to describe the value; the model's text must parse and
+   * match the schema.
    */
   generateObject(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
   /**
@@ -122,14 +123,15 @@ export declare class Model {
    * (M11, RFC-0016).
    *
    * Drives `streamText` to completion and returns a JSON-serialized
-   * `StreamTextResultAggregated` (the fully-consumed stream summary).
+   * `GenerateTextResult`, the same result `generateText` returns.
    */
   consumeStreamText(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
   /**
    * Stream text from the model.
    *
-   * Returns an `AsyncGenerator<string>` yielding `StreamPart` JSON strings.
-   * Use `for await (const part of model.streamText(...))` to consume.
+   * Returns an `AsyncGenerator<string>` yielding `TextStreamPart` JSON
+   * strings. Use `for await (const part of model.streamText(...))` to
+   * consume.
    */
   streamText(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<AsyncGenerator<string>>
   /**

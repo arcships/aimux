@@ -18,7 +18,8 @@ decision_capabilities?: DecisionCapabilities | null, operation?: RecordingOperat
  */
 prompt: Array<LanguageModelMessage>,
 /**
- * 序列化的 CallOptions(abort_signal/call_id 已 serde skip);
- * headers/provider_options 已递归脱敏。
+ * 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
+ * 加上所在操作的 `max_retries` / `timeout` / `session_id`
+ * (`OperationSettings`);headers/provider_options/body_overrides 已递归脱敏。
  */
 options: JsonValue, };

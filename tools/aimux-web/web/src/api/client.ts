@@ -5,7 +5,7 @@ import type { WireCallResponse } from '@/types/generated/WireCallResponse'
 import type { Recording } from '@aimux/types/Recording'
 import type { TraceRecord } from '@aimux/types/TraceRecord'
 import type { SessionView } from '@aimux/types/SessionView'
-import type { StreamPart } from '@aimux/types/StreamPart'
+import type { TextStreamPart } from '@aimux/types/TextStreamPart'
 
 const API = '/api'
 
@@ -220,7 +220,7 @@ export const api = {
   },
 }
 
-/** Parse a `stream_part` JSON payload into a StreamPart (best-effort). */
-export function parseStreamPart(json: string): StreamPart {
-  return JSON.parse(json) as StreamPart
+/** Parse a `stream_part` JSON payload into a TextStreamPart (best-effort). */
+export function parseStreamPart(json: string): TextStreamPart {
+  return JSON.parse(json) as TextStreamPart
 }

@@ -149,13 +149,13 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
      *
      * @param prompt  Plain text prompt.
      * @param options Optional typed [GenerateTextOptions].
-     * @return Decoded [StreamTextResultAggregated].
+     * @return Decoded [GenerateTextResult].
      */
-    fun consumeStreamText(prompt: String, options: GenerateTextOptions? = null): StreamTextResultAggregated {
+    fun consumeStreamText(prompt: String, options: GenerateTextOptions? = null): GenerateTextResult {
         val promptJson = AimuxJson.encodeToString(prompt)
         val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
         val resultJson = repaired(raw.consumeStreamText(promptJson, optsJson), promptJson, optsJson, options)
-        return decodeAggregated(resultJson)
+        return decodeResult(resultJson)
     }
 
     /**
@@ -164,27 +164,16 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
      *
      * @param messages Conversation as a list of [ModelMessage]s.
      * @param options  Optional typed [GenerateTextOptions].
-     * @return Decoded [StreamTextResultAggregated].
+     * @return Decoded [GenerateTextResult].
      */
-    fun consumeStreamText(messages: List<ModelMessage>, options: GenerateTextOptions? = null): StreamTextResultAggregated {
+    fun consumeStreamText(messages: List<ModelMessage>, options: GenerateTextOptions? = null): GenerateTextResult {
         val promptJson = AimuxJson.encodeToString(
             kotlinx.serialization.builtins.ListSerializer(ModelMessage.serializer()),
             messages,
         )
         val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
         val resultJson = repaired(raw.consumeStreamText(promptJson, optsJson), promptJson, optsJson, options)
-        return decodeAggregated(resultJson)
-    }
-
-    private fun decodeAggregated(resultJson: String): StreamTextResultAggregated {
-        return try {
-            AimuxJson.decodeFromString(StreamTextResultAggregated.serializer(), resultJson)
-        } catch (e: Exception) {
-            throw InvalidArgumentError(
-                "failed to decode StreamTextResultAggregated: ${e.message ?: e::class.simpleName}",
-                cause = e,
-            )
-        }
+        return decodeResult(resultJson)
     }
 
     // ── streamText ───────────────────────────────────────────────────────

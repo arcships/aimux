@@ -14,8 +14,9 @@ package ai.arcships.aimux;
  * <ul>
  *   <li>Return a replacement {@link Types.RawToolCall} (its {@code input} is
  *       raw argument TEXT) to have the library re-parse and re-validate it. If
- *       the replacement is still invalid, the call comes back invalid carrying
- *       a {@code ToolCallRepair} error.</li>
+ *       the replacement is still invalid, the original call comes back invalid
+ *       carrying the replacement's parse or validation error (not wrapped in
+ *       {@code ToolCallRepair}).</li>
  *   <li>Return {@code null} to leave the call as it was — invalid, with its
  *       original error.</li>
  *   <li>Throw to report a failed attempt: the call comes back invalid with a
