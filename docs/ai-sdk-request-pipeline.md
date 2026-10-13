@@ -482,9 +482,15 @@ backoff_factor = 2
 固定 message 与 AI SDK 一致：
 
 ```text
-Failed after {N} attempts. Last error: {last_error}
-Failed after {N} attempts with non-retryable error: '{last_error}'
+Failed after {N} attempts. Last error: {last_error_message}
+Failed after {N} attempts with non-retryable error: '{last_error_message}'
 ```
+
+`{last_error_message}` 对应 AI SDK 的 `getErrorMessage(error)`
+（provider-utils `retry-with-exponential-backoff.ts:97`、`:103`、`:138`）：ApiCall 只取
+`ApiCallError.message`，不带 `API call error:` 前缀，也不带 HTTP status；其他 variant 取自身
+message。JavaScript `Error.toString()` 另加的类名前缀（如 `AI_APICallError: `）在 Aimux
+没有对应物，不复刻。
 
 ### 6.5 Retry headers
 

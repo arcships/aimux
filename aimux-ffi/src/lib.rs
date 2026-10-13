@@ -3721,7 +3721,9 @@ mod tests {
         assert_eq!(aimux_error_retryable(h), 0);
         assert!(aimux_error_provider_code(h).is_null());
         let m = take(aimux_error_message(h)).unwrap();
-        assert!(m.contains("Failed after 2 attempts"), "{m}");
+        // getErrorMessage text (provider-utils retry-with-exponential-backoff.ts:97,
+        // :103): the last attempt's message, without its HTTP status.
+        assert_eq!(m, "Failed after 2 attempts. Last error: boom");
         let first = aimux_error_retry_error_at(h, 0);
         assert_eq!(aimux_error_code(first), AIMUX_E_OTHER);
         assert_eq!(take(aimux_error_message(first)).as_deref(), Some("first"));

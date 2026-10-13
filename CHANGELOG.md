@@ -79,6 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [docs/api/providers.md](docs/api/providers.md); Rust also gains
   `provider_names()`.
 
+- `RetryError`'s text names the last attempt's message as the AI SDK's
+  `getErrorMessage` does: `Failed after 3 attempts. Last error: Too Many
+  Requests`, not `... Last error: API call error: HTTP 429: Too Many
+  Requests`. The HTTP status stays a field of the attempt error.
+
 **Rust (aimux-stream)**
 
 - `SseStream` is now a thin adapter over the `sse-stream` crate (WHATWG

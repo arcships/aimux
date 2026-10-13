@@ -621,6 +621,9 @@ mod tests {
         assert_eq!(dropped.load(Ordering::SeqCst), 1);
     }
 
+    /// `@ai-sdk/provider-utils@5.0.53` `retry-with-exponential-backoff.ts:97`
+    /// takes `getErrorMessage(error)` for both texts (`:103`, `:138`): the
+    /// error's message, without an HTTP status or a variant label.
     #[test]
     fn retry_error_messages_match_the_ai_sdk() {
         let max = RetryError {
@@ -629,7 +632,7 @@ mod tests {
         };
         assert_eq!(
             max.to_string(),
-            "Failed after 3 attempts. Last error: API call error: retry"
+            "Failed after 3 attempts. Last error: retry"
         );
 
         let non_retryable = RetryError {
@@ -638,7 +641,17 @@ mod tests {
         };
         assert_eq!(
             non_retryable.to_string(),
-            "Failed after 2 attempts with non-retryable error: 'API call error: retry'"
+            "Failed after 2 attempts with non-retryable error: 'retry'"
+        );
+
+        // The status is a field of the error, never part of the message.
+        let with_status = RetryError {
+            reason: RetryErrorReason::MaxRetriesExceeded,
+            errors: vec![api_error_with_headers(429, &[])],
+        };
+        assert_eq!(
+            with_status.to_string(),
+            "Failed after 1 attempts. Last error: retry"
         );
     }
 }

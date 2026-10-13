@@ -124,12 +124,31 @@ impl RetryError {
     }
 }
 
+/// The text the AI SDK's `getErrorMessage` gives for an attempt error
+/// (`@ai-sdk/provider` `errors/get-error-message.ts`), which the retry
+/// wrapper puts after "Last error:"
+/// (`@ai-sdk/provider-utils` `retry-with-exponential-backoff.ts:97`).
+///
+/// For an API failure that is the provider's message alone: the AI SDK's
+/// `APICallError.message` never carries the HTTP status, so neither does this
+/// text. (JavaScript's `Error.toString()` also prefixes the class name, such as
+/// `AI_APICallError: `; Aimux errors have no JavaScript class name, so only
+/// the message part is reproduced.) Every other variant is its own message.
+fn retry_attempt_message(error: &AiMuxError) -> String {
+    match error {
+        AiMuxError::ApiCall(api) if !api.message.is_empty() => api.message.clone(),
+        AiMuxError::ApiCall(api) => api.to_string(),
+        other => other.to_string(),
+    }
+}
+
 impl std::fmt::Display for RetryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let attempts = self.errors.len();
         let Some(last_error) = self.errors.last() else {
             return f.write_str("Retry failed without recorded errors");
         };
+        let last_error = retry_attempt_message(last_error);
         match self.reason {
             RetryErrorReason::MaxRetriesExceeded => {
                 write!(
