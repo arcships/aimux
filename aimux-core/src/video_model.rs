@@ -266,7 +266,7 @@ pub enum VideoOperationStatus {
 }
 
 /// AI SDK `generateVideo` poll defaults (ai@7.0.127
-/// `generate-video/generate-video.ts:575-576`).
+/// `generate-video/generate-video.ts:543-544`).
 const DEFAULT_POLL_INTERVAL_MS: u64 = 5_000;
 const DEFAULT_POLL_TIMEOUT_MS: u64 = 600_000;
 
@@ -292,7 +292,7 @@ impl PollPacing {
     }
 
     /// The AI SDK's `pollingTimeoutError` text
-    /// (`generate-video/generate-video.ts:579-581`).
+    /// (`generate-video/generate-video.ts:547-549`).
     fn timeout_error(&self) -> AiMuxError {
         AiMuxError::Timeout(format!(
             "Video generation timed out after {}ms.",
@@ -497,7 +497,7 @@ async fn start_and_poll_one_batch(
         // As the AI SDK does, each status check, retries included, races the
         // time left in the poll budget; when the budget runs out the pending
         // request is dropped (cancelled) and the poll fails with the polling
-        // timeout (ai@7.0.127 generate-video/generate-video.ts:585-622).
+        // timeout (ai@7.0.127 generate-video/generate-video.ts:586-625).
         let status = tokio::time::timeout(
             poll.timeout - elapsed,
             retries.retry(|| model.do_status(&start.operation, &options)),
@@ -886,9 +886,9 @@ mod tests {
         }
     }
 
-    /// ai@7.0.127 generate-video/generate-video.ts:585-622: each status
+    /// ai@7.0.127 generate-video/generate-video.ts:586-625: each status
     /// check races the time left in the poll budget, and losing the race
-    /// fails with the polling timeout error (`:579-581`).
+    /// fails with the polling timeout error (`:547-549`).
     #[tokio::test]
     async fn a_hanging_status_check_is_bounded_by_the_poll_timeout() {
         let model = HangingStatus(ScriptedVideoModel::new(vec![]));
@@ -912,7 +912,7 @@ mod tests {
     }
 
     /// The race covers the status retries too (upstream passes the status
-    /// timeout signal to `prepareRetries`, generate-video.ts:597-600): a
+    /// timeout signal to `prepareRetries`, generate-video.ts:602-605): a
     /// retry delay longer than the remaining budget ends with the polling
     /// timeout, not after the delay.
     #[tokio::test]
@@ -969,7 +969,7 @@ mod tests {
     }
 
     /// Without a `poll` option the AI SDK defaults apply
-    /// (generate-video.ts:575-576); the model has no poll settings.
+    /// (generate-video.ts:543-544); the model has no poll settings.
     #[test]
     fn poll_pacing_defaults_to_the_ai_sdk_values() {
         let pacing = PollPacing::resolve(None);

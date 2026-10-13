@@ -2,6 +2,8 @@
 
 > **Status**: IMPLEMENTED（2026-08-20；jitter 与首条 SSE error 两处有意差异见 §3）
 >
+> **修订**: provider 默认 retry、composite 默认零重试、helper 观测与录制等有意差异由 [aisdk-architecture-alignment.md](aisdk-architecture-alignment.md) §4.5、§9.4 撤销或改写。对应的 V4 分层 PR 合入主线时同步改写本文。
+>
 > **Date**: 2026-08-19
 >
 > **Reference baseline**: Vercel AI SDK `63db193`
@@ -86,7 +88,7 @@ Core user operation
 | error context 安全 | AI SDK 传原始 request context；Aimux 写入 public error 前使用统一白名单/脱敏/大小限制，binary 与大型 data URL 只保留摘要 |
 | 错误 body 上限 | AI SDK 全量读取错误 body（仅受 2 GiB 防 OOM 上限，超限直接抛 `DownloadError` 替换原错误）；Aimux 的 `ApiCallError` 会跨 FFI 序列化并写入 recording，因此错误 body 采用 best-effort 截断读：public `response_body` 上限 64 KiB（lossy 解码后按字符边界执行，带 `…(truncated)` 标记），解析上限 1 MiB 保证超大但合法的错误 JSON 仍能进 provider mapper，读取中途连接死亡保留已收到的部分 |
 | 成功 JSON body 上限 | AI SDK 对成功 body 复用同一个 2 GiB 下载上限；Aimux 的成功 JSON body 会同时以 bytes + `T` 的形式驻留（`raw_value` 是 best-effort 的第二次解析，不再额外持有 `Value` 克隆），2 GiB 上限会放大峰值内存，因此 `create_json_response_handler` 改用独立更小的默认值 `DEFAULT_MAX_JSON_RESPONSE_SIZE`（64 MiB），可通过 `HttpRequest::max_json_response_bytes` 按请求覆盖；`create_binary_response_handler` 不受影响，仍使用 `DEFAULT_MAX_DOWNLOAD_SIZE`（2 GiB） |
-| provider 默认 retry | 保留既有 `RetryConfig` 源码与行为兼容；Core 读取 model config，per-call 只覆盖 `max_retries` |
+| provider 默认 retry | 保留既有 `RetryConfig` 源码与行为兼容；Core 读取 model config，per-call 只覆盖 `max_retries`（目标设计已撤销：[aisdk-architecture-alignment.md](aisdk-architecture-alignment.md) D14、§9.4 删除 model/provider 级默认 retry，组合模型改为给每个 child 配预算；删除它的那层合入前，这里仍是主线现状） |
 | jitter | AI SDK 默认不抖动但留 `getDelayInMs` 注入点；Aimux 用同一注入点默认注入 RFC-0009 Full Jitter，只作用于 exponential delay，server hint 精确遵守（§6.5） |
 | 第一条 SSE error | AI SDK OpenAI provider 会扫描到首个 semantic output；Aimux 保留 RFC-0016 的更窄 first-event peek，使立即到达的 error 成为 retry 边界内的 attempt 失败（§8.3） |
 | 默认超时 | 与 AI SDK 一致无默认 `total_ms`；Aimux 有意保留非流式 exchange 的 30s whole-response 上限，但从 shared-client 全局配置下移到单次 exchange，流式 exchange 豁免（§5.4） |
@@ -420,7 +422,7 @@ retry
        └─ 返回 parsed stream（被 peek 的事件重新接回流首，不丢）
 ```
 
-stream 返回之后的 SSE error、parse error 或 transport failure 不自动 retry/reconnect。
+stream 返回之后的 SSE error、parse error 或 transport failure 不自动 retry/reconnect。（上游 `streamText` 另有 `streamRetries`：不设时不重试，设为 n 时流中途的 provider error 最多重新调用模型 n 次，`onError` 也可返回 `{ retry: true }` 请求一次重试，重试前关闭未结束的 text / reasoning 段，见 ai 7.0.127 `generate-text/stream-text.ts:374`、`:1948-1953`、`:2495-2665`。aimux 尚未实现这个选项，现状与不设时相同。）
 peek 在返回之前，因此它产生的错误按 §8.3 走正常 attempt 语义。
 
 ### 6.3 `RetryError`
@@ -477,7 +479,9 @@ backoff_factor = 2
 `MaxRetriesExceeded`），再 `should_retry` → delay 后重试，再 `try_number == 1` → 原错误，
 否则 `ErrorNotRetryable`。
 `should_retry` 固定为 `AiMuxError::ApiCall(e) && e.is_retryable`；其他 variant 不得自行
-加入通用 retry 白名单。
+加入通用 retry 白名单。（与上游的差异：上游 retry 有 `additionalRetryableError` 扩展点，
+`generateImage` 用它把 `RetryableNoImageResultError` 也算作可重试，见 ai 7.0.127
+`util/retry-with-exponential-backoff.ts:70-88`、`generate-image/generate-image.ts:181-182`。）
 
 固定 message 与 AI SDK 一致：
 
@@ -720,7 +724,10 @@ future，不构造合并 signal，也不把 timeout 写进 `AbortSignal`。外�
 前触发时，不得产生 HTTP exchange。
 
 `first_chunk_ms` 在调用 `do_stream` **之前** arm，因此覆盖 request/setup 以及 §8.3 的
-first-event peek；慢握手、200 后无首帧、以及首条 semantic output 迟到都受同一 budget 约束。
+first-event peek（与上游的差异：上游在 provider 响应流开始时才计时，不含请求建立，见
+ai 7.0.127 `generate-text/stream-text.ts:2228-2243`、`:2671`。aimux 的 provider 在
+`do_stream` 内等首个 SSE 事件，只有在 operation 开始时计时才能约束“200 后无首帧”；
+改成上游的时机要先让 `do_stream` 在响应头到达时返回，这一项未决）；慢握手、200 后无首帧、以及首条 semantic output 迟到都受同一 budget 约束。
 被 peek 的正常事件会重新接回流首，第一条 semantic output 对用户可见前清除 timer。
 
 `do_stream` 返回后所有 deadline 都由 pump task 观察（见“stream 驱动”偏差行）：timer 只度量
@@ -768,13 +775,19 @@ provider error 留在 operation retry 边界内。`do_stream` 返回 `Ok(stream)
 start/status 流），Core 拥有 poll 循环并分别 retry 两个阶段：
 
 - `do_start` 由 Core retry；Core 为它铸造一次 `idempotency-key`（caller 提供的
-  优先），同一个 key 覆盖所有 replay，且不泄漏给 `do_status`（AI SDK
-  generate-video 同款行为）；
+  优先），同一个 key 覆盖所有 replay，且不泄漏给 `do_status`。这里不泄漏的是 Core
+  铸造的 key；调用方在 headers 里给的 key 随 headers 同时用于 `do_start` 和
+  `do_status`（测试 `caller_idempotency_key_is_preserved_for_start_and_status`），
+  与上游一致（ai 7.0.127 `generate-video/generate-video.ts:520-536`、`:576-625`）。
+  与上游的差异只在多批：上游每个批次原样复用同一个调用方 key，aimux 按批次派生
+  （见下文 `options.n` 一条）；
 - `do_status` 在同一个 operation reference 上由 Core 独立 retry——poll 失败
   不会重新 submit；
-- `poll.timeout` 约束轮询节奏（与 AI SDK 相同，在两次 status 检查之间判定超
-  时）；挂起的 status GET 由 provider-utils 的单次交换 30s 响应上限兜底，
-  retry 次数有界；
+- 轮询设置属于 operation（`VideoCallOptions::poll`，对应上游 `generateVideo` 的
+  `poll` 选项，默认 interval 5000ms、timeout 600000ms），`VideoModel` 不提供轮询
+  设置；`poll.timeout` 是整个轮询的预算：每次 `do_status`（含其重试）与剩余时间
+  竞争，超时即丢弃挂起的请求，以 `Video generation timed out after {timeoutMs}ms.`
+  失败（与上游一致，ai 7.0.127 `generate-video/generate-video.ts:543-549`、`:586-625`）；
 - Provider-specific polling delay 不是通用 exponential retry；
 - 耗尽产生的 `RetryError` 原样透传，外层不得再次 submit。
 - **修订**（RFC-0031 review）：`options.n` 按 `VideoModel::max_videos_per_call`
@@ -782,7 +795,10 @@ start/status 流），Core 拥有 poll 循环并分别 retry 两个阶段：
   idempotency key（AI SDK 用 `Promise.all`，Rust 侧 `try_join_all` 会在首个
   失败时 drop 其余 batch future——不影响正确性，两边都不会重连或取消已发出的
   provider 任务）。调用方提供 key 时，单批保持原键，多批按批次索引派生不同的
-  键；同批重试和同一调用方 key 的重放保持键稳定。`n == 0` 在任何网络调用
+  键（`<key>:batch:<i>`）；同批重试和同一调用方 key 的重放保持键稳定。这是产品
+  差异：上游每个批次的 `doStart` 都带同一个调用方 key（ai 7.0.127
+  `generate-video/generate-video.ts:338-372`、`:520-536`），provider 可能据此把几个
+  批次去重成一个任务，少交付视频；aimux 因此保留按批次派生。`n == 0` 在任何网络调用
   之前返回 `InvalidArgument`。
 
 ### 9.2 Router / MoA
@@ -793,7 +809,7 @@ Composite 外层不重放；重试放在已有语义边界内：
 - Router stream 只 retry 选中 child 的 setup，返回 stream 后不 fallback/reconnect；
 - MoA 每个 reference 独立 retry，aggregator generate/stream setup 独立 retry；
 - `RouterModel` / `MoaModel` 的 model default 为 0，inner 耗尽产生的 `RetryError`
-  原样穿过外层，避免重跑 fallback/fanout。
+  原样穿过外层，避免重跑 fallback/fanout。（目标设计已撤销：[aisdk-architecture-alignment.md](aisdk-architecture-alignment.md) D14、§9.4 删除 model/provider 级默认 retry，组合模型改为给每个 child 配预算；删除它的那层合入前，这里仍是主线现状）
 
 ### 9.3 Realtime transcription
 
@@ -806,8 +822,11 @@ Composite 外层不重放；重试放在已有语义边界内：
 
 ### 9.4 Files
 
-`Files::upload_file` 按 AI SDK Provider SPI 本身就是公开 operation，没有对应的
-`do_upload_file`；本轮不为它虚构第二层。**修订**（RFC-0031 review）：`upload_file`
+`Files::upload_file` 在本 RFC 中直接作为公开 operation，没有对应的
+`do_upload_file`；本轮不为它增加第二层。（上游另有用户操作 `uploadFile`，直接调用
+provider 的 `files().uploadFile` 且不重试，见 ai 7.0.127 `upload-file/upload-file.ts:37`、
+`:94`。V4 分层中删除 provider 级 `RetryConfig` 的那层会去掉这里的重试，与上游一致；
+该层合入前，下面描述的重试仍是主线现状。）**修订**（RFC-0031 review）：`upload_file`
 自己用 Provider 已配置的 `RetryConfig` 重试（与 `execute_list_models` 同一
 primitive）。这是“创建资源类 POST 不自动重试”一般规则的显式例外，前提是
 upload 不计费、失败的 create-file 请求不会返回可复用的 file id。多阶段的
@@ -837,7 +856,7 @@ search
 所有 binding 调用这些 user operations，不得直接调用 provider-facing `do_*`。`do_*`
 继续作为 Provider SPI。
 
-为保留现有 model-level 配置，各 model trait 提供只读 `retry_config()`；只有
+（目标设计已撤销：[aisdk-architecture-alignment.md](aisdk-architecture-alignment.md) D14、§9.4 删除 model/provider 级默认 retry，组合模型改为给每个 child 配预算；删除它的那层合入前，这里仍是主线现状）为保留现有 model-level 配置，各 model trait 提供只读 `retry_config()`；只有
 Core user operation 读取它。Provider 的 `do_*` 不得重试整个 operation；§9.1 的
 已创建 job 安全 exchange 例外除外。
 
