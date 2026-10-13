@@ -141,7 +141,7 @@ pub mod prelude {
         Usage, Warning,
     };
     pub use crate::video_model::{
-        VideoCallOptions, VideoModel, VideoOperationStart, VideoOperationStatus, VideoPollConfig,
+        VideoCallOptions, VideoModel, VideoOperationStart, VideoOperationStatus,
         VideoPollOptions, VideoResult, generate_video,
     };
 }

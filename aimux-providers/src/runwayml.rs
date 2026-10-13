@@ -10,7 +10,6 @@
 //! `X-Runway-Version: 2024-11-06` header.
 
 use std::collections::HashMap;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -20,7 +19,7 @@ use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::provider::Provider;
 use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoFrameType, VideoModel,
-    VideoOperationStart, VideoOperationStatus, VideoPollConfig, VideoResponse, VideoResult,
+    VideoOperationStart, VideoOperationStatus, VideoResponse, VideoResult,
 };
 use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
 
@@ -51,10 +50,6 @@ pub struct RunwaymlConfig {
     pub api_key: String,
     pub base_url: String,
     pub headers: Option<HashMap<String, String>>,
-    /// Interval between task-status polls. Defaults to 2 seconds.
-    pub poll_interval: Duration,
-    /// Maximum total time to wait for a task to finish. Defaults to 300 seconds.
-    pub timeout: Duration,
 }
 
 impl RunwaymlConfig {
@@ -63,8 +58,6 @@ impl RunwaymlConfig {
             api_key: api_key.into(),
             base_url: DEFAULT_BASE_URL.to_string(),
             headers: None,
-            poll_interval: Duration::from_secs(2),
-            timeout: Duration::from_secs(300),
         }
     }
 
@@ -77,20 +70,6 @@ impl RunwaymlConfig {
     #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
-        self
-    }
-
-    /// Override the interval between status polls.
-    #[must_use]
-    pub fn with_poll_interval(mut self, interval: Duration) -> Self {
-        self.poll_interval = interval;
-        self
-    }
-
-    /// Override the maximum time to wait for a task to finish.
-    #[must_use]
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
         self
     }
 
@@ -209,13 +188,6 @@ impl VideoModel for RunwaymlVideoModel {
 
     fn max_videos_per_call(&self) -> Option<u32> {
         Some(1)
-    }
-
-    fn poll_config(&self) -> VideoPollConfig {
-        VideoPollConfig {
-            interval: self.config.poll_interval,
-            timeout: self.config.timeout,
-        }
     }
 
     async fn do_start(

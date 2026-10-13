@@ -6,7 +6,6 @@
 //! async polling loop without a real delay.
 
 use std::collections::HashMap;
-use std::time::Duration;
 
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -31,13 +30,11 @@ fn options(prompt: &str) -> VideoCallOptions {
     o
 }
 
-/// A config pointed at the mock server with a short poll interval so tests run
-/// fast. Uses a dummy, non-secret API key.
+/// A config pointed at the mock server. Poll pacing is a per-call option
+/// ([`fast_poll`]), as the AI SDK's `generateVideo` `poll`. Uses a dummy,
+/// non-secret API key.
 fn config(server_uri: String) -> RunwaymlConfig {
-    RunwaymlConfig::new("test-api-key")
-        .with_base_url(server_uri)
-        .with_poll_interval(Duration::from_millis(10))
-        .with_timeout(Duration::from_secs(10))
+    RunwaymlConfig::new("test-api-key").with_base_url(server_uri)
 }
 
 /// Mount a submit mock (returning task id `task-123`) and a polling sequence:
@@ -166,9 +163,7 @@ async fn should_pass_custom_headers() {
     provider_headers.insert("Custom-Provider-Header".to_string(), "val".to_string());
     let cfg = RunwaymlConfig::new("test-api-key")
         .with_base_url(server.uri())
-        .with_headers(provider_headers)
-        .with_poll_interval(Duration::from_millis(10))
-        .with_timeout(Duration::from_secs(10));
+        .with_headers(provider_headers);
     let provider = RunwaymlProvider::new(cfg);
     let model = provider.video(MODEL_ID);
 

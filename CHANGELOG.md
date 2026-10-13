@@ -84,6 +84,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Requests`, not `... Last error: API call error: HTTP 429: Too Many
   Requests`. The HTTP status stays a field of the attempt error.
 
+- Video poll settings belong to the operation, as the AI SDK's
+  `generateVideo` `poll` option (`aimux-core`, `aimux-providers`).
+  `VideoModel::poll_config()` and `VideoPollConfig` are removed; unset
+  `VideoCallOptions::poll` fields use the AI SDK defaults (5000 ms interval,
+  600000 ms timeout). `RunwaymlConfig` loses `poll_interval`, `timeout`,
+  `with_poll_interval` and `with_timeout` (RunwayML used 2 s / 300 s); pass
+  `poll` per call instead. Each status check, its retries included, now races
+  the time left in the poll budget and a hanging check fails with `Timeout`
+  "Video generation timed out after {timeoutMs}ms." as upstream.
+
 **Rust (aimux-stream)**
 
 - `SseStream` is now a thin adapter over the `sse-stream` crate (WHATWG
