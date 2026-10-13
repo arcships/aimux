@@ -24,6 +24,7 @@ use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
 use crate::language_model_message::convert_to_language_model_prompt;
 use crate::message::{ModelMessage, ModelPrompt};
+use crate::operation::OperationSettings;
 use crate::options::{CallOptions, ToolChoice, prepare_tool_choice};
 use crate::output::Output;
 use crate::parse_tool_call::{ToolCallRepair, parse_tool_call};
@@ -157,7 +158,19 @@ pub struct GenerateTextOptions {
 }
 
 impl GenerateTextOptions {
+    /// The operation settings of these options: the retry count, the timeout
+    /// and the session id, which the model call options do not carry.
+    #[must_use]
+    pub fn operation_settings(&self) -> OperationSettings {
+        OperationSettings {
+            max_retries: self.max_retries,
+            timeout: self.timeout,
+            session_id: self.session_id.clone(),
+        }
+    }
+
     /// Build the provider-facing `CallOptions` from user-facing options.
+    /// The operation settings ([`Self::operation_settings`]) are left out.
     #[must_use]
     pub fn into_call_options(
         self,
@@ -186,9 +199,6 @@ impl GenerateTextOptions {
             provider_options: self.provider_options,
             reasoning: self.reasoning,
             body_overrides: self.body_overrides,
-            max_retries: self.max_retries,
-            timeout: self.timeout,
-            session_id: self.session_id,
             abort_signal: self.abort_signal,
             recording_context: None,
             include_raw_chunks: self.include_raw_chunks,
@@ -891,6 +901,24 @@ pub(crate) async fn generate_text_from_language_model_prompt(
     messages: Vec<ModelMessage>,
     options: GenerateTextOptions,
 ) -> Result<GenerateTextResult, AiMuxError> {
+    let settings = options.operation_settings();
+    settings
+        .clone()
+        .scope(generate_in_operation(
+            model, lm_prompt, messages, options, settings,
+        ))
+        .await
+}
+
+// The operation body runs inside its settings' scope, where the model, the
+// composite children and the recorder read them.
+async fn generate_in_operation(
+    model: &dyn LanguageModel,
+    lm_prompt: crate::language_model_message::LanguageModelPrompt,
+    messages: Vec<ModelMessage>,
+    options: GenerateTextOptions,
+    settings: OperationSettings,
+) -> Result<GenerateTextResult, AiMuxError> {
     let repair_tool_call = options.repair_tool_call.clone();
     let tools = options.tools.clone();
     let operation_instructions = options.instructions.clone();
@@ -901,11 +929,10 @@ pub(crate) async fn generate_text_from_language_model_prompt(
 
     // 2. Build CallOptions.
     let mut call_options = options.into_call_options(lm_prompt);
-    let operation_timeout =
-        timeout::OperationTimeout::new(call_options.timeout.unwrap_or_default())?;
+    let operation_timeout = timeout::OperationTimeout::new(settings.timeout.unwrap_or_default())?;
     let abort_signal = call_options.abort_signal.clone();
     let retries = retry::prepare_retries(
-        call_options.max_retries,
+        settings.max_retries,
         model.retry_config(),
         abort_signal.clone(),
     );
@@ -941,10 +968,7 @@ pub(crate) async fn generate_text_from_language_model_prompt(
     //     and store lookups are cheap (once-locked env check + two RwLock
     //     reads) when no store / inferer is registered.
     if let (Some((session_id, source)), Some(store)) = (
-        crate::session::resolve_session_id(
-            call_options.session_id.as_deref(),
-            &call_options.prompt,
-        ),
+        crate::session::resolve_session_id(settings.session_id.as_deref(), &call_options.prompt),
         crate::session::session_store(),
     ) {
         let call = store.append(&session_id, call_id.as_deref(), source);
@@ -1377,6 +1401,22 @@ pub async fn stream_text(
     prompt: impl Into<ModelPrompt>,
     options: GenerateTextOptions,
 ) -> Result<StreamTextResult, AiMuxError> {
+    let settings = options.operation_settings();
+    settings
+        .clone()
+        .scope(stream_in_operation(model, prompt.into(), options, settings))
+        .await
+}
+
+// The stream setup runs inside the operation settings' scope, like
+// `generate_in_operation`. The pump task that drives the returned stream
+// calls no model and does not read them.
+async fn stream_in_operation(
+    model: &dyn LanguageModel,
+    prompt: ModelPrompt,
+    options: GenerateTextOptions,
+    settings: OperationSettings,
+) -> Result<StreamTextResult, AiMuxError> {
     // 1. Convert user prompt to provider-facing prompt.
     let repair_tool_call = options.repair_tool_call.clone();
     let tools = options.tools.clone();
@@ -1385,13 +1425,12 @@ pub async fn stream_text(
     if let Some(output) = &output {
         output.validate()?;
     }
-    let (messages, instructions) =
-        standardize_prompt(prompt.into(), operation_instructions.as_deref())?;
+    let (messages, instructions) = standardize_prompt(prompt, operation_instructions.as_deref())?;
     let lm_prompt = convert_to_language_model_prompt(&messages, instructions, provider_id(model))?;
 
     // 2. Build CallOptions.
     let mut call_options = options.into_call_options(lm_prompt);
-    let stream_timeout = call_options.timeout.unwrap_or_default();
+    let stream_timeout = settings.timeout.unwrap_or_default();
     let operation_timeout = timeout::OperationTimeout::new(stream_timeout)?;
     // Armed at operation start: providers await their first SSE event inside
     // do_stream, so the first-chunk budget must already be counting there —
@@ -1403,7 +1442,7 @@ pub async fn stream_text(
         .transpose()?;
     let abort_signal = call_options.abort_signal.clone();
     let retries = retry::prepare_retries(
-        call_options.max_retries,
+        settings.max_retries,
         model.retry_config(),
         abort_signal.clone(),
     );
@@ -1446,10 +1485,7 @@ pub async fn stream_text(
     //     and store lookups are cheap (once-locked env check + two RwLock
     //     reads) when no store / inferer is registered.
     if let (Some((session_id, source)), Some(store)) = (
-        crate::session::resolve_session_id(
-            call_options.session_id.as_deref(),
-            &call_options.prompt,
-        ),
+        crate::session::resolve_session_id(settings.session_id.as_deref(), &call_options.prompt),
         crate::session::session_store(),
     ) {
         let call = store.append(&session_id, call_id.as_deref(), source);

@@ -3,7 +3,6 @@ import type { LanguageModelMessage } from "./LanguageModelMessage";
 import type { LanguageModelV4ToolChoice } from "./LanguageModelV4ToolChoice";
 import type { ReasoningEffort } from "./ReasoningEffort";
 import type { ResponseFormat } from "./ResponseFormat";
-import type { TimeoutConfiguration } from "./TimeoutConfiguration";
 import type { Tool } from "./Tool";
 import type { JsonValue } from "./serde_json/JsonValue";
 
@@ -13,6 +12,10 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * This is the **provider-facing** options struct. Users interact with
  * `GenerateTextOptions` (user-facing) which is converted to `CallOptions`
  * by the `generate_text` / `stream_text` functions.
+ *
+ * The retry count, the timeout and the session id are settings of the
+ * operation (`OperationSettings`), not call options, as in the AI SDK
+ * (`language-model-v4-call-options.ts:8-138` has none of them).
  */
 export type CallOptions = {
 /**
@@ -83,25 +86,6 @@ reasoning: ReasoningEffort | null,
  * `null` values delete the corresponding key. See RFC-0017.
  */
 body_overrides: JsonValue | null,
-/**
- * Per-call retry count override. `None` uses the provider's configured
- * Core operation retry. `Some(0)` disables retries.
- */
-max_retries: number | null,
-/**
- * Per-call timeout configuration (total / first-chunk / chunk idle).
- * `None` = no timeouts (provider defaults still apply at the HTTP layer).
- */
-timeout: TimeoutConfiguration | null,
-/**
- * Session identifier, for grouping consecutive calls into a session
- * (observability, see RFC-0024). Explicit values take precedence; when
- * `None` and the optional session inferer is enabled, one may be inferred.
- * Orthogonal to RFC-0019 session-affinity headers: this field is for
- * local grouping, while session headers in `headers` are for upstream
- * routing — both may share an id value but travel different paths.
- */
-session_id: string | null,
 /**
  * Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
  * When `Some(true)`, streaming providers yield one `Raw` part per JSON

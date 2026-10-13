@@ -73,6 +73,10 @@ pub struct TimeoutConfiguration {
 /// This is the **provider-facing** options struct. Users interact with
 /// `GenerateTextOptions` (user-facing) which is converted to `CallOptions`
 /// by the `generate_text` / `stream_text` functions.
+///
+/// The retry count, the timeout and the session id are settings of the
+/// operation (`OperationSettings`), not call options, as in the AI SDK
+/// (`language-model-v4-call-options.ts:8-138` has none of them).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct CallOptions {
@@ -129,23 +133,6 @@ pub struct CallOptions {
     /// `null` values delete the corresponding key. See RFC-0017.
     pub body_overrides: Option<Value>,
 
-    /// Per-call retry count override. `None` uses the provider's configured
-    /// Core operation retry. `Some(0)` disables retries.
-    pub max_retries: Option<u32>,
-
-    /// Per-call timeout configuration (total / first-chunk / chunk idle).
-    /// `None` = no timeouts (provider defaults still apply at the HTTP layer).
-    pub timeout: Option<TimeoutConfiguration>,
-
-    /// Session identifier, for grouping consecutive calls into a session
-    /// (observability, see RFC-0024). Explicit values take precedence; when
-    /// `None` and the optional session inferer is enabled, one may be inferred.
-    /// Orthogonal to RFC-0019 session-affinity headers: this field is for
-    /// local grouping, while session headers in `headers` are for upstream
-    /// routing — both may share an id value but travel different paths.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-
     /// Abort signal for cancelling the call.
     ///
     /// Runtime handle — never crosses the JSON boundary (bindings that only
@@ -198,9 +185,6 @@ impl CallOptions {
             provider_options: None,
             reasoning: None,
             body_overrides: None,
-            max_retries: None,
-            timeout: None,
-            session_id: None,
             abort_signal: None,
             recording_context: None,
             include_raw_chunks: None,

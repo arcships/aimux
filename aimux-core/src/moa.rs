@@ -14,7 +14,7 @@ use futures::{StreamExt, future::join_all};
 use serde::Deserialize;
 
 use crate::composite::{
-    ChildModel, add_usage, build_aggregator_prompt, extract_text, step_options,
+    ChildModel, add_usage, build_aggregator_prompt, child_max_retries, extract_text, step_options,
 };
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
@@ -130,7 +130,7 @@ impl MoaModel {
             );
             async move {
                 let retries = retry::prepare_retries(
-                    child_opts.max_retries,
+                    child_max_retries(),
                     m.retry_config(),
                     child_opts.abort_signal.clone(),
                 );
@@ -211,7 +211,7 @@ impl LanguageModel for MoaModel {
 
         // 3. Run the aggregator.
         let retries = retry::prepare_retries(
-            agg_opts.max_retries,
+            child_max_retries(),
             self.aggregator.retry_config(),
             agg_opts.abort_signal.clone(),
         );
@@ -256,7 +256,7 @@ impl LanguageModel for MoaModel {
         //    usage onto its Finish. We swallow the aggregator's StreamStart
         //    (we've already emitted ours).
         let retries = retry::prepare_retries(
-            agg_opts.max_retries,
+            child_max_retries(),
             self.aggregator.retry_config(),
             agg_opts.abort_signal.clone(),
         );

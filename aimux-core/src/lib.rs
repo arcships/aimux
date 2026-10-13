@@ -39,6 +39,7 @@ pub mod moa;
 pub mod model_catalogue;
 pub mod model_id;
 pub mod openai_output;
+pub mod operation;
 pub mod options;
 pub mod output;
 pub mod parse_tool_call;

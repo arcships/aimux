@@ -9,6 +9,7 @@
 //! This module holds the pieces both share:
 //! - [`ChildModel`] — the child-handle shape (`Arc<dyn LanguageModel>`).
 //! - `step_options` — the call options of one child step.
+//! - `child_max_retries` — the operation's retry count for a child call.
 //! - [`add_usage`] — per-field `Usage` accumulation.
 //! - [`extract_text`] — pull text out of a `GenerateContent` list.
 //! - [`build_aggregator_prompt`] — assemble the MoA aggregator prompt.
@@ -21,6 +22,7 @@ use std::sync::Arc;
 
 use crate::language_model::LanguageModel;
 use crate::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
+use crate::operation::OperationSettings;
 use crate::options::CallOptions;
 use crate::result::GenerateContent;
 use crate::types::{InputTokenUsage, OutputTokenUsage, Usage};
@@ -42,6 +44,13 @@ pub(crate) fn step_options(options: &CallOptions, step: impl Into<String>) -> Ca
         .as_ref()
         .map(|context| context.child(step.into()));
     child
+}
+
+/// The retry count of a child call: the `max_retries` of the operation the
+/// composite runs in ([`OperationSettings::current`]). `None` outside an
+/// operation, or when the operation sets none, leaves the child's default.
+pub(crate) fn child_max_retries() -> Option<u32> {
+    OperationSettings::current().and_then(|settings| settings.max_retries)
 }
 
 /// Add two `Usage` values field-by-field. `Usage::raw` (provider-opaque) is

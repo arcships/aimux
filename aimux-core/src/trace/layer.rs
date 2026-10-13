@@ -72,7 +72,7 @@ pub struct TraceLayer {
     /// strict mode (RFC-0015 §4.3); default shared (safe for multi-process
     /// / shared API keys).
     strict: bool,
-    /// Default session id when `CallOptions.session_id` is absent.
+    /// Default session id when the operation sets no session id.
     default_session: Option<String>,
     /// Scope salt (HMAC-style key for fingerprint scoping).
     scope_salt: u64,
@@ -120,7 +120,7 @@ impl TraceLayer {
         }
     }
 
-    /// Default session id (used when `CallOptions.session_id` is absent) +
+    /// Default session id (used when the operation sets no session id) +
     /// session key (32-byte HMAC-style salt for fingerprint scoping).
     #[must_use]
     pub fn with_default_session(mut self, session_id: String, key: [u8; 32]) -> Self {
@@ -159,9 +159,10 @@ impl TraceLayer {
         response_headers: Option<HashMap<String, String>>,
         ttft_ms: Arc<AtomicU64>,
     ) -> RecordCtx {
-        let session_id = options
-            .session_id
-            .clone()
+        // The explicit session id of the operation the call runs in
+        // (`OperationSettings`); the model call options carry none.
+        let session_id = crate::operation::OperationSettings::current()
+            .and_then(|settings| settings.session_id)
             .or_else(|| self.default_session.clone());
         // B1: scope_key isolates by (provider, base_url, model_id) — not just
         // model_id — so two TraceLayers over the same model_id but different

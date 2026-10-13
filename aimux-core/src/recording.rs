@@ -138,16 +138,31 @@ pub struct InputRecord {
     pub operation: RecordingOperation,
     /// 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
     pub prompt: LanguageModelPrompt,
-    /// 序列化的 CallOptions(abort_signal/recording_context 已 serde skip);
-    /// headers/provider_options/body_overrides 已递归脱敏。
+    /// 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
+    /// 加上所在操作的 `max_retries` / `timeout` / `session_id`
+    /// (`OperationSettings`);headers/provider_options/body_overrides 已递归脱敏。
     pub options: serde_json::Value,
 }
 
 impl InputRecord {
     /// 从 CallOptions 提取输入侧快照(options 序列化后递归脱敏)。
+    ///
+    /// The retry count, the timeout and the session id are operation
+    /// settings, not call options. They are taken from the operation the
+    /// call runs in ([`crate::operation::OperationSettings::current`]) and
+    /// written under the keys they had as call options, so the record still
+    /// rebuilds the whole `generate_text` call.
     #[must_use]
     pub fn from_call_options(options: &CallOptions) -> Self {
-        let value = serde_json::to_value(options).unwrap_or(serde_json::Value::Null);
+        let mut value = serde_json::to_value(options).unwrap_or(serde_json::Value::Null);
+        if let (serde_json::Value::Object(map), Ok(serde_json::Value::Object(settings))) = (
+            &mut value,
+            serde_json::to_value(
+                crate::operation::OperationSettings::current().unwrap_or_default(),
+            ),
+        ) {
+            map.extend(settings);
+        }
         Self {
             operation: RecordingOperation::LanguageModel,
             prompt: options.prompt.clone(),

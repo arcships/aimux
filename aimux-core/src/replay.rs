@@ -23,6 +23,7 @@ use crate::language_model::LanguageModel;
 use crate::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, UserPart,
 };
+use crate::operation::OperationSettings;
 use crate::options::CallOptions;
 use crate::recording::Recording;
 use crate::result::{GenerateContent, GenerateResult, StreamResult};
@@ -962,8 +963,11 @@ pub async fn replay_with_model(
             "language replay requires a language-model recording".into(),
         ));
     }
-    // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)。
+    // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)
+    //    and the operation settings recorded next to them.
     let mut call_options: CallOptions = serde_json::from_value(recording.input.options.clone())
+        .map_err(|e| AiMuxError::JsonParse(format!("mock replay: input options invalid: {e}")))?;
+    let settings: OperationSettings = serde_json::from_value(recording.input.options.clone())
         .map_err(|e| AiMuxError::JsonParse(format!("mock replay: input options invalid: {e}")))?;
 
     // 2. 应用 overrides。
@@ -982,7 +986,7 @@ pub async fn replay_with_model(
     // Recorded options already contain the complete provider-facing prompt.
     // Repair callbacks are runtime-only and are not restored from recordings.
     let prompt = std::mem::take(&mut call_options.prompt);
-    let options = generate_options_from_call_options(call_options);
+    let options = generate_options_from_call_options(call_options, settings);
     generate_text_from_language_model_prompt(model, prompt, Vec::new(), options).await
 }
 
@@ -997,11 +1001,15 @@ fn user_tool_choice(choice: LanguageModelV4ToolChoice) -> ToolChoice {
     }
 }
 
-/// `CallOptions` → `GenerateTextOptions`(record 侧到用户侧的反向映射)。
+/// `CallOptions` and the operation settings → `GenerateTextOptions`(record
+/// 侧到用户侧的反向映射)。
 ///
 /// `instructions` 已烘焙进 prompt(system 消息),重建时置 None;
 /// `abort_signal` 运行时句柄不跨 JSON,重建时置 None。
-fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
+fn generate_options_from_call_options(
+    o: CallOptions,
+    settings: OperationSettings,
+) -> GenerateTextOptions {
     GenerateTextOptions {
         max_output_tokens: o.max_output_tokens,
         temperature: o.temperature,
@@ -1019,9 +1027,9 @@ fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
         reasoning: o.reasoning,
         instructions: None,
         body_overrides: o.body_overrides,
-        max_retries: o.max_retries,
-        timeout: o.timeout,
-        session_id: o.session_id,
+        max_retries: settings.max_retries,
+        timeout: settings.timeout,
+        session_id: settings.session_id,
         abort_signal: None,
         include_raw_chunks: o.include_raw_chunks,
         repair_tool_call: None,

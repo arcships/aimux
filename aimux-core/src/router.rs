@@ -9,7 +9,7 @@
 
 use async_trait::async_trait;
 
-use crate::composite::{ChildModel, step_options};
+use crate::composite::{ChildModel, child_max_retries, step_options};
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
 use crate::language_model_message::LanguageModelPrompt;
@@ -178,7 +178,7 @@ impl RouterModel {
                 continue;
             }
             let retries = retry::prepare_retries(
-                options.max_retries,
+                child_max_retries(),
                 m.retry_config(),
                 options.abort_signal.clone(),
             );
@@ -243,7 +243,7 @@ impl LanguageModel for RouterModel {
         let idx = self.check_index(raw, "router")?;
         let model = &self.models[idx];
         let retries = retry::prepare_retries(
-            options.max_retries,
+            child_max_retries(),
             model.retry_config(),
             options.abort_signal.clone(),
         );
@@ -273,7 +273,7 @@ impl LanguageModel for RouterModel {
         let idx = self.check_index(raw, "router")?;
         let model = &self.models[idx];
         let retries = retry::prepare_retries(
-            options.max_retries,
+            child_max_retries(),
             model.retry_config(),
             options.abort_signal.clone(),
         );

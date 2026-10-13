@@ -188,6 +188,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   options.call_id.clone(), .. }` uses `HttpRequest::new(url, headers,
   options)`. The JSON is unchanged (both were internal and never serialized).
 
+- `CallOptions.max_retries`, `CallOptions.timeout` and
+  `CallOptions.session_id` are removed (`aimux-core`), as in the V4 call
+  options. They are settings of the `generate_text` / `stream_text`
+  operation: `GenerateTextOptions` keeps all three, and the JSON bindings
+  are unchanged. The operation runs its model calls inside
+  `operation::OperationSettings::scope`. The router and MoA take the child
+  retry count from `OperationSettings::current()`, and `TraceLayer` takes
+  the session id from it. Code that calls `do_generate` / `do_stream` on a
+  router, MoA or trace layer directly wraps the call in
+  `OperationSettings { .. }.scope(..)`. Recordings keep the three keys in
+  `input.options`, and replay restores them.
+
 - `ProviderTool.id` is a `types::NamespacedKind`, the V4
   `${string}.${string}` identifier: an id without a `.` (for example
   `"web_search"` instead of `"openai.web_search"`) no longer deserializes,
