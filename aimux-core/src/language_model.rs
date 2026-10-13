@@ -60,12 +60,14 @@ pub trait LanguageModel: Send + Sync {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError>;
 
     /// URLs the model can fetch on its own, keyed by media-type pattern
-    /// (e.g. `"image/*"`), AI SDK `supportedUrls`.
+    /// (e.g. `"image/*"`), AI SDK `supportedUrls`. Async, as the AI SDK's
+    /// value may be a `PromiseLike` (provider@4.0.21
+    /// `language-model-v4.ts:36-38`).
     ///
     /// Default: empty, meaning every file part is sent as inline data.
     /// Transparent decorators must forward the inner model's value. Core does
     /// not consult this yet.
-    fn supported_urls(&self) -> SupportedUrls {
+    async fn supported_urls(&self) -> SupportedUrls {
         SupportedUrls::default()
     }
 }

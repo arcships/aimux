@@ -347,7 +347,7 @@ async fn should_forward_the_model_id() {
 #[tokio::test]
 async fn should_natively_support_http_image_urls() {
     let server = MockServer::start().await;
-    let urls = chat(&server, "deepseek-chat").supported_urls();
+    let urls = chat(&server, "deepseek-chat").supported_urls().await;
     let patterns = &urls.0["image/*"];
     assert_eq!(patterns.len(), 1);
     assert!(patterns[0].is_match("https://example.com/a.png"));

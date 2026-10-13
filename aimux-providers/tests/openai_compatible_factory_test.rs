@@ -630,6 +630,39 @@ async fn chat_without_an_api_key_sends_no_authorization() {
     assert_metadata_key(&fixture, &result, "local");
 }
 
+/// `supportedUrls` is read through the settings function each time, and its
+/// value may be async (openai-compatible@3.0.62
+/// `openai-compatible-chat-language-model.ts:84`, `:161-163`); completion
+/// models get none (`openai-compatible-provider.ts:189-193`).
+#[tokio::test]
+async fn chat_supported_urls_come_from_the_async_settings_function() {
+    let mock = MockFetch::new(Vec::new());
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = calls.clone();
+    let provider = create_openai_compatible(OpenAICompatibleProviderSettings {
+        supported_urls: Some(Arc::new(move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async {
+                tokio::task::yield_now().await;
+                aimux_core::language_model::SupportedUrls(HashMap::from([(
+                    "image/*".to_string(),
+                    vec![regex::Regex::new("^https://").unwrap()],
+                )]))
+            })
+        })),
+        ..groq_settings(&mock)
+    })
+    .unwrap();
+    let chat = provider.chat("m");
+    for _ in 0..2 {
+        let urls = chat.supported_urls().await;
+        assert_eq!(urls.0.keys().collect::<Vec<_>>(), ["image/*"]);
+    }
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert!(provider.completion("m").supported_urls().await.is_empty());
+    assert!(mock.seen().is_empty());
+}
+
 #[tokio::test]
 async fn chat_stream_basic() {
     let fixture = Fixture::load("chat-stream-basic");

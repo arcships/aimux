@@ -507,8 +507,8 @@ impl LanguageModel for TraceLayer {
         self.inner.model_id()
     }
 
-    fn supported_urls(&self) -> crate::language_model::SupportedUrls {
-        self.inner.supported_urls()
+    async fn supported_urls(&self) -> crate::language_model::SupportedUrls {
+        self.inner.supported_urls().await
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {

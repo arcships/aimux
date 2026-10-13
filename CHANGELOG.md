@@ -41,6 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handler now reads only `error.type` as the provider code, and DeepSeek's
   prefers `error.code` (a string or a number) over `error.type`.
 
+- `LanguageModel::supported_urls` and
+  `LanguageModelMiddleware::override_supported_urls` are async, as the AI
+  SDK's `supportedUrls` and `overrideSupportedUrls` may be a `PromiseLike`.
+  A wrapped model reads the override, else the inner model, when asked
+  instead of once at wrap time. The OpenAI-compatible `SupportedUrlsFn`
+  setting returns a `BoxFuture<'static, SupportedUrls>`.
+
 - Provider results carry request and response information as the AI SDK does
   (`aimux-core`). `GenerateResult` has `request: Option<RequestInfo>` and
   `response: Option<ResponseInfo>`; `ResponseInfo` gains `id` and holds the

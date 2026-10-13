@@ -196,13 +196,11 @@ impl LanguageModel for OpenAICompatibleChatModel {
         &self.model_id
     }
 
-    fn supported_urls(&self) -> SupportedUrls {
-        self.config
-            .chat
-            .supported_urls
-            .as_ref()
-            .map(|urls| urls())
-            .unwrap_or_default()
+    async fn supported_urls(&self) -> SupportedUrls {
+        match &self.config.chat.supported_urls {
+            Some(urls) => urls().await,
+            None => SupportedUrls::default(),
+        }
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {

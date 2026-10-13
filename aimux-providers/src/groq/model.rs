@@ -272,7 +272,7 @@ impl LanguageModel for GroqChatLanguageModel {
         &self.model_id
     }
 
-    fn supported_urls(&self) -> SupportedUrls {
+    async fn supported_urls(&self) -> SupportedUrls {
         let http = regex::Regex::new(r"^https?://.*$").expect("static pattern");
         SupportedUrls(std::iter::once(("image/*".to_string(), vec![http])).collect())
     }

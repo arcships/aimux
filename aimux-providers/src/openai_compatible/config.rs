@@ -6,6 +6,7 @@
 //! produced it. Compatible endpoint behavior is data (flags and a usage-key
 //! name); the shared model never compares a provider name.
 
+use futures::future::BoxFuture;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -122,8 +123,11 @@ pub(crate) fn default_error_structure(data: &Value) -> ProviderErrorParts {
 
 /// Converts the upstream token usage object into language-model usage.
 pub type ConvertUsage = Arc<dyn Fn(&Value) -> Usage + Send + Sync>;
-/// Returns the URLs supported by chat models.
-pub type SupportedUrlsFn = Arc<dyn Fn() -> SupportedUrls + Send + Sync>;
+/// Returns the URLs supported by chat models, read each time a chat model's
+/// supported URLs are: `supportedUrls?: () => LanguageModelV4['supportedUrls']`
+/// (openai-compatible@3.0.62 `openai-compatible-chat-language-model.ts:84`,
+/// `:161-163`), whose value may be a `PromiseLike`.
+pub type SupportedUrlsFn = Arc<dyn Fn() -> BoxFuture<'static, SupportedUrls> + Send + Sync>;
 
 /// Chat-only settings of a provider.
 #[derive(Clone)]
