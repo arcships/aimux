@@ -561,8 +561,13 @@ async fn messages_stream_emits_raw_chunks_when_asked() {
             )
         })
         .unwrap();
+    // The chunk that does not parse is an error part, and the stream goes on
+    // (anthropic-language-model.ts:1960-1963).
     assert!(
-        matches!(&items[not_json + 1], Err(error) if error.is_recoverable_stream_error()),
+        matches!(
+            &items[not_json + 1],
+            Ok(StreamPart::Error { error }) if error.is_recoverable_stream_error()
+        ),
         "{:?}",
         items[not_json + 1]
     );
