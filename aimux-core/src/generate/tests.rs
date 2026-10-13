@@ -666,3 +666,42 @@ async fn generate_object_wraps_the_output() {
         Err(AiMuxError::JsonParse(_))
     ));
 }
+
+/// stream-text.ts:2881-2891: a `text-delta` is enqueued only when its text is
+/// non-empty or it carries provider metadata.
+#[tokio::test]
+async fn an_empty_text_delta_is_forwarded_only_with_provider_metadata() {
+    let metadata = HashMap::from([(
+        "mock".to_string(),
+        serde_json::Map::from_iter([("itemId".to_string(), json!("msg_1"))]),
+    )]);
+    let mut parts = text_stream(&["", "hi"], FinishReasonUnified::Stop);
+    parts.insert(
+        4,
+        Ok(StreamPart::TextDelta {
+            id: "t1".into(),
+            delta: String::new(),
+            provider_metadata: Some(metadata.clone()),
+        }),
+    );
+    let model = ScriptedModel::streaming(parts);
+    let result = stream_text(&model, "hi", GenerateTextOptions::default())
+        .await
+        .unwrap();
+    let deltas: Vec<(String, bool)> = collect(result)
+        .await
+        .into_iter()
+        .filter_map(|part| match part {
+            TextStreamPart::TextDelta {
+                text,
+                provider_metadata,
+                ..
+            } => Some((text, provider_metadata.is_some())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        deltas,
+        vec![(String::new(), true), ("hi".to_string(), false)]
+    );
+}

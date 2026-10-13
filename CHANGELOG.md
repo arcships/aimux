@@ -145,6 +145,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stream with `Abort { reason }`. `StreamTextResult::consume()` returns a
   `GenerateTextResult`; `StreamTextResultAggregated` is removed.
 
+- `stream_text` drops an empty `TextDelta` that carries no provider
+  metadata, as the AI SDK does (`aimux-core`); providers emit one, e.g. the
+  opening `"content": ""` chunk of OpenAI chat.
+
 **Rust (aimux-stream)**
 
 - `SseStream` is now a thin adapter over the `sse-stream` crate (WHATWG

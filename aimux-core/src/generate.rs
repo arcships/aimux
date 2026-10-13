@@ -1564,6 +1564,10 @@ pub async fn stream_text(
                             }});
                         }
                     }
+                    // An empty text delta without provider metadata is not
+                    // forwarded (stream-text.ts:2881-2891); providers emit
+                    // one, e.g. OpenAI chat's opening `"content": ""`.
+                    Ok(StreamPart::TextDelta { delta, provider_metadata: None, .. }) if delta.is_empty() => {}
                     Ok(part) => {
                         if let Some(part) = part
                             .map_payloads(|_| unreachable!("matched above"), |_| unreachable!("matched above"))
