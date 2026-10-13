@@ -105,6 +105,13 @@ fn error_value_snapshots_plain_variants() {
             AiMuxError::InvalidResponseData("eof".into()),
             r#"{"InvalidResponseData":"eof"}"#,
         ),
+        (
+            AiMuxError::ToolCallNotFoundForApproval {
+                tool_call_id: "call-1".into(),
+                approval_id: "approval-1".into(),
+            },
+            r#"{"ToolCallNotFoundForApproval":{"tool_call_id":"call-1","approval_id":"approval-1"}}"#,
+        ),
         // NoSuchTool is pinned in both shapes: `skip_serializing_if` makes
         // the wire payload vary with `available_tools`.
         (
@@ -183,6 +190,131 @@ fn error_value_snapshots_plain_variants() {
     ] {
         golden(&err, expected);
     }
+}
+
+/// The AI SDK's `ToolCallNotFoundForApprovalError` message, verbatim
+/// (ai 7.0.127 `src/error/tool-call-not-found-for-approval-error.ts:22`).
+#[test]
+fn tool_call_not_found_for_approval_message_matches_upstream() {
+    let err = AiMuxError::ToolCallNotFoundForApproval {
+        tool_call_id: "call-1".into(),
+        approval_id: "approval-1".into(),
+    };
+    assert_eq!(
+        err.to_string(),
+        r#"Tool call "call-1" not found for approval request "approval-1"."#
+    );
+}
+
+/// The variant set is a cross-language contract of its own: bindings switch on
+/// the wire tag, and the FFI / Node / Python error mappings match on every
+/// variant. Adding or removing one is a breaking change.
+/// Compile-time pin: adding an `AiMuxError` variant breaks this match, so
+/// the wire-tag list below and every binding's switch must be updated in the
+/// same change (the runtime assertion alone cannot see additions).
+#[allow(dead_code)]
+fn variant_addition_breaks_this_match(error: &AiMuxError) {
+    match error {
+        AiMuxError::ApiCall(_)
+        | AiMuxError::Retry(_)
+        | AiMuxError::JsonParse(_)
+        | AiMuxError::InvalidResponseData(_)
+        | AiMuxError::ToolCallNotFoundForApproval { .. }
+        | AiMuxError::NoSuchTool { .. }
+        | AiMuxError::InvalidToolInput { .. }
+        | AiMuxError::ToolCallRepair { .. }
+        | AiMuxError::InvalidArgument(_)
+        | AiMuxError::InvalidPrompt(_)
+        | AiMuxError::TokenExpired(_)
+        | AiMuxError::UnsupportedFunctionality(_)
+        | AiMuxError::NoSuchModel { .. }
+        | AiMuxError::NoSuchProvider { .. }
+        | AiMuxError::Timeout(_)
+        | AiMuxError::Aborted(_)
+        | AiMuxError::Other(_) => {}
+    }
+}
+
+#[test]
+fn variant_set_is_exactly_the_wire_tag_list() {
+    let all = [
+        AiMuxError::ApiCall(Box::new(api_error("x"))),
+        AiMuxError::Retry(RetryError {
+            reason: RetryErrorReason::MaxRetriesExceeded,
+            errors: vec![AiMuxError::ApiCall(Box::new(api_error("x")))],
+        }),
+        AiMuxError::JsonParse("x".into()),
+        AiMuxError::InvalidResponseData("x".into()),
+        AiMuxError::ToolCallNotFoundForApproval {
+            tool_call_id: "x".into(),
+            approval_id: "x".into(),
+        },
+        AiMuxError::NoSuchTool {
+            tool_name: "x".into(),
+            available_tools: None,
+            tool_input: None,
+        },
+        AiMuxError::InvalidToolInput {
+            tool_name: "x".into(),
+            tool_input: "{}".into(),
+            cause: "x".into(),
+        },
+        AiMuxError::ToolCallRepair {
+            original_error: Box::new(AiMuxError::NoSuchTool {
+                tool_name: "x".into(),
+                available_tools: None,
+                tool_input: None,
+            }),
+            cause: Box::new(AiMuxError::Other("x".into())),
+        },
+        AiMuxError::InvalidArgument("x".into()),
+        AiMuxError::InvalidPrompt("x".into()),
+        AiMuxError::TokenExpired("x".into()),
+        AiMuxError::UnsupportedFunctionality("x".into()),
+        AiMuxError::NoSuchModel {
+            model_id: "x".into(),
+            model_type: String::new(),
+        },
+        AiMuxError::NoSuchProvider {
+            provider_id: "x".into(),
+        },
+        AiMuxError::Timeout("x".into()),
+        AiMuxError::Aborted("request aborted".into()),
+        AiMuxError::Other("x".into()),
+    ];
+    // The wire tag IS the variant name (externally-tagged serde JSON).
+    let mut names: Vec<String> = all
+        .iter()
+        .map(|e| match serde_json::to_value(e).unwrap() {
+            serde_json::Value::Object(m) => m.into_iter().next().unwrap().0,
+            v => panic!("unexpected error_value shape: {v}"),
+        })
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    assert_eq!(
+        names,
+        [
+            "Aborted",
+            "ApiCall",
+            "InvalidArgument",
+            "InvalidPrompt",
+            "InvalidResponseData",
+            "InvalidToolInput",
+            "JsonParse",
+            "NoSuchModel",
+            "NoSuchProvider",
+            "NoSuchTool",
+            "Other",
+            "Retry",
+            "Timeout",
+            "TokenExpired",
+            "ToolCallNotFoundForApproval",
+            "ToolCallRepair",
+            "UnsupportedFunctionality",
+        ],
+        "variant set changed"
+    );
 }
 
 /// Request context is required. Payloads from the pre-context schema are
