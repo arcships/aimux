@@ -64,9 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Rust (aimux-provider-utils)**
 
 - Gains `StreamingToolCallTracker` (plus `StreamingToolCallDelta`,
-  `TypeValidation`, `TrackerError`, `StreamingToolCallArgumentState` and
-  `starts_with_structured_value`), a port of the current
-  `@ai-sdk/provider-utils` tracker. The previous `aimux-stream` version was
+  `TypeValidation` and `TrackerError`), a port of the current
+  `@ai-sdk/provider-utils` tracker, exported from the crate root only: the
+  `streaming_tool_call_tracker` and `streaming_tool_call_argument_state`
+  modules are private, and the argument state is internal, as upstream
+  exports only the tracker from its index. The previous `aimux-stream` version was
   a port of an older, index-only tracker. Deltas are correlated by wire
   `id`, `index` and function name (ambiguous deltas are dropped), ids are
   de-duplicated with `-N` suffixes, blank function names are ignored, and

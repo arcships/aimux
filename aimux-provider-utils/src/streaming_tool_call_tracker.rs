@@ -1,34 +1,7 @@
 //! Streaming tool call tracker for the OpenAI chat-completions wire format.
 //!
-//! Port of `@ai-sdk/provider-utils`'s `streaming-tool-call-tracker.ts`. It
-//! accumulates `tool_calls[i]` deltas, emits [`StreamPart::ToolInputStart`] /
-//! [`StreamPart::ToolInputDelta`] as they arrive, and emits
-//! [`StreamPart::ToolInputEnd`] / [`StreamPart::ToolCall`] for every call in
-//! [`StreamingToolCallTracker::finish`]. A call is never finalized earlier: a
-//! parsable argument buffer can still be the prefix of a longer argument
-//! string (ai-sdk #13137).
-//!
-//! Deltas are correlated to calls by wire `id`, `index` and function name,
-//! not by `index` alone, so providers that reuse indices, repeat ids, drop
-//! ids on continuations or send blank names are handled:
-//!
-//! | ID evidence | index/name evidence | start evidence | resolution |
-//! | --- | --- | --- | --- |
-//! | known | matching | any | matching call, new call, or ambiguity |
-//! | known | conflicting | named | new call |
-//! | unseen | matching | structured start | new call |
-//! | unseen | matching | named empty arguments | incomplete call, new call, or ambiguity |
-//! | unseen | matching | continuation | matching call or ambiguity |
-//! | absent | matching | any | matching call, new call, or ambiguity |
-//! | absent | absent | named | new call |
-//! | absent | absent | unnamed | sole unfinished call, new call, or ambiguity |
-//!
-//! An ambiguous delta is dropped. Behaviour follows
-//! `@ai-sdk/provider-utils@5.0.55`, which keeps parallel calls apart when
-//! stream labels are missing or reused (`hasEmptyArguments`).
-//!
-//! Protocols whose streams carry explicit tool-call boundaries (Anthropic,
-//! Google, Bedrock, Cohere, the Responses API) do not need this.
+//! Port of `@ai-sdk/provider-utils`'s `streaming-tool-call-tracker.ts`; see
+//! [`StreamingToolCallTracker`].
 
 use thiserror::Error;
 
@@ -110,7 +83,37 @@ enum Resolution {
     Ambiguous,
 }
 
-/// Tracks the tool calls of one streamed response. See the module docs.
+/// Tracks the tool calls of one streamed response.
+///
+/// Port of `@ai-sdk/provider-utils`'s `streaming-tool-call-tracker.ts`. It
+/// accumulates `tool_calls[i]` deltas, emits [`StreamPart::ToolInputStart`] /
+/// [`StreamPart::ToolInputDelta`] as they arrive, and emits
+/// [`StreamPart::ToolInputEnd`] / [`StreamPart::ToolCall`] for every call in
+/// [`StreamingToolCallTracker::finish`]. A call is never finalized earlier: a
+/// parsable argument buffer can still be the prefix of a longer argument
+/// string (ai-sdk #13137).
+///
+/// Deltas are correlated to calls by wire `id`, `index` and function name,
+/// not by `index` alone, so providers that reuse indices, repeat ids, drop
+/// ids on continuations or send blank names are handled:
+///
+/// | ID evidence | index/name evidence | start evidence | resolution |
+/// | --- | --- | --- | --- |
+/// | known | matching | any | matching call, new call, or ambiguity |
+/// | known | conflicting | named | new call |
+/// | unseen | matching | structured start | new call |
+/// | unseen | matching | named empty arguments | incomplete call, new call, or ambiguity |
+/// | unseen | matching | continuation | matching call or ambiguity |
+/// | absent | matching | any | matching call, new call, or ambiguity |
+/// | absent | absent | named | new call |
+/// | absent | absent | unnamed | sole unfinished call, new call, or ambiguity |
+///
+/// An ambiguous delta is dropped. Behaviour follows
+/// `@ai-sdk/provider-utils@5.0.55`, which keeps parallel calls apart when
+/// stream labels are missing or reused (`hasEmptyArguments`).
+///
+/// Protocols whose streams carry explicit tool-call boundaries (Anthropic,
+/// Google, Bedrock, Cohere, the Responses API) do not need this.
 pub struct StreamingToolCallTracker {
     calls: Vec<ToolCall>,
     generate_id: Box<dyn Fn() -> String + Send + Sync>,
@@ -244,7 +247,7 @@ impl StreamingToolCallTracker {
         }
     }
 
-    /// Apply the correlation table in the module docs.
+    /// Apply the correlation table in the type docs.
     fn resolve(
         &self,
         wire_id: Option<&str>,
