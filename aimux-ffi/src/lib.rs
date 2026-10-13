@@ -1646,8 +1646,9 @@ pub extern "C" fn aimux_consume_stream_text(
 ///
 /// Blocks the calling thread until the stream completes (synchronous +
 /// callback mode). Callbacks are invoked in the same call stack:
-/// - `on_part(json, stream_ctx)`: each `StreamPart` as JSON (valid only during
-///   the call). `StreamPart::Error` is data on this path, not a terminal fail.
+/// - `on_part(json, stream_ctx)`: each `TextStreamPart` as JSON (valid only
+///   during the call). `TextStreamPart::Error` is data on this path, not a
+///   terminal fail.
 /// - `on_done(stream_ctx)`: once on normal completion (not on failure).
 ///
 /// NULL on success (after `on_done`); a returned error otherwise (no

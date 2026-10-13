@@ -213,7 +213,7 @@ try (Model model = Model.openai("sk-...", "gpt-4o")) {
 try (TypedModel model = TypedModel.openai("sk-...", "gpt-4o")) {
     Types.GenerateTextResult result = model.generateText("What is Rust?");
     System.out.println(result.getText());
-    System.out.println(result.getUsage().getInputTokens().getTotal());
+    System.out.println(result.getUsage().getInputTokens());
 }
 ```
 
@@ -222,7 +222,7 @@ try (TypedModel model = TypedModel.openai("sk-...", "gpt-4o")) {
 `(List<ModelMessage> messages)`,
 `(List<ModelMessage> messages, GenerateTextOptions options)`.
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -429,7 +429,8 @@ Factories: `Files.openai` / `openaiWithBase`.
 custom serializer for the scalar-or-object wire form), `ContentPart` (sealed),
 `MessageContent` (sealed), `ModelMessage`, `GenerateTextOptions`,
 `FileBytes` / `FileData`, `GenerateContent`, `GenerateResult`,
-`GenerateTextResult`, `StreamPart` (sealed). All sealed hierarchies serialize
+`LanguageModelUsage`, `GenerateTextResult`, `GenerateObjectResult`,
+`StreamPart` (sealed). All sealed hierarchies serialize
 in the wrapper-object wire form (e.g. `{"TextDelta":{...}}`).
 
 `RawToolCall` and `ToolCallRepairContext` serve

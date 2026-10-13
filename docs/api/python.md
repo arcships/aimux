@@ -64,7 +64,7 @@ print(result["usage"])
 print(result["finish_reason"])
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -77,9 +77,9 @@ from aimux import openai, stream_text
 model = openai("sk-...", "gpt-4o")
 for part in stream_text(model, "Write a haiku about Rust."):
     if "TextDelta" in part:
-        print(part["TextDelta"]["delta"], end="")
+        print(part["TextDelta"]["text"], end="")
     if "Finish" in part:
-        print("\n[done]")
+        print(f"\n[done: {part['Finish']['finish_reason']}]")
 ```
 
 > Stream part variants are documented in the [API overview](../API.md#streaming-generation).
@@ -367,12 +367,13 @@ The wrapper's types are pydantic models in `bindings/python/python/aimux/wrapper
 from aimux.wrapper import (
     # type aliases
     Role, FinishReasonUnified, ReasoningEffort, MessageContent, ContentPart,
-    Tool, ToolChoice, ResponseFormat, StreamPart, GenerateContent,
+    Tool, ToolChoice, StreamPart, GenerateContent, TextContent,
     FileData, FileBytes, Warning, AiMuxErrorValue,
     # pydantic models
-    TokenUsage, Usage, FinishReason, ResponseMetadata, ToolCall,
+    LanguageModelUsage, InputTokenDetails, OutputTokenDetails, ToolCall,
     ModelMessage, FunctionTool, ProviderTool, TextContentPart,
-    GenerateTextOptions, GenerateTextResult, GenerateResult,
+    GenerateTextOptions, GenerateTextResult, StepResult, StepResponse,
+    GenerateObjectResult,
     RawToolCall, ToolCallRepairContext, RepairToolCall,
     # functions
     generate_text, stream_text, parse_stream_part,
@@ -459,15 +460,21 @@ Key shapes (mirroring the shared JSON schema):
 
 ```python
 class GenerateTextResult(BaseModel):
+    content: list[TextContent]          # the final step's parts
     text: str
     tool_calls: list[ToolCall]
-    finish_reason: FinishReason
-    usage: Usage
+    finish_reason: FinishReasonUnified  # "stop", "tool-calls", ...
+    raw_finish_reason: Optional[str]
+    usage: LanguageModelUsage           # summed over the steps
     warnings: list[Warning]
-    raw: GenerateResult
+    steps: list[StepResult]
+    response_messages: list[ModelMessage]
+    output: Optional[Any]               # the value parsed by options.output
+    ...
 ```
 
-`StreamPart` is a `RootModel` over the external-tagged union dict, e.g.
-`{"TextDelta": {"id": ..., "delta": ...}}`. Iterate dicts with
+`StreamPart` is a `RootModel` over the external-tagged union dict (the AI
+SDK's full stream: `Start`, `StartStep` … `FinishStep`, `Finish`), e.g.
+`{"TextDelta": {"id": ..., "text": ...}}`. Iterate dicts with
 `if "TextDelta" in part:` (as in [Streaming Generation](#streaming-generation))
 or validate them with `parse_stream_part(part)` for attribute access.

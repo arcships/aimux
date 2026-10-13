@@ -156,7 +156,7 @@ Model.openai("sk-...", "gpt-4o").use { model ->
 }
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation

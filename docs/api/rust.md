@@ -93,7 +93,7 @@ signal.abort(); // cancels connect, body reads, and streaming
 let result = task.await.unwrap()?;
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -107,8 +107,8 @@ let result = stream_text(&model, "Write a haiku.", GenerateTextOptions::default(
 let mut stream = result.stream;
 while let Some(part) = stream.next().await {
     match part? {
-        StreamPart::TextDelta { delta, .. } => print!("{}", delta),
-        StreamPart::Finish { .. } => println!("\n[done]"),
+        TextStreamPart::TextDelta { text, .. } => print!("{}", text),
+        TextStreamPart::Finish { finish_reason, .. } => println!("\n[done: {finish_reason:?}]"),
         _ => {}
     }
 }
@@ -314,9 +314,13 @@ Rust types are the canonical definitions — one module per feature in
 
 | Module | Key types |
 |------|------|
-| `generate` | `generate_text` / `stream_text` functions, `GenerateResult` |
-| `language_model` | `LanguageModel`, `GenerateTextResult` |
-| `stream_part` | `StreamPart` (18 variants) |
+| `generate` | `generate_text` / `stream_text` functions, `GenerateTextResult`, `StreamTextResult` |
+| `step_result` | `StepResult`, `StepResponse`, `StepResultPerformance` |
+| `output` | `Output` (the `output` option: Text / Object / Array / Choice / Json) |
+| `language_model` | `LanguageModel` |
+| `result` | `GenerateResult` (provider result), `TextContent`, `Source`, `GeneratedFile` |
+| `stream_part` | `StreamPart` (provider stream), `TextStreamPart` (the AI SDK's full stream) |
+| `types` | `LanguageModelUsage`, `Usage`, `FinishReasonUnified`, `Warning` |
 | `options` | `GenerateTextOptions`, `CallOptions`, `ResponseFormat`, `ToolChoice`, `ReasoningEffort` |
 | `message` / `language_model_message` | `ModelMessage`, `ModelPrompt`, `MessageContent`, `Role` |
 | `content` | `ContentPart` (Text / Image / File / Reasoning / ToolCall / ToolResult) |
