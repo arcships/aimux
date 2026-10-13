@@ -178,6 +178,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AiMuxError::InvalidResponseData`.
 - `SigV4Fetch::with_clock` takes a plain function (`fn() -> DateTime<Utc>`)
   instead of a closure.
+- Gains `Transformer`, `TransformStreamController` and `pipe_through`, the
+  Rust form of the WHATWG `TransformStream` the AI SDK models build `doStream`
+  with (`start` / `transform` / `flush`; `enqueue`, `enqueue_error`, `error`,
+  `terminate`).
 
 **Rust (aimux-providers)**
 
@@ -205,6 +209,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged; the closures callers pass in settings (`transform_request_body`,
   `generate_id`, the compatible `supported_urls`, `convert_usage` and
   `metadata_extractor`) are kept as given.
+- Every language-model `doStream` (OpenAI chat and Responses, OpenAI-compatible
+  chat and completion, Groq, DeepSeek, Mistral, Anthropic, Bedrock, Cohere,
+  Google, Vertex, xAI, Hugging Face, Open Responses) is a named stream struct
+  driven by `pipe_through`; emitted parts are unchanged, and a stream still
+  stops reading the body at an Anthropic `message_stop` or a
+  Google/Vertex/xAI/Hugging Face error event.
 
 **Rust (provider factory, RFC-0036)**
 
