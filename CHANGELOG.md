@@ -202,8 +202,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `NoSuchModel { model_id, model_type }` when a vendor has no such modality;
   `transcription_model`, `speech_model`, `reranking_model` and `files` are
   optional (`None` = not offered); video and search stay aimux extensions.
+  `Provider` gains `specification_version()`, returning `"v4"` like
+  `ProviderV4` and the model traits.
   AI SDK model constructors return an `Arc<dyn …>`. Removed: `Provider::name()`,
-  `specification_version()` (from `Provider` and the nine model traits),
   `LanguageModel::config_snapshot()` and `list_models` on `Provider`.
   Discovery is the separate `ProviderDiscovery` trait, accessed through
   `Provider::discovery()`; `supported_urls()` is added to `LanguageModel`.

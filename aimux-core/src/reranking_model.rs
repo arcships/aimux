@@ -124,6 +124,11 @@ pub struct RerankingResponse {
 /// Aligned with V4 `RerankingModelV4`.
 #[async_trait]
 pub trait RerankingModel: Send + Sync {
+    /// Specification version (always `"v4"`).
+    fn specification_version(&self) -> &'static str {
+        "v4"
+    }
+
     /// Provider name, e.g. `"cohere"`.
     fn provider(&self) -> &str;
 

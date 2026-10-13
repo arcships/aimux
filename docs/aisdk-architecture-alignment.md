@@ -308,8 +308,8 @@ FFI / Node / Python / tools
 ```rust
 #[async_trait]
 pub trait LanguageModel: Send + Sync {
-    fn specification_version(&self) -> SpecificationVersion {
-        SpecificationVersion::V4
+    fn specification_version(&self) -> &'static str {
+        "v4"
     }
 
     fn provider(&self) -> &str;
@@ -344,7 +344,9 @@ pub trait LanguageModel: Send + Sync {
 
 ```rust
 pub trait Provider: Send + Sync {
-    fn specification_version(&self) -> SpecificationVersion;
+    fn specification_version(&self) -> &'static str {
+        "v4"
+    }
 
     fn language_model(&self, id: &str)
         -> Result<Arc<dyn LanguageModel>, AiMuxError>;
@@ -1141,7 +1143,8 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 不采用 | 历史版本和 deprecated 兼容 | 不实现 V2/V3 适配、旧 namespace 双写、旧方法转发、旧录制读取 |
 | 本期范围外 | Evaluation/Realtime/SpeechTranslation/Batch 等完整链路 | 不注册虚假能力；后续需完整接通操作与观测 |
 | ABI 范围外 | C 宿主异步 fetch/model/headers/telemetry | 由独立异步 ABI 设计处理；本期提供 Rust 内建句柄 |
-| 语言适配 | `specification_version` / `Provider.name()` | `Provider` 与各模型 trait 不带 `specification_version`，`Provider` 不带 `name()`（D-c）：Rust trait 本身就是版本边界，注册名归持有 registry 的一方，身份由模型自己的 `provider()`（`"{name}.{method}"`）承担 |
+| 上游对齐 | `specification_version` | `Provider` 与各模型 trait 保留 `specification_version()`，默认返回 `"v4"`，与上游 `ProviderV4` 及各模型 V4 接口的 `specificationVersion: 'v4'` 一致 |
+| 语言适配 | `Provider.name()` | `Provider` 不带 `name()`（D-c）：注册名归持有 registry 的一方，身份由模型自己的 `provider()`（`"{name}.{method}"`）承担 |
 | 语言适配 | Rust `.call()` 的具体形式 | 每个包的 provider 提供 `call(model_id) -> Arc<dyn LanguageModel>`，与 `Provider::language_model` 返回同一个模型；Rust 无可调用对象，绑定侧在语言允许处恢复调用语法 |
 | 上游对齐 | OpenAI 默认 `language_model` | `language_model` 和 `call` 返回 Responses（`openai.responses`），与上游 `openai(id)` 一致；`chat(id)` 显式选择 Chat Completions。xAI、Hugging Face、Azure 的默认也为 Responses |
 | 产品选择 | Bedrock 上的 Anthropic InvokeModel | aimux 没有 `bedrock.anthropic.messages` 对应的 provider（`anthropic_aws` 是 Claude Platform on AWS，不是 Bedrock InvokeModel）；属新增能力，不在本期 |

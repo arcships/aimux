@@ -48,6 +48,11 @@ use crate::video_model::VideoModel;
 /// whoever holds the registry, and each model reports its own
 /// [`LanguageModel::provider`] string.
 pub trait Provider: Send + Sync {
+    /// Specification version (always `"v4"`).
+    fn specification_version(&self) -> &'static str {
+        "v4"
+    }
+
     /// Create a typed decision model (aimux extension).
     /// # Errors
     /// Returns `UnsupportedFunctionality` when decisions are not offered.
@@ -156,6 +161,10 @@ pub trait ProviderDiscovery: Send + Sync {
 /// A reference to a provider is a provider, so a `&'static` default instance
 /// (`openai()`, `anthropic()`, ...) can be registered as it is.
 impl<P: Provider + ?Sized> Provider for &P {
+    fn specification_version(&self) -> &'static str {
+        (**self).specification_version()
+    }
+
     fn decision_model(&self, id: &str) -> Result<Box<dyn crate::DecisionModel>, AiMuxError> {
         (**self).decision_model(id)
     }
