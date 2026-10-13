@@ -172,6 +172,7 @@ Provider 不对完整 model operation 执行通用 exponential retry；上述安
 | `postFormDataToApi` | `post_form_data_to_api` |
 | `postToApi` | `post_to_api` |
 | `getFromApi` | `get_from_api` |
+| `downloadBlob` | `download_blob`（经下载防护，不带任何 header，所以没有 user-agent） |
 | `ResponseHandler<T>` | `ResponseHandler<T>` |
 | `createJsonErrorResponseHandler` | `create_json_error_response_handler` |
 | `createJsonResponseHandler` | `create_json_response_handler` |

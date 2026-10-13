@@ -11,6 +11,7 @@
 
 mod aisdk_pins;
 pub mod api_key;
+pub mod download_blob;
 #[doc(hidden)]
 pub use aimux_core::download_guard;
 pub mod extract_response_headers;
@@ -37,6 +38,7 @@ pub mod url;
 pub mod ws;
 
 pub use api_key::{load_api_key, load_optional_setting, load_setting};
+pub use download_blob::download_blob;
 pub use download_guard::same_origin;
 pub use fetch::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, RequestCredentials,

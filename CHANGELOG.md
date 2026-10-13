@@ -474,6 +474,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   part of `@ai-sdk/open-responses` (now pinned in `VERSIONS.json`).
   `OpenResponsesProviderSettings::user_agent_suffix` replaces it, as the AI
   SDK's `userAgentSuffix` does.
+- `aimux_provider_utils::download_blob`, the AI SDK's `downloadBlob`: a GET
+  of an untrusted URL through the download guard with no headers, so no
+  `user-agent`. OpenAI-compatible image edits download URL files with it, as
+  upstream does, and no longer send `ai-sdk-provider-utils/5.0.53` there.
 - `OpenAIProvider::tools` and `AzureOpenAIProvider::tools`: the provider tools
   on the provider instance, as the AI SDK's `openai.tools` and `azure.tools`
   (`openai().tools.web_search(…)`). Azure's holds its upstream subset.
