@@ -326,7 +326,7 @@ finally:
 provider 只记录 provider_id/provider/model_id，endpoint 与凭证来自调用方配置；
 exchanges 记录各重试 attempt 的 HTTP 请求、响应和时延；
 `outcome.decision_result` 保存规范化结果。凭据沿用统一脱敏规则。
-录制使用 schema 3；语言录制缺少 operation 时仍按 language model 解析。
+录制使用 schema 2，与 aimux 0.5 相同；语言录制缺少 operation 时仍按 language model 解析。aimux 0.5 写的 decision 录制可以读取，但其能力声明在 `provider.profile` 中，本版本不读，离线回放会报错说明。
 
 CLI 离线回放不需要 key：
 

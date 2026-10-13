@@ -52,7 +52,11 @@ impl MockDecisionReplayModel {
                 )
             })?;
         let capabilities = first.input.decision_capabilities.clone().ok_or_else(|| {
-            AiMuxError::InvalidArgument("decision replay: missing decision capabilities".into())
+            AiMuxError::InvalidArgument(
+                "decision replay: missing decision capabilities (recordings written by aimux \
+                 0.5 or earlier keep them in provider.profile, which this version does not read)"
+                    .into(),
+            )
         })?;
         Ok(Self {
             provider,

@@ -29,22 +29,39 @@ use ts_rs::TS;
 // ── 数据模型(三层 + call_id 关联;schema 版本)────────────────────────────
 
 /// 录制格式版本(用于未来字段迁移与绑定层兼容)。
-pub const RECORDING_SCHEMA: u32 = 3;
+///
+/// Schema 2, as released aimux writes it: the V4 layers keep it until the
+/// full schema 3 of the alignment doc (§4.3) lands with the last layers.
+pub const RECORDING_SCHEMA: u32 = 2;
 
-/// 只接受当前 [`RECORDING_SCHEMA`]:反序列化旧版本录制时给出明确错误。
-fn deserialize_current_schema<'de, D>(deserializer: D) -> Result<u32, D::Error>
+/// Reads `schema`: 1 and 2, the schemas released aimux versions write, load;
+/// any other value is refused with a clear error. No schema 3 recording was
+/// ever released.
+fn deserialize_known_schema<'de, D>(deserializer: D) -> Result<u32, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let schema = u32::deserialize(deserializer)?;
-    if schema == RECORDING_SCHEMA {
+    if (1..=RECORDING_SCHEMA).contains(&schema) {
         Ok(schema)
     } else {
         Err(serde::de::Error::custom(format!(
-            "unsupported recording schema {schema}: only schema {RECORDING_SCHEMA} is \
-             readable, recordings written by older versions are no longer read"
+            "unsupported recording schema {schema}: only schemas 1 to {RECORDING_SCHEMA} \
+             are readable"
         )))
     }
+}
+
+/// Reads `InputRecord.prompt`. A prompt this version cannot read, such as
+/// one written by aimux 0.5 or earlier with a system message whose content is
+/// a part array, loads as empty so the recording still loads;
+/// [`InputRecord::unreadable_prompt`] then says why, and replay refuses it.
+fn deserialize_prompt<'de, D>(deserializer: D) -> Result<LanguageModelPrompt, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
 /// Operation stored in a unified recording. Older recordings are language calls.
@@ -67,9 +84,11 @@ impl RecordingOperation {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Recording {
-    /// 格式版本。读取时只接受当前 [`RECORDING_SCHEMA`];旧 schema 的录制带有
-    /// 配置快照(base_url / profile 等),不再读取。
-    #[serde(deserialize_with = "deserialize_current_schema")]
+    /// 格式版本。Written as [`RECORDING_SCHEMA`]; schemas 1 and 2 are read.
+    /// Recordings written by aimux 0.5 and earlier also carry a configuration
+    /// snapshot under `provider` (base URL, key source, profile, provider
+    /// options), which is ignored.
+    #[serde(deserialize_with = "deserialize_known_schema")]
     pub schema: u32,
     /// 暴露逻辑调用 ID,关联三层。
     pub call_id: String,
@@ -160,7 +179,9 @@ pub struct InputRecord {
     pub decision_capabilities: Option<crate::decision_model::DecisionCapabilities>,
     #[serde(default, skip_serializing_if = "RecordingOperation::is_language_model")]
     pub operation: RecordingOperation,
-    /// 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
+    /// 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。Loads as
+    /// empty when this version cannot read it ([`Self::unreadable_prompt`]).
+    #[serde(deserialize_with = "deserialize_prompt")]
     pub prompt: LanguageModelPrompt,
     /// 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
     /// 加上所在操作的 `max_retries` / `timeout` / `session_id`
@@ -207,6 +228,24 @@ impl InputRecord {
             options: redact_json(serde_json::to_value(options).unwrap_or_default()),
         }
     }
+
+    /// Why the recorded prompt cannot be replayed, when it cannot: the
+    /// recorded options hold a prompt this version does not read (one written
+    /// by aimux 0.5 or earlier, for example with a system message whose
+    /// content is a part array). `prompt` then loaded as empty.
+    #[must_use]
+    pub fn unreadable_prompt(&self) -> Option<String> {
+        if !self.prompt.is_empty() {
+            return None;
+        }
+        let recorded = self.options.get("prompt")?;
+        if recorded.as_array().is_none_or(Vec::is_empty) {
+            return None;
+        }
+        serde_json::from_value::<LanguageModelPrompt>(recorded.clone())
+            .err()
+            .map(|e| e.to_string())
+    }
 }
 
 /// ② 配置侧:provider 身份(请求回放重建用)。
@@ -217,6 +256,9 @@ impl InputRecord {
 #[ts(export)]
 pub struct ProviderRecord {
     /// provider 名(registry 名),回放重建的查找键,如 "openai"、"deepseek"。
+    /// Empty in a recording written by aimux 0.5 or earlier, which has none
+    /// ([`Self::registry_id`]).
+    #[serde(default)]
     pub provider_id: String,
     /// `model.provider()`,如 "openai.chat"。
     pub provider: String,
@@ -233,6 +275,25 @@ impl ProviderRecord {
             provider: provider.to_string(),
             model_id: model_id.to_string(),
         }
+    }
+
+    /// `provider_id`, the registry name live replay rebuilds the model from.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidArgument` when the recording has none: aimux 0.5 and earlier
+    /// record the model's `provider()` and its configuration instead, so such
+    /// a recording is replayed by passing the model to `replay_with_model`.
+    pub fn registry_id(&self) -> Result<&str, crate::error::AiMuxError> {
+        if self.provider_id.is_empty() {
+            return Err(crate::error::AiMuxError::InvalidArgument(format!(
+                "replay: the recording of `{}` has no provider_id (recordings written by \
+                 aimux 0.5 or earlier carry none), so the model cannot be rebuilt from a \
+                 registry; pass the model to replay_with_model",
+                self.provider
+            )));
+        }
+        Ok(&self.provider_id)
     }
 
     /// 由 model 的 `provider()` / `model_id()` 构造:`provider_id` 暂取
@@ -2139,6 +2200,70 @@ mod tests {
         assert_eq!(back.call_id, "call-1");
         assert_eq!(back.schema, RECORDING_SCHEMA);
         assert_eq!(back.provider.provider, "openai");
+    }
+
+    /// Recordings are written as schema 2, as master writes them. Schemas 1
+    /// and 2 (what released versions write) are read; any other schema,
+    /// including the never-released 3, is refused with a clear error.
+    #[test]
+    fn schema_two_is_written_and_released_schemas_are_read() {
+        let rec = Recording::new(
+            "call-1",
+            InputRecord::from_call_options(&sample_options()),
+            ProviderRecord::from_model("openai.chat", "gpt-4o"),
+        );
+        let json = serde_json::to_value(&rec).unwrap();
+        assert_eq!(json["schema"], 2);
+        for schema in [1, 2] {
+            let mut value = json.clone();
+            value["schema"] = schema.into();
+            let back: Recording = serde_json::from_value(value).unwrap();
+            assert_eq!(back.schema, schema);
+        }
+        for schema in [0, 3, 4] {
+            let mut value = json.clone();
+            value["schema"] = schema.into();
+            let err = serde_json::from_value::<Recording>(value)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains(&format!("unsupported recording schema {schema}")),
+                "{err}"
+            );
+        }
+    }
+
+    /// Fields only this version writes are optional when reading, fields
+    /// only master writes are ignored, and a prompt this version cannot read
+    /// loads as empty with the reason kept for replay.
+    #[test]
+    fn a_master_shaped_record_loads() {
+        let system = serde_json::json!([{
+            "role": "system",
+            "content": [{"type": "text", "text": "Be brief."}],
+            "provider_options": null
+        }]);
+        let line = serde_json::json!({
+            "schema": 2,
+            "call_id": "c",
+            "recorded_at": "2026-10-13T00:00:00.000Z",
+            "input": {"prompt": system, "options": {"prompt": system}},
+            "provider": {
+                "provider": "openai",
+                "model_id": "gpt-4o",
+                "base_url": "https://api.openai.com/v1",
+                "profile": null,
+                "provider_options": null
+            },
+            "exchanges": [],
+            "outcome": {"status": "success", "finish_reason": "stop", "error": null, "usage": null}
+        });
+        let rec: Recording = serde_json::from_value(line).unwrap();
+        assert_eq!(rec.provider.provider_id, "");
+        assert!(rec.provider.registry_id().is_err());
+        assert!(rec.input.prompt.is_empty());
+        assert!(rec.input.unreadable_prompt().is_some());
+        assert!(!rec.complete);
     }
 
     #[test]

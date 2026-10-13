@@ -15,4 +15,4 @@ The recording includes the actual HTTP exchange, timing, capability snapshot and
 normalized result. Offline provider tests replay the wire exchange via the
 shared replay helper; Core and the CLI replay the normalized result.
 
-Stack integration migrates the recording envelope to schema 3: provider identity only, with decision capabilities under input. Recorded requests, responses and normalized outcomes are unchanged.
+The V4 layers rewrite the provider section to the identity they record (`provider_id`, `provider`, `model_id`) and move the decision capabilities under `input`; the envelope stays schema 2. Recorded requests, responses and normalized outcomes are unchanged. The file as master recorded it is kept as `aimux-core/tests/fixtures/master_decision_recordings.jsonl`.

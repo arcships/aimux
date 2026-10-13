@@ -1481,7 +1481,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 | P1：分层切换 | 按依赖顺序拆成若干层（core 类型 → provider 工厂与请求层 → 厂商包与其余模型种类 → 公共 JSON → 下文所列的最后几层），每层一个 PR，直接合入主线 | 每层在同一 PR 内改完它删除或改动的符号在整个依赖闭包（FFI、八种接口、三个工具）中的全部消费方；合入时 §9.2 中已具备的检查全部通过 |
 | P2：协议与生命周期验收 | 完成逐包差分、离线回放、并发、取消、认证、流、生成物检查和文档核对 | 全部发布门槛通过后才发布 |
 
-每层直接写成目标设计，不引入之后要删除的过渡代码、deprecated 别名或旧 API 转发（D31）。某一层暂时达不到本文的某项要求时，在该层 PR 描述中写明缺什么、由哪一层补齐；与该层代码直接相关的本文修订随该层 PR 一起提交。例外：新 C ABI 与句柄对象模型（§6.1–§6.3）、descriptor/manifest/codegen（§6.5）、录制 schema 3 的完整形态（§4.3、§4.4），以及八种接口与工具的迁移（§6.4、§4.6），排在其余各层之后、发布之前。在此之前，现有按厂商命名的 C 构造器与按名字创建 provider 的入口保持对外签名，内部改调新工厂；它们随绑定迁移那一层一次替换，不另设 deprecated 别名，任何发布版本中都不会出现。每层 PR 描述还列出产物改前改后的体积（体积与性能门禁排在迁移之后，见 §0.7）。
+每层直接写成目标设计，不引入之后要删除的过渡代码、deprecated 别名或旧 API 转发（D31）。某一层暂时达不到本文的某项要求时，在该层 PR 描述中写明缺什么、由哪一层补齐；与该层代码直接相关的本文修订随该层 PR 一起提交。例外：新 C ABI 与句柄对象模型（§6.1–§6.3）、descriptor/manifest/codegen（§6.5）、录制 schema 3（§4.3、§4.4），以及八种接口与工具的迁移（§6.4、§4.6），排在其余各层之后、发布之前。在此之前，现有按厂商命名的 C 构造器与按名字创建 provider 的入口保持对外签名，内部改调新工厂；它们随绑定迁移那一层一次替换，不另设 deprecated 别名，任何发布版本中都不会出现。每层 PR 描述还列出产物改前改后的体积（体积与性能门禁排在迁移之后，见 §0.7）。
 
 全部层合入并通过 P2 之前，主线处于迁移中途，**不从主线发布**。此期间已发布版本的修复，从对应 release 标签拉出维护分支发布（如 0.5.x 从 `v0.5.0` 拉出）。
 
@@ -1500,6 +1500,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - feature 组合矩阵 CI（§9.2）。
 - 协议 fixture 扩到四个家族以外，逐字段比对结果与流（§9.3）。
 - CLI 探测加 `--method`；现在 OpenAI 只能探测 Responses（§4.6、RFC-0025）。
+- 录制 schema 3（§4.3、§4.4）；随最后几层做。在此之前各层仍写主线的 schema 2，`ProviderRecord` 只记身份；主线写的录制可以读取（只有主线写的字段忽略，只有新层写的字段读时可缺省），回放不了的部分在回放时报错说明。
 - OpenAI 兼容输出的流带回上游的 id 与 model（RFC-0026）；这是回归，不是新功能。
 - Bedrock Mantle 仍是 registry 预设（OpenAI 兼容 chat），只对齐了 user-agent。上游 `createBedrockMantle` 是完整 provider，有 chat、responses 两种模型和自己的鉴权（amazon-bedrock 5.0.100 `mantle/bedrock-mantle-provider.ts:122-273`；§4.1）。
 - AWS SigV4 fetch（Bedrock、Anthropic-AWS）也给 GET 请求签名，即 `list_models`；上游只签带 body 的 POST（`amazon-bedrock-sigv4-fetch.ts:57-62`、`anthropic-aws-fetch.ts:57-62`）。模型列表是 aimux 独有的接口，不签名就调不通，所以保留这一差异，不再修改（§3.3）。
