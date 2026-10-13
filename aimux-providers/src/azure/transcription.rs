@@ -360,15 +360,22 @@ impl TranscriptionModel for AzureTranscriptionModel {
         })
     }
 
-    async fn do_stream(
+    fn do_stream(
         &self,
         options: TranscriptionStreamOptions,
-    ) -> Result<TranscriptionStreamResult, AiMuxError> {
-        if self.uses_speech(&parse_options(options.provider_options.as_ref())?) {
-            return Err(AiMuxError::UnsupportedFunctionality(
-                "streaming transcription with the Azure Speech API".into(),
-            ));
-        }
-        self.openai.do_stream(options).await
+    ) -> Option<futures::future::BoxFuture<'_, Result<TranscriptionStreamResult, AiMuxError>>> {
+        Some(Box::pin(async move {
+            if self.uses_speech(&parse_options(options.provider_options.as_ref())?) {
+                return Err(AiMuxError::UnsupportedFunctionality(
+                    "streaming transcription with the Azure Speech API".into(),
+                ));
+            }
+            match self.openai.do_stream(options) {
+                Some(stream) => stream.await,
+                None => Err(AiMuxError::UnsupportedFunctionality(
+                    "streaming transcription".into(),
+                )),
+            }
+        }))
     }
 }

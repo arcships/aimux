@@ -816,6 +816,23 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
             provider_metadata: None,
         })
     }
+
+    /// The model has a streaming method; the session itself is
+    /// [`ElevenLabsTranscriptionModel::stream_transcription`].
+    fn do_stream(
+        &self,
+        options: aimux_core::transcription_model::TranscriptionStreamOptions,
+    ) -> Option<
+        futures::future::BoxFuture<
+            '_,
+            Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError>,
+        >,
+    > {
+        Some(Box::pin(self.stream_transcription(options)))
+    }
+}
+
+impl ElevenLabsTranscriptionModel {
     /// Streaming transcription over the ElevenLabs realtime WebSocket
     /// (RFC-0034 §3, wire shape per the public API reference 2026-09).
     ///
@@ -831,7 +848,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
     /// shape is pinned field-by-field against the documented reference by
     /// the local mock-server tests — same posture as RFC-0028 D4.
     #[cfg(feature = "realtime")]
-    async fn do_stream(
+    async fn stream_transcription(
         &self,
         options: aimux_core::transcription_model::TranscriptionStreamOptions,
     ) -> Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError> {
@@ -1185,7 +1202,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
 
     /// Without the `realtime` feature the WebSocket path is compiled out.
     #[cfg(not(feature = "realtime"))]
-    async fn do_stream(
+    async fn stream_transcription(
         &self,
         _options: aimux_core::transcription_model::TranscriptionStreamOptions,
     ) -> Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError> {

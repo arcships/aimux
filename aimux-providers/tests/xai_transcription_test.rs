@@ -267,6 +267,7 @@ async fn run_with(
     let (base_url, cap) = start(events).await;
     let mut result = model(&base_url, headers)
         .do_stream(options)
+        .expect("the model has do_stream")
         .await
         .expect("do_stream");
     let response = result.response.take();
@@ -529,7 +530,11 @@ async fn should_require_channels_when_streaming_multichannel_audio() {
         "audio/pcm",
         Some(16000),
     );
-    let error = model(&base_url, None).do_stream(options).await.unwrap_err();
+    let error = model(&base_url, None)
+        .do_stream(options)
+        .expect("the model has do_stream")
+        .await
+        .unwrap_err();
 
     assert!(
         matches!(&error, AiMuxError::InvalidArgument(message) if message.contains(

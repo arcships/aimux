@@ -295,28 +295,30 @@ impl TranscriptionModel for GoogleTranscriptionModel {
         })
     }
 
-    async fn do_stream(
+    fn do_stream(
         &self,
         options: TranscriptionStreamOptions,
-    ) -> Result<TranscriptionStreamResult, AiMuxError> {
-        if !is_live(&self.model_id) {
-            return Err(AiMuxError::InvalidArgument(format!(
-                "Model '{}' does not support streaming transcription. \
+    ) -> Option<futures::future::BoxFuture<'_, Result<TranscriptionStreamResult, AiMuxError>>> {
+        Some(Box::pin(async move {
+            if !is_live(&self.model_id) {
+                return Err(AiMuxError::InvalidArgument(format!(
+                    "Model '{}' does not support streaming transcription. \
                  Use a live model such as 'gemini-3.5-transcribe-live'.",
-                self.model_id
-            )));
-        }
-        #[cfg(feature = "realtime")]
-        {
-            self.stream_live(options).await
-        }
-        #[cfg(not(feature = "realtime"))]
-        {
-            let _ = options;
-            Err(AiMuxError::UnsupportedFunctionality(
-                "Enable realtime for Google Live transcription".into(),
-            ))
-        }
+                    self.model_id
+                )));
+            }
+            #[cfg(feature = "realtime")]
+            {
+                self.stream_live(options).await
+            }
+            #[cfg(not(feature = "realtime"))]
+            {
+                let _ = options;
+                Err(AiMuxError::UnsupportedFunctionality(
+                    "Enable realtime for Google Live transcription".into(),
+                ))
+            }
+        }))
     }
 }
 

@@ -189,27 +189,29 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
         })
     }
 
-    async fn do_stream(
+    fn do_stream(
         &self,
         options: TranscriptionStreamOptions,
-    ) -> Result<TranscriptionStreamResult, AiMuxError> {
-        if !self.model_id.contains("-live") {
-            return Err(AiMuxError::InvalidArgument(format!(
-                "Model '{}' does not support streaming transcription. Use a live model.",
-                self.model_id
-            )));
-        }
-        #[cfg(feature = "realtime")]
-        {
-            self.stream_live(options).await
-        }
-        #[cfg(not(feature = "realtime"))]
-        {
-            let _ = options;
-            Err(AiMuxError::UnsupportedFunctionality(
-                "Enable realtime for Vertex Live transcription".into(),
-            ))
-        }
+    ) -> Option<futures::future::BoxFuture<'_, Result<TranscriptionStreamResult, AiMuxError>>> {
+        Some(Box::pin(async move {
+            if !self.model_id.contains("-live") {
+                return Err(AiMuxError::InvalidArgument(format!(
+                    "Model '{}' does not support streaming transcription. Use a live model.",
+                    self.model_id
+                )));
+            }
+            #[cfg(feature = "realtime")]
+            {
+                self.stream_live(options).await
+            }
+            #[cfg(not(feature = "realtime"))]
+            {
+                let _ = options;
+                Err(AiMuxError::UnsupportedFunctionality(
+                    "Enable realtime for Vertex Live transcription".into(),
+                ))
+            }
+        }))
     }
 }
 

@@ -282,3 +282,40 @@ async fn should_fallback_to_words_when_segments_are_not_available() {
         .collect();
     assert_eq!(segments, [("Hello", 0.0, 1.0), ("world", 1.0, 2.0)]);
 }
+
+/// Upstream's `GroqTranscriptionModel` has `doGenerate` only
+/// (`groq-transcription-model.ts:30`, `:123`), and `doStream` is optional on
+/// `TranscriptionModelV4` (`@ai-sdk/provider@4.0.22
+/// src/transcription-model/v4/transcription-model-v4.ts:44-46`). Streaming is
+/// therefore unsupported before any request is sent.
+#[tokio::test]
+async fn the_model_has_no_streaming_method() {
+    use aimux_core::error::AiMuxError;
+    use aimux_core::transcription_model::{
+        InputAudioFormat, TranscriptionStreamOptions, stream_transcribe,
+    };
+
+    let server = serve(ResponseTemplate::new(200).set_body_json(json_body())).await;
+    let model = model_on(&server, None, "whisper-large-v3");
+    let options = || TranscriptionStreamOptions {
+        audio: Box::pin(futures::stream::empty()),
+        input_audio_format: InputAudioFormat {
+            format_type: "audio/pcm".to_string(),
+            rate: Some(16_000),
+        },
+        provider_options: None,
+        abort_signal: None,
+        headers: None,
+        include_raw_chunks: false,
+        timeout: None,
+    };
+
+    assert!(model.do_stream(options()).is_none());
+    let error = stream_transcribe(&model, options()).await.unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::UnsupportedFunctionality(message)
+            if message == "The groq.transcription model \"whisper-large-v3\" does not support streaming transcription."),
+        "{error:?}"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}

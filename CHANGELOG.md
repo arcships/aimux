@@ -392,6 +392,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `InvalidArgument` before a request is sent.
 - `ExternalProviderEntry` debug output reports only whether `api_key` is
   present, keeping literal keys out of debug logs.
+- `TranscriptionModel::do_stream` is optional, as the AI SDK's `doStream?`:
+  it returns `Option<BoxFuture<…>>` and is `None` by default, instead of a
+  default method that fails with `UnsupportedFunctionality`. Implementors
+  return `Some(Box::pin(…))`. `stream_transcribe` reports a model without the
+  method as `UnsupportedFunctionality` before any I/O
+  (`The {provider} model "{id}" does not support streaming transcription.`).
 
 **C ABI**
 

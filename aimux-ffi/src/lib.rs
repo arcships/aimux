@@ -4421,77 +4421,83 @@ mod tests {
         ) -> Result<aimux_core::transcription_model::TranscriptionResult, AiMuxError> {
             unimplemented!()
         }
-        async fn do_stream(
+        fn do_stream(
             &self,
             options: aimux_core::transcription_model::TranscriptionStreamOptions,
-        ) -> Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError>
-        {
-            use aimux_core::transcription_model::{
-                AudioChunk, TranscriptionStreamPart, TranscriptionStreamResult,
-            };
-            use futures::StreamExt;
-            let mut audio = options.audio;
-            let abort = options.abort_signal.clone();
-            let stream = async_stream::stream! {
-                yield Ok(TranscriptionStreamPart::StreamStart { warnings: vec![] });
-                let mut text = String::new();
-                loop {
-                    let aborted = async {
-                        match &abort {
-                            Some(s) => s.cancelled().await,
-                            None => std::future::pending().await,
-                        }
-                    };
-                    tokio::select! {
-                        _ = aborted => {
-                            yield Err(AiMuxError::Aborted("request aborted".into()));
-                            break;
-                        }
-                        chunk = audio.next() => match chunk {
-                            Some(AudioChunk::Binary(b)) => {
-                                let s = format!("{} ", b.len());
-                                text.push_str(&s);
-                                yield Ok(TranscriptionStreamPart::TranscriptDelta {
-                                    id: None,
-                                    delta: s,
-                                    provider_metadata: None,
-                                });
+        ) -> Option<
+            futures::future::BoxFuture<
+                '_,
+                Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError>,
+            >,
+        > {
+            Some(Box::pin(async move {
+                use aimux_core::transcription_model::{
+                    AudioChunk, TranscriptionStreamPart, TranscriptionStreamResult,
+                };
+                use futures::StreamExt;
+                let mut audio = options.audio;
+                let abort = options.abort_signal.clone();
+                let stream = async_stream::stream! {
+                    yield Ok(TranscriptionStreamPart::StreamStart { warnings: vec![] });
+                    let mut text = String::new();
+                    loop {
+                        let aborted = async {
+                            match &abort {
+                                Some(s) => s.cancelled().await,
+                                None => std::future::pending().await,
                             }
-                            Some(AudioChunk::Base64(s)) => {
-                                text.push_str(&s);
-                                yield Ok(TranscriptionStreamPart::TranscriptDelta {
-                                    id: None,
-                                    delta: s,
-                                    provider_metadata: None,
-                                });
-                            }
-                            None => {
-                                yield Ok(TranscriptionStreamPart::TranscriptFinal {
-                                    id: None,
-                                    text: text.clone(),
-                                    start_second: None,
-                                    end_second: None,
-                                    channel_index: None,
-                                    provider_metadata: None,
-                                });
-                                yield Ok(TranscriptionStreamPart::Finish {
-                                    text,
-                                    segments: vec![],
-                                    language: None,
-                                    duration_in_seconds: None,
-                                    provider_metadata: None,
-                                });
+                        };
+                        tokio::select! {
+                            _ = aborted => {
+                                yield Err(AiMuxError::Aborted("request aborted".into()));
                                 break;
                             }
-                        },
+                            chunk = audio.next() => match chunk {
+                                Some(AudioChunk::Binary(b)) => {
+                                    let s = format!("{} ", b.len());
+                                    text.push_str(&s);
+                                    yield Ok(TranscriptionStreamPart::TranscriptDelta {
+                                        id: None,
+                                        delta: s,
+                                        provider_metadata: None,
+                                    });
+                                }
+                                Some(AudioChunk::Base64(s)) => {
+                                    text.push_str(&s);
+                                    yield Ok(TranscriptionStreamPart::TranscriptDelta {
+                                        id: None,
+                                        delta: s,
+                                        provider_metadata: None,
+                                    });
+                                }
+                                None => {
+                                    yield Ok(TranscriptionStreamPart::TranscriptFinal {
+                                        id: None,
+                                        text: text.clone(),
+                                        start_second: None,
+                                        end_second: None,
+                                        channel_index: None,
+                                        provider_metadata: None,
+                                    });
+                                    yield Ok(TranscriptionStreamPart::Finish {
+                                        text,
+                                        segments: vec![],
+                                        language: None,
+                                        duration_in_seconds: None,
+                                        provider_metadata: None,
+                                    });
+                                    break;
+                                }
+                            },
+                        }
                     }
-                }
-            };
-            Ok(TranscriptionStreamResult {
-                stream: Box::pin(stream),
-                request: None,
-                response: None,
-            })
+                };
+                Ok(TranscriptionStreamResult {
+                    stream: Box::pin(stream),
+                    request: None,
+                    response: None,
+                })
+            }))
         }
     }
 

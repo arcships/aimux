@@ -5,14 +5,16 @@
 //! (`reference/ai/packages/provider/src/transcription-model/v4/`).
 //!
 //! This is the only non-chat model type with an optional streaming method,
-//! [`TranscriptionModel::do_stream`]. The default implementation returns
-//! [`AiMuxError::UnsupportedFunctionality`]; providers override it and users
-//! enter through [`stream_transcribe`].
+//! [`TranscriptionModel::do_stream`]. As the optional `doStream?` of
+//! `TranscriptionModelV4`, a model without it returns `None` (the default);
+//! users enter through [`stream_transcribe`], which reports such a model as
+//! [`AiMuxError::UnsupportedFunctionality`] before any I/O.
 
 use std::pin::Pin;
 
 use async_trait::async_trait;
 use futures::Stream;
+use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -303,19 +305,19 @@ pub trait TranscriptionModel: Send + Sync {
         options: &TranscriptionCallOptions,
     ) -> Result<TranscriptionResult, AiMuxError>;
 
-    /// Stream a transcript for live audio.
+    /// Stream a transcript for live audio: the optional `doStream?` of
+    /// `TranscriptionModelV4` (`@ai-sdk/provider@4.0.22
+    /// src/transcription-model/v4/transcription-model-v4.ts:44-46`).
     ///
-    /// Default implementation returns [`AiMuxError::UnsupportedFunctionality`]; providers
-    /// override it as needed. This mirrors the optional `doStream?` in the TS
-    /// spec.
-    async fn do_stream(
+    /// `None` (the default) means the model has no streaming method; a model
+    /// that has one returns `Some`, and the future reports its own failures,
+    /// such as a model ID that cannot stream.
+    fn do_stream(
         &self,
-        _options: TranscriptionStreamOptions,
-    ) -> Result<TranscriptionStreamResult, AiMuxError> {
-        Err(AiMuxError::UnsupportedFunctionality(format!(
-            "transcription streaming is not supported by provider `{}`",
-            self.provider()
-        )))
+        options: TranscriptionStreamOptions,
+    ) -> Option<BoxFuture<'_, Result<TranscriptionStreamResult, AiMuxError>>> {
+        let _ = options;
+        None
     }
 }
 
@@ -347,10 +349,80 @@ pub async fn transcribe(
 ///
 /// # Errors
 ///
-/// Returns the provider's session-establishment error.
+/// Returns [`AiMuxError::UnsupportedFunctionality`] when the model has no
+/// streaming method (as `experimental_streamTranscribe`, `ai@7.0.127
+/// src/transcribe/stream-transcribe.ts:125-138`), else the provider's
+/// session-establishment error.
 pub async fn stream_transcribe(
     model: &dyn TranscriptionModel,
     options: TranscriptionStreamOptions,
 ) -> Result<TranscriptionStreamResult, AiMuxError> {
-    model.do_stream(options).await
+    let Some(stream) = model.do_stream(options) else {
+        return Err(AiMuxError::UnsupportedFunctionality(format!(
+            "The {} model \"{}\" does not support streaming transcription.",
+            model.provider(),
+            model.model_id()
+        )));
+    };
+    stream.await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A batch-only model, like Groq's: it defines no `do_stream`.
+    struct BatchOnly;
+
+    #[async_trait]
+    impl TranscriptionModel for BatchOnly {
+        fn provider(&self) -> &str {
+            "groq.transcription"
+        }
+        fn model_id(&self) -> &str {
+            "whisper-large-v3"
+        }
+        async fn do_generate(
+            &self,
+            _options: &TranscriptionCallOptions,
+        ) -> Result<TranscriptionResult, AiMuxError> {
+            unreachable!("not called")
+        }
+    }
+
+    fn stream_options() -> TranscriptionStreamOptions {
+        TranscriptionStreamOptions {
+            audio: Box::pin(futures::stream::empty()),
+            input_audio_format: InputAudioFormat {
+                format_type: "audio/pcm".into(),
+                rate: Some(24_000),
+            },
+            provider_options: None,
+            abort_signal: None,
+            headers: None,
+            include_raw_chunks: false,
+            timeout: None,
+        }
+    }
+
+    /// `doStream` is optional on `TranscriptionModelV4`
+    /// (`@ai-sdk/provider@4.0.22 src/transcription-model/v4/transcription-model-v4.ts:44-46`),
+    /// and `experimental_streamTranscribe` throws `UnsupportedFunctionalityError`
+    /// with this message when a model has none, before any I/O
+    /// (`ai@7.0.127 src/transcribe/stream-transcribe.ts:125-138`).
+    #[tokio::test]
+    async fn a_model_without_do_stream_cannot_stream() {
+        let model = BatchOnly;
+        assert!(model.do_stream(stream_options()).is_none());
+        let error = stream_transcribe(&model, stream_options())
+            .await
+            .expect_err("no streaming method");
+        match error {
+            AiMuxError::UnsupportedFunctionality(message) => assert_eq!(
+                message,
+                "The groq.transcription model \"whisper-large-v3\" does not support streaming transcription."
+            ),
+            other => panic!("expected UnsupportedFunctionality, got {other:?}"),
+        }
+    }
 }
