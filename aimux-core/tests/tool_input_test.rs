@@ -148,6 +148,52 @@ async fn unknown_tool_is_an_invalid_dynamic_call_with_available_tools() {
     ));
 }
 
+/// The input of an invalid call is back-filled with the same prototype-safe
+/// parse as the main path: `ai@7.0.127 parse-tool-call.ts:115-117` uses
+/// `safeParseJSON`, whose `secureJsonParse` rejects a `__proto__` key or a
+/// `constructor.prototype` anywhere in the value
+/// (`@ai-sdk/provider-utils@5.0.53 secure-json-parse.ts:49-67`), so such text
+/// stays the verbatim string.
+#[tokio::test]
+async fn invalid_call_input_is_not_back_filled_with_forbidden_prototype_keys() {
+    for text in [
+        r#"{"city":"Tokyo","__proto__":{"polluted":true}}"#,
+        r#"{"city":"Tokyo","days":[{"constructor":{"prototype":{"polluted":true}}}]}"#,
+    ] {
+        // A known tool: the main path rejects the text.
+        let call = parse_tool_call(
+            raw("weather", text),
+            Some(&[weather_tool()]),
+            None,
+            &[],
+            None,
+        )
+        .await;
+        assert_eq!(call.invalid, Some(true), "{text}");
+        assert!(
+            matches!(call.error, Some(AiMuxError::InvalidToolInput { .. })),
+            "{text}"
+        );
+        assert_eq!(call.input, json!(text), "{text}");
+
+        // An unknown tool: invalid for another reason, but the back-fill
+        // still refuses the value.
+        let call = parse_tool_call(
+            raw("forecast", text),
+            Some(&[weather_tool()]),
+            None,
+            &[],
+            None,
+        )
+        .await;
+        assert!(
+            matches!(call.error, Some(AiMuxError::NoSuchTool { .. })),
+            "{text}"
+        );
+        assert_eq!(call.input, json!(text), "{text}");
+    }
+}
+
 #[tokio::test]
 async fn repair_runs_once_and_the_replacement_is_fully_revalidated() {
     let calls = Arc::new(AtomicUsize::new(0));

@@ -292,13 +292,17 @@ fn parsed_tool_call(tool_call: RawToolCall, input: Value, dynamic: Option<bool>)
 
 fn invalid_tool_call(tool_call: RawToolCall, error: AiMuxError) -> ToolCall {
     // Best effort, for every failure including `NoSuchTool`, exactly as the
-    // AI SDK's `parseToolCall` catch-all does: the parsed value when the text
-    // is valid JSON, the verbatim text otherwise. Callers replaying an
-    // invalid call rely on this — `response_messages` only carries a
-    // structured input into the next turn's transcript, so an unknown tool
-    // called with perfectly good arguments must still parse here.
+    // AI SDK's `parseToolCall` catch-all does (`parse-tool-call.ts:115-117`,
+    // `safeParseJSON`): the parsed value when the text is valid JSON without
+    // forbidden prototype keys, the verbatim text otherwise. Callers
+    // replaying an invalid call rely on this — `response_messages` only
+    // carries a structured input into the next turn's transcript, so an
+    // unknown tool called with perfectly good arguments must still parse
+    // here.
     let input = serde_json::from_str(&tool_call.input)
-        .unwrap_or_else(|_| Value::String(tool_call.input.clone()));
+        .ok()
+        .filter(|value| !contains_forbidden_prototype(value))
+        .unwrap_or_else(|| Value::String(tool_call.input.clone()));
     ToolCall {
         invalid: Some(true),
         error: Some(error),
