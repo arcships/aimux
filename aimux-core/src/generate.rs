@@ -208,7 +208,7 @@ pub struct GenerateTextOptions {
     /// `supported_urls` cover it; the files it returns are sent inline.
     /// `None` downloads the URLs the model does not fetch itself with the
     /// guarded download
-    /// ([`create_default_download_function`](crate::download::create_default_download_function)).
+    /// ([`create_default_download_function`]).
     ///
     /// Runtime handle; never crosses the JSON boundary.
     #[serde(skip)]
