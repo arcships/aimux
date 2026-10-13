@@ -322,7 +322,8 @@ fn build_generation_body(
     body
 }
 
-/// Convert inline data or download a URL without forwarding provider credentials.
+/// Convert inline data, or download a URL as `downloadBlob` does: guarded, with
+/// no provider headers.
 async fn image_file_to_bytes(
     file: &ImageFile,
     options: &ImageCallOptions,
@@ -343,16 +344,11 @@ async fn image_file_to_bytes(
             Ok((bytes, media_type.clone()))
         }
         ImageFile::Url { url, .. } => {
-            let response = aimux_provider_utils::get_from_api(
-                aimux_provider_utils::HttpRequest {
-                    url: url.clone(),
-                    abort_signal: options.abort_signal.clone(),
-                    ..Default::default()
-                },
-                aimux_provider_utils::create_binary_response_handler(),
-                super::openai_failed_response_handler(),
-            )
-            .await?;
+            // openai-image-model.ts:166, :357: `downloadBlob(file.url,
+            // {abortSignal})`, guarded and with no headers.
+            let response =
+                aimux_provider_utils::download_blob(url.clone(), options.abort_signal.clone())
+                    .await?;
             let media_type = response
                 .response_headers
                 .get("content-type")

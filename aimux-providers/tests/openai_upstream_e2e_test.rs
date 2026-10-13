@@ -4,7 +4,9 @@ mod mock_fetch;
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
 use aimux_core::error::AiMuxError;
-use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs};
+use aimux_core::image_model::{
+    ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs,
+};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::CallOptions;
@@ -704,6 +706,39 @@ async fn image_generate() {
         .map(|image| image["b64_json"].as_str().unwrap().to_owned())
         .collect::<Vec<_>>();
     assert!(matches!(result.images,ImageOutputs::Base64(images) if images==expected));
+}
+
+/// openai-image-model.ts:166 (files) and :357 (mask) fetch a URL file with
+/// `downloadBlob(file.url, {abortSignal})`, which goes through
+/// `fetchUntrustedUrl` (provider-utils download-blob.ts:111-114): a
+/// non-public target is refused before any request, and the edit request is
+/// never sent.
+#[tokio::test]
+async fn image_edit_url_files_are_downloaded_through_the_guard() {
+    let url = || ImageFile::Url {
+        url: "http://169.254.169.254/latest/meta-data/image.png".into(),
+    };
+    let mut files = ImageCallOptions::new("Edit");
+    files.files = Some(vec![url()]);
+    let mut mask = ImageCallOptions::new("Edit");
+    mask.files = Some(vec![ImageFile::File {
+        media_type: "image/png".into(),
+        data: ImageFileData::Binary(vec![1, 2, 3]),
+    }]);
+    mask.mask = Some(url());
+    for options in [files, mask] {
+        let fetch = MockFetch::new(vec![Canned::json(&image_response())]);
+        let error = provider(&fetch)
+            .image("gpt-image-1")
+            .do_generate(&options)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, AiMuxError::InvalidArgument(ref message) if message.contains("non-public")),
+            "{error:?}"
+        );
+        assert!(fetch.seen().is_empty());
+    }
 }
 
 /// TS: "should pass the model and text" (src/speech/openai-speech-model.test.ts)

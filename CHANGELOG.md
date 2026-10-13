@@ -51,6 +51,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Responses result's per-part lists become one list, and a token without
   `bytes` gets `"bytes": null`.
 
+- Security: OpenAI image edits download URL files (`files` and `mask`) with
+  `download_blob`, as `@ai-sdk/openai` does with `downloadBlob`. The download
+  goes through the download guard, so a private-network, loopback or
+  link-local URL is refused before any request, and it sends no headers. A
+  failed download is a status-code error rather than a parsed OpenAI error.
+
 - OpenAI chat `providerMetadata.openai.logprobs` holds the entries as the AI
   SDK's chat schema parses them, `{token, logprob, top_logprobs: [{token,
   logprob}]}`: `bytes` is dropped, so `to_chat_completion` returns it as
