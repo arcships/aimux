@@ -604,6 +604,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   defers the ops protocol schema and L0 passthrough and no longer fixes C1
   at nine exports.
 
+- RFC-0035 shows the repair context, reply and result patch in the final
+  JSON (`toolCall` tagged `tool-call`, errors tagged by `name`, camelCase
+  keys). It says that a repaired call failing re-validation is returned as an
+  invalid call, not wrapped in `AI_ToolCallRepairError`, as upstream does, and
+  registers the pre-evaluated `inputSchema` and Swift's delayed abort as
+  differences from upstream.
+
 ## [0.5.0] - 2026-09-27
 
 **Breaking release.** 13 PRs since 0.3.0: the cross-language error model
