@@ -743,10 +743,11 @@ pub(crate) async fn list_models_once(
         config.with_transport(
             aimux_provider_utils::HttpRequest {
                 url,
-                headers,
+                headers: headers.list,
                 ..Default::default()
             },
             origin,
+            headers.fetch_user_agent,
         ),
         aimux_provider_utils::create_json_response_handler::<ModelsList>(),
         config.failed_response_handler(),

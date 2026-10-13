@@ -468,7 +468,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `create_google_vertex_xai` / `google_vertex_xai` (Grok chat models named
   `googleVertex.xai`), over the project/location `endpoints/openapi` URL with
   a Google OAuth token. As in the Node wrappers, the provider headers and the
-  token go over the per-call headers.
+  token go over the per-call headers, and a provider `user-agent` header is
+  sent as the whole user-agent.
 - Open Responses requests carry `ai-sdk-open-responses/2.0.58`, the package
   part of `@ai-sdk/open-responses` (now pinned in `VERSIONS.json`).
   `OpenResponsesProviderSettings::user_agent_suffix` replaces it, as the AI

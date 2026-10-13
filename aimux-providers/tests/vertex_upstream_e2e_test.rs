@@ -722,6 +722,52 @@ async fn partner_headers_win_over_per_call_headers() {
     }
 }
 
+/// Upstream: the Node wrappers' fetch spreads the provider headers over
+/// `init.headers` after `postToApi` built the user-agent
+/// (google-vertex-maas-provider-node.ts:43-49,
+/// google-vertex-xai-provider-node.ts:41-47; provider-utils
+/// post-to-api.ts:100-104). A provider-level `user-agent` therefore replaces
+/// the whole header: no package part, no `ai-sdk-provider-utils` part, and
+/// not the per-call one.
+#[tokio::test]
+async fn partner_user_agent_header_replaces_the_whole_user_agent() {
+    let fetch = MockFetch::new(vec![
+        partner_response(json!({"prompt_tokens": 1, "completion_tokens": 1})),
+        partner_response(json!({"prompt_tokens": 1, "completion_tokens": 1})),
+    ]);
+    let settings = || {
+        let mut settings = partner_settings(&fetch, None);
+        settings.headers = Some(Resolvable::Value(
+            [("User-Agent".into(), Some("my-agent/1.0 (vertex)".into()))].into(),
+        ));
+        settings
+    };
+    let mut options = prompt();
+    options.headers = Some([("user-agent".to_string(), "call-agent/2.0".to_string())].into());
+    aimux_providers::create_google_vertex_maas(settings())
+        .unwrap()
+        .chat("meta/llama-3.3-70b-instruct-maas")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    aimux_providers::create_google_vertex_xai(settings())
+        .unwrap()
+        .chat("xai/grok-4.1-fast-reasoning")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    let seen = fetch.seen();
+    assert_eq!(seen.len(), 2);
+    for seen in seen {
+        assert_eq!(
+            seen.headers["user-agent"], "my-agent/1.0 (vertex)",
+            "{}",
+            seen.url
+        );
+        assert_eq!(seen.headers["authorization"], "Bearer test-token");
+    }
+}
+
 /// Upstream: @ai-sdk/google-vertex 5.0.98 src/google-vertex-provider-base.ts:270-276
 /// appends `ai-sdk-google-vertex/<v>` to the Gemini models' headers; the
 /// Anthropic sub-provider hands the caller's headers to the Anthropic model

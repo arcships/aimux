@@ -227,8 +227,11 @@ pub(crate) fn transport_user_agent(
         .iter_mut()
         .rev()
         .find(|part| part.starts_with("ai-sdk-provider-utils/"));
-    if let (Some(version), Some(part)) = (provider_utils, last_utils) {
-        *part = format!("ai-sdk-provider-utils/{version}");
+    match (provider_utils, last_utils) {
+        (Some(version), Some(part)) => *part = format!("ai-sdk-provider-utils/{version}"),
+        // Nothing to rename or append: the header stays exactly as it is.
+        _ if suffix.is_none() => return,
+        _ => {}
     }
     parts.extend(suffix.map(String::from));
     let user_agent = parts.join(" ");

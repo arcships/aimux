@@ -15,8 +15,8 @@ use serde_json::Value;
 use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
 use aimux_provider_utils::{
-    ExchangeContext, FetchFunction, HeaderMapOpt, HeadersFn, HttpRequest, ProviderErrorParts,
-    combine_headers, normalize_headers,
+    ExchangeContext, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
+    HeadersFn, HttpRequest, ProviderErrorParts, combine_headers, normalize_headers,
 };
 
 pub use crate::shared::TransformRequestBody;
@@ -154,7 +154,8 @@ pub(crate) struct CompatModelConfig {
     /// Headers layered over the per-call headers, resolved on every request
     /// after `headers`: what an AI SDK package that builds on
     /// `createOpenAICompatible` adds in its own fetch wrapper (google-vertex's
-    /// Node MaaS and xAI providers).
+    /// Node MaaS and xAI providers). Their `user-agent` replaces the whole
+    /// header, the helper layer's part included ([`FetchUserAgent`]).
     pub fetch_headers: Option<HeadersFn>,
     /// Transport; `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
@@ -190,11 +191,12 @@ impl CompatModelConfig {
 
     /// Resolve the provider headers, layer the per-call headers over them,
     /// then the fetch headers (case-insensitive, later wins, `None` removes),
-    /// and return the list that goes on the wire.
+    /// and return the list that goes on the wire with the fetch headers'
+    /// `user-agent`.
     pub(crate) async fn request_headers(
         &self,
         call_headers: Option<&HashMap<String, String>>,
-    ) -> Result<Vec<(String, String)>, AiMuxError> {
+    ) -> Result<RequestHeaders, AiMuxError> {
         let provider = self.headers.resolve().await?;
         let call: HeaderMapOpt = call_headers
             .map(|headers| {
@@ -205,12 +207,14 @@ impl CompatModelConfig {
             })
             .unwrap_or_default();
         let fetch = match &self.fetch_headers {
-            Some(headers) => headers.resolve().await?,
+            Some(headers) => combine_headers(&[&headers.resolve().await?]),
             None => HeaderMapOpt::new(),
         };
-        Ok(normalize_headers(combine_headers(&[
-            &provider, &call, &fetch,
-        ])))
+        let fetch_user_agent = fetch.get("user-agent").cloned().flatten();
+        Ok(RequestHeaders {
+            list: normalize_headers(combine_headers(&[&provider, &call, &fetch])),
+            fetch_user_agent,
+        })
     }
 
     /// An exchange for `path` that inherits the operation's cancellation and
@@ -219,16 +223,32 @@ impl CompatModelConfig {
     pub(crate) fn http_request(
         &self,
         path: &str,
-        headers: Vec<(String, String)>,
+        headers: RequestHeaders,
         options: &impl ExchangeContext,
     ) -> Result<HttpRequest, AiMuxError> {
         let (url, origin) = self.url(path)?;
-        Ok(self.with_transport(HttpRequest::new(url, headers, options), origin))
+        Ok(self.with_transport(
+            HttpRequest::new(url, headers.list, options),
+            origin,
+            headers.fetch_user_agent,
+        ))
     }
 
-    /// Attach the transport and the credential origin to a request.
-    pub(crate) fn with_transport(&self, mut request: HttpRequest, origin: String) -> HttpRequest {
-        request.fetch = self.fetch.clone();
+    /// Attach the transport and the credential origin to a request. A fetch
+    /// headers' `user-agent` is sent as the whole header by the transport.
+    pub(crate) fn with_transport(
+        &self,
+        mut request: HttpRequest,
+        origin: String,
+        fetch_user_agent: Option<String>,
+    ) -> HttpRequest {
+        request.fetch = match fetch_user_agent {
+            Some(user_agent) => Some(Arc::new(FetchUserAgent {
+                inner: self.fetch.clone(),
+                user_agent,
+            })),
+            None => self.fetch.clone(),
+        };
         request.credentialed_origin = Some(origin);
         request
     }
@@ -247,5 +267,40 @@ impl CompatModelConfig {
     ) -> aimux_provider_utils::ResponseHandler<AiMuxError> {
         let structure = self.chat.dialect.error_structure.clone();
         aimux_provider_utils::create_json_error_response_handler(move |data| structure(data))
+    }
+}
+
+/// The headers of one request ([`CompatModelConfig::request_headers`]).
+pub(crate) struct RequestHeaders {
+    /// What goes on the wire, before the helper layer adds its
+    /// `ai-sdk-provider-utils` part.
+    pub list: Vec<(String, String)>,
+    /// The `user-agent` of the fetch headers, when they set one.
+    pub fetch_user_agent: Option<String>,
+}
+
+/// The transport of a request whose fetch headers set `user-agent`: it sends
+/// that value as the whole header, over the one the helper layer and the
+/// package transport built. google-vertex's Node wrappers spread their
+/// headers over `init.headers` after `postToApi` added its part
+/// (google-vertex-maas-provider-node.ts:43-49,
+/// google-vertex-xai-provider-node.ts:41-47), so nothing of it is left.
+struct FetchUserAgent {
+    /// The package transport (`None`: the process default).
+    inner: Option<FetchFunction>,
+    user_agent: String,
+}
+
+#[async_trait::async_trait]
+impl Fetch for FetchUserAgent {
+    async fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
+        let value = reqwest::header::HeaderValue::try_from(self.user_agent.as_str())
+            .map_err(|_| FetchError::Other("invalid header value for user-agent".to_string()))?;
+        request.headers.insert(reqwest::header::USER_AGENT, value);
+        self.inner
+            .clone()
+            .unwrap_or_else(aimux_provider_utils::default_fetch)
+            .fetch(request)
+            .await
     }
 }

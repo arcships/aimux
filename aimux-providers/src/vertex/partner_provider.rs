@@ -49,8 +49,9 @@ pub struct VertexPartnerProviderSettings {
     /// Base URL for the API calls; replaces the project/location URL. A
     /// trailing slash is removed and `""` counts as unset.
     pub base_url: Option<String>,
-    /// Extra headers on every request, resolved per request. The
-    /// `Authorization` header is set after them.
+    /// Extra headers on every request, resolved per request. They win over
+    /// the per-call headers, a `user-agent` among them is sent as the whole
+    /// header, and the `Authorization` header is set after them.
     pub headers: Option<Resolvable<HeaderMapOpt>>,
     /// The transport. `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
@@ -127,7 +128,8 @@ fn partner_parts(
     let user_headers = settings.headers.clone();
     // The Node wrapper passes no headers to `createOpenAICompatible` and
     // spreads the resolved headers, then `Authorization`, over the request's
-    // headers in its fetch, so they win over the per-call headers
+    // headers in its fetch, so they win over the per-call headers, and a
+    // `user-agent` among them replaces the whole header
     // (google-vertex-maas-provider-node.ts:34-58,
     // google-vertex-xai-provider-node.ts:33-55).
     let headers = Resolvable::from_async_fn(move || {
