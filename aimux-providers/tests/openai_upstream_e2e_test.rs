@@ -749,3 +749,35 @@ async fn responses_web_search_stream() {
         ])
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/openai-provider.ts:387 puts
+/// `openaiTools` on the provider, so `openai.tools.webSearch(…)` makes the
+/// provider tool; it is the module's factory and reaches the request.
+#[tokio::test]
+async fn provider_tools_member_makes_the_provider_tools() {
+    use aimux_providers::openai::tools::{SearchContextSize, WebSearchArgs};
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let openai = provider(&fetch);
+    let args = || WebSearchArgs {
+        search_context_size: Some(SearchContextSize::High),
+        ..Default::default()
+    };
+    let tool = openai.tools.web_search(args()).unwrap();
+    let factory = aimux_providers::openai::tools::web_search(args()).unwrap();
+    assert_eq!(
+        (&tool.id, &tool.name, &tool.args),
+        (&factory.id, &factory.name, &factory.args)
+    );
+    assert_eq!(openai.tools.apply_patch().id, "openai.apply_patch");
+    let mut call = options();
+    call.tools = Some(vec![Tool::Provider(tool)]);
+    openai
+        .responses("test-model")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["tools"],
+        json!([{"type":"web_search","search_context_size":"high"}])
+    );
+}

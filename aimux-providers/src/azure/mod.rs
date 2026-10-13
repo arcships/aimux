@@ -245,6 +245,7 @@ pub fn create_azure(
             options::NAMESPACE,
             crate::shared::aisdk_pins::AZURE,
         ),
+        tools: crate::openai::tools::AzureOpenAITools,
     })
 }
 
@@ -310,6 +311,8 @@ pub struct AzureOpenAIProvider {
     use_deployment_based_urls: bool,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
+    /// The provider tools (`azure.tools` in the AI SDK).
+    pub tools: crate::openai::tools::AzureOpenAITools,
 }
 
 /// Everything the URL of a request depends on, owned so a closure can hold it.

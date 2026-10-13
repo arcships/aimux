@@ -277,6 +277,7 @@ pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider,
         fetch: settings.fetch,
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
+        tools: tools::OpenAITools,
     })
 }
 
@@ -299,6 +300,8 @@ pub struct OpenAIProvider {
     fetch: Option<FetchFunction>,
     #[cfg(feature = "realtime")]
     web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
+    /// The provider tools (`openai.tools` in the AI SDK).
+    pub tools: tools::OpenAITools,
 }
 
 impl OpenAIProvider {

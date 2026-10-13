@@ -451,3 +451,26 @@ async fn responses_logprobs_reach_the_openai_output_under_the_azure_key() {
     let completion = aimux_core::openai_output::to_chat_completion(&result, "test-deployment");
     assert_eq!(completion.choices[0].logprobs, Some(json!([logprobs])));
 }
+
+/// Upstream: @ai-sdk/azure 4.0.84 src/azure-openai-provider.ts:434 puts
+/// `azureOpenaiTools` (src/azure-openai-tools.ts: the OpenAI code
+/// interpreter, file search, image generation and web search tools) on the
+/// provider as `azure.tools`.
+#[tokio::test]
+async fn provider_tools_member_makes_the_azure_tool_subset() {
+    let fetch = MockFetch::new(vec![Canned::json(&text_fixture())]);
+    let azure = provider(&fetch);
+    let tool = azure.tools.web_search(Default::default()).unwrap();
+    assert_eq!(tool.id, "openai.web_search");
+    let mut options = prompt();
+    options.tools = Some(vec![aimux_core::options::Tool::Provider(tool)]);
+    azure
+        .responses("test-deployment")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    assert_eq!(
+        assert_request(&fetch, "responses")["tools"],
+        json!([{"type":"web_search"}])
+    );
+}
