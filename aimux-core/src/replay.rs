@@ -478,6 +478,32 @@ impl MockReplayModel {
     pub fn recordings(&self) -> &[Recording] {
         &self.recordings
     }
+
+    /// The matcher's recording, or its error naming the recordings of this
+    /// provider and model whose prompt this version cannot read (written by
+    /// aimux 0.5 or earlier), which never match.
+    fn matching(&self, options: &CallOptions) -> Result<&Recording, AiMuxError> {
+        self.matcher
+            .r#match(options, &self.recordings)
+            .map_err(|error| {
+                let unreadable = self
+                    .recordings
+                    .iter()
+                    .filter(|r| {
+                        r.provider.provider == self.provider
+                            && r.provider.model_id == self.model_id
+                            && r.input.unreadable_prompt().is_some()
+                    })
+                    .count();
+                if unreadable == 0 {
+                    return error;
+                }
+                AiMuxError::InvalidArgument(format!(
+                    "{error}; {unreadable} recording(s) of this model hold a prompt this \
+                     version cannot read (written by aimux 0.5 or earlier) and never match"
+                ))
+            })
+    }
 }
 
 #[async_trait]
@@ -491,13 +517,11 @@ impl LanguageModel for MockReplayModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let rec = self.matcher.r#match(options, &self.recordings)?;
-        rebuild_generate_result(rec)
+        rebuild_generate_result(self.matching(options)?)
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let rec = self.matcher.r#match(options, &self.recordings)?;
-        rebuild_stream_result(rec)
+        rebuild_stream_result(self.matching(options)?)
     }
 }
 
@@ -957,7 +981,9 @@ pub struct ReplayOverrides {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::JsonParse` when the recorded call options cannot be
+/// Returns `AiMuxError::InvalidArgument` for a recording whose prompt this
+/// version cannot read ([`InputRecord::unreadable_prompt`](crate::recording::InputRecord::unreadable_prompt)),
+/// `AiMuxError::JsonParse` when the recorded call options cannot be
 /// deserialized, and propagates errors from the generation pipeline.
 pub async fn replay_with_model(
     recording: &Recording,
@@ -969,12 +995,29 @@ pub async fn replay_with_model(
             "language replay requires a language-model recording".into(),
         ));
     }
+    if let Some(error) = recording.input.unreadable_prompt() {
+        return Err(AiMuxError::InvalidArgument(format!(
+            "language replay: this version cannot read the recorded prompt (recordings \
+             written by aimux 0.5 or earlier use another prompt format): {error}"
+        )));
+    }
+    // A recording without a provider_id was written by aimux 0.5 or earlier;
+    // its options may use fields this version reads differently.
+    let older = if recording.provider.provider_id.is_empty() {
+        " (the recording was written by aimux 0.5 or earlier)"
+    } else {
+        ""
+    };
     // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)
     //    and the operation settings recorded next to them.
     let mut call_options: CallOptions = serde_json::from_value(recording.input.options.clone())
-        .map_err(|e| AiMuxError::JsonParse(format!("mock replay: input options invalid: {e}")))?;
+        .map_err(|e| {
+            AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
+        })?;
     let settings: OperationSettings = serde_json::from_value(recording.input.options.clone())
-        .map_err(|e| AiMuxError::JsonParse(format!("mock replay: input options invalid: {e}")))?;
+        .map_err(|e| {
+            AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
+        })?;
 
     // 2. 应用 overrides。
     if let Some(o) = overrides {

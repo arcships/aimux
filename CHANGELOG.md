@@ -615,11 +615,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the C ABI `config_json` and the Node `ProviderConfig` that carry `max_retries` or
   `body_overrides` now fail with `InvalidArgument` instead of ignoring them
   (`reject_removed_provider_options` for other shapes).
-- Recording: `RECORDING_SCHEMA = 3`. `ProviderRecord` holds identity only
-  (`provider_id`, `provider`, `model_id`); base URL, key source, profile,
-  options and retry settings are no longer recorded and schema-2 files are
-  rejected on read. `rebuild_provider(record, registry)` resolves
-  `provider_id` through the caller-supplied registry, retaining its settings.
+- Recording: `RECORDING_SCHEMA` stays 2, and recordings written by aimux 0.5
+  and earlier (schemas 1 and 2) still load; schema 3 and above are refused.
+  `ProviderRecord` holds identity only (`provider_id`, `provider`,
+  `model_id`); base URL, key source, profile, options and retry settings are
+  no longer recorded, and when read from an older recording they are
+  ignored. What this version cannot replay from an older recording fails at
+  replay time with an error that names it: its empty `provider_id`
+  (`ProviderRecord::registry_id`) for a rebuild from a registry, a prompt in
+  the older format (`InputRecord::unreadable_prompt`, loaded as empty),
+  older call options, or the pre-V4 decision options and results.
+  `rebuild_provider(record, registry)` resolves `provider_id` through the
+  caller-supplied registry, retaining its settings.
   If the default model method differs from the recorded one, pass the model
   to `replay_with_model`. Recorded provider strings change with the next item.
 - `model.provider()` follows the package's fixed identity or, where offered,
@@ -743,7 +750,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `InputRecord::from_decision_options` and `Recorder::record_decision_input`
   no longer take capabilities. `MockDecisionReplayModel` does not read the
   field; replay rebuilds the model from the host registry. The recording
-  schema stays 3, and older recordings with the field still load.
+  schema stays 2, and older recordings with the field still load.
 - Decisions follow the AI SDK's `DecisionModelV4` (`@ai-sdk/provider@4.0.22`)
   and `decide` (`ai@7.0.128`). Questions are a map keyed by id; Choice and
   Score questions take `criteria` (option names to descriptions, ordered

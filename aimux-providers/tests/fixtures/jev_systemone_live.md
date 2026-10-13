@@ -15,11 +15,13 @@ includes the actual HTTP exchange, timing and the result `decide` returned.
 Offline provider tests replay the wire exchange via the shared replay helper;
 Core and the CLI replay the recorded result.
 
-Stack integration migrates the recording envelope to schema 3: provider
-identity only, and no capability snapshot. The decision options and results
-were then converted, offline and deterministically, to the DecisionModelV4
-shape: the options are `decide` options (a question map with criteria), and
-the result is `decide`'s (answers, usage with its total, warnings, rounding,
-provider metadata with the probability source and per-answer confidence, and
-the response with the recording time as its timestamp). The HTTP exchanges,
-including the request and response bodies, are unchanged.
+The V4 layers record the provider identity only (`provider_id`, `provider`,
+`model_id`) and no capability snapshot; the envelope stays schema 2. The
+decision options and results were then converted, offline and
+deterministically, to the DecisionModelV4 shape: the options are `decide`
+options (a question map with criteria), and the result is `decide`'s
+(answers, usage with its total, warnings, rounding, provider metadata with the
+probability source and per-answer confidence, and the response with the
+recording time as its timestamp). The HTTP exchanges, including the request
+and response bodies, are unchanged. The file as master recorded it is kept as
+`aimux-core/tests/fixtures/master_decision_recordings.jsonl`.
