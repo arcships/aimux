@@ -20,7 +20,7 @@ use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
 use crate::language_model_message::convert_to_language_model_prompt;
 use crate::message::{ModelMessage, ModelPrompt};
-use crate::options::{CallOptions, ResponseFormat, ToolChoice};
+use crate::options::{CallOptions, ResponseFormat, ToolChoice, prepare_tool_choice};
 use crate::parse_tool_call::{ToolCallRepair, parse_tool_call};
 use crate::result::{
     GenerateContent, GenerateResult, GeneratedFile, ReasoningFileOutput, ReasoningPart, Source,
@@ -118,12 +118,10 @@ impl GenerateTextOptions {
         self,
         prompt: crate::language_model_message::LanguageModelPrompt,
     ) -> CallOptions {
-        let tool_choice = self.tool_choice.or_else(|| {
-            self.tools
-                .as_ref()
-                .filter(|tools| !tools.is_empty())
-                .map(|_| ToolChoice::Auto)
-        });
+        // `generateText` / `streamText` always send the prepared choice,
+        // `{type:"auto"}` when none is given (ai@7.0.127
+        // src/generate-text/generate-text.ts:953-955, stream-text.ts:2382-2384).
+        let tool_choice = Some(prepare_tool_choice(self.tool_choice));
         CallOptions {
             prompt,
             max_output_tokens: self.max_output_tokens,

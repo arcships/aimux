@@ -29,7 +29,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::shared::provider_namespace;
 use aimux_core::shared::{FileBytes, FileData};
@@ -1003,7 +1003,7 @@ fn detect_media_type_from_base64(data: &str, top_level: &str) -> Option<String> 
 #[must_use]
 pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
 ) -> (Option<Vec<Value>>, Option<Value>, Vec<Warning>) {
     let tools = match tools {
         Some(t) if !t.is_empty() => t,
@@ -1035,10 +1035,10 @@ pub fn prepare_responses_tools(
     }
 
     let mapped_tool_choice = match tool_choice {
-        Some(ToolChoice::Auto) => Some(json!("auto")),
-        Some(ToolChoice::Required) => Some(json!("required")),
-        None | Some(ToolChoice::None) => None, // not supported, ignore
-        Some(ToolChoice::Tool { tool_name }) => Some(json!({
+        Some(LanguageModelV4ToolChoice::Auto) => Some(json!("auto")),
+        Some(LanguageModelV4ToolChoice::Required) => Some(json!("required")),
+        None | Some(LanguageModelV4ToolChoice::None) => None, // not supported, ignore
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => Some(json!({
             "type": "function",
             "function": { "name": tool_name }
         })),

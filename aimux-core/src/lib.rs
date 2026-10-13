@@ -102,7 +102,9 @@ pub mod prelude {
         ChatCompletion, ChatCompletionChunk, ChatCompletionStream, DONE_FRAME, OpenAiStreamOptions,
         encode_chunk_sse, to_chat_completion, to_chat_completion_stream,
     };
-    pub use crate::options::{CallOptions, ResponseFormat, ToolChoice};
+    pub use crate::options::{
+        CallOptions, LanguageModelV4ToolChoice, ResponseFormat, ToolChoice, prepare_tool_choice,
+    };
     pub use crate::parse_tool_call::{
         ToolCallRepair, ToolCallRepairContext, ToolCallRepairReply, apply_tool_call_repair,
         apply_tool_call_repair_to_result, tool_call_repair_context, tool_call_repair_inputs,

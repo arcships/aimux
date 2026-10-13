@@ -5,7 +5,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolPart,
     ToolResultContent, ToolResultOutput, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::shared::{FileBytes, FileData, JsonObject, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
@@ -48,7 +48,7 @@ pub struct PreparedTools {
 #[must_use]
 pub fn prepare_tools(
     tools: &Option<Vec<FunctionTool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
 ) -> PreparedTools {
     let non_empty = tools.as_ref().filter(|&t| !t.is_empty());
 
@@ -81,10 +81,10 @@ pub fn prepare_tools(
         (None, _) => None,
         (Some(_), None) => None,
         (Some(_), Some(tc)) => match tc {
-            ToolChoice::Auto => Some(json!("auto")),
-            ToolChoice::None => Some(json!("none")),
-            ToolChoice::Required => Some(json!("required")),
-            ToolChoice::Tool { tool_name } => {
+            LanguageModelV4ToolChoice::Auto => Some(json!("auto")),
+            LanguageModelV4ToolChoice::None => Some(json!("none")),
+            LanguageModelV4ToolChoice::Required => Some(json!("required")),
+            LanguageModelV4ToolChoice::Tool { tool_name } => {
                 Some(json!({ "type": "function", "function": { "name": tool_name } }))
             }
         },
@@ -108,7 +108,7 @@ const GROQ_BROWSER_SEARCH_MODELS: &[&str] = &["openai/gpt-oss-20b", "openai/gpt-
 fn prepare_tools_groq(
     function_tools: &Option<Vec<FunctionTool>>,
     all_tools: Option<&Vec<Tool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
     model_id: &str,
 ) -> PreparedTools {
     let non_empty_functions = function_tools.as_ref().filter(|&t| !t.is_empty());
@@ -181,10 +181,10 @@ fn prepare_tools_groq(
         (None, _) => None,
         (Some(_), None) => None,
         (Some(_), Some(tc)) => match tc {
-            ToolChoice::Auto => Some(json!("auto")),
-            ToolChoice::None => Some(json!("none")),
-            ToolChoice::Required => Some(json!("required")),
-            ToolChoice::Tool { tool_name } => {
+            LanguageModelV4ToolChoice::Auto => Some(json!("auto")),
+            LanguageModelV4ToolChoice::None => Some(json!("none")),
+            LanguageModelV4ToolChoice::Required => Some(json!("required")),
+            LanguageModelV4ToolChoice::Tool { tool_name } => {
                 Some(json!({ "type": "function", "function": { "name": tool_name } }))
             }
         },

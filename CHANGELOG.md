@@ -97,6 +97,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signature is no longer dropped), and a source's `url` / `title` serialize as
   `null` when absent instead of being omitted.
 
+- A repaired tool call that still fails to parse or validate is reported as
+  the AI SDK reports it: the original call stays invalid and carries the
+  replacement's own `InvalidToolInput` / `NoSuchTool` error, no longer wrapped
+  in `ToolCallRepair` (only a failing repair function is wrapped). This holds
+  for the `repair_tool_call` closure and for a host's `repaired` reply in every
+  binding.
+
+- `CallOptions.tool_choice` is the V4 object union
+  `LanguageModelV4ToolChoice` (`{"type":"auto"}`, `{"type":"none"}`,
+  `{"type":"required"}`, `{"type":"tool","toolName":..}`); the user-level
+  `ToolChoice` (`"auto"` | `"none"` | `"required"` | `{type:"tool",toolName}`)
+  stays on `GenerateTextOptions`. `prepare_tool_choice` converts one into the
+  other as the AI SDK's `prepareToolChoice` does, and `generate_text` /
+  `stream_text` now send `{"type":"auto"}` when no choice is given, with or
+  without tools (providers still drop it when there are no tools, except
+  open-responses, which sends it as upstream does). Provider authors match
+  on `LanguageModelV4ToolChoice`. Recordings store the object form, so an
+  `ExactMatcher` no longer matches recordings made before this change.
+
+- `ProviderTool.id` is a `types::NamespacedKind`, the V4
+  `${string}.${string}` identifier: an id without a `.` (for example
+  `"web_search"` instead of `"openai.web_search"`) no longer deserializes,
+  and `NamespacedKind::new` / `parse` check it when built in Rust. The JSON
+  is still a plain string.
+
+- A provider-executed `tool::ToolResult` whose `result` is `null` no longer
+  deserializes: the V4 `result` is `NonNullable<JSONValue>`.
+
 - Removed the generated `ProviderName` type in every binding (Rust enum, TS
   const object, Go/Java/Kotlin consts, Swift enum, Dart consts, Python
   `Literal`) and `scripts/gen_provider_names.py`. Provider names are plain
@@ -137,9 +165,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Rust (aimux-provider-utils)**
 
 - Gains `StreamingToolCallTracker` (plus `StreamingToolCallDelta`,
-  `TypeValidation`, `TrackerError`, `StreamingToolCallArgumentState` and
-  `starts_with_structured_value`), a port of the current
-  `@ai-sdk/provider-utils` tracker. The previous `aimux-stream` version was
+  `TypeValidation` and `TrackerError`), a port of the current
+  `@ai-sdk/provider-utils` tracker, exported from the crate root only: the
+  `streaming_tool_call_tracker` and `streaming_tool_call_argument_state`
+  modules are private, and the argument state is internal, as upstream
+  exports only the tracker from its index. The previous `aimux-stream` version was
   a port of an older, index-only tracker. Deltas are correlated by wire
   `id`, `index` and function name (ambiguous deltas are dropped), ids are
   de-duplicated with `-N` suffixes, blank function names are ignored, and
@@ -154,6 +184,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `StreamingToolCallDelta::provider_metadata`, read from the delta that
   starts a call. `TrackerError` converts into
   `AiMuxError::InvalidResponseData`.
+- The tracker follows `@ai-sdk/provider-utils` 5.0.55 (pinned in
+  `fixtures/aisdk/VERSIONS.json`): a named delta with an unseen id and empty
+  arguments continues an incomplete matching call, but starts a new call
+  once that call's structured arguments are complete; a continuation without
+  labels goes to the only matching call whose structured arguments are not
+  complete. Parallel same-name calls whose ids are missing or reused are no
+  longer merged into the first call.
 
 **Rust (aimux-providers)**
 
@@ -166,6 +203,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tool-call-N` id instead of an empty string; a new call without a function
   name ends the stream with `InvalidResponseData` (previously it started a
   call with an empty name). `DeltaToolCall.index` is now `Option<usize>`.
+
+### RFCs
+
+- `docs/aisdk-architecture-alignment.md`: the V4 migration now lands on
+  master layer by layer, each layer CI-green with all its consumers updated,
+  instead of one atomic cutover through an integration branch (§0.4 Q3, D31,
+  §9.1). The new C ABI, codegen, the full recording schema 3 and the binding
+  migration come last; until then the existing C constructors keep their
+  signatures and call the new factories, and ts-rs stays as the interim
+  generator. No release is cut from master until every layer is merged;
+  fixes for released versions ship from a maintenance branch. `ROADMAP.md`
+  defers the ops protocol schema and L0 passthrough and no longer fixes C1
+  at nine exports.
 
 ## [0.5.0] - 2026-09-27
 
