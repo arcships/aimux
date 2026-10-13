@@ -433,6 +433,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`ProviderConfig` in Go and Dart) drop `max_retries` / `body_overrides` and
   gain `params`; call-level `max_retries` is unchanged.
 
+### Added
+
+- `aimux_core::wrap_provider`, the AI SDK's `wrapProvider`: wraps every
+  language model of a provider with language-model middleware and, when
+  given, every image model with image-model middleware; all other members
+  are the provider's own.
+
 ### Fixed
 
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an

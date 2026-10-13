@@ -154,7 +154,7 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 | D10 | 设置求值时间逐包对齐 | 区分工厂、取模型、请求三个阶段，不统一成“所有设置都懒加载” |
 | D11 | 特殊鉴权维持包内组合 | Azure token、Vertex express、Bedrock 签名使用 fetch 装饰器；Vertex ADC 使用异步凭证能力 |
 | D12 | preset 按名字从运行时 descriptor 表创建，复用 compat 内部模型实现 | registry JSON 是唯一数据来源，首次使用时解析并校验一次；不为每一行生成 `create_<name>` 源码（同一份数据不存两遍）。preset 的 key 懒加载是明确的产品扩展；不以原生 OpenAI model 加 profile 模拟所有厂商 |
-| D13 | V4 Provider 与厂商扩展分开 | `chat`、`responses`、`getAvailableModels`、tools 等通过注册条目的扩展能力访问；registry、wrap 不丢失这些能力 |
+| D13 | V4 Provider 与厂商扩展分开 | `chat`、`responses`、`getAvailableModels`、tools 等通过注册条目的扩展能力访问；registry、wrap 不丢失这些能力。上游只有 gateway 提供 `getAvailableModels`（`@ai-sdk/gateway` 4.0.100 `gateway-provider.ts:93`），其他厂商的 discovery 是 aimux 扩展（§5） |
 | D14 | 删除所有 model/provider 默认 retry 配置 | retry 属于操作；router/MoA 为每个 child 配置预算，最终组合失败不得触发整组重跑 |
 | D15 | 删除通用 `body_overrides` | compat 保留 SDK 的 providerOptions 透传与 `transformRequestBody`；原生包不增加统一请求体改写契约 |
 | D16 | `aimux` 不依赖厂商包、不内建 Gateway | `aimux_providers::default_providers()` 返回注册条目集合；上层调用 `create_provider_registry()` 组装 |

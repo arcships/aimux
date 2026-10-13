@@ -64,6 +64,7 @@ pub mod transcription_model;
 pub mod types;
 pub mod util;
 pub mod video_model;
+pub mod wrap_provider;
 
 /// Convenience re-exports.
 pub mod prelude {
@@ -151,6 +152,7 @@ pub mod prelude {
         VideoCallOptions, VideoModel, VideoOperationStart, VideoOperationStatus, VideoPollConfig,
         VideoPollOptions, VideoResult, generate_video,
     };
+    pub use crate::wrap_provider::wrap_provider;
 }
 
 // Root-level re-exports for convenience.
