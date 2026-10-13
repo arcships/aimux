@@ -73,9 +73,11 @@ test('cassette: DeepSeek generate', async (t) => {
   }
 })
 
-test('cassette: DeepSeek usage.raw carries vendor fields', async (t) => {
+test('cassette: DeepSeek step usage.raw carries vendor fields', async (t) => {
   // RFC-0016 M10: DeepSeek's vendor-specific usage fields (not part of the
-  // typed Usage model) survive in usage.raw.
+  // typed Usage model) survive in the step's usage.raw. The result's `usage`
+  // is summed over the steps and, as the AI SDK's addLanguageModelUsage,
+  // carries no raw object.
   const srv = new CassetteServer('deepseek')
   await srv.start()
   t.true(srv.count > 0)
@@ -84,10 +86,11 @@ test('cassette: DeepSeek usage.raw carries vendor fields', async (t) => {
     const model = await openai('test-key', 'deepseek-chat', srv.url)
     const resultJson = await model.generateText(JSON.stringify('Hello'))
     const result = JSON.parse(resultJson)
-    const raw = result.usage?.raw
-    t.truthy(raw, 'usage.raw should be populated (RFC-0016 M10)')
+    const raw = result.steps?.[0]?.usage?.raw
+    t.truthy(raw, 'steps[0].usage.raw should be populated (RFC-0016 M10)')
     t.is(typeof raw?.prompt_cache_hit_tokens, 'number')
     t.is(typeof raw?.prompt_cache_miss_tokens, 'number')
+    t.is(result.usage?.raw ?? null, null)
   } finally {
     await srv.stop()
   }
