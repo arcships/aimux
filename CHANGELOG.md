@@ -155,7 +155,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answers, `output`, `provider_executed`, `provider_metadata?`, `dynamic?`,
   `preliminary?`) instead of the provider's `ToolResult`; a provider result
   marked `is_error` arrives as `ToolError` (`TypedToolError`, with
-  `error`). Unlike upstream, the provider's `preliminary` flag is kept, so
+  `error`), and an invalid client tool call is followed by a `ToolError`
+  holding its error message and `dynamic: true`
+  (stream-language-model-call.ts:709-725). Unlike upstream, the provider's `preliminary` flag is kept, so
   a preliminary result stays out of the step content, as on the generated
   path.
 

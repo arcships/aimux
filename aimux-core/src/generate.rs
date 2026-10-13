@@ -756,7 +756,10 @@ impl StreamTextResult {
                     dynamic: result.dynamic,
                     provider_metadata: result.provider_metadata,
                 }),
-                // A provider-executed tool's error result.
+                // A provider-executed tool's error result. The error that
+                // follows an invalid client tool call has no place in this
+                // layer's step content (the generated path does not keep it
+                // either).
                 TextStreamPart::ToolError(error) if error.provider_executed == Some(true) => {
                     rm.tool_result(ToolResult {
                         tool_call_id: error.tool_call_id,
@@ -1051,6 +1054,25 @@ pub(crate) async fn generate_text_from_language_model_prompt(
         );
     }
     outcome
+}
+
+/// The tool error that follows a client tool call that could not be parsed
+/// (`stream-language-model-call.ts:709-725`): the call's input, its error
+/// message, and `dynamic`.
+fn invalid_tool_call_error(call: &ToolCall) -> Option<TypedToolError> {
+    (call.invalid == Some(true) && call.provider_executed != Some(true)).then(|| TypedToolError {
+        tool_call_id: call.tool_call_id.clone(),
+        tool_name: call.tool_name.clone(),
+        input: Some(call.input.clone()),
+        error: Value::String(
+            call.error
+                .as_ref()
+                .map_or_else(|| "unknown error".to_owned(), ToString::to_string),
+        ),
+        provider_executed: None,
+        provider_metadata: None,
+        dynamic: Some(true),
+    })
 }
 
 /// A provider's tool result as a stream part
@@ -1614,7 +1636,11 @@ pub async fn stream_text(
                             operation_instructions.as_deref(),
                         ).await;
                         tool_calls.insert(parsed.tool_call_id.clone(), parsed.clone());
+                        let tool_error = invalid_tool_call_error(&parsed);
                         yield Ok(TextStreamPart::ToolCall(parsed));
+                        if let Some(error) = tool_error {
+                            yield Ok(TextStreamPart::ToolError(error));
+                        }
                     }
                     Ok(StreamPart::ToolResult(result)) => {
                         let input = tool_calls.get(&result.tool_call_id).map(|call| call.input.clone());

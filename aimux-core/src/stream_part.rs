@@ -157,7 +157,8 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = GeneratedFi
 /// `StartStep` and the `FinishStep` response, and the call is framed by
 /// `Start` ... `Finish`. A provider's tool result becomes `ToolResult` or,
 /// when it reports an error, `ToolError`, both carrying the input of the call
-/// they answer (`stream-language-model-call.ts:760-792`).
+/// they answer; an invalid client tool call is followed by a `ToolError`
+/// (`stream-language-model-call.ts:709-725`, `:760-792`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub enum TextStreamPart {
@@ -250,7 +251,8 @@ pub enum TextStreamPart {
     ToolCall(ToolCall),
     /// A tool result (provider-executed tools).
     ToolResult(TypedToolResult),
-    /// A provider-executed tool's error result.
+    /// A tool error: a provider-executed tool's error result, or an invalid
+    /// tool call.
     ToolError(TypedToolError),
     /// A request to approve a tool call.
     ToolApprovalRequest(ToolApprovalRequestOutput),

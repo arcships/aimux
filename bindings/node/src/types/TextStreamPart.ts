@@ -25,7 +25,8 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * `StartStep` and the `FinishStep` response, and the call is framed by
  * `Start` ... `Finish`. A provider's tool result becomes `ToolResult` or,
  * when it reports an error, `ToolError`, both carrying the input of the call
- * they answer (`stream-language-model-call.ts:760-792`).
+ * they answer; an invalid client tool call is followed by a `ToolError`
+ * (`stream-language-model-call.ts:709-725`, `:760-792`).
  */
 export type TextStreamPart = { "TextStart": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextDelta": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, text: string, } } | { "ReasoningStart": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningDelta": { provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, id: string, text: string, } } | { "Custom": { kind: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputStart": { id: string, tool_name: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null,
 /**

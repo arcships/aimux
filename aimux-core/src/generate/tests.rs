@@ -901,3 +901,75 @@ async fn a_consumed_stream_keeps_provider_tool_results_and_errors() {
         ]
     );
 }
+
+/// stream-language-model-call.ts:709-725: a client tool call that could not
+/// be parsed is followed by a `tool-error` with the call's input,
+/// `getErrorMessage(error)` and `dynamic: true`; an invalid provider-executed
+/// call is not.
+#[tokio::test]
+async fn an_invalid_tool_call_is_followed_by_a_tool_error() {
+    let mut parts = text_stream(&["hi"], FinishReasonUnified::ToolCalls);
+    let finish = parts.pop().unwrap();
+    parts.extend([
+        Ok(StreamPart::ToolCall(RawToolCall {
+            tool_call_id: "call-1".into(),
+            tool_name: "weather".into(),
+            input: r#"{"city":"Paris"}"#.into(),
+            provider_executed: None,
+            dynamic: None,
+            provider_metadata: None,
+        })),
+        Ok(StreamPart::ToolCall(RawToolCall {
+            tool_call_id: "srv-1".into(),
+            tool_name: "web_search".into(),
+            input: "{".into(),
+            provider_executed: Some(true),
+            dynamic: Some(true),
+            provider_metadata: None,
+        })),
+    ]);
+    parts.push(finish);
+    let model = ScriptedModel::streaming(parts);
+    let parts = collect(
+        stream_text(&model, "hi", GenerateTextOptions::default())
+            .await
+            .unwrap(),
+    )
+    .await;
+    let kinds: Vec<String> = parts.iter().map(kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            "Start",
+            "StartStep",
+            "TextStart",
+            "TextDelta",
+            "TextEnd",
+            "ToolCall",
+            "ToolError",
+            "ToolCall",
+            "FinishStep",
+            "Finish"
+        ]
+    );
+    let TextStreamPart::ToolCall(invalid) = &parts[5] else {
+        unreachable!()
+    };
+    assert_eq!(invalid.invalid, Some(true));
+    let TextStreamPart::ToolError(error) = &parts[6] else {
+        unreachable!()
+    };
+    assert_eq!(error.tool_call_id, "call-1");
+    assert_eq!(error.tool_name, "weather");
+    assert_eq!(error.input, Some(json!({ "city": "Paris" })));
+    assert_eq!(
+        error.error,
+        json!(invalid.error.as_ref().unwrap().to_string())
+    );
+    assert_eq!(error.provider_executed, None);
+    assert_eq!(error.dynamic, Some(true));
+    let TextStreamPart::ToolCall(provider_call) = &parts[7] else {
+        unreachable!()
+    };
+    assert_eq!(provider_call.invalid, Some(true));
+}
