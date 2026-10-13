@@ -754,12 +754,12 @@ providerOptions 必须描述**查找、合并、回退、回写**，而非仅列
 | OpenAI chat | `openai` |
 | OpenAI Responses/Azure Responses | 按包内 SDK 规则选择 `openai`/`azure`；保留当前跨包功能性 fallback |
 | Anthropic | canonical `anthropic` 与包内首段规则得到的 custom key 合并；custom 优先；按 SDK 记录 custom key 使用情况 |
-| Google/Vertex | 包内保留 Vertex 分支；使用 `googleVertex`，保留功能性的 `google` fallback |
-| Bedrock | `amazonBedrock`；另外独立读取 `anthropic` 选项，二者不是同一条 fallback 链 |
+| Google/Vertex | 包内保留 Vertex 分支；依次读取 `googleVertex`、旧键 `vertex`，保留功能性的 `google` fallback；metadata 同时写 `googleVertex` 与 `vertex`（视频另写 `google-vertex`） |
+| Bedrock | 读取 `amazonBedrock`，旧键 `bedrock` 兜底；metadata 同时写 `amazonBedrock` 与 `bedrock`；另外独立读取 `anthropic` 选项，二者不是同一条 fallback 链 |
 | compat | `openaiCompatible` 与 name 的规范 camelCase key；优先级及未知字段透传按包定义 |
 | aimux preset | 由 descriptor 明确命名空间，不通过宿主 registry alias 改变 |
 
-按本文的无兼容立场，SDK 中明确标记为历史兼容的 `vertex`、`bedrock`、`openai-compatible` 等旧键及对应双写/告警转发不移植。该偏差进入 §5，不能声称逐字复制 SDK 所有历史行为。
+SDK 为历史兼容保留的旧键照上游读取并回写：新键优先、旧键兜底地读取（Vertex 的 `vertex`、Bedrock 的 `bedrock`；compat 的 `openai-compatible` 读取时附 deprecated 告警），写 metadata 时新旧键都写（Vertex 写 `googleVertex` 与 `vertex`，视频另写 `google-vertex`；Bedrock 写 `amazonBedrock` 与 `bedrock`），与 `@ai-sdk/google`、`@ai-sdk/google-vertex`、`@ai-sdk/amazon-bedrock`、`@ai-sdk/openai-compatible` 一致。
 
 **compat 请求体顺序：**
 
@@ -1112,7 +1112,7 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 产品选择 | SSE 预读 | 保留首事件错误预读，明确计时影响 |
 | 产品选择 | core 工具循环 | 保持单步，不引入 agent loop |
 | 不采用 | workflow 模型序列化 | 不用于录制或重建 |
-| 不采用 | 历史版本和 deprecated 兼容 | 不实现 V2/V3 适配、旧 namespace 双写、旧方法转发、旧录制读取 |
+| 不采用 | 历史版本和 deprecated 兼容 | 不实现 V2/V3 适配、旧方法转发、旧录制读取；旧 namespace 键不在此列，照上游读取并双写（§4.1） |
 | 本期范围外 | Evaluation/Realtime/SpeechTranslation/Batch 等完整链路 | 不注册虚假能力；后续需完整接通操作与观测 |
 | ABI 范围外 | C 宿主异步 fetch/model/headers/telemetry | 由独立异步 ABI 设计处理；本期提供 Rust 内建句柄 |
 | 上游对齐 | `specification_version` | `Provider` 与各模型 trait 保留 `specification_version()`，默认返回 `"v4"`，与上游 `ProviderV4` 及各模型 V4 接口的 `specificationVersion: 'v4'` 一致 |
@@ -1519,7 +1519,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 | 工厂 | base URL/name/auth 的求值时间；空 key；缺 key；默认实例与显式工厂 |
 | 身份 | OpenAI chat/Responses、Azure、Vertex、嵌套 Anthropic、Groq、xAI；自定义 registry key |
 | Headers | 大小写、覆盖、None 删除、无重复凭证、逐 attempt token 更新 |
-| 命名空间 | 读取、合并、metadata 回写、下一轮再输入；无旧键转发 |
+| 命名空间 | 读取、合并、metadata 回写、下一轮再输入；旧键照上游读取并双写 |
 | 请求体 | compat 透传顺序；原生包工具映射；Responses 默认方法完整可用 |
 | Prompt | supportedUrls、受控下载、图片/文件和 tool output |
 | 内容往返 | reasoning signature、thought metadata、tool IDs、图片、文件、provider-executed 结果 |

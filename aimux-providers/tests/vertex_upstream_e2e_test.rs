@@ -489,3 +489,36 @@ async fn executable_credential_without_the_opt_in_fails_and_spawns_nothing() {
     assert!(!marker.exists(), "the credential executable was spawned");
     assert!(fetch.seen().is_empty(), "a request was sent");
 }
+
+/// Upstream: @ai-sdk/google-vertex 5.0.98 src/google-vertex-image-model.ts
+/// reads the image options under `googleVertex`, then the legacy `vertex`,
+/// hands them to the inner language model under both keys (:190-194) and
+/// writes its metadata under both (:221-224).
+#[tokio::test]
+async fn image_options_under_the_legacy_vertex_key_are_read_and_metadata_written_back() {
+    let response = json!({
+        "candidates": [{"content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": "image"}}], "role": "model"}, "finishReason": "STOP"}]
+    });
+    let fetch = MockFetch::new(vec![Canned::json(&response)]);
+    let provider = create_google_vertex(VertexProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".into())),
+        base_url: Some("https://api.example.com".into()),
+        fetch: Some(fetch.transport()),
+        ..Default::default()
+    })
+    .unwrap();
+    let mut options = ImageCallOptions::new("A cat");
+    options.provider_options =
+        provider_namespace("vertex", json!({"imageConfig": {"imageSize": "2K"}})).unwrap();
+    let result = provider
+        .image("gemini-2.5-flash-image")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["generationConfig"],
+        json!({"responseModalities": ["IMAGE"], "imageConfig": {"imageSize": "2K"}})
+    );
+    let metadata = result.provider_metadata.unwrap();
+    assert_eq!(metadata["googleVertex"], metadata["vertex"]);
+}
