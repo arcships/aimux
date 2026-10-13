@@ -499,6 +499,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   other credentials from the environment (Bedrock, Vertex, Codex, Polly,
   DataForSEO, Anthropic on AWS) refuse a custom `base_url`. A client could
   point `base_url` at its own host and receive the console's key.
+- Recordings: a call that lost a recording event (the JSONL recorder's queue
+  was full or its writer gone) or was marked inconsistent (a duplicate
+  attempt, an exchange update that matches no exchange) is written with
+  `complete: false`, by the JSONL and the ring recorder, whether its last
+  event or a flush writes it. Such calls used to be marked complete.
 
 ### RFCs
 
