@@ -81,13 +81,19 @@ pub(crate) fn openai_failed_response_handler() -> aimux_provider_utils::Response
     })
 }
 
+/// The `ApiCallError` of an OpenAI stream error frame, as upstream's
+/// `createOpenAIProviderStreamError` builds it (@ai-sdk/openai 4.0.83
+/// src/openai-stream-error.ts:18-37): an HTTP status in `code` is the status,
+/// otherwise one is inferred from `code`/`type` (`getStatusCode`, :235-267);
+/// `insufficient_quota` is never retryable (:303-315).
 pub(crate) fn openai_stream_error(
     error: &Value,
     url: &str,
     request_body_values: Value,
     response_headers: std::collections::HashMap<String, String>,
 ) -> AiMuxError {
-    let payload = if error.get("type").and_then(Value::as_str) == Some("response.failed") {
+    let response_failed = error.get("type").and_then(Value::as_str) == Some("response.failed");
+    let payload = if response_failed {
         error
             .get("response")
             .and_then(|response| response.get("error"))
@@ -105,10 +111,16 @@ pub(crate) fn openai_stream_error(
         Value::Number(value) => Some(value.to_string()),
         _ => None,
     });
-    let error_type = payload
-        .get("type")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+    // Upstream types a `response.failed` frame as `response.failed`, not by
+    // its inner error (`parseStreamError`, openai-stream-error.ts:207-217).
+    let error_type = if response_failed {
+        "response.failed"
+    } else {
+        payload
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+    };
     let discriminator = format!(
         "{} {error_type}",
         provider_code.as_deref().unwrap_or_default()

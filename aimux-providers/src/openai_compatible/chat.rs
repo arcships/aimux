@@ -141,7 +141,7 @@ fn thought_signature(extra_content: Option<&Value>) -> Option<String> {
         .map(str::to_string)
 }
 
-fn stream_error(
+pub(super) fn stream_error(
     name: &str,
     error: &Value,
     url: &str,

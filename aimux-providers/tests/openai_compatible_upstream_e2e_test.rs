@@ -289,6 +289,38 @@ async fn chat_stream_preserves_structured_error() {
     );
 }
 
+/// Upstream: @ai-sdk/openai-compatible 3.0.62
+/// src/completion/openai-compatible-completion-language-model.ts:320-324
+/// passes an error chunk on as it is (`error: value.error`): unlike
+/// @ai-sdk/openai, no status is inferred from its `code`/`type`.
+#[tokio::test]
+async fn completion_stream_error_infers_no_status() {
+    let fetch = MockFetch::new(vec![stream_response(&[json!({"error":{
+        "message":"Slow down","type":"requests","code":"rate_limit_exceeded"}})])]);
+    let parts: Vec<_> = provider(&fetch)
+        .completion("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect()
+        .await;
+    let error = parts
+        .iter()
+        .find_map(|part| match part {
+            StreamPart::Error {
+                error: AiMuxError::ApiCall(error),
+            } => Some(error),
+            _ => None,
+        })
+        .expect("expected an API error part");
+    assert_eq!(error.message, "Slow down");
+    assert_eq!(error.provider_code.as_deref(), Some("rate_limit_exceeded"));
+    assert_eq!(error.status_code, None);
+    assert!(!error.is_retryable);
+}
+
 /// TS: "should extract embedding" (openai-compatible/src/embedding/openai-compatible-embedding-model.test.ts)
 /// TS: "should pass the model and the values" (openai-compatible/src/embedding/openai-compatible-embedding-model.test.ts)
 #[tokio::test]

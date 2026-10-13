@@ -226,6 +226,79 @@ async fn chat_stream_tool_call_type_is_validated_if_present() {
     );
 }
 
+/// Upstream: @ai-sdk/openai 4.0.83 src/openai-stream-error.ts:18-37,
+/// :235-267 and :303-315: an error frame before any output fails the call
+/// with the status `createOpenAIProviderStreamError` gives it — an HTTP
+/// status in `code`, else one inferred from `code`/`type` — and
+/// `insufficient_quota` is never retryable.
+#[tokio::test]
+async fn chat_stream_error_frame_status_is_inferred_as_upstream() {
+    let cases = [
+        (
+            json!({"message":"quota","type":"insufficient_quota","code":"insufficient_quota","param":null}),
+            429,
+            false,
+        ),
+        (
+            json!({"message":"slow down","type":"requests","code":"rate_limit_exceeded"}),
+            429,
+            true,
+        ),
+        (
+            json!({"message":"busy","type":"server_error","code":"503"}),
+            503,
+            true,
+        ),
+        (
+            json!({"message":"bad","type":"invalid_request_error","code":null}),
+            400,
+            false,
+        ),
+        (
+            json!({"message":"oops","type":"server_error","code":null}),
+            500,
+            true,
+        ),
+    ];
+    let fetch = MockFetch::new(
+        cases
+            .iter()
+            .map(|(error, ..)| sse(vec![json!({ "error": error })]))
+            .collect(),
+    );
+    let model = provider(&fetch).chat("test-model");
+    for (frame, status, retryable) in cases {
+        let Err(AiMuxError::ApiCall(error)) = model.do_stream(&options()).await.map(|_| ()) else {
+            panic!("expected an API error for {frame}");
+        };
+        assert_eq!(error.message, frame["message"], "{frame}");
+        assert_eq!(error.status_code, Some(status), "{frame}");
+        assert_eq!(error.is_retryable, retryable, "{frame}");
+    }
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/openai-stream-error.ts:207-217 types a
+/// `response.failed` frame as `response.failed`, so its status comes from
+/// the inner error's `code` alone, never from an inner `type`.
+#[tokio::test]
+async fn responses_failed_frame_status_ignores_the_inner_type() {
+    let fetch = MockFetch::new(vec![sse(vec![json!({
+        "type":"response.failed","sequence_number":1,
+        "response":{"error":{"code":"server_error","message":"boom","type":"invalid_request_error"}}
+    })])]);
+    let Err(AiMuxError::ApiCall(error)) = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .map(|_| ())
+    else {
+        panic!("expected an API error");
+    };
+    assert_eq!(error.message, "boom");
+    assert_eq!(error.status_code, Some(500));
+    assert!(error.is_retryable);
+}
+
 /// Upstream: @ai-sdk/openai 4.0.83 src/chat/map-openai-finish-reason.ts:13-15
 /// maps the legacy `function_call` finish reason to `tool-calls`; the raw
 /// value stays `function_call`.
