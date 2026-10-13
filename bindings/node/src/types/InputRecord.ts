@@ -14,7 +14,8 @@ export type InputRecord = {
  */
 decision_capabilities?: DecisionCapabilities | null, operation?: RecordingOperation,
 /**
- * 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
+ * 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。Loads as
+ * empty when this version cannot read it ([`Self::unreadable_prompt`]).
  */
 prompt: Array<LanguageModelMessage>,
 /**

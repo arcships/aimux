@@ -1,6 +1,6 @@
 //! aimux-replay — RFC-0023 请求回放 CLI(层 2 消费端)。
 //!
-//! 读录制 jsonl(每行一个 `Recording`,仅 schema 3),按 `ProviderRecord` 的
+//! 读录制 jsonl(每行一个 `Recording`,schema 1 或 2),按 `ProviderRecord` 的
 //! `provider_id` + `model_id` 重建 model,再用录制输入经 `replay_with_model`
 //! **重发真实 API**。用途:离线重跑线上流量、改 prompt 重发(A/B)、回归对比、CI 集成。
 //!
@@ -161,7 +161,7 @@ fn run_replay(
                 vec![rec.clone()],
             )?)
         } else {
-            let registry = replay_registry(&rec.provider.provider_id, api_key)?;
+            let registry = replay_registry(rec.provider.registry_id()?, api_key)?;
             aimux_providers::rebuild_decision_provider(&rec.provider, &registry).with_context(
                 || {
                     format!(
@@ -191,7 +191,7 @@ fn run_replay(
             vec![rec.clone()],
         ))
     } else {
-        let registry = replay_registry(&rec.provider.provider_id, api_key)?;
+        let registry = replay_registry(rec.provider.registry_id()?, api_key)?;
         rebuild_provider(&rec.provider, &registry)
             .with_context(|| format!("rebuild provider for '{}'", rec.provider.provider_id))?
     };
