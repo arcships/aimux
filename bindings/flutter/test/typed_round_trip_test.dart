@@ -361,21 +361,21 @@ void main() {
       expect(tc.providerMetadata, {'provider': 'openai'});
     });
 
-    test('ToolResult variant — uses result, not output', () {
+    test('ToolResult variant — the typed tool result with output and input', () {
       final original = StreamPartToolResult(
         toolCallId: 'call_1',
         toolName: 'web_search',
-        result: {'count': 3},
-        isError: false,
-        preliminary: true,
+        input: {'q': 'rust'},
+        output: {'count': 3},
+        providerExecuted: true,
         isDynamic: false,
         providerMetadata: null,
       );
       final json = original.toJson();
 
       final payload = json['ToolResult'] as Map<String, dynamic>;
-      expect(payload, contains('result'));
-      expect(payload, isNot(contains('output')));
+      expect(payload, contains('output'));
+      expect(payload, isNot(contains('result')));
 
       final decoded = StreamPart.fromJson(json);
       expect(decoded, isA<StreamPartToolResult>());
@@ -383,10 +383,33 @@ void main() {
       final tr = decoded as StreamPartToolResult;
       expect(tr.toolCallId, 'call_1');
       expect(tr.toolName, 'web_search');
-      expect((tr.result as Map<String, dynamic>)['count'], 3);
-      expect(tr.isError, false);
-      expect(tr.preliminary, true);
+      expect((tr.input as Map<String, dynamic>)['q'], 'rust');
+      expect((tr.output as Map<String, dynamic>)['count'], 3);
+      expect(tr.providerExecuted, true);
       expect(tr.isDynamic, false);
+
+      final deferred = StreamPart.fromJson({
+        'ToolResult': {'tool_call_id': 'srv-0', 'tool_name': 'code_execution', 'output': 'done', 'provider_executed': true},
+      }) as StreamPartToolResult;
+      expect(deferred.input, isNull);
+    });
+
+    test('ToolError variant', () {
+      final error = StreamPart.fromJson({
+        'ToolError': {
+          'tool_call_id': 'srv-2',
+          'tool_name': 'code_execution',
+          'input': {'code': '1/0'},
+          'error': {'error_code': 'unavailable'},
+          'provider_executed': true,
+        },
+      });
+      expect(error, isA<StreamPartToolError>());
+      expect(error.type, 'ToolError');
+      expect((error as StreamPartToolError).error, {'error_code': 'unavailable'});
+      expect(error.providerExecuted, true);
+      expect(error.isDynamic, isNull);
+      expect(StreamPart.fromJson(error.toJson()).toJson(), error.toJson());
     });
 
     // ── File ──

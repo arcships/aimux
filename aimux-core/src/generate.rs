@@ -29,7 +29,7 @@ use crate::output::Output;
 use crate::parse_tool_call::{ToolCallRepair, parse_tool_call};
 use crate::result::{
     GenerateContent, GenerateResult, GeneratedFile, ReasoningFileOutput, ReasoningPart, Source,
-    StreamResult, TextContent, ToolApprovalRequestOutput,
+    StreamResult, TextContent, ToolApprovalRequestOutput, TypedToolError, TypedToolResult,
 };
 use crate::shared::{RequestInfo, SharedHeaders, SharedProviderOptions};
 use crate::step_result::{
@@ -747,7 +747,27 @@ impl StreamTextResult {
                     provider_metadata,
                 } => rm.reasoning_end(id, provider_metadata),
                 TextStreamPart::ToolCall(call) => rm.tool_call(&call),
-                TextStreamPart::ToolResult(result) => rm.tool_result(result),
+                TextStreamPart::ToolResult(result) => rm.tool_result(ToolResult {
+                    tool_call_id: result.tool_call_id,
+                    tool_name: result.tool_name,
+                    result: result.output,
+                    is_error: None,
+                    preliminary: result.preliminary,
+                    dynamic: result.dynamic,
+                    provider_metadata: result.provider_metadata,
+                }),
+                // A provider-executed tool's error result.
+                TextStreamPart::ToolError(error) if error.provider_executed == Some(true) => {
+                    rm.tool_result(ToolResult {
+                        tool_call_id: error.tool_call_id,
+                        tool_name: error.tool_name,
+                        result: error.error,
+                        is_error: Some(true),
+                        preliminary: None,
+                        dynamic: error.dynamic,
+                        provider_metadata: error.provider_metadata,
+                    });
+                }
                 TextStreamPart::Source(source) => rm.source(source),
                 TextStreamPart::File(file) => rm.file(&file, false),
                 TextStreamPart::ReasoningFile(output) => rm.file(&output.file, true),
@@ -808,6 +828,7 @@ impl StreamTextResult {
                 TextStreamPart::ToolInputStart { .. }
                 | TextStreamPart::ToolInputDelta { .. }
                 | TextStreamPart::ToolInputEnd { .. }
+                | TextStreamPart::ToolError(_)
                 | TextStreamPart::Start {}
                 | TextStreamPart::Raw { .. } => {}
             }
@@ -1030,6 +1051,39 @@ pub(crate) async fn generate_text_from_language_model_prompt(
         );
     }
     outcome
+}
+
+/// A provider's tool result as a stream part
+/// (`stream-language-model-call.ts:760-792`): a tool error when the provider
+/// marks it as one, otherwise a tool result, with the input of the call it
+/// answers (`None` when the call is not in this stream).
+///
+/// Upstream drops the provider's `preliminary` flag here; aimux keeps it so
+/// that, as on the generated path, a preliminary result does not enter the
+/// step content.
+fn provider_tool_result_part(result: ToolResult, input: Option<Value>) -> TextStreamPart {
+    if result.is_error == Some(true) {
+        TextStreamPart::ToolError(TypedToolError {
+            tool_call_id: result.tool_call_id,
+            tool_name: result.tool_name,
+            input,
+            error: result.result,
+            provider_executed: Some(true),
+            provider_metadata: result.provider_metadata,
+            dynamic: result.dynamic,
+        })
+    } else {
+        TextStreamPart::ToolResult(TypedToolResult {
+            tool_call_id: result.tool_call_id,
+            tool_name: result.tool_name,
+            input,
+            output: result.result,
+            provider_executed: Some(true),
+            provider_metadata: result.provider_metadata,
+            dynamic: result.dynamic,
+            preliminary: result.preliminary,
+        })
+    }
 }
 
 /// The content of a generated model call with parsed tool calls and
@@ -1561,6 +1615,10 @@ pub async fn stream_text(
                         ).await;
                         tool_calls.insert(parsed.tool_call_id.clone(), parsed.clone());
                         yield Ok(TextStreamPart::ToolCall(parsed));
+                    }
+                    Ok(StreamPart::ToolResult(result)) => {
+                        let input = tool_calls.get(&result.tool_call_id).map(|call| call.input.clone());
+                        yield Ok(provider_tool_result_part(result, input));
                     }
                     Ok(StreamPart::File(file)) => {
                         match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {

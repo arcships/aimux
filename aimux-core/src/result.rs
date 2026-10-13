@@ -56,6 +56,51 @@ pub type TextContent =
 #[ts(export, rename = "TextContent", as = "TextContent")]
 struct TextContentBinding;
 
+/// A tool result (the AI SDK's `TypedToolResult`, `ai`
+/// `generate-text/tool-result.ts:10-42`).
+///
+/// aimux has no user-level tool definitions, so upstream's `toolMetadata`
+/// and `title`, which come from them, are absent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct TypedToolResult {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    /// The input of the tool call the result answers; absent for a deferred
+    /// provider result, whose call is not in this response.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<serde_json::Value>,
+    pub output: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_executed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_metadata: Option<ProviderMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamic: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preliminary: Option<bool>,
+}
+
+/// A tool error (the AI SDK's `TypedToolError`, `ai`
+/// `generate-text/tool-error.ts:6-36`). `toolMetadata` and `title` are
+/// absent, as on [`TypedToolResult`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct TypedToolError {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    /// The input of the tool call; absent for a deferred provider result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<serde_json::Value>,
+    pub error: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_executed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_metadata: Option<ProviderMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamic: Option<bool>,
+}
+
 /// Provider approval request for a provider-executed call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]

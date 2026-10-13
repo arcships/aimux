@@ -29,6 +29,7 @@ import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -1294,15 +1295,35 @@ sealed interface StreamPart {
         val error: JsonElement? = null,
     ) : StreamPart
 
+    /**
+     * A provider-executed tool's result (Rust `TypedToolResult`), with the
+     * input of the call it answers (`null` for a deferred result).
+     */
     @Serializable
     data class ToolResult(
         @SerialName("tool_call_id") val toolCallId: String = "",
         @SerialName("tool_name") val toolName: String = "",
-        val result: JsonElement = JsonObject(emptyMap()),
-        @SerialName("is_error") val isError: Boolean? = null,
-        @SerialName("preliminary") val preliminary: Boolean? = null,
-        @SerialName("dynamic") val dynamic: Boolean? = null,
+        val input: JsonElement? = null,
+        val output: JsonElement = JsonNull,
+        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+        @SerialName("dynamic") val dynamic: Boolean? = null,
+        @SerialName("preliminary") val preliminary: Boolean? = null,
+    ) : StreamPart
+
+    /**
+     * A provider-executed tool's error result, or the error that follows an
+     * invalid tool call (Rust `TypedToolError`).
+     */
+    @Serializable
+    data class ToolError(
+        @SerialName("tool_call_id") val toolCallId: String = "",
+        @SerialName("tool_name") val toolName: String = "",
+        val input: JsonElement? = null,
+        val error: JsonElement = JsonNull,
+        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
+        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+        @SerialName("dynamic") val dynamic: Boolean? = null,
     ) : StreamPart
 
     // ── P2: file ──
@@ -1366,6 +1387,7 @@ val StreamPart.variantTag: String
         is StreamPart.ToolInputEnd -> "ToolInputEnd"
         is StreamPart.ToolCall -> "ToolCall"
         is StreamPart.ToolResult -> "ToolResult"
+        is StreamPart.ToolError -> "ToolError"
         is StreamPart.File -> "File"
         is StreamPart.ReasoningStart -> "ReasoningStart"
         is StreamPart.ReasoningDelta -> "ReasoningDelta"
@@ -1416,6 +1438,7 @@ object StreamPartSerializer : KSerializer<StreamPart> {
             "ToolInputEnd" -> ctx.decodeFromJsonElement(StreamPart.ToolInputEnd.serializer(), innerObj)
             "ToolCall" -> ctx.decodeFromJsonElement(StreamPart.ToolCall.serializer(), innerObj)
             "ToolResult" -> ctx.decodeFromJsonElement(StreamPart.ToolResult.serializer(), innerObj)
+            "ToolError" -> ctx.decodeFromJsonElement(StreamPart.ToolError.serializer(), innerObj)
             "File" -> ctx.decodeFromJsonElement(StreamPart.File.serializer(), innerObj)
             "ReasoningStart" -> ctx.decodeFromJsonElement(StreamPart.ReasoningStart.serializer(), innerObj)
             "ReasoningDelta" -> ctx.decodeFromJsonElement(StreamPart.ReasoningDelta.serializer(), innerObj)
@@ -1448,6 +1471,7 @@ object StreamPartSerializer : KSerializer<StreamPart> {
             is StreamPart.ToolInputEnd -> "ToolInputEnd" to ctx.encodeToJsonElement(StreamPart.ToolInputEnd.serializer(), value)
             is StreamPart.ToolCall -> "ToolCall" to ctx.encodeToJsonElement(StreamPart.ToolCall.serializer(), value)
             is StreamPart.ToolResult -> "ToolResult" to ctx.encodeToJsonElement(StreamPart.ToolResult.serializer(), value)
+            is StreamPart.ToolError -> "ToolError" to ctx.encodeToJsonElement(StreamPart.ToolError.serializer(), value)
             is StreamPart.File -> "File" to ctx.encodeToJsonElement(StreamPart.File.serializer(), value)
             is StreamPart.ReasoningStart -> "ReasoningStart" to ctx.encodeToJsonElement(StreamPart.ReasoningStart.serializer(), value)
             is StreamPart.ReasoningDelta -> "ReasoningDelta" to ctx.encodeToJsonElement(StreamPart.ReasoningDelta.serializer(), value)

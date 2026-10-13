@@ -563,7 +563,8 @@ export type TextStreamPart =
   | { Start: {} } | { StartStep: ... } | { FinishStep: ... } | { Finish: ... }
   | { TextStart: ... } | { TextDelta: { id, text, ... } } | { TextEnd: ... }
   | { ToolInputStart: ... } | { ToolInputDelta: ... } | { ToolInputEnd: ... }
-  | { ToolCall: ... } | { ToolResult: ... } | { ToolApprovalRequest: ... }
+  | { ToolCall: ... } | { ToolResult: TypedToolResult } | { ToolError: TypedToolError }
+  | { ToolApprovalRequest: ... }
   | { ReasoningStart: ... } | { ReasoningDelta: ... } | { ReasoningEnd: ... }
   | { Source: ... } | { File: ... } | { ReasoningFile: ... } | { Custom: ... }
   | { Abort: ... } | { Error: ... } | { Raw: ... }

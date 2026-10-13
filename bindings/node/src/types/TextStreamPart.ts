@@ -10,7 +10,8 @@ import type { StepResponseMetadata } from "./StepResponseMetadata";
 import type { StepResultPerformance } from "./StepResultPerformance";
 import type { ToolApprovalRequestOutput } from "./ToolApprovalRequestOutput";
 import type { ToolCall } from "./ToolCall";
-import type { ToolResult } from "./ToolResult";
+import type { TypedToolError } from "./TypedToolError";
+import type { TypedToolResult } from "./TypedToolResult";
 import type { Warning } from "./Warning";
 import type { JsonValue } from "./serde_json/JsonValue";
 
@@ -22,9 +23,9 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * are parsed, text and reasoning deltas carry `text` (the provider part's
  * `delta`), the provider's `stream-start` and `response-metadata` become
  * `StartStep` and the `FinishStep` response, and the call is framed by
- * `Start` ... `Finish`. Variants for the tool-execution family
- * (`tool-error`, `tool-output-denied`, `tool-approval-response`) arrive with
- * the core tool-result types.
+ * `Start` ... `Finish`. A provider's tool result becomes `ToolResult` or,
+ * when it reports an error, `ToolError`, both carrying the input of the call
+ * they answer (`stream-language-model-call.ts:760-792`).
  */
 export type TextStreamPart = { "TextStart": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextDelta": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, text: string, } } | { "ReasoningStart": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningDelta": { provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, id: string, text: string, } } | { "Custom": { kind: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputStart": { id: string, tool_name: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null,
 /**
@@ -38,7 +39,7 @@ dynamic?: boolean | null,
 /**
  * Optional title for the tool call.
  */
-title?: string | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "Source": Source } | { "File": GeneratedFile } | { "ReasoningFile": ReasoningFileOutput } | { "ToolCall": ToolCall } | { "ToolResult": ToolResult } | { "ToolApprovalRequest": ToolApprovalRequestOutput } | { "StartStep": { request: RequestInfo, warnings: Array<Warning>, } } | { "FinishStep": {
+title?: string | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "Source": Source } | { "File": GeneratedFile } | { "ReasoningFile": ReasoningFileOutput } | { "ToolCall": ToolCall } | { "ToolResult": TypedToolResult } | { "ToolError": TypedToolError } | { "ToolApprovalRequest": ToolApprovalRequestOutput } | { "StartStep": { request: RequestInfo, warnings: Array<Warning>, } } | { "FinishStep": {
 /**
  * Response metadata without the messages and the body.
  */

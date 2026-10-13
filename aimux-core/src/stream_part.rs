@@ -10,6 +10,7 @@ use ts_rs::TS;
 use crate::error::AiMuxError;
 use crate::result::{
     GeneratedFile, RawToolApprovalRequest, ReasoningFileOutput, Source, ToolApprovalRequestOutput,
+    TypedToolError, TypedToolResult,
 };
 use crate::shared::RequestInfo;
 use crate::step_result::{StepResponseMetadata, StepResultPerformance};
@@ -154,9 +155,9 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = GeneratedFi
 /// are parsed, text and reasoning deltas carry `text` (the provider part's
 /// `delta`), the provider's `stream-start` and `response-metadata` become
 /// `StartStep` and the `FinishStep` response, and the call is framed by
-/// `Start` ... `Finish`. Variants for the tool-execution family
-/// (`tool-error`, `tool-output-denied`, `tool-approval-response`) arrive with
-/// the core tool-result types.
+/// `Start` ... `Finish`. A provider's tool result becomes `ToolResult` or,
+/// when it reports an error, `ToolError`, both carrying the input of the call
+/// they answer (`stream-language-model-call.ts:760-792`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub enum TextStreamPart {
@@ -248,7 +249,9 @@ pub enum TextStreamPart {
     /// A parsed tool call.
     ToolCall(ToolCall),
     /// A tool result (provider-executed tools).
-    ToolResult(ToolResult),
+    ToolResult(TypedToolResult),
+    /// A provider-executed tool's error result.
+    ToolError(TypedToolError),
     /// A request to approve a tool call.
     ToolApprovalRequest(ToolApprovalRequestOutput),
 
@@ -358,13 +361,17 @@ impl<C, A, R> StreamPart<C, A, R> {
 
 impl StreamPart<ToolCall, ToolApprovalRequestOutput, ReasoningFileOutput> {
     /// Convert content chunks. `None` for the parts the call layer absorbs
-    /// (`StreamStart`, `ResponseMetadata`, `Finish`).
+    /// (`StreamStart`, `ResponseMetadata`, `Finish`) and for `ToolResult`,
+    /// which needs the input of the call it answers (see `stream_text`).
     #[must_use]
     pub fn into_text_stream_part(self) -> Option<TextStreamPart> {
         macro_rules! carry {
             ($($variant:ident { $($field:ident),* })*) => {
                 match self {
-                    Self::StreamStart { .. } | Self::ResponseMetadata(_) | Self::Finish { .. } => None,
+                    Self::StreamStart { .. }
+                    | Self::ResponseMetadata(_)
+                    | Self::Finish { .. }
+                    | Self::ToolResult(_) => None,
                     Self::TextDelta { id, delta, provider_metadata } => {
                         Some(TextStreamPart::TextDelta { id, provider_metadata, text: delta })
                     }
@@ -373,7 +380,6 @@ impl StreamPart<ToolCall, ToolApprovalRequestOutput, ReasoningFileOutput> {
                     }
                     Self::ToolCall(value) => Some(TextStreamPart::ToolCall(value)),
                     Self::ToolApprovalRequest(value) => Some(TextStreamPart::ToolApprovalRequest(value)),
-                    Self::ToolResult(value) => Some(TextStreamPart::ToolResult(value)),
                     Self::File(value) => Some(TextStreamPart::File(value)),
                     Self::ReasoningFile(value) => Some(TextStreamPart::ReasoningFile(value)),
                     Self::Source(value) => Some(TextStreamPart::Source(value)),

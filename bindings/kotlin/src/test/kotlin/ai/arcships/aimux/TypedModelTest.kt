@@ -461,6 +461,30 @@ class TypedModelRoundTripTest {
     }
 
     @Test
+    fun `stream parts decode tool results and tool errors`() {
+        val decode = { json: String -> AimuxJson.decodeFromString(StreamPart.serializer(), json) }
+        val result = decode(
+            """{"ToolResult":{"tool_call_id":"srv-1","tool_name":"web_search","input":{"q":"rust"},""" +
+                """"output":[{"url":"https://example.com"}],"provider_executed":true,"dynamic":true}}""",
+        ) as StreamPart.ToolResult
+        assertThat(result.toolCallId).isEqualTo("srv-1")
+        assertThat(result.input.toString()).isEqualTo("""{"q":"rust"}""")
+        assertThat(result.output.toString()).isEqualTo("""[{"url":"https://example.com"}]""")
+        assertThat(result.providerExecuted).isTrue()
+        val deferred = decode(
+            """{"ToolResult":{"tool_call_id":"srv-0","tool_name":"code_execution","output":{"stdout":"2"},"provider_executed":true}}""",
+        ) as StreamPart.ToolResult
+        assertThat(deferred.input).isNull()
+        val error = decode(
+            """{"ToolError":{"tool_call_id":"call-1","tool_name":"weather","input":{"city":"Paris"},""" +
+                """"error":"no such tool","dynamic":true}}""",
+        ) as StreamPart.ToolError
+        assertThat(error.error.toString()).isEqualTo("\"no such tool\"")
+        assertThat(error.providerExecuted).isNull()
+        assertThat(error.dynamic).isTrue()
+    }
+
+    @Test
     fun `GenerateResult round-trips with mixed content variants`() {
         val original = GenerateResult(
             content = listOf(

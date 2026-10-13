@@ -4185,78 +4185,93 @@ public final class Types {
             }
         }
 
+        /**
+         * A provider-executed tool's result (Rust {@code TypedToolResult}), with the
+         * input of the call it answers ({@code null} for a deferred result).
+         */
         public static class ToolResult extends StreamPart {
             @JsonProperty("tool_call_id") private String toolCallId = "";
             @JsonProperty("tool_name") private String toolName = "";
-            @JsonProperty("result") private JsonNode result = emptyObject();
-            @JsonProperty("is_error") private Boolean isError;
-            @JsonProperty("preliminary") private Boolean preliminary;
-            @JsonProperty("dynamic") private Boolean dynamic;
+            @JsonProperty("input") private JsonNode input;
+            @JsonProperty("output") private JsonNode output;
+            @JsonProperty("provider_executed") private Boolean providerExecuted;
             @JsonProperty("provider_metadata") private JsonNode providerMetadata;
-
-            @JsonCreator
-            ToolResult() {}
-
-            private ToolResult(String toolCallId, String toolName, JsonNode result, Boolean isError,
-                               Boolean preliminary, Boolean dynamic, JsonNode providerMetadata) {
+            @JsonProperty("dynamic") private Boolean dynamic;
+            @JsonProperty("preliminary") private Boolean preliminary;
+            @JsonCreator ToolResult() {}
+            public ToolResult(String toolCallId, String toolName, JsonNode input, JsonNode output, Boolean providerExecuted,
+                              JsonNode providerMetadata, Boolean dynamic, Boolean preliminary) {
                 this.toolCallId = toolCallId;
                 this.toolName = toolName;
-                this.result = result;
-                this.isError = isError;
-                this.preliminary = preliminary;
-                this.dynamic = dynamic;
+                this.input = input;
+                this.output = output;
+                this.providerExecuted = providerExecuted;
                 this.providerMetadata = providerMetadata;
+                this.dynamic = dynamic;
+                this.preliminary = preliminary;
             }
-
             public String getToolCallId() { return toolCallId; }
             public String getToolName() { return toolName; }
-            public JsonNode getResult() { return result; }
-            public Boolean getIsError() { return isError; }
-            public Boolean getPreliminary() { return preliminary; }
-            public Boolean getDynamic() { return dynamic; }
+            public JsonNode getInput() { return input; }
+            public JsonNode getOutput() { return output; }
+            public Boolean getProviderExecuted() { return providerExecuted; }
             public JsonNode getProviderMetadata() { return providerMetadata; }
-
-            public static Builder builder() { return new Builder(); }
-
-            public static class Builder {
-                private String toolCallId = "";
-                private String toolName = "";
-                private JsonNode result = emptyObject();
-                private Boolean isError;
-                private Boolean preliminary;
-                private Boolean dynamic;
-                private JsonNode providerMetadata;
-
-                public Builder toolCallId(String v) { this.toolCallId = v; return this; }
-                public Builder toolName(String v) { this.toolName = v; return this; }
-                public Builder result(JsonNode v) { this.result = v; return this; }
-                public Builder isError(Boolean v) { this.isError = v; return this; }
-                public Builder preliminary(Boolean v) { this.preliminary = v; return this; }
-                public Builder dynamic(Boolean v) { this.dynamic = v; return this; }
-                public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
-
-                public ToolResult build() {
-                    return new ToolResult(toolCallId, toolName, result, isError, preliminary, dynamic, providerMetadata);
-                }
+            public Boolean getDynamic() { return dynamic; }
+            public Boolean getPreliminary() { return preliminary; }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof ToolResult)) return false;
+                ToolResult other = (ToolResult) value;
+                return Objects.equals(toolCallId, other.toolCallId) && Objects.equals(toolName, other.toolName)
+                    && Objects.equals(input, other.input) && Objects.equals(output, other.output)
+                    && Objects.equals(providerExecuted, other.providerExecuted)
+                    && Objects.equals(providerMetadata, other.providerMetadata)
+                    && Objects.equals(dynamic, other.dynamic) && Objects.equals(preliminary, other.preliminary);
             }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) return true;
-                if (!(o instanceof ToolResult)) return false;
-                ToolResult that = (ToolResult) o;
-                return Objects.equals(toolCallId, that.toolCallId)
-                    && Objects.equals(toolName, that.toolName)
-                    && Objects.equals(result, that.result)
-                    && Objects.equals(isError, that.isError)
-                    && Objects.equals(preliminary, that.preliminary)
-                    && Objects.equals(dynamic, that.dynamic)
-                    && Objects.equals(providerMetadata, that.providerMetadata);
+            @Override public int hashCode() {
+                return Objects.hash(toolCallId, toolName, input, output, providerExecuted, providerMetadata, dynamic, preliminary);
             }
+        }
 
-            @Override
-            public int hashCode() {
-                return Objects.hash(toolCallId, toolName, result, isError, preliminary, dynamic, providerMetadata);
+        /**
+         * A provider-executed tool's error result, or the error that follows an
+         * invalid tool call (Rust {@code TypedToolError}).
+         */
+        public static class ToolError extends StreamPart {
+            @JsonProperty("tool_call_id") private String toolCallId = "";
+            @JsonProperty("tool_name") private String toolName = "";
+            @JsonProperty("input") private JsonNode input;
+            @JsonProperty("error") private JsonNode error;
+            @JsonProperty("provider_executed") private Boolean providerExecuted;
+            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("dynamic") private Boolean dynamic;
+            @JsonCreator ToolError() {}
+            public ToolError(String toolCallId, String toolName, JsonNode input, JsonNode error, Boolean providerExecuted,
+                             JsonNode providerMetadata, Boolean dynamic) {
+                this.toolCallId = toolCallId;
+                this.toolName = toolName;
+                this.input = input;
+                this.error = error;
+                this.providerExecuted = providerExecuted;
+                this.providerMetadata = providerMetadata;
+                this.dynamic = dynamic;
+            }
+            public String getToolCallId() { return toolCallId; }
+            public String getToolName() { return toolName; }
+            public JsonNode getInput() { return input; }
+            public JsonNode getError() { return error; }
+            public Boolean getProviderExecuted() { return providerExecuted; }
+            public JsonNode getProviderMetadata() { return providerMetadata; }
+            public Boolean getDynamic() { return dynamic; }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof ToolError)) return false;
+                ToolError other = (ToolError) value;
+                return Objects.equals(toolCallId, other.toolCallId) && Objects.equals(toolName, other.toolName)
+                    && Objects.equals(input, other.input) && Objects.equals(error, other.error)
+                    && Objects.equals(providerExecuted, other.providerExecuted)
+                    && Objects.equals(providerMetadata, other.providerMetadata) && Objects.equals(dynamic, other.dynamic);
+            }
+            @Override public int hashCode() {
+                return Objects.hash(toolCallId, toolName, input, error, providerExecuted, providerMetadata, dynamic);
             }
         }
 
@@ -4676,6 +4691,7 @@ public final class Types {
         if (value instanceof StreamPart.ToolInputEnd) return "ToolInputEnd";
         if (value instanceof StreamPart.ToolCall) return "ToolCall";
         if (value instanceof StreamPart.ToolResult) return "ToolResult";
+        if (value instanceof StreamPart.ToolError) return "ToolError";
         if (value instanceof StreamPart.File) return "File";
         if (value instanceof StreamPart.ReasoningStart) return "ReasoningStart";
         if (value instanceof StreamPart.ReasoningDelta) return "ReasoningDelta";
@@ -4734,6 +4750,7 @@ public final class Types {
                 case "ToolInputEnd": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolInputEnd.class);
                 case "ToolCall": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolCall.class);
                 case "ToolResult": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolResult.class);
+                case "ToolError": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolError.class);
                 case "File": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.File.class);
                 case "ReasoningStart": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ReasoningStart.class);
                 case "ReasoningDelta": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ReasoningDelta.class);

@@ -645,14 +645,32 @@ class _SPToolCall(BaseModel):
 
 
 class _SPToolResult(BaseModel):
+    """Rust ``TypedToolResult``: a provider-executed tool's result with the
+    input of the call it answers (absent for a deferred result)."""
+
     type: Literal["ToolResult"]
     tool_call_id: str
     tool_name: str
-    result: Any
-    is_error: Optional[bool] = None
-    preliminary: Optional[bool] = None
-    dynamic: Optional[bool] = None
+    input: Optional[Any] = None
+    output: Any
+    provider_executed: Optional[bool] = None
     provider_metadata: Optional[Dict[str, Any]] = None
+    dynamic: Optional[bool] = None
+    preliminary: Optional[bool] = None
+
+
+class _SPToolError(BaseModel):
+    """Rust ``TypedToolError``: a provider-executed tool's error result, or
+    the error that follows an invalid tool call."""
+
+    type: Literal["ToolError"]
+    tool_call_id: str
+    tool_name: str
+    input: Optional[Any] = None
+    error: Any
+    provider_executed: Optional[bool] = None
+    provider_metadata: Optional[Dict[str, Any]] = None
+    dynamic: Optional[bool] = None
 
 
 class _SPReasoningStart(BaseModel):
@@ -753,6 +771,7 @@ _StreamPartUnion = Annotated[
         _SPToolInputEnd,
         _SPToolCall,
         _SPToolResult,
+        _SPToolError,
         _SPFile,
         _SPReasoningFile,
         _SPReasoningStart,

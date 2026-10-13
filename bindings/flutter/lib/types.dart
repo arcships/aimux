@@ -1198,7 +1198,8 @@ class ModelMessage {
 /// [StreamPartStart], [StreamPartStartStep], [StreamPartFinishStep],
 /// [StreamPartFinish], [StreamPartAbort], [StreamPartError],
 /// [StreamPartToolInputStart]/[StreamPartToolInputDelta]/[StreamPartToolInputEnd],
-/// [StreamPartToolCall], [StreamPartToolResult], [StreamPartFile],
+/// [StreamPartToolCall], [StreamPartToolResult], [StreamPartToolError],
+/// [StreamPartFile],
 /// [StreamPartReasoningStart]/[StreamPartReasoningDelta]/[StreamPartReasoningEnd],
 /// [StreamPartSource], [StreamPartRaw]. Narrow
 /// via `switch`/`is`/`whereType` to read variant-specific fields.
@@ -1223,6 +1224,7 @@ sealed class StreamPart {
         StreamPartToolInputEnd() => 'ToolInputEnd',
         StreamPartToolCall() => 'ToolCall',
         StreamPartToolResult() => 'ToolResult',
+        StreamPartToolError() => 'ToolError',
         StreamPartCustom() => 'Custom',
         StreamPartReasoningFile() => 'ReasoningFile',
         StreamPartToolApprovalRequest() => 'ToolApprovalRequest',
@@ -1258,6 +1260,7 @@ sealed class StreamPart {
       'ToolInputEnd' => StreamPartToolInputEnd.fromJson(payload),
       'ToolCall' => StreamPartToolCall.fromJson(payload),
       'ToolResult' => StreamPartToolResult.fromJson(payload),
+      'ToolError' => StreamPartToolError.fromJson(payload),
       'Custom' => StreamPartCustom.fromJson(payload),
       'ReasoningFile' => StreamPartReasoningFile.fromJson(payload),
       'ToolApprovalRequest' => StreamPartToolApprovalRequest.fromJson(payload),
@@ -1638,36 +1641,40 @@ final class StreamPartToolCall extends StreamPart {
       };
 }
 
-/// A tool result (provider-executed tools).
+/// A provider-executed tool's result (Rust `TypedToolResult`), with the
+/// input of the call it answers (`null` for a deferred result).
 final class StreamPartToolResult extends StreamPart {
   final String toolCallId;
   final String toolName;
-  final dynamic result;
-  final bool? isError;
-  final bool? preliminary;
-  final bool? isDynamic;
+  final dynamic input;
+  final dynamic output;
+  final bool? providerExecuted;
   final Map<String, dynamic>? providerMetadata;
+  final bool? isDynamic;
+  final bool? preliminary;
 
   StreamPartToolResult({
     required this.toolCallId,
     required this.toolName,
-    required this.result,
-    this.isError,
-    this.preliminary,
-    this.isDynamic,
+    this.input,
+    required this.output,
+    this.providerExecuted,
     this.providerMetadata,
+    this.isDynamic,
+    this.preliminary,
   });
 
   factory StreamPartToolResult.fromJson(Map<String, dynamic> json) =>
       StreamPartToolResult(
         toolCallId: json['tool_call_id'] as String,
         toolName: json['tool_name'] as String,
-        result: json['result'],
-        isError: json['is_error'] as bool?,
-        preliminary: json['preliminary'] as bool?,
-        isDynamic: json['dynamic'] as bool?,
+        input: json['input'],
+        output: json['output'],
+        providerExecuted: json['provider_executed'] as bool?,
         providerMetadata:
             json['provider_metadata'] as Map<String, dynamic>?,
+        isDynamic: json['dynamic'] as bool?,
+        preliminary: json['preliminary'] as bool?,
       );
 
   @override
@@ -1675,11 +1682,59 @@ final class StreamPartToolResult extends StreamPart {
         'ToolResult': {
           'tool_call_id': toolCallId,
           'tool_name': toolName,
-          'result': result,
-          if (isError != null) 'is_error': isError,
-          if (preliminary != null) 'preliminary': preliminary,
-          if (isDynamic != null) 'dynamic': isDynamic,
+          if (input != null) 'input': input,
+          'output': output,
+          if (providerExecuted != null) 'provider_executed': providerExecuted,
           if (providerMetadata != null) 'provider_metadata': providerMetadata,
+          if (isDynamic != null) 'dynamic': isDynamic,
+          if (preliminary != null) 'preliminary': preliminary,
+        },
+      };
+}
+
+/// A provider-executed tool's error result, or the error that follows an
+/// invalid tool call (Rust `TypedToolError`).
+final class StreamPartToolError extends StreamPart {
+  final String toolCallId;
+  final String toolName;
+  final dynamic input;
+  final dynamic error;
+  final bool? providerExecuted;
+  final Map<String, dynamic>? providerMetadata;
+  final bool? isDynamic;
+
+  StreamPartToolError({
+    required this.toolCallId,
+    required this.toolName,
+    this.input,
+    required this.error,
+    this.providerExecuted,
+    this.providerMetadata,
+    this.isDynamic,
+  });
+
+  factory StreamPartToolError.fromJson(Map<String, dynamic> json) =>
+      StreamPartToolError(
+        toolCallId: json['tool_call_id'] as String,
+        toolName: json['tool_name'] as String,
+        input: json['input'],
+        error: json['error'],
+        providerExecuted: json['provider_executed'] as bool?,
+        providerMetadata:
+            json['provider_metadata'] as Map<String, dynamic>?,
+        isDynamic: json['dynamic'] as bool?,
+      );
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'ToolError': {
+          'tool_call_id': toolCallId,
+          'tool_name': toolName,
+          if (input != null) 'input': input,
+          'error': error,
+          if (providerExecuted != null) 'provider_executed': providerExecuted,
+          if (providerMetadata != null) 'provider_metadata': providerMetadata,
+          if (isDynamic != null) 'dynamic': isDynamic,
         },
       };
 }

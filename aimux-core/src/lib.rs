@@ -113,7 +113,8 @@ pub mod prelude {
     };
     pub use crate::result::{
         GenerateResult, GeneratedFile, RawToolApprovalRequest, ReasoningOutput, ReasoningPart,
-        Source, StreamResult, TextContent, ToolApprovalRequestOutput,
+        Source, StreamResult, TextContent, ToolApprovalRequestOutput, TypedToolError,
+        TypedToolResult,
     };
     pub use crate::router::{
         FallbackPolicy, Router, RouterConfig, RouterModel, RuleRouter, WeightedRouter,

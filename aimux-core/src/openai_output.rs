@@ -38,6 +38,7 @@ use crate::generate::GenerateTextResult;
 use crate::parse_tool_call::raw_tool_call_text;
 use crate::result::{
     GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, TextContent,
+    TypedToolError, TypedToolResult,
 };
 use crate::shared::GeneratedFileData;
 use crate::stream_part::TextStreamPart;
@@ -872,14 +873,39 @@ impl StreamState {
                 }
             }
 
-            TextStreamPart::ToolResult(ToolResult {
-                tool_name, result, ..
+            TextStreamPart::ToolResult(TypedToolResult {
+                tool_name, output, ..
             }) => {
                 // Degraded: provider-executed tool result as content.
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
-                let text = format!("[tool result: {tool_name}] {result}");
+                let text = format!("[tool result: {tool_name}] {output}");
+                let mut chunk = self.base_chunk();
+                chunk.choices = vec![ChatCompletionChunkChoice {
+                    index: 0,
+                    delta: ChatCompletionDelta {
+                        content: Some(text),
+                        ..Default::default()
+                    },
+                    finish_reason: None,
+                    logprobs: None,
+                }];
+                chunks.push(chunk);
+            }
+
+            TextStreamPart::ToolError(TypedToolError {
+                tool_name,
+                error,
+                provider_executed: Some(true),
+                ..
+            }) => {
+                // Degraded: provider-executed tool error as content, as the
+                // generated path renders it.
+                if let Some(c) = self.ensure_started() {
+                    chunks.push(c);
+                }
+                let text = format!("[tool error: {tool_name}] {error}");
                 let mut chunk = self.base_chunk();
                 chunk.choices = vec![ChatCompletionChunkChoice {
                     index: 0,
@@ -958,6 +984,7 @@ impl StreamState {
             | TextStreamPart::Source(Source::Document { .. })
             | TextStreamPart::Custom { .. }
             | TextStreamPart::ReasoningFile(_)
+            | TextStreamPart::ToolError(_)
             | TextStreamPart::ToolApprovalRequest(_) => { /* no OpenAI chat equivalent */ }
         }
 

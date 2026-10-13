@@ -1405,8 +1405,14 @@ public enum StreamPart: Codable, Equatable {
                   providerExecuted: Bool?, dynamic: Bool?,
                   providerMetadata: JSONValue?,
                   invalid: Bool?, error: JSONValue?)
-    case toolResult(toolCallId: String, toolName: String, result: JSONValue,
-                    isError: Bool?, preliminary: Bool?, dynamic: Bool?, providerMetadata: JSONValue?)
+    /// A provider-executed tool's result (Rust `TypedToolResult`), with the
+    /// input of the call it answers (`nil` for a deferred result).
+    case toolResult(toolCallId: String, toolName: String, input: JSONValue?, output: JSONValue,
+                    providerExecuted: Bool?, providerMetadata: JSONValue?, dynamic: Bool?, preliminary: Bool?)
+    /// A provider-executed tool's error result, or the error that follows an
+    /// invalid tool call (Rust `TypedToolError`).
+    case toolError(toolCallId: String, toolName: String, input: JSONValue?, error: JSONValue,
+                   providerExecuted: Bool?, providerMetadata: JSONValue?, dynamic: Bool?)
     // P2: file
     case file(data: GeneratedFileData, mediaType: String, providerMetadata: JSONValue?)
     // P2: reasoning
@@ -1423,13 +1429,14 @@ public enum StreamPart: Codable, Equatable {
 
     private enum Field: String, CodingKey {
         case file, kind, approvalId = "approval_id", toolCall = "tool_call", reason, isAutomatic = "is_automatic", signature
+        case output
         case id, delta, warnings, usage, text, request, performance
         case finishReason = "finish_reason", providerMetadata = "provider_metadata"
         case rawFinishReason = "raw_finish_reason", totalUsage = "total_usage"
         case error, response
-        case toolName = "tool_name", toolCallId = "tool_call_id", input, result
+        case toolName = "tool_name", toolCallId = "tool_call_id", input
         case providerExecuted = "provider_executed", dynamic, invalid
-        case isError = "is_error", preliminary
+        case preliminary
         case timestamp, modelId = "model_id"
         case sourceType = "source_type", url, title
         case data, mediaType = "media_type"
@@ -1501,11 +1508,20 @@ public enum StreamPart: Codable, Equatable {
         case "ToolResult":
             self = .toolResult(toolCallId: try n.decode(String.self, forKey: .toolCallId),
                                toolName: try n.decode(String.self, forKey: .toolName),
-                               result: try n.decode(JSONValue.self, forKey: .result),
-                               isError: try n.decodeIfPresent(Bool.self, forKey: .isError),
-                               preliminary: try n.decodeIfPresent(Bool.self, forKey: .preliminary),
+                               input: try n.decodeIfPresent(JSONValue.self, forKey: .input),
+                               output: try n.decode(JSONValue.self, forKey: .output),
+                               providerExecuted: try n.decodeIfPresent(Bool.self, forKey: .providerExecuted),
+                               providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata),
                                dynamic: try n.decodeIfPresent(Bool.self, forKey: .dynamic),
-                               providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata))
+                               preliminary: try n.decodeIfPresent(Bool.self, forKey: .preliminary))
+        case "ToolError":
+            self = .toolError(toolCallId: try n.decode(String.self, forKey: .toolCallId),
+                              toolName: try n.decode(String.self, forKey: .toolName),
+                              input: try n.decodeIfPresent(JSONValue.self, forKey: .input),
+                              error: try n.decode(JSONValue.self, forKey: .error),
+                              providerExecuted: try n.decodeIfPresent(Bool.self, forKey: .providerExecuted),
+                              providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata),
+                              dynamic: try n.decodeIfPresent(Bool.self, forKey: .dynamic))
         case "Custom":
             self = .custom(kind: try n.decode(String.self, forKey: .kind),
                            providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata))
@@ -1594,13 +1610,18 @@ public enum StreamPart: Codable, Equatable {
             try n.encodeIfPresent(pe, forKey: .providerExecuted); try n.encodeIfPresent(dyn, forKey: .dynamic)
             try n.encodeIfPresent(pm, forKey: .providerMetadata)
             try n.encodeIfPresent(inv, forKey: .invalid); try n.encodeIfPresent(err, forKey: .error)
-        case .toolResult(let toolCallId, let toolName, let result, let ie, let prel, let dyn, let pm):
+        case .toolResult(let toolCallId, let toolName, let input, let output, let pe, let pm, let dyn, let prel):
             var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("ToolResult"))
             try n.encode(toolCallId, forKey: .toolCallId); try n.encode(toolName, forKey: .toolName)
-            try n.encode(result, forKey: .result)
-            try n.encodeIfPresent(ie, forKey: .isError); try n.encodeIfPresent(prel, forKey: .preliminary)
+            try n.encodeIfPresent(input, forKey: .input); try n.encode(output, forKey: .output)
+            try n.encodeIfPresent(pe, forKey: .providerExecuted); try n.encodeIfPresent(pm, forKey: .providerMetadata)
+            try n.encodeIfPresent(dyn, forKey: .dynamic); try n.encodeIfPresent(prel, forKey: .preliminary)
+        case .toolError(let toolCallId, let toolName, let input, let error, let pe, let pm, let dyn):
+            var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("ToolError"))
+            try n.encode(toolCallId, forKey: .toolCallId); try n.encode(toolName, forKey: .toolName)
+            try n.encodeIfPresent(input, forKey: .input); try n.encode(error, forKey: .error)
+            try n.encodeIfPresent(pe, forKey: .providerExecuted); try n.encodeIfPresent(pm, forKey: .providerMetadata)
             try n.encodeIfPresent(dyn, forKey: .dynamic)
-            try n.encodeIfPresent(pm, forKey: .providerMetadata)
         case .custom(let kind, let pm):
             var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("Custom"))
             try n.encode(kind, forKey: .kind); try n.encodeIfPresent(pm, forKey: .providerMetadata)

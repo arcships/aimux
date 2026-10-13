@@ -757,3 +757,147 @@ async fn generate_text_rejects_a_tool_result_without_its_call() {
         GenerateContent::ToolResult(result) if result.tool_call_id == "srv-0"
     )));
 }
+
+fn provider_call(id: &str, name: &str, input: &str) -> StreamPart {
+    StreamPart::ToolCall(RawToolCall {
+        tool_call_id: id.into(),
+        tool_name: name.into(),
+        input: input.into(),
+        provider_executed: Some(true),
+        dynamic: Some(true),
+        provider_metadata: None,
+    })
+}
+
+/// Provider tool calls, their results (one an error) and a deferred result,
+/// before the step's `finish`.
+fn tool_stream() -> Vec<Result<StreamPart, AiMuxError>> {
+    let mut parts = text_stream(&["hi"], FinishReasonUnified::ToolCalls);
+    let finish = parts.pop().unwrap();
+    parts.extend([
+        Ok(provider_call("srv-1", "web_search", r#"{"q":"rust"}"#)),
+        Ok(StreamPart::ToolResult(provider_result(
+            "srv-1",
+            "web_search",
+            json!([{ "url": "https://example.com" }]),
+            None,
+        ))),
+        Ok(provider_call(
+            "srv-2",
+            "code_execution",
+            r#"{"code":"1/0"}"#,
+        )),
+        Ok(StreamPart::ToolResult(provider_result(
+            "srv-2",
+            "code_execution",
+            json!({ "error_code": "unavailable" }),
+            Some(true),
+        ))),
+        Ok(StreamPart::ToolResult(provider_result(
+            "srv-0",
+            "code_execution",
+            json!({ "stdout": "2" }),
+            None,
+        ))),
+    ]);
+    parts.push(finish);
+    parts
+}
+
+/// stream-language-model-call.ts:760-792: a provider `tool-result` becomes a
+/// `tool-result` (or, with `isError`, a `tool-error`) part with
+/// `providerExecuted: true`, the chunk's `dynamic` and the input of its call
+/// (`undefined` for a deferred result, whose call is not in the stream).
+#[tokio::test]
+async fn stream_tool_results_and_errors_follow_the_ai_sdk() {
+    let model = ScriptedModel::streaming(tool_stream());
+    let parts = collect(
+        stream_text(&model, "hi", GenerateTextOptions::default())
+            .await
+            .unwrap(),
+    )
+    .await;
+    let kinds: Vec<String> = parts.iter().map(kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            "Start",
+            "StartStep",
+            "TextStart",
+            "TextDelta",
+            "TextEnd",
+            "ToolCall",
+            "ToolResult",
+            "ToolCall",
+            "ToolError",
+            "ToolResult",
+            "FinishStep",
+            "Finish"
+        ]
+    );
+    assert_eq!(
+        serde_json::to_value(&parts[6]).unwrap(),
+        json!({ "ToolResult": {
+            "tool_call_id": "srv-1",
+            "tool_name": "web_search",
+            "input": { "q": "rust" },
+            "output": [{ "url": "https://example.com" }],
+            "provider_executed": true,
+            "dynamic": true,
+        } })
+    );
+    assert_eq!(
+        serde_json::to_value(&parts[8]).unwrap(),
+        json!({ "ToolError": {
+            "tool_call_id": "srv-2",
+            "tool_name": "code_execution",
+            "input": { "code": "1/0" },
+            "error": { "error_code": "unavailable" },
+            "provider_executed": true,
+            "dynamic": true,
+        } })
+    );
+    assert_eq!(
+        serde_json::to_value(&parts[9]).unwrap(),
+        json!({ "ToolResult": {
+            "tool_call_id": "srv-0",
+            "tool_name": "code_execution",
+            "output": { "stdout": "2" },
+            "provider_executed": true,
+            "dynamic": true,
+        } })
+    );
+}
+
+/// The step content of a consumed stream keeps the provider's results and
+/// error results (stream-text.ts:1529-1538 records `tool-error` parts,
+/// :1648-1650 non-preliminary `tool-result` parts).
+#[tokio::test]
+async fn a_consumed_stream_keeps_provider_tool_results_and_errors() {
+    let model = ScriptedModel::streaming(tool_stream());
+    let result = stream_text(&model, "hi", GenerateTextOptions::default())
+        .await
+        .unwrap()
+        .consume()
+        .await
+        .unwrap();
+    let results: Vec<(String, Option<bool>)> = result
+        .final_step()
+        .content
+        .iter()
+        .filter_map(|part| match part {
+            GenerateContent::ToolResult(result) => {
+                Some((result.tool_call_id.clone(), result.is_error))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        results,
+        [
+            ("srv-1".to_string(), None),
+            ("srv-2".to_string(), Some(true)),
+            ("srv-0".to_string(), None),
+        ]
+    );
+}

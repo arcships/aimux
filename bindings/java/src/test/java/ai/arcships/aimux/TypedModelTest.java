@@ -154,6 +154,28 @@ class TypedModelTest {
     // ── Tests ───────────────────────────────────────────────────────────
 
     @Test
+    void streamPartsDecodeToolResultsAndToolErrors() throws Exception {
+        Types.StreamPart result = Types.AimuxJson.MAPPER.readValue(
+            "{\"ToolResult\":{\"tool_call_id\":\"srv-1\",\"tool_name\":\"web_search\",\"input\":{\"q\":\"rust\"},"
+                + "\"output\":[{\"url\":\"https://example.com\"}],\"provider_executed\":true,\"dynamic\":true}}",
+            Types.StreamPart.class);
+        assertThat(result).isInstanceOf(Types.StreamPart.ToolResult.class);
+        Types.StreamPart.ToolResult toolResult = (Types.StreamPart.ToolResult) result;
+        assertThat(toolResult.getInput().get("q").asText()).isEqualTo("rust");
+        assertThat(toolResult.getOutput().get(0).get("url").asText()).isEqualTo("https://example.com");
+        assertThat(toolResult.getProviderExecuted()).isTrue();
+
+        Types.StreamPart error = Types.AimuxJson.MAPPER.readValue(
+            "{\"ToolError\":{\"tool_call_id\":\"call-1\",\"tool_name\":\"weather\",\"input\":{\"city\":\"Paris\"},"
+                + "\"error\":\"no such tool\",\"dynamic\":true}}",
+            Types.StreamPart.class);
+        assertThat(error).isInstanceOf(Types.StreamPart.ToolError.class);
+        assertThat(((Types.StreamPart.ToolError) error).getError().asText()).isEqualTo("no such tool");
+        assertThat(((Types.StreamPart.ToolError) error).getProviderExecuted()).isNull();
+
+    }
+
+    @Test
     void topLevelToolCallProviderMetadataRoundTrips() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode metadata = mapper.createObjectNode();

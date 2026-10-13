@@ -201,7 +201,8 @@ when the call is aborted.
 | `TextStart` / `TextDelta` / `TextEnd` | Text segment lifecycle (`TextDelta.text`) |
 | `ToolInputStart` / `ToolInputDelta` / `ToolInputEnd` | Tool calling input stream |
 | `ToolCall` | Complete tool call (same shape as a `tool_calls` entry, incl. `invalid?` / `error?`) |
-| `ToolResult` | Tool result executed by the provider |
+| `ToolResult` | Result of a provider-executed tool: `tool_call_id`, `tool_name`, `input?` (the call's input; absent for a deferred result), `output`, `provider_executed`, `dynamic?`, `provider_metadata?` |
+| `ToolError` | A provider-executed tool's error result: `tool_call_id`, `tool_name`, `input?`, `error`, `provider_executed`, `dynamic?`, `provider_metadata?` |
 | `ToolApprovalRequest` | Approval request for a provider-executed tool call |
 | `ReasoningStart` / `ReasoningDelta` / `ReasoningEnd` | Reasoning segment lifecycle (`ReasoningDelta.text`) |
 | `Source` / `File` / `ReasoningFile` / `Custom` | Content parts, as in `content` |

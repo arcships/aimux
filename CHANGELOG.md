@@ -149,12 +149,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   metadata, as the AI SDK does (`aimux-core`); providers emit one, e.g. the
   opening `"content": ""` chunk of OpenAI chat.
 
+- `TextStreamPart` carries the AI SDK's tool parts (`aimux-core`,
+  stream-language-model-call.ts:760-792). `ToolResult` is a
+  `TypedToolResult` (`tool_call_id`, `tool_name`, `input?` from the call it
+  answers, `output`, `provider_executed`, `provider_metadata?`, `dynamic?`,
+  `preliminary?`) instead of the provider's `ToolResult`; a provider result
+  marked `is_error` arrives as `ToolError` (`TypedToolError`, with
+  `error`). Unlike upstream, the provider's `preliminary` flag is kept, so
+  a preliminary result stays out of the step content, as on the generated
+  path.
+
 - `generate_text` fails with `Tool call {id} not found.` when the model
   returns a provider tool result whose call is not in the response and no
   provider tool of that name was passed (`aimux-core`,
   convert-language-model-content.ts:87-104). A result for a passed provider
-  tool is kept as a deferred result. The stream passes such results
-  through, as upstream does.
+  tool is kept as a deferred result. The stream passes such results through,
+  without `input`, as upstream does.
 
 - The response messages write a tool approval request's
   `input_schema_input` only when it differs from the call's input under the
@@ -235,8 +245,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is replaced by `output`. Stream parts: `TextDelta` / `ReasoningDelta` carry
   `text`; `StreamStart` and `ResponseMetadata` give way to `Start`,
   `StartStep`, `FinishStep`, `Finish { finish_reason, raw_finish_reason,
-  total_usage }` and `Abort`. Tool-call repair reads the top-level
-  `tool_calls` only.
+  total_usage }` and `Abort`; `ToolResult` carries `output` and the call's
+  `input` (was `result`, `is_error`), and `ToolError` is decoded. Tool-call
+  repair reads the top-level `tool_calls` only.
 
 ## [0.5.0] - 2026-09-27
 
