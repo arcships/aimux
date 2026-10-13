@@ -55,7 +55,7 @@ pub use video::VertexVideoModel;
 
 /// The Express-mode base URL.
 const EXPRESS_MODE_BASE_URL: &str = "https://aiplatform.googleapis.com/v1/publishers/google";
-const API_KEY_ENV_VAR: &str = "GOOGLE_VERTEX_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "GOOGLE_VERTEX_API_KEY";
 const ACCESS_TOKEN_ENV_VAR: &str = "GOOGLE_VERTEX_ACCESS_TOKEN";
 const PROJECT_ENV_VAR: &str = "GOOGLE_VERTEX_PROJECT";
 const LOCATION_ENV_VAR: &str = "GOOGLE_VERTEX_LOCATION";

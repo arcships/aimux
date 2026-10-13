@@ -7,39 +7,39 @@ import type { Verdict } from "./Verdict";
 /**
  * One probed call. Plaintext never persists — fingerprints only.
  */
-export type TraceRecord = { provider: string, model: string, request_id: string | null, 
+export type TraceRecord = { provider: string, model: string, request_id: string | null,
 /**
- * From `CallOptions.session_id` (RFC-0024) — explicit first, inference
- * fallback; may also be the layer's default session.
+ * The explicit session id of the operation (RFC-0024), else the
+ * layer's default session.
  */
-session_id: string | null, 
+session_id: string | null,
 /**
  * Call-level unique id (association key for Recording / replay,
  * RFC-0023).
  */
-call_id: string, 
+call_id: string,
 /**
  * When the call was sent (epoch ms).
  */
-sent_at_unix_ms: number, 
+sent_at_unix_ms: number,
 /**
  * Client-side LCP token upper bound (block upper bound, byte-proxy
  * len/4). `None` when no history matched. Consumed by `TraceStats`
  * aggregation.
  */
-lcp_token_upper?: bigint | null, 
+lcp_token_upper?: bigint | null,
 /**
  * Time to first streamed token (ms). Non-streaming: `None`.
  */
-ttft_ms: number | null, fingerprint: Fingerprint, usage: UsageSnapshot, 
+ttft_ms: number | null, fingerprint: Fingerprint, usage: UsageSnapshot,
 /**
  * Response-side cache headers (e.g. `x-openrouter-cache-status`).
  */
-response_cache_headers?: { [key in string]: string } | null, request_cache_hints?: RequestCacheHints | null, 
+response_cache_headers?: { [key in string]: string } | null, request_cache_hints?: RequestCacheHints | null,
 /**
  * Audit verdict (`None` when no auditor is attached — the default).
  */
-verdict?: Verdict | null, 
+verdict?: Verdict | null,
 /**
  * Error string when the call failed (still recorded: failures are part
  * of the session).

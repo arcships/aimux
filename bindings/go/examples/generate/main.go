@@ -44,7 +44,7 @@ func main() {
 		if part.Tag == "TextDelta" {
 			var td aimux.TextDeltaPayload
 			json.Unmarshal(part.Payload, &td)
-			fmt.Print(td.Delta)
+			fmt.Print(td.Text)
 		}
 	}
 	if err := stream.Err(); err != nil {

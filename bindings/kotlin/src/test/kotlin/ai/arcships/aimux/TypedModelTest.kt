@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test
 // Like StructuredE2ETest, these spin up the shared [MockProviderServer]
 // (OpenAI Responses wire format) and assert that the typed wrapper:
 //   1. returns a [GenerateTextResult] object (no manual JSON parsing),
-//   2. surfaces `.text`, `.toolCalls[0].toolName`, and `.raw.content`,
+//   2. surfaces `.text`, `.toolCalls[0].toolName`, and `.content`,
 //   3. forwards typed `tools` / `tool_choice` onto the provider request,
 //   4. forwards multi-role [ModelMessage] conversations.
 //
@@ -84,8 +84,11 @@ class TypedModelTest {
             // A plain-text response carries no tool calls.
             assertThat(result.toolCalls).isEmpty()
 
-            // .raw.content is accessible as a list (no JSON digging required).
-            assertThat(result.raw.content).isNotEmpty
+            // .content is accessible as a list (no JSON digging required).
+            assertThat(result.content).isNotEmpty
+            // Everything else is derived from the steps.
+            assertThat(result.steps).hasSize(1)
+            assertThat(result.finishReason).isEqualTo(FinishReasonUnified.STOP)
         }
     }
 
@@ -110,8 +113,9 @@ class TypedModelTest {
             assertThat(call.input.jsonObject["location"]!!.jsonPrimitive.content)
                 .isEqualTo("Tokyo")
 
-            // .raw.content carries the ToolCall variant tag.
-            assertThat(result.raw.hasContentVariant("ToolCall")).isTrue()
+            // .content carries the ToolCall variant tag.
+            assertThat(result.content.any { (it as JsonObject).containsKey("ToolCall") }).isTrue()
+            assertThat(result.finishReason).isEqualTo(FinishReasonUnified.TOOL_CALLS)
         }
     }
 
@@ -366,6 +370,60 @@ class TypedModelRoundTripTest {
     }
 
     // ── GenerateResult (integration: mixed content variants) ───────────
+
+    @Test
+    fun `stream parts decode the call-level framing`() {
+        val decode = { json: String -> AimuxJson.decodeFromString(StreamPart.serializer(), json) }
+        assertThat(decode("""{"Start":{}}""")).isEqualTo(StreamPart.Start())
+        assertThat(decode("""{"StartStep":{"request":{},"warnings":[]}}"""))
+            .isInstanceOf(StreamPart.StartStep::class.java)
+        assertThat(decode("""{"TextDelta":{"id":"t","text":"Hi"}}"""))
+            .isEqualTo(StreamPart.TextDelta(id = "t", text = "Hi"))
+        val finish = decode(
+            """{"Finish":{"finish_reason":"tool-calls","raw_finish_reason":"tool_use",""" +
+                """"total_usage":{"input_tokens":3,"input_token_details":{"cache_read_tokens":1},""" +
+                """"output_tokens":2,"output_token_details":{},"total_tokens":5}}}""",
+        ) as StreamPart.Finish
+        assertThat(finish.finishReason).isEqualTo(FinishReasonUnified.TOOL_CALLS)
+        assertThat(finish.rawFinishReason).isEqualTo("tool_use")
+        assertThat(finish.totalUsage.totalTokens).isEqualTo(5L)
+        assertThat(finish.totalUsage.inputTokenDetails.cacheReadTokens).isEqualTo(1L)
+        assertThat(decode("""{"Abort":{"reason":"stop"}}""")).isEqualTo(StreamPart.Abort("stop"))
+        // Encoding writes the externally tagged shape back.
+        assertThat(AimuxJson.encodeToString(StreamPart.serializer(), StreamPart.Start()))
+            .isEqualTo("""{"Start":{}}""")
+    }
+
+    @Test
+    fun `stream parts decode tool results and tool errors`() {
+        val decode = { json: String -> AimuxJson.decodeFromString(StreamPart.serializer(), json) }
+        val result = decode(
+            """{"ToolResult":{"tool_call_id":"srv-1","tool_name":"web_search","input":{"q":"rust"},""" +
+                """"output":[{"url":"https://example.com"}],"provider_executed":true,"dynamic":true}}""",
+        ) as StreamPart.ToolResult
+        assertThat(result.toolCallId).isEqualTo("srv-1")
+        assertThat(result.input.toString()).isEqualTo("""{"q":"rust"}""")
+        assertThat(result.output.toString()).isEqualTo("""[{"url":"https://example.com"}]""")
+        assertThat(result.providerExecuted).isTrue()
+        val deferred = decode(
+            """{"ToolResult":{"tool_call_id":"srv-0","tool_name":"code_execution","output":{"stdout":"2"},"provider_executed":true}}""",
+        ) as StreamPart.ToolResult
+        assertThat(deferred.input).isNull()
+        val error = decode(
+            """{"ToolError":{"tool_call_id":"call-1","tool_name":"weather","input":{"city":"Paris"},""" +
+                """"error":"no such tool","dynamic":true}}""",
+        ) as StreamPart.ToolError
+        assertThat(error.error.toString()).isEqualTo("\"no such tool\"")
+        assertThat(error.providerExecuted).isNull()
+        assertThat(error.dynamic).isTrue()
+        assertThat(decode("""{"ToolOutputDenied":{"tool_call_id":"c","tool_name":"t"}}"""))
+            .isEqualTo(StreamPart.ToolOutputDenied(toolCallId = "c", toolName = "t"))
+        val response = decode(
+            """{"ToolApprovalResponse":{"approval_id":"a","tool_call":{"tool_call_id":"c","tool_name":"t","input":{}},"approved":false}}""",
+        ) as StreamPart.ToolApprovalResponse
+        assertThat(response.approved).isFalse()
+        assertThat(response.variantTag).isEqualTo("ToolApprovalResponse")
+    }
 
     @Test
     fun `GenerateResult round-trips with mixed content variants`() {

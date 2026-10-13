@@ -78,8 +78,8 @@ fn elevenlabs_failed_response_handler() -> aimux_provider_utils::ResponseHandler
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
-const DEFAULT_BASE_URL: &str = "https://api.elevenlabs.io";
-const API_KEY_ENV_VAR: &str = "ELEVENLABS_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.elevenlabs.io";
+pub(crate) const API_KEY_ENV_VAR: &str = "ELEVENLABS_API_KEY";
 const DEFAULT_NAME: &str = "elevenlabs";
 
 /// Settings of [`create_elevenlabs`] (the AI SDK's `ElevenLabsProviderSettings`).
@@ -693,6 +693,7 @@ fn audio_input_to_bytes_stt(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
             base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
                 .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))
         }
+        AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
 

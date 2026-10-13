@@ -36,9 +36,13 @@ pub fn hop_trusted_origin<'a>(
     trusted_origin.filter(|origin| same_origin(current_url, origin))
 }
 
-fn without_query(parsed: &url::Url) -> String {
+/// The URL as an error message may show it: no query, no userinfo.
+fn redacted(parsed: &url::Url) -> String {
     let mut redacted = parsed.clone();
     redacted.set_query(None);
+    // Both fail only for URLs that cannot carry userinfo at all.
+    let _ = redacted.set_username("");
+    let _ = redacted.set_password(None);
     redacted.to_string()
 }
 
@@ -62,7 +66,7 @@ pub fn validate_download_url(url: &str) -> Result<url::Url, AiMuxError> {
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(AiMuxError::InvalidArgument(format!(
             "download URL must use HTTP or HTTPS: {}",
-            without_query(&parsed)
+            redacted(&parsed)
         )));
     }
     let host = parsed
@@ -252,6 +256,16 @@ pub fn retain_user_agent(headers: &mut Vec<(String, String)>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejected_url_error_omits_userinfo_and_query() {
+        let error = validate_download_url("ftp://user:secret@example.com/file?token=t0k")
+            .expect_err("ftp must be blocked");
+        let message = error.to_string();
+        assert!(message.contains("ftp://example.com/file"), "{message}");
+        assert!(!message.contains("secret"), "{message}");
+        assert!(!message.contains("t0k"), "{message}");
+    }
 
     fn public(address: &str) -> bool {
         is_public_download_address(address.parse().unwrap())

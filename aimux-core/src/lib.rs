@@ -22,7 +22,7 @@ pub mod composite;
 pub mod content;
 pub mod decision_model;
 mod decision_replay;
-pub(crate) mod download;
+pub mod download;
 #[doc(hidden)]
 pub mod download_guard;
 pub mod embedding_model;
@@ -39,9 +39,10 @@ pub mod math;
 pub mod message;
 pub mod moa;
 pub mod model_catalogue;
-pub mod model_id;
 pub mod openai_output;
+pub mod operation;
 pub mod options;
+pub mod output;
 pub mod parse_tool_call;
 pub mod provider;
 pub mod provider_registry;
@@ -57,6 +58,7 @@ pub mod session;
 pub mod shared;
 pub mod skills_model;
 pub mod speech_model;
+pub mod step_result;
 pub mod stream_part;
 mod timeout;
 pub mod tool;
@@ -65,12 +67,16 @@ pub mod transcription_model;
 pub mod types;
 pub mod util;
 pub mod video_model;
+pub mod wrap_provider;
 
 /// Convenience re-exports.
 pub mod prelude {
     pub use crate::abort_signal::AbortSignal;
     pub use crate::composite::ChildModel;
-    pub use crate::content::ContentPart;
+    pub use crate::content::{
+        AssistantContentPart, ToolContentPart, ToolResultContentPart, ToolResultOutput,
+        ToolResultPart, UserContentPart,
+    };
     pub use crate::decision_model::{
         DecisionAnswer, DecisionBooleanCriteria, DecisionCallOptions, DecisionCapabilities,
         DecisionDescription, DecisionImage, DecisionModel, DecisionOption,
@@ -82,9 +88,11 @@ pub mod prelude {
     };
     pub use crate::error::{AiMuxError, ApiCallError};
     pub use crate::files_model::{Files, UploadFileCallOptions, UploadFileResult};
+    #[allow(deprecated)]
+    pub use crate::generate::generate_object;
     pub use crate::generate::{
-        GenerateObjectResult, GenerateTextOptions, GenerateTextResult, StreamTextResult,
-        generate_object, generate_text, generate_text_as_openai,
+        GenerateObjectResponse, GenerateObjectResult, GenerateTextOptions, GenerateTextResult,
+        StreamTextResult, generate_text, generate_text_as_openai,
         generate_text_result_to_chat_completion, stream_text, stream_text_as_openai,
     };
     pub use crate::image_model::{ImageCallOptions, ImageModel, ImageResult, generate_image};
@@ -94,18 +102,22 @@ pub mod prelude {
     pub use crate::language_model_middleware::{
         LanguageModelMiddleware, LanguageModelOperation, wrap_language_model,
     };
-    pub use crate::message::{MessageContent, ModelMessage, ModelPrompt, Role};
+    pub use crate::message::{
+        AssistantContent, ModelMessage, ModelPrompt, ToolContent, UserContent,
+    };
     pub use crate::moa::{MoaConfig, MoaFailMode, MoaModel};
     pub use crate::model_catalogue::{
         CatalogueSource, Modality, ModelCapabilities, ModelCost, ModelLimits, ModelModalities,
         ModelSpec, ModelType, ReasoningMode, ReasoningSpec, ReasoningVisibility, RuntimeModel,
     };
-    pub use crate::model_id::ModelId;
     pub use crate::openai_output::{
         ChatCompletion, ChatCompletionChunk, ChatCompletionStream, DONE_FRAME, OpenAiStreamOptions,
         encode_chunk_sse, to_chat_completion, to_chat_completion_stream,
     };
-    pub use crate::options::{CallOptions, ResponseFormat, ToolChoice};
+    pub use crate::options::{
+        CallOptions, LanguageModelV4ToolChoice, ResponseFormat, ToolChoice, prepare_tool_choice,
+    };
+    pub use crate::output::Output;
     pub use crate::parse_tool_call::{
         ToolCallRepair, ToolCallRepairContext, ToolCallRepairReply, apply_tool_call_repair,
         apply_tool_call_repair_to_result, tool_call_repair_context, tool_call_repair_inputs,
@@ -115,8 +127,9 @@ pub mod prelude {
         RerankingCallOptions, RerankingModel, RerankingResult, rerank,
     };
     pub use crate::result::{
-        GenerateResult, GeneratedFile, RawToolApprovalRequest, ReasoningOutput, ReasoningPart,
-        Source, StreamResult, TextContent, ToolApprovalRequestOutput,
+        ContentPart, GenerateResult, GeneratedFile, RawToolApprovalRequest, ReasoningOutput,
+        ReasoningPart, Source, StreamResult, ToolApprovalRequestOutput, ToolApprovalResponseOutput,
+        ToolOutputDenied, TypedToolError, TypedToolResult,
     };
     pub use crate::router::{
         FallbackPolicy, Router, RouterConfig, RouterModel, RuleRouter, WeightedRouter,
@@ -135,6 +148,10 @@ pub mod prelude {
     };
     pub use crate::skills_model::{SkillFile, Skills, UploadSkillCallOptions, UploadSkillResult};
     pub use crate::speech_model::{SpeechCallOptions, SpeechModel, SpeechResult, generate_speech};
+    pub use crate::step_result::{
+        OutputChunkTimingStats, StepModel, StepResponse, StepResponseMetadata, StepResult,
+        StepResultPerformance,
+    };
     pub use crate::stream_part::{StreamPart, TextStreamPart};
     pub use crate::tool::{
         FunctionTool, FunctionToolInputExample, ProviderTool, RawToolCall, Tool, ToolCall,
@@ -146,20 +163,21 @@ pub mod prelude {
         TranscriptionStreamResult, stream_transcribe, transcribe,
     };
     pub use crate::types::{
-        FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, ReasoningEffort,
-        Usage, Warning,
+        FinishReason, FinishReasonUnified, InputTokenDetails, InputTokenUsage, LanguageModelUsage,
+        OutputTokenDetails, OutputTokenUsage, ReasoningEffort, Usage, Warning,
     };
     pub use crate::video_model::{
-        VideoCallOptions, VideoModel, VideoOperationStart, VideoOperationStatus, VideoPollConfig,
-        VideoPollOptions, VideoResult, generate_video,
+        VideoCallOptions, VideoModel, VideoOperationStart, VideoOperationStatus, VideoPollOptions,
+        VideoResult, generate_video,
     };
+    pub use crate::wrap_provider::wrap_provider;
 }
 
 // Root-level re-exports for convenience.
 pub use abort_signal::AbortSignal;
 pub use decision_model::DecisionModel;
 pub use embedding_model::EmbeddingModel;
-pub use error::{AiMuxError, ApiCallError, RetryError, RetryErrorReason};
+pub use error::{AiMuxError, ApiCallError, RetryError, RetryErrorReason, ToolChoiceViolationError};
 pub use files_model::Files;
 pub use image_model::ImageModel;
 pub use language_model::LanguageModel;

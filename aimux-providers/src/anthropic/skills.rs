@@ -1,6 +1,6 @@
 //! Skill uploads and version metadata from the Anthropic Skills API.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -164,7 +164,10 @@ impl Skills for AnthropicSkills {
             None
         };
         Ok(UploadSkillResult {
-            provider_reference: HashMap::from([(CANONICAL.to_string(), response.id)]),
+            provider_reference: aimux_core::shared::SharedProviderReference::from([(
+                CANONICAL.to_string(),
+                response.id,
+            )]),
             display_title: response.display_title,
             name: version
                 .as_ref()

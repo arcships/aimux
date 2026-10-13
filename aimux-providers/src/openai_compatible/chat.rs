@@ -188,16 +188,11 @@ impl LanguageModel for OpenAICompatibleChatModel {
         &self.model_id
     }
 
-    fn supported_urls(&self) -> SupportedUrls {
-        self.config
-            .chat
-            .dialect
-            .supported_urls
-            .as_ref()
-            .map_or_else(
-                || self.config.chat.supported_urls.clone(),
-                |supported_urls| supported_urls(),
-            )
+    async fn supported_urls(&self) -> SupportedUrls {
+        match &self.config.chat.dialect.supported_urls {
+            Some(urls) => urls().await,
+            None => self.config.chat.supported_urls.clone(),
+        }
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
@@ -293,7 +288,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
             |convert| convert(raw.get("usage")),
         );
 
-        let mut metadata = HashMap::new();
+        let mut metadata = aimux_core::shared::SharedProviderMetadata::new();
         metadata.insert(metadata_key.clone(), Map::new());
         if let Some(extractor) = &dialect.metadata_extractor
             && let Some(extra) = extractor.extract_metadata(&raw)
@@ -621,7 +616,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                 yield Ok(part);
             }
 
-            let mut metadata = HashMap::new();
+            let mut metadata = aimux_core::shared::SharedProviderMetadata::new();
             metadata.insert(metadata_key.clone(), Map::new());
             if let Some(extractor) = &metadata_extractor
                 && let Some(extra) = extractor.build_metadata()

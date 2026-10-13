@@ -100,8 +100,8 @@ pub(crate) fn google_failed_response_handler() -> aimux_provider_utils::Response
     })
 }
 
-const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
-const API_KEY_ENV_VAR: &str = "GOOGLE_GENERATIVE_AI_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
+pub(crate) const API_KEY_ENV_VAR: &str = "GOOGLE_GENERATIVE_AI_API_KEY";
 const DEFAULT_NAME: &str = "google.generative-ai";
 
 /// The media types the API fetches from an external `https` URL itself

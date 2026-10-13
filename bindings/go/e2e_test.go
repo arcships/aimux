@@ -281,21 +281,19 @@ func TestE2E_GenerateTextParsesToolCalls(t *testing.T) {
 		t.Errorf("expected location Tokyo, got %v", input["location"])
 	}
 
-	// raw.content should contain a "ToolCall" variant.
-	var rawWrap struct {
-		Raw struct {
-			Content []map[string]json.RawMessage `json:"content"`
-		} `json:"raw"`
+	// content should contain a "ToolCall" variant.
+	var contentWrap struct {
+		Content []map[string]json.RawMessage `json:"content"`
 	}
-	json.Unmarshal([]byte(result), &rawWrap)
+	json.Unmarshal([]byte(result), &contentWrap)
 	hasToolCallVariant := false
-	for _, part := range rawWrap.Raw.Content {
+	for _, part := range contentWrap.Content {
 		if _, ok := part["ToolCall"]; ok {
 			hasToolCallVariant = true
 		}
 	}
 	if !hasToolCallVariant {
-		t.Error("expected raw.content to contain a ToolCall variant")
+		t.Error("expected content to contain a ToolCall variant")
 	}
 }
 
@@ -394,6 +392,7 @@ func TestE2E_StreamTextParsesToolCallStreamParts(t *testing.T) {
 		t.Fatal("expected at least one stream part")
 	}
 
+	// The stream opens with Start and StartStep parts.
 	var gotToolCall, gotFinish bool
 	for _, p := range parts {
 		sp, err := ParseStreamPart(p)
@@ -453,7 +452,7 @@ func TestE2E_StreamTextYieldsTextDeltas(t *testing.T) {
 		case "TextDelta":
 			var td TextDeltaPayload
 			json.Unmarshal(sp.Payload, &td)
-			textBuilder.WriteString(td.Delta)
+			textBuilder.WriteString(td.Text)
 		case "Finish":
 			gotFinish = true
 		}

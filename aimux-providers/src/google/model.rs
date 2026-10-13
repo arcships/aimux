@@ -78,7 +78,7 @@ impl LanguageModel for GoogleModel {
         &self.model_id
     }
 
-    fn supported_urls(&self) -> SupportedUrls {
+    async fn supported_urls(&self) -> SupportedUrls {
         (self.config.supported_urls)(&self.model_id)
     }
 

@@ -56,8 +56,8 @@ fn lmnt_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMux
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://api.lmnt.com";
-const API_KEY_ENV_VAR: &str = "LMNT_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.lmnt.com";
+pub(crate) const API_KEY_ENV_VAR: &str = "LMNT_API_KEY";
 const DEFAULT_NAME: &str = "lmnt";
 
 /// Settings of [`create_lmnt`].

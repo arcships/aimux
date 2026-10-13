@@ -87,9 +87,9 @@ impl ToolNameMapping {
                         | "anthropic.web_search_20260318"
                         | "anthropic.web_fetch_20260318"
                 );
-                has_code_execution |= pt.id.starts_with("anthropic.code_execution_");
+                has_code_execution |= pt.id.as_str().starts_with("anthropic.code_execution_");
 
-                if let Some(provider_name) = provider_tool_name(&pt.id) {
+                if let Some(provider_name) = provider_tool_name(pt.id.as_str()) {
                     mapping
                         .custom_to_provider
                         .insert(pt.name.clone(), provider_name.to_string());

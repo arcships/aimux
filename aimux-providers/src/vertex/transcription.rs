@@ -101,6 +101,7 @@ fn audio_input_to_base64(audio: &AudioInput) -> Result<String, AiMuxError> {
             &base64::engine::general_purpose::STANDARD,
             bytes,
         )),
+        AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
 

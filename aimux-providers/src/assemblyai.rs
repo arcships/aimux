@@ -13,7 +13,6 @@
 //! there: it is loaded for every request, from the setting or from `ASSEMBLYAI_API_KEY`.
 //! [`assemblyai()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -78,8 +77,8 @@ const MAX_POLL_ATTEMPTS: u32 = 6_000;
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://api.assemblyai.com";
-const API_KEY_ENV_VAR: &str = "ASSEMBLYAI_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.assemblyai.com";
+pub(crate) const API_KEY_ENV_VAR: &str = "ASSEMBLYAI_API_KEY";
 const DEFAULT_NAME: &str = "assemblyai";
 
 /// Settings of [`create_assemblyai`].
@@ -253,6 +252,7 @@ fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
             base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
                 .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))
         }
+        AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
 
@@ -420,7 +420,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
 
         // Build provider metadata from extra fields.
         let mut provider_metadata: Option<SharedProviderMetadata> = None;
-        let mut md = HashMap::new();
+        let mut md = SharedProviderMetadata::new();
         let mut aai_meta = Map::new();
         if parsed.utterances.is_some() {
             aai_meta.insert(

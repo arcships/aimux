@@ -344,7 +344,7 @@ async fn should_forward_the_model_id() {
 #[tokio::test]
 async fn should_natively_support_http_image_urls() {
     let server = MockServer::start().await;
-    let urls = chat(&server, "deepseek-chat").supported_urls();
+    let urls = chat(&server, "deepseek-chat").supported_urls().await;
     let patterns = &urls.0["image/*"];
     assert_eq!(patterns.len(), 1);
     assert!(patterns[0].is_match("https://example.com/a.png"));
@@ -1433,6 +1433,29 @@ async fn stream_error(data: &Value) -> aimux_core::error::ApiCallError {
             _ => None,
         })
         .expect("expected a provider error part")
+}
+
+/// `deepSeekErrorSchema` as the chat model's failed-response handler
+/// (deepseek@3.0.56 `deepseek-chat-api-types.ts:117-124`,
+/// `deepseek-chat-language-model.ts:213-217`): `code` may be a number.
+#[tokio::test]
+async fn a_failed_response_reads_deepseeks_error_schema() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path_regex(".*/chat/completions$"))
+        .respond_with(ResponseTemplate::new(402).set_body_json(json!({ "error": {
+            "message": "Insufficient Balance", "type": "unknown_error", "param": null, "code": 4020
+        } })))
+        .mount(&server)
+        .await;
+    let Err(AiMuxError::ApiCall(error)) =
+        chat(&server, "deepseek-chat").do_generate(&options()).await
+    else {
+        panic!("expected an API call error");
+    };
+    assert_eq!(error.message, "Insufficient Balance");
+    assert_eq!(error.provider_code.as_deref(), Some("4020"));
+    assert_eq!(error.status_code, Some(402));
 }
 
 #[tokio::test]

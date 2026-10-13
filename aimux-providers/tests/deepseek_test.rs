@@ -33,8 +33,8 @@ async fn recorded_deepseek_cassettes_replay_through_the_package() {
     let result = generate_text(&model, "Hello", GenerateTextOptions::default())
         .await
         .expect("generate_text should succeed with cassette replay");
-    assert!(!result.text.is_empty() || !result.tool_calls.is_empty());
-    assert!(result.usage.input_tokens.total.is_some());
+    assert!(!result.text().is_empty() || !result.tool_calls().is_empty());
+    assert!(result.usage().input_tokens.is_some());
 
     let result = stream_text(&model, "Hello", GenerateTextOptions::default())
         .await

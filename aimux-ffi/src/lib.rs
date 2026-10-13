@@ -55,10 +55,11 @@ use serde::de::DeserializeOwned;
 
 use aimux_core::AbortSignal;
 use aimux_core::AiMuxError;
+#[allow(deprecated)]
+use aimux_core::generate::generate_object;
 use aimux_core::generate::{
-    GenerateTextOptions, GenerateTextResult, generate_object, generate_text,
-    generate_text_as_openai, generate_text_result_to_chat_completion, stream_text,
-    stream_text_as_openai,
+    GenerateTextOptions, GenerateTextResult, generate_text, generate_text_as_openai,
+    generate_text_result_to_chat_completion, stream_text, stream_text_as_openai,
 };
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
@@ -487,14 +488,19 @@ fn aimux_error_code_of(err: &AiMuxError) -> i32 {
         AiMuxError::Retry(_) => AIMUX_E_RETRY,
         AiMuxError::JsonParse(_) => AIMUX_E_JSON_PARSE,
         AiMuxError::NoOutputGenerated(_) => AIMUX_E_NO_OUTPUT_GENERATED,
-        AiMuxError::InvalidResponseData(_) | AiMuxError::ToolCallNotFoundForApproval { .. } => {
-            AIMUX_E_INVALID_RESPONSE_DATA
-        }
+        // The AI SDK's MissingToolResultsError / ToolChoiceViolationError have
+        // no code of their own yet; they join the prompt / response-data
+        // codes until the new C ABI (as ToolCallNotFoundForApproval does).
+        AiMuxError::InvalidResponseData(_)
+        | AiMuxError::ToolCallNotFoundForApproval { .. }
+        | AiMuxError::ToolChoiceViolation(_) => AIMUX_E_INVALID_RESPONSE_DATA,
         AiMuxError::NoSuchTool { .. } => AIMUX_E_NO_SUCH_TOOL,
         AiMuxError::InvalidToolInput { .. } => AIMUX_E_INVALID_TOOL_INPUT,
         AiMuxError::ToolCallRepair { .. } => AIMUX_E_TOOL_CALL_REPAIR,
         AiMuxError::InvalidArgument(_) => AIMUX_E_INVALID_ARGUMENT,
-        AiMuxError::InvalidPrompt(_) => AIMUX_E_INVALID_PROMPT,
+        AiMuxError::InvalidPrompt(_) | AiMuxError::MissingToolResults { .. } => {
+            AIMUX_E_INVALID_PROMPT
+        }
         AiMuxError::LoadApiKey { .. } => AIMUX_E_LOAD_API_KEY,
         AiMuxError::LoadSetting { .. } => AIMUX_E_LOAD_SETTING,
         AiMuxError::TokenExpired(_) => AIMUX_E_TOKEN_EXPIRED,
@@ -1753,13 +1759,16 @@ pub extern "C" fn aimux_generate_text(
     })
 }
 
-/// Generate a structured JSON object from the model (M12, RFC-0016).
+/// Generate a structured JSON object from the model (M12, RFC-0016), with the
+/// core's deprecated `generate_object` wrapper.
 ///
 /// Same signature as [`aimux_generate_text`]; writes the serialized
-/// `GenerateObjectResult`. The caller passes `response_format: { "Json": {
-/// ... } }` via `opts_json` to control the schema; the function applies JSON
-/// repair before parsing.
+/// `GenerateObjectResult`. The caller passes `output` (for example
+/// `{ "Object": { "schema": ... } }`) via `opts_json` to describe the value;
+/// without one any JSON value is accepted. The model's text must parse as
+/// JSON and match the schema.
 #[unsafe(no_mangle)]
+#[allow(deprecated)]
 pub extern "C" fn aimux_generate_object(
     handle: u64,
     prompt_json: *const c_char,
@@ -1778,7 +1787,7 @@ pub extern "C" fn aimux_generate_object(
 /// RFC-0016). Synchronous — blocks until the stream finishes.
 ///
 /// Same signature as [`aimux_generate_text`]; writes the serialized
-/// `StreamTextResultAggregated`.
+/// `GenerateTextResult`, the same result `aimux_generate_text` writes.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_consume_stream_text(
     handle: u64,
@@ -1805,8 +1814,9 @@ pub extern "C" fn aimux_consume_stream_text(
 ///
 /// Blocks the calling thread until the stream completes (synchronous +
 /// callback mode). Callbacks are invoked in the same call stack:
-/// - `on_part(json, stream_ctx)`: each `StreamPart` as JSON (valid only during
-///   the call). `StreamPart::Error` is data on this path, not a terminal fail.
+/// - `on_part(json, stream_ctx)`: each `TextStreamPart` as JSON (valid only
+///   during the call). `TextStreamPart::Error` is data on this path, not a
+///   terminal fail.
 /// - `on_done(stream_ctx)`: once on normal completion (not on failure).
 ///
 /// NULL on success (after `on_done`); a returned error otherwise (no
@@ -1967,10 +1977,12 @@ pub extern "C" fn aimux_apply_tool_call_repair(
 
 /// Apply a repair reply to a whole result document (RFC-0035).
 ///
-/// `result_json` is a serialized `GenerateTextResult` or
-/// `GenerateObjectResult`; `opts_json` is the same string the call was
-/// generated with. Both `tool_calls` and the matching `response_messages`
-/// tool-call part are rewritten. The OpenAI-shaped
+/// `result_json` is a serialized `GenerateTextResult` (from
+/// `aimux_generate_text` or `aimux_consume_stream_text`); `opts_json` is the
+/// same string the call was generated with. The call is repaired in the
+/// result's steps (content, approval requests and response messages) and
+/// the derived `tool_calls`, `content` and `response_messages` are written
+/// from them. The OpenAI-shaped
 /// `ChatCompletion` is not supported — it carries no `invalid`/`error`, so
 /// repair is driven from the native result, which
 /// [`aimux_generate_text_result_as_openai`] then converts. Same purity as
@@ -2005,8 +2017,9 @@ pub extern "C" fn aimux_apply_tool_call_repair_to_result(
 ///
 /// The conversion half of [`aimux_generate_text_as_openai`], for hosts that
 /// repair a native result themselves (RFC-0035) and then want the OpenAI
-/// shape: tool calls come from `result_json`'s `tool_calls`, so a patched
-/// result converts to a completion that reflects the repair. `handle` only
+/// shape: tool calls come from the content of `result_json`'s `steps`, so a
+/// result patched by [`aimux_apply_tool_call_repair_to_result`] converts to a
+/// completion that reflects the repair. `handle` only
 /// supplies the model id fallback for `ChatCompletion.model`; no runtime work,
 /// so this is safe from inside a stream callback.
 #[unsafe(no_mangle)]
@@ -2301,6 +2314,19 @@ pub extern "C" fn aimux_drop_handle(handle: u64) {
     if handle != 0 {
         drop_handle(handle);
     }
+}
+
+/// [`aimux_drop_handle`] with the handle passed as a pointer-sized value, for
+/// callers that can only register a `void (*)(void *)` callback, such as a
+/// Dart `NativeFinalizer`. The pointer is never dereferenced: its address is
+/// the handle. Calling `aimux_drop_handle` through a `void (*)(void *)`
+/// pointer instead passes a garbage high word on 32-bit targets, where a
+/// `uint64_t` argument does not travel like a pointer.
+///
+/// Safe to call with NULL or an unknown handle (no-op).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_drop_handle_ptr(handle: *mut c_void) {
+    aimux_drop_handle(handle.addr() as u64);
 }
 
 /// Free a C string previously returned by any aimux function that hands out
@@ -3501,9 +3527,11 @@ pub extern "C" fn aimux_register_providers(config_json: *const c_char) -> *mut a
     })
 }
 
-/// Set the global proxy configuration (M6, RFC-0016). Must be called before
-/// the first `aimux_generate_text` / `aimux_stream_text` call; a no-op if the
-/// shared HTTP client is already initialised.
+/// Replace the default Rust transport with one routed by this proxy
+/// configuration (M6, RFC-0016). Every later request of a provider without
+/// its own transport, every built-in WebSocket connect and every validated
+/// download hop uses it; requests already in flight keep theirs. Calling it
+/// again replaces the previous configuration.
 ///
 /// `config_json` is a serialized `ProxyConfig`:
 /// `{ "http_url": "...", "https_url": "...", "all_url": "...", "no_proxy":
@@ -3513,10 +3541,9 @@ pub extern "C" fn aimux_register_providers(config_json: *const c_char) -> *mut a
 pub extern "C" fn aimux_init_proxy(config_json: *const c_char) -> *mut aimux_error_t {
     no_result(|| {
         let config: aimux_provider_utils::ProxyConfig = parse_json_arg(config_json, "config_json")?;
-        // `init_proxy` returns false when the shared client is already up; treat
-        // that as success (idempotent) so callers don't need to reason about
-        // ordering races.
-        let _ = aimux_provider_utils::init_proxy(config);
+        aimux_provider_utils::set_default_transport(aimux_provider_utils::ReqwestFetch::new(
+            config,
+        ));
         Ok(())
     })
 }
@@ -3858,7 +3885,9 @@ mod tests {
         assert_eq!(aimux_error_retryable(h), 0);
         assert!(aimux_error_provider_code(h).is_null());
         let m = take(aimux_error_message(h)).unwrap();
-        assert!(m.contains("Failed after 2 attempts"), "{m}");
+        // getErrorMessage text (provider-utils retry-with-exponential-backoff.ts:97,
+        // :103): the last attempt's message, without its HTTP status.
+        assert_eq!(m, "Failed after 2 attempts. Last error: boom");
         let first = aimux_error_retry_error_at(h, 0);
         assert_eq!(aimux_error_code(first), AIMUX_E_OTHER);
         assert_eq!(take(aimux_error_message(first)).as_deref(), Some("first"));
@@ -4403,6 +4432,24 @@ mod tests {
         let e = aimux_router_new(std::ptr::null(), 2, std::ptr::null(), &mut h);
         assert_eq!(h, 0);
         assert_eq!(expect_ffi_error(e), "handles: must not be NULL");
+    }
+
+    #[test]
+    fn drop_handle_ptr_releases_the_handle_its_address_names() {
+        let handle = aimux_abort_signal_new();
+        let other = aimux_abort_signal_new();
+        assert!(get_handle(handle).is_some());
+
+        aimux_drop_handle_ptr(std::ptr::without_provenance_mut(handle as usize));
+        assert!(get_handle(handle).is_none());
+        assert!(
+            get_handle(other).is_some(),
+            "only the named handle is released"
+        );
+
+        // NULL is handle 0: a no-op, like aimux_drop_handle(0).
+        aimux_drop_handle_ptr(std::ptr::null_mut());
+        aimux_drop_handle(other);
     }
 
     struct MockStreamingTranscriber;

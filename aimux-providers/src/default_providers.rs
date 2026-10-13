@@ -368,20 +368,154 @@ pub fn create_provider(
     }
 }
 
+/// The environment variable `name`'s API key is read from when
+/// [`create_provider`] gets no `api_key`: the vendor package's key variable,
+/// or the registry row's `env_var`. `None` for an unknown name, for a
+/// registry row without a variable, and for the packages whose `api_key`
+/// setting has no variable (`searxng`) or that take no `api_key` at all
+/// (`anthropic_aws`, `aws_polly`, `codex`, `dataforseo`).
+///
+/// Hosts that let a caller pick a key by variable name (the aimux-web
+/// console's `env:VAR`) use it to allow only the provider's own variable.
+#[must_use]
+pub fn provider_api_key_env(name: &str) -> Option<&'static str> {
+    use crate::{
+        anthropic, assemblyai, azure, bedrock, black_forest_labs, cartesia, cohere, deepgram,
+        deepseek, elevenlabs, exa_ai, fal, firecrawl, gladia, google, google_pse, groq,
+        huggingface, hume, jina_ai, klingai, linkup, lmnt, luma, mistral, openai, parallel_ai,
+        prodia, recraft, replicate, revai, runwayml, serper, stability, tavily, tinyfish, vertex,
+        voyage, xai, you_com,
+    };
+    Some(match name {
+        "amazon_bedrock" => bedrock::BEARER_TOKEN_ENV_VAR,
+        "anthropic" => anthropic::API_KEY_ENV_VAR,
+        "assemblyai" => assemblyai::API_KEY_ENV_VAR,
+        "azure" => azure::API_KEY_ENV_VAR,
+        "black_forest_labs" => black_forest_labs::API_KEY_ENV_VAR,
+        "cartesia" => cartesia::API_KEY_ENV_VAR,
+        "cohere" => cohere::API_KEY_ENV_VAR,
+        "deepgram" => deepgram::API_KEY_ENV_VAR,
+        "deepseek" => deepseek::API_KEY_ENV_VAR,
+        "elevenlabs" => elevenlabs::API_KEY_ENV_VAR,
+        "exa_ai" => exa_ai::API_KEY_ENV_VAR,
+        "fal" => fal::API_KEY_ENV_VAR,
+        "firecrawl" => firecrawl::API_KEY_ENV_VAR,
+        "gladia" => gladia::API_KEY_ENV_VAR,
+        "google" => google::API_KEY_ENV_VAR,
+        "google_pse" => google_pse::API_KEY_ENV_VAR,
+        "google_vertex" => vertex::API_KEY_ENV_VAR,
+        "groq" => groq::API_KEY_ENV_VAR,
+        "huggingface" => huggingface::API_KEY_ENV_VAR,
+        "hume" => hume::API_KEY_ENV_VAR,
+        "jina_ai" => jina_ai::API_KEY_ENV_VAR,
+        "klingai" => klingai::API_KEY_ENV_VAR,
+        "linkup" => linkup::API_KEY_ENV_VAR,
+        "lmnt" => lmnt::API_KEY_ENV_VAR,
+        "luma" => luma::API_KEY_ENV_VAR,
+        "mistral" => mistral::API_KEY_ENV_VAR,
+        "openai" => openai::API_KEY_ENV_VAR,
+        "parallel_ai" => parallel_ai::API_KEY_ENV_VAR,
+        "prodia" => prodia::API_KEY_ENV_VAR,
+        "recraft" => recraft::API_KEY_ENV_VAR,
+        "replicate" => replicate::API_KEY_ENV_VAR,
+        "revai" => revai::API_KEY_ENV_VAR,
+        "runwayml" => runwayml::API_KEY_ENV_VAR,
+        "serper" => serper::API_KEY_ENV_VAR,
+        "stability" => stability::API_KEY_ENV_VAR,
+        "tavily" => tavily::API_KEY_ENV_VAR,
+        "tinyfish" => tinyfish::API_KEY_ENV_VAR,
+        "voyage" => voyage::API_KEY_ENV_VAR,
+        "xai" => xai::API_KEY_ENV_VAR,
+        "you_com" => you_com::API_KEY_ENV_VAR,
+        _ if PACKAGES.contains(&name) => return None,
+        _ => preset::lookup(name)
+            .map(|entry| entry.descriptor.env_var.as_str())
+            .filter(|var| !var.is_empty())?,
+    })
+}
+
+/// The endpoint `name`'s factory calls when [`create_provider`] gets no
+/// `base_url` and no base-URL variable is set: the vendor package's default
+/// base URL, or the registry row's `base_url`. `None` for an unknown name and
+/// where the endpoint is not one fixed URL: built from settings (a region,
+/// resource, project or a registry row's template parameters) or read only
+/// from the environment.
+///
+/// Hosts that let a caller choose the base URL (the aimux-web console) use it
+/// to tell the provider's own endpoint from one the caller picked.
+#[must_use]
+pub fn provider_default_base_url(name: &str) -> Option<&'static str> {
+    use crate::{
+        anthropic, assemblyai, black_forest_labs, cartesia, cohere, dataforseo, deepgram, deepseek,
+        elevenlabs, exa_ai, fal, firecrawl, gladia, google, google_pse, groq, huggingface, hume,
+        jina_ai, klingai, linkup, lmnt, luma, mistral, openai, parallel_ai, prodia, recraft,
+        replicate, revai, runwayml, serper, stability, tavily, tinyfish, voyage, xai, you_com,
+    };
+    Some(match name {
+        "anthropic" => anthropic::DEFAULT_BASE_URL,
+        "assemblyai" => assemblyai::DEFAULT_BASE_URL,
+        "black_forest_labs" => black_forest_labs::DEFAULT_BASE_URL,
+        "cartesia" => cartesia::DEFAULT_BASE_URL,
+        "cohere" => cohere::DEFAULT_BASE_URL,
+        "dataforseo" => dataforseo::DEFAULT_BASE_URL,
+        "deepgram" => deepgram::DEFAULT_BASE_URL,
+        "deepseek" => deepseek::DEFAULT_BASE_URL,
+        "elevenlabs" => elevenlabs::DEFAULT_BASE_URL,
+        "exa_ai" => exa_ai::DEFAULT_BASE_URL,
+        "fal" => fal::DEFAULT_BASE_URL,
+        "firecrawl" => firecrawl::DEFAULT_BASE_URL,
+        "gladia" => gladia::DEFAULT_BASE_URL,
+        "google" => google::DEFAULT_BASE_URL,
+        "google_pse" => google_pse::DEFAULT_BASE_URL,
+        "groq" => groq::DEFAULT_BASE_URL,
+        "huggingface" => huggingface::DEFAULT_BASE_URL,
+        "hume" => hume::DEFAULT_BASE_URL,
+        "jina_ai" => jina_ai::DEFAULT_BASE_URL,
+        "klingai" => klingai::DEFAULT_BASE_URL,
+        "linkup" => linkup::DEFAULT_BASE_URL,
+        "lmnt" => lmnt::DEFAULT_BASE_URL,
+        "luma" => luma::DEFAULT_BASE_URL,
+        "mistral" => mistral::DEFAULT_BASE_URL,
+        "openai" => openai::DEFAULT_BASE_URL,
+        "parallel_ai" => parallel_ai::DEFAULT_BASE_URL,
+        "prodia" => prodia::DEFAULT_BASE_URL,
+        "recraft" => recraft::DEFAULT_BASE_URL,
+        "replicate" => replicate::DEFAULT_BASE_URL,
+        "revai" => revai::DEFAULT_BASE_URL,
+        "runwayml" => runwayml::DEFAULT_BASE_URL,
+        "serper" => serper::DEFAULT_BASE_URL,
+        "stability" => stability::DEFAULT_BASE_URL,
+        "tavily" => tavily::DEFAULT_BASE_URL,
+        "tinyfish" => tinyfish::DEFAULT_BASE_URL,
+        "voyage" => voyage::DEFAULT_BASE_URL,
+        "xai" => xai::DEFAULT_BASE_URL,
+        "you_com" => you_com::DEFAULT_BASE_URL,
+        // amazon_bedrock, anthropic_aws, aws_polly, azure, codex,
+        // google_vertex and searxng.
+        _ if PACKAGES.contains(&name) => return None,
+        _ => preset::lookup(name)
+            .filter(|entry| entry.descriptor.params.is_empty())
+            .map(|entry| entry.descriptor.base_url.as_str())?,
+    })
+}
+
 /// Every built-in provider with default settings, keyed by name: pass it to
 /// [`aimux_core::create_provider_registry`], after adding or replacing entries
 /// as needed.
 ///
-/// Nothing is read from the environment here and no entry can fail to be
-/// created: keys and environment-sourced base URLs are evaluated per request,
-/// so a missing key fails the call that needs it.
+/// No entry can fail to be created. Keys are read per request, so a missing
+/// key fails the call that needs it. The `openai` and `anthropic` packages
+/// read `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` once, here, as the AI SDK
+/// does when a provider is created; an invalid value fails each call of that
+/// provider with `InvalidArgument` naming the variable, not this function.
+/// Registry rows read their base-URL variables per request.
 #[must_use]
 pub fn default_providers() -> BTreeMap<String, Arc<dyn Provider>> {
     provider_names()
         .into_iter()
         .map(|name| {
             let provider = create_provider(name, PresetSettings::default())
-                .expect("a built-in provider with default settings is always valid");
+                .expect("default settings have nothing a factory can reject");
             (name.to_string(), provider)
         })
         .collect()
@@ -390,6 +524,61 @@ pub fn default_providers() -> BTreeMap<String, Arc<dyn Provider>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Sets an environment variable for the test's duration and restores
+    /// the previous value on drop.
+    struct EnvVar(&'static str, Option<std::ffi::OsString>);
+
+    impl EnvVar {
+        fn set(name: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(name);
+            // SAFETY: the tests touching these variables are `#[serial]`.
+            unsafe { std::env::set_var(name, value) };
+            Self(name, previous)
+        }
+    }
+
+    impl Drop for EnvVar {
+        fn drop(&mut self) {
+            // SAFETY: as in `set`.
+            unsafe {
+                match &self.1 {
+                    Some(value) => std::env::set_var(self.0, value),
+                    None => std::env::remove_var(self.0),
+                }
+            }
+        }
+    }
+
+    /// An invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` does not fail
+    /// creating the default providers. Each call of that provider reports it
+    /// instead, as the AI SDK's factories read the variable without failing
+    /// (openai@4.0.83 `openai-provider.ts:207-215`, anthropic@4.0.71
+    /// `anthropic-provider.ts:127-133`) and the first request rejects the URL.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn an_invalid_env_base_url_fails_each_call_not_creation() {
+        let _openai = EnvVar::set("OPENAI_BASE_URL", "not a url");
+        let _anthropic = EnvVar::set("ANTHROPIC_BASE_URL", "not a url");
+        let _openai_key = EnvVar::set("OPENAI_API_KEY", "test-key");
+        let _anthropic_key = EnvVar::set("ANTHROPIC_API_KEY", "test-key");
+        let providers = default_providers();
+        for (name, var) in [
+            ("openai", "OPENAI_BASE_URL"),
+            ("anthropic", "ANTHROPIC_BASE_URL"),
+        ] {
+            let model = providers[name].language_model("some-model").unwrap();
+            let options = aimux_core::options::CallOptions::new(vec![
+                aimux_core::language_model_message::LanguageModelMessage::user_text("hi"),
+            ]);
+            let error = model.do_generate(&options).await.expect_err(name);
+            assert!(
+                matches!(&error, AiMuxError::InvalidArgument(message) if message.starts_with(var)),
+                "{name}: {error:?}"
+            );
+        }
+        let _ = create_provider("openai", PresetSettings::default()).unwrap();
+    }
 
     /// A misspelled name lists every name `create_provider` accepts, the
     /// vendor packages included, not only the registry rows.
@@ -406,6 +595,84 @@ mod tests {
         assert_eq!(provider_id, "opeanai");
         assert_eq!(available_providers, provider_names());
         assert!(available_providers.iter().any(|name| name == "openai"));
+    }
+
+    /// The key variable is the one each factory reads with no `api_key`:
+    /// the package's own constant, else the registry row's `env_var`.
+    #[test]
+    fn provider_api_key_env_names_the_variable_the_factory_reads() {
+        assert_eq!(provider_api_key_env("openai"), Some("OPENAI_API_KEY"));
+        assert_eq!(provider_api_key_env("groq"), Some("GROQ_API_KEY"));
+        assert_eq!(
+            provider_api_key_env("google"),
+            Some("GOOGLE_GENERATIVE_AI_API_KEY")
+        );
+        assert_eq!(
+            provider_api_key_env("amazon_bedrock"),
+            Some("AWS_BEARER_TOKEN_BEDROCK")
+        );
+        assert_eq!(provider_api_key_env("fal"), Some("FAL_KEY"));
+        // Registry rows.
+        assert_eq!(
+            provider_api_key_env("openrouter"),
+            Some("OPENROUTER_API_KEY")
+        );
+        assert_eq!(provider_api_key_env("ollama"), Some("OLLAMA_API_KEY"));
+        // Every package that takes a key names its variable; the rest none.
+        let keyless = [
+            "anthropic_aws",
+            "aws_polly",
+            "codex",
+            "dataforseo",
+            "searxng",
+        ];
+        for name in PACKAGES {
+            assert_eq!(
+                provider_api_key_env(name).is_some(),
+                !keyless.contains(&name),
+                "{name}"
+            );
+        }
+        // A registry row without a variable, and an unknown name.
+        let without = preset::entries()
+            .find(|entry| entry.descriptor.env_var.is_empty())
+            .map(|entry| entry.descriptor.name.as_str());
+        if let Some(name) = without {
+            assert_eq!(provider_api_key_env(name), None, "{name}");
+        }
+        assert_eq!(provider_api_key_env("no-such-provider"), None);
+    }
+
+    /// The default endpoint is the package constant or the registry row's
+    /// URL; a URL built from settings has none.
+    #[test]
+    fn provider_default_base_url_is_the_factorys_fixed_endpoint() {
+        assert_eq!(
+            provider_default_base_url("openai"),
+            Some("https://api.openai.com/v1")
+        );
+        assert_eq!(
+            provider_default_base_url("groq"),
+            Some("https://api.groq.com/openai/v1")
+        );
+        assert_eq!(
+            provider_default_base_url("openrouter"),
+            Some("https://openrouter.ai/api/v1")
+        );
+        for name in [
+            "amazon_bedrock",
+            "anthropic_aws",
+            "aws_polly",
+            "azure",
+            "codex",
+            "google_vertex",
+            "searxng",
+            // A registry row with template parameters.
+            "bedrock_mantle",
+            "no-such-provider",
+        ] {
+            assert_eq!(provider_default_base_url(name), None, "{name}");
+        }
     }
 
     /// Providers and their models report the V4 specification version, as

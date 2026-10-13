@@ -144,16 +144,20 @@ fn every_registry_row_loads_and_creates_without_environment() {
     let mut variables = BTreeSet::new();
     for entry in &entries {
         let d = entry.descriptor;
-        variables.extend((!d.env_var.is_empty()).then_some(d.env_var));
-        variables.extend(d.base_url_env);
-        variables.extend(d.params.iter().flat_map(|param| param.env.iter().copied()));
+        variables.extend((!d.env_var.is_empty()).then_some(d.env_var.as_str()));
+        variables.extend(d.base_url_env.as_deref());
+        variables.extend(
+            d.params
+                .iter()
+                .flat_map(|param| param.env.iter().map(String::as_str)),
+        );
     }
     let _guards: Vec<_> = variables
         .into_iter()
         .map(|var| EnvVar::set(var, None))
         .collect();
     for entry in entries {
-        preset::create(entry.descriptor.name, PresetSettings::default())
+        preset::create(&entry.descriptor.name, PresetSettings::default())
             .unwrap_or_else(|error| panic!("{}: {error}", entry.descriptor.name));
     }
 }

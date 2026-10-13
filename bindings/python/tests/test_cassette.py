@@ -30,7 +30,8 @@ class TestOpenAICassette:
             parts = list(stream_text(model, "Hello"))
             assert len(parts) > 0, "should receive stream parts"
             types = [list(p.keys())[0] for p in parts]
-            assert "StreamStart" in types, "should have StreamStart"
+            assert types[0] == "Start", "should open with Start"
+            assert "StartStep" in types, "should have StartStep"
             assert "Finish" in types, "should have Finish"
 
 
@@ -75,7 +76,7 @@ class TestDeepSeekCassette:
         assert isinstance(raw.get("prompt_cache_hit_tokens"), int)
         assert isinstance(raw.get("prompt_cache_miss_tokens"), int)
         # Typed totals still work alongside the raw object.
-        assert result["usage"]["input_tokens"]["total"] is not None
+        assert result["usage"]["input_tokens"] is not None
 
 
 class TestGroqCassette:

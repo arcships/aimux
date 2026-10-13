@@ -250,7 +250,7 @@ impl LanguageModel for OpenAIResponsesModel {
         &self.config.provider
     }
 
-    fn supported_urls(&self) -> aimux_core::language_model::SupportedUrls {
+    async fn supported_urls(&self) -> aimux_core::language_model::SupportedUrls {
         self.config.supported_urls.clone()
     }
 

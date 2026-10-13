@@ -141,7 +141,7 @@ public interface AimuxFFI extends Library {
     /** Writes JSON GenerateObjectResult to {@code outJson} (caller MUST free); returns the error or null. */
     Pointer aimux_generate_object(long handle, String promptJson, String optsJson, PointerByReference outJson);
 
-    /** Writes JSON StreamTextResultAggregated to {@code outJson} (caller MUST free); returns the error or null. */
+    /** Writes JSON GenerateTextResult to {@code outJson} (caller MUST free); returns the error or null. */
     Pointer aimux_consume_stream_text(long handle, String promptJson, String optsJson, PointerByReference outJson);
 
     /**
@@ -382,7 +382,7 @@ public interface AimuxFFI extends Library {
     /** Register external OpenAI-compatible providers from JSON config (RFC-0020). Returns the error or null. */
     Pointer aimux_register_providers(String configJson);
 
-    /** Set the global proxy configuration (M6, RFC-0016). Returns the error or null. */
+    /** Replace the default transport's proxy configuration (M6, RFC-0016). Returns the error or null. */
     Pointer aimux_init_proxy(String configJson);
 
     /** Create a RouterModel (RFC-0021) over child handles. {@code handles} is pinned by

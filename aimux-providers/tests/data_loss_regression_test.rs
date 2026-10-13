@@ -139,13 +139,13 @@ fn opts() -> CallOptions {
 fn opts_with_tools(tools: Vec<Tool>) -> CallOptions {
     let mut o = opts();
     o.tools = Some(tools);
-    o.tool_choice = Some(aimux_core::tool::ToolChoice::Auto);
+    o.tool_choice = Some(aimux_core::tool::LanguageModelV4ToolChoice::Auto);
     o
 }
 
 fn provider_tool(id: &str, name: &str) -> Tool {
     Tool::Provider(ProviderTool {
-        id: id.to_string(),
+        id: id.parse().unwrap(),
         name: name.to_string(),
         args: serde_json::Map::new(),
     })

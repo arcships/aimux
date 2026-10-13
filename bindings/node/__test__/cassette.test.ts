@@ -47,7 +47,8 @@ test('cassette: OpenAI stream', async (t) => {
     t.true(parts.length > 0, 'should receive stream parts')
 
     const types = parts.map((p) => Object.keys(p)[0])
-    t.true(types.includes('StreamStart'), 'should have StreamStart')
+    t.is(types[0], 'Start', 'should open with Start')
+    t.true(types.includes('StartStep'), 'should have StartStep')
     t.true(types.includes('Finish'), 'should have Finish')
   } finally {
     await srv.stop()

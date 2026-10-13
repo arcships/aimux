@@ -72,10 +72,12 @@ pub struct TraceLayer {
     /// strict mode (RFC-0015 §4.3); default shared (safe for multi-process
     /// / shared API keys).
     strict: bool,
-    /// Default session id when `CallOptions.session_id` is absent.
+    /// Default session id when the operation sets no session id.
     default_session: Option<String>,
     /// Scope salt (HMAC-style key for fingerprint scoping).
     scope_salt: u64,
+    /// Name the scope key isolates by; `None` uses the model's `provider()`.
+    scope_name: Option<String>,
     session_tracker: Arc<Mutex<HashMap<String, SessionTracker>>>,
 }
 
@@ -99,7 +101,7 @@ struct RecordCtx {
     scope_salt: u64,
     session_tracker: Arc<Mutex<HashMap<String, SessionTracker>>>,
     ctx: RequestCtx,
-    /// RFC-0023 关联 ID:复用 `options.call_id`(缺失时由构造处生成)。
+    /// RFC-0023 关联 ID:取自 `options.recording_context`(缺失时由构造处生成)。
     call_id: Option<String>,
     request_body: Option<serde_json::Value>,
     response_headers: Option<HashMap<String, String>>,
@@ -116,11 +118,25 @@ impl TraceLayer {
             strict: false,
             default_session: None,
             scope_salt: hash::mix(0x5eed_5eed ^ std::process::id() as u64),
+            scope_name: None,
             session_tracker: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    /// Default session id (used when `CallOptions.session_id` is absent) +
+    /// Name this layer's trace scope instead of the model's `provider()`.
+    ///
+    /// The scope key isolates LCP history by (scope name, model id), and the
+    /// model carries no endpoint, so two endpoints reached under one provider
+    /// name share a scope. A host that calls one provider at several base
+    /// URLs gives each endpoint its own name here. Records still report the
+    /// model's `provider()`.
+    #[must_use]
+    pub fn with_scope_name(mut self, name: impl Into<String>) -> Self {
+        self.scope_name = Some(name.into());
+        self
+    }
+
+    /// Default session id (used when the operation sets no session id) +
     /// session key (32-byte HMAC-style salt for fingerprint scoping).
     #[must_use]
     pub fn with_default_session(mut self, session_id: String, key: [u8; 32]) -> Self {
@@ -159,21 +175,25 @@ impl TraceLayer {
         response_headers: Option<HashMap<String, String>>,
         ttft_ms: Arc<AtomicU64>,
     ) -> RecordCtx {
-        let session_id = options
-            .session_id
-            .clone()
+        // The explicit session id of the operation the call runs in
+        // (`OperationSettings`); the model call options carry none.
+        let session_id = crate::operation::OperationSettings::current()
+            .and_then(|settings| settings.session_id)
             .or_else(|| self.default_session.clone());
-        // B1: scope_key isolates by (provider, model_id), so two TraceLayers
+        // B1: scope_key isolates by (scope name, model_id), so two TraceLayers
         // over the same model_id but different providers sharing one
-        // RingTraceStore never cross-match their LCP history. A model's
-        // `provider()` string already carries the settings-level name, so two
-        // endpoints of one vendor stay apart when they are given different
-        // provider names. The default `scope_salt` stays process-level (set in
-        // `new` / `with_default_session`).
+        // RingTraceStore never cross-match their LCP history. The scope name
+        // is the model's `provider()` string, which carries the settings-level
+        // name, unless the host set one (`with_scope_name`). Two endpoints of
+        // one vendor under the same name are NOT isolated: the model reports
+        // no base URL, so the host names each endpoint. The default
+        // `scope_salt` stays process-level (set in `new` /
+        // `with_default_session`).
         let provider = self.inner.provider();
         let model_id = self.inner.model_id();
-        let mut scope_bytes = Vec::with_capacity(provider.len() + model_id.len());
-        scope_bytes.extend_from_slice(provider.as_bytes());
+        let scope_name = self.scope_name.as_deref().unwrap_or(provider);
+        let mut scope_bytes = Vec::with_capacity(scope_name.len() + model_id.len());
+        scope_bytes.extend_from_slice(scope_name.as_bytes());
         scope_bytes.extend_from_slice(model_id.as_bytes());
         let scope_key = hash::hash64(self.scope_salt, &scope_bytes);
         let sent_at_unix_ms = SystemTime::now()
@@ -189,7 +209,10 @@ impl TraceLayer {
             strict: self.strict,
             scope_salt: self.scope_salt,
             session_tracker: self.session_tracker.clone(),
-            call_id: options.call_id.clone(),
+            call_id: options
+                .recording_context
+                .as_ref()
+                .map(|context| context.call_id.clone()),
             ctx: RequestCtx {
                 session_id,
                 scope_key,
@@ -507,8 +530,8 @@ impl LanguageModel for TraceLayer {
         self.inner.model_id()
     }
 
-    fn supported_urls(&self) -> crate::language_model::SupportedUrls {
-        self.inner.supported_urls()
+    async fn supported_urls(&self) -> crate::language_model::SupportedUrls {
+        self.inner.supported_urls().await
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
@@ -599,5 +622,71 @@ impl LanguageModel for TraceLayer {
             request: result.request,
             response: result.response,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Model(&'static str);
+
+    #[async_trait]
+    impl LanguageModel for Model {
+        fn provider(&self) -> &str {
+            self.0
+        }
+
+        fn model_id(&self) -> &str {
+            "m"
+        }
+
+        async fn do_generate(&self, _: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+            unreachable!("not called")
+        }
+
+        async fn do_stream(&self, _: &CallOptions) -> Result<StreamResult, AiMuxError> {
+            unreachable!("not called")
+        }
+    }
+
+    fn scope_key(layer: &TraceLayer) -> u64 {
+        let ctx = layer.make_record_ctx(
+            &CallOptions::default(),
+            None,
+            None,
+            Arc::new(AtomicU64::new(0)),
+        );
+        ctx.ctx.scope_key
+    }
+
+    /// B18 (#232): the scope key isolates by provider name and model, so two
+    /// endpoints under one provider name share a scope unless the host names
+    /// each one. Records keep the model's provider.
+    #[test]
+    fn a_scope_name_separates_endpoints_of_one_provider() {
+        let sink: Arc<dyn TraceSink> = Arc::new(RingTraceStore::new());
+        let layer = |provider| TraceLayer::new(Arc::new(Model(provider)), sink.clone());
+
+        let first = scope_key(&layer("openai.chat"));
+        assert_eq!(first, scope_key(&layer("openai.chat")));
+        assert_ne!(first, scope_key(&layer("deepseek.chat")));
+
+        let named = layer("openai.chat").with_scope_name("openai.chat @ http://a/v1");
+        assert_ne!(first, scope_key(&named));
+        let other = layer("openai.chat").with_scope_name("openai.chat @ http://b/v1");
+        assert_ne!(scope_key(&named), scope_key(&other));
+        assert_eq!(
+            scope_key(&named),
+            scope_key(&layer("openai.chat").with_scope_name("openai.chat @ http://a/v1"))
+        );
+
+        let ctx = named.make_record_ctx(
+            &CallOptions::default(),
+            None,
+            None,
+            Arc::new(AtomicU64::new(0)),
+        );
+        assert_eq!(ctx.provider, "openai.chat");
     }
 }

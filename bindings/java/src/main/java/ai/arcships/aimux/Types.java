@@ -285,6 +285,172 @@ public final class Types {
     }
 
     /**
+     * Input-token breakdown of a {@link LanguageModelUsage}.
+     *
+     * Mirrors `InputTokenDetails.ts`.
+     */
+    public static class InputTokenDetails {
+        @JsonProperty("no_cache_tokens") private Long noCacheTokens;
+        @JsonProperty("cache_read_tokens") private Long cacheReadTokens;
+        @JsonProperty("cache_write_tokens") private Long cacheWriteTokens;
+
+        @JsonCreator
+        InputTokenDetails() {}
+
+        private InputTokenDetails(Long noCacheTokens, Long cacheReadTokens, Long cacheWriteTokens) {
+            this.noCacheTokens = noCacheTokens;
+            this.cacheReadTokens = cacheReadTokens;
+            this.cacheWriteTokens = cacheWriteTokens;
+        }
+
+        public Long getNoCacheTokens() { return noCacheTokens; }
+        public Long getCacheReadTokens() { return cacheReadTokens; }
+        public Long getCacheWriteTokens() { return cacheWriteTokens; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private Long noCacheTokens;
+            private Long cacheReadTokens;
+            private Long cacheWriteTokens;
+
+            public Builder noCacheTokens(Long v) { this.noCacheTokens = v; return this; }
+            public Builder cacheReadTokens(Long v) { this.cacheReadTokens = v; return this; }
+            public Builder cacheWriteTokens(Long v) { this.cacheWriteTokens = v; return this; }
+
+            public InputTokenDetails build() { return new InputTokenDetails(noCacheTokens, cacheReadTokens, cacheWriteTokens); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof InputTokenDetails)) return false;
+            InputTokenDetails that = (InputTokenDetails) o;
+            return Objects.equals(noCacheTokens, that.noCacheTokens)
+                && Objects.equals(cacheReadTokens, that.cacheReadTokens)
+                && Objects.equals(cacheWriteTokens, that.cacheWriteTokens);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(noCacheTokens, cacheReadTokens, cacheWriteTokens); }
+    }
+
+    /**
+     * Output-token breakdown of a {@link LanguageModelUsage}.
+     *
+     * Mirrors `OutputTokenDetails.ts`.
+     */
+    public static class OutputTokenDetails {
+        @JsonProperty("text_tokens") private Long textTokens;
+        @JsonProperty("reasoning_tokens") private Long reasoningTokens;
+
+        @JsonCreator
+        OutputTokenDetails() {}
+
+        private OutputTokenDetails(Long textTokens, Long reasoningTokens) {
+            this.textTokens = textTokens;
+            this.reasoningTokens = reasoningTokens;
+        }
+
+        public Long getTextTokens() { return textTokens; }
+        public Long getReasoningTokens() { return reasoningTokens; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private Long textTokens;
+            private Long reasoningTokens;
+
+            public Builder textTokens(Long v) { this.textTokens = v; return this; }
+            public Builder reasoningTokens(Long v) { this.reasoningTokens = v; return this; }
+
+            public OutputTokenDetails build() { return new OutputTokenDetails(textTokens, reasoningTokens); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof OutputTokenDetails)) return false;
+            OutputTokenDetails that = (OutputTokenDetails) o;
+            return Objects.equals(textTokens, that.textTokens)
+                && Objects.equals(reasoningTokens, that.reasoningTokens);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(textTokens, reasoningTokens); }
+    }
+
+    /**
+     * Call-level token usage, the AI SDK's {@code LanguageModelUsage}: flat counts,
+     * unknown counts {@code null}. Provider results keep {@link Usage}.
+     *
+     * Mirrors `LanguageModelUsage.ts`.
+     */
+    public static class LanguageModelUsage {
+        @JsonProperty("input_tokens") private Long inputTokens;
+        @JsonProperty("input_token_details") private InputTokenDetails inputTokenDetails = new InputTokenDetails();
+        @JsonProperty("output_tokens") private Long outputTokens;
+        @JsonProperty("output_token_details") private OutputTokenDetails outputTokenDetails = new OutputTokenDetails();
+        @JsonProperty("total_tokens") private Long totalTokens;
+        @JsonProperty("raw") private ObjectNode raw;
+
+        @JsonCreator
+        LanguageModelUsage() {}
+
+        private LanguageModelUsage(Long inputTokens, InputTokenDetails inputTokenDetails, Long outputTokens, OutputTokenDetails outputTokenDetails, Long totalTokens, ObjectNode raw) {
+            this.inputTokens = inputTokens;
+            this.inputTokenDetails = inputTokenDetails;
+            this.outputTokens = outputTokens;
+            this.outputTokenDetails = outputTokenDetails;
+            this.totalTokens = totalTokens;
+            this.raw = raw;
+        }
+
+        public Long getInputTokens() { return inputTokens; }
+        public InputTokenDetails getInputTokenDetails() { return inputTokenDetails; }
+        public Long getOutputTokens() { return outputTokens; }
+        public OutputTokenDetails getOutputTokenDetails() { return outputTokenDetails; }
+        public Long getTotalTokens() { return totalTokens; }
+        public ObjectNode getRaw() { return raw; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private Long inputTokens;
+            private InputTokenDetails inputTokenDetails = new InputTokenDetails();
+            private Long outputTokens;
+            private OutputTokenDetails outputTokenDetails = new OutputTokenDetails();
+            private Long totalTokens;
+            private ObjectNode raw;
+
+            public Builder inputTokens(Long v) { this.inputTokens = v; return this; }
+            public Builder inputTokenDetails(InputTokenDetails v) { this.inputTokenDetails = v; return this; }
+            public Builder outputTokens(Long v) { this.outputTokens = v; return this; }
+            public Builder outputTokenDetails(OutputTokenDetails v) { this.outputTokenDetails = v; return this; }
+            public Builder totalTokens(Long v) { this.totalTokens = v; return this; }
+            public Builder raw(ObjectNode v) { this.raw = v; return this; }
+
+            public LanguageModelUsage build() { return new LanguageModelUsage(inputTokens, inputTokenDetails, outputTokens, outputTokenDetails, totalTokens, raw); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof LanguageModelUsage)) return false;
+            LanguageModelUsage that = (LanguageModelUsage) o;
+            return Objects.equals(inputTokens, that.inputTokens)
+                && Objects.equals(inputTokenDetails, that.inputTokenDetails)
+                && Objects.equals(outputTokens, that.outputTokens)
+                && Objects.equals(outputTokenDetails, that.outputTokenDetails)
+                && Objects.equals(totalTokens, that.totalTokens)
+                && Objects.equals(raw, that.raw);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(inputTokens, inputTokenDetails, outputTokens, outputTokenDetails, totalTokens, raw); }
+    }
+
+    /**
      * Unified finish reason.
      *
      * Mirrors `FinishReason.ts`: `{ unified: FinishReasonUnified, raw: string | null }`.
@@ -1914,7 +2080,13 @@ public final class Types {
         @JsonProperty("top_k") private Double topK;
         @JsonProperty("presence_penalty") private Double presencePenalty;
         @JsonProperty("frequency_penalty") private Double frequencyPenalty;
-        @JsonProperty("response_format") private JsonNode responseFormat;
+        /**
+         * Structured output, the AI SDK's {@code output}: for example
+         * {@code {"Object": {"schema": {...}}}}, {@code {"Array": {"element": {...}}}},
+         * {@code {"Choice": {"options": [...]}}} or {@code {"Json": {}}}. The parsed
+         * value is {@link GenerateTextResult#getOutput()}.
+         */
+        @JsonProperty("output") private JsonNode output;
         @JsonProperty("seed") private Long seed;
         @JsonProperty("tools") private List<Tool> tools;
         @JsonProperty("tool_choice") private ToolChoice toolChoice;
@@ -1935,7 +2107,7 @@ public final class Types {
 
         private GenerateTextOptions(Long maxOutputTokens, Double temperature, List<String> stopSequences,
                                     Double topP, Double topK, Double presencePenalty, Double frequencyPenalty,
-                                    JsonNode responseFormat, Long seed, List<Tool> tools, ToolChoice toolChoice,
+                                    JsonNode output, Long seed, List<Tool> tools, ToolChoice toolChoice,
                                     Map<String, String> headers, Map<String, JsonNode> providerOptions,
                                     ReasoningEffort reasoning, String instructions,
                                     Long maxRetries, Boolean includeRawChunks,
@@ -1947,7 +2119,7 @@ public final class Types {
             this.topK = topK;
             this.presencePenalty = presencePenalty;
             this.frequencyPenalty = frequencyPenalty;
-            this.responseFormat = responseFormat;
+            this.output = output;
             this.seed = seed;
             this.tools = tools;
             this.toolChoice = toolChoice;
@@ -1968,7 +2140,7 @@ public final class Types {
         public Double getTopK() { return topK; }
         public Double getPresencePenalty() { return presencePenalty; }
         public Double getFrequencyPenalty() { return frequencyPenalty; }
-        public JsonNode getResponseFormat() { return responseFormat; }
+        public JsonNode getOutput() { return output; }
         public Long getSeed() { return seed; }
         public List<Tool> getTools() { return tools; }
         public ToolChoice getToolChoice() { return toolChoice; }
@@ -2014,7 +2186,7 @@ public final class Types {
             private Double topK;
             private Double presencePenalty;
             private Double frequencyPenalty;
-            private JsonNode responseFormat;
+            private JsonNode output;
             private Long seed;
             private List<Tool> tools;
             private ToolChoice toolChoice;
@@ -2035,7 +2207,7 @@ public final class Types {
             public Builder topK(Double v) { this.topK = v; return this; }
             public Builder presencePenalty(Double v) { this.presencePenalty = v; return this; }
             public Builder frequencyPenalty(Double v) { this.frequencyPenalty = v; return this; }
-            public Builder responseFormat(JsonNode v) { this.responseFormat = v; return this; }
+            public Builder output(JsonNode v) { this.output = v; return this; }
             public Builder seed(Long v) { this.seed = v; return this; }
             public Builder tools(List<Tool> v) { this.tools = v; return this; }
             public Builder toolChoice(ToolChoice v) { this.toolChoice = v; return this; }
@@ -2052,7 +2224,7 @@ public final class Types {
 
             public GenerateTextOptions build() {
                 GenerateTextOptions options = new GenerateTextOptions(maxOutputTokens, temperature,
-                    stopSequences, topP, topK, presencePenalty, frequencyPenalty, responseFormat, seed,
+                    stopSequences, topP, topK, presencePenalty, frequencyPenalty, output, seed,
                     tools, toolChoice, headers, providerOptions, reasoning, instructions,
                     maxRetries, includeRawChunks, timeout, sessionId);
                 // Set outside the constructor: the hook is host-side state, not
@@ -2074,7 +2246,7 @@ public final class Types {
                 && Objects.equals(topK, that.topK)
                 && Objects.equals(presencePenalty, that.presencePenalty)
                 && Objects.equals(frequencyPenalty, that.frequencyPenalty)
-                && Objects.equals(responseFormat, that.responseFormat)
+                && Objects.equals(output, that.output)
                 && Objects.equals(seed, that.seed)
                 && Objects.equals(tools, that.tools)
                 && Objects.equals(toolChoice, that.toolChoice)
@@ -2091,7 +2263,7 @@ public final class Types {
         @Override
         public int hashCode() {
             return Objects.hash(maxOutputTokens, temperature, stopSequences, topP, topK, presencePenalty,
-                frequencyPenalty, responseFormat, seed, tools, toolChoice, headers, providerOptions, reasoning,
+                frequencyPenalty, output, seed, tools, toolChoice, headers, providerOptions, reasoning,
                 instructions, maxRetries, includeRawChunks, timeout, sessionId);
         }
     }
@@ -3209,111 +3381,130 @@ public final class Types {
     }
 
     /**
-     * Result of `generate_text` (user-facing).
+     * Result of `generate_text` and of a consumed stream (user-facing), the AI
+     * SDK's {@code GenerateTextResult}. {@code steps} holds every step (weak type);
+     * the other fields are derived from them: the last step's text, finish reason,
+     * reasoning, request, response and provider metadata, every step's content,
+     * files, sources, tool calls, tool results and warnings, and the usage summed
+     * over the steps. {@code reasoning}, {@code reasoningText} ({@code null} when
+     * there is none), {@code totalUsage} (equal to {@code usage}), {@code request},
+     * {@code response} and {@code providerMetadata} are deprecated upstream.
+     * {@code output} is the value parsed by the {@code output} option, absent when
+     * it was not parsed.
      *
-     * Mirrors `GenerateTextResult.ts`.
+     * Mirrors `GenerateTextResult.ts`. {@code response} reads the id, timestamp
+     * and model id of the step response.
      */
     public static class GenerateTextResult {
         @JsonProperty("content") private List<JsonNode> content = new ArrayList<>();
         @JsonProperty("text") private String text = "";
-        @JsonProperty("tool_calls") private List<ToolCall> toolCalls = new ArrayList<>();
-        @JsonProperty("finish_reason") private FinishReason finishReason = new FinishReason();
-        @JsonProperty("usage") private Usage usage = new Usage();
-        @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
-        @JsonProperty("raw") private GenerateResult raw = new GenerateResult();
         @JsonProperty("reasoning") private List<JsonNode> reasoning = new ArrayList<>();
-        @JsonProperty("reasoning_text") private String reasoningText = "";
-        @JsonProperty("sources") private List<Source> sources = new ArrayList<>();
+        @JsonProperty("reasoning_text") private String reasoningText;
         @JsonProperty("files") private List<JsonNode> files = new ArrayList<>();
-        @JsonProperty("response_messages") private List<ModelMessage> responseMessages = new ArrayList<>();
+        @JsonProperty("sources") private List<Source> sources = new ArrayList<>();
+        @JsonProperty("tool_calls") private List<ToolCall> toolCalls = new ArrayList<>();
+        @JsonProperty("tool_results") private List<JsonNode> toolResults = new ArrayList<>();
+        @JsonProperty("finish_reason") private FinishReasonUnified finishReason = FinishReasonUnified.OTHER;
         @JsonProperty("raw_finish_reason") private String rawFinishReason;
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("usage") private LanguageModelUsage usage = new LanguageModelUsage();
+        @JsonProperty("total_usage") private LanguageModelUsage totalUsage = new LanguageModelUsage();
+        @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
+        @JsonProperty("request") private JsonNode request;
         @JsonProperty("response") private ResponseMetadata response = new ResponseMetadata();
-        @JsonProperty("total_usage") private Usage totalUsage = new Usage();
+        @JsonProperty("response_messages") private List<ModelMessage> responseMessages = new ArrayList<>();
+        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("steps") private List<JsonNode> steps = new ArrayList<>();
+        @JsonProperty("output") private JsonNode output;
 
         @JsonCreator
         GenerateTextResult() {}
 
-        private GenerateTextResult(String text, List<ToolCall> toolCalls, FinishReason finishReason, Usage usage,
-                                   List<JsonNode> warnings, GenerateResult raw,
-                                   List<JsonNode> reasoning, String reasoningText,
-                                   List<Source> sources, List<JsonNode> files,
-                                   List<ModelMessage> responseMessages, String rawFinishReason,
-                                   JsonNode providerMetadata, ResponseMetadata response, Usage totalUsage) {
+        private GenerateTextResult(List<JsonNode> content, String text, List<JsonNode> reasoning, String reasoningText, List<JsonNode> files, List<Source> sources, List<ToolCall> toolCalls, List<JsonNode> toolResults, FinishReasonUnified finishReason, String rawFinishReason, LanguageModelUsage usage, LanguageModelUsage totalUsage, List<JsonNode> warnings, JsonNode request, ResponseMetadata response, List<ModelMessage> responseMessages, JsonNode providerMetadata, List<JsonNode> steps, JsonNode output) {
+            this.content = content;
             this.text = text;
-            this.toolCalls = toolCalls;
-            this.finishReason = finishReason;
-            this.usage = usage;
-            this.warnings = warnings;
-            this.raw = raw;
             this.reasoning = reasoning;
             this.reasoningText = reasoningText;
-            this.sources = sources;
             this.files = files;
-            this.responseMessages = responseMessages;
+            this.sources = sources;
+            this.toolCalls = toolCalls;
+            this.toolResults = toolResults;
+            this.finishReason = finishReason;
             this.rawFinishReason = rawFinishReason;
-            this.providerMetadata = providerMetadata;
-            this.response = response;
+            this.usage = usage;
             this.totalUsage = totalUsage;
+            this.warnings = warnings;
+            this.request = request;
+            this.response = response;
+            this.responseMessages = responseMessages;
+            this.providerMetadata = providerMetadata;
+            this.steps = steps;
+            this.output = output;
         }
 
         public List<JsonNode> getContent() { return content; }
         public String getText() { return text; }
-        public List<ToolCall> getToolCalls() { return toolCalls; }
-        public FinishReason getFinishReason() { return finishReason; }
-        public Usage getUsage() { return usage; }
-        public List<JsonNode> getWarnings() { return warnings; }
-        public GenerateResult getRaw() { return raw; }
         public List<JsonNode> getReasoning() { return reasoning; }
         public String getReasoningText() { return reasoningText; }
-        public List<Source> getSources() { return sources; }
         public List<JsonNode> getFiles() { return files; }
-        public List<ModelMessage> getResponseMessages() { return responseMessages; }
+        public List<Source> getSources() { return sources; }
+        public List<ToolCall> getToolCalls() { return toolCalls; }
+        public List<JsonNode> getToolResults() { return toolResults; }
+        public FinishReasonUnified getFinishReason() { return finishReason; }
         public String getRawFinishReason() { return rawFinishReason; }
-        public JsonNode getProviderMetadata() { return providerMetadata; }
+        public LanguageModelUsage getUsage() { return usage; }
+        public LanguageModelUsage getTotalUsage() { return totalUsage; }
+        public List<JsonNode> getWarnings() { return warnings; }
+        public JsonNode getRequest() { return request; }
         public ResponseMetadata getResponse() { return response; }
-        public Usage getTotalUsage() { return totalUsage; }
+        public List<ModelMessage> getResponseMessages() { return responseMessages; }
+        public JsonNode getProviderMetadata() { return providerMetadata; }
+        public List<JsonNode> getSteps() { return steps; }
+        public JsonNode getOutput() { return output; }
 
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
+            private List<JsonNode> content = new ArrayList<>();
             private String text = "";
-            private List<ToolCall> toolCalls = new ArrayList<>();
-            private FinishReason finishReason = new FinishReason();
-            private Usage usage = new Usage();
-            private List<JsonNode> warnings = new ArrayList<>();
-            private GenerateResult raw = new GenerateResult();
             private List<JsonNode> reasoning = new ArrayList<>();
-            private String reasoningText = "";
-            private List<Source> sources = new ArrayList<>();
+            private String reasoningText;
             private List<JsonNode> files = new ArrayList<>();
-            private List<ModelMessage> responseMessages = new ArrayList<>();
+            private List<Source> sources = new ArrayList<>();
+            private List<ToolCall> toolCalls = new ArrayList<>();
+            private List<JsonNode> toolResults = new ArrayList<>();
+            private FinishReasonUnified finishReason = FinishReasonUnified.OTHER;
             private String rawFinishReason;
-            private JsonNode providerMetadata;
+            private LanguageModelUsage usage = new LanguageModelUsage();
+            private LanguageModelUsage totalUsage = new LanguageModelUsage();
+            private List<JsonNode> warnings = new ArrayList<>();
+            private JsonNode request;
             private ResponseMetadata response = new ResponseMetadata();
-            private Usage totalUsage = new Usage();
+            private List<ModelMessage> responseMessages = new ArrayList<>();
+            private JsonNode providerMetadata;
+            private List<JsonNode> steps = new ArrayList<>();
+            private JsonNode output;
 
+            public Builder content(List<JsonNode> v) { this.content = v; return this; }
             public Builder text(String v) { this.text = v; return this; }
-            public Builder toolCalls(List<ToolCall> v) { this.toolCalls = v; return this; }
-            public Builder finishReason(FinishReason v) { this.finishReason = v; return this; }
-            public Builder usage(Usage v) { this.usage = v; return this; }
-            public Builder warnings(List<JsonNode> v) { this.warnings = v; return this; }
-            public Builder raw(GenerateResult v) { this.raw = v; return this; }
             public Builder reasoning(List<JsonNode> v) { this.reasoning = v; return this; }
             public Builder reasoningText(String v) { this.reasoningText = v; return this; }
-            public Builder sources(List<Source> v) { this.sources = v; return this; }
             public Builder files(List<JsonNode> v) { this.files = v; return this; }
-            public Builder responseMessages(List<ModelMessage> v) { this.responseMessages = v; return this; }
+            public Builder sources(List<Source> v) { this.sources = v; return this; }
+            public Builder toolCalls(List<ToolCall> v) { this.toolCalls = v; return this; }
+            public Builder toolResults(List<JsonNode> v) { this.toolResults = v; return this; }
+            public Builder finishReason(FinishReasonUnified v) { this.finishReason = v; return this; }
             public Builder rawFinishReason(String v) { this.rawFinishReason = v; return this; }
-            public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
+            public Builder usage(LanguageModelUsage v) { this.usage = v; return this; }
+            public Builder totalUsage(LanguageModelUsage v) { this.totalUsage = v; return this; }
+            public Builder warnings(List<JsonNode> v) { this.warnings = v; return this; }
+            public Builder request(JsonNode v) { this.request = v; return this; }
             public Builder response(ResponseMetadata v) { this.response = v; return this; }
-            public Builder totalUsage(Usage v) { this.totalUsage = v; return this; }
+            public Builder responseMessages(List<ModelMessage> v) { this.responseMessages = v; return this; }
+            public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
+            public Builder steps(List<JsonNode> v) { this.steps = v; return this; }
+            public Builder output(JsonNode v) { this.output = v; return this; }
 
-            public GenerateTextResult build() {
-                return new GenerateTextResult(text, toolCalls, finishReason, usage, warnings, raw,
-                    reasoning, reasoningText, sources, files, responseMessages, rawFinishReason,
-                    providerMetadata, response, totalUsage);
-            }
+            public GenerateTextResult build() { return new GenerateTextResult(content, text, reasoning, reasoningText, files, sources, toolCalls, toolResults, finishReason, rawFinishReason, usage, totalUsage, warnings, request, response, responseMessages, providerMetadata, steps, output); }
         }
 
         @Override
@@ -3321,105 +3512,97 @@ public final class Types {
             if (this == o) return true;
             if (!(o instanceof GenerateTextResult)) return false;
             GenerateTextResult that = (GenerateTextResult) o;
-            return Objects.equals(text, that.text)
-                && Objects.equals(toolCalls, that.toolCalls)
-                && Objects.equals(finishReason, that.finishReason)
-                && Objects.equals(usage, that.usage)
-                && Objects.equals(warnings, that.warnings)
-                && Objects.equals(raw, that.raw)
+            return Objects.equals(content, that.content)
+                && Objects.equals(text, that.text)
                 && Objects.equals(reasoning, that.reasoning)
                 && Objects.equals(reasoningText, that.reasoningText)
-                && Objects.equals(sources, that.sources)
                 && Objects.equals(files, that.files)
-                && Objects.equals(responseMessages, that.responseMessages)
+                && Objects.equals(sources, that.sources)
+                && Objects.equals(toolCalls, that.toolCalls)
+                && Objects.equals(toolResults, that.toolResults)
+                && Objects.equals(finishReason, that.finishReason)
                 && Objects.equals(rawFinishReason, that.rawFinishReason)
-                && Objects.equals(providerMetadata, that.providerMetadata)
+                && Objects.equals(usage, that.usage)
+                && Objects.equals(totalUsage, that.totalUsage)
+                && Objects.equals(warnings, that.warnings)
+                && Objects.equals(request, that.request)
                 && Objects.equals(response, that.response)
-                && Objects.equals(totalUsage, that.totalUsage);
+                && Objects.equals(responseMessages, that.responseMessages)
+                && Objects.equals(providerMetadata, that.providerMetadata)
+                && Objects.equals(steps, that.steps)
+                && Objects.equals(output, that.output);
         }
 
         @Override
-        public int hashCode() {
-            return Objects.hash(text, toolCalls, finishReason, usage, warnings, raw,
-                reasoning, reasoningText, sources, files, responseMessages, rawFinishReason,
-                providerMetadata, response, totalUsage);
-        }
+        public int hashCode() { return Objects.hash(content, text, reasoning, reasoningText, files, sources, toolCalls, toolResults, finishReason, rawFinishReason, usage, totalUsage, warnings, request, response, responseMessages, providerMetadata, steps, output); }
     }
 
     /**
-     * Result of {@code generate_object} (user-facing, M12). The parsed JSON
-     * object plus convenience fields from the underlying {@code generate_text}
-     * call.
+     * Result of {@code generate_object} (user-facing, M12), the AI SDK's
+     * {@code GenerateObjectResult}: the parsed JSON object and the call's
+     * reasoning, finish reason, usage, warnings, request, response and provider
+     * metadata. The AI SDK deprecates {@code generateObject} for
+     * {@code generateText} with an {@code output}.
      *
      * Mirrors {@code GenerateObjectResult.ts}. {@code object} is a
-     * {@link JsonNode} (arbitrary JSON value, weak type).
+     * {@link JsonNode} (arbitrary JSON value, weak type); {@code response} reads
+     * the id, timestamp and model id.
      */
     public static class GenerateObjectResult {
         @JsonProperty("object") private JsonNode object = emptyObject();
-        @JsonProperty("finish_reason") private FinishReason finishReason = new FinishReason();
-        @JsonProperty("raw_finish_reason") private String rawFinishReason;
-        @JsonProperty("usage") private Usage usage = new Usage();
-        @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
         @JsonProperty("reasoning") private String reasoning;
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("finish_reason") private FinishReasonUnified finishReason = FinishReasonUnified.OTHER;
+        @JsonProperty("usage") private LanguageModelUsage usage = new LanguageModelUsage();
+        @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
+        @JsonProperty("request") private JsonNode request;
         @JsonProperty("response") private ResponseMetadata response = new ResponseMetadata();
-        @JsonProperty("raw") private GenerateTextResult raw = new GenerateTextResult();
+        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
 
         @JsonCreator
         GenerateObjectResult() {}
 
-        private GenerateObjectResult(JsonNode object, FinishReason finishReason, String rawFinishReason,
-                                     Usage usage, List<JsonNode> warnings, String reasoning,
-                                     JsonNode providerMetadata, ResponseMetadata response,
-                                     GenerateTextResult raw) {
+        private GenerateObjectResult(JsonNode object, String reasoning, FinishReasonUnified finishReason, LanguageModelUsage usage, List<JsonNode> warnings, JsonNode request, ResponseMetadata response, JsonNode providerMetadata) {
             this.object = object;
+            this.reasoning = reasoning;
             this.finishReason = finishReason;
-            this.rawFinishReason = rawFinishReason;
             this.usage = usage;
             this.warnings = warnings;
-            this.reasoning = reasoning;
-            this.providerMetadata = providerMetadata;
+            this.request = request;
             this.response = response;
-            this.raw = raw;
+            this.providerMetadata = providerMetadata;
         }
 
         public JsonNode getObject() { return object; }
-        public FinishReason getFinishReason() { return finishReason; }
-        public String getRawFinishReason() { return rawFinishReason; }
-        public Usage getUsage() { return usage; }
-        public List<JsonNode> getWarnings() { return warnings; }
         public String getReasoning() { return reasoning; }
-        public JsonNode getProviderMetadata() { return providerMetadata; }
+        public FinishReasonUnified getFinishReason() { return finishReason; }
+        public LanguageModelUsage getUsage() { return usage; }
+        public List<JsonNode> getWarnings() { return warnings; }
+        public JsonNode getRequest() { return request; }
         public ResponseMetadata getResponse() { return response; }
-        public GenerateTextResult getRaw() { return raw; }
+        public JsonNode getProviderMetadata() { return providerMetadata; }
 
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
             private JsonNode object = emptyObject();
-            private FinishReason finishReason = new FinishReason();
-            private String rawFinishReason;
-            private Usage usage = new Usage();
-            private List<JsonNode> warnings = new ArrayList<>();
             private String reasoning;
-            private JsonNode providerMetadata;
+            private FinishReasonUnified finishReason = FinishReasonUnified.OTHER;
+            private LanguageModelUsage usage = new LanguageModelUsage();
+            private List<JsonNode> warnings = new ArrayList<>();
+            private JsonNode request;
             private ResponseMetadata response = new ResponseMetadata();
-            private GenerateTextResult raw = new GenerateTextResult();
+            private JsonNode providerMetadata;
 
             public Builder object(JsonNode v) { this.object = v; return this; }
-            public Builder finishReason(FinishReason v) { this.finishReason = v; return this; }
-            public Builder rawFinishReason(String v) { this.rawFinishReason = v; return this; }
-            public Builder usage(Usage v) { this.usage = v; return this; }
-            public Builder warnings(List<JsonNode> v) { this.warnings = v; return this; }
             public Builder reasoning(String v) { this.reasoning = v; return this; }
-            public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
+            public Builder finishReason(FinishReasonUnified v) { this.finishReason = v; return this; }
+            public Builder usage(LanguageModelUsage v) { this.usage = v; return this; }
+            public Builder warnings(List<JsonNode> v) { this.warnings = v; return this; }
+            public Builder request(JsonNode v) { this.request = v; return this; }
             public Builder response(ResponseMetadata v) { this.response = v; return this; }
-            public Builder raw(GenerateTextResult v) { this.raw = v; return this; }
+            public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
 
-            public GenerateObjectResult build() {
-                return new GenerateObjectResult(object, finishReason, rawFinishReason, usage, warnings,
-                    reasoning, providerMetadata, response, raw);
-            }
+            public GenerateObjectResult build() { return new GenerateObjectResult(object, reasoning, finishReason, usage, warnings, request, response, providerMetadata); }
         }
 
         @Override
@@ -3428,155 +3611,17 @@ public final class Types {
             if (!(o instanceof GenerateObjectResult)) return false;
             GenerateObjectResult that = (GenerateObjectResult) o;
             return Objects.equals(object, that.object)
+                && Objects.equals(reasoning, that.reasoning)
                 && Objects.equals(finishReason, that.finishReason)
-                && Objects.equals(rawFinishReason, that.rawFinishReason)
                 && Objects.equals(usage, that.usage)
                 && Objects.equals(warnings, that.warnings)
-                && Objects.equals(reasoning, that.reasoning)
-                && Objects.equals(providerMetadata, that.providerMetadata)
+                && Objects.equals(request, that.request)
                 && Objects.equals(response, that.response)
-                && Objects.equals(raw, that.raw);
+                && Objects.equals(providerMetadata, that.providerMetadata);
         }
 
         @Override
-        public int hashCode() {
-            return Objects.hash(object, finishReason, rawFinishReason, usage, warnings,
-                reasoning, providerMetadata, response, raw);
-        }
-    }
-
-    /**
-     * Aggregated result of {@code stream_text().consume()} (M11). Mirrors
-     * {@code GenerateTextResult}'s user-facing fields (without {@code raw},
-     * since streaming has no {@code GenerateResult} equivalent).
-     *
-     * Mirrors {@code StreamTextResultAggregated.ts}. reasoning/sources/files use
-     * weak types ({@link JsonNode}) — same strategy as {@link GenerateTextResult}.
-     */
-    public static class StreamTextResultAggregated {
-        @JsonProperty("content") private List<JsonNode> content = new ArrayList<>();
-        @JsonProperty("text") private String text = "";
-        @JsonProperty("reasoning") private List<JsonNode> reasoning = new ArrayList<>();
-        @JsonProperty("reasoning_text") private String reasoningText = "";
-        @JsonProperty("tool_calls") private List<ToolCall> toolCalls = new ArrayList<>();
-        @JsonProperty("sources") private List<Source> sources = new ArrayList<>();
-        @JsonProperty("files") private List<JsonNode> files = new ArrayList<>();
-        @JsonProperty("finish_reason") private FinishReason finishReason = new FinishReason();
-        @JsonProperty("raw_finish_reason") private String rawFinishReason;
-        @JsonProperty("usage") private Usage usage = new Usage();
-        @JsonProperty("total_usage") private Usage totalUsage = new Usage();
-        @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
-        @JsonProperty("response") private ResponseMetadata response;
-        @JsonProperty("response_messages") private List<ModelMessage> responseMessages = new ArrayList<>();
-
-        @JsonCreator
-        StreamTextResultAggregated() {}
-
-        private StreamTextResultAggregated(String text, List<JsonNode> reasoning, String reasoningText,
-                                           List<ToolCall> toolCalls, List<Source> sources, List<JsonNode> files,
-                                           FinishReason finishReason, String rawFinishReason, Usage usage,
-                                           Usage totalUsage, List<JsonNode> warnings, JsonNode providerMetadata,
-                                           ResponseMetadata response, List<ModelMessage> responseMessages) {
-            this.text = text;
-            this.reasoning = reasoning;
-            this.reasoningText = reasoningText;
-            this.toolCalls = toolCalls;
-            this.sources = sources;
-            this.files = files;
-            this.finishReason = finishReason;
-            this.rawFinishReason = rawFinishReason;
-            this.usage = usage;
-            this.totalUsage = totalUsage;
-            this.warnings = warnings;
-            this.providerMetadata = providerMetadata;
-            this.response = response;
-            this.responseMessages = responseMessages;
-        }
-
-        public List<JsonNode> getContent() { return content; }
-        public String getText() { return text; }
-        public List<JsonNode> getReasoning() { return reasoning; }
-        public String getReasoningText() { return reasoningText; }
-        public List<ToolCall> getToolCalls() { return toolCalls; }
-        public List<Source> getSources() { return sources; }
-        public List<JsonNode> getFiles() { return files; }
-        public FinishReason getFinishReason() { return finishReason; }
-        public String getRawFinishReason() { return rawFinishReason; }
-        public Usage getUsage() { return usage; }
-        public Usage getTotalUsage() { return totalUsage; }
-        public List<JsonNode> getWarnings() { return warnings; }
-        public JsonNode getProviderMetadata() { return providerMetadata; }
-        public ResponseMetadata getResponse() { return response; }
-        public List<ModelMessage> getResponseMessages() { return responseMessages; }
-
-        public static Builder builder() { return new Builder(); }
-
-        public static class Builder {
-            private String text = "";
-            private List<JsonNode> reasoning = new ArrayList<>();
-            private String reasoningText = "";
-            private List<ToolCall> toolCalls = new ArrayList<>();
-            private List<Source> sources = new ArrayList<>();
-            private List<JsonNode> files = new ArrayList<>();
-            private FinishReason finishReason = new FinishReason();
-            private String rawFinishReason;
-            private Usage usage = new Usage();
-            private Usage totalUsage = new Usage();
-            private List<JsonNode> warnings = new ArrayList<>();
-            private JsonNode providerMetadata;
-            private ResponseMetadata response;
-            private List<ModelMessage> responseMessages = new ArrayList<>();
-
-            public Builder text(String v) { this.text = v; return this; }
-            public Builder reasoning(List<JsonNode> v) { this.reasoning = v; return this; }
-            public Builder reasoningText(String v) { this.reasoningText = v; return this; }
-            public Builder toolCalls(List<ToolCall> v) { this.toolCalls = v; return this; }
-            public Builder sources(List<Source> v) { this.sources = v; return this; }
-            public Builder files(List<JsonNode> v) { this.files = v; return this; }
-            public Builder finishReason(FinishReason v) { this.finishReason = v; return this; }
-            public Builder rawFinishReason(String v) { this.rawFinishReason = v; return this; }
-            public Builder usage(Usage v) { this.usage = v; return this; }
-            public Builder totalUsage(Usage v) { this.totalUsage = v; return this; }
-            public Builder warnings(List<JsonNode> v) { this.warnings = v; return this; }
-            public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
-            public Builder response(ResponseMetadata v) { this.response = v; return this; }
-            public Builder responseMessages(List<ModelMessage> v) { this.responseMessages = v; return this; }
-
-            public StreamTextResultAggregated build() {
-                return new StreamTextResultAggregated(text, reasoning, reasoningText, toolCalls,
-                    sources, files, finishReason, rawFinishReason, usage, totalUsage, warnings,
-                    providerMetadata, response, responseMessages);
-            }
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof StreamTextResultAggregated)) return false;
-            StreamTextResultAggregated that = (StreamTextResultAggregated) o;
-            return Objects.equals(text, that.text)
-                && Objects.equals(reasoning, that.reasoning)
-                && Objects.equals(reasoningText, that.reasoningText)
-                && Objects.equals(toolCalls, that.toolCalls)
-                && Objects.equals(sources, that.sources)
-                && Objects.equals(files, that.files)
-                && Objects.equals(finishReason, that.finishReason)
-                && Objects.equals(rawFinishReason, that.rawFinishReason)
-                && Objects.equals(usage, that.usage)
-                && Objects.equals(totalUsage, that.totalUsage)
-                && Objects.equals(warnings, that.warnings)
-                && Objects.equals(providerMetadata, that.providerMetadata)
-                && Objects.equals(response, that.response)
-                && Objects.equals(responseMessages, that.responseMessages);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(text, reasoning, reasoningText, toolCalls, sources, files,
-                finishReason, rawFinishReason, usage, totalUsage, warnings, providerMetadata,
-                response, responseMessages);
-        }
+        public int hashCode() { return Objects.hash(object, reasoning, finishReason, usage, warnings, request, response, providerMetadata); }
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -3636,34 +3681,34 @@ public final class Types {
 
         public static class TextDelta extends StreamPart {
             @JsonProperty("id") private String id = "";
-            @JsonProperty("delta") private String delta = "";
+            @JsonProperty("text") private String text = "";
             @JsonProperty("provider_metadata") private JsonNode providerMetadata;
 
             @JsonCreator
             TextDelta() {}
 
-            private TextDelta(String id, String delta, JsonNode providerMetadata) {
+            private TextDelta(String id, String text, JsonNode providerMetadata) {
                 this.id = id;
-                this.delta = delta;
+                this.text = text;
                 this.providerMetadata = providerMetadata;
             }
 
             public String getId() { return id; }
-            public String getDelta() { return delta; }
+            public String getText() { return text; }
             public JsonNode getProviderMetadata() { return providerMetadata; }
 
             public static Builder builder() { return new Builder(); }
 
             public static class Builder {
                 private String id = "";
-                private String delta = "";
+                private String text = "";
                 private JsonNode providerMetadata;
 
                 public Builder id(String v) { this.id = v; return this; }
-                public Builder delta(String v) { this.delta = v; return this; }
+                public Builder text(String v) { this.text = v; return this; }
                 public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
 
-                public TextDelta build() { return new TextDelta(id, delta, providerMetadata); }
+                public TextDelta build() { return new TextDelta(id, text, providerMetadata); }
             }
 
             @Override
@@ -3672,12 +3717,12 @@ public final class Types {
                 if (!(o instanceof TextDelta)) return false;
                 TextDelta that = (TextDelta) o;
                 return Objects.equals(id, that.id)
-                    && Objects.equals(delta, that.delta)
+                    && Objects.equals(text, that.text)
                     && Objects.equals(providerMetadata, that.providerMetadata);
             }
 
             @Override
-            public int hashCode() { return Objects.hash(id, delta, providerMetadata); }
+            public int hashCode() { return Objects.hash(id, text, providerMetadata); }
         }
 
         public static class TextEnd extends StreamPart {
@@ -3719,67 +3764,178 @@ public final class Types {
             public int hashCode() { return Objects.hash(id, providerMetadata); }
         }
 
-        public static class StreamStart extends StreamPart {
-            @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
+        /**
+         * Opens the stream (the AI SDK's {@code start} part).
+         */
+        public static class Start extends StreamPart {
 
             @JsonCreator
-            StreamStart() {}
+            Start() {}
 
-            private StreamStart(List<JsonNode> warnings) { this.warnings = warnings; }
-
-            public List<JsonNode> getWarnings() { return warnings; }
 
             public static Builder builder() { return new Builder(); }
 
             public static class Builder {
-                private List<JsonNode> warnings = new ArrayList<>();
 
-                public Builder warnings(List<JsonNode> v) { this.warnings = v; return this; }
-
-                public StreamStart build() { return new StreamStart(warnings); }
+                public Start build() { return new Start(); }
             }
 
             @Override
             public boolean equals(Object o) {
                 if (this == o) return true;
-                if (!(o instanceof StreamStart)) return false;
-                return Objects.equals(warnings, ((StreamStart) o).warnings);
+                if (!(o instanceof Start)) return false;
+                return true;
             }
 
             @Override
-            public int hashCode() { return Objects.hash(warnings); }
+            public int hashCode() { return Objects.hash(); }
         }
 
-        public static class Finish extends StreamPart {
-            @JsonProperty("finish_reason") private FinishReason finishReason = new FinishReason();
-            @JsonProperty("usage") private Usage usage = new Usage();
+        /**
+         * Opens a step: the step's request and the provider's call warnings.
+         */
+        public static class StartStep extends StreamPart {
+            @JsonProperty("request") private JsonNode request;
+            @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
+
+            @JsonCreator
+            StartStep() {}
+
+            private StartStep(JsonNode request, List<JsonNode> warnings) {
+                this.request = request;
+                this.warnings = warnings;
+            }
+
+            public JsonNode getRequest() { return request; }
+            public List<JsonNode> getWarnings() { return warnings; }
+
+            public static Builder builder() { return new Builder(); }
+
+            public static class Builder {
+                private JsonNode request;
+                private List<JsonNode> warnings = new ArrayList<>();
+
+                public Builder request(JsonNode v) { this.request = v; return this; }
+                public Builder warnings(List<JsonNode> v) { this.warnings = v; return this; }
+
+                public StartStep build() { return new StartStep(request, warnings); }
+            }
+
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) return true;
+                if (!(o instanceof StartStep)) return false;
+                StartStep that = (StartStep) o;
+                return Objects.equals(request, that.request)
+                    && Objects.equals(warnings, that.warnings);
+            }
+
+            @Override
+            public int hashCode() { return Objects.hash(request, warnings); }
+        }
+
+        /**
+         * Closes a step: its response metadata, usage, performance, finish reason and
+         * provider metadata.
+         */
+        public static class FinishStep extends StreamPart {
+            @JsonProperty("response") private ResponseMetadata response = new ResponseMetadata();
+            @JsonProperty("usage") private LanguageModelUsage usage = new LanguageModelUsage();
+            @JsonProperty("performance") private JsonNode performance;
+            @JsonProperty("finish_reason") private FinishReasonUnified finishReason = FinishReasonUnified.OTHER;
+            @JsonProperty("raw_finish_reason") private String rawFinishReason;
             @JsonProperty("provider_metadata") private JsonNode providerMetadata;
 
             @JsonCreator
-            Finish() {}
+            FinishStep() {}
 
-            private Finish(FinishReason finishReason, Usage usage, JsonNode providerMetadata) {
-                this.finishReason = finishReason;
+            private FinishStep(ResponseMetadata response, LanguageModelUsage usage, JsonNode performance, FinishReasonUnified finishReason, String rawFinishReason, JsonNode providerMetadata) {
+                this.response = response;
                 this.usage = usage;
+                this.performance = performance;
+                this.finishReason = finishReason;
+                this.rawFinishReason = rawFinishReason;
                 this.providerMetadata = providerMetadata;
             }
 
-            public FinishReason getFinishReason() { return finishReason; }
-            public Usage getUsage() { return usage; }
+            public ResponseMetadata getResponse() { return response; }
+            public LanguageModelUsage getUsage() { return usage; }
+            public JsonNode getPerformance() { return performance; }
+            public FinishReasonUnified getFinishReason() { return finishReason; }
+            public String getRawFinishReason() { return rawFinishReason; }
             public JsonNode getProviderMetadata() { return providerMetadata; }
 
             public static Builder builder() { return new Builder(); }
 
             public static class Builder {
-                private FinishReason finishReason = new FinishReason();
-                private Usage usage = new Usage();
+                private ResponseMetadata response = new ResponseMetadata();
+                private LanguageModelUsage usage = new LanguageModelUsage();
+                private JsonNode performance;
+                private FinishReasonUnified finishReason = FinishReasonUnified.OTHER;
+                private String rawFinishReason;
                 private JsonNode providerMetadata;
 
-                public Builder finishReason(FinishReason v) { this.finishReason = v; return this; }
-                public Builder usage(Usage v) { this.usage = v; return this; }
+                public Builder response(ResponseMetadata v) { this.response = v; return this; }
+                public Builder usage(LanguageModelUsage v) { this.usage = v; return this; }
+                public Builder performance(JsonNode v) { this.performance = v; return this; }
+                public Builder finishReason(FinishReasonUnified v) { this.finishReason = v; return this; }
+                public Builder rawFinishReason(String v) { this.rawFinishReason = v; return this; }
                 public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
 
-                public Finish build() { return new Finish(finishReason, usage, providerMetadata); }
+                public FinishStep build() { return new FinishStep(response, usage, performance, finishReason, rawFinishReason, providerMetadata); }
+            }
+
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) return true;
+                if (!(o instanceof FinishStep)) return false;
+                FinishStep that = (FinishStep) o;
+                return Objects.equals(response, that.response)
+                    && Objects.equals(usage, that.usage)
+                    && Objects.equals(performance, that.performance)
+                    && Objects.equals(finishReason, that.finishReason)
+                    && Objects.equals(rawFinishReason, that.rawFinishReason)
+                    && Objects.equals(providerMetadata, that.providerMetadata);
+            }
+
+            @Override
+            public int hashCode() { return Objects.hash(response, usage, performance, finishReason, rawFinishReason, providerMetadata); }
+        }
+
+        /**
+         * Closes the stream: the last step's finish reason and the usage summed over
+         * the steps.
+         */
+        public static class Finish extends StreamPart {
+            @JsonProperty("finish_reason") private FinishReasonUnified finishReason = FinishReasonUnified.OTHER;
+            @JsonProperty("raw_finish_reason") private String rawFinishReason;
+            @JsonProperty("total_usage") private LanguageModelUsage totalUsage = new LanguageModelUsage();
+
+            @JsonCreator
+            Finish() {}
+
+            private Finish(FinishReasonUnified finishReason, String rawFinishReason, LanguageModelUsage totalUsage) {
+                this.finishReason = finishReason;
+                this.rawFinishReason = rawFinishReason;
+                this.totalUsage = totalUsage;
+            }
+
+            public FinishReasonUnified getFinishReason() { return finishReason; }
+            public String getRawFinishReason() { return rawFinishReason; }
+            public LanguageModelUsage getTotalUsage() { return totalUsage; }
+
+            public static Builder builder() { return new Builder(); }
+
+            public static class Builder {
+                private FinishReasonUnified finishReason = FinishReasonUnified.OTHER;
+                private String rawFinishReason;
+                private LanguageModelUsage totalUsage = new LanguageModelUsage();
+
+                public Builder finishReason(FinishReasonUnified v) { this.finishReason = v; return this; }
+                public Builder rawFinishReason(String v) { this.rawFinishReason = v; return this; }
+                public Builder totalUsage(LanguageModelUsage v) { this.totalUsage = v; return this; }
+
+                public Finish build() { return new Finish(finishReason, rawFinishReason, totalUsage); }
             }
 
             @Override
@@ -3788,12 +3944,12 @@ public final class Types {
                 if (!(o instanceof Finish)) return false;
                 Finish that = (Finish) o;
                 return Objects.equals(finishReason, that.finishReason)
-                    && Objects.equals(usage, that.usage)
-                    && Objects.equals(providerMetadata, that.providerMetadata);
+                    && Objects.equals(rawFinishReason, that.rawFinishReason)
+                    && Objects.equals(totalUsage, that.totalUsage);
             }
 
             @Override
-            public int hashCode() { return Objects.hash(finishReason, usage, providerMetadata); }
+            public int hashCode() { return Objects.hash(finishReason, rawFinishReason, totalUsage); }
         }
 
         public static class ToolInputStart extends StreamPart {
@@ -4036,79 +4192,120 @@ public final class Types {
             }
         }
 
+        /**
+         * A provider-executed tool's result (Rust {@code TypedToolResult}), with the
+         * input of the call it answers ({@code null} for a deferred result).
+         */
         public static class ToolResult extends StreamPart {
             @JsonProperty("tool_call_id") private String toolCallId = "";
             @JsonProperty("tool_name") private String toolName = "";
-            @JsonProperty("result") private JsonNode result = emptyObject();
-            @JsonProperty("is_error") private Boolean isError;
-            @JsonProperty("preliminary") private Boolean preliminary;
-            @JsonProperty("dynamic") private Boolean dynamic;
+            @JsonProperty("input") private JsonNode input;
+            @JsonProperty("output") private JsonNode output;
+            @JsonProperty("provider_executed") private Boolean providerExecuted;
             @JsonProperty("provider_metadata") private JsonNode providerMetadata;
-
-            @JsonCreator
-            ToolResult() {}
-
-            private ToolResult(String toolCallId, String toolName, JsonNode result, Boolean isError,
-                               Boolean preliminary, Boolean dynamic, JsonNode providerMetadata) {
+            @JsonProperty("dynamic") private Boolean dynamic;
+            @JsonProperty("preliminary") private Boolean preliminary;
+            @JsonCreator ToolResult() {}
+            public ToolResult(String toolCallId, String toolName, JsonNode input, JsonNode output, Boolean providerExecuted,
+                              JsonNode providerMetadata, Boolean dynamic, Boolean preliminary) {
                 this.toolCallId = toolCallId;
                 this.toolName = toolName;
-                this.result = result;
-                this.isError = isError;
-                this.preliminary = preliminary;
-                this.dynamic = dynamic;
+                this.input = input;
+                this.output = output;
+                this.providerExecuted = providerExecuted;
                 this.providerMetadata = providerMetadata;
+                this.dynamic = dynamic;
+                this.preliminary = preliminary;
             }
-
             public String getToolCallId() { return toolCallId; }
             public String getToolName() { return toolName; }
-            public JsonNode getResult() { return result; }
-            public Boolean getIsError() { return isError; }
-            public Boolean getPreliminary() { return preliminary; }
-            public Boolean getDynamic() { return dynamic; }
+            public JsonNode getInput() { return input; }
+            public JsonNode getOutput() { return output; }
+            public Boolean getProviderExecuted() { return providerExecuted; }
             public JsonNode getProviderMetadata() { return providerMetadata; }
-
-            public static Builder builder() { return new Builder(); }
-
-            public static class Builder {
-                private String toolCallId = "";
-                private String toolName = "";
-                private JsonNode result = emptyObject();
-                private Boolean isError;
-                private Boolean preliminary;
-                private Boolean dynamic;
-                private JsonNode providerMetadata;
-
-                public Builder toolCallId(String v) { this.toolCallId = v; return this; }
-                public Builder toolName(String v) { this.toolName = v; return this; }
-                public Builder result(JsonNode v) { this.result = v; return this; }
-                public Builder isError(Boolean v) { this.isError = v; return this; }
-                public Builder preliminary(Boolean v) { this.preliminary = v; return this; }
-                public Builder dynamic(Boolean v) { this.dynamic = v; return this; }
-                public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
-
-                public ToolResult build() {
-                    return new ToolResult(toolCallId, toolName, result, isError, preliminary, dynamic, providerMetadata);
-                }
+            public Boolean getDynamic() { return dynamic; }
+            public Boolean getPreliminary() { return preliminary; }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof ToolResult)) return false;
+                ToolResult other = (ToolResult) value;
+                return Objects.equals(toolCallId, other.toolCallId) && Objects.equals(toolName, other.toolName)
+                    && Objects.equals(input, other.input) && Objects.equals(output, other.output)
+                    && Objects.equals(providerExecuted, other.providerExecuted)
+                    && Objects.equals(providerMetadata, other.providerMetadata)
+                    && Objects.equals(dynamic, other.dynamic) && Objects.equals(preliminary, other.preliminary);
             }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) return true;
-                if (!(o instanceof ToolResult)) return false;
-                ToolResult that = (ToolResult) o;
-                return Objects.equals(toolCallId, that.toolCallId)
-                    && Objects.equals(toolName, that.toolName)
-                    && Objects.equals(result, that.result)
-                    && Objects.equals(isError, that.isError)
-                    && Objects.equals(preliminary, that.preliminary)
-                    && Objects.equals(dynamic, that.dynamic)
-                    && Objects.equals(providerMetadata, that.providerMetadata);
+            @Override public int hashCode() {
+                return Objects.hash(toolCallId, toolName, input, output, providerExecuted, providerMetadata, dynamic, preliminary);
             }
+        }
 
-            @Override
-            public int hashCode() {
-                return Objects.hash(toolCallId, toolName, result, isError, preliminary, dynamic, providerMetadata);
+        /**
+         * A provider-executed tool's error result, or the error that follows an
+         * invalid tool call (Rust {@code TypedToolError}).
+         */
+        public static class ToolError extends StreamPart {
+            @JsonProperty("tool_call_id") private String toolCallId = "";
+            @JsonProperty("tool_name") private String toolName = "";
+            @JsonProperty("input") private JsonNode input;
+            @JsonProperty("error") private JsonNode error;
+            @JsonProperty("provider_executed") private Boolean providerExecuted;
+            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("dynamic") private Boolean dynamic;
+            @JsonCreator ToolError() {}
+            public ToolError(String toolCallId, String toolName, JsonNode input, JsonNode error, Boolean providerExecuted,
+                             JsonNode providerMetadata, Boolean dynamic) {
+                this.toolCallId = toolCallId;
+                this.toolName = toolName;
+                this.input = input;
+                this.error = error;
+                this.providerExecuted = providerExecuted;
+                this.providerMetadata = providerMetadata;
+                this.dynamic = dynamic;
             }
+            public String getToolCallId() { return toolCallId; }
+            public String getToolName() { return toolName; }
+            public JsonNode getInput() { return input; }
+            public JsonNode getError() { return error; }
+            public Boolean getProviderExecuted() { return providerExecuted; }
+            public JsonNode getProviderMetadata() { return providerMetadata; }
+            public Boolean getDynamic() { return dynamic; }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof ToolError)) return false;
+                ToolError other = (ToolError) value;
+                return Objects.equals(toolCallId, other.toolCallId) && Objects.equals(toolName, other.toolName)
+                    && Objects.equals(input, other.input) && Objects.equals(error, other.error)
+                    && Objects.equals(providerExecuted, other.providerExecuted)
+                    && Objects.equals(providerMetadata, other.providerMetadata) && Objects.equals(dynamic, other.dynamic);
+            }
+            @Override public int hashCode() {
+                return Objects.hash(toolCallId, toolName, input, error, providerExecuted, providerMetadata, dynamic);
+            }
+        }
+
+        /** A tool whose execution was denied (Rust {@code ToolOutputDenied}). */
+        public static class ToolOutputDenied extends StreamPart {
+            @JsonProperty("tool_call_id") private String toolCallId = "";
+            @JsonProperty("tool_name") private String toolName = "";
+            @JsonProperty("provider_executed") private Boolean providerExecuted;
+            @JsonProperty("dynamic") private Boolean dynamic;
+            @JsonCreator ToolOutputDenied() {}
+            public ToolOutputDenied(String toolCallId, String toolName, Boolean providerExecuted, Boolean dynamic) {
+                this.toolCallId = toolCallId;
+                this.toolName = toolName;
+                this.providerExecuted = providerExecuted;
+                this.dynamic = dynamic;
+            }
+            public String getToolCallId() { return toolCallId; }
+            public String getToolName() { return toolName; }
+            public Boolean getProviderExecuted() { return providerExecuted; }
+            public Boolean getDynamic() { return dynamic; }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof ToolOutputDenied)) return false;
+                ToolOutputDenied other = (ToolOutputDenied) value;
+                return Objects.equals(toolCallId, other.toolCallId) && Objects.equals(toolName, other.toolName)
+                    && Objects.equals(providerExecuted, other.providerExecuted) && Objects.equals(dynamic, other.dynamic);
+            }
+            @Override public int hashCode() { return Objects.hash(toolCallId, toolName, providerExecuted, dynamic); }
         }
 
         /** A file generated by the model (e.g. an image or document). */
@@ -4199,34 +4396,34 @@ public final class Types {
 
         public static class ReasoningDelta extends StreamPart {
             @JsonProperty("id") private String id = "";
-            @JsonProperty("delta") private String delta = "";
+            @JsonProperty("text") private String text = "";
             @JsonProperty("provider_metadata") private JsonNode providerMetadata;
 
             @JsonCreator
             ReasoningDelta() {}
 
-            private ReasoningDelta(String id, String delta, JsonNode providerMetadata) {
+            private ReasoningDelta(String id, String text, JsonNode providerMetadata) {
                 this.id = id;
-                this.delta = delta;
+                this.text = text;
                 this.providerMetadata = providerMetadata;
             }
 
             public String getId() { return id; }
-            public String getDelta() { return delta; }
+            public String getText() { return text; }
             public JsonNode getProviderMetadata() { return providerMetadata; }
 
             public static Builder builder() { return new Builder(); }
 
             public static class Builder {
                 private String id = "";
-                private String delta = "";
+                private String text = "";
                 private JsonNode providerMetadata;
 
                 public Builder id(String v) { this.id = v; return this; }
-                public Builder delta(String v) { this.delta = v; return this; }
+                public Builder text(String v) { this.text = v; return this; }
                 public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
 
-                public ReasoningDelta build() { return new ReasoningDelta(id, delta, providerMetadata); }
+                public ReasoningDelta build() { return new ReasoningDelta(id, text, providerMetadata); }
             }
 
             @Override
@@ -4235,12 +4432,12 @@ public final class Types {
                 if (!(o instanceof ReasoningDelta)) return false;
                 ReasoningDelta that = (ReasoningDelta) o;
                 return Objects.equals(id, that.id)
-                    && Objects.equals(delta, that.delta)
+                    && Objects.equals(text, that.text)
                     && Objects.equals(providerMetadata, that.providerMetadata);
             }
 
             @Override
-            public int hashCode() { return Objects.hash(id, delta, providerMetadata); }
+            public int hashCode() { return Objects.hash(id, text, providerMetadata); }
         }
 
         public static class ReasoningEnd extends StreamPart {
@@ -4282,50 +4479,41 @@ public final class Types {
             public int hashCode() { return Objects.hash(id, providerMetadata); }
         }
 
-        public static class ResponseMetadata extends StreamPart {
-            @JsonProperty("id") private String id;
-            @JsonProperty("timestamp") private String timestamp;
-            @JsonProperty("model_id") private String modelId;
+        /**
+         * Ends a stream whose call was aborted.
+         */
+        public static class Abort extends StreamPart {
+            @JsonProperty("reason") private String reason;
 
             @JsonCreator
-            ResponseMetadata() {}
+            Abort() {}
 
-            private ResponseMetadata(String id, String timestamp, String modelId) {
-                this.id = id;
-                this.timestamp = timestamp;
-                this.modelId = modelId;
+            private Abort(String reason) {
+                this.reason = reason;
             }
 
-            public String getId() { return id; }
-            public String getTimestamp() { return timestamp; }
-            public String getModelId() { return modelId; }
+            public String getReason() { return reason; }
 
             public static Builder builder() { return new Builder(); }
 
             public static class Builder {
-                private String id;
-                private String timestamp;
-                private String modelId;
+                private String reason;
 
-                public Builder id(String v) { this.id = v; return this; }
-                public Builder timestamp(String v) { this.timestamp = v; return this; }
-                public Builder modelId(String v) { this.modelId = v; return this; }
+                public Builder reason(String v) { this.reason = v; return this; }
 
-                public ResponseMetadata build() { return new ResponseMetadata(id, timestamp, modelId); }
+                public Abort build() { return new Abort(reason); }
             }
 
             @Override
             public boolean equals(Object o) {
                 if (this == o) return true;
-                if (!(o instanceof ResponseMetadata)) return false;
-                ResponseMetadata that = (ResponseMetadata) o;
-                return Objects.equals(id, that.id)
-                    && Objects.equals(timestamp, that.timestamp)
-                    && Objects.equals(modelId, that.modelId);
+                if (!(o instanceof Abort)) return false;
+                Abort that = (Abort) o;
+                return Objects.equals(reason, that.reason);
             }
 
             @Override
-            public int hashCode() { return Objects.hash(id, timestamp, modelId); }
+            public int hashCode() { return Objects.hash(reason); }
         }
 
         public static class Source extends StreamPart {
@@ -4492,6 +4680,34 @@ public final class Types {
             }
             @Override public int hashCode() { return Objects.hash(approvalId, toolCall, reason, isAutomatic, signature); }
         }
+        /** The answer to a tool approval request (Rust {@code ToolApprovalResponseOutput}). */
+        public static class ToolApprovalResponse extends StreamPart {
+            @JsonProperty("approval_id") private String approvalId;
+            @JsonProperty("tool_call") private Types.ToolCall toolCall;
+            @JsonProperty("approved") private boolean approved;
+            @JsonProperty("reason") private String reason;
+            @JsonProperty("provider_executed") private Boolean providerExecuted;
+            @JsonCreator ToolApprovalResponse() {}
+            public ToolApprovalResponse(String approvalId, Types.ToolCall toolCall, boolean approved, String reason, Boolean providerExecuted) {
+                this.approvalId = approvalId;
+                this.toolCall = toolCall;
+                this.approved = approved;
+                this.reason = reason;
+                this.providerExecuted = providerExecuted;
+            }
+            public String getApprovalId() { return approvalId; }
+            public Types.ToolCall getToolCall() { return toolCall; }
+            public boolean getApproved() { return approved; }
+            public String getReason() { return reason; }
+            public Boolean getProviderExecuted() { return providerExecuted; }
+            @Override public boolean equals(Object value) {
+                if (!(value instanceof ToolApprovalResponse)) return false;
+                ToolApprovalResponse other = (ToolApprovalResponse) value;
+                return Objects.equals(approvalId, other.approvalId) && Objects.equals(toolCall, other.toolCall) && approved == other.approved
+                    && Objects.equals(reason, other.reason) && Objects.equals(providerExecuted, other.providerExecuted);
+            }
+            @Override public int hashCode() { return Objects.hash(approvalId, toolCall, approved, reason, providerExecuted); }
+        }
         /** Fallback for variants introduced after this wrapper was written. */
         public static class Unknown extends StreamPart {
             private String tag;
@@ -4526,24 +4742,29 @@ public final class Types {
         if (value instanceof StreamPart.TextStart) return "TextStart";
         if (value instanceof StreamPart.TextDelta) return "TextDelta";
         if (value instanceof StreamPart.TextEnd) return "TextEnd";
-        if (value instanceof StreamPart.StreamStart) return "StreamStart";
+        if (value instanceof StreamPart.Start) return "Start";
+        if (value instanceof StreamPart.StartStep) return "StartStep";
+        if (value instanceof StreamPart.FinishStep) return "FinishStep";
         if (value instanceof StreamPart.Finish) return "Finish";
+        if (value instanceof StreamPart.Abort) return "Abort";
         if (value instanceof StreamPart.ToolInputStart) return "ToolInputStart";
         if (value instanceof StreamPart.ToolInputDelta) return "ToolInputDelta";
         if (value instanceof StreamPart.ToolInputEnd) return "ToolInputEnd";
         if (value instanceof StreamPart.ToolCall) return "ToolCall";
         if (value instanceof StreamPart.ToolResult) return "ToolResult";
+        if (value instanceof StreamPart.ToolError) return "ToolError";
+        if (value instanceof StreamPart.ToolOutputDenied) return "ToolOutputDenied";
         if (value instanceof StreamPart.File) return "File";
         if (value instanceof StreamPart.ReasoningStart) return "ReasoningStart";
         if (value instanceof StreamPart.ReasoningDelta) return "ReasoningDelta";
         if (value instanceof StreamPart.ReasoningEnd) return "ReasoningEnd";
-        if (value instanceof StreamPart.ResponseMetadata) return "ResponseMetadata";
         if (value instanceof StreamPart.Source) return "Source";
         if (value instanceof StreamPart.Raw) return "Raw";
         if (value instanceof StreamPart.Error) return "Error";
         if (value instanceof StreamPart.Custom) return "Custom";
         if (value instanceof StreamPart.ReasoningFile) return "ReasoningFile";
         if (value instanceof StreamPart.ToolApprovalRequest) return "ToolApprovalRequest";
+        if (value instanceof StreamPart.ToolApprovalResponse) return "ToolApprovalResponse";
         if (value instanceof StreamPart.Unknown) return ((StreamPart.Unknown) value).getTag();
         throw new IllegalArgumentException("Unknown StreamPart: " + value);
     }
@@ -4582,24 +4803,29 @@ public final class Types {
                 case "TextStart": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.TextStart.class);
                 case "TextDelta": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.TextDelta.class);
                 case "TextEnd": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.TextEnd.class);
-                case "StreamStart": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.StreamStart.class);
+                case "Start": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Start.class);
+                case "StartStep": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.StartStep.class);
+                case "FinishStep": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.FinishStep.class);
                 case "Finish": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Finish.class);
+                case "Abort": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Abort.class);
                 case "ToolInputStart": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolInputStart.class);
                 case "ToolInputDelta": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolInputDelta.class);
                 case "ToolInputEnd": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolInputEnd.class);
                 case "ToolCall": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolCall.class);
                 case "ToolResult": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolResult.class);
+                case "ToolError": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolError.class);
+                case "ToolOutputDenied": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolOutputDenied.class);
                 case "File": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.File.class);
                 case "ReasoningStart": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ReasoningStart.class);
                 case "ReasoningDelta": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ReasoningDelta.class);
                 case "ReasoningEnd": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ReasoningEnd.class);
-                case "ResponseMetadata": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ResponseMetadata.class);
                 case "Source": return new StreamPart.Source(AimuxJson.MAPPER.treeToValue(innerObj, Types.Source.class));
                 case "Raw": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Raw.class);
                 case "Error": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Error.class);
                 case "Custom": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.Custom.class);
                 case "ReasoningFile": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ReasoningFile.class);
                 case "ToolApprovalRequest": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolApprovalRequest.class);
+                case "ToolApprovalResponse": return AimuxJson.MAPPER.treeToValue(innerObj, StreamPart.ToolApprovalResponse.class);
                 default: return new StreamPart.Unknown(tag, inner);
             }
         }

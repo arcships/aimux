@@ -55,8 +55,9 @@ final class ToolCallRepairs {
     // ── Host loops ───────────────────────────────────────────────────────────
 
     /**
-     * Repair every invalid tool call in a serialized GenerateTextResult /
-     * GenerateObjectResult / StreamTextResultAggregated, at most once each.
+     * Repair every invalid tool call in a serialized GenerateTextResult (generated
+     * or consumed from a stream), at most once each. A GenerateObjectResult has
+     * no tool calls.
      *
      * @return The patched result JSON, or {@code resultJson} unchanged when
      *         there is no hook or nothing to repair.
@@ -195,10 +196,9 @@ final class ToolCallRepairs {
         return repaired.toString();
     }
 
-    /** {@code tool_calls}, from a text result or from the {@code raw} of an object result. */
+    /** The top-level {@code tool_calls} of a text result (missing on an object result). */
     private static JsonNode toolCalls(JsonNode result) {
-        JsonNode calls = result.path("tool_calls");
-        return calls.isArray() ? calls : result.path("raw").path("tool_calls");
+        return result.path("tool_calls");
     }
 
     private static boolean isNull(String json) {
