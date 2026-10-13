@@ -29,6 +29,7 @@ const PINNED_ONLY = [
   '@ai-sdk/deepseek',
   '@ai-sdk/google-vertex',
   '@ai-sdk/groq',
+  '@ai-sdk/huggingface',
   '@ai-sdk/mistral',
   '@ai-sdk/open-responses',
   '@ai-sdk/xai',

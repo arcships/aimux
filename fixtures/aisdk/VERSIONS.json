@@ -35,6 +35,10 @@
     "version": "4.0.52",
     "integrity": "sha512-Vmgr4GDtZRd/eKGVSfCYvWLEPpVJyxbE4PI5OWPmnu/uHHvCOQU/6jRP7z2Rn4S+GGR64p3QvSHqeTRuj2bfQA=="
   },
+  "@ai-sdk/huggingface": {
+    "version": "2.0.62",
+    "integrity": "sha512-FCjGyrLhnV2nh6euHleq4/d6ZD/7d5g+2XnxUjjJx7SVp/PT1ICLG2kJ3zBiveMG6i5FfUN+7sj5377o8w/jFw=="
+  },
   "@ai-sdk/mistral": {
     "version": "4.0.54",
     "integrity": "sha512-s3RkuUtkVvh8rmUgqBBtB7Ysttfq64Mr76G/589+IFOCp6WkBXO61lw+lCO1w61tWG5YFfMhg3RaHmKPSCWVIw=="

@@ -1956,3 +1956,18 @@ fn normalizes_image_wildcard_via_detection() {
         })
     );
 }
+
+/// TS: `supportedUrls` (huggingface-responses-language-model.ts:67-69): image
+/// URLs go to the API as they are; other URLs are downloaded by the operation.
+#[tokio::test]
+async fn supports_http_image_urls() {
+    let server = MockServer::start().await;
+    let urls = make_provider(&server)
+        .responses("deepseek-ai/DeepSeek-V3-0324")
+        .supported_urls()
+        .await;
+    assert_eq!(urls.0.len(), 1);
+    assert!(urls.0["image/*"][0].is_match("https://example.com/a.png"));
+    assert!(urls.0["image/*"][0].is_match("http://example.com/a.png"));
+    assert!(!urls.0["image/*"][0].is_match("ftp://example.com/a.png"));
+}

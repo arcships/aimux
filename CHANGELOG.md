@@ -42,7 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenAI-compatible, Open Responses, Anthropic, Anthropic-AWS and Google. A
   per-call `user-agent` keeps the package's part. The Vertex MaaS and xAI
   sub-providers send `ai-sdk-openai-compatible/3.0.59`, the version
-  google-vertex depends on. Other packages send `ai-sdk-provider-utils/5.0.53`.
+  google-vertex depends on. Hugging Face sends `ai-sdk-provider-utils/5.0.53`
+  and no package part, as `@ai-sdk/huggingface` 2.0.62 does (now pinned in
+  `VERSIONS.json`). Other packages send `ai-sdk-provider-utils/5.0.53`.
 
 - `to_chat_completion` reads `choices[].logprobs` from the calling
   provider's metadata namespace (Azure's `azure`, DeepSeek's `deepseek`)
@@ -124,7 +126,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through. The Cohere chat, Open Responses and xAI Responses models declare
   the URLs their packages declare (HTTP(S) images; for xAI also PDF and
   text), so those still reach the API as URLs. Codex models declare the
-  OpenAI Responses model's URLs (HTTP(S) images and PDFs) on both channels.
+  OpenAI Responses model's URLs (HTTP(S) images and PDFs) on both channels,
+  and the Hugging Face Responses model declares HTTP(S) images, as
+  `@ai-sdk/huggingface` does.
   `GenerateTextOptions::download` takes a `DownloadFunction` (the AI SDK's
   `experimental_download`) instead. `AudioInput::Url` is new:
   `transcribe` downloads it with `TranscriptionCallOptions::download`, and a
