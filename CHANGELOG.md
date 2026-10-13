@@ -37,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Go reads these bodies as `json.RawMessage`; Dart gains `hasBody` /
   `hasInputSchemaInput` (#232 C34).
 
+- File content parts are the AI SDK's `FilePart`: one `file` tag whose `data`
+  is a tagged `FileData` (`{type:"data"|"url"|"reference"|"text"}`), a string
+  (base64 or a URL) or a bare `{provider: id}` reference. The `file-base64`,
+  `file-url` and `file-reference` parts are removed; write
+  `{type:"file", data:{type:"url", url}}` and so on. A `reasoning-file`
+  part's `data` also takes a bare string. A `data:` URL's media type wins over
+  the part's `mediaType`, and response messages carry files as bare base64
+  strings. Bindings replace the three part classes with a typed `FilePartData`
+  (#232 C35).
+
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
   model and provider ids take precedence over middleware overrides.

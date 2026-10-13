@@ -728,3 +728,48 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 		t.Errorf("tool output did not round-trip: %q (%v)", content, err)
 	}
 }
+
+func TestE2E_FilePartsAreTheAiSdkFilePart(t *testing.T) {
+	// FilePart.data is FileData | DataContent | URL | ProviderReference upstream
+	// (provider-utils types/content-part.ts:75): a data: URL's media type wins
+	// (ai prompt/file-part-data.ts:31-41) and a bare reference is a reference
+	// (:133-138). There is no file-base64 / file-url / file-reference part.
+	srv := newMockServer()
+	defer srv.Close()
+	srv.SetResponse(plainOpenAIResponse)
+	m := chatModel(t, srv.URL)
+	defer m.Close()
+
+	prompt := `[{"role":"user","content":[
+		{"type":"file","data":{"type":"url","url":"https://example.com/a.png"},"mediaType":"image/png"},
+		{"type":"file","data":"data:image/png;base64,iVBORw==","mediaType":"image"},
+		{"type":"file","data":{"deepseek":"file-abc"},"mediaType":"image/png"}]}]`
+	if _, err := m.GenerateText(prompt, ""); err != nil {
+		t.Fatalf("generate_text failed: %v", err)
+	}
+	var request struct {
+		Messages []struct {
+			Content []map[string]any `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(srv.LastRequestBody()), &request); err != nil {
+		t.Fatalf("request body: %v", err)
+	}
+	content := request.Messages[0].Content
+	if got := content[0]["image_url"].(map[string]any)["url"]; got != "https://example.com/a.png" {
+		t.Errorf("url file part: %v", content[0])
+	}
+	if got := content[1]["image_url"].(map[string]any)["url"]; got != "data:image/png;base64,iVBORw==" {
+		t.Errorf("data URL file part: %v", content[1])
+	}
+	if content[2]["type"] != "file" || content[2]["file_id"] != "file-abc" {
+		t.Errorf("bare reference file part: %v", content[2])
+	}
+
+	for _, removed := range []string{"file-base64", "file-url", "file-reference"} {
+		part := `{"type":"` + removed + `","data":"aGk=","url":"https://example.com/a.png","mediaType":"image/png"}`
+		if _, err := m.GenerateText(`[{"role":"user","content":[`+part+`]}]`, ""); err == nil {
+			t.Errorf("%s was accepted", removed)
+		}
+	}
+}

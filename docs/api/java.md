@@ -440,6 +440,13 @@ value (`body`, `inputSchemaInput`) is a `JsonNode`: a JSON `null` reads as
 `NullNode` and is written back as `null`, a missing field stays Java `null`
 and is omitted.
 
+A `ContentPart.File` is the AI SDK `FilePart`: its `data` is a `FilePartData`
+(`Tagged(FileData)`, `Bare` for a base64 or URL string, or `Reference` for a
+bare `{provider: id}`); the builder also takes a `FileData` or inline bytes
+(written as tagged data). `ContentPart.ReasoningFile.data` is a
+`ReasoningFilePartData`. There is no `file-base64` / `file-url` /
+`file-reference` part.
+
 A `ContentPart.ToolResult` (`type: "tool-result"`) carries `toolCallId`,
 `toolName`, `output` and `providerOptions`; `output` is a `ToolResultOutput`
 built with `text` / `json` / `executionDenied` / `errorText` / `errorJson` /

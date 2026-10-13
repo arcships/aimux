@@ -220,6 +220,48 @@ test('e2e: image bytes are a base64 string in the prompt JSON', async (t) => {
   }
 })
 
+test('e2e: file parts take the AI SDK file part data', async (t) => {
+  // FilePart.data is FileData | DataContent | URL | ProviderReference upstream
+  // (provider-utils types/content-part.ts:75); a data: URL's media type wins
+  // (ai prompt/file-part-data.ts:31-41) and a bare reference is a reference
+  // (:133-138). There is no file-base64 / file-url / file-reference part.
+  let receivedBody: any = null
+  const { server, url } = await startMockServer((req, res) => {
+    let body = ''
+    req.on('data', (chunk: Buffer) => (body += chunk))
+    req.on('end', () => {
+      receivedBody = JSON.parse(body)
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(ANTHROPIC_MESSAGE_RESPONSE)
+    })
+  })
+
+  try {
+    const model = await anthropic('test-key', 'claude-3-5-sonnet-20241022', url)
+    const prompt = [{
+      role: 'user',
+      content: [
+        { type: 'file', data: 'data:image/png;base64,iVBORw==', mediaType: 'image' },
+        { type: 'file', data: { type: 'reference', reference: { anthropic: 'file-abc' } }, mediaType: 'application/pdf' },
+        { type: 'file', data: { anthropic: 'file-def' }, mediaType: 'application/pdf' },
+      ],
+    }]
+    await model.generateText(JSON.stringify(prompt))
+
+    const content = receivedBody.messages[0].content
+    t.deepEqual(content[0].source, { type: 'base64', media_type: 'image/png', data: 'iVBORw==' })
+    t.deepEqual(content[1], { type: 'document', source: { type: 'file', file_id: 'file-abc' } })
+    t.deepEqual(content[2], { type: 'document', source: { type: 'file', file_id: 'file-def' } })
+
+    for (const removed of ['file-base64', 'file-url', 'file-reference']) {
+      const part = { type: removed, data: 'aGk=', url: 'https://example.com/a.pdf', mediaType: 'application/pdf' }
+      await t.throwsAsync(model.generateText(JSON.stringify([{ role: 'user', content: [part] }])))
+    }
+  } finally {
+    await closeServer(server)
+  }
+})
+
 // ── Tool-call parsing ───────────────────────────────────────────────────────
 
 const OPENAI_TOOL_CALL_RESPONSE = JSON.stringify({

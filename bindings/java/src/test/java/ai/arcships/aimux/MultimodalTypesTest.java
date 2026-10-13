@@ -378,8 +378,8 @@ class MultimodalTypesTest {
 
         Types.ContentPart file = Types.ContentPart.File.builder()
             .data(Arrays.asList(0, 1, 2, 250, 255)).mediaType("application/pdf").build();
-        assertThat(t.writeValueAsString(file))
-            .isEqualTo("{\"type\":\"file\",\"data\":\"AAEC+v8=\",\"mediaType\":\"application/pdf\"}");
+        assertThat(t.writeValueAsString(file)).isEqualTo(
+            "{\"type\":\"file\",\"data\":{\"type\":\"data\",\"data\":\"AAEC+v8=\"},\"mediaType\":\"application/pdf\"}");
 
         assertThat(t.writeValueAsString(new Types.FileBytes.Binary(Arrays.asList(104, 105))))
             .isEqualTo("\"aGk=\"");
@@ -387,6 +387,42 @@ class MultimodalTypesTest {
             .isEqualTo(new Types.FileBytes.Base64("aGk="));
         assertThatThrownBy(() -> t.readValue("[104,105]", Types.FileBytes.class))
             .isInstanceOf(IOException.class);
+    }
+
+    @Test
+    void filePartsAreTheAiSdkFilePart() throws Exception {
+        // FilePart.data is FileData | DataContent | URL | ProviderReference
+        // (provider-utils types/content-part.ts:75, file-data.ts:44-48) and
+        // ReasoningFilePart.data is tagged data or a URL, or a string (:164).
+        // There is no file-base64 / file-url / file-reference part.
+        ObjectMapper t = Types.AimuxJson.MAPPER;
+        String[] wires = {
+            "{\"type\":\"file\",\"data\":{\"type\":\"data\",\"data\":\"aGk=\"},\"mediaType\":\"text/plain\",\"filename\":\"a.txt\"}",
+            "{\"type\":\"file\",\"data\":{\"type\":\"url\",\"url\":\"https://example.com/a.pdf\"},\"mediaType\":\"application/pdf\"}",
+            "{\"type\":\"file\",\"data\":{\"type\":\"reference\",\"reference\":{\"openai\":\"file-abc\"}},\"mediaType\":\"application/pdf\"}",
+            "{\"type\":\"file\",\"data\":{\"type\":\"text\",\"text\":\"hello\"},\"mediaType\":\"text/plain\"}",
+            "{\"type\":\"file\",\"data\":\"aGk=\",\"mediaType\":\"text/plain\"}",
+            "{\"type\":\"file\",\"data\":\"https://example.com/a.pdf\",\"mediaType\":\"application/pdf\"}",
+            "{\"type\":\"file\",\"data\":{\"openai\":\"file-abc\"},\"mediaType\":\"application/pdf\"}",
+            "{\"type\":\"reasoning-file\",\"data\":\"aGk=\",\"mediaType\":\"image/png\"}",
+            "{\"type\":\"reasoning-file\",\"data\":{\"type\":\"url\",\"url\":\"https://example.com/a.png\"},\"mediaType\":\"image/png\"}",
+        };
+        for (String wire : wires) {
+            assertThat(t.writeValueAsString(t.readValue(wire, Types.ContentPart.class))).isEqualTo(wire);
+        }
+        Types.ContentPart.File bare = (Types.ContentPart.File) t.readValue(wires[6], Types.ContentPart.class);
+        assertThat(bare.getData()).isInstanceOf(Types.FilePartData.Reference.class);
+        for (String removed : new String[] {"file-base64", "file-url", "file-reference"}) {
+            assertThatThrownBy(() -> t.readValue(
+                    "{\"type\":\"" + removed + "\",\"data\":\"aGk=\",\"url\":\"https://example.com/a.pdf\","
+                        + "\"mediaType\":\"application/pdf\"}",
+                    Types.ContentPart.class))
+                .hasMessageContaining("Unknown ContentPart type");
+        }
+        Types.ContentPart url = Types.ContentPart.File.builder()
+            .data(Types.FileData.Url.builder().url("https://example.com/a.pdf").build())
+            .mediaType("application/pdf").build();
+        assertThat(t.writeValueAsString(url)).isEqualTo(wires[1]);
     }
 
     @Test

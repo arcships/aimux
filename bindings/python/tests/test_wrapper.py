@@ -308,6 +308,55 @@ class TestPromptMessages:
         assert source == {"type": "base64", "media_type": "image/png", "data": "iVBORw=="}
 
 
+    def test_file_parts_are_the_ai_sdk_file_part(self):
+        """FilePart.data is FileData | DataContent | URL | ProviderReference
+        upstream (provider-utils types/content-part.ts:75, file-data.ts:44-48);
+        there is no file-base64 / file-url / file-reference part."""
+        adapter = TypeAdapter(ContentPart)
+        for wire in [
+            {"type": "file", "data": {"type": "data", "data": "aGk="}, "mediaType": "text/plain"},
+            {"type": "file", "data": {"type": "url", "url": "https://example.com/a.pdf"},
+             "mediaType": "application/pdf"},
+            {"type": "file", "data": {"type": "reference", "reference": {"anthropic": "file-abc"}},
+             "mediaType": "application/pdf", "filename": "a.pdf"},
+            {"type": "file", "data": {"type": "text", "text": "hello"}, "mediaType": "text/plain"},
+            {"type": "file", "data": "aGk=", "mediaType": "text/plain"},
+            {"type": "file", "data": {"anthropic": "file-abc"}, "mediaType": "application/pdf"},
+            {"type": "reasoning-file", "data": "aGk=", "mediaType": "image/png"},
+            {"type": "reasoning-file", "data": {"type": "url", "url": "https://example.com/a.png"},
+             "mediaType": "image/png"},
+        ]:
+            assert adapter.dump_python(adapter.validate_python(wire), by_alias=True) == wire
+        assert adapter.dump_python(
+            adapter.validate_python({"type": "file", "data": b"hi", "mediaType": "text/plain"}),
+            by_alias=True,
+        ) == {"type": "file", "data": "aGk=", "mediaType": "text/plain"}
+        for removed in ("file-base64", "file-url", "file-reference"):
+            with pytest.raises(ValueError):
+                adapter.validate_python(
+                    {"type": removed, "data": "aGk=", "url": "https://example.com/a.pdf",
+                     "mediaType": "application/pdf"}
+                )
+
+        # A data: URL's media type wins (ai prompt/file-part-data.ts:31-41);
+        # a bare reference is a reference (:133-138).
+        parts = [
+            adapter.validate_python(
+                {"type": "file", "data": "data:image/png;base64,iVBORw==", "mediaType": "image"}
+            ),
+            adapter.validate_python(
+                {"type": "file", "data": {"anthropic": "file-abc"}, "mediaType": "application/pdf"}
+            ),
+        ]
+        with RecordingMockServer(ANTHROPIC_MSG) as mock:
+            model = anthropic("test-key", "claude-3-5-sonnet-20241022", mock.url)
+            generate_text(model, [ModelMessage(role="user", content=parts)])
+            body = mock.received_body()
+        content = body["messages"][0]["content"]
+        assert content[0]["source"] == {"type": "base64", "media_type": "image/png", "data": "iVBORw=="}
+        assert content[1] == {"type": "document", "source": {"type": "file", "file_id": "file-abc"}}
+
+
 # ── JSON null and undefined (#232 C34) ───────────────────────────────────────
 
 class TestNullIsKeptApartFromMissing:

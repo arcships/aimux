@@ -54,6 +54,8 @@ __all__ = [
     "Source",
     "TextContent",
     "FileData",
+    "FilePartData",
+    "ReasoningFilePartData",
     "FileBytes",
     "Warning",
     "AiMuxErrorValue",
@@ -631,30 +633,28 @@ class _ImageContentPart(_PartOptions):
     media_type: str
 
 
+#: ``FilePart.data`` (Rust ``FilePartData``): a tagged ``FileData``, a string
+#: (base64 or a URL; ``bytes`` are encoded as base64) or a bare provider
+#: reference ``{provider: id}``.
+FilePartData = Annotated[
+    Union[FileData, Base64Bytes, Dict[str, str]],
+    Field(union_mode="left_to_right"),
+]
+
+#: ``ReasoningFilePart.data`` (Rust ``ReasoningFilePartData``): tagged data or
+#: a URL, or a string (base64 or a URL).
+ReasoningFilePartData = Annotated[
+    Union[GeneratedFileData, Base64Bytes],
+    Field(union_mode="left_to_right"),
+]
+
+
 class _FileContentPart(_PartOptions):
+    """The AI SDK ``FilePart``: ``data`` is ``FilePartData``."""
+
     type: Literal["file"] = "file"
-    data: Base64Bytes
+    data: FilePartData
     media_type: str
-    filename: Optional[str] = None
-
-
-class _FileBase64ContentPart(_PartOptions):
-    type: Literal["file-base64"] = "file-base64"
-    data: str
-    media_type: str
-    filename: Optional[str] = None
-
-
-class _FileUrlContentPart(_PartOptions):
-    type: Literal["file-url"] = "file-url"
-    url: str
-    media_type: str
-
-
-class _FileReferenceContentPart(_PartOptions):
-    type: Literal["file-reference"] = "file-reference"
-    media_type: str
-    reference: Any
     filename: Optional[str] = None
 
 
@@ -689,7 +689,7 @@ class _CustomContentPart(_PartOptions):
 
 class _ReasoningFileContentPart(_PartOptions):
     type: Literal["reasoning-file"] = "reasoning-file"
-    data: GeneratedFileData
+    data: ReasoningFilePartData
     media_type: str
 
 
@@ -708,9 +708,6 @@ ContentPart = Annotated[
         TextContentPart,
         _ImageContentPart,
         _FileContentPart,
-        _FileBase64ContentPart,
-        _FileUrlContentPart,
-        _FileReferenceContentPart,
         _ReasoningContentPart,
         _ToolCallContentPart,
         _ToolResultContentPart,

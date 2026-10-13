@@ -2034,6 +2034,8 @@ pub enum GeneratedFileData {
 
 普通 V4 输入 FilePart 使用完整 `FileData`，并有 `filename?`。V4 reasoning-file 输入，以及 V4 file/reasoning-file 输出，只使用 data/url 子集。现有输出 FileData 允许 reference/text 的范围过宽。
 
+用户层 `ContentPart` 的文件部件已落地为上游 `FilePart`(#232 C35，`provider-utils` `types/content-part.ts:62-102`)：只有 `file` 一个标签，`data` 为 `FilePartData` = 带标签的 `FileData` | 字符串(base64 或 URL) | 裸 `ProviderReference`；`reasoning-file` 的 `data` 为 `ReasoningFilePartData` = data/url 标签 | 字符串。`file-base64`/`file-url`/`file-reference` 已删除。转换为 V4 prompt 时按 `convertToLanguageModelV4FilePart`(`ai` `prompt/file-part-data.ts:89-141`)：字符串能解析为 URL 即为 URL(规范化后与原文不同则保留 `originalUrl`)，否则为 base64；`data:` URL 拆为内联数据，其媒体类型优先于部件的 `mediaType`；`{type:'data'}` 内出现 `data:` URL 报错(上游 `InvalidDataContentError`，此处为 `AI_InvalidPromptError`)。响应消息中的 file/reasoning-file 部件按 `to-response-messages.ts:69-84` 写成裸 base64 字符串。
+
 `originalUrl?` 也必须补齐，依据 `S4/shared-v4-file-data.ts:25`。
 
 工具结果输出应成为受判别的联合：

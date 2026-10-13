@@ -5,7 +5,9 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::language_model_message::ToolResultOutput;
-use crate::shared::SharedProviderOptions;
+use crate::shared::{
+    FileBytes, FileData, GeneratedFileData, SharedProviderOptions, SharedProviderReference,
+};
 
 /// A part of a multi-part message.
 ///
@@ -35,9 +37,10 @@ pub enum ContentPart {
         provider_options: Option<SharedProviderOptions>,
     },
 
-    /// A file generated during reasoning.
+    /// A file generated during reasoning (upstream `ReasoningFilePart`,
+    /// `types/content-part.ts:146-180`).
     ReasoningFile {
-        data: crate::shared::GeneratedFileData,
+        data: ReasoningFilePartData,
         media_type: String,
         #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -78,57 +81,13 @@ pub enum ContentPart {
         provider_options: Option<SharedProviderOptions>,
     },
 
-    /// A file (raw bytes + MIME type). The JSON holds the bytes as a base64
-    /// string.
+    /// A file (upstream `FilePart`, `provider-utils` `types/content-part.ts:62-102`):
+    /// `data` is tagged `FileData` or a bare base64 string, URL string or
+    /// provider reference, and a `data:` URL's media type wins over
+    /// `media_type` when the prompt is converted.
     File {
-        #[ts(type = "string")]
-        #[serde(with = "crate::wire::base64_bytes")]
-        data: Vec<u8>,
+        data: FilePartData,
         media_type: String,
-        #[ts(optional)]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        filename: Option<String>,
-        #[ts(optional)]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<SharedProviderOptions>,
-    },
-
-    /// A file whose inline data is an already-base64-encoded string.
-    ///
-    /// Mirrors the Vercel AI SDK `file` part with `data: { type: 'data', data:
-    /// '<base64>' }`: the `data` field holds the raw base64 string verbatim
-    /// (it is NOT decoded into bytes), so it round-trips through providers that
-    /// emit a `base64` source unchanged.
-    FileBase64 {
-        data: String,
-        media_type: String,
-        #[ts(optional)]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        filename: Option<String>,
-        #[ts(optional)]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<SharedProviderOptions>,
-    },
-
-    /// A file referenced by URL.
-    ///
-    /// Mirrors the Vercel AI SDK `file` part with `data: { type: 'url', url }`.
-    FileUrl {
-        url: String,
-        media_type: String,
-        #[ts(optional)]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<SharedProviderOptions>,
-    },
-
-    /// A file referenced by a provider-specific reference (e.g. an OpenAI file ID).
-    ///
-    /// Mirrors the Vercel AI SDK `file` part with `data: { type: 'reference',
-    /// reference: { openai: 'file-xxx' } }`. The `reference` field is a JSON
-    /// object keyed by provider name.
-    FileReference {
-        media_type: String,
-        reference: Value,
         #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
@@ -232,44 +191,90 @@ impl ContentPart {
         }
     }
 
-    /// Convenience constructor for a file part (no provider options, no filename).
+    /// Convenience constructor for a file part with inline bytes, written as
+    /// `data: { type: 'data', data: '<base64>' }` (no provider options, no
+    /// filename).
     pub fn file(data: Vec<u8>, media_type: impl Into<String>) -> Self {
-        ContentPart::File {
-            data,
-            media_type: media_type.into(),
-            filename: None,
-            provider_options: None,
-        }
+        Self::file_data(
+            FileData::Data {
+                data: FileBytes::Binary(data),
+            },
+            media_type,
+        )
     }
 
-    /// Convenience constructor for a base64-encoded file part (no provider
-    /// options, no filename).
+    /// Convenience constructor for a file part whose inline data is an
+    /// already-base64-encoded string, passed on verbatim (no provider options,
+    /// no filename).
     pub fn file_base64(data: impl Into<String>, media_type: impl Into<String>) -> Self {
-        ContentPart::FileBase64 {
-            data: data.into(),
-            media_type: media_type.into(),
-            filename: None,
-            provider_options: None,
-        }
+        Self::file_data(
+            FileData::Data {
+                data: FileBytes::Base64(data.into()),
+            },
+            media_type,
+        )
     }
 
-    /// Convenience constructor for a URL-referenced file part (no provider options).
+    /// Convenience constructor for a file part referenced by URL,
+    /// `data: { type: 'url', url }` (no provider options).
     pub fn file_url(url: impl Into<String>, media_type: impl Into<String>) -> Self {
-        ContentPart::FileUrl {
-            url: url.into(),
-            media_type: media_type.into(),
-            provider_options: None,
-        }
+        Self::file_data(
+            FileData::Url {
+                url: url.into(),
+                original_url: None,
+            },
+            media_type,
+        )
     }
 
-    /// Convenience constructor for a provider-referenced file part (no provider
-    /// options, no filename).
-    pub fn file_reference(media_type: impl Into<String>, reference: Value) -> Self {
-        ContentPart::FileReference {
+    /// Convenience constructor for a file part referenced by a provider
+    /// reference, `data: { type: 'reference', reference: { [provider]: id } }`
+    /// (no provider options, no filename).
+    pub fn file_reference(
+        media_type: impl Into<String>,
+        reference: SharedProviderReference,
+    ) -> Self {
+        Self::file_data(FileData::Reference { reference }, media_type)
+    }
+
+    fn file_data(data: FileData, media_type: impl Into<String>) -> Self {
+        ContentPart::File {
+            data: FilePartData::Tagged(data),
             media_type: media_type.into(),
-            reference,
             filename: None,
             provider_options: None,
         }
     }
+}
+
+/// `FilePart.data` (`provider-utils` `types/content-part.ts:75`):
+/// `FileData | DataContent | URL | ProviderReference`, in JSON a tagged
+/// `FileData`, a string (base64 or a URL) or a bare `{ [provider]: id }`.
+///
+/// A string is read as the AI SDK reads it when it converts the prompt
+/// (`ai` `prompt/file-part-data.ts:125-131`): a URL when it parses as one
+/// (a `data:` URL becomes inline data), base64 otherwise.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(untagged)]
+#[ts(export)]
+pub enum FilePartData {
+    /// `{ type: 'data' | 'url' | 'reference' | 'text', ... }`.
+    Tagged(FileData),
+    /// A base64 string or a URL string.
+    String(String),
+    /// A bare provider reference.
+    Reference(SharedProviderReference),
+}
+
+/// `ReasoningFilePart.data` (`types/content-part.ts:164`):
+/// `FileDataData | FileDataUrl | DataContent | URL`, in JSON tagged data or a
+/// URL, or a string (base64 or a URL).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(untagged)]
+#[ts(export)]
+pub enum ReasoningFilePartData {
+    /// `{ type: 'data' | 'url', ... }`.
+    Tagged(GeneratedFileData),
+    /// A base64 string or a URL string.
+    String(String),
 }

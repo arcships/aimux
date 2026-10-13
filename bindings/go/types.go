@@ -203,6 +203,9 @@ type ToolCall struct {
 // {"type":"tool-result","toolCallId":...,"toolName":...,"output":{...}} where
 // output is {"type":"text"|"json"|"error-text"|"error-json","value":...},
 // {"type":"execution-denied","reason":...} or {"type":"content","value":[...]}.
+// A file part is the AI SDK FilePart, {"type":"file","data":...,"mediaType":...},
+// where data is a tagged {"type":"data"|"url"|"reference"|"text",...}, a
+// base64 or URL string, or a bare {"<provider>":"<id>"} reference.
 type ContentPart = json.RawMessage
 
 // ResponseMetadata describes the provider response.

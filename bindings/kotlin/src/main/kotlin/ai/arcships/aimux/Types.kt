@@ -470,6 +470,104 @@ sealed interface GeneratedFileData {
     data class Url(val url: String = "", val originalUrl: String? = null) : GeneratedFileData
 }
 
+/**
+ * `FilePart.data` (Rust `FilePartData`, provider-utils
+ * `types/content-part.ts:75`): `FileData | DataContent | URL |
+ * ProviderReference`, in JSON a tagged [FileData], a string (base64 or a URL)
+ * or a bare `{provider: id}` reference.
+ */
+@Serializable(with = FilePartDataSerializer::class)
+sealed interface FilePartData {
+    /** A tagged [FileData]. */
+    data class Tagged(val data: FileData) : FilePartData
+
+    /** A bare string: base64 data or a URL. */
+    data class Bare(val value: String) : FilePartData
+
+    /** A bare provider reference, `{provider: id}`. */
+    data class Reference(val reference: Map<String, String>) : FilePartData
+}
+
+private val FILE_DATA_TAGS = setOf("data", "url", "reference", "text")
+private val GENERATED_FILE_DATA_TAGS = setOf("data", "url")
+
+private fun fileDataTag(element: JsonElement): String? =
+    ((element as? JsonObject)?.get("type") as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+object FilePartDataSerializer : KSerializer<FilePartData> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("aimux.FilePartData")
+
+    override fun deserialize(decoder: Decoder): FilePartData {
+        val json = decoder as? JsonDecoder
+            ?: throw SerializationException("FilePartData can only be decoded from JSON")
+        val el = json.decodeJsonElement()
+        if (el is JsonPrimitive && el.isString) return FilePartData.Bare(el.content)
+        if (fileDataTag(el) in FILE_DATA_TAGS) {
+            return FilePartData.Tagged(json.json.decodeFromJsonElement(FileData.serializer(), el))
+        }
+        if (el is JsonObject) {
+            return FilePartData.Reference(el.mapValues { (_, id) ->
+                (id as? JsonPrimitive)?.takeIf { it.isString }?.content
+                    ?: throw SerializationException("a provider reference maps providers to string ids, got: $el")
+            })
+        }
+        throw SerializationException("file data must be a tagged object, a string or a provider reference, got: $el")
+    }
+
+    override fun serialize(encoder: Encoder, value: FilePartData) {
+        val json = encoder as? JsonEncoder
+            ?: throw SerializationException("FilePartData can only be encoded to JSON")
+        json.encodeJsonElement(
+            when (value) {
+                is FilePartData.Tagged -> json.json.encodeToJsonElement(FileData.serializer(), value.data)
+                is FilePartData.Bare -> JsonPrimitive(value.value)
+                is FilePartData.Reference -> JsonObject(value.reference.mapValues { JsonPrimitive(it.value) })
+            }
+        )
+    }
+}
+
+/**
+ * `ReasoningFilePart.data` (Rust `ReasoningFilePartData`,
+ * `types/content-part.ts:164`): tagged data or a URL ([GeneratedFileData]), or
+ * a bare string (base64 or a URL).
+ */
+@Serializable(with = ReasoningFilePartDataSerializer::class)
+sealed interface ReasoningFilePartData {
+    /** Tagged data or a URL. */
+    data class Tagged(val data: GeneratedFileData) : ReasoningFilePartData
+
+    /** A bare string: base64 data or a URL. */
+    data class Bare(val value: String) : ReasoningFilePartData
+}
+
+object ReasoningFilePartDataSerializer : KSerializer<ReasoningFilePartData> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("aimux.ReasoningFilePartData")
+
+    override fun deserialize(decoder: Decoder): ReasoningFilePartData {
+        val json = decoder as? JsonDecoder
+            ?: throw SerializationException("ReasoningFilePartData can only be decoded from JSON")
+        val el = json.decodeJsonElement()
+        if (el is JsonPrimitive && el.isString) return ReasoningFilePartData.Bare(el.content)
+        if (fileDataTag(el) in GENERATED_FILE_DATA_TAGS) {
+            return ReasoningFilePartData.Tagged(json.json.decodeFromJsonElement(GeneratedFileData.serializer(), el))
+        }
+        throw SerializationException("reasoning file data must be tagged data or a URL, or a string, got: $el")
+    }
+
+    override fun serialize(encoder: Encoder, value: ReasoningFilePartData) {
+        val json = encoder as? JsonEncoder
+            ?: throw SerializationException("ReasoningFilePartData can only be encoded to JSON")
+        json.encodeJsonElement(
+            when (value) {
+                is ReasoningFilePartData.Tagged ->
+                    json.json.encodeToJsonElement(GeneratedFileData.serializer(), value.data)
+                is ReasoningFilePartData.Bare -> JsonPrimitive(value.value)
+            }
+        )
+    }
+}
+
 /** A file produced by the model. Mirrors `GeneratedFile.ts`. */
 @Serializable
 data class GeneratedFile(
@@ -551,13 +649,17 @@ sealed interface ContentPart {
     @SerialName("custom")
     data class Custom(val kind: String, val providerOptions: ProviderOptions? = null) : ContentPart
 
+    /** The AI SDK `ReasoningFilePart` (`types/content-part.ts:146-180`). */
     @Serializable
     @SerialName("reasoning-file")
     data class ReasoningFile(
-        val data: GeneratedFileData,
+        val data: ReasoningFilePartData,
         val mediaType: String,
         val providerOptions: ProviderOptions? = null,
-    ) : ContentPart
+    ) : ContentPart {
+        constructor(data: GeneratedFileData, mediaType: String, providerOptions: ProviderOptions? = null) :
+            this(ReasoningFilePartData.Tagged(data), mediaType, providerOptions)
+    }
 
     @Serializable
     @SerialName("tool-approval-request")
@@ -581,42 +683,27 @@ sealed interface ContentPart {
         val providerOptions: ProviderOptions? = null,
     ) : ContentPart
 
+    /**
+     * The AI SDK `FilePart` (provider-utils `types/content-part.ts:62-102`):
+     * `data` is a [FilePartData]: tagged [FileData], a bare string (base64 or a
+     * URL) or a bare provider reference.
+     */
     @Serializable
     @SerialName("file")
     data class File(
-        /** File bytes (0–255), a base64 string on the wire. */
-        @Serializable(with = Base64ByteListSerializer::class)
-        val data: List<Int> = emptyList(),
+        val data: FilePartData,
         val mediaType: String = "",
         val filename: String? = null,
         val providerOptions: ProviderOptions? = null,
-    ) : ContentPart
+    ) : ContentPart {
+        /** Tagged data, e.g. [FileData.Url]. */
+        constructor(data: FileData, mediaType: String, filename: String? = null, providerOptions: ProviderOptions? = null) :
+            this(FilePartData.Tagged(data), mediaType, filename, providerOptions)
 
-    @Serializable
-    @SerialName("file-base64")
-    data class FileBase64(
-        val data: String = "",
-        val mediaType: String = "",
-        val filename: String? = null,
-        val providerOptions: ProviderOptions? = null,
-    ) : ContentPart
-
-    @Serializable
-    @SerialName("file-url")
-    data class FileUrl(
-        val url: String = "",
-        val mediaType: String = "",
-        val providerOptions: ProviderOptions? = null,
-    ) : ContentPart
-
-    @Serializable
-    @SerialName("file-reference")
-    data class FileReference(
-        val mediaType: String = "",
-        val reference: JsonElement = JsonObject(emptyMap()),
-        val filename: String? = null,
-        val providerOptions: ProviderOptions? = null,
-    ) : ContentPart
+        /** Inline bytes (0–255), written as `{"type":"data","data":"<base64>"}`. */
+        constructor(data: List<Int>, mediaType: String, filename: String? = null, providerOptions: ProviderOptions? = null) :
+            this(FileData.Data(FileBytes.Binary(data)), mediaType, filename, providerOptions)
+    }
 
     @Serializable
     @SerialName("reasoning")

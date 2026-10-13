@@ -373,6 +373,32 @@ async fn finding_1_gemini_inline_data_surfaces_as_file() {
     );
 }
 
+/// Response messages carry a generated file as the AI SDK does
+/// (`ai` `generate-text/to-response-messages.ts:69-76`): a `file` part whose
+/// `data` is the file's bare base64 string (#232 C35).
+#[tokio::test]
+async fn generated_file_reaches_response_messages_as_a_base64_file_part() {
+    let c = cassette("gemini/test_google_image_and_text_output.json");
+    let server = MockServer::start().await;
+    mount(&server, &c).await;
+
+    let model = google_at(&server.uri()).chat("gemini-2.5-flash-image");
+    let result = aimux_core::generate::generate_text(
+        &model,
+        "Tell a story and draw it",
+        aimux_core::generate::GenerateTextOptions::default(),
+    )
+    .await
+    .expect("generate_text should succeed");
+
+    let message = serde_json::to_value(&result.response_messages[0]).unwrap();
+    let file = &message["content"][1];
+    assert_eq!(file["type"], "file");
+    assert_eq!(file["mediaType"], "image/png");
+    let data = file["data"].as_str().expect("data is a bare base64 string");
+    assert!(data.starts_with(PNG_BASE64_PREFIX));
+}
+
 #[tokio::test]
 async fn finding_1_gemini_image_and_text_output_both_survive() {
     let c = cassette("gemini/test_google_image_and_text_output.json");

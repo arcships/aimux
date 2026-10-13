@@ -6,7 +6,7 @@
 //! file part. `convert_to_language_model_prompt` is the single conversion from
 //! the user-facing `ModelMessage`s.
 
-use crate::content::ContentPart;
+use crate::content::{ContentPart, FilePartData, ReasoningFilePartData};
 use crate::error::AiMuxError;
 use crate::message::{MessageContent, ModelMessage, Role};
 use crate::shared::{FileBytes, FileData, GeneratedFileData, SharedProviderOptions};
@@ -308,55 +308,15 @@ fn to_assistant_part(part: &ContentPart) -> Result<AssistantPart, AiMuxError> {
             media_type,
             filename,
             provider_options,
-        } => file(
-            FileData::Data {
-                data: FileBytes::Binary(data.clone()),
-            },
-            media_type,
-            filename,
-            provider_options,
-        ),
-        ContentPart::FileBase64 {
-            data,
-            media_type,
-            filename,
-            provider_options,
-        } => file(
-            FileData::Data {
-                data: FileBytes::Base64(data.clone()),
-            },
-            media_type,
-            filename,
-            provider_options,
-        ),
-        ContentPart::FileUrl {
-            url,
-            media_type,
-            provider_options,
-        } => file(
-            FileData::Url {
-                url: url.clone(),
-                original_url: None,
-            },
-            media_type,
-            &None,
-            provider_options,
-        ),
-        ContentPart::FileReference {
-            media_type,
-            reference,
-            filename,
-            provider_options,
-        } => file(
-            FileData::Reference {
-                reference: serde_json::from_value(reference.clone()).map_err(|e| {
-                    AiMuxError::InvalidPrompt(format!("invalid file reference: {e}"))
-                })?,
-            },
-            media_type,
-            filename,
-            provider_options,
-        ),
+        } => {
+            let (data, data_url_media_type) = convert_file_part_data(data)?;
+            file(
+                data,
+                data_url_media_type.as_ref().unwrap_or(media_type),
+                filename,
+                provider_options,
+            )
+        }
         ContentPart::Reasoning {
             text,
             provider_options,
@@ -400,11 +360,36 @@ fn to_assistant_part(part: &ContentPart) -> Result<AssistantPart, AiMuxError> {
             data,
             media_type,
             provider_options,
-        } => AssistantPart::ReasoningFile(ReasoningFilePart {
-            data: data.clone(),
-            media_type: media_type.clone(),
-            provider_options: provider_options.clone(),
-        }),
+        } => {
+            let data = match data {
+                ReasoningFilePartData::Tagged(GeneratedFileData::Data { data }) => {
+                    FilePartData::Tagged(FileData::Data { data: data.clone() })
+                }
+                ReasoningFilePartData::Tagged(GeneratedFileData::Url { url, original_url }) => {
+                    FilePartData::Tagged(FileData::Url {
+                        url: url.clone(),
+                        original_url: original_url.clone(),
+                    })
+                }
+                ReasoningFilePartData::String(text) => FilePartData::String(text.clone()),
+            };
+            // `convert-to-language-model-prompt.ts:313-327`.
+            let (data, data_url_media_type) = convert_file_part_data(&data)?;
+            let data = match data {
+                FileData::Data { data } => GeneratedFileData::Data { data },
+                FileData::Url { url, original_url } => GeneratedFileData::Url { url, original_url },
+                FileData::Reference { .. } | FileData::Text { .. } => {
+                    return Err(AiMuxError::InvalidPrompt(
+                        "Unsupported reasoning-file data type".into(),
+                    ));
+                }
+            };
+            AssistantPart::ReasoningFile(ReasoningFilePart {
+                data,
+                media_type: data_url_media_type.unwrap_or_else(|| media_type.clone()),
+                provider_options: provider_options.clone(),
+            })
+        }
         ContentPart::ToolApprovalRequest { .. } => {
             return Err(AiMuxError::InvalidPrompt(
                 "tool approval requests are only allowed in assistant messages".into(),
@@ -413,17 +398,109 @@ fn to_assistant_part(part: &ContentPart) -> Result<AssistantPart, AiMuxError> {
     })
 }
 
+/// `convertToLanguageModelV4FilePart` (`ai` `prompt/file-part-data.ts:89-141`):
+/// the tagged provider `FileData` for a file part's `data`, and the media type
+/// of a `data:` URL, which takes precedence over the part's `mediaType`.
+///
+/// A string is a URL when it parses as one and base64 otherwise; a `data:`
+/// URL becomes inline base64 data; a URL string that parsing changes keeps
+/// the given text as `originalUrl`.
+///
+/// # Errors
+///
+/// `InvalidPrompt` (upstream `InvalidDataContentError`) for a `data:` URL
+/// passed as inline data or a `data:` URL without a comma.
+pub fn convert_file_part_data(
+    data: &FilePartData,
+) -> Result<(FileData, Option<String>), AiMuxError> {
+    match data {
+        FilePartData::Tagged(FileData::Data {
+            data: FileBytes::Base64(text),
+        }) if text.starts_with("data:") => Err(AiMuxError::InvalidPrompt(
+            "Data URLs are not valid inline data. Pass them as { type: \"url\", url } instead."
+                .into(),
+        )),
+        FilePartData::Tagged(FileData::Url { url, original_url }) => {
+            convert_url_to_file_part_data(url, original_url.clone())
+        }
+        FilePartData::Tagged(data) => Ok((data.clone(), None)),
+        FilePartData::String(text) => match url::Url::parse(text) {
+            Ok(parsed) => {
+                let (mut data, media_type) = convert_url_to_file_part_data(parsed.as_str(), None)?;
+                if let FileData::Url { url, original_url } = &mut data
+                    && url != text
+                {
+                    *original_url = Some(text.clone());
+                }
+                Ok((data, media_type))
+            }
+            Err(_) => Ok((
+                FileData::Data {
+                    data: FileBytes::Base64(text.clone()),
+                },
+                None,
+            )),
+        },
+        FilePartData::Reference(reference) => Ok((
+            FileData::Reference {
+                reference: reference.clone(),
+            },
+            None,
+        )),
+    }
+}
+
+/// `convertUrlToFilePartData` (`file-part-data.ts:27-48`) with `splitDataUrl`
+/// (`split-data-url.ts`): a `data:` URL is split into its media type and
+/// base64 content; any other URL stays a URL.
+fn convert_url_to_file_part_data(
+    url: &str,
+    original_url: Option<String>,
+) -> Result<(FileData, Option<String>), AiMuxError> {
+    let data_url = match url::Url::parse(url) {
+        Ok(parsed) if parsed.scheme() == "data" => parsed,
+        _ => {
+            return Ok((
+                FileData::Url {
+                    url: url.to_owned(),
+                    original_url,
+                },
+                None,
+            ));
+        }
+    };
+    let url = data_url.as_str();
+    let mut pieces = url.split(',');
+    let header = pieces.next().unwrap_or_default();
+    let media_type = header
+        .split(';')
+        .next()
+        .and_then(|scheme_and_type| scheme_and_type.split(':').nth(1));
+    match (media_type, pieces.next()) {
+        (Some(media_type), Some(base64_content)) => Ok((
+            FileData::Data {
+                data: FileBytes::Base64(base64_content.to_owned()),
+            },
+            Some(media_type.to_owned()),
+        )),
+        _ => Err(AiMuxError::InvalidPrompt(format!(
+            "Invalid data URL format in content {url}"
+        ))),
+    }
+}
+
 /// Convert user-facing `ModelMessage`s into a `LanguageModelPrompt`.
 ///
 /// - String content is normalized to a single text part.
-/// - The five user-facing file variants become one `FilePart`.
+/// - Image and file parts become one `FilePart`; file `data` is converted as
+///   `convert_file_part_data` describes.
 /// - If `instructions` is provided, it is prepended as a system message.
 ///
 /// # Errors
 ///
 /// `InvalidPrompt` when a part is not allowed for its role (user: text/file;
-/// tool: tool-result), a system message is not plain text, or a file
-/// reference is not a `{ provider: id }` map.
+/// tool: tool-result), a system message is not plain text, or a file part's
+/// data is a `data:` URL given as inline data or a malformed `data:` URL.
 pub fn convert_to_language_model_prompt(
     messages: &[ModelMessage],
     instructions: Option<&str>,

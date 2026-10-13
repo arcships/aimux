@@ -515,6 +515,71 @@ public enum GeneratedFileData: Codable, Equatable {
     }
 }
 
+private enum FileDataTagField: String, CodingKey { case type }
+
+/// The `type` tag of a tagged file data object, when it is one of `tags`.
+private func fileDataTag(_ decoder: Decoder, in tags: Set<String>) -> Bool {
+    guard let c = try? decoder.container(keyedBy: FileDataTagField.self),
+          let tag = try? c.decode(String.self, forKey: .type) else { return false }
+    return tags.contains(tag)
+}
+
+/// `FilePart.data` (Rust `FilePartData`, provider-utils
+/// `types/content-part.ts:75`): `FileData | DataContent | URL |
+/// ProviderReference`. Wire: a tagged `FileData`, a string (base64 or a URL) or
+/// a bare `{provider: id}` reference.
+public enum FilePartData: Codable, Equatable {
+    case tagged(FileData)
+    /// A bare string: base64 data or a URL.
+    case bare(String)
+    /// A bare provider reference.
+    case reference([String: String])
+
+    public init(from decoder: Decoder) throws {
+        let single = try decoder.singleValueContainer()
+        if let text = try? single.decode(String.self) {
+            self = .bare(text)
+        } else if fileDataTag(decoder, in: ["data", "url", "reference", "text"]) {
+            self = .tagged(try FileData(from: decoder))
+        } else {
+            self = .reference(try single.decode([String: String].self))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .tagged(let data): try data.encode(to: encoder)
+        case .bare(let text): var c = encoder.singleValueContainer(); try c.encode(text)
+        case .reference(let reference): var c = encoder.singleValueContainer(); try c.encode(reference)
+        }
+    }
+}
+
+/// `ReasoningFilePart.data` (Rust `ReasoningFilePartData`,
+/// `types/content-part.ts:164`): tagged data or a URL, or a bare string
+/// (base64 or a URL).
+public enum ReasoningFilePartData: Codable, Equatable {
+    case tagged(GeneratedFileData)
+    /// A bare string: base64 data or a URL.
+    case bare(String)
+
+    public init(from decoder: Decoder) throws {
+        let single = try decoder.singleValueContainer()
+        if let text = try? single.decode(String.self) {
+            self = .bare(text)
+        } else {
+            self = .tagged(try GeneratedFileData(from: decoder))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .tagged(let data): try data.encode(to: encoder)
+        case .bare(let text): var c = encoder.singleValueContainer(); try c.encode(text)
+        }
+    }
+}
+
 public struct GeneratedFile: Codable, Equatable {
     public var data: GeneratedFileData
     public var mediaType: String
@@ -688,24 +753,22 @@ public enum ToolResultOutput: Codable, Equatable {
 public enum ContentPart: Codable, Equatable {
     case text(text: String, providerOptions: ProviderOptions? = nil)
     case image(image: [UInt8], mediaType: String, providerOptions: ProviderOptions? = nil)
-    case file(data: [UInt8], mediaType: String, filename: String? = nil, providerOptions: ProviderOptions? = nil)
-    case fileBase64(data: String, mediaType: String, filename: String? = nil, providerOptions: ProviderOptions? = nil)
-    case fileUrl(url: String, mediaType: String, providerOptions: ProviderOptions? = nil)
-    case fileReference(mediaType: String, reference: JSONValue, filename: String? = nil,
-                       providerOptions: ProviderOptions? = nil)
+    /// The AI SDK `FilePart` (`types/content-part.ts:62-102`); inline bytes are
+    /// `.tagged(.data(data: .binary(bytes)))`.
+    case file(data: FilePartData, mediaType: String, filename: String? = nil, providerOptions: ProviderOptions? = nil)
     case reasoning(text: String, signature: String? = nil, providerOptions: ProviderOptions? = nil)
     case toolCall(toolCallId: String, toolName: String, input: JSONValue,
                   providerExecuted: Bool? = nil, providerOptions: ProviderOptions? = nil)
     case toolResult(toolCallId: String, toolName: String, output: ToolResultOutput,
                     providerOptions: ProviderOptions? = nil)
     case custom(kind: String, providerOptions: ProviderOptions? = nil)
-    case reasoningFile(data: GeneratedFileData, mediaType: String, providerOptions: ProviderOptions? = nil)
+    case reasoningFile(data: ReasoningFilePartData, mediaType: String, providerOptions: ProviderOptions? = nil)
     case toolApprovalRequest(approvalId: String, toolCallId: String, reason: String? = nil,
                              isAutomatic: Bool? = nil, signature: String? = nil,
                              inputSchemaInput: JSONValue? = nil)
 
     private enum Field: String, CodingKey {
-        case type, text, image, data, mediaType, filename, url, reference, signature
+        case type, text, image, data, mediaType, filename, signature
         case toolCallId, toolName, input, output, providerExecuted, providerOptions
         case kind, approvalId, reason, isAutomatic, inputSchemaInput
     }
@@ -720,20 +783,9 @@ public enum ContentPart: Codable, Equatable {
             self = .image(image: try Base64Bytes.decode(c, forKey: .image),
                           mediaType: try c.decode(String.self, forKey: .mediaType), providerOptions: po)
         case "file":
-            self = .file(data: try Base64Bytes.decode(c, forKey: .data),
+            self = .file(data: try c.decode(FilePartData.self, forKey: .data),
                          mediaType: try c.decode(String.self, forKey: .mediaType),
                          filename: try c.decodeIfPresent(String.self, forKey: .filename), providerOptions: po)
-        case "file-base64":
-            self = .fileBase64(data: try c.decode(String.self, forKey: .data),
-                               mediaType: try c.decode(String.self, forKey: .mediaType),
-                               filename: try c.decodeIfPresent(String.self, forKey: .filename), providerOptions: po)
-        case "file-url":
-            self = .fileUrl(url: try c.decode(String.self, forKey: .url),
-                            mediaType: try c.decode(String.self, forKey: .mediaType), providerOptions: po)
-        case "file-reference":
-            self = .fileReference(mediaType: try c.decode(String.self, forKey: .mediaType),
-                                  reference: try c.decode(JSONValue.self, forKey: .reference),
-                                  filename: try c.decodeIfPresent(String.self, forKey: .filename), providerOptions: po)
         case "reasoning":
             self = .reasoning(text: try c.decode(String.self, forKey: .text),
                               signature: try c.decodeIfPresent(String.self, forKey: .signature), providerOptions: po)
@@ -750,7 +802,7 @@ public enum ContentPart: Codable, Equatable {
         case "custom":
             self = .custom(kind: try c.decode(String.self, forKey: .kind), providerOptions: po)
         case "reasoning-file":
-            self = .reasoningFile(data: try c.decode(GeneratedFileData.self, forKey: .data),
+            self = .reasoningFile(data: try c.decode(ReasoningFilePartData.self, forKey: .data),
                                   mediaType: try c.decode(String.self, forKey: .mediaType), providerOptions: po)
         case "tool-approval-request":
             self = .toolApprovalRequest(approvalId: try c.decode(String.self, forKey: .approvalId),
@@ -775,17 +827,9 @@ public enum ContentPart: Codable, Equatable {
             try tag("image", po); try c.encode(Base64Bytes.encode(image), forKey: .image)
             try c.encode(mediaType, forKey: .mediaType)
         case .file(let data, let mediaType, let filename, let po):
-            try tag("file", po); try c.encode(Base64Bytes.encode(data), forKey: .data)
+            try tag("file", po); try c.encode(data, forKey: .data)
             try c.encode(mediaType, forKey: .mediaType)
             try c.encodeIfPresent(filename, forKey: .filename)
-        case .fileBase64(let data, let mediaType, let filename, let po):
-            try tag("file-base64", po); try c.encode(data, forKey: .data); try c.encode(mediaType, forKey: .mediaType)
-            try c.encodeIfPresent(filename, forKey: .filename)
-        case .fileUrl(let url, let mediaType, let po):
-            try tag("file-url", po); try c.encode(url, forKey: .url); try c.encode(mediaType, forKey: .mediaType)
-        case .fileReference(let mediaType, let reference, let filename, let po):
-            try tag("file-reference", po); try c.encode(mediaType, forKey: .mediaType)
-            try c.encode(reference, forKey: .reference); try c.encodeIfPresent(filename, forKey: .filename)
         case .reasoning(let text, let signature, let po):
             try tag("reasoning", po); try c.encode(text, forKey: .text)
             try c.encodeIfPresent(signature, forKey: .signature)

@@ -313,8 +313,13 @@ and writes exactly the shapes of the generated TypeScript types
   `maxOutputTokens`, ...); `config_json` / router / moa settings follow suit
   (`baseUrl`, `providerName`, ...);
 - unions carry a `type` tag with kebab-case values (`text-delta`, `tool-call`,
-  `file-base64`, ...); sources use `sourceType`; errors use `name`
+  `reasoning-file`, ...); sources use `sourceType`; errors use `name`
   (`{"name": "AI_APICallError", ...}`);
+- a file part is the AI SDK `FilePart`: `ContentPartFile(data: FilePartData,
+  ...)` where `data` is `FilePartDataTagged(FileData)`, `FilePartDataBare`
+  (a base64 or URL string) or `FilePartDataReference` (`{provider: id}`);
+  `ContentPartFile.bytes(...)` writes inline bytes as tagged data. There is no
+  `file-base64` / `file-url` / `file-reference` part;
 - optional fields are absent, never `null`, except an `unknown` value
   (`body`, `inputSchemaInput`): a JSON `null` there is kept, and `hasBody` /
   `hasInputSchemaInput` tell it apart from a missing field;

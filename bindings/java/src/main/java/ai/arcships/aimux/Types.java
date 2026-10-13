@@ -28,6 +28,7 @@ import com.fasterxml.jackson.databind.node.TextNode;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -111,6 +112,10 @@ public final class Types {
             module.addDeserializer(FileData.class, new FileDataDeserializer());
             module.addSerializer(GeneratedFileData.class, new GeneratedFileDataSerializer());
             module.addDeserializer(GeneratedFileData.class, new GeneratedFileDataDeserializer());
+            module.addSerializer(FilePartData.class, new FilePartDataSerializer());
+            module.addDeserializer(FilePartData.class, new FilePartDataDeserializer());
+            module.addSerializer(ReasoningFilePartData.class, new ReasoningFilePartDataSerializer());
+            module.addDeserializer(ReasoningFilePartData.class, new ReasoningFilePartDataDeserializer());
             // `type`-tagged polymorphic serializers — only on the public
             // mapper. They use INNER_MAPPER internally to avoid self-recursion.
             if (polymorphic) {
@@ -1087,11 +1092,13 @@ public final class Types {
             public int hashCode() { return Objects.hash(image, mediaType, providerOptions); }
         }
 
+        /**
+         * The AI SDK `FilePart` (provider-utils `types/content-part.ts:62-102`):
+         * `data` is a {@link FilePartData}: tagged {@link FileData}, a bare
+         * string (base64 or a URL) or a bare provider reference.
+         */
         public static class File extends ContentPart {
-            /** File bytes (0–255), a base64 string on the wire. */
-            @JsonProperty("data")
-            @JsonSerialize(using = Base64BytesSerializer.class) @JsonDeserialize(using = Base64BytesDeserializer.class)
-            private List<Integer> data = new ArrayList<>();
+            @JsonProperty("data") private FilePartData data;
             @JsonProperty("mediaType") private String mediaType = "";
             @JsonProperty("filename") private String filename;
             @JsonProperty("providerOptions") private JsonNode providerOptions;
@@ -1099,14 +1106,14 @@ public final class Types {
             @JsonCreator
             File() {}
 
-            private File(List<Integer> data, String mediaType, String filename, JsonNode providerOptions) {
+            private File(FilePartData data, String mediaType, String filename, JsonNode providerOptions) {
                 this.data = data;
                 this.mediaType = mediaType;
                 this.filename = filename;
                 this.providerOptions = providerOptions;
             }
 
-            public List<Integer> getData() { return data; }
+            public FilePartData getData() { return data; }
             public String getMediaType() { return mediaType; }
             public String getFilename() { return filename; }
             public JsonNode getProviderOptions() { return providerOptions; }
@@ -1114,12 +1121,16 @@ public final class Types {
             public static Builder builder() { return new Builder(); }
 
             public static class Builder {
-                private List<Integer> data = new ArrayList<>();
+                private FilePartData data;
                 private String mediaType = "";
                 private String filename;
                 private JsonNode providerOptions;
 
-                public Builder data(List<Integer> v) { this.data = v; return this; }
+                public Builder data(FilePartData v) { this.data = v; return this; }
+                /** Tagged data, e.g. `{"type":"url","url":...}`. */
+                public Builder data(FileData v) { this.data = new FilePartData.Tagged(v); return this; }
+                /** Inline bytes (0–255), written as `{"type":"data","data":"<base64>"}`. */
+                public Builder data(List<Integer> v) { return data(new FileData.Data(new FileBytes.Binary(v))); }
                 public Builder mediaType(String v) { this.mediaType = v; return this; }
                 public Builder filename(String v) { this.filename = v; return this; }
                 public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
@@ -1140,158 +1151,6 @@ public final class Types {
 
             @Override
             public int hashCode() { return Objects.hash(data, mediaType, filename, providerOptions); }
-        }
-
-        public static class FileBase64 extends ContentPart {
-            @JsonProperty("data") private String data = "";
-            @JsonProperty("mediaType") private String mediaType = "";
-            @JsonProperty("filename") private String filename;
-            @JsonProperty("providerOptions") private JsonNode providerOptions;
-
-            @JsonCreator
-            FileBase64() {}
-
-            private FileBase64(String data, String mediaType, String filename, JsonNode providerOptions) {
-                this.data = data;
-                this.mediaType = mediaType;
-                this.filename = filename;
-                this.providerOptions = providerOptions;
-            }
-
-            public String getData() { return data; }
-            public String getMediaType() { return mediaType; }
-            public String getFilename() { return filename; }
-            public JsonNode getProviderOptions() { return providerOptions; }
-
-            public static Builder builder() { return new Builder(); }
-
-            public static class Builder {
-                private String data = "";
-                private String mediaType = "";
-                private String filename;
-                private JsonNode providerOptions;
-
-                public Builder data(String v) { this.data = v; return this; }
-                public Builder mediaType(String v) { this.mediaType = v; return this; }
-                public Builder filename(String v) { this.filename = v; return this; }
-                public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
-
-                public FileBase64 build() { return new FileBase64(data, mediaType, filename, providerOptions); }
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) return true;
-                if (!(o instanceof FileBase64)) return false;
-                FileBase64 that = (FileBase64) o;
-                return Objects.equals(data, that.data)
-                    && Objects.equals(mediaType, that.mediaType)
-                    && Objects.equals(filename, that.filename)
-                    && Objects.equals(providerOptions, that.providerOptions);
-            }
-
-            @Override
-            public int hashCode() { return Objects.hash(data, mediaType, filename, providerOptions); }
-        }
-
-        public static class FileUrl extends ContentPart {
-            @JsonProperty("url") private String url = "";
-            @JsonProperty("mediaType") private String mediaType = "";
-            @JsonProperty("providerOptions") private JsonNode providerOptions;
-
-            @JsonCreator
-            FileUrl() {}
-
-            private FileUrl(String url, String mediaType, JsonNode providerOptions) {
-                this.url = url;
-                this.mediaType = mediaType;
-                this.providerOptions = providerOptions;
-            }
-
-            public String getUrl() { return url; }
-            public String getMediaType() { return mediaType; }
-            public JsonNode getProviderOptions() { return providerOptions; }
-
-            public static Builder builder() { return new Builder(); }
-
-            public static class Builder {
-                private String url = "";
-                private String mediaType = "";
-                private JsonNode providerOptions;
-
-                public Builder url(String v) { this.url = v; return this; }
-                public Builder mediaType(String v) { this.mediaType = v; return this; }
-                public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
-
-                public FileUrl build() { return new FileUrl(url, mediaType, providerOptions); }
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) return true;
-                if (!(o instanceof FileUrl)) return false;
-                FileUrl that = (FileUrl) o;
-                return Objects.equals(url, that.url)
-                    && Objects.equals(mediaType, that.mediaType)
-                    && Objects.equals(providerOptions, that.providerOptions);
-            }
-
-            @Override
-            public int hashCode() { return Objects.hash(url, mediaType, providerOptions); }
-        }
-
-        public static class FileReference extends ContentPart {
-            @JsonProperty("mediaType") private String mediaType = "";
-            @JsonProperty("reference") private JsonNode reference = emptyObject();
-            @JsonProperty("filename") private String filename;
-            @JsonProperty("providerOptions") private JsonNode providerOptions;
-
-            @JsonCreator
-            FileReference() {}
-
-            private FileReference(String mediaType, JsonNode reference, String filename, JsonNode providerOptions) {
-                this.mediaType = mediaType;
-                this.reference = reference;
-                this.filename = filename;
-                this.providerOptions = providerOptions;
-            }
-
-            public String getMediaType() { return mediaType; }
-            public JsonNode getReference() { return reference; }
-            public String getFilename() { return filename; }
-            public JsonNode getProviderOptions() { return providerOptions; }
-
-            public static Builder builder() { return new Builder(); }
-
-            public static class Builder {
-                private String mediaType = "";
-                private JsonNode reference = emptyObject();
-                private String filename;
-                private JsonNode providerOptions;
-
-                public Builder mediaType(String v) { this.mediaType = v; return this; }
-                public Builder reference(JsonNode v) { this.reference = v; return this; }
-                public Builder filename(String v) { this.filename = v; return this; }
-                public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
-
-                public FileReference build() {
-                    return new FileReference(mediaType, reference, filename, providerOptions);
-                }
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) return true;
-                if (!(o instanceof FileReference)) return false;
-                FileReference that = (FileReference) o;
-                return Objects.equals(mediaType, that.mediaType)
-                    && Objects.equals(reference, that.reference)
-                    && Objects.equals(filename, that.filename)
-                    && Objects.equals(providerOptions, that.providerOptions);
-            }
-
-            @Override
-            public int hashCode() { return Objects.hash(mediaType, reference, filename, providerOptions); }
         }
 
         public static class Reasoning extends ContentPart {
@@ -1479,25 +1338,30 @@ public final class Types {
             }
             @Override public int hashCode() { return Objects.hash(kind, providerOptions); }
         }
+        /**
+         * The AI SDK `ReasoningFilePart` (`types/content-part.ts:146-180`):
+         * `data` is tagged data or a URL, or a bare string (base64 or a URL).
+         */
         public static class ReasoningFile extends ContentPart {
-            @JsonProperty("data") private GeneratedFileData data;
+            @JsonProperty("data") private ReasoningFilePartData data;
             @JsonProperty("mediaType") private String mediaType;
             @JsonProperty("providerOptions") private JsonNode providerOptions;
             @JsonCreator ReasoningFile() {}
-            public ReasoningFile(GeneratedFileData data, String mediaType, JsonNode providerOptions) {
+            public ReasoningFile(ReasoningFilePartData data, String mediaType, JsonNode providerOptions) {
                 this.data = data;
                 this.mediaType = mediaType;
                 this.providerOptions = providerOptions;
             }
-            public GeneratedFileData getData() { return data; }
+            public ReasoningFilePartData getData() { return data; }
             public String getMediaType() { return mediaType; }
             public JsonNode getProviderOptions() { return providerOptions; }
             public static Builder builder() { return new Builder(); }
             public static class Builder {
-                private GeneratedFileData data;
+                private ReasoningFilePartData data;
                 private String mediaType;
                 private JsonNode providerOptions;
-                public Builder data(GeneratedFileData value) { this.data = value; return this; }
+                public Builder data(ReasoningFilePartData value) { this.data = value; return this; }
+                public Builder data(GeneratedFileData value) { this.data = new ReasoningFilePartData.Tagged(value); return this; }
                 public Builder mediaType(String value) { this.mediaType = value; return this; }
                 public Builder providerOptions(JsonNode value) { this.providerOptions = value; return this; }
                 public ReasoningFile build() { return new ReasoningFile(data, mediaType, providerOptions); }
@@ -1572,9 +1436,6 @@ public final class Types {
             if (value instanceof ContentPart.Text) return "text";
             if (value instanceof ContentPart.Image) return "image";
             if (value instanceof ContentPart.File) return "file";
-            if (value instanceof ContentPart.FileBase64) return "file-base64";
-            if (value instanceof ContentPart.FileUrl) return "file-url";
-            if (value instanceof ContentPart.FileReference) return "file-reference";
             if (value instanceof ContentPart.Reasoning) return "reasoning";
             if (value instanceof ContentPart.ToolCall) return "tool-call";
             if (value instanceof ContentPart.ToolResult) return "tool-result";
@@ -1598,9 +1459,6 @@ public final class Types {
                 case "text": return AimuxJson.MAPPER.treeToValue(node, ContentPart.Text.class);
                 case "image": return AimuxJson.MAPPER.treeToValue(node, ContentPart.Image.class);
                 case "file": return AimuxJson.MAPPER.treeToValue(node, ContentPart.File.class);
-                case "file-base64": return AimuxJson.MAPPER.treeToValue(node, ContentPart.FileBase64.class);
-                case "file-url": return AimuxJson.MAPPER.treeToValue(node, ContentPart.FileUrl.class);
-                case "file-reference": return AimuxJson.MAPPER.treeToValue(node, ContentPart.FileReference.class);
                 case "reasoning": return AimuxJson.MAPPER.treeToValue(node, ContentPart.Reasoning.class);
                 case "tool-call": return AimuxJson.MAPPER.treeToValue(node, ContentPart.ToolCall.class);
                 case "tool-result": return AimuxJson.MAPPER.treeToValue(node, ContentPart.ToolResult.class);
@@ -2441,6 +2299,149 @@ public final class Types {
                 default:
                     throw new IOException("Unknown FileData type: '" + tag + "'");
             }
+        }
+    }
+
+    /**
+     * `FilePart.data` (Rust `FilePartData`, provider-utils
+     * `types/content-part.ts:75`): `FileData | DataContent | URL |
+     * ProviderReference`, in JSON a tagged {@link FileData}, a string (base64
+     * or a URL) or a bare `{provider: id}` reference.
+     */
+    public abstract static class FilePartData {
+        private FilePartData() {}
+
+        /** A tagged {@link FileData}. */
+        public static final class Tagged extends FilePartData {
+            private final FileData data;
+            public Tagged(FileData data) { this.data = data; }
+            public FileData getData() { return data; }
+            @Override public boolean equals(Object o) {
+                return o instanceof Tagged && Objects.equals(data, ((Tagged) o).data);
+            }
+            @Override public int hashCode() { return Objects.hash(data); }
+        }
+
+        /** A bare string: base64 data or a URL. */
+        public static final class Bare extends FilePartData {
+            private final String value;
+            public Bare(String value) { this.value = value; }
+            public String getValue() { return value; }
+            @Override public boolean equals(Object o) {
+                return o instanceof Bare && Objects.equals(value, ((Bare) o).value);
+            }
+            @Override public int hashCode() { return Objects.hash(value); }
+        }
+
+        /** A bare provider reference, `{provider: id}`. */
+        public static final class Reference extends FilePartData {
+            private final JsonNode reference;
+            public Reference(JsonNode reference) { this.reference = reference; }
+            public JsonNode getReference() { return reference; }
+            @Override public boolean equals(Object o) {
+                return o instanceof Reference && Objects.equals(reference, ((Reference) o).reference);
+            }
+            @Override public int hashCode() { return Objects.hash(reference); }
+        }
+    }
+
+    /** Writes {@link FilePartData} as its JSON form: an object or a string. */
+    public static class FilePartDataSerializer extends JsonSerializer<FilePartData> {
+        @Override
+        public void serialize(FilePartData value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+            if (value instanceof FilePartData.Tagged) {
+                gen.writeTree(AimuxJson.MAPPER.valueToTree(((FilePartData.Tagged) value).getData()));
+            } else if (value instanceof FilePartData.Bare) {
+                gen.writeString(((FilePartData.Bare) value).getValue());
+            } else if (value instanceof FilePartData.Reference) {
+                gen.writeTree(((FilePartData.Reference) value).getReference());
+            } else {
+                throw new IOException("Unknown FilePartData: " + value);
+            }
+        }
+    }
+
+    /** Reads {@link FilePartData}: a `type`-tagged object, a string or a reference. */
+    public static class FilePartDataDeserializer extends JsonDeserializer<FilePartData> {
+        @Override
+        public FilePartData deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+            JsonNode node = p.getCodec().readTree(p);
+            if (node.isTextual()) return new FilePartData.Bare(node.asText());
+            if (isTaggedFileData(node, "data", "url", "reference", "text")) {
+                return new FilePartData.Tagged(AimuxJson.MAPPER.treeToValue(node, FileData.class));
+            }
+            if (node.isObject()) {
+                for (JsonNode id : node) {
+                    if (!id.isTextual()) {
+                        throw new IOException("a provider reference maps providers to string ids, got: " + node);
+                    }
+                }
+                return new FilePartData.Reference(node);
+            }
+            throw new IOException("file data must be a tagged object, a string or a provider reference, got: " + node);
+        }
+    }
+
+    private static boolean isTaggedFileData(JsonNode node, String... tags) {
+        if (!node.isObject() || !node.path("type").isTextual()) return false;
+        return Arrays.asList(tags).contains(node.get("type").asText());
+    }
+
+    /**
+     * `ReasoningFilePart.data` (Rust `ReasoningFilePartData`,
+     * `types/content-part.ts:164`): tagged data or a URL
+     * ({@link GeneratedFileData}), or a bare string (base64 or a URL).
+     */
+    public abstract static class ReasoningFilePartData {
+        private ReasoningFilePartData() {}
+
+        /** Tagged data or a URL. */
+        public static final class Tagged extends ReasoningFilePartData {
+            private final GeneratedFileData data;
+            public Tagged(GeneratedFileData data) { this.data = data; }
+            public GeneratedFileData getData() { return data; }
+            @Override public boolean equals(Object o) {
+                return o instanceof Tagged && Objects.equals(data, ((Tagged) o).data);
+            }
+            @Override public int hashCode() { return Objects.hash(data); }
+        }
+
+        /** A bare string: base64 data or a URL. */
+        public static final class Bare extends ReasoningFilePartData {
+            private final String value;
+            public Bare(String value) { this.value = value; }
+            public String getValue() { return value; }
+            @Override public boolean equals(Object o) {
+                return o instanceof Bare && Objects.equals(value, ((Bare) o).value);
+            }
+            @Override public int hashCode() { return Objects.hash(value); }
+        }
+    }
+
+    /** Writes {@link ReasoningFilePartData} as its JSON form. */
+    public static class ReasoningFilePartDataSerializer extends JsonSerializer<ReasoningFilePartData> {
+        @Override
+        public void serialize(ReasoningFilePartData value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+            if (value instanceof ReasoningFilePartData.Tagged) {
+                gen.writeTree(AimuxJson.MAPPER.valueToTree(((ReasoningFilePartData.Tagged) value).getData()));
+            } else if (value instanceof ReasoningFilePartData.Bare) {
+                gen.writeString(((ReasoningFilePartData.Bare) value).getValue());
+            } else {
+                throw new IOException("Unknown ReasoningFilePartData: " + value);
+            }
+        }
+    }
+
+    /** Reads {@link ReasoningFilePartData}: a `type`-tagged object or a string. */
+    public static class ReasoningFilePartDataDeserializer extends JsonDeserializer<ReasoningFilePartData> {
+        @Override
+        public ReasoningFilePartData deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+            JsonNode node = p.getCodec().readTree(p);
+            if (node.isTextual()) return new ReasoningFilePartData.Bare(node.asText());
+            if (isTaggedFileData(node, "data", "url")) {
+                return new ReasoningFilePartData.Tagged(AimuxJson.MAPPER.treeToValue(node, GeneratedFileData.class));
+            }
+            throw new IOException("reasoning file data must be tagged data or a URL, or a string, got: " + node);
         }
     }
 

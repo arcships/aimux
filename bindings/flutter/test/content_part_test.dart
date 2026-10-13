@@ -45,26 +45,41 @@ void main() {
       // ImagePart.image / FilePart.data are DataContent (provider-utils
       // types/content-part.ts:42, :75): base64 strings.
       'image': {'type': 'image', 'image': 'AQID', 'mediaType': 'image/png'},
+      // FilePart.data is FileData | DataContent | URL | ProviderReference
+      // (content-part.ts:75, file-data.ts:44-48).
       'file': {
         'type': 'file',
         'data': 'aGk=',
         'mediaType': 'application/pdf',
         'filename': 'doc.pdf',
       },
-      'file-base64': {
-        'type': 'file-base64',
+      'file tagged data': {
+        'type': 'file',
+        'data': {'type': 'data', 'data': 'aGk='},
+        'mediaType': 'image/png',
+      },
+      'file tagged url': {
+        'type': 'file',
+        'data': {'type': 'url', 'url': 'https://example.com/f.png'},
+        'mediaType': 'image/png',
+      },
+      'file tagged reference': {
+        'type': 'file',
+        'data': {
+          'type': 'reference',
+          'reference': {'openai': 'file-abc'},
+        },
+        'mediaType': 'application/pdf',
+      },
+      'file bare reference': {
+        'type': 'file',
+        'data': {'openai': 'file-abc'},
+        'mediaType': 'application/pdf',
+      },
+      'reasoning-file bare': {
+        'type': 'reasoning-file',
         'data': 'aGk=',
         'mediaType': 'image/png',
-      },
-      'file-url': {
-        'type': 'file-url',
-        'url': 'https://example.com/f.png',
-        'mediaType': 'image/png',
-      },
-      'file-reference': {
-        'type': 'file-reference',
-        'mediaType': 'application/pdf',
-        'reference': {'openai': 'file-abc'},
       },
       'reasoning': {'type': 'reasoning', 'text': 'thinking...', 'signature': 'sig'},
       'reasoning-file': {
@@ -108,6 +123,31 @@ void main() {
         expect(part.toJson(), entry.value);
       });
     }
+
+    test('file-base64 / file-url / file-reference are not AI SDK parts', () {
+      for (final tag in ['file-base64', 'file-url', 'file-reference']) {
+        expect(
+            ContentPart.fromJson({
+              'type': tag,
+              'data': 'aGk=',
+              'url': 'https://example.com/f.png',
+              'mediaType': 'image/png',
+            }),
+            isA<ContentPartUnknown>());
+      }
+      final bare = ContentPart.fromJson({
+        'type': 'file',
+        'data': {'openai': 'file-abc'},
+        'mediaType': 'application/pdf',
+      }) as ContentPartFile;
+      expect(bare.data, isA<FilePartDataReference>());
+      expect(
+          ContentPartFile.bytes([104, 105], mediaType: 'text/plain').toJson(), {
+        'type': 'file',
+        'data': {'type': 'data', 'data': 'aGk='},
+        'mediaType': 'text/plain',
+      });
+    });
 
     test('tool-result carries a typed output, not result/isError', () {
       final part = ContentPartToolResult(

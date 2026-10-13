@@ -1,5 +1,6 @@
 package ai.arcships.aimux
 
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -414,8 +415,44 @@ class TypedModelRoundTripTest {
         assertThat(json).isEqualTo("{\"type\":\"image\",\"image\":\"iVBORw==\",\"mediaType\":\"image/png\"}")
         assertThat(AimuxJson.decodeFromString(ContentPart.serializer(), json)).isEqualTo(image)
         val file = ContentPart.File(data = listOf(0, 1, 2, 250, 255), mediaType = "application/pdf")
-        assertThat(AimuxJson.encodeToString(ContentPart.serializer(), file))
-            .isEqualTo("{\"type\":\"file\",\"data\":\"AAEC+v8=\",\"mediaType\":\"application/pdf\"}")
+        assertThat(AimuxJson.encodeToString(ContentPart.serializer(), file)).isEqualTo(
+            "{\"type\":\"file\",\"data\":{\"type\":\"data\",\"data\":\"AAEC+v8=\"},\"mediaType\":\"application/pdf\"}"
+        )
+    }
+
+    @Test
+    fun `file parts are the AI SDK file part`() {
+        // FilePart.data is FileData | DataContent | URL | ProviderReference
+        // (provider-utils types/content-part.ts:75, file-data.ts:44-48) and
+        // ReasoningFilePart.data is tagged data or a URL, or a string (:164).
+        // There is no file-base64 / file-url / file-reference part.
+        val wires = listOf(
+            """{"type":"file","data":{"type":"data","data":"aGk="},"mediaType":"text/plain","filename":"a.txt"}""",
+            """{"type":"file","data":{"type":"url","url":"https://example.com/a.pdf"},"mediaType":"application/pdf"}""",
+            """{"type":"file","data":{"type":"reference","reference":{"openai":"file-abc"}},"mediaType":"application/pdf"}""",
+            """{"type":"file","data":{"type":"text","text":"hello"},"mediaType":"text/plain"}""",
+            """{"type":"file","data":"aGk=","mediaType":"text/plain"}""",
+            """{"type":"file","data":"https://example.com/a.pdf","mediaType":"application/pdf"}""",
+            """{"type":"file","data":{"openai":"file-abc"},"mediaType":"application/pdf"}""",
+            """{"type":"reasoning-file","data":"aGk=","mediaType":"image/png"}""",
+            """{"type":"reasoning-file","data":{"type":"url","url":"https://example.com/a.png"},"mediaType":"image/png"}""",
+        )
+        for (wire in wires) {
+            val part = AimuxJson.decodeFromString(ContentPart.serializer(), wire)
+            assertThat(AimuxJson.encodeToString(ContentPart.serializer(), part)).isEqualTo(wire)
+        }
+        assertThat((AimuxJson.decodeFromString(ContentPart.serializer(), wires[6]) as ContentPart.File).data)
+            .isEqualTo(FilePartData.Reference(mapOf("openai" to "file-abc")))
+        for (removed in listOf("file-base64", "file-url", "file-reference")) {
+            assertThatThrownBy {
+                AimuxJson.decodeFromString(
+                    ContentPart.serializer(),
+                    """{"type":"$removed","data":"aGk=","url":"https://example.com/a.pdf","mediaType":"application/pdf"}""",
+                )
+            }.isInstanceOf(SerializationException::class.java)
+        }
+        val url = ContentPart.File(FileData.Url("https://example.com/a.pdf"), "application/pdf")
+        assertThat(AimuxJson.encodeToString(ContentPart.serializer(), url)).isEqualTo(wires[1])
     }
 
     @Test

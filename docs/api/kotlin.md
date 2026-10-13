@@ -309,7 +309,8 @@ properties carry the same names), unions tagged on `type` (`Source` on
 | `FinishReason(unified, raw)`, `ResponseMetadata` / `ResponseInfo(id, timestamp, modelId, headers, body)` | `modelId` |
 | `ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata, invalid, error)` | `error` is the `name`-tagged `AiMuxError` JSON |
 | `Tool` (`Function` / `Provider`), `ToolChoice` | `{"type":"function"}`, `inputSchema`, `toolChoice` |
-| `ContentPart` (sealed) | `type`: `text`, `custom`, `reasoning`, `reasoning-file`, `image`, `file`, `file-base64`, `file-url`, `file-reference`, `tool-call`, `tool-result`, `tool-approval-request` |
+| `ContentPart` (sealed) | `type`: `text`, `custom`, `reasoning`, `reasoning-file`, `image`, `file`, `tool-call`, `tool-result`, `tool-approval-request` |
+| `FilePartData` | `File.data`: a tagged `FileData`, a bare string (base64 or a URL) or a bare `{provider: id}` reference (`Tagged` / `Bare` / `Reference`); `ReasoningFilePartData` is `Tagged(GeneratedFileData)` / `Bare` |
 | `ContentPart.ToolResult(toolCallId, toolName, output, providerOptions)` | `output` is a `ToolResultOutput`: `text`, `json` (`ToolResultOutput.JsonValue`), `execution-denied`, `error-text`, `error-json`, `content` |
 | `FileBytes` | a base64 string; `Binary` is written as base64 (also audio / image / video file data, image and file part bytes) |
 | `FileData` / `GeneratedFileData` | `type`: `data`, `url`, `reference`, `text` |

@@ -596,6 +596,84 @@ final class FileDataText extends FileData {
   Json toJson() => {'type': 'text', 'text': text};
 }
 
+/// `FilePart.data` (Rust `FilePartData`, provider-utils
+/// `types/content-part.ts:75`): `FileData | DataContent | URL |
+/// ProviderReference`, in JSON a tagged [FileData], a string (base64 or a URL)
+/// or a bare `{provider: id}` reference.
+sealed class FilePartData {
+  const FilePartData();
+  factory FilePartData.fromJson(Object j) {
+    if (j is String) return FilePartDataBare(j);
+    if (j is Map) {
+      final m = j.cast<String, dynamic>();
+      if (const {'data', 'url', 'reference', 'text'}.contains(m['type'])) {
+        return FilePartDataTagged(FileData.fromJson(m));
+      }
+      return FilePartDataReference(Map<String, String>.from(m));
+    }
+    throw FormatException(
+        'file data must be a tagged object, a string or a provider reference: $j');
+  }
+  Object toJson();
+}
+
+/// A tagged [FileData].
+final class FilePartDataTagged extends FilePartData {
+  final FileData data;
+  const FilePartDataTagged(this.data);
+  @override
+  Object toJson() => data.toJson();
+}
+
+/// A bare string: base64 data or a URL.
+final class FilePartDataBare extends FilePartData {
+  final String value;
+  const FilePartDataBare(this.value);
+  @override
+  Object toJson() => value;
+}
+
+/// A bare provider reference, `{provider: id}`.
+final class FilePartDataReference extends FilePartData {
+  final Map<String, String> reference;
+  const FilePartDataReference(this.reference);
+  @override
+  Object toJson() => reference;
+}
+
+/// `ReasoningFilePart.data` (Rust `ReasoningFilePartData`,
+/// `types/content-part.ts:164`): tagged data or a URL ([GeneratedFileData]),
+/// or a bare string (base64 or a URL).
+sealed class ReasoningFilePartData {
+  const ReasoningFilePartData();
+  factory ReasoningFilePartData.fromJson(Object j) {
+    if (j is String) return ReasoningFilePartDataBare(j);
+    if (j is Map) {
+      return ReasoningFilePartDataTagged(
+          GeneratedFileData.fromJson(j.cast<String, dynamic>()));
+    }
+    throw FormatException(
+        'reasoning file data must be tagged data or a URL, or a string: $j');
+  }
+  Object toJson();
+}
+
+/// Tagged data or a URL.
+final class ReasoningFilePartDataTagged extends ReasoningFilePartData {
+  final GeneratedFileData data;
+  const ReasoningFilePartDataTagged(this.data);
+  @override
+  Object toJson() => data.toJson();
+}
+
+/// A bare string: base64 data or a URL.
+final class ReasoningFilePartDataBare extends ReasoningFilePartData {
+  final String value;
+  const ReasoningFilePartDataBare(this.value);
+  @override
+  Object toJson() => value;
+}
+
 /// Data or a URL returned for a generated file. Mirrors `GeneratedFileData.ts`.
 sealed class GeneratedFileData {
   const GeneratedFileData();
@@ -770,7 +848,7 @@ sealed class ContentPart {
         'custom' => ContentPartCustom(
             kind: j['kind'] as String, providerOptions: _opt(j['providerOptions'])),
         'reasoning-file' => ContentPartReasoningFile(
-            data: GeneratedFileData.fromJson(j['data'] as Json),
+            data: ReasoningFilePartData.fromJson(j['data'] as Object),
             mediaType: j['mediaType'] as String,
             providerOptions: _opt(j['providerOptions'])),
         'tool-approval-request' => ContentPartToolApprovalRequest(
@@ -786,22 +864,8 @@ sealed class ContentPart {
             mediaType: j['mediaType'] as String,
             providerOptions: _opt(j['providerOptions'])),
         'file' => ContentPartFile(
-            data: decodeBase64Bytes(j['data']),
+            data: FilePartData.fromJson(j['data'] as Object),
             mediaType: j['mediaType'] as String,
-            filename: j['filename'] as String?,
-            providerOptions: _opt(j['providerOptions'])),
-        'file-base64' => ContentPartFileBase64(
-            data: j['data'] as String,
-            mediaType: j['mediaType'] as String,
-            filename: j['filename'] as String?,
-            providerOptions: _opt(j['providerOptions'])),
-        'file-url' => ContentPartFileUrl(
-            url: j['url'] as String,
-            mediaType: j['mediaType'] as String,
-            providerOptions: _opt(j['providerOptions'])),
-        'file-reference' => ContentPartFileReference(
-            mediaType: j['mediaType'] as String,
-            reference: j['reference'],
             filename: j['filename'] as String?,
             providerOptions: _opt(j['providerOptions'])),
         'reasoning' => ContentPartReasoning(
@@ -848,8 +912,9 @@ final class ContentPartCustom extends ContentPart {
       };
 }
 
+/// The AI SDK `ReasoningFilePart` (`types/content-part.ts:146-180`).
 final class ContentPartReasoningFile extends ContentPart {
-  final GeneratedFileData data;
+  final ReasoningFilePartData data;
   final String mediaType;
   final Json? providerOptions;
   const ContentPartReasoningFile(
@@ -913,8 +978,11 @@ final class ContentPartImage extends ContentPart {
       };
 }
 
+/// The AI SDK `FilePart` (provider-utils `types/content-part.ts:62-102`):
+/// `data` is a [FilePartData]: tagged [FileData], a bare string (base64 or a
+/// URL) or a bare provider reference.
 final class ContentPartFile extends ContentPart {
-  final List<int> data;
+  final FilePartData data;
   final String mediaType;
   final String? filename;
   final Json? providerOptions;
@@ -923,66 +991,21 @@ final class ContentPartFile extends ContentPart {
       required this.mediaType,
       this.filename,
       this.providerOptions});
+
+  /// Inline bytes, written as `{"type":"data","data":"<base64>"}`.
+  ContentPartFile.bytes(List<int> bytes,
+      {required String mediaType, String? filename, Json? providerOptions})
+      : this(
+            data: FilePartDataTagged(
+                FileDataData(data: FileBytesBinary(data: bytes))),
+            mediaType: mediaType,
+            filename: filename,
+            providerOptions: providerOptions);
   @override
   Json toJson() => {
         'type': 'file',
-        'data': encodeBase64Bytes(data),
+        'data': data.toJson(),
         'mediaType': mediaType,
-        if (filename != null) 'filename': filename,
-        if (providerOptions != null) 'providerOptions': providerOptions,
-      };
-}
-
-final class ContentPartFileBase64 extends ContentPart {
-  final String data;
-  final String mediaType;
-  final String? filename;
-  final Json? providerOptions;
-  const ContentPartFileBase64(
-      {required this.data,
-      required this.mediaType,
-      this.filename,
-      this.providerOptions});
-  @override
-  Json toJson() => {
-        'type': 'file-base64',
-        'data': data,
-        'mediaType': mediaType,
-        if (filename != null) 'filename': filename,
-        if (providerOptions != null) 'providerOptions': providerOptions,
-      };
-}
-
-final class ContentPartFileUrl extends ContentPart {
-  final String url;
-  final String mediaType;
-  final Json? providerOptions;
-  const ContentPartFileUrl(
-      {required this.url, required this.mediaType, this.providerOptions});
-  @override
-  Json toJson() => {
-        'type': 'file-url',
-        'url': url,
-        'mediaType': mediaType,
-        if (providerOptions != null) 'providerOptions': providerOptions,
-      };
-}
-
-final class ContentPartFileReference extends ContentPart {
-  final String mediaType;
-  final dynamic reference;
-  final String? filename;
-  final Json? providerOptions;
-  const ContentPartFileReference(
-      {required this.mediaType,
-      required this.reference,
-      this.filename,
-      this.providerOptions});
-  @override
-  Json toJson() => {
-        'type': 'file-reference',
-        'mediaType': mediaType,
-        'reference': reference,
         if (filename != null) 'filename': filename,
         if (providerOptions != null) 'providerOptions': providerOptions,
       };

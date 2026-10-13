@@ -165,6 +165,36 @@ final class WrapperTests: XCTestCase {
         XCTAssertEqual(request.body, .null)
     }
 
+    /// FilePart.data is FileData | DataContent | URL | ProviderReference
+    /// (provider-utils types/content-part.ts:75, file-data.ts:44-48);
+    /// ReasoningFilePart.data is tagged data or a URL, or a string (:164).
+    /// There is no file-base64 / file-url / file-reference part.
+    func testFilePartsAreTheAiSdkFilePart() throws {
+        let cases: [(String, ContentPart)] = [
+            (#"{"type":"file","data":{"type":"url","url":"https://example.com/a.pdf"},"mediaType":"application/pdf"}"#,
+             .file(data: .tagged(.url(url: "https://example.com/a.pdf")), mediaType: "application/pdf")),
+            (#"{"type":"file","data":{"type":"data","data":"aGk="},"mediaType":"text/plain"}"#,
+             .file(data: .tagged(.data(data: .base64("aGk="))), mediaType: "text/plain")),
+            (#"{"type":"file","data":"aGk=","mediaType":"text/plain"}"#,
+             .file(data: .bare("aGk="), mediaType: "text/plain")),
+            (#"{"type":"file","data":{"openai":"file-abc"},"mediaType":"application/pdf"}"#,
+             .file(data: .reference(["openai": "file-abc"]), mediaType: "application/pdf")),
+            (#"{"type":"file","data":{"type":"reference","reference":{"openai":"file-abc"}},"mediaType":"application/pdf"}"#,
+             .file(data: .tagged(.reference(reference: ["openai": "file-abc"])), mediaType: "application/pdf")),
+            (#"{"type":"reasoning-file","data":"aGk=","mediaType":"image/png"}"#,
+             .reasoningFile(data: .bare("aGk="), mediaType: "image/png")),
+        ]
+        for (wire, part) in cases {
+            let decoded = try JSONDecoder().decode(ContentPart.self, from: Data(wire.utf8))
+            XCTAssertEqual(decoded, part)
+            XCTAssertEqual(try JSONDecoder().decode(ContentPart.self, from: try JSONEncoder().encode(part)), part)
+        }
+        for removed in ["file-base64", "file-url", "file-reference"] {
+            let wire = #"{"type":"\#(removed)","data":"aGk=","url":"https://example.com/a.pdf","mediaType":"application/pdf"}"#
+            XCTAssertThrowsError(try JSONDecoder().decode(ContentPart.self, from: Data(wire.utf8)))
+        }
+    }
+
     func testToolChoiceCodableWire() throws {
         let pairs: [(ToolChoice, String)] = [
             (ToolChoice.auto, "\"auto\""),

@@ -374,7 +374,7 @@ from aimux.wrapper import (
     # type aliases
     Role, FinishReasonUnified, ReasoningEffort, MessageContent, ContentPart,
     Tool, ToolChoice, ResponseFormat, StreamPart, GenerateContent,
-    FileData, FileBytes, Warning, AiMuxErrorValue,
+    FileData, FilePartData, ReasoningFilePartData, FileBytes, Warning, AiMuxErrorValue,
     # pydantic models
     InputTokenUsage, OutputTokenUsage, Usage, FinishReason, ResponseMetadata, ToolCall,
     ModelMessage, FunctionTool, ProviderTool, TextContentPart,
@@ -384,6 +384,12 @@ from aimux.wrapper import (
     generate_text, stream_text, parse_stream_part,
 )
 ```
+
+A file content part is the AI SDK `FilePart`: `{"type": "file", "data": ...,
+"mediaType": ...}` where `data` (`FilePartData`) is a tagged `FileData`, a
+string (base64 or a URL; `bytes` are encoded as base64) or a bare
+`{provider: id}` reference. There is no `file-base64` / `file-url` /
+`file-reference` part.
 
 `AiMuxError` and recorder failures raise an **exception hierarchy** (explicit types —
 OpenAI/Anthropic SDK style, same idea as Vercel AI SDK on JS):

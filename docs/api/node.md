@@ -576,6 +576,8 @@ Provider-layer `StreamPart` also has `ResponseMetadata`; the call layer
 consumes those events internally.
 
 The full declarations live in `bindings/node/src/types/` — `GenerateTextOptions.ts`,
-`ModelMessage.ts`, `Tool.ts`, `ToolChoice.ts`, `ContentPart.ts`,
+`ModelMessage.ts`, `Tool.ts`, `ToolChoice.ts`, `ContentPart.ts` (a file part is
+the AI SDK `FilePart`; its `data` is `FilePartData.ts`: a tagged `FileData`, a
+base64 or URL string, or a bare provider reference),
 `GenerateContent.ts`, `GenerateResult.ts`, and the `types/` directory of the
 package (140 files).
