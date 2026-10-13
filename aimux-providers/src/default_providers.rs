@@ -365,16 +365,19 @@ pub fn create_provider(
 /// [`aimux_core::create_provider_registry`], after adding or replacing entries
 /// as needed.
 ///
-/// Nothing is read from the environment here and no entry can fail to be
-/// created: keys and environment-sourced base URLs are evaluated per request,
-/// so a missing key fails the call that needs it.
+/// No entry can fail to be created. Keys are read per request, so a missing
+/// key fails the call that needs it. The `openai` and `anthropic` packages
+/// read `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` once, here, as the AI SDK
+/// does when a provider is created; an invalid value fails each call of that
+/// provider with `InvalidArgument` naming the variable, not this function.
+/// Registry rows read their base-URL variables per request.
 #[must_use]
 pub fn default_providers() -> BTreeMap<String, Arc<dyn Provider>> {
     provider_names()
         .into_iter()
         .map(|name| {
             let provider = create_provider(name, PresetSettings::default())
-                .expect("a built-in provider with default settings is always valid");
+                .expect("default settings have nothing a factory can reject");
             (name.to_string(), provider)
         })
         .collect()
@@ -383,6 +386,61 @@ pub fn default_providers() -> BTreeMap<String, Arc<dyn Provider>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Sets an environment variable for the test's duration and restores
+    /// the previous value on drop.
+    struct EnvVar(&'static str, Option<std::ffi::OsString>);
+
+    impl EnvVar {
+        fn set(name: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(name);
+            // SAFETY: the tests touching these variables are `#[serial]`.
+            unsafe { std::env::set_var(name, value) };
+            Self(name, previous)
+        }
+    }
+
+    impl Drop for EnvVar {
+        fn drop(&mut self) {
+            // SAFETY: as in `set`.
+            unsafe {
+                match &self.1 {
+                    Some(value) => std::env::set_var(self.0, value),
+                    None => std::env::remove_var(self.0),
+                }
+            }
+        }
+    }
+
+    /// An invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` does not fail
+    /// creating the default providers. Each call of that provider reports it
+    /// instead, as the AI SDK's factories read the variable without failing
+    /// (openai@4.0.83 `openai-provider.ts:207-215`, anthropic@4.0.71
+    /// `anthropic-provider.ts:127-133`) and the first request rejects the URL.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn an_invalid_env_base_url_fails_each_call_not_creation() {
+        let _openai = EnvVar::set("OPENAI_BASE_URL", "not a url");
+        let _anthropic = EnvVar::set("ANTHROPIC_BASE_URL", "not a url");
+        let _openai_key = EnvVar::set("OPENAI_API_KEY", "test-key");
+        let _anthropic_key = EnvVar::set("ANTHROPIC_API_KEY", "test-key");
+        let providers = default_providers();
+        for (name, var) in [
+            ("openai", "OPENAI_BASE_URL"),
+            ("anthropic", "ANTHROPIC_BASE_URL"),
+        ] {
+            let model = providers[name].language_model("some-model").unwrap();
+            let options = aimux_core::options::CallOptions::new(vec![
+                aimux_core::language_model_message::LanguageModelMessage::user_text("hi"),
+            ]);
+            let error = model.do_generate(&options).await.expect_err(name);
+            assert!(
+                matches!(&error, AiMuxError::InvalidArgument(message) if message.starts_with(var)),
+                "{name}: {error:?}"
+            );
+        }
+        let _ = create_provider("openai", PresetSettings::default()).unwrap();
+    }
 
     /// A misspelled name lists every name `create_provider` accepts, the
     /// vendor packages included, not only the registry rows.

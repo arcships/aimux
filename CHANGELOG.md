@@ -409,6 +409,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`ProviderConfig` in Go and Dart) drop `max_retries` / `body_overrides` and
   gain `params`; call-level `max_retries` is unchanged.
 
+### Fixed
+
+- `default_providers()`, `openai()` and `anthropic()` no longer panic on an
+  invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
+  read when the provider is created, as the AI SDK does; an invalid value now
+  fails each call of that provider with `InvalidArgument` naming the
+  variable. An invalid explicit `base_url` still fails the factory.
+
 ## [0.5.0] - 2026-09-27
 
 **Breaking release.** 13 PRs since 0.3.0: the cross-language error model

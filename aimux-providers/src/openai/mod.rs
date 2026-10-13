@@ -50,9 +50,7 @@ use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
-use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, load_optional_setting, validate_base_url,
-};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
 use crate::shared::{Credential, provider_headers};
 
@@ -125,8 +123,10 @@ const API_KEY_ENV_VAR: &str = "OPENAI_API_KEY";
 /// on every request.
 #[derive(Clone, Default)]
 pub struct OpenAIProviderSettings {
-    /// Base URL for the API calls. Default `https://api.openai.com/v1`; a
-    /// trailing slash is removed.
+    /// Base URL for the API calls. `None` reads `OPENAI_BASE_URL` when the
+    /// provider is created, else `https://api.openai.com/v1`; a trailing
+    /// slash is removed. An invalid explicit value fails [`create_openai`];
+    /// an invalid `OPENAI_BASE_URL` fails every request instead.
     pub base_url: Option<String>,
     /// The API key. `None` loads `OPENAI_API_KEY` when a request is made and
     /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
@@ -173,14 +173,17 @@ impl std::fmt::Debug for OpenAIProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
+/// Returns `AiMuxError::InvalidArgument` when the explicit `base_url` is not
+/// an `http(s)` URL with a host. That is the only way this fails: the key is
+/// loaded per request, and an invalid `OPENAI_BASE_URL` is reported by each
 /// request, not here.
 pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider, AiMuxError> {
-    let base_url = match load_optional_setting(settings.base_url.as_deref(), "OPENAI_BASE_URL") {
-        Some(url) => validate_base_url(&url)?,
-        None => DEFAULT_BASE_URL.to_string(),
-    };
+    let base_url = crate::shared::base_url_setting(
+        settings.base_url.as_deref(),
+        "OPENAI_BASE_URL",
+        DEFAULT_BASE_URL,
+        validate_base_url,
+    )?;
     let name = settings.name.unwrap_or_else(|| "openai".to_string());
     Ok(OpenAIProvider {
         name,
@@ -211,11 +214,13 @@ pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider,
 }
 
 /// The default provider: `create_openai` with default settings, created on
-/// first use. The base URL is loaded at creation; the key is loaded per request.
+/// first use. `OPENAI_BASE_URL` is read at creation (an invalid value fails
+/// each request, not the creation); the key is loaded per request.
 pub fn openai() -> &'static OpenAIProvider {
     static DEFAULT: OnceLock<OpenAIProvider> = OnceLock::new();
     DEFAULT.get_or_init(|| {
-        create_openai(OpenAIProviderSettings::default()).expect("invalid OPENAI_BASE_URL")
+        create_openai(OpenAIProviderSettings::default())
+            .expect("default settings have no explicit base URL to reject")
     })
 }
 
@@ -223,7 +228,9 @@ pub fn openai() -> &'static OpenAIProvider {
 /// models out of; it holds no HTTP client.
 pub struct OpenAIProvider {
     name: String,
-    base_url: String,
+    /// The validated base URL, or the error of an invalid `OPENAI_BASE_URL`,
+    /// which every request reports.
+    base_url: Result<String, AiMuxError>,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
     #[cfg(feature = "realtime")]
@@ -232,13 +239,18 @@ pub struct OpenAIProvider {
 
 impl OpenAIProvider {
     fn model_config(&self, method: &str) -> OpenAIModelConfig {
-        OpenAIModelConfig::fixed(
+        let mut config = OpenAIModelConfig::fixed(
             format!("{}.{method}", self.name),
-            self.base_url.clone(),
+            self.base_url.clone().unwrap_or_default(),
             self.headers.clone(),
             self.fetch.clone(),
             None,
-        )
+        );
+        if let Err(error) = &self.base_url {
+            let error = error.clone();
+            config.url = Arc::new(move |_| Err(error.clone()));
+        }
+        config
     }
 
     /// A chat-completions model; `provider()` is `"{name}.chat"`.
