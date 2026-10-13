@@ -79,7 +79,7 @@ fn elevenlabs_failed_response_handler() -> aimux_provider_utils::ResponseHandler
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 const DEFAULT_BASE_URL: &str = "https://api.elevenlabs.io";
-const API_KEY_ENV_VAR: &str = "ELEVENLABS_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "ELEVENLABS_API_KEY";
 const DEFAULT_NAME: &str = "elevenlabs";
 
 /// Settings of [`create_elevenlabs`] (the AI SDK's `ElevenLabsProviderSettings`).

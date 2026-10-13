@@ -53,7 +53,7 @@ fn parallel_ai_failed_response_handler() -> aimux_provider_utils::ResponseHandle
 const MODEL_ID: &str = "parallel-search";
 
 const DEFAULT_BASE_URL: &str = "https://api.parallel.ai";
-const API_KEY_ENV_VAR: &str = "PARALLEL_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "PARALLEL_API_KEY";
 const DEFAULT_NAME: &str = "parallel_ai";
 
 /// Settings of [`create_parallel_ai`].

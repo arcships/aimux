@@ -93,7 +93,7 @@ struct BflResult {
 pub(crate) mod options;
 
 const DEFAULT_BASE_URL: &str = "https://api.bfl.ai";
-const API_KEY_ENV_VAR: &str = "BFL_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "BFL_API_KEY";
 const DEFAULT_NAME: &str = "blackForestLabs";
 
 /// Settings of [`create_black_forest_labs`].

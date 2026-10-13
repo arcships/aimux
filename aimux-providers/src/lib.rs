@@ -167,7 +167,9 @@ pub use jev::{JevConfig, JevDecisionModel, JevProvider};
 pub mod mistral;
 pub mod openai;
 pub mod openai_compatible;
-pub use default_providers::{create_provider, default_providers, provider_names};
+pub use default_providers::{
+    create_provider, default_providers, provider_api_key_env, provider_names,
+};
 pub mod preset;
 pub(crate) mod shared;
 pub mod vertex;

@@ -57,7 +57,7 @@ const DEFAULT_COUNT: u32 = 10;
 // ── Config ───────────────────────────────────────────────────────────────────
 
 const DEFAULT_BASE_URL: &str = "https://api.search.tinyfish.ai";
-const API_KEY_ENV_VAR: &str = "TINYFISH_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "TINYFISH_API_KEY";
 const DEFAULT_NAME: &str = "tinyfish";
 
 /// Settings of [`create_tinyfish`].

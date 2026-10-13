@@ -361,6 +361,72 @@ pub fn create_provider(
     }
 }
 
+/// The environment variable `name`'s API key is read from when
+/// [`create_provider`] gets no `api_key`: the vendor package's key variable,
+/// or the registry row's `env_var`. `None` for an unknown name, for a
+/// registry row without a variable, and for the packages whose `api_key`
+/// setting has no variable (`searxng`) or that take no `api_key` at all
+/// (`anthropic_aws`, `aws_polly`, `codex`, `dataforseo`).
+///
+/// Hosts that let a caller pick a key by variable name (the aimux-web
+/// console's `env:VAR`) use it to allow only the provider's own variable.
+#[must_use]
+pub fn provider_api_key_env(name: &str) -> Option<&'static str> {
+    use crate::{
+        anthropic, assemblyai, azure, bedrock, black_forest_labs, cartesia, cohere, deepgram,
+        deepseek, elevenlabs, exa_ai, fal, firecrawl, gladia, google, google_pse, groq,
+        huggingface, hume, jina_ai, klingai, linkup, lmnt, luma, mistral, openai, parallel_ai,
+        prodia, recraft, replicate, revai, runwayml, serper, stability, tavily, tinyfish, vertex,
+        voyage, xai, you_com,
+    };
+    Some(match name {
+        "amazon_bedrock" => bedrock::BEARER_TOKEN_ENV_VAR,
+        "anthropic" => anthropic::API_KEY_ENV_VAR,
+        "assemblyai" => assemblyai::API_KEY_ENV_VAR,
+        "azure" => azure::API_KEY_ENV_VAR,
+        "black_forest_labs" => black_forest_labs::API_KEY_ENV_VAR,
+        "cartesia" => cartesia::API_KEY_ENV_VAR,
+        "cohere" => cohere::API_KEY_ENV_VAR,
+        "deepgram" => deepgram::API_KEY_ENV_VAR,
+        "deepseek" => deepseek::API_KEY_ENV_VAR,
+        "elevenlabs" => elevenlabs::API_KEY_ENV_VAR,
+        "exa_ai" => exa_ai::API_KEY_ENV_VAR,
+        "fal" => fal::API_KEY_ENV_VAR,
+        "firecrawl" => firecrawl::API_KEY_ENV_VAR,
+        "gladia" => gladia::API_KEY_ENV_VAR,
+        "google" => google::API_KEY_ENV_VAR,
+        "google_pse" => google_pse::API_KEY_ENV_VAR,
+        "google_vertex" => vertex::API_KEY_ENV_VAR,
+        "groq" => groq::API_KEY_ENV_VAR,
+        "huggingface" => huggingface::API_KEY_ENV_VAR,
+        "hume" => hume::API_KEY_ENV_VAR,
+        "jina_ai" => jina_ai::API_KEY_ENV_VAR,
+        "klingai" => klingai::API_KEY_ENV_VAR,
+        "linkup" => linkup::API_KEY_ENV_VAR,
+        "lmnt" => lmnt::API_KEY_ENV_VAR,
+        "luma" => luma::API_KEY_ENV_VAR,
+        "mistral" => mistral::API_KEY_ENV_VAR,
+        "openai" => openai::API_KEY_ENV_VAR,
+        "parallel_ai" => parallel_ai::API_KEY_ENV_VAR,
+        "prodia" => prodia::API_KEY_ENV_VAR,
+        "recraft" => recraft::API_KEY_ENV_VAR,
+        "replicate" => replicate::API_KEY_ENV_VAR,
+        "revai" => revai::API_KEY_ENV_VAR,
+        "runwayml" => runwayml::API_KEY_ENV_VAR,
+        "serper" => serper::API_KEY_ENV_VAR,
+        "stability" => stability::API_KEY_ENV_VAR,
+        "tavily" => tavily::API_KEY_ENV_VAR,
+        "tinyfish" => tinyfish::API_KEY_ENV_VAR,
+        "voyage" => voyage::API_KEY_ENV_VAR,
+        "xai" => xai::API_KEY_ENV_VAR,
+        "you_com" => you_com::API_KEY_ENV_VAR,
+        _ if PACKAGES.contains(&name) => return None,
+        _ => preset::lookup(name)
+            .map(|entry| entry.descriptor.env_var.as_str())
+            .filter(|var| !var.is_empty())?,
+    })
+}
+
 /// Every built-in provider with default settings, keyed by name: pass it to
 /// [`aimux_core::create_provider_registry`], after adding or replacing entries
 /// as needed.
@@ -457,6 +523,52 @@ mod tests {
         assert_eq!(provider_id, "opeanai");
         assert_eq!(available_providers, provider_names());
         assert!(available_providers.iter().any(|name| name == "openai"));
+    }
+
+    /// The key variable is the one each factory reads with no `api_key`:
+    /// the package's own constant, else the registry row's `env_var`.
+    #[test]
+    fn provider_api_key_env_names_the_variable_the_factory_reads() {
+        assert_eq!(provider_api_key_env("openai"), Some("OPENAI_API_KEY"));
+        assert_eq!(provider_api_key_env("groq"), Some("GROQ_API_KEY"));
+        assert_eq!(
+            provider_api_key_env("google"),
+            Some("GOOGLE_GENERATIVE_AI_API_KEY")
+        );
+        assert_eq!(
+            provider_api_key_env("amazon_bedrock"),
+            Some("AWS_BEARER_TOKEN_BEDROCK")
+        );
+        assert_eq!(provider_api_key_env("fal"), Some("FAL_KEY"));
+        // Registry rows.
+        assert_eq!(
+            provider_api_key_env("openrouter"),
+            Some("OPENROUTER_API_KEY")
+        );
+        assert_eq!(provider_api_key_env("ollama"), Some("OLLAMA_API_KEY"));
+        // Every package that takes a key names its variable; the rest none.
+        let keyless = [
+            "anthropic_aws",
+            "aws_polly",
+            "codex",
+            "dataforseo",
+            "searxng",
+        ];
+        for name in PACKAGES {
+            assert_eq!(
+                provider_api_key_env(name).is_some(),
+                !keyless.contains(&name),
+                "{name}"
+            );
+        }
+        // A registry row without a variable, and an unknown name.
+        let without = preset::entries()
+            .find(|entry| entry.descriptor.env_var.is_empty())
+            .map(|entry| entry.descriptor.name.as_str());
+        if let Some(name) = without {
+            assert_eq!(provider_api_key_env(name), None, "{name}");
+        }
+        assert_eq!(provider_api_key_env("no-such-provider"), None);
     }
 
     /// Providers and their models report the V4 specification version, as

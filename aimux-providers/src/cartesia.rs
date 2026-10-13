@@ -72,7 +72,7 @@ const SAMPLE_RATES: &[u32] = &[8000, 16000, 22050, 24000, 44100, 48000];
 pub(crate) mod options;
 
 const DEFAULT_BASE_URL: &str = "https://api.cartesia.ai";
-const API_KEY_ENV_VAR: &str = "CARTESIA_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "CARTESIA_API_KEY";
 const DEFAULT_NAME: &str = "cartesia";
 
 /// Settings of [`create_cartesia`].

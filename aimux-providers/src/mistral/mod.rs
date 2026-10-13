@@ -93,7 +93,7 @@ pub(crate) fn mistral_stream_error(
 }
 
 const DEFAULT_BASE_URL: &str = "https://api.mistral.ai/v1";
-const API_KEY_ENV_VAR: &str = "MISTRAL_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "MISTRAL_API_KEY";
 const DEFAULT_NAME: &str = "mistral";
 
 /// The URL patterns the chat model fetches itself (`supportedUrls` of the AI

@@ -65,7 +65,7 @@ pub(crate) fn anthropic_failed_response_handler()
 
 const API_ORIGIN: &str = "https://api.anthropic.com";
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com/v1";
-const API_KEY_ENV_VAR: &str = "ANTHROPIC_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "ANTHROPIC_API_KEY";
 const API_VERSION: &str = "2023-06-01";
 const DEFAULT_NAME: &str = "anthropic.messages";
 

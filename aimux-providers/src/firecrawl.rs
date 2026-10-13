@@ -40,7 +40,7 @@ fn firecrawl_failed_response_handler() -> aimux_provider_utils::ResponseHandler<
 }
 
 const DEFAULT_BASE_URL: &str = "https://api.firecrawl.dev";
-const API_KEY_ENV_VAR: &str = "FIRECRAWL_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "FIRECRAWL_API_KEY";
 const DEFAULT_NAME: &str = "firecrawl";
 
 /// Settings of [`create_firecrawl`].

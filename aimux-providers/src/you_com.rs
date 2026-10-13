@@ -58,7 +58,7 @@ const DEFAULT_COUNT: u32 = 10;
 // ── Config ───────────────────────────────────────────────────────────────────
 
 const DEFAULT_BASE_URL: &str = "https://ydc-index.io";
-const API_KEY_ENV_VAR: &str = "YDC_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "YDC_API_KEY";
 const DEFAULT_NAME: &str = "you_com";
 
 /// Settings of [`create_you_com`].

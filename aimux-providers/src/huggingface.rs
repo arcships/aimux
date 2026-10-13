@@ -36,7 +36,7 @@ use crate::openai::config::OpenAIModelConfig;
 use crate::shared::{Credential, EndpointConfig, provider_headers};
 
 const DEFAULT_BASE_URL: &str = "https://router.huggingface.co/v1";
-const API_KEY_ENV_VAR: &str = "HUGGINGFACE_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "HUGGINGFACE_API_KEY";
 const DEFAULT_NAME: &str = "huggingface";
 
 /// Settings of [`create_huggingface`] (the AI SDK's

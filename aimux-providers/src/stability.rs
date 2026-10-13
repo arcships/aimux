@@ -117,7 +117,7 @@ fn model_id_to_subpath(model_id: &str) -> &str {
 pub(crate) mod options;
 
 const DEFAULT_BASE_URL: &str = "https://api.stability.ai";
-const API_KEY_ENV_VAR: &str = "STABILITY_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "STABILITY_API_KEY";
 const DEFAULT_NAME: &str = "stability";
 
 /// Settings of [`create_stability`].

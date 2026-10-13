@@ -69,7 +69,7 @@ const PROVIDER: &str = "amazon-bedrock";
 const SIGV4_SERVICE: &str = "bedrock";
 
 const REGION_ENV_VAR: &str = "AWS_REGION";
-const BEARER_TOKEN_ENV_VAR: &str = "AWS_BEARER_TOKEN_BEDROCK";
+pub(crate) const BEARER_TOKEN_ENV_VAR: &str = "AWS_BEARER_TOKEN_BEDROCK";
 const ACCESS_KEY_ID_ENV_VAR: &str = "AWS_ACCESS_KEY_ID";
 const SECRET_ACCESS_KEY_ENV_VAR: &str = "AWS_SECRET_ACCESS_KEY";
 const SESSION_TOKEN_ENV_VAR: &str = "AWS_SESSION_TOKEN";

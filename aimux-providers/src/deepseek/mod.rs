@@ -37,7 +37,7 @@ use crate::shared::{Credential, EndpointConfig, provider_headers};
 use model::DeepSeekChatConfig;
 
 const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
-const API_KEY_ENV_VAR: &str = "DEEPSEEK_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "DEEPSEEK_API_KEY";
 
 /// The URL patterns the chat model fetches itself (`supportedUrls` of the AI
 /// SDK's `DeepSeekChatLanguageModel`): `http(s)` images.

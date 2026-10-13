@@ -456,6 +456,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - C ABI: `void aimux_drop_handle_ptr(void *handle)`, `aimux_drop_handle` with
   the handle passed as a pointer-sized value (NULL is a no-op), for a
   finalizer that can only register a `void (*)(void *)` callback.
+- `aimux_providers::provider_api_key_env(name)`: the environment variable a
+  built-in provider reads its key from when `create_provider` gets none.
 
 ### Fixed
 
@@ -484,6 +486,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ProviderHandle.list_models`, `get_model_specs`, the multimodal calls and
   the recording flushes) releases the GIL while it waits, so other Python
   threads keep running.
+- aimux-web: an `env:VAR` key reference is accepted only for the variable the
+  provider's key is registered under (for example `env:OPENAI_API_KEY` for
+  `openai`); any other name is refused before it is read, on the calls,
+  cache-probe and replay paths. It read any variable of the console process.
 
 ### RFCs
 

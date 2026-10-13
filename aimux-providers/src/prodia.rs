@@ -58,7 +58,7 @@ fn prodia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiM
 pub(crate) mod options;
 
 const DEFAULT_BASE_URL: &str = "https://prodia.com/api";
-const API_KEY_ENV_VAR: &str = "PRODIA_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "PRODIA_API_KEY";
 const DEFAULT_NAME: &str = "prodia";
 
 /// Settings of [`create_prodia`].

@@ -35,7 +35,7 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, v
 use crate::shared::{Credential, EndpointConfig, provider_headers};
 
 const DEFAULT_BASE_URL: &str = "https://api.x.ai/v1";
-const API_KEY_ENV_VAR: &str = "XAI_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "XAI_API_KEY";
 const DEFAULT_NAME: &str = "xai";
 
 pub(crate) fn xai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
