@@ -665,3 +665,49 @@ async fn partner_sub_providers_require_a_project() {
     );
     assert!(fetch.seen().is_empty());
 }
+
+/// Upstream: @ai-sdk/google-vertex 5.0.98 src/google-vertex-provider-base.ts:270-276
+/// appends `ai-sdk-google-vertex/<v>` to the Gemini models' headers; the
+/// Anthropic sub-provider hands the caller's headers to the Anthropic model
+/// as they are (anthropic/google-vertex-anthropic-provider.ts:206-210), so
+/// only the helper's `ai-sdk-provider-utils/<v>` part is sent.
+#[tokio::test]
+async fn only_gemini_models_send_the_google_vertex_user_agent_part() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "msg_1", "type": "message", "role": "assistant", "model": "claude",
+        "content": [{"type": "text", "text": "ok"}],
+        "stop_reason": "end_turn", "stop_sequence": null,
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+    let anthropic = aimux_providers::create_google_vertex_anthropic(
+        aimux_providers::VertexAnthropicProviderSettings {
+            project: Some("test-project".into()),
+            location: Some("us-east5".into()),
+            fetch: Some(fetch.transport()),
+            generate_auth_token: Some(Resolvable::Value(Some("test-token".into()))),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut options = prompt();
+    options.max_output_tokens = Some(16);
+    anthropic
+        .call("claude-sonnet-4-5")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    let agent = &fetch.seen()[0].headers["user-agent"];
+    assert!(agent.starts_with("ai-sdk-provider-utils/"), "{agent}");
+    assert!(!agent.contains("ai-sdk-google-vertex/"), "{agent}");
+
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "candidates": [{"content": {"parts": [{"text": "ok"}], "role": "model"}, "finishReason": "STOP"}]
+    }))]);
+    provider(&fetch)
+        .chat("gemini-2.5-flash")
+        .do_generate(&prompt())
+        .await
+        .unwrap();
+    let agent = &fetch.seen()[0].headers["user-agent"];
+    assert!(agent.starts_with("ai-sdk-google-vertex/"), "{agent}");
+}

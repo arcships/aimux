@@ -258,13 +258,21 @@ impl Resolver {
         };
         let base_url = self.base_url(express_key.is_some(), publisher)?;
         let headers = self.headers(express_key.as_deref()).await?;
-        let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            Resolvable::Value(headers),
-            "google-vertex",
-            crate::shared::aisdk_pins::GOOGLE_VERTEX,
-        )
-        .resolve()
-        .await?;
+        let headers = match publisher {
+            // google-vertex-provider-base.ts:270-276 appends the package part.
+            Publisher::Google => {
+                aimux_provider_utils::headers::with_user_agent_suffix_fn(
+                    Resolvable::Value(headers),
+                    "google-vertex",
+                    crate::shared::aisdk_pins::GOOGLE_VERTEX,
+                )
+                .resolve()
+                .await?
+            }
+            // The Anthropic sub-provider passes the caller's headers as they
+            // are (google-vertex-anthropic-provider.ts:206-210).
+            Publisher::Anthropic => headers,
+        };
         Ok(Endpoint { base_url, headers })
     }
 }
