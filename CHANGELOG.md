@@ -18,7 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AiMuxError` is tagged by `name`
   (`AI_APICallError`, `AI_RetryError`, ...). Vendor request and response types
   and the OpenAI chat-completion output keep their vendor wire formats.
-  Persisted recordings and trace records change with the same rule.
+  Persisted recordings and trace records change with the same rule;
+  recordings stay schema 2 and still read the snake_case envelope keys
+  aimux 0.5 writes (`call_id`, `recorded_at`, `model_id`, ...).
 
 - Bytes are base64 strings in the public JSON, as the AI SDK writes a
   `Uint8Array`: image part `image`, file part `data`, `FileBytes`, speech
@@ -652,8 +654,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The native Decision/Jev extension from master is retained. Its typed
   `JevConfig` / `JevProvider::new` entry point and `Provider::decision_model`
   remain available. Decision replay now takes the caller's registry;
-  recordings contain provider identity only and keep decision capabilities
-  separately under input. Decision retries use the core call-level policy.
+  recordings contain provider identity only and no capability snapshot
+  (see the DecisionModelV4 entry). Decision retries use the core call-level
+  policy.
 
 - `OpenAIProvider::language_model(id)` (and so `create_provider("openai", ..)`
   and the registry id `openai:<model>`) returns the **Responses** model, as
@@ -738,11 +741,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the C ABI `config_json` and the Node `ProviderConfig` that carry `max_retries` or
   `body_overrides` now fail with `InvalidArgument` instead of ignoring them
   (`reject_removed_provider_options` for other shapes).
-- Recording: `RECORDING_SCHEMA = 3`. `ProviderRecord` holds identity only
-  (`provider_id`, `provider`, `model_id`); base URL, key source, profile,
-  options and retry settings are no longer recorded and schema-2 files are
-  rejected on read. `rebuild_provider(record, registry)` resolves
-  `provider_id` through the caller-supplied registry, retaining its settings.
+- Recording: `RECORDING_SCHEMA` stays 2, and recordings written by aimux 0.5
+  and earlier (schemas 1 and 2) still load; schema 3 and above are refused.
+  `ProviderRecord` holds identity only (`provider_id`, `provider`,
+  `model_id`); base URL, key source, profile, options and retry settings are
+  no longer recorded, and when read from an older recording they are
+  ignored. What this version cannot replay from an older recording fails at
+  replay time with an error that names it: its empty `provider_id`
+  (`ProviderRecord::registry_id`) for a rebuild from a registry, a prompt in
+  the older format (`InputRecord::unreadable_prompt`, loaded as empty),
+  older call options (snake_case keys the camelCase options would ignore are
+  refused), or the pre-V4 decision options and results.
+  `rebuild_provider(record, registry)` resolves `provider_id` through the
+  caller-supplied registry, retaining its settings.
   If the default model method differs from the recorded one, pass the model
   to `replay_with_model`. Recorded provider strings change with the next item.
 - `model.provider()` follows the package's fixed identity or, where offered,
@@ -763,9 +774,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `blackForestLabs.image`, `cartesia.transcription`, … . Consumers that
   compared `provider` to `"openai"` must match the prefix (the CLI and web
   probes filter by `model.provider()`).
-- providerOptions namespaces are canonical only: `googleVertex` and
-  `amazonBedrock` (the legacy `vertex` / `bedrock` keys are neither read nor
-  written; Bedrock still reads `anthropic` for its Anthropic models). The
+- providerOptions namespaces: `googleVertex` and `amazonBedrock` are the
+  canonical keys; the legacy `vertex` / `bedrock` keys are still read, and
+  provider metadata is written under both, as the upstream packages do
+  (Bedrock also reads `anthropic` for its Anthropic models). The
   Anthropic package reads `anthropic` merged with the first segment of a
   custom `name` (custom wins) and writes metadata under the custom key;
   compat providers no longer read the `openai` key; `providerOptions.deepseek`
@@ -866,7 +878,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `InputRecord::from_decision_options` and `Recorder::record_decision_input`
   no longer take capabilities. `MockDecisionReplayModel` does not read the
   field; replay rebuilds the model from the host registry. The recording
-  schema stays 3, and older recordings with the field still load.
+  schema stays 2, and older recordings with the field still load.
 - Decisions follow the AI SDK's `DecisionModelV4` (`@ai-sdk/provider@4.0.22`)
   and `decide` (`ai@7.0.128`). Questions are a map keyed by id; Choice and
   Score questions take `criteria` (option names to descriptions, ordered

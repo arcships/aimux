@@ -29,22 +29,39 @@ use ts_rs::TS;
 // ── 数据模型(三层 + call_id 关联;schema 版本)────────────────────────────
 
 /// 录制格式版本(用于未来字段迁移与绑定层兼容)。
-pub const RECORDING_SCHEMA: u32 = 3;
+///
+/// Schema 2, as released aimux writes it: the V4 layers keep it until the
+/// full schema 3 of the alignment doc (§4.3) lands with the last layers.
+pub const RECORDING_SCHEMA: u32 = 2;
 
-/// 只接受当前 [`RECORDING_SCHEMA`]:反序列化旧版本录制时给出明确错误。
-fn deserialize_current_schema<'de, D>(deserializer: D) -> Result<u32, D::Error>
+/// Reads `schema`: 1 and 2, the schemas released aimux versions write, load;
+/// any other value is refused with a clear error. No schema 3 recording was
+/// ever released.
+fn deserialize_known_schema<'de, D>(deserializer: D) -> Result<u32, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let schema = u32::deserialize(deserializer)?;
-    if schema == RECORDING_SCHEMA {
+    if (1..=RECORDING_SCHEMA).contains(&schema) {
         Ok(schema)
     } else {
         Err(serde::de::Error::custom(format!(
-            "unsupported recording schema {schema}: only schema {RECORDING_SCHEMA} is \
-             readable, recordings written by older versions are no longer read"
+            "unsupported recording schema {schema}: only schemas 1 to {RECORDING_SCHEMA} \
+             are readable"
         )))
     }
+}
+
+/// Reads `InputRecord.prompt`. A prompt this version cannot read, such as
+/// one written by aimux 0.5 or earlier with a system message whose content is
+/// a part array, loads as empty so the recording still loads;
+/// [`InputRecord::unreadable_prompt`] then says why, and replay refuses it.
+fn deserialize_prompt<'de, D>(deserializer: D) -> Result<LanguageModelPrompt, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
 /// Operation stored in a unified recording. Older recordings are language calls.
@@ -68,13 +85,19 @@ impl RecordingOperation {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct Recording {
-    /// 格式版本。读取时只接受当前 [`RECORDING_SCHEMA`];旧 schema 的录制带有
-    /// 配置快照(base_url / profile 等),不再读取。
-    #[serde(deserialize_with = "deserialize_current_schema")]
+    /// 格式版本。Written as [`RECORDING_SCHEMA`]; schemas 1 and 2 are read.
+    /// Recordings written by aimux 0.5 and earlier also carry a configuration
+    /// snapshot under `provider` (base URL, key source, profile, provider
+    /// options), which is ignored, and write the envelope's keys snake_case
+    /// (`call_id`, `recorded_at`, ...), which are read as aliases of the
+    /// camelCase keys this version writes.
+    #[serde(deserialize_with = "deserialize_known_schema")]
     pub schema: u32,
     /// 暴露逻辑调用 ID,关联三层。
+    #[serde(alias = "call_id")]
     pub call_id: String,
     /// ISO 8601 时间戳。
+    #[serde(alias = "recorded_at")]
     pub recorded_at: String,
 
     /// ① 输入侧:调用参数(prompt + options)。
@@ -96,14 +119,14 @@ pub struct Recording {
     pub complete: bool,
     /// 传输层封闭信号:层 B 声明"不再有 exchange"(P1:层 A 收尾自动发;
     /// P2:由层 B 发送)。false = 仍可能来 exchange(记录暂不可定稿)。
-    #[serde(default)]
+    #[serde(default, alias = "transport_closed")]
     pub transport_closed: bool,
 
     /// 会话归组(RFC-0024 P3):所在会话 id。None = 未归组(无 session_id 且
     /// 推断关闭)。由 `Recorder::record_session` 填充,写入 InputRecord 之前
     /// 或之后均可(writer 端按 call_id 合并)。
     #[ts(optional)]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, alias = "session_id", skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     /// 会话内步号(0 起,由 SessionStore 分配)。与 `session_id` 同生命周期。
     #[ts(optional)]
@@ -160,7 +183,9 @@ impl Recording {
 pub struct InputRecord {
     #[serde(default, skip_serializing_if = "RecordingOperation::is_language_model")]
     pub operation: RecordingOperation,
-    /// 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
+    /// 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。Loads as
+    /// empty when this version cannot read it ([`Self::unreadable_prompt`]).
+    #[serde(deserialize_with = "deserialize_prompt")]
     pub prompt: LanguageModelPrompt,
     /// 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
     /// 加上所在操作的 `max_retries` / `timeout` / `session_id`
@@ -207,6 +232,24 @@ impl InputRecord {
             options: redact_json(serde_json::to_value(options).unwrap_or_default()),
         }
     }
+
+    /// Why the recorded prompt cannot be replayed, when it cannot: the
+    /// recorded options hold a prompt this version does not read (one written
+    /// by aimux 0.5 or earlier, for example with a system message whose
+    /// content is a part array). `prompt` then loaded as empty.
+    #[must_use]
+    pub fn unreadable_prompt(&self) -> Option<String> {
+        if !self.prompt.is_empty() {
+            return None;
+        }
+        let recorded = self.options.get("prompt")?;
+        if recorded.as_array().is_none_or(Vec::is_empty) {
+            return None;
+        }
+        serde_json::from_value::<LanguageModelPrompt>(recorded.clone())
+            .err()
+            .map(|e| e.to_string())
+    }
 }
 
 /// ② 配置侧:provider 身份(请求回放重建用)。
@@ -218,10 +261,14 @@ impl InputRecord {
 #[ts(export)]
 pub struct ProviderRecord {
     /// provider 名(registry 名),回放重建的查找键,如 "openai"、"deepseek"。
+    /// Empty in a recording written by aimux 0.5 or earlier, which has none
+    /// ([`Self::registry_id`]).
+    #[serde(default, alias = "provider_id")]
     pub provider_id: String,
     /// `model.provider()`,如 "openai.chat"。
     pub provider: String,
     /// `model.model_id()`,如 "gpt-4o"。
+    #[serde(alias = "model_id")]
     pub model_id: String,
 }
 
@@ -234,6 +281,25 @@ impl ProviderRecord {
             provider: provider.to_string(),
             model_id: model_id.to_string(),
         }
+    }
+
+    /// `provider_id`, the registry name live replay rebuilds the model from.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidArgument` when the recording has none: aimux 0.5 and earlier
+    /// record the model's `provider()` and its configuration instead, so such
+    /// a recording is replayed by passing the model to `replay_with_model`.
+    pub fn registry_id(&self) -> Result<&str, crate::error::AiMuxError> {
+        if self.provider_id.is_empty() {
+            return Err(crate::error::AiMuxError::InvalidArgument(format!(
+                "replay: the recording of `{}` has no provider_id (recordings written by \
+                 aimux 0.5 or earlier carry none), so the model cannot be rebuilt from a \
+                 registry; pass the model to replay_with_model",
+                self.provider
+            )));
+        }
+        Ok(&self.provider_id)
     }
 
     /// 由 model 的 `provider()` / `model_id()` 构造:`provider_id` 暂取
@@ -261,7 +327,7 @@ pub struct HttpExchange {
     /// `(attempt, exchange_index)` alone still identifies an exchange.
     pub attempt: u32,
     /// HTTP exchange within the operation attempt, starting at 1.
-    #[serde(default)]
+    #[serde(default, alias = "exchange_index")]
     pub exchange_index: u32,
     pub request: HttpRecord,
     /// None = 请求失败未获响应。
@@ -306,11 +372,15 @@ pub struct ResponseRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
     #[ts(optional)]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        alias = "stream_chunks",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub stream_chunks: Option<usize>,
     /// 首字节延迟(流式)。
     #[ts(optional, type = "number")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, alias = "ttfb_ms", skip_serializing_if = "Option::is_none")]
     pub ttfb_ms: Option<u64>,
 }
 
@@ -320,9 +390,10 @@ pub struct ResponseRecord {
 pub struct TimingRecord {
     /// ms 级延迟,TS 用 number(远小于 2^53,避免 bigint)。
     #[ts(type = "number")]
+    #[serde(alias = "latency_ms")]
     pub latency_ms: u64,
     #[ts(optional, type = "number")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, alias = "ttfb_ms", skip_serializing_if = "Option::is_none")]
     pub ttfb_ms: Option<u64>,
 }
 
@@ -350,11 +421,20 @@ pub enum OutcomeStatus {
 pub struct OutcomeRecord {
     /// The result `decide` returned (`DecideResult`), independent of a
     /// provider's wire format.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(
+        default,
+        alias = "decision_result",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub decision_result: Option<serde_json::Value>,
     pub status: OutcomeStatus,
     #[ts(optional)]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        alias = "finish_reason",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub finish_reason: Option<String>,
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -362,7 +442,11 @@ pub struct OutcomeRecord {
     /// Lossless structured domain error. In particular, `RetryError.errors`
     /// keeps the complete attempt history rather than only its display text.
     #[ts(optional)]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        alias = "error_value",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub error_value: Option<serde_json::Value>,
     /// 序列化的 Usage。
     #[ts(optional)]
@@ -2157,6 +2241,113 @@ mod tests {
         assert_eq!(back.call_id, "call-1");
         assert_eq!(back.schema, RECORDING_SCHEMA);
         assert_eq!(back.provider.provider, "openai");
+    }
+
+    /// Recordings are written as schema 2, as master writes them. Schemas 1
+    /// and 2 (what released versions write) are read; any other schema,
+    /// including the never-released 3, is refused with a clear error.
+    #[test]
+    fn schema_two_is_written_and_released_schemas_are_read() {
+        let rec = Recording::new(
+            "call-1",
+            InputRecord::from_call_options(&sample_options()),
+            ProviderRecord::from_model("openai.chat", "gpt-4o"),
+        );
+        let json = serde_json::to_value(&rec).unwrap();
+        assert_eq!(json["schema"], 2);
+        for schema in [1, 2] {
+            let mut value = json.clone();
+            value["schema"] = schema.into();
+            let back: Recording = serde_json::from_value(value).unwrap();
+            assert_eq!(back.schema, schema);
+        }
+        for schema in [0, 3, 4] {
+            let mut value = json.clone();
+            value["schema"] = schema.into();
+            let err = serde_json::from_value::<Recording>(value)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains(&format!("unsupported recording schema {schema}")),
+                "{err}"
+            );
+        }
+    }
+
+    /// Fields only this version writes are optional when reading, fields
+    /// only master writes are ignored, master's snake_case envelope keys are
+    /// read (this version writes them camelCase), and a prompt this version
+    /// cannot read loads as empty with the reason kept for replay.
+    #[test]
+    fn a_master_shaped_record_loads() {
+        let system = serde_json::json!([{
+            "role": "system",
+            "content": [{"type": "text", "text": "Be brief."}],
+            "provider_options": null
+        }]);
+        let line = serde_json::json!({
+            "schema": 2,
+            "call_id": "c",
+            "recorded_at": "2026-10-13T00:00:00.000Z",
+            "input": {"prompt": system, "options": {"prompt": system}},
+            "provider": {
+                "provider": "openai",
+                "model_id": "gpt-4o",
+                "base_url": "https://api.openai.com/v1",
+                "profile": null,
+                "provider_options": null
+            },
+            "exchanges": [{
+                "attempt": 1,
+                "exchange_index": 1,
+                "request": {"method": "POST", "url": "https://api.openai.com/v1/chat/completions", "headers": []},
+                "response": {"status": 200, "headers": [], "stream_chunks": 3, "ttfb_ms": 5},
+                "timing": {"latency_ms": 9, "ttfb_ms": 5}
+            }],
+            "outcome": {
+                "status": "success",
+                "finish_reason": "stop",
+                "error": null,
+                "error_value": {"kind": "x"},
+                "decision_result": {"answers": {}},
+                "usage": null
+            },
+            "transport_closed": true,
+            "session_id": "s"
+        });
+        let rec: Recording = serde_json::from_value(line).unwrap();
+        assert_eq!(rec.call_id, "c");
+        assert_eq!(rec.recorded_at, "2026-10-13T00:00:00.000Z");
+        assert_eq!(rec.provider.provider_id, "");
+        assert_eq!(rec.provider.model_id, "gpt-4o");
+        assert!(rec.provider.registry_id().is_err());
+        assert!(rec.input.prompt.is_empty());
+        assert!(rec.input.unreadable_prompt().is_some());
+        assert!(!rec.complete);
+        assert!(rec.transport_closed);
+        assert_eq!(rec.session_id.as_deref(), Some("s"));
+        let exchange = &rec.exchanges[0];
+        assert_eq!(exchange.exchange_index, 1);
+        let response = exchange.response.as_ref().unwrap();
+        assert_eq!(
+            (response.stream_chunks, response.ttfb_ms),
+            (Some(3), Some(5))
+        );
+        assert_eq!(
+            (exchange.timing.latency_ms, exchange.timing.ttfb_ms),
+            (9, Some(5))
+        );
+        assert_eq!(rec.outcome.finish_reason.as_deref(), Some("stop"));
+        assert!(rec.outcome.error_value.is_some() && rec.outcome.decision_result.is_some());
+
+        // Written back with this version's camelCase keys, still schema 2.
+        let written = serde_json::to_value(&rec).unwrap();
+        assert_eq!(written["schema"], 2);
+        assert_eq!(written["callId"], "c");
+        assert_eq!(written["provider"]["modelId"], "gpt-4o");
+        assert_eq!(written["exchanges"][0]["timing"]["latencyMs"], 9);
+        assert_eq!(written["outcome"]["finishReason"], "stop");
+        assert!(written.get("call_id").is_none());
     }
 
     #[test]

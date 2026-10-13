@@ -9,6 +9,12 @@ use crate::decision_model::{
 };
 use crate::recording::{OutcomeStatus, Recording, RecordingOperation};
 
+/// Appended to a replay error when recordings written by aimux 0.5 or
+/// earlier (no `provider_id`) are involved: their decision options and
+/// results use the pre-V4 shapes, which this version does not read.
+const OLDER_RECORDING: &str = "written by aimux 0.5 or earlier, whose decision options and \
+                               results this version does not read";
+
 /// What identifies a request: the call options a model receives. Operation
 /// settings (retries, timeout) are not part of it.
 fn key(options: &Value) -> Value {
@@ -109,9 +115,23 @@ impl DecisionModel for MockDecisionReplayModel {
                     && crate::replay::redaction_aware_eq(&key(&rec.input.options), &requested)
             })
             .ok_or_else(|| {
-                AiMuxError::InvalidArgument(
-                    "decision replay: no exact matching complete recording".into(),
-                )
+                let older = self
+                    .recordings
+                    .iter()
+                    .filter(|rec| {
+                        rec.input.operation == RecordingOperation::Decision
+                            && rec.provider.provider == self.provider
+                            && rec.provider.model_id == self.model_id
+                            && rec.provider.provider_id.is_empty()
+                    })
+                    .count();
+                let mut message = "decision replay: no exact matching complete recording".to_string();
+                if older > 0 {
+                    message.push_str(&format!(
+                        "; {older} recording(s) of this model were {OLDER_RECORDING} and never match"
+                    ));
+                }
+                AiMuxError::InvalidArgument(message)
             })?;
         if rec.outcome.status != OutcomeStatus::Success {
             return Err(rec
@@ -160,7 +180,15 @@ pub async fn replay_decision_with_model(
             "decision replay requires a decision recording".into(),
         ));
     }
-    let options: DecideOptions = serde_json::from_value(recording.input.options.clone())
-        .map_err(|e| AiMuxError::JsonParse(e.to_string()))?;
+    let options: DecideOptions =
+        serde_json::from_value(recording.input.options.clone()).map_err(|e| {
+            if recording.provider.provider_id.is_empty() {
+                AiMuxError::JsonParse(format!(
+                    "decision replay: the recording was {OLDER_RECORDING}: {e}"
+                ))
+            } else {
+                AiMuxError::JsonParse(e.to_string())
+            }
+        })?;
     decide(model, options).await
 }

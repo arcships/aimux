@@ -9,8 +9,12 @@ import type { ProviderRecord } from "./ProviderRecord";
  */
 export type Recording = { 
 /**
- * 格式版本。读取时只接受当前 [`RECORDING_SCHEMA`];旧 schema 的录制带有
- * 配置快照(base_url / profile 等),不再读取。
+ * 格式版本。Written as [`RECORDING_SCHEMA`]; schemas 1 and 2 are read.
+ * Recordings written by aimux 0.5 and earlier also carry a configuration
+ * snapshot under `provider` (base URL, key source, profile, provider
+ * options), which is ignored, and write the envelope's keys snake_case
+ * (`call_id`, `recorded_at`, ...), which are read as aliases of the
+ * camelCase keys this version writes.
  */
 schema: number, 
 /**

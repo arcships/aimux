@@ -67,9 +67,12 @@ async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMu
     // (RFC-0029 §5.5). The recording stores no credential source and no base
     // URL (only the provider identity), so the replay goes to the provider's
     // default endpoint: never a custom base URL.
+    // A recording written by aimux 0.5 or earlier has no provider_id to
+    // rebuild from; refuse it before any key is resolved.
+    let provider_id = recording.provider.registry_id()?;
     let key = wire::resolve_api_key(
         req.api_key.as_deref(),
-        &recording.provider.provider_id,
+        provider_id,
         &state.keys,
         state.loopback,
         false,
@@ -78,9 +81,9 @@ async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMu
     let mut providers = aimux_providers::default_providers();
     if let Some(key) = key {
         providers.insert(
-            recording.provider.provider_id.clone(),
+            provider_id.to_string(),
             aimux_providers::create_provider(
-                &recording.provider.provider_id,
+                provider_id,
                 aimux_providers::PresetSettings {
                     api_key: Some(key.into()),
                     ..Default::default()

@@ -478,6 +478,32 @@ impl MockReplayModel {
     pub fn recordings(&self) -> &[Recording] {
         &self.recordings
     }
+
+    /// The matcher's recording, or its error naming the recordings of this
+    /// provider and model whose prompt this version cannot read (written by
+    /// aimux 0.5 or earlier), which never match.
+    fn matching(&self, options: &CallOptions) -> Result<&Recording, AiMuxError> {
+        self.matcher
+            .r#match(options, &self.recordings)
+            .map_err(|error| {
+                let unreadable = self
+                    .recordings
+                    .iter()
+                    .filter(|r| {
+                        r.provider.provider == self.provider
+                            && r.provider.model_id == self.model_id
+                            && r.input.unreadable_prompt().is_some()
+                    })
+                    .count();
+                if unreadable == 0 {
+                    return error;
+                }
+                AiMuxError::InvalidArgument(format!(
+                    "{error}; {unreadable} recording(s) of this model hold a prompt this \
+                     version cannot read (written by aimux 0.5 or earlier) and never match"
+                ))
+            })
+    }
 }
 
 #[async_trait]
@@ -491,13 +517,11 @@ impl LanguageModel for MockReplayModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let rec = self.matcher.r#match(options, &self.recordings)?;
-        rebuild_generate_result(rec)
+        rebuild_generate_result(self.matching(options)?)
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let rec = self.matcher.r#match(options, &self.recordings)?;
-        rebuild_stream_result(rec)
+        rebuild_stream_result(self.matching(options)?)
     }
 }
 
@@ -523,6 +547,29 @@ fn last_response(rec: &Recording) -> Result<&crate::recording::ResponseRecord, A
     Err(AiMuxError::InvalidArgument(
         "mock replay: recording has no successful (2xx, finalized, error-free) response".into(),
     ))
+}
+
+/// The keys of recorded options this version would silently ignore: the
+/// snake_case keys aimux 0.5 and earlier wrote (`tool_choice`,
+/// `max_retries`, `timeout.total_ms`, ...), which this version reads
+/// camelCase. A null value carries nothing and is not reported.
+pub(crate) fn snake_case_option_keys(options: &serde_json::Value) -> Vec<String> {
+    let snake = |(key, value): (&String, &serde_json::Value)| {
+        (key.contains('_') && !value.is_null()).then(|| key.clone())
+    };
+    let Some(options) = options.as_object() else {
+        return Vec::new();
+    };
+    let mut keys: Vec<String> = options.iter().filter_map(snake).collect();
+    if let Some(timeout) = options.get("timeout").and_then(|t| t.as_object()) {
+        keys.extend(
+            timeout
+                .iter()
+                .filter_map(snake)
+                .map(|key| format!("timeout.{key}")),
+        );
+    }
+    keys
 }
 
 /// 解析 finish_reason 字符串为 unified 枚举。
@@ -957,8 +1004,12 @@ pub struct ReplayOverrides {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::JsonParse` when the recorded call options cannot be
-/// deserialized, and propagates errors from the generation pipeline.
+/// Returns `AiMuxError::InvalidArgument` for a recording whose prompt this
+/// version cannot read ([`InputRecord::unreadable_prompt`](crate::recording::InputRecord::unreadable_prompt)),
+/// `AiMuxError::JsonParse` when the recorded call options cannot be
+/// deserialized or hold snake_case keys this version would ignore (options
+/// written by aimux 0.5 or earlier), and propagates errors from the
+/// generation pipeline.
 pub async fn replay_with_model(
     recording: &Recording,
     model: &dyn LanguageModel,
@@ -969,12 +1020,37 @@ pub async fn replay_with_model(
             "language replay requires a language-model recording".into(),
         ));
     }
+    if let Some(error) = recording.input.unreadable_prompt() {
+        return Err(AiMuxError::InvalidArgument(format!(
+            "language replay: this version cannot read the recorded prompt (recordings \
+             written by aimux 0.5 or earlier use another prompt format): {error}"
+        )));
+    }
+    // A recording without a provider_id was written by aimux 0.5 or earlier;
+    // its options may use fields this version reads differently.
+    let older = if recording.provider.provider_id.is_empty() {
+        " (the recording was written by aimux 0.5 or earlier)"
+    } else {
+        ""
+    };
+    let unread = snake_case_option_keys(&recording.input.options);
+    if !unread.is_empty() {
+        return Err(AiMuxError::JsonParse(format!(
+            "mock replay: input options invalid{older}: this version reads the options \
+             camelCase and would ignore {}",
+            unread.join(", ")
+        )));
+    }
     // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)
     //    and the operation settings recorded next to them.
     let mut call_options: CallOptions = serde_json::from_value(recording.input.options.clone())
-        .map_err(|e| AiMuxError::JsonParse(format!("mock replay: input options invalid: {e}")))?;
+        .map_err(|e| {
+            AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
+        })?;
     let settings: OperationSettings = serde_json::from_value(recording.input.options.clone())
-        .map_err(|e| AiMuxError::JsonParse(format!("mock replay: input options invalid: {e}")))?;
+        .map_err(|e| {
+            AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
+        })?;
 
     // 2. 应用 overrides。
     if let Some(o) = overrides {
@@ -1461,6 +1537,35 @@ mod tests {
                 .and_then(|response| response.model_id.as_deref()),
             Some("gpt-4o")
         );
+    }
+
+    /// Options written by aimux 0.5 and earlier use snake_case keys, which
+    /// this version's camelCase options would silently ignore; options this
+    /// version writes have none at the levels it reads.
+    #[test]
+    fn snake_case_recorded_options_are_reported() {
+        let master = serde_json::json!({
+            "prompt": [],
+            "max_output_tokens": null,
+            "temperature": 0.0,
+            "tool_choice": "auto",
+            "max_retries": 0,
+            "timeout": {"total_ms": 30000, "step_ms": null},
+            "providerOptions": {"vllm": {"chat_template_kwargs": {}}}
+        });
+        assert_eq!(
+            snake_case_option_keys(&master),
+            ["tool_choice", "max_retries", "timeout.total_ms"]
+        );
+        let options = CallOptions {
+            max_output_tokens: Some(5),
+            tool_choice: Some(crate::tool::LanguageModelV4ToolChoice::Auto),
+            ..Default::default()
+        };
+        let mut written = serde_json::to_value(&options).unwrap();
+        written["maxRetries"] = 0.into();
+        written["timeout"] = serde_json::json!({"totalMs": 30000});
+        assert!(snake_case_option_keys(&written).is_empty(), "{written}");
     }
 
     #[test]
