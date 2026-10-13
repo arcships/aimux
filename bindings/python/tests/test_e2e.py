@@ -352,6 +352,27 @@ OPENAI_TOOL_CALL = json.dumps({
 
 class TestStructuredContent:
 
+    def test_integral_tool_input_numbers_are_integers(self):
+        """The AI SDK parses tool input with JSON.parse (ai
+        generate-text/parse-tool-call.ts:256; provider-utils
+        secure-json-parse.ts:31): `1e2` and `3.0` are the integers 100 and 3,
+        and JSON.stringify writes them so."""
+        response = OPENAI_TOOL_CALL.replace(
+            '{\\"location\\":\\"Tokyo\\"}', '{\\"location\\":\\"Tokyo\\",\\"days\\":3.0,\\"n\\":1e2,\\"t\\":1.5}'
+        )
+        assert '\\"days\\":3.0' in response
+        with RecordingMockServer(response) as mock:
+            model = deepseek("test-key", "gpt-4o", mock.url)
+            result = generate_text(model, "Weather?", {"tools": [{
+                "type": "function",
+                "name": "get_weather",
+                "inputSchema": {"type": "object"},
+            }]})
+        tool_input = result["toolCalls"][0]["input"]
+        assert tool_input == {"location": "Tokyo", "days": 3, "n": 100, "t": 1.5}
+        assert type(tool_input["days"]) is int and type(tool_input["n"]) is int
+        assert type(tool_input["t"]) is float
+
     def test_generate_text_parses_tool_calls(self):
         with RecordingMockServer(OPENAI_TOOL_CALL) as mock:
             model = deepseek("test-key", "gpt-4o", mock.url)

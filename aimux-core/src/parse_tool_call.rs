@@ -238,7 +238,7 @@ fn parse_json_input(tool_call: &RawToolCall) -> Result<Value, AiMuxError> {
     }
     // Cause wording matches the AI SDK's `JSONParseError` template.
     let value: Value =
-        serde_json::from_str(&tool_call.input).map_err(|error| AiMuxError::InvalidToolInput {
+        parse_input_text(&tool_call.input).map_err(|error| AiMuxError::InvalidToolInput {
             tool_name: tool_call.tool_name.clone(),
             tool_input: tool_call.input.clone(),
             cause: format!(
@@ -257,6 +257,61 @@ fn parse_json_input(tool_call: &RawToolCall) -> Result<Value, AiMuxError> {
         });
     }
     Ok(value)
+}
+
+/// Parse tool-call argument text into the value `JSON.parse` gives, as far
+/// as its JSON goes.
+///
+/// JavaScript has one number type, so `JSON.stringify(JSON.parse("1e2"))` is
+/// `100`. serde_json keeps a number written with a fraction or an exponent
+/// (`1e2`, `100.0`) as an `f64`, which it writes back as `100.0`. Each such
+/// number that is integral is stored as the integer JavaScript prints (see
+/// [`js_integer`]); every other number keeps serde_json's form.
+fn parse_input_text(text: &str) -> serde_json::Result<Value> {
+    let mut value: Value = serde_json::from_str(text)?;
+    integral_floats_as_integers(&mut value);
+    Ok(value)
+}
+
+fn integral_floats_as_integers(value: &mut Value) {
+    match value {
+        Value::Number(number) => {
+            if let Some(integer) = js_integer(number) {
+                *number = integer;
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(integral_floats_as_integers),
+        Value::Object(map) => map.values_mut().for_each(integral_floats_as_integers),
+        _ => {}
+    }
+}
+
+/// The integer `JSON.stringify` writes for an integral, finite `f64`.
+///
+/// Below 1e21 JavaScript writes such a number without an exponent: its
+/// shortest round-trip digits, then zeros (ECMA-262 `Number::toString`, step
+/// 7). Rust's `Display` for `f64` writes the same digits, so `2 ** 60` is
+/// `1152921504606847000` in both. `-0` is written `0`. `None` when the
+/// number is not such a float, or when its digits do not fit an `i64` or a
+/// `u64` (from about 1.8e19 up to 1e21), since serde_json has no larger
+/// integer.
+fn js_integer(number: &serde_json::Number) -> Option<serde_json::Number> {
+    if !number.is_f64() {
+        return None;
+    }
+    let float = number.as_f64()?;
+    if !float.is_finite() || float.fract() != 0.0 || float.abs() >= 1e21 {
+        return None;
+    }
+    if float == 0.0 {
+        return Some(0.into());
+    }
+    let digits = float.to_string();
+    digits
+        .parse::<i64>()
+        .map(Into::into)
+        .or_else(|_| digits.parse::<u64>().map(Into::into))
+        .ok()
 }
 
 // Port of the AI SDK's secure JSON parse (fastify/secure-json-parse): a
@@ -301,7 +356,7 @@ fn invalid_tool_call(tool_call: RawToolCall, error: AiMuxError) -> ToolCall {
     // invalid call rely on this — `response_messages` only carries a
     // structured input into the next turn's transcript, so an unknown tool
     // called with perfectly good arguments must still parse here.
-    let input = serde_json::from_str(&tool_call.input)
+    let input = parse_input_text(&tool_call.input)
         .unwrap_or_else(|_| Value::String(tool_call.input.clone()));
     ToolCall {
         invalid: Some(true),
@@ -332,6 +387,7 @@ fn invalid_tool_call(tool_call: RawToolCall, error: AiMuxError) -> ToolCall {
 pub enum ToolCallRepairReply {
     /// Re-validate this replacement call, exactly as the closure path does
     /// for a returned `Some(call)`.
+    ///
     /// The call may carry its `type` tag, as the AI SDK repair function's
     /// `LanguageModelV4ToolCall` does.
     Repaired {
@@ -781,6 +837,54 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// The AI SDK parses tool input with `JSON.parse` (`ai`
+    /// `generate-text/parse-tool-call.ts:116`, `:256`; `provider-utils`
+    /// `parse-json.ts:97`, `secure-json-parse.ts:31`), so an integral number
+    /// written with a fraction or exponent is a plain integer in its JSON:
+    /// `JSON.stringify(JSON.parse('{"a":1e2}'))` is `{"a":100}`.
+    #[tokio::test]
+    async fn integral_input_numbers_are_written_as_javascript_writes_them() {
+        let tools = weather_tools();
+        let text =
+            r#"{"city":"SG","n":[1e2,100.0,-2.0E1,1.5,0.0,-0.0,9007199254740993.0,1e300,7]}"#;
+        let call = parse_tool_call(raw_call("call-1", text), Some(&tools), None, &[], None).await;
+        assert_eq!(call.invalid, None);
+        // `JSON.stringify(JSON.parse(text))` in Node.
+        assert_eq!(
+            serde_json::to_string(&call.input).unwrap(),
+            r#"{"city":"SG","n":[100,100,-20,1.5,0,0,9007199254740992,1e+300,7]}"#
+        );
+
+        // An invalid call keeps the parsed value, normalized the same way.
+        let invalid = parse_tool_call(
+            raw_call("call-2", r#"{"town":1e1}"#),
+            Some(&tools),
+            None,
+            &[],
+            None,
+        )
+        .await;
+        assert_eq!(invalid.invalid, Some(true));
+        assert_eq!(
+            serde_json::to_string(&invalid.input).unwrap(),
+            r#"{"town":10}"#
+        );
+
+        // Shortest round-trip digits then zeros, as `Number::toString` (2 ** 60).
+        let number = |text: &str| js_integer(&serde_json::from_str(text).unwrap());
+        assert_eq!(
+            number("1152921504606846976.0"),
+            Some(1_152_921_504_606_847_000_u64.into())
+        );
+        assert_eq!(
+            number("-1e18"),
+            Some((-1_000_000_000_000_000_000_i64).into())
+        );
+        // Past `u64` serde_json has no integer; the float is kept.
+        assert_eq!(number("1e20"), None);
+        assert_eq!(number("12"), None);
     }
 
     #[tokio::test]

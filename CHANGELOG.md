@@ -95,6 +95,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Go through `MarshalJSON`; Java, Kotlin, Swift, Dart and Python as a fixed
   `type` field) (#229 NP2-7).
 
+- Tool-call input parsed from the model's argument text writes an integral
+  number as JavaScript does: `1e2` and `100.0` become `100`, `-0.0` becomes
+  `0`, as `JSON.stringify(JSON.parse(text))` writes them, instead of
+  serde_json's `100.0`. Other numbers are unchanged. Bindings that tell
+  integers from floats (Python `int`, Go raw JSON, Jackson `IntNode`) now see
+  integers (#229).
+
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
   model and provider ids take precedence over middleware overrides.

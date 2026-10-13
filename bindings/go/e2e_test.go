@@ -267,6 +267,31 @@ func TestE2E_GenerateTextParsesText(t *testing.T) {
 	}
 }
 
+// The AI SDK parses tool input with JSON.parse (ai
+// generate-text/parse-tool-call.ts:256; provider-utils secure-json-parse.ts:31),
+// so JSON.stringify writes an integral 1e2 or 3.0 as 100 or 3.
+func TestE2E_IntegralToolInputNumbersAreIntegers(t *testing.T) {
+	srv := newMockServer()
+	defer srv.Close()
+	srv.SetResponse(strings.Replace(toolCallOpenAIResponse, `{\"location\":\"Tokyo\"}`,
+		`{\"location\":\"Tokyo\",\"days\":3.0,\"n\":1e2,\"t\":1.5}`, 1))
+
+	m := chatModel(t, srv.URL)
+	defer m.Close()
+
+	result, err := m.GenerateText(`"What is the weather in Tokyo?"`, weatherToolsOpts(""))
+	if err != nil {
+		t.Fatalf("generate_text failed: %v", err)
+	}
+	parsed, err := ParseGenerateTextResult(result)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if got := string(parsed.ToolCalls[0].Input); got != `{"location":"Tokyo","days":3,"n":100,"t":1.5}` {
+		t.Errorf("tool input: %s", got)
+	}
+}
+
 func TestE2E_GenerateTextParsesToolCalls(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()

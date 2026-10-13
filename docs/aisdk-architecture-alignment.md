@@ -2278,6 +2278,8 @@ raw?: JSONObject
 
 core ToolCall 的 input 是解析后的值；provider raw input String 在解析、校验、repair 之前一直保持原文。
 
+解析结果要等于上游 `JSON.parse` 的值(`A/generate-text/parse-tool-call.ts:116`、`:256`，provider-utils `secure-json-parse.ts:31`)。JS 只有一种数字类型，`JSON.stringify(JSON.parse("1e2"))` 是 `100`；serde_json 却把带小数点或指数的数字保存为 `f64`，写回时是 `100.0`。落地方式(最小改动)：只在工具输入文本解析处(`parse_input_text`，有效与非法调用共用)遍历一次解析结果，把有限、整数值、绝对值小于 1e21 的 `f64` 换成 JS 会写出的整数：`f64` 的 `Display` 与 JS `Number::toString` 一样给出最短往返数字再补零(`2 ** 60` 写作 `1152921504606847000`)，`-0` 写作 `0`。其余数字不动：非整数与 1e21 以上的数 serde_json 的写法本来就与 JS 相同(`1.5`、`1e+300`)；约 1.8e19 到 1e21 之间的整数值超出 `i64`/`u64`，没有 `arbitrary_precision` 时无法表示，仍写成浮点(已知差异)。不带小数点或指数、但超过 2^53 的整数字面量由 serde_json 精确保存，而 JS 会舍入到最近的 double，也是已知差异(#229 item 10)。
+
 | core 类型 | 字段与约束 |
 |---|---|
 | StaticToolCall | `toolCallId, toolName, input, providerExecuted?, providerMetadata?, toolMetadata?, title?, dynamic?:false, invalid?:false`；无 error |
