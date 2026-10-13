@@ -171,6 +171,23 @@ async fn chat_tool_call() {
     );
 }
 
+/// Upstream: @ai-sdk/openai 4.0.83 src/chat/map-openai-finish-reason.ts:13-15
+/// maps the legacy `function_call` finish reason to `tool-calls`; the raw
+/// value stays `function_call`.
+#[tokio::test]
+async fn chat_function_call_finish_reason_is_tool_calls() {
+    let mut response = chat_response();
+    response["choices"][0]["finish_reason"] = json!("function_call");
+    let fetch = MockFetch::new(vec![Canned::json(&response)]);
+    let result = provider(&fetch)
+        .chat("test-model")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
+    assert_eq!(result.finish_reason.raw.as_deref(), Some("function_call"));
+}
+
 /// TS: "should parse OpenRouter resource exhausted error" (src/openai-error.test.ts)
 #[tokio::test]
 async fn chat_error_response() {

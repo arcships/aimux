@@ -1212,7 +1212,9 @@ pub fn parse_finish_reason(s: &str) -> FinishReason {
     let unified = match s {
         "stop" => FinishReasonUnified::Stop,
         "length" => FinishReasonUnified::Length,
-        "tool_calls" => FinishReasonUnified::ToolCalls,
+        // Legacy `function_call` is a tool-call stop too
+        // (upstream map-openai-finish-reason.ts:13-15).
+        "function_call" | "tool_calls" => FinishReasonUnified::ToolCalls,
         "content_filter" => FinishReasonUnified::ContentFilter,
         _ => FinishReasonUnified::Other,
     };
