@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#232 C33). Decision images (`images[].data`) follow the same rule; Python
   `decide` encodes `bytes` image data (C33a).
 
+- JSON `null` is kept apart from a missing value where the AI SDK's type is
+  `unknown`: response and request `body` (language, speech, transcription,
+  embedding, reranking and search results), `APICallError.data` and the tool
+  approval request's `inputSchemaInput` read `"body": null` as a present null
+  and write it back, and omit the field only when it was missing. Python
+  serializes without `exclude_none` and keeps a set `None` of an `Any` field;
+  Go reads these bodies as `json.RawMessage`; Dart gains `hasBody` /
+  `hasInputSchemaInput` (#232 C34).
+
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
   model and provider ids take precedence over middleware overrides.
