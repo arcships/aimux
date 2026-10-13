@@ -113,7 +113,7 @@ pub(crate) fn openai_stream_error(
     )
 }
 
-const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 pub(crate) const API_KEY_ENV_VAR: &str = "OPENAI_API_KEY";
 
 /// Settings of [`create_openai`] (the AI SDK's `OpenAIProviderSettings`).

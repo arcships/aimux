@@ -78,7 +78,7 @@ fn parse_linkup_options(provider_options: Option<&SharedProviderOptions>) -> Lin
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://api.linkup.so";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.linkup.so";
 pub(crate) const API_KEY_ENV_VAR: &str = "LINKUP_API_KEY";
 const DEFAULT_NAME: &str = "linkup";
 

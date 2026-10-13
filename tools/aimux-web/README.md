@@ -71,6 +71,11 @@ cargo run -p aimux-web -- --port 8787 --no-open
 env var。非回环绑定(`--host 0.0.0.0` 等)时网页内 key 管理自动禁用,只能走
 `env:` 引用。
 
+自填 `base_url`(不是该 provider 的默认地址)时只用请求里直接给的 key(仅回环
+绑定可填明文):Settings 已存 key 和环境变量都不会发往该地址,`env:` 引用被拒绝;
+key 留空则不带 key 调用。还会从环境读取其他凭据的 provider(Bedrock、Vertex、
+Codex 等)不能自填 `base_url`。Replay 总是发往 provider 的默认地址。
+
 打开后使用 Playground / Agent 页跑一次调用,Traces 页即可看到完整录制。
 
 ## 开发模式(前端热更新)

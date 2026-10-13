@@ -168,7 +168,8 @@ pub mod mistral;
 pub mod openai;
 pub mod openai_compatible;
 pub use default_providers::{
-    create_provider, default_providers, provider_api_key_env, provider_names,
+    create_provider, default_providers, provider_api_key_env, provider_default_base_url,
+    provider_names,
 };
 pub mod preset;
 pub(crate) mod shared;

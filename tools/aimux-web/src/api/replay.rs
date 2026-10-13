@@ -62,12 +62,15 @@ async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMu
 
     // Resolve the key for provider rebuild: the request spec first, then the
     // Settings key store; otherwise the provider's registered env var is read
-    // (RFC-0029 §5.5). The recording stores no credential source.
+    // (RFC-0029 §5.5). The recording stores no credential source and no base
+    // URL (only the provider identity), so the replay goes to the provider's
+    // default endpoint: never a custom base URL.
     let key = wire::resolve_api_key(
         req.api_key.as_deref(),
         &recording.provider.provider_id,
         &state.keys,
         state.loopback,
+        false,
     )?;
 
     let mut providers = aimux_providers::default_providers();

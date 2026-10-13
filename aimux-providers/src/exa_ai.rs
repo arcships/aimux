@@ -42,7 +42,7 @@ fn exa_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxE
 
 const MODEL_ID: &str = "exa-search";
 
-const DEFAULT_BASE_URL: &str = "https://api.exa.ai";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.exa.ai";
 pub(crate) const API_KEY_ENV_VAR: &str = "EXA_API_KEY";
 const DEFAULT_NAME: &str = "exa_ai";
 

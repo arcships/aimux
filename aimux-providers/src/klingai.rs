@@ -50,7 +50,7 @@ fn klingai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<Ai
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://api.klingai.com";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.klingai.com";
 pub(crate) const API_KEY_ENV_VAR: &str = "KLINGAI_API_KEY";
 const DEFAULT_NAME: &str = "klingai";
 

@@ -36,7 +36,7 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, v
 use crate::shared::{Credential, EndpointConfig, provider_headers};
 use model::DeepSeekChatConfig;
 
-const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
 pub(crate) const API_KEY_ENV_VAR: &str = "DEEPSEEK_API_KEY";
 
 /// The URL patterns the chat model fetches itself (`supportedUrls` of the AI

@@ -39,7 +39,7 @@ fn tavily_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiM
     })
 }
 
-const DEFAULT_BASE_URL: &str = "https://api.tavily.com";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.tavily.com";
 pub(crate) const API_KEY_ENV_VAR: &str = "TAVILY_API_KEY";
 const DEFAULT_NAME: &str = "tavily";
 

@@ -57,7 +57,7 @@ const DOWNLOAD_RETRY_INTERVAL_MS: u64 = 1_000;
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://external.api.recraft.ai/v1";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://external.api.recraft.ai/v1";
 pub(crate) const API_KEY_ENV_VAR: &str = "RECRAFT_API_TOKEN";
 const DEFAULT_NAME: &str = "recraft";
 

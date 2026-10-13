@@ -55,7 +55,7 @@ fn google_pse_failed_response_handler() -> aimux_provider_utils::ResponseHandler
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://www.googleapis.com/customsearch/v1";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://www.googleapis.com/customsearch/v1";
 pub(crate) const API_KEY_ENV_VAR: &str = "GOOGLE_API_KEY";
 const CX_ENV_VAR: &str = "GOOGLE_CSE_ID";
 const DEFAULT_NAME: &str = "google_pse";

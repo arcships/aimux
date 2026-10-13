@@ -51,7 +51,7 @@ pub(crate) fn cohere_failed_response_handler() -> aimux_provider_utils::Response
     })
 }
 
-const DEFAULT_BASE_URL: &str = "https://api.cohere.com/v2";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.cohere.com/v2";
 pub(crate) const API_KEY_ENV_VAR: &str = "COHERE_API_KEY";
 const DEFAULT_NAME: &str = "cohere";
 

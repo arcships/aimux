@@ -55,7 +55,7 @@ fn runwayml_failed_response_handler() -> aimux_provider_utils::ResponseHandler<A
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-const DEFAULT_BASE_URL: &str = "https://api.dev.runwayml.com";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.dev.runwayml.com";
 pub(crate) const API_KEY_ENV_VAR: &str = "RUNWAYML_API_SECRET";
 const DEFAULT_NAME: &str = "runwayml";
 

@@ -51,7 +51,7 @@ fn jina_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMux
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://api.jina.ai";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.jina.ai";
 pub(crate) const API_KEY_ENV_VAR: &str = "JINA_AI_API_KEY";
 const DEFAULT_NAME: &str = "jina_ai";
 

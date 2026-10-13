@@ -47,7 +47,7 @@ fn serper_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiM
 
 const MODEL_ID: &str = "serper-search";
 
-const DEFAULT_BASE_URL: &str = "https://google.serper.dev";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://google.serper.dev";
 pub(crate) const API_KEY_ENV_VAR: &str = "SERPER_API_KEY";
 const DEFAULT_NAME: &str = "serper";
 

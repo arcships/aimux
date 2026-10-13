@@ -78,7 +78,7 @@ const MAX_POLL_ATTEMPTS: u32 = 6_000;
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://api.assemblyai.com";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.assemblyai.com";
 pub(crate) const API_KEY_ENV_VAR: &str = "ASSEMBLYAI_API_KEY";
 const DEFAULT_NAME: &str = "assemblyai";
 

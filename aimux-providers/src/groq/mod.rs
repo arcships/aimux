@@ -41,7 +41,7 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, v
 
 use crate::shared::{Credential, EndpointConfig, provider_headers};
 
-const DEFAULT_BASE_URL: &str = "https://api.groq.com/openai/v1";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.groq.com/openai/v1";
 pub(crate) const API_KEY_ENV_VAR: &str = "GROQ_API_KEY";
 const DEFAULT_NAME: &str = "groq";
 

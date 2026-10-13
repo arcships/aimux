@@ -44,7 +44,7 @@ pub(crate) fn voyage_failed_response_handler() -> aimux_provider_utils::Response
     })
 }
 
-const DEFAULT_BASE_URL: &str = "https://api.voyageai.com/v1";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.voyageai.com/v1";
 pub(crate) const API_KEY_ENV_VAR: &str = "VOYAGE_API_KEY";
 const DEFAULT_NAME: &str = "voyage";
 

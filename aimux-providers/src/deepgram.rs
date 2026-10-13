@@ -69,7 +69,7 @@ fn deepgram_failed_response_handler() -> aimux_provider_utils::ResponseHandler<A
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://api.deepgram.com";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.deepgram.com";
 pub(crate) const API_KEY_ENV_VAR: &str = "DEEPGRAM_API_KEY";
 const DEFAULT_NAME: &str = "deepgram";
 

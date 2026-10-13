@@ -427,6 +427,71 @@ pub fn provider_api_key_env(name: &str) -> Option<&'static str> {
     })
 }
 
+/// The endpoint `name`'s factory calls when [`create_provider`] gets no
+/// `base_url` and no base-URL variable is set: the vendor package's default
+/// base URL, or the registry row's `base_url`. `None` for an unknown name and
+/// where the endpoint is not one fixed URL: built from settings (a region,
+/// resource, project or a registry row's template parameters) or read only
+/// from the environment.
+///
+/// Hosts that let a caller choose the base URL (the aimux-web console) use it
+/// to tell the provider's own endpoint from one the caller picked.
+#[must_use]
+pub fn provider_default_base_url(name: &str) -> Option<&'static str> {
+    use crate::{
+        anthropic, assemblyai, black_forest_labs, cartesia, cohere, dataforseo, deepgram, deepseek,
+        elevenlabs, exa_ai, fal, firecrawl, gladia, google, google_pse, groq, huggingface, hume,
+        jina_ai, klingai, linkup, lmnt, luma, mistral, openai, parallel_ai, prodia, recraft,
+        replicate, revai, runwayml, serper, stability, tavily, tinyfish, voyage, xai, you_com,
+    };
+    Some(match name {
+        "anthropic" => anthropic::DEFAULT_BASE_URL,
+        "assemblyai" => assemblyai::DEFAULT_BASE_URL,
+        "black_forest_labs" => black_forest_labs::DEFAULT_BASE_URL,
+        "cartesia" => cartesia::DEFAULT_BASE_URL,
+        "cohere" => cohere::DEFAULT_BASE_URL,
+        "dataforseo" => dataforseo::DEFAULT_BASE_URL,
+        "deepgram" => deepgram::DEFAULT_BASE_URL,
+        "deepseek" => deepseek::DEFAULT_BASE_URL,
+        "elevenlabs" => elevenlabs::DEFAULT_BASE_URL,
+        "exa_ai" => exa_ai::DEFAULT_BASE_URL,
+        "fal" => fal::DEFAULT_BASE_URL,
+        "firecrawl" => firecrawl::DEFAULT_BASE_URL,
+        "gladia" => gladia::DEFAULT_BASE_URL,
+        "google" => google::DEFAULT_BASE_URL,
+        "google_pse" => google_pse::DEFAULT_BASE_URL,
+        "groq" => groq::DEFAULT_BASE_URL,
+        "huggingface" => huggingface::DEFAULT_BASE_URL,
+        "hume" => hume::DEFAULT_BASE_URL,
+        "jina_ai" => jina_ai::DEFAULT_BASE_URL,
+        "klingai" => klingai::DEFAULT_BASE_URL,
+        "linkup" => linkup::DEFAULT_BASE_URL,
+        "lmnt" => lmnt::DEFAULT_BASE_URL,
+        "luma" => luma::DEFAULT_BASE_URL,
+        "mistral" => mistral::DEFAULT_BASE_URL,
+        "openai" => openai::DEFAULT_BASE_URL,
+        "parallel_ai" => parallel_ai::DEFAULT_BASE_URL,
+        "prodia" => prodia::DEFAULT_BASE_URL,
+        "recraft" => recraft::DEFAULT_BASE_URL,
+        "replicate" => replicate::DEFAULT_BASE_URL,
+        "revai" => revai::DEFAULT_BASE_URL,
+        "runwayml" => runwayml::DEFAULT_BASE_URL,
+        "serper" => serper::DEFAULT_BASE_URL,
+        "stability" => stability::DEFAULT_BASE_URL,
+        "tavily" => tavily::DEFAULT_BASE_URL,
+        "tinyfish" => tinyfish::DEFAULT_BASE_URL,
+        "voyage" => voyage::DEFAULT_BASE_URL,
+        "xai" => xai::DEFAULT_BASE_URL,
+        "you_com" => you_com::DEFAULT_BASE_URL,
+        // amazon_bedrock, anthropic_aws, aws_polly, azure, codex,
+        // google_vertex and searxng.
+        _ if PACKAGES.contains(&name) => return None,
+        _ => preset::lookup(name)
+            .filter(|entry| entry.descriptor.params.is_empty())
+            .map(|entry| entry.descriptor.base_url.as_str())?,
+    })
+}
+
 /// Every built-in provider with default settings, keyed by name: pass it to
 /// [`aimux_core::create_provider_registry`], after adding or replacing entries
 /// as needed.
@@ -569,6 +634,38 @@ mod tests {
             assert_eq!(provider_api_key_env(name), None, "{name}");
         }
         assert_eq!(provider_api_key_env("no-such-provider"), None);
+    }
+
+    /// The default endpoint is the package constant or the registry row's
+    /// URL; a URL built from settings has none.
+    #[test]
+    fn provider_default_base_url_is_the_factorys_fixed_endpoint() {
+        assert_eq!(
+            provider_default_base_url("openai"),
+            Some("https://api.openai.com/v1")
+        );
+        assert_eq!(
+            provider_default_base_url("groq"),
+            Some("https://api.groq.com/openai/v1")
+        );
+        assert_eq!(
+            provider_default_base_url("openrouter"),
+            Some("https://openrouter.ai/api/v1")
+        );
+        for name in [
+            "amazon_bedrock",
+            "anthropic_aws",
+            "aws_polly",
+            "azure",
+            "codex",
+            "google_vertex",
+            "searxng",
+            // A registry row with template parameters.
+            "bedrock_mantle",
+            "no-such-provider",
+        ] {
+            assert_eq!(provider_default_base_url(name), None, "{name}");
+        }
     }
 
     /// Providers and their models report the V4 specification version, as

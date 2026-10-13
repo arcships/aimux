@@ -457,7 +457,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the handle passed as a pointer-sized value (NULL is a no-op), for a
   finalizer that can only register a `void (*)(void *)` callback.
 - `aimux_providers::provider_api_key_env(name)`: the environment variable a
-  built-in provider reads its key from when `create_provider` gets none.
+  built-in provider reads its key from when `create_provider` gets none, and
+  `provider_default_base_url(name)`, the endpoint it calls when given no base
+  URL (`None` when that is built from settings).
 
 ### Fixed
 
@@ -490,6 +492,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider's key is registered under (for example `env:OPENAI_API_KEY` for
   `openai`); any other name is refused before it is read, on the calls,
   cache-probe and replay paths. It read any variable of the console process.
+- aimux-web: a call or cache probe whose `base_url` is not the provider's
+  default endpoint gets only a key carried in the request (plaintext, loopback
+  binds only): the Settings key and the environment are not read, `env:` is
+  refused, and with no key the call goes out without one. Providers that read
+  other credentials from the environment (Bedrock, Vertex, Codex, Polly,
+  DataForSEO, Anthropic on AWS) refuse a custom `base_url`. A client could
+  point `base_url` at its own host and receive the console's key.
 
 ### RFCs
 
