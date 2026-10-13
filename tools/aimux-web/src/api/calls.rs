@@ -58,7 +58,7 @@ async fn run(state: AppState, req: WireCallRequest) -> Result<Response, AiMuxErr
     } else {
         let m =
             model_builder::build_model(&req.provider, key, &req.model, req.base_url.as_deref())?;
-        state.traced(m)
+        state.traced(m, &req.provider, req.base_url.as_deref())
     };
 
     let options = wire::to_generate_options(&req.options, req.session_id.as_deref())?;
@@ -299,5 +299,39 @@ mod tests {
             }
         }
         assert!(seen[2].contains("sk-for-this-endpoint"), "{}", seen[2]);
+    }
+
+    /// B18: calls of one provider and model at two endpoints get two trace
+    /// scopes; calls at one endpoint share a scope.
+    #[tokio::test]
+    async fn each_endpoint_gets_its_own_trace_scope() {
+        let state = AppState::with_bind_host_and_store("127.0.0.1", KeyStore::from_path(None));
+        let app = router(state.clone());
+        let (first, _) = capture_server().await;
+        let (second, _) = capture_server().await;
+
+        for url in [&first, &first, &second] {
+            let (status, body) =
+                call(app.clone(), request("deepseek", url, Some("sk-endpoint"))).await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+        }
+
+        let scopes: Vec<u64> = state
+            .trace_sink
+            .records()
+            .iter()
+            .map(|record| record.scope_key)
+            .collect();
+        assert_eq!(scopes.len(), 3, "{scopes:?}");
+        assert_eq!(scopes[0], scopes[1], "one endpoint, one scope");
+        assert_ne!(scopes[0], scopes[2], "two endpoints, two scopes");
+        // Records still report the model's provider, not the scope name.
+        let records = state.trace_sink.records();
+        assert!(
+            records
+                .iter()
+                .all(|record| record.provider == records[0].provider
+                    && !record.provider.contains(&first))
+        );
     }
 }

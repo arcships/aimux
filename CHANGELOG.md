@@ -508,6 +508,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decision model (OpenAI, the runtime presets, Jev), rebuilt from the same
   registry as language recordings: the built-in providers, the recorded one
   with `--api-key` when given. It accepted only Jev.
+- aimux-web: a call at a custom `base_url` gets its own cache-probe trace
+  scope, named after the provider and that endpoint, so two endpoints of one
+  provider and model no longer match each other's prefix history. The trace
+  scope isolates by provider name and model id; `TraceLayer::with_scope_name`
+  names a scope for a host that calls one provider at several endpoints.
 
 ### RFCs
 
