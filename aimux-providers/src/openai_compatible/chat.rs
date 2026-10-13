@@ -2,7 +2,7 @@
 //!
 //! The Rust form of `OpenAICompatibleChatLanguageModel`. Request construction
 //! lives in [`super::convert`]; vendor differences arrive through the
-//! [`ChatDialect`](super::config::ChatDialect) of the model's config.
+//! [`ChatSettings`](super::config::ChatSettings) of the model's config.
 
 use aimux_core::tool::RawToolCall;
 use std::collections::{HashMap, HashSet};
@@ -58,9 +58,7 @@ impl OpenAICompatibleChatModel {
             stream,
             &ChatBodySpec {
                 provider_options_name: self.config.provider_options_name(),
-                include_usage: self.config.chat.include_usage,
-                supports_structured_outputs: self.config.chat.supports_structured_outputs,
-                dialect: &self.config.chat.dialect,
+                chat: &self.config.chat,
             },
         )
     }
@@ -189,15 +187,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
     }
 
     fn supported_urls(&self) -> SupportedUrls {
-        self.config
-            .chat
-            .dialect
-            .supported_urls
-            .as_ref()
-            .map_or_else(
-                || self.config.chat.supported_urls.clone(),
-                |supported_urls| supported_urls(),
-            )
+        self.config.chat.supported_urls()
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
@@ -287,15 +277,12 @@ impl LanguageModel for OpenAICompatibleChatModel {
                 raw: None,
             });
 
-        let dialect = &self.config.chat.dialect;
-        let usage = dialect.convert_usage.as_ref().map_or_else(
-            || usage_from_raw(raw.get("usage")),
-            |convert| convert(raw.get("usage")),
-        );
+        let chat = &self.config.chat;
+        let usage = chat.convert_usage(raw.get("usage"));
 
         let mut metadata = HashMap::new();
         metadata.insert(metadata_key.clone(), Map::new());
-        if let Some(extractor) = &dialect.metadata_extractor
+        if let Some(extractor) = &chat.metadata_extractor
             && let Some(extra) = extractor.extract_metadata(&raw)
         {
             for (key, value) in extra {
@@ -353,8 +340,8 @@ impl LanguageModel for OpenAICompatibleChatModel {
         let response_headers = resp.response_headers;
         let mut sse_stream = resp.value;
 
-        let dialect = self.config.chat.dialect.clone();
-        let mut metadata_extractor = dialect
+        let chat = self.config.chat.clone();
+        let mut metadata_extractor = chat
             .metadata_extractor
             .as_ref()
             .map(|extractor| extractor.create_stream_extractor());
@@ -412,7 +399,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                             continue;
                         }
 
-                        let chunk_usage_raw: Option<Value> = match &dialect.stream_usage_key {
+                        let chunk_usage_raw: Option<Value> = match &chat.stream_usage_key {
                             Some(key) => parsed.get(key).and_then(|v| v.get("usage")).cloned(),
                             None => parsed.get("usage").cloned(),
                         }
@@ -643,10 +630,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                     unified: FinishReasonUnified::Error,
                     raw: None,
                 }),
-                usage: dialect.convert_usage.as_ref().map_or_else(
-                    || usage_from_raw(final_usage_raw.as_ref()),
-                    |convert| convert(final_usage_raw.as_ref()),
-                ),
+                usage: chat.convert_usage(final_usage_raw.as_ref()),
                 provider_metadata: Some(metadata),
             });
         };

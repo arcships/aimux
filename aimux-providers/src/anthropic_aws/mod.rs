@@ -18,6 +18,7 @@ use std::sync::{Arc, OnceLock};
 
 use futures::future::BoxFuture;
 
+use crate::shared::ProviderHeaders;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
@@ -25,11 +26,11 @@ use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{
-    AwsCredentials, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url,
+    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, validate_base_url,
 };
 
 use crate::anthropic::AnthropicMessagesModel;
-use crate::anthropic::config::{AnthropicModelConfig, AnthropicModelHooks};
+use crate::anthropic::config::{AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks};
 use crate::anthropic::options::{CANONICAL, options_name_of};
 
 pub use crate::shared::TransformRequestBody;
@@ -197,17 +198,15 @@ pub struct AnthropicAwsProvider {
     name: String,
     provider_options_name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
     transform_request_body: Option<TransformRequestBody>,
 }
 
 impl AnthropicAwsProvider {
     fn model_config(&self) -> AnthropicModelConfig {
-        let base = self.base_url.clone();
         AnthropicModelConfig {
             provider: self.name.clone(),
-            url: Arc::new(move |path| format!("{base}{path}")),
             headers: self.headers.clone(),
             fetch: self.fetch.clone(),
             supported_urls: SupportedUrls::default(),
@@ -215,7 +214,7 @@ impl AnthropicAwsProvider {
             base_url: self.base_url.clone(),
             provider_options_name: self.provider_options_name.clone(),
             hooks: AnthropicModelHooks::default(),
-            resolve: None,
+            endpoint: AnthropicEndpoint::Fixed,
         }
     }
 

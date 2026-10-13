@@ -9,12 +9,11 @@
 
 use std::sync::Arc;
 
-use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, SigV4Fetch, default_fetch,
-};
+use crate::shared::ProviderHeaders;
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, SigV4Fetch, default_fetch};
 
 use crate::anthropic::AnthropicMessagesModel;
-use crate::shared::{AuthScheme, Credential, credential_headers};
+use crate::shared::{AuthScheme, Credential};
 
 use super::AnthropicAwsAuth;
 
@@ -40,7 +39,7 @@ pub(super) fn authenticated(
     workspace_id: Option<String>,
     user_headers: Option<HeaderMapOpt>,
     fetch: Option<FetchFunction>,
-) -> (HeadersFn, Option<FetchFunction>) {
+) -> (ProviderHeaders, Option<FetchFunction>) {
     let mut fixed = vec![("anthropic-version".to_string(), API_VERSION.to_string())];
     if let Some(workspace_id) = workspace_id {
         fixed.push(("anthropic-workspace-id".to_string(), workspace_id));
@@ -51,7 +50,7 @@ pub(super) fn authenticated(
             let signing: FetchFunction =
                 Arc::new(SigV4Fetch::new(inner, credentials, SIGV4_SERVICE));
             (
-                credential_headers(Credential::None, AuthScheme::Bearer, fixed, user_headers),
+                ProviderHeaders::new(Credential::None, AuthScheme::Bearer, fixed, user_headers),
                 Some(signing),
             )
         }
@@ -61,7 +60,7 @@ pub(super) fn authenticated(
                 _ => None,
             };
             (
-                credential_headers(
+                ProviderHeaders::new(
                     Credential::explicit_or_env(key, API_KEY_ENV_VAR, "Anthropic AWS"),
                     AuthScheme::Header("x-api-key"),
                     fixed,

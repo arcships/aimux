@@ -15,7 +15,7 @@
 //! there: the instance URL is resolved for every request.
 //! [`searxng()`] is the default instance; it reads nothing and cannot fail.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -25,11 +25,9 @@ use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, load_setting, validate_base_url,
-};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, Endpoint, EndpointConfig, provider_headers};
+use crate::shared::{BaseUrl, Credential, EndpointConfig, EndpointSource, ProviderHeaders};
 
 /// Fixed model ID for the SearXNG search model.
 const MODEL_ID: &str = "searxng-search";
@@ -91,7 +89,14 @@ pub fn create_searxng(settings: SearxngProviderSettings) -> Result<SearxngProvid
         .base_url
         .as_deref()
         .map(validate_base_url)
-        .transpose()?;
+        .transpose()?
+        .map_or(
+            BaseUrl::Env {
+                var: BASE_URL_ENV_VAR,
+                description: "SearXNG instance URL",
+            },
+            BaseUrl::Fixed,
+        );
     let credential = match settings.api_key {
         Some(key) => Credential::Explicit(key),
         None => Credential::None,
@@ -99,7 +104,7 @@ pub fn create_searxng(settings: SearxngProviderSettings) -> Result<SearxngProvid
     Ok(SearxngProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: provider_headers(credential, Vec::new(), settings.headers),
+        headers: ProviderHeaders::bearer(credential, Vec::new(), settings.headers),
         fetch: settings.fetch,
     })
 }
@@ -118,35 +123,19 @@ pub fn searxng() -> &'static SearxngProvider {
 /// A SearXNG provider. Search only; it holds no HTTP client.
 pub struct SearxngProvider {
     name: String,
-    base_url: Option<String>,
-    headers: HeadersFn,
+    base_url: BaseUrl,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
 impl SearxngProvider {
     fn model_config(&self, method: &str) -> EndpointConfig {
-        let base_url = self.base_url.clone();
-        let headers = self.headers.clone();
-        EndpointConfig::dynamic(
+        EndpointConfig::new(
             format!("{}.{method}", self.name),
-            Arc::new(move || {
-                let base_url = base_url.clone();
-                let headers = headers.clone();
-                Box::pin(async move {
-                    let base_url = match base_url {
-                        Some(url) => url,
-                        None => validate_base_url(&load_setting(
-                            None,
-                            BASE_URL_ENV_VAR,
-                            "SearXNG instance URL",
-                        )?)?,
-                    };
-                    Ok(Endpoint {
-                        base_url,
-                        headers: headers.resolve().await?,
-                    })
-                })
-            }),
+            EndpointSource::Http {
+                base_url: self.base_url.clone(),
+                headers: self.headers.clone().into(),
+            },
             self.fetch.clone(),
         )
     }

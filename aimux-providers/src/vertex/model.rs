@@ -81,7 +81,7 @@ impl LanguageModel for VertexModel {
     }
 
     fn supported_urls(&self) -> SupportedUrls {
-        (self.config.supported_urls)(&self.model_id)
+        self.config.supported_urls(&self.model_id)
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {

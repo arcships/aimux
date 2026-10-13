@@ -33,11 +33,11 @@ use aimux_core::types::{
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::image_model::ImageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, validate_base_url,
-};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, TransformRequestBody, provider_headers};
+use crate::shared::{
+    Credential, EndpointConfig, EndpointHeaders, ProviderHeaders, TransformRequestBody,
+};
 
 fn open_responses_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -181,19 +181,11 @@ pub fn create_open_responses(
         Some(key) => Credential::Explicit(key),
         None => Credential::None,
     };
-    let provider_layer = provider_headers(credential, Vec::new(), None);
-    let user = settings.headers;
-    let headers: HeadersFn = Resolvable::from_async_fn(move || {
-        let provider_layer = provider_layer.clone();
-        let user = user.clone();
-        async move {
-            let layer = provider_layer.resolve().await?;
-            match &user {
-                Some(user) => Ok(combine_headers(&[&layer, &user.resolve().await?])),
-                None => Ok(layer),
-            }
-        }
-    });
+    let provider = ProviderHeaders::bearer(credential, Vec::new(), None);
+    let headers = match settings.headers {
+        Some(user) => EndpointHeaders::WithUserHeaders { provider, user },
+        None => EndpointHeaders::Provider(provider),
+    };
     Ok(OpenResponsesProvider {
         name: settings.name,
         base_url,
@@ -209,7 +201,7 @@ pub fn create_open_responses(
 pub struct OpenResponsesProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: EndpointHeaders,
     fetch: Option<FetchFunction>,
     transform_request_body: Option<TransformRequestBody>,
 }

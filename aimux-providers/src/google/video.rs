@@ -260,7 +260,7 @@ impl VideoModel for GoogleVideoModel {
                     "No videos in response. Response: {raw_body}"
                 ))
             })?;
-        let endpoint = (self.config.endpoint)().await?;
+        let endpoint = self.config.endpoint().await?;
         let api_key = endpoint
             .headers
             .iter()

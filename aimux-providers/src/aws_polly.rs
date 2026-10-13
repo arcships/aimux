@@ -35,11 +35,11 @@ use aimux_core::speech_model::{
 };
 use aimux_provider_utils::HttpBody;
 use aimux_provider_utils::{
-    AwsCredentials, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, SigV4Fetch, default_fetch,
+    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, SigV4Fetch, default_fetch,
     load_optional_setting, load_setting, validate_base_url,
 };
 
-use crate::shared::{Endpoint, EndpointConfig};
+use crate::shared::{Endpoint, EndpointConfig, EndpointSource};
 
 /// AWS service name used for SigV4 signing.
 const SERVICE_NAME: &str = "polly";
@@ -235,17 +235,29 @@ impl Auth {
     }
 }
 
-/// The provider headers: only the caller's, after checking that signing has
-/// its credentials (the signature itself is made by the transport).
-fn signing_headers(auth: Auth, user: Option<HeaderMapOpt>) -> HeadersFn {
-    Resolvable::from_async_fn(move || {
-        let auth = auth.clone();
-        let user = user.clone();
-        async move {
-            auth.preflight()?;
-            Ok(user.unwrap_or_default())
-        }
-    })
+/// The endpoint of a Polly request: the explicit base URL or the regional
+/// host, and only the caller's headers, after checking that signing has its
+/// credentials (the signature itself is made by the transport).
+#[derive(Clone)]
+pub(crate) struct PollyEndpoint {
+    auth: Auth,
+    base_url: Option<String>,
+    user: Option<HeaderMapOpt>,
+}
+
+impl PollyEndpoint {
+    /// The base URL and provider headers of one request.
+    pub(crate) async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
+        let base_url = self
+            .base_url
+            .clone()
+            .unwrap_or_else(|| format!("https://polly.{}.amazonaws.com", self.auth.region()));
+        self.auth.preflight()?;
+        Ok(Endpoint {
+            base_url,
+            headers: self.user.clone().unwrap_or_default(),
+        })
+    }
 }
 
 /// Create an Amazon Polly provider.
@@ -271,7 +283,6 @@ pub fn create_aws_polly(
         credential_provider: settings.credential_provider,
     };
     let signing_auth = auth.clone();
-    let headers_auth = auth.clone();
     let fetch: FetchFunction = Arc::new(SigV4Fetch::new(
         settings.fetch.unwrap_or_else(default_fetch),
         Resolvable::from_async_fn(move || {
@@ -282,10 +293,12 @@ pub fn create_aws_polly(
     ));
     Ok(AwsPollyProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
-        auth,
-        base_url,
         // SigV4 signs in the transport; the provider headers carry no credential.
-        headers: signing_headers(headers_auth, settings.headers),
+        endpoint: PollyEndpoint {
+            auth,
+            base_url,
+            user: settings.headers,
+        },
         fetch,
     })
 }
@@ -304,32 +317,15 @@ pub fn aws_polly() -> &'static AwsPollyProvider {
 /// An Amazon Polly provider. Speech only; it holds no HTTP client.
 pub struct AwsPollyProvider {
     name: String,
-    auth: Auth,
-    base_url: Option<String>,
-    headers: HeadersFn,
+    endpoint: PollyEndpoint,
     fetch: FetchFunction,
 }
 
 impl AwsPollyProvider {
     fn model_config(&self, method: &str) -> EndpointConfig {
-        let auth = self.auth.clone();
-        let base_url = self.base_url.clone();
-        let headers = self.headers.clone();
-        EndpointConfig::dynamic(
+        EndpointConfig::new(
             format!("{}.{method}", self.name),
-            Arc::new(move || {
-                let auth = auth.clone();
-                let base_url = base_url.clone();
-                let headers = headers.clone();
-                Box::pin(async move {
-                    Ok(Endpoint {
-                        base_url: base_url.unwrap_or_else(|| {
-                            format!("https://polly.{}.amazonaws.com", auth.region())
-                        }),
-                        headers: headers.resolve().await?,
-                    })
-                })
-            }),
+            EndpointSource::AwsPolly(self.endpoint.clone()),
             Some(self.fetch.clone()),
         )
     }

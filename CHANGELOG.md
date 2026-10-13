@@ -176,6 +176,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `StreamingToolCallDelta::provider_metadata`, read from the delta that
   starts a call. `TrackerError` converts into
   `AiMuxError::InvalidResponseData`.
+- `SigV4Fetch::with_clock` takes a plain function (`fn() -> DateTime<Utc>`)
+  instead of a closure.
 
 **Rust (aimux-providers)**
 
@@ -194,6 +196,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `generate_id` instead of `tool-call` / `tool-call-N`, and
   `DeltaToolCall.index` is required again, so a chunk without it fails to
   parse.
+- The private per-model configs hold data where they held closures: base
+  URLs (`OpenAIUrl`, `MessagesUrl`, `BaseUrl`), provider headers
+  (`ProviderHeaders`, `EndpointHeaders`), endpoint sources (Vertex, Bedrock,
+  Polly) and supported-URL rules. A registry row selects its chat usage
+  accounting with `profile.convert_usage` (`"alibaba"`, `"moonshotai"`)
+  instead of a name match. Public settings, requests and errors are
+  unchanged; the closures callers pass in settings (`transform_request_body`,
+  `generate_id`, the compatible `supported_urls`, `convert_usage` and
+  `metadata_extractor`) are kept as given.
 
 **Rust (provider factory, RFC-0036)**
 

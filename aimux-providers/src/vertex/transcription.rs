@@ -23,7 +23,7 @@ use aimux_core::transcription_model::{
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
 
-use super::ProjectLocationFn;
+use super::ProjectLocationSource;
 
 // ── Response schema ─────────────────────────────────────────────────────────
 
@@ -109,14 +109,14 @@ fn audio_input_to_base64(audio: &AudioInput) -> Result<String, AiMuxError> {
 pub struct VertexTranscriptionModel {
     model_id: String,
     config: EndpointConfig,
-    project_location: ProjectLocationFn,
+    project_location: ProjectLocationSource,
 }
 
 impl VertexTranscriptionModel {
     pub(crate) fn from_config(
         model_id: String,
         config: EndpointConfig,
-        project_location: ProjectLocationFn,
+        project_location: ProjectLocationSource,
     ) -> Self {
         Self {
             model_id,
@@ -160,7 +160,7 @@ impl TranscriptionModel for VertexTranscriptionModel {
         let warnings: Vec<Warning> = Vec::new();
 
         // Parse provider options (`googleVertex`, then `google`).
-        let target = (self.project_location)().await?;
+        let target = self.project_location.resolve().await?;
         let mut region = target.location.clone();
         let mut language_codes: Vec<String> = vec!["auto".to_string()];
         let mut enable_word_time_offsets = true;

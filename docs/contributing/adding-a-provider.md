@@ -38,7 +38,10 @@ its own, ...), it is case 2: add its own package next to `groq/` and
    (`{param}` placeholders, each declared with an optional `env` list and
    `default`; a derived parameter takes `derive: {from, map, otherwise}`);
    `profile.max_tokens_key` (`"max_tokens"` or `"max_completion_tokens"`: the
-   only max-token key the vendor accepts). Per-call body fields can use the
+   only max-token key the vendor accepts); `profile.convert_usage`
+   (`"alibaba"` or `"moonshotai"`: a usage shape that differs from the
+   generic OpenAI one; a new shape is a new `UsageDialect` variant). Per-call
+   body fields can use the
    provider's options namespace. The OpenAI-compatible factory also exposes
    its upstream `transform_request_body` hook; if the quirk changes auth or
    error shapes, it is case 2.

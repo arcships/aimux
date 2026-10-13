@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::ProjectLocationFn;
+use super::ProjectLocationSource;
 use crate::google::options::{GOOGLE, Namespace};
 use crate::google::transcription::parse_offset_seconds;
 use crate::shared::EndpointConfig;
@@ -57,7 +57,7 @@ struct Response {
 pub struct VertexGeminiTranscriptionModel {
     model_id: String,
     config: EndpointConfig,
-    project_location: ProjectLocationFn,
+    project_location: ProjectLocationSource,
     #[cfg(feature = "realtime")]
     web_socket: Option<std::sync::Arc<dyn aimux_provider_utils::ws::WsConnector>>,
 }
@@ -66,7 +66,7 @@ impl VertexGeminiTranscriptionModel {
     pub(crate) fn from_config(
         model_id: String,
         config: EndpointConfig,
-        project_location: ProjectLocationFn,
+        project_location: ProjectLocationSource,
         #[cfg(feature = "realtime")] web_socket: Option<
             std::sync::Arc<dyn aimux_provider_utils::ws::WsConnector>,
         >,
@@ -100,7 +100,7 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
                 self.model_id
             )));
         }
-        (self.project_location)().await?;
+        self.project_location.resolve().await?;
         let timestamp = chrono::Utc::now().to_rfc3339();
         let config = crate::google::transcription::TranscriptionOptions::parse(
             Namespace::Vertex.read(options.provider_options.as_ref()),
@@ -223,7 +223,7 @@ impl VertexGeminiTranscriptionModel {
         use aimux_provider_utils::ws::{WebSocketRequest, ws_connect};
 
         crate::google::transcription::validate_live_input_audio_format(&options)?;
-        let target = (self.project_location)().await?;
+        let target = self.project_location.resolve().await?;
         let config = crate::google::transcription::TranscriptionOptions::parse(
             Namespace::Vertex.read(options.provider_options.as_ref()),
         )?

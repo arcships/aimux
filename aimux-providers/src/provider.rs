@@ -19,8 +19,8 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{Resolvable, load_api_key, validate_base_url};
 
-use crate::openai_compatible::config::{BaseUrl, ChatDialect};
-use crate::openai_compatible::{Assembly, ChatProfile, OpenAICompatibleProvider};
+use crate::openai_compatible::config::{BaseUrl, ChatSettings};
+use crate::openai_compatible::{Assembly, OpenAICompatibleProvider};
 use crate::preset::PresetSettings;
 use crate::shared::Credential;
 
@@ -63,7 +63,7 @@ fn default_true() -> bool {
 
 impl ProviderProfile {
     /// The chat behavior this profile describes.
-    fn chat_profile(&self) -> Result<ChatProfile, AiMuxError> {
+    fn chat_settings(&self) -> Result<ChatSettings, AiMuxError> {
         let max_tokens_key = match self.max_tokens_key.as_deref() {
             None => None,
             Some("max_tokens") => Some("max_tokens"),
@@ -75,16 +75,15 @@ impl ProviderProfile {
                 )));
             }
         };
-        let mut dialect = ChatDialect::baseline();
-        dialect.supports_top_k = self.supports_top_k;
-        dialect.supports_tools = self.supports_tools;
-        dialect.supports_response_format = self.supports_response_format;
-        dialect.stream_usage_key = self.stream_usage_key.clone();
-        dialect.max_tokens_key = max_tokens_key;
-        Ok(ChatProfile {
+        Ok(ChatSettings {
             include_usage: true,
             supports_structured_outputs: true,
-            dialect,
+            supports_top_k: self.supports_top_k,
+            supports_tools: self.supports_tools,
+            supports_response_format: self.supports_response_format,
+            stream_usage_key: self.stream_usage_key.clone(),
+            max_tokens_key,
+            ..ChatSettings::default()
         })
     }
 }
@@ -384,7 +383,7 @@ fn validate_external_entry(entry: &ExternalProviderEntry) -> Result<(), AiMuxErr
             entry.name, entry.protocol
         )));
     }
-    entry.profile.chat_profile().map_err(|e| {
+    entry.profile.chat_settings().map_err(|e| {
         AiMuxError::InvalidArgument(format!("external provider '{}': {e}", entry.name))
     })?;
     Ok(())
@@ -480,7 +479,7 @@ fn build_external(
         query_params: None,
         fetch: None,
         transform_request_body: None,
-        profile: entry.profile.chat_profile()?,
+        chat: entry.profile.chat_settings()?,
     })
 }
 

@@ -180,9 +180,8 @@ pub(crate) fn options(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use aimux_provider_utils::Resolvable;
+    use crate::openai::config::OpenAIUrl;
+    use crate::shared::{Credential, ProviderHeaders};
 
     use super::*;
 
@@ -191,17 +190,14 @@ mod tests {
         let mut config = OpenAIModelConfig::fixed(
             "openai".into(),
             "https://example.com/v1".into(),
-            Resolvable::Value(HashMap::new()),
+            ProviderHeaders::bearer(Credential::None, Vec::new(), None),
             None,
             None,
         );
-        config.url = Arc::new(|path| {
-            assert_eq!(path, "/decisions");
-            Ok("https://example.com/decisions?version=1".into())
-        });
+        config.url = OpenAIUrl::Base("https://example.com/decisions-host".into());
         assert_eq!(
             DecisionConfig::OpenAI(config).url("/decisions").unwrap(),
-            "https://example.com/decisions?version=1"
+            "https://example.com/decisions-host/decisions"
         );
     }
 }
