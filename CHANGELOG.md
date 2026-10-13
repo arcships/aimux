@@ -456,6 +456,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `OpenAIProvider::tools` and `AzureOpenAIProvider::tools`: the provider tools
   on the provider instance, as the AI SDK's `openai.tools` and `azure.tools`
   (`openai().tools.web_search(…)`). Azure's holds its upstream subset.
+- `custom_provider` forwards model discovery as it forwards files and
+  skills: `CustomProviderOptions::discovery`, else the fallback provider's
+  `discovery()`.
 
 ### RFCs
 

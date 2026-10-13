@@ -19,6 +19,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use futures::future::BoxFuture;
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel, EmbeddingResult};
 use aimux_core::error::AiMuxError;
@@ -28,8 +29,9 @@ use aimux_core::evaluation_model::{
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileResult};
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageResult};
 use aimux_core::language_model::LanguageModel;
+use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::options::CallOptions;
-use aimux_core::provider::Provider;
+use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::provider_registry::{ProviderRegistryOptions, create_provider_registry};
 use aimux_core::reranking_model::{RerankingCallOptions, RerankingModel, RerankingResult};
 use aimux_core::result::{GenerateResult, StreamResult};
@@ -108,6 +110,23 @@ impl Files for MockFiles {
     }
 }
 
+struct MockDiscovery(&'static str);
+impl ProviderDiscovery for MockDiscovery {
+    fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
+        Box::pin(async move {
+            Ok(vec![RuntimeModel {
+                id: self.0.to_owned(),
+                owned_by: None,
+                created: None,
+            }])
+        })
+    }
+}
+
+/// The fallback's discovery interface; a promoted constant, so `Fallback` can
+/// lend it.
+const FALLBACK_DISCOVERY: &MockDiscovery = &MockDiscovery("fallback-listed");
+
 struct MockSkills;
 #[async_trait]
 impl Skills for MockSkills {
@@ -123,14 +142,15 @@ impl Skills for MockSkills {
 }
 
 /// A provider that serves a `"fallback"` model for every modality and records
-/// each lookup as `"{method}:{id}"`; `evaluation`, `files` and `skills` choose
-/// whether it offers those at all.
+/// each lookup as `"{method}:{id}"`; `evaluation`, `files`, `skills` and
+/// `discovery` choose whether it offers those at all.
 #[derive(Default)]
 struct Fallback {
     calls: Mutex<Vec<String>>,
     evaluation: bool,
     files: bool,
     skills: bool,
+    discovery: bool,
 }
 
 impl Fallback {
@@ -190,6 +210,11 @@ impl Provider for Fallback {
     fn skills(&self) -> Option<Arc<dyn Skills>> {
         self.record("skills", "");
         self.skills.then(|| Arc::new(MockSkills) as _)
+    }
+    fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
+        self.record("discovery", "");
+        self.discovery
+            .then_some(FALLBACK_DISCOVERY as &dyn ProviderDiscovery)
     }
 }
 
@@ -396,6 +421,65 @@ fn does_not_expose_skills_without_configuration_or_fallback_support() {
         ..Default::default()
     });
     assert!(provider.skills().is_none());
+}
+
+// Discovery is an aimux extension with no upstream counterpart; it follows
+// upstream's files/skills forwarding (`ai@7.0.127
+// src/registry/custom-provider.ts:268-283`: `files ?? fallbackProvider.files()`).
+
+async fn listed(provider: &aimux_core::CustomProvider) -> Option<Vec<String>> {
+    let discovery = provider.discovery()?;
+    let models = discovery.list_models().await.unwrap();
+    Some(models.into_iter().map(|m| m.id).collect())
+}
+
+/// Mirrors TS: should return the files interface if it exists
+#[tokio::test]
+async fn returns_the_discovery_interface() {
+    let fallback = Arc::new(Fallback {
+        discovery: true,
+        ..Default::default()
+    });
+    let provider = custom_provider(CustomProviderOptions {
+        discovery: Some(Arc::new(MockDiscovery("configured"))),
+        fallback_provider: Some(fallback.clone()),
+        ..Default::default()
+    });
+    assert_eq!(listed(&provider).await, Some(vec!["configured".to_owned()]));
+    assert!(fallback.calls().is_empty());
+}
+
+/// Mirrors TS: should use fallback provider files if files is not configured and fallback exists
+#[tokio::test]
+async fn uses_fallback_provider_discovery() {
+    let fallback = Arc::new(Fallback {
+        discovery: true,
+        ..Default::default()
+    });
+    let provider = custom_provider(CustomProviderOptions {
+        fallback_provider: Some(fallback.clone()),
+        ..Default::default()
+    });
+    assert_eq!(
+        listed(&provider).await,
+        Some(vec!["fallback-listed".to_owned()])
+    );
+    assert_eq!(fallback.calls(), ["discovery:"]);
+}
+
+/// Mirrors TS: should not expose files if files is not configured and fallback does not support files
+#[test]
+fn does_not_expose_discovery_without_configuration_or_fallback_support() {
+    assert!(
+        custom_provider(CustomProviderOptions::default())
+            .discovery()
+            .is_none()
+    );
+    let provider = custom_provider(CustomProviderOptions {
+        fallback_provider: Some(Arc::new(Fallback::default())),
+        ..Default::default()
+    });
+    assert!(provider.discovery().is_none());
 }
 
 // ── evaluation-model.test.ts ────────────────────────────────────────────────

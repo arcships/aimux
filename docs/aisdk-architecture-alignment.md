@@ -609,7 +609,7 @@ registry 默认用 `:` 分隔，在第一个分隔符处分割；model ID 的剩
 
 完整注册条目的 wrap 同时包装命名方法返回的模型，并保留 discovery、files 与 tools。仅包装 `Arc<dyn Provider>` 时只承诺标准能力。
 
-`custom_provider` 支持标准模态映射、files/skills 和 fallback。自定义命名方法必须显式登记；不能默默穿透到不相关的 fallback 模型。
+`custom_provider` 支持标准模态映射、files/skills 和 fallback。discovery 扩展按上游 files/skills 的方式转发（`ai@7.0.127 src/registry/custom-provider.ts:268-283`）：先用配置的 `discovery`，否则用 fallback provider 的 `discovery()`。自定义命名方法必须显式登记；不能默默穿透到不相关的 fallback 模型。
 
 **下载：**
 

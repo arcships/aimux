@@ -6,6 +6,12 @@
 //! provider; with neither, it is [`AiMuxError::NoSuchModel`]. There are no
 //! string aliases that resolve through a global default provider: Rust has
 //! none.
+//!
+//! The aimux discovery extension ([`Provider::discovery`]) is forwarded the
+//! way upstream forwards files and skills
+//! (`ai@7.0.127 src/registry/custom-provider.ts:268-283`: the configured
+//! interface, else the fallback provider's): the configured
+//! [`CustomProviderOptions::discovery`], else the fallback provider's.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -16,7 +22,7 @@ use crate::evaluation_model::EvaluationModel;
 use crate::files_model::Files;
 use crate::image_model::ImageModel;
 use crate::language_model::LanguageModel;
-use crate::provider::Provider;
+use crate::provider::{Provider, ProviderDiscovery};
 use crate::reranking_model::RerankingModel;
 use crate::search_model::SearchModel;
 use crate::skills_model::Skills;
@@ -40,6 +46,9 @@ pub struct CustomProviderOptions {
     pub files: Option<Arc<dyn Files>>,
     /// A skills interface for uploading skills.
     pub skills: Option<Arc<dyn Skills>>,
+    /// aimux extension: a model-discovery interface. Without one, the
+    /// fallback provider's discovery is used.
+    pub discovery: Option<Arc<dyn ProviderDiscovery>>,
     /// Consulted when a requested model is not in the alias tables.
     pub fallback_provider: Option<Arc<dyn Provider>>,
 }
@@ -154,5 +163,12 @@ impl Provider for CustomProvider {
         o.skills
             .clone()
             .or_else(|| o.fallback_provider.as_ref()?.skills())
+    }
+
+    fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
+        let o = &self.options;
+        o.discovery
+            .as_deref()
+            .or_else(|| o.fallback_provider.as_ref()?.discovery())
     }
 }
