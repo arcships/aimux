@@ -436,6 +436,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Anthropic Messages streams honor `include_raw_chunks`: each SSE chunk is
   sent as `StreamPart::Raw` before the parts made from it, a chunk that is
   not JSON as `Raw` with `null`, as the AI SDK does.
+- OpenAI Responses: reasoning parts of one assistant message that share an
+  `itemId` become one input item, as the AI SDK does: one `item_reference`
+  with `store`, otherwise one `reasoning` item whose summary collects the
+  parts and whose `encrypted_content` is the last one given. Each part used
+  to become its own item, which the API rejects as a duplicate id.
 
 ## [0.5.0] - 2026-09-27
 

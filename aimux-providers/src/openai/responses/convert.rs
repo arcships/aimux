@@ -169,6 +169,11 @@ pub fn convert_to_responses_input(
                 input.push(json!({ "role": "user", "content": content }));
             }
             LanguageModelMessage::Assistant { content, .. } => {
+                // Reasoning item id → its index in `input`: the parts of one
+                // reasoning item become one input item (per assistant
+                // message, as `reasoningMessages` upstream).
+                let mut reasoning_items: std::collections::HashMap<String, Option<usize>> =
+                    std::collections::HashMap::new();
                 for part in content {
                     match part {
                         AssistantPart::Text(TextPart {
@@ -224,58 +229,76 @@ pub fn convert_to_responses_input(
                             provider_options,
                             ..
                         }) => {
-                            let reasoning_id = openai_sub_option(ns, provider_options, "itemId");
+                            // convert-to-openai-responses-input.ts:1151-1250 (openai@4.0.83).
+                            let reasoning_id = openai_sub_option(ns, provider_options, "itemId")
+                                .and_then(|id| id.as_str().map(str::to_owned));
+                            let encrypted = openai_sub_option(
+                                ns,
+                                provider_options,
+                                "reasoningEncryptedContent",
+                            )
+                            .filter(|value| !value.is_null());
                             if (has_previous_response_id || has_conversation)
                                 && reasoning_id.is_some()
                             {
                                 continue;
                             }
-                            if let Some(ref rid) = reasoning_id {
+                            let summary_part = (!text.is_empty())
+                                .then(|| json!({ "type": "summary_text", "text": text }));
+                            if let Some(rid) = reasoning_id {
                                 if store {
-                                    input.push(json!({ "type": "item_reference", "id": rid }));
-                                } else {
-                                    let encrypted = openai_sub_option(
-                                        ns,
-                                        provider_options,
-                                        "reasoningEncryptedContent",
-                                    );
-                                    let mut summary: Vec<Value> = Vec::new();
-                                    if !text.is_empty() {
-                                        summary
-                                            .push(json!({ "type": "summary_text", "text": text }));
+                                    // One item reference, at the first part.
+                                    if !reasoning_items.contains_key(&rid) {
+                                        input.push(json!({ "type": "item_reference", "id": rid }));
+                                        reasoning_items.insert(rid, None);
                                     }
+                                } else if let Some(&Some(index)) = reasoning_items.get(&rid) {
+                                    // Later parts of the same item append their
+                                    // summary; the last encrypted content wins.
+                                    let item = &mut input[index];
+                                    match summary_part {
+                                        Some(summary_part) => {
+                                            if let Some(summary) =
+                                                item["summary"].as_array_mut()
+                                            {
+                                                summary.push(summary_part);
+                                            }
+                                        }
+                                        None => warnings.push(Warning::Other {
+                                            message: format!(
+                                                "Cannot append empty reasoning part to existing reasoning sequence. Skipping reasoning part: {}.",
+                                                serde_json::to_string(part).unwrap_or_default()
+                                            ),
+                                        }),
+                                    }
+                                    if let Some(enc) = encrypted {
+                                        item["encrypted_content"] = enc;
+                                    }
+                                } else {
                                     let mut item = json!({
                                         "type": "reasoning",
                                         "id": rid,
-                                        "summary": summary,
+                                        "summary": summary_part.into_iter().collect::<Vec<_>>(),
                                     });
                                     if let Some(enc) = encrypted {
-                                        item["encrypted_content"] = json!(enc);
+                                        item["encrypted_content"] = enc;
                                     }
+                                    reasoning_items.insert(rid, Some(input.len()));
                                     input.push(item);
                                 }
+                            } else if let Some(enc) = encrypted {
+                                input.push(json!({
+                                    "type": "reasoning",
+                                    "encrypted_content": enc,
+                                    "summary": summary_part.into_iter().collect::<Vec<_>>(),
+                                }));
                             } else {
-                                let encrypted = openai_sub_option(
-                                    ns,
-                                    provider_options,
-                                    "reasoningEncryptedContent",
-                                );
-                                if let Some(enc) = encrypted {
-                                    let mut summary: Vec<Value> = Vec::new();
-                                    if !text.is_empty() {
-                                        summary
-                                            .push(json!({ "type": "summary_text", "text": text }));
-                                    }
-                                    input.push(json!({
-                                        "type": "reasoning",
-                                        "encrypted_content": enc,
-                                        "summary": summary,
-                                    }));
-                                } else {
-                                    warnings.push(Warning::Other {
-                                        message: "Non-OpenAI reasoning parts are not supported. Skipping reasoning part.".to_string(),
-                                    });
-                                }
+                                warnings.push(Warning::Other {
+                                    message: format!(
+                                        "Non-OpenAI reasoning parts are not supported. Skipping reasoning part: {}.",
+                                        serde_json::to_string(part).unwrap_or_default()
+                                    ),
+                                });
                             }
                         }
                         AssistantPart::ToolResult(part) => {
@@ -1349,5 +1372,127 @@ pub fn map_responses_finish_reason(
     FinishReason {
         unified,
         raw: finish_reason.map(std::string::ToString::to_string),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reasoning(text: &str, options: Value) -> AssistantPart {
+        AssistantPart::Reasoning(ReasoningPart {
+            text: text.to_string(),
+            provider_options: Some(serde_json::from_value(json!({ "openai": options })).unwrap()),
+        })
+    }
+
+    fn convert(store: bool, content: Vec<AssistantPart>) -> ResponsesInputResult {
+        let prompt = vec![LanguageModelMessage::Assistant {
+            content,
+            provider_options: None,
+        }];
+        convert_to_responses_input(
+            ResponsesNamespace::OPENAI,
+            &prompt,
+            SystemMessageMode::System,
+            store,
+            false,
+            false,
+        )
+        .unwrap()
+    }
+
+    /// Parts of one reasoning item become one input item: the summaries are
+    /// appended and the last encrypted content wins (openai@4.0.83
+    /// `convert-to-openai-responses-input.ts:1167-1220`).
+    #[test]
+    fn reasoning_parts_with_one_item_id_are_merged_without_store() {
+        let result = convert(
+            false,
+            vec![
+                reasoning(
+                    "first",
+                    json!({ "itemId": "rs_1", "reasoningEncryptedContent": "enc-1" }),
+                ),
+                reasoning(
+                    "second",
+                    json!({ "itemId": "rs_1", "reasoningEncryptedContent": "enc-2" }),
+                ),
+                reasoning(
+                    "other",
+                    json!({ "itemId": "rs_2", "reasoningEncryptedContent": "enc-3" }),
+                ),
+            ],
+        );
+        assert_eq!(
+            result.input,
+            vec![
+                json!({
+                    "type": "reasoning",
+                    "id": "rs_1",
+                    "encrypted_content": "enc-2",
+                    "summary": [
+                        { "type": "summary_text", "text": "first" },
+                        { "type": "summary_text", "text": "second" },
+                    ],
+                }),
+                json!({
+                    "type": "reasoning",
+                    "id": "rs_2",
+                    "encrypted_content": "enc-3",
+                    "summary": [{ "type": "summary_text", "text": "other" }],
+                }),
+            ]
+        );
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    }
+
+    /// An empty part cannot extend an item that already has parts.
+    #[test]
+    fn an_empty_reasoning_part_is_not_appended_to_an_item() {
+        let result = convert(
+            false,
+            vec![
+                reasoning(
+                    "first",
+                    json!({ "itemId": "rs_1", "reasoningEncryptedContent": "enc-1" }),
+                ),
+                reasoning("", json!({ "itemId": "rs_1" })),
+            ],
+        );
+        assert_eq!(
+            result.input,
+            vec![json!({
+                "type": "reasoning",
+                "id": "rs_1",
+                "encrypted_content": "enc-1",
+                "summary": [{ "type": "summary_text", "text": "first" }],
+            })]
+        );
+        assert!(matches!(
+            result.warnings.as_slice(),
+            [Warning::Other { message }]
+                if message.starts_with("Cannot append empty reasoning part to existing reasoning sequence. Skipping reasoning part: ")
+        ));
+    }
+
+    /// With `store`, one item reference stands for every part of the item.
+    #[test]
+    fn reasoning_parts_with_one_item_id_are_one_reference_with_store() {
+        let result = convert(
+            true,
+            vec![
+                reasoning("first", json!({ "itemId": "rs_1" })),
+                reasoning("second", json!({ "itemId": "rs_1" })),
+                reasoning("other", json!({ "itemId": "rs_2" })),
+            ],
+        );
+        assert_eq!(
+            result.input,
+            vec![
+                json!({ "type": "item_reference", "id": "rs_1" }),
+                json!({ "type": "item_reference", "id": "rs_2" }),
+            ]
+        );
     }
 }
