@@ -17,12 +17,15 @@
 //! | known | matching | any | matching call, new call, or ambiguity |
 //! | known | conflicting | named | new call |
 //! | unseen | matching | structured start | new call |
+//! | unseen | matching | named empty arguments | incomplete call, new call, or ambiguity |
 //! | unseen | matching | continuation | matching call or ambiguity |
 //! | absent | matching | any | matching call, new call, or ambiguity |
 //! | absent | absent | named | new call |
-//! | absent | absent | unnamed | sole call, new call, or ambiguity |
+//! | absent | absent | unnamed | sole unfinished call, new call, or ambiguity |
 //!
-//! An ambiguous delta is dropped.
+//! An ambiguous delta is dropped. Behaviour follows
+//! `@ai-sdk/provider-utils@5.0.55`, which keeps parallel calls apart when
+//! stream labels are missing or reused (`hasEmptyArguments`).
 //!
 //! Protocols whose streams carry explicit tool-call boundaries (Anthropic,
 //! Google, Bedrock, Cohere, the Responses API) do not need this.
@@ -168,8 +171,9 @@ impl StreamingToolCallTracker {
         let wire_id = non_blank(id);
         let name = non_blank(wire_name);
         let explicit_start = name.is_some() && starts_with_structured_value(arguments);
+        let empty_arguments = arguments.is_none_or(|arguments| arguments.trim().is_empty());
 
-        let call = match self.resolve(wire_id, index, name, explicit_start) {
+        let call = match self.resolve(wire_id, index, name, explicit_start, empty_arguments) {
             Resolution::Ambiguous => return Ok(()),
             // Blank names cannot start a usable call, but some providers
             // repeat a blank name on continuations; those were correlated
@@ -247,6 +251,7 @@ impl StreamingToolCallTracker {
         index: Option<usize>,
         name: Option<&str>,
         explicit_start: bool,
+        empty_arguments: bool,
     ) -> Resolution {
         let at_index = |c: &ToolCall| index.is_some_and(|i| c.indices.contains(&i));
         let named = |c: &ToolCall| name.is_none_or(|n| c.name == n);
@@ -267,13 +272,18 @@ impl StreamingToolCallTracker {
 
         let has_id = |c: &ToolCall| c.wire_ids.iter().any(|w| w == wire_id);
         if !self.calls.iter().any(has_id) {
-            // A previously unseen id plus a named structured start is
-            // stronger evidence of a distinct call than a reused index/name;
-            // ids may still change on plain continuations.
+            // A named structured start with an unseen id identifies a new
+            // call. Empty arguments can also occur when a continuation
+            // changes its id: keep the incomplete matching call then, and
+            // start a new call only once the matching call's structured
+            // arguments are complete.
             if explicit_start {
                 return Resolution::New;
             }
-            return self.matching(|c| at_index(c) && named(c), false);
+            return self.matching(
+                |c| at_index(c) && named(c),
+                name.is_some() && empty_arguments,
+            );
         }
 
         if index.is_none() {
@@ -300,17 +310,33 @@ impl StreamingToolCallTracker {
         self.matching(has_id, false)
     }
 
-    /// Resolve to the single call matching `predicate`. With an explicit
-    /// structured start, a call whose structured arguments are already
-    /// complete cannot continue, so it is not a candidate.
+    /// Resolve among the calls matching `predicate` (the upstream
+    /// `resolveMatchingToolCall`).
+    ///
+    /// A repeated name can occur on continuations. A fresh structured start
+    /// is evidence of another call only once the matching call has completed
+    /// its own structured arguments. Without an explicit start, a sole
+    /// candidate is the continuation target; otherwise the only candidate
+    /// without complete structured arguments is.
     fn matching(&self, predicate: impl Fn(&ToolCall) -> bool, explicit_start: bool) -> Resolution {
-        let mut candidates = self.calls.iter().enumerate().filter(|(_, c)| {
-            predicate(c) && !(explicit_start && c.argument_state.has_complete_structured_value())
-        });
-        match (candidates.next(), candidates.next()) {
-            (None, _) => Resolution::New,
-            (Some((call, _)), None) => Resolution::Existing(call),
-            (Some(_), Some(_)) => Resolution::Ambiguous,
+        let candidates: Vec<(usize, &ToolCall)> = self
+            .calls
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| predicate(c))
+            .collect();
+        match candidates[..] {
+            [] => return Resolution::New,
+            [(call, _)] if !explicit_start => return Resolution::Existing(call),
+            _ => {}
+        }
+        let mut continuable = candidates
+            .iter()
+            .filter(|(_, c)| !c.argument_state.has_complete_structured_value());
+        match (continuable.next(), continuable.next()) {
+            (Some(&(call, _)), None) => Resolution::Existing(call),
+            (None, _) if explicit_start => Resolution::New,
+            _ => Resolution::Ambiguous,
         }
     }
 

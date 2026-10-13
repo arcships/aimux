@@ -81,6 +81,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `StreamingToolCallDelta::provider_metadata`, read from the delta that
   starts a call. `TrackerError` converts into
   `AiMuxError::InvalidResponseData`.
+- The tracker follows `@ai-sdk/provider-utils` 5.0.55 (pinned in
+  `fixtures/aisdk/VERSIONS.json`): a named delta with an unseen id and empty
+  arguments continues an incomplete matching call, but starts a new call
+  once that call's structured arguments are complete; a continuation without
+  labels goes to the only matching call whose structured arguments are not
+  complete. Parallel same-name calls whose ids are missing or reused are no
+  longer merged into the first call.
 
 **Rust (aimux-providers)**
 

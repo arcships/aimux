@@ -358,6 +358,119 @@ mod process_delta {
         );
     }
 
+    /// Added in 5.0.55: `it.each` "repeat their ids" / "omit their ids"
+    /// (streaming-tool-call-tracker.test.ts:248-302).
+    #[test]
+    fn keeps_same_name_calls_with_empty_opening_arguments_distinct() {
+        for (first_continuation_id, second_continuation_id) in
+            [(Some("call_1"), Some("call_2")), (None, None)]
+        {
+            let mut h = Harness::new();
+
+            h.delta(start(0, "call_1", "get_weather", "")).unwrap();
+            h.delta(delta(
+                Some(0),
+                first_continuation_id,
+                None,
+                None,
+                Some("{\"city\":\"Berlin\"}"),
+            ))
+            .unwrap();
+            h.delta(start(0, "call_2", "get_weather", "")).unwrap();
+            h.delta(delta(
+                Some(0),
+                second_continuation_id,
+                None,
+                None,
+                Some("{\"city\":\"Paris\"}"),
+            ))
+            .unwrap();
+            h.flush();
+
+            assert_eq!(
+                h.tool_calls(),
+                vec![
+                    tc("call_1", "get_weather", "{\"city\":\"Berlin\"}"),
+                    tc("call_2", "get_weather", "{\"city\":\"Paris\"}"),
+                ],
+                "continuation ids {first_continuation_id:?}, {second_continuation_id:?}"
+            );
+        }
+    }
+
+    /// Added in 5.0.55: `it.each([undefined, null, '', ' \n'])`
+    /// (streaming-tool-call-tracker.test.ts:304-341). Rust has one `None`
+    /// for the wire's absent and `null` arguments.
+    #[test]
+    fn retains_an_incomplete_call_when_its_id_changes_on_a_named_empty_fragment() {
+        for arguments in [None, Some(""), Some(" \n")] {
+            let mut h = Harness::new();
+
+            h.delta(delta(
+                Some(0),
+                Some("call_1"),
+                None,
+                Some("get_weather"),
+                Some("{\"city\":"),
+            ))
+            .unwrap();
+            h.delta(delta(
+                Some(0),
+                Some("alias"),
+                None,
+                Some("get_weather"),
+                arguments,
+            ))
+            .unwrap();
+            h.delta(delta(
+                Some(0),
+                Some("alias"),
+                None,
+                None,
+                Some("\"Berlin\"}"),
+            ))
+            .unwrap();
+            h.flush();
+
+            let input = format!("{{\"city\":{}\"Berlin\"}}", arguments.unwrap_or(""));
+            assert_eq!(
+                h.tool_calls(),
+                vec![tc("call_1", "get_weather", &input)],
+                "arguments {arguments:?}"
+            );
+            let starts: Vec<&Part> = h
+                .parts
+                .iter()
+                .filter(|part| matches!(part, Part::ToolInputStart { .. }))
+                .collect();
+            assert_eq!(
+                starts,
+                vec![&input_start("call_1", "get_weather")],
+                "arguments {arguments:?}"
+            );
+        }
+    }
+
+    /// Added in 5.0.55 (streaming-tool-call-tracker.test.ts:343-381).
+    #[test]
+    fn uses_an_unlabeled_continuation_for_the_only_call_without_complete_structured_arguments() {
+        let mut h = Harness::new();
+
+        h.delta(start(0, "call_1", "get_weather", "")).unwrap();
+        h.delta(cont(None, "{\"city\":\"Berlin\"}")).unwrap();
+        h.delta(start(1, "call_2", "get_weather", "")).unwrap();
+        h.delta(cont(None, "{\"city\":\"Paris\"}")).unwrap();
+        h.flush();
+
+        assert_eq!(
+            h.tool_calls(),
+            vec![
+                tc("call_1", "get_weather", "{\"city\":\"Berlin\"}"),
+                tc("call_2", "get_weather", "{\"city\":\"Paris\"}"),
+            ]
+        );
+    }
+
     #[test]
     fn continues_latest_call_when_index_is_omitted_after_starting_at() {
         for index in [None, Some(7)] {
