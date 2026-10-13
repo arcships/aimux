@@ -1853,6 +1853,8 @@ impl StreamStep {
 }
 
 #[cfg(test)]
+mod pipeline_tests;
+#[cfg(test)]
 mod tests;
 
 /// A malformed individual frame does not prove that the transport is dead:

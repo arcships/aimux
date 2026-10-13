@@ -158,7 +158,7 @@ pub(super) async fn collect(result: StreamTextResult) -> Vec<TextStreamPart> {
         .await
 }
 
-fn kind(part: &TextStreamPart) -> String {
+pub(super) fn kind(part: &TextStreamPart) -> String {
     let value = serde_json::to_value(part).unwrap();
     value
         .as_object()
