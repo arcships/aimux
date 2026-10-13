@@ -39,7 +39,6 @@ pub mod math;
 pub mod message;
 pub mod moa;
 pub mod model_catalogue;
-pub mod model_id;
 pub mod openai_output;
 pub mod options;
 pub mod parse_tool_call;
@@ -100,7 +99,6 @@ pub mod prelude {
         CatalogueSource, Modality, ModelCapabilities, ModelCost, ModelLimits, ModelModalities,
         ModelSpec, ModelType, ReasoningMode, ReasoningSpec, ReasoningVisibility, RuntimeModel,
     };
-    pub use crate::model_id::ModelId;
     pub use crate::openai_output::{
         ChatCompletion, ChatCompletionChunk, ChatCompletionStream, DONE_FRAME, OpenAiStreamOptions,
         encode_chunk_sse, to_chat_completion, to_chat_completion_stream,

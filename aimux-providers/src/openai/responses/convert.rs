@@ -32,13 +32,6 @@ use super::types::ResponsesUsage;
 // converter (issue M10).
 use crate::openai::convert_common::{ModelCapabilities, SystemMessageMode, get_model_capabilities};
 
-/// Compatibility alias: the Responses-specific enum name was merged into the
-/// shared [`SystemMessageMode`] during M10. Keeping the alias lets existing
-/// import paths (`openai::responses::convert::ResponsesSystemMessageMode`)
-/// keep compiling while the module signature uses the shared type.
-#[doc(hidden)]
-pub use crate::openai::convert_common::SystemMessageMode as ResponsesSystemMessageMode;
-
 // -- Provider options helper -------------------------------------------------
 
 /// The providerOptions keys a Responses model reads, in order of precedence

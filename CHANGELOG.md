@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `extract_response_header_pairs`, the SigV4 signing internals, the logging
   internals, `DEFAULT_MAX_JSON_RESPONSE_SIZE` and `TungsteniteConnector`.
 
+- Removed items the AI SDK has no counterpart for: `aimux_core::ModelId`
+  (and `model_id`, the Node `ModelId` type), the hidden
+  `aimux_provider_utils::download_guard` re-export (use
+  `aimux_core::download_guard`; `same_origin` stays re-exported), the
+  deprecated panicking converters `convert_prompt_to_anthropic`,
+  `convert_prompt_to_anthropic_full`, `convert_prompt_to_openai_messages`
+  and `convert_prompt_to_openai_messages_with_mode` (use the `_fallible`
+  forms), and the `ResponsesSystemMessageMode` alias (use
+  `SystemMessageMode`).
+
 - Provider results carry request and response information as the AI SDK does
   (`aimux-core`). `GenerateResult` has `request: Option<RequestInfo>` and
   `response: Option<ResponseInfo>`; `ResponseInfo` gains `id` and holds the

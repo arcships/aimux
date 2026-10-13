@@ -242,9 +242,9 @@ impl HttpRequest {
         let mut headers = self.headers;
         let mut credentials = RequestCredentials::Include;
         if let Some(origin) = self.credentialed_origin.as_deref()
-            && !crate::download_guard::same_origin(&self.url, origin)
+            && !aimux_core::download_guard::same_origin(&self.url, origin)
         {
-            crate::download_guard::retain_user_agent(&mut headers);
+            aimux_core::download_guard::retain_user_agent(&mut headers);
             credentials = RequestCredentials::Omit;
         }
         PreparedRequest {
@@ -462,9 +462,9 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
         Some(_) => {
             // First-request credential gating already ran in `prepare`; this
             // strips hop-by-hop, forwarding, and metadata-service headers.
-            crate::download_guard::sanitize_download_headers(&mut current.headers);
+            aimux_core::download_guard::sanitize_download_headers(&mut current.headers);
             Some(
-                crate::download_guard::validate_download_target(&current.url, trusted_origin)
+                aimux_core::download_guard::validate_download_target(&current.url, trusted_origin)
                     .await?,
             )
         }
@@ -514,9 +514,10 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
         drop(response);
         if pinned.is_some() {
             let hop_trusted =
-                crate::download_guard::hop_trusted_origin(trusted_origin, &current.url);
-            pinned =
-                Some(crate::download_guard::validate_download_target(&next, hop_trusted).await?);
+                aimux_core::download_guard::hop_trusted_origin(trusted_origin, &current.url);
+            pinned = Some(
+                aimux_core::download_guard::validate_download_target(&next, hop_trusted).await?,
+            );
         }
         // Credentials are scoped to the credential anchor, not the previous
         // hop: once a redirect leaves it, headers cannot come back. An API
@@ -525,8 +526,8 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
         // only `User-Agent`, as `fetchWithValidatedRedirects` does: the fetch
         // spec strips only `Authorization`, and provider keys also travel in
         // custom headers. Signing decorators see `RequestCredentials::Omit`.
-        if !crate::download_guard::same_origin(&next, credential_anchor) {
-            crate::download_guard::retain_user_agent(&mut current.headers);
+        if !aimux_core::download_guard::same_origin(&next, credential_anchor) {
+            aimux_core::download_guard::retain_user_agent(&mut current.headers);
             current.credentials = RequestCredentials::Omit;
         }
         if status == http::StatusCode::SEE_OTHER

@@ -10,8 +10,6 @@
 //! `aimux-core`.
 
 pub mod api_key;
-#[doc(hidden)]
-pub use aimux_core::download_guard;
 pub mod extract_response_headers;
 pub mod fetch;
 pub mod generate_id;
@@ -35,8 +33,8 @@ pub mod url;
 #[cfg(feature = "ws")]
 pub mod ws;
 
+pub use aimux_core::download_guard::same_origin;
 pub use api_key::{load_api_key, load_optional_setting, load_setting};
-pub use download_guard::same_origin;
 pub use fetch::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, RequestCredentials,
     ReqwestFetch, default_fetch,
