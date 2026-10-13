@@ -425,7 +425,7 @@ pub type FetchFunction = Arc<dyn Fetch>;
 关键规则：
 
 - multipart 在 helper 内编码成字节，签名处理最终发送字节。
-- 重定向由 helper 逐跳处理，transport（含注入的 `Fetch`）不跟随重定向、原样返回 `3xx`。普通 API 调用只跟随同源重定向，跨 origin 的 `3xx` 按非 2xx 返回，请求头与 fetch 装饰器注入的凭证都不会到达另一个 origin；每一跳重新经过请求的 `Fetch`，签名装饰器对实际发送的 URL 重新签名。校验下载（D26）沿用逐跳校验、pin 与离开 credentialed origin 后剥离调用方头的规则。
+- 重定向由 helper 逐跳处理，transport（含注入的 `Fetch`）不跟随重定向、原样返回 `3xx`。普通 API 调用跟随所有重定向（同上游 `postToApi` 在 fetch 默认 `redirect: "follow"` 下的行为，provider-utils@5.0.53 `post-to-api.ts:98-107`）；一旦离开请求的 origin，只保留 `User-Agent`，其余请求头全部丢弃，并以 `RequestCredentials::Omit` 通知 transport（同 `fetch-with-validated-redirects.ts:195-206`），请求头与 fetch 装饰器注入的凭证都不会到达另一个 origin；每一跳重新经过请求的 `Fetch`，签名装饰器对实际发送的 URL 重新签名。校验下载（D26）沿用逐跳校验、pin 与离开 credentialed origin 后剥离调用方头的规则。
 - 默认 HTTP client 按 Tokio runtime 分片，保留现有连接池生命周期约束。
 - `settings.fetch == None` 时，每次请求读取当前默认 leaf；不在工厂创建时冻结全局 fetch。
 - WebSocket 使用独立 connector，和默认 HTTP leaf 共用显式 `TransportSettings`。

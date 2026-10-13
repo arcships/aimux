@@ -435,12 +435,16 @@ fn redirect_error(
 /// transport never follows one itself). The whole chain is one exchange to
 /// the caller, matching how an auto-following client behaves.
 ///
-/// - An ordinary API call follows a redirect only while it stays on the origin
-///   of the hop that issued it. A cross-origin `3xx` is returned as it is, so
-///   neither the request headers nor anything a transport decorator adds (a
+/// - An ordinary API call follows every redirect, as the AI SDK's `postToApi`
+///   does under fetch's default `redirect: "follow"` (provider-utils@5.0.53
+///   `post-to-api.ts:98-107`). Once a hop leaves the request's origin, every
+///   header except `User-Agent` is dropped and the transport is told
+///   `RequestCredentials::Omit`, as `fetchWithValidatedRedirects` does
+///   (`fetch-with-validated-redirects.ts:195-206`), so neither a provider key
+///   in a custom header nor anything a transport decorator adds (a
 ///   signature, a bearer token) reaches another origin. Every followed hop
-///   goes through the request's transport again, so a signing transport signs
-///   the URL it actually sends.
+///   goes through the request's transport again, so a signing transport
+///   signs the URL it actually sends.
 /// - A validated download (`validation` set) re-validates every hop and pins
 ///   its connection to the DNS answers that passed the guard (see
 ///   `download_guard`); it follows cross-origin hops with the caller headers
