@@ -37,8 +37,8 @@ def test_provider_handle_openai_decisions_answer_every_question():
         provider = create_provider('openai', 'test-key', base_url=f'http://127.0.0.1:{http.server_port}/v1')
         model = provider.decision_model('gpt-6-luna')
         assert describe_decision_model(model) == {
-            'specification_version': 'v4', 'provider': 'openai', 'model_id': 'gpt-6-luna',
-            'supported_question_types': ['choice', 'score', 'boolean']}
+            'specificationVersion': 'v4', 'provider': 'openai', 'modelId': 'gpt-6-luna',
+            'supportedQuestionTypes': ['choice', 'score', 'boolean']}
         result = decide(model, **contract['options'])
         assert captured == [('/v1/decisions', 'Bearer test-key', contract['request'])]
         assert list(result['answers']) == ['urgent', 'team', 'severity']
@@ -55,7 +55,7 @@ def test_decision_uses_unified_runtime_recording(server, tmp_path):
     init_recording(str(tmp_path))
     try:
         result = decide(jev_decision('test-key', 'jev-latest', base + '/v1/systemone'),
-                        {'message': 'Billed twice'}, QUESTIONS, max_retries=0)
+                        {'message': 'Billed twice'}, QUESTIONS, maxRetries=0)
     finally:
         recording_flush()
         recording_stop()
@@ -83,10 +83,13 @@ def test_optional_usage_counts_preserve_answers(server, monkeypatch, usage):
     monkeypatch.setitem(FIXTURE, 'usage', usage)
     base, _ = server
     result = decide(jev_decision('test-key', 'jev-latest', base + '/v1/systemone'),
-                    {'message': 'Billed twice'}, QUESTIONS, max_retries=0)
+                    {'message': 'Billed twice'}, QUESTIONS, maxRetries=0)
     assert len(result['answers']) == 3
-    assert result['usage']['input_tokens'] == usage.get('input_tokens')
-    assert result['usage']['output_tokens'] == usage.get('output_tokens')
+    # An unknown count is absent, as the AI SDK's undefined is in JSON.
+    expected = {key: usage[wire] for key, wire in
+                [('inputTokens', 'input_tokens'), ('outputTokens', 'output_tokens')]
+                if usage.get(wire) is not None}
+    assert result['usage'] == expected
     assert result['response']['body']['usage'] == usage
 
 
@@ -122,14 +125,14 @@ def server():
 def test_decide_all_types_and_raw_response(server):
     base, captures = server
     model = jev_decision('test-key', 'jev-latest', base + '/v1/systemone')
-    result = decide(model, {'message': 'Billed twice'}, QUESTIONS, max_retries=0, timeout={'total_ms': 2000})
+    result = decide(model, {'message': 'Billed twice'}, QUESTIONS, maxRetries=0, timeout={'totalMs': 2000})
     assert result['answers']['is_urgent'] == {'type': 'boolean', 'probability': 1.0}
     assert result['answers']['department']['choice'] == 'technical'
     assert result['answers']['frustration']['score'] == 1.0
     assert result['answers']['frustration']['probabilities'] == {'0': 0, '1': 1.0, '2': 0}
-    assert result['usage'] == {'input_tokens': 392, 'output_tokens': 65, 'total_tokens': 457}
+    assert result['usage'] == {'inputTokens': 392, 'outputTokens': 65, 'totalTokens': 457}
     assert result['response']['body'] == FIXTURE
-    assert result['provider_metadata']['jev']['probability_source'] == 'native'
+    assert result['providerMetadata']['jev']['probabilitySource'] == 'native'
     assert captures[0][0] == '/v1/systemone'
     assert captures[0][1]['authorization'] == 'Bearer test-key'
     assert captures[0][2]['questions']['is_urgent']['type'] == 'noul'
@@ -139,15 +142,15 @@ def test_invalid_answer_uses_python_error_class(server):
     base, _ = server
     model = jev_decision('test-key', 'jev-latest', base + '/invalid')
     with pytest.raises(APICallError):
-        decide(model, 'text', QUESTIONS, max_retries=0, timeout={'total_ms': 2000})
+        decide(model, 'text', QUESTIONS, maxRetries=0, timeout={'totalMs': 2000})
 
 
 @pytest.mark.parametrize('source', ['native', 'logit_scoring', 'model_estimate'])
 def test_self_hosted_probability_source(server, source):
     base, _ = server
     model = jev_decision('test-key', 'jev-latest', base + '/v1/systemone', probability_source=source)
-    result = decide(model, 'text', QUESTIONS, max_retries=0, timeout={'total_ms': 2000})
-    assert result['provider_metadata']['jev']['probability_source'] == source
+    result = decide(model, 'text', QUESTIONS, maxRetries=0, timeout={'totalMs': 2000})
+    assert result['providerMetadata']['jev']['probabilitySource'] == source
 
 
 def test_unknown_probability_source():
@@ -176,11 +179,11 @@ def test_official_structured_contract_and_description():
         assert describe_decision_model(model)['provider'] == 'jev'
         assert not captures
         request = fixture['request']
-        result = decide(model, request['state'], request['questions'], max_retries=0, timeout={'total_ms':2000})
+        result = decide(model, request['state'], request['questions'], maxRetries=0, timeout={'totalMs':2000})
         assert captures[0]['questions']['urgent']['criteria'] == request['questions']['urgent']['criteria']
         assert captures[0]['questions']['severity']['criteria'] == request['questions']['severity']['criteria']
         assert result['answers']['severity'] == {'type': 'score', 'score': 0.25, 'probabilities': {'0': 0.75, '1': 0.25}}
-        assert result['rounding'] == {'probability_decimals': 2, 'score_decimals': 2}
+        assert result['rounding'] == {'probabilityDecimals': 2, 'scoreDecimals': 2}
     finally:
         http.shutdown()
         http.server_close()
@@ -196,7 +199,7 @@ def test_openai_images_native_values_and_score_descriptions(as_bytes):
         # DecisionImage.data is a base64 string on the wire, as the AI SDK
         # writes bytes (provider-utils uint8-utils.ts:12-23); bytes given to
         # decide() are encoded to the same string.
-        openai = contract['options']['provider_options']['openai']
+        openai = contract['options']['providerOptions']['openai']
         openai['images'] = [
             dict(image, data=base64.b64decode(image['data']))
             for image in openai['images']
@@ -223,7 +226,7 @@ def test_openai_images_native_values_and_score_descriptions(as_bytes):
         assert captured == [contract['request']]
         assert result['answers']['choice'] == {'type': 'choice', 'choice': 'boolean_true',
                                                'probabilities': {'boolean_true': 0.75, 'text_true': 0.25}}
-        assert result['provider_metadata']['openai']['answers']['choice']['value'] is True
+        assert result['providerMetadata']['openai']['answers']['choice']['value'] is True
         assert result['answers']['score'] == {'type': 'score', 'score': 0.75, 'probabilities': {'0': 0.25, '1': 0.75}}
     finally:
         http.shutdown()

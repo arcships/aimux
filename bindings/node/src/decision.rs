@@ -13,16 +13,13 @@ pub struct DecisionModel {
 
 #[napi]
 impl DecisionModel {
-    /// The DecisionModelV4 properties as JSON: `specification_version`,
-    /// `provider`, `model_id`, `supported_question_types`.
+    /// The DecisionModelV4 properties as JSON: `specificationVersion`,
+    /// `provider`, `modelId`, `supportedQuestionTypes`.
     #[napi]
     pub fn describe(&self) -> AimuxResult<String> {
-        AimuxResult(serialize_result(&serde_json::json!({
-            "specification_version": self.inner.specification_version(),
-            "provider": self.inner.provider(),
-            "model_id": self.inner.model_id(),
-            "supported_question_types": self.inner.supported_question_types(),
-        })))
+        AimuxResult(serialize_result(&aimux_core::decision_model::decision_model_properties(
+            self.inner.as_ref(),
+        )))
     }
 
     /// `opts_json` is `DecideOptions` JSON; resolves to `DecideResult` JSON.

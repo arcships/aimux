@@ -77,7 +77,7 @@ func (p *ProviderHandle) DecisionModel(modelID string) (*DecisionModel, error) {
 func (m *DecisionModel) Close() error { closeMultimodal(m, &m.h); return nil }
 
 // Describe returns the model's DecisionModelV4 properties as JSON
-// ({specification_version, provider, model_id, supported_question_types}),
+// ({specificationVersion, provider, modelId, supportedQuestionTypes}),
 // without a network request.
 func (m *DecisionModel) Describe() (string, error) {
 	return callFFIString(m, &m.h, func(handle C.uint64_t, out **C.char) *C.aimux_error_t {
@@ -86,9 +86,11 @@ func (m *DecisionModel) Describe() (string, error) {
 }
 
 // Decide accepts a value serializable as DecideOptions (state, a question map
-// keyed by ID, and optional max_retries, timeout, headers and
-// provider_options), preserving structured instructions and criteria. It
-// returns DecideResult JSON.
+// keyed by ID, and optional maxRetries, timeout, headers and
+// providerOptions: the AI SDK's camelCase keys), preserving structured
+// instructions and criteria. It returns DecideResult JSON (usage with
+// inputTokens, outputTokens and totalTokens, an unknown count absent;
+// providerMetadata).
 func (m *DecisionModel) Decide(options any) (string, error) {
 	return m.DecideContext(context.Background(), options)
 }

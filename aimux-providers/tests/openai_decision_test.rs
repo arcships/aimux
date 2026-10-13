@@ -98,7 +98,7 @@ async fn native_wire_maps_all_questions_to_v4_answers() {
     request.provider_options = Some(aimux_core::shared::SharedProviderOptions::from([
         (
             "openai".into(),
-            object(json!({"safety_identifier":"opaque-user"})),
+            object(json!({"safetyIdentifier":"opaque-user"})),
         ),
         ("other-provider".into(), object(json!({"ignored":true}))),
     ]));
@@ -136,7 +136,7 @@ async fn native_wire_maps_all_questions_to_v4_answers() {
     assert_eq!(
         Value::Object(result.provider_metadata.unwrap()["openai"].clone()),
         json!({
-            "probability_source": "native",
+            "probabilitySource": "native",
             "answers": {"team": {"confidence": 0.9}, "severity": {"confidence": 0.6}}
         })
     );
@@ -303,11 +303,21 @@ async fn unsupported_native_fields_and_limits_fail_before_http() {
         .remove("support");
     cases.push(choice);
     let mut opts = fixture()["options"].clone();
-    opts["provider_options"] = json!({"openai":{"temperature":1}});
+    opts["providerOptions"] = json!({"openai":{"temperature":1}});
     cases.push(opts);
     let mut values = fixture()["options"].clone();
-    values["provider_options"] = json!({"openai":{"choice_values":{"urgent":{"yes":true}}}});
+    values["providerOptions"] = json!({"openai":{"choiceValues":{"urgent":{"yes":true}}}});
     cases.push(values);
+    // aimux's own options are camelCase; the snake_case names are unknown.
+    for snake in [
+        json!({"safety_identifier":"opaque-user"}),
+        json!({"choice_values":{"team":{"billing":true}}}),
+        json!({"images":[{"data":"iVBORw0KGgo=","media_type":"image/png"}]}),
+    ] {
+        let mut options = fixture()["options"].clone();
+        options["providerOptions"] = json!({ "openai": snake });
+        cases.push(options);
+    }
     for request in cases {
         let request = serde_json::from_value(request).unwrap();
         assert!(decide(model(&server).as_ref(), request).await.is_err());
@@ -588,7 +598,7 @@ async fn malformed_image_answers_bound_error_context_but_preserve_wire_and_respo
     let mut request = options();
     request.provider_options = Some(SharedProviderOptions::from([(
         "openai".into(),
-        object(json!({"images": [{"data": encoded, "media_type": "image/png", "detail": "low"}]})),
+        object(json!({"images": [{"data": encoded, "mediaType": "image/png", "detail": "low"}]})),
     )]));
     let error = decide(model(&server).as_ref(), request).await.unwrap_err();
     let AiMuxError::ApiCall(error) = error else {
@@ -626,14 +636,14 @@ async fn bad_media_and_duplicate_native_values_are_rejected_before_http() {
     .unwrap();
     let server = MockServer::start().await;
     for (pointer, value) in [
-        ("/provider_options/openai/images/0/data", json!("bad!")),
-        ("/provider_options/openai/images/0/detail", json!("unknown")),
+        ("/providerOptions/openai/images/0/data", json!("bad!")),
+        ("/providerOptions/openai/images/0/detail", json!("unknown")),
         (
-            "/provider_options/openai/images/0/media_type",
+            "/providerOptions/openai/images/0/mediaType",
             json!("text/plain"),
         ),
         (
-            "/provider_options/openai/choice_values/choice/text_true",
+            "/providerOptions/openai/choiceValues/choice/text_true",
             json!(true),
         ),
         ("/questions/score/criteria/1/label", json!("low")),

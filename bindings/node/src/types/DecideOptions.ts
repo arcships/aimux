@@ -5,14 +5,15 @@ import type { TimeoutConfiguration } from "./TimeoutConfiguration";
 import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
- * Options of [`decide`]: the call options plus the operation settings.
+ * Options of [`decide`]: the call options plus the operation settings
+ * (`ai@7.0.128 src/decide/decide.ts:53-61`).
  */
 export type DecideOptions = { state: DecisionInput, questions: { [key in string]: DecisionQuestion }, 
 /**
  * Maximum retries for transient provider failures. Defaults to 2.
  */
-max_retries?: number, 
+maxRetries?: number, 
 /**
  * Operation deadline (aimux extension).
  */
-timeout?: TimeoutConfiguration, headers?: { [key in string]: string }, provider_options?: { [key in string]: { [key in string]: JsonValue } }, };
+timeout?: TimeoutConfiguration, headers?: { [key in string]: string }, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

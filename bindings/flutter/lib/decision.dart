@@ -69,8 +69,8 @@ class DecisionModel {
       (jsonDecode(decideJson(encodeJson(options, 'options'),
           abortHandle: abortHandle)) as Map).cast<String, dynamic>();
 
-  /// The model's DecisionModelV4 properties (`specification_version`,
-  /// `provider`, `model_id`, `supported_question_types`), without HTTP.
+  /// The model's DecisionModelV4 properties (`specificationVersion`,
+  /// `provider`, `modelId`, `supportedQuestionTypes`), without HTTP.
   Map<String, dynamic> describe() {
     _checkOpen();
     return (jsonDecode(takeString(

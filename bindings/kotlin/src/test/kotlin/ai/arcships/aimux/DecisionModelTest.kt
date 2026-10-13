@@ -15,8 +15,9 @@ class DecisionModelTest {
             provider.decisionModel("gpt-6-luna").use { model ->
                 provider.close()
                 val description = JSONObject(model.describe())
-                assertEquals("v4", description.getString("specification_version"))
+                assertEquals("v4", description.getString("specificationVersion"))
                 assertEquals("openai", description.getString("provider"))
+                assertEquals("gpt-6-luna", description.getString("modelId"))
                 assertThrows(IllegalStateException::class.java) { provider.decisionModel("gpt-6-luna") }
             }
         }
@@ -39,12 +40,14 @@ class DecisionModelTest {
             DecisionModel.jev("test-key", "jev-latest", "http://127.0.0.1:${server.address.port}/v1/systemone").use { model ->
                 val description = JSONObject(model.describe())
                 assertEquals("jev", description.getString("provider"))
-                assertEquals(3, description.getJSONArray("supported_question_types").length())
+                assertEquals(3, description.getJSONArray("supportedQuestionTypes").length())
                 assertNull(captured.get())
                 val request = fixture.getJSONObject("request")
                 val result = JSONObject(model.decide(request.toString()))
                 assertEquals(0.9, result.getJSONObject("answers").getJSONObject("urgent").getDouble("probability"))
-                assertEquals(2, result.getJSONObject("rounding").getInt("probability_decimals"))
+                assertEquals(2, result.getJSONObject("rounding").getInt("probabilityDecimals"))
+                assertTrue(JSONObject(mapOf("inputTokens" to 50, "outputTokens" to 10, "totalTokens" to 60))
+                    .similar(result.getJSONObject("usage")))
                 val questions = request.getJSONObject("questions")
                 assertTrue(questions.getJSONObject("urgent").getJSONObject("criteria")
                     .similar(captured.get().getJSONObject("questions").getJSONObject("urgent").getJSONObject("criteria")))
@@ -79,7 +82,7 @@ class DecisionModelTest {
                     val result = JSONObject(model.decide(rawObject(text, "options")))
                     assertTrue(fixture.getJSONObject("request").similar(captured.get()))
                     assertEquals("boolean_true", result.getJSONObject("answers").getJSONObject("choice").getString("choice"))
-                    assertEquals(true, result.getJSONObject("provider_metadata").getJSONObject("openai")
+                    assertEquals(true, result.getJSONObject("providerMetadata").getJSONObject("openai")
                         .getJSONObject("answers").getJSONObject("choice").get("value"))
                     assertEquals(0.75, result.getJSONObject("answers").getJSONObject("score").getDouble("score"))
                 }

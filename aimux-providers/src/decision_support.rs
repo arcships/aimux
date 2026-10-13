@@ -12,7 +12,7 @@ use serde_json::{Map, Value, json};
 
 /// How a native decision provider produced its probabilities. This is
 /// provenance, not a calibration guarantee (RFC-0037). Reported as
-/// `provider_metadata.<provider>.probability_source`.
+/// `providerMetadata.<provider>.probabilitySource`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DecisionProbabilitySource {
@@ -49,9 +49,11 @@ impl std::str::FromStr for DecisionProbabilitySource {
 }
 
 /// An inline image shared by all questions, placed before the textual
-/// state: an entry of `provider_options.<provider>.images`.
+/// state: an entry of `providerOptions.<provider>.images`,
+/// `{data, mediaType, detail?}` as the AI SDK's image parts name the media
+/// type.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct DecisionImage {
     /// Base64 image bytes.
     pub data: String,
@@ -228,7 +230,7 @@ pub(crate) fn provider_metadata(
 ) -> SharedProviderMetadata {
     let mut metadata = Map::new();
     metadata.insert(
-        "probability_source".into(),
+        "probabilitySource".into(),
         json!(probability_source.as_str()),
     );
     if !answers.is_empty() {

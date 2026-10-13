@@ -62,9 +62,9 @@
         ]
       }
     },
-    "max_retries": 0,
+    "maxRetries": 0,
     "timeout": {
-      "total_ms": 2000
+      "totalMs": 2000
     }
   },
   "response": {

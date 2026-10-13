@@ -134,6 +134,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ...}`, `{"type": "choice", "options"}`, `{"type": "json"}`. The externally
   tagged `{"Object": {...}}` form is no longer read.
 
+- Decisions follow the same JSON rules. `DecideOptions` and
+  `DecisionCallOptions` write `maxRetries` and `providerOptions`;
+  `DecisionResult` and `DecideResult` write `rounding {probabilityDecimals,
+  scoreDecimals}`, `providerMetadata` and `usage {inputTokens, outputTokens,
+  totalTokens}`, an unknown count omitted instead of `null`
+  (`decision-result.ts:27-31`). The model description of
+  `aimux_decision_capabilities` and every binding's `describe` is
+  `{specificationVersion, provider, modelId, supportedQuestionTypes}`. The
+  options and metadata aimux defines in a provider's namespace are camelCase
+  too: `images[].mediaType`, OpenAI `choiceValues` and `safetyIdentifier`,
+  candidate scoring's `modelRevision`, `tokenizerRevision`,
+  `promptFormatVersion` and `encoded.<id>.{promptTokenIds, labelTokenIds}`,
+  and the metadata's `probabilitySource` and `latencyMs`; options a runtime
+  receives as given keep the runtime's names (`keep_alive`,
+  `chat_template_kwargs`, ...). Python's `decide` takes the JSON keys as
+  keyword arguments (`maxRetries=0`). Decision recordings write the options
+  and result this way, and replay refuses recorded options with snake_case
+  keys instead of ignoring them.
+
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
   model and provider ids take precedence over middleware overrides.
@@ -885,7 +904,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   levels). Answers are `{choice, probabilities?}`, `{score, probabilities?}`
   (keyed `"0"`, `"1"`, …) and `{probability}`. `decide` takes `DecideOptions`
   (the call options plus `max_retries`, default 2, and `timeout`) and returns
-  `DecideResult` (answers, usage with `total_tokens`, warnings, rounding,
+  `DecideResult` (answers, usage with `totalTokens`, warnings, rounding,
   provider metadata, response). It validates the input, rejects unsupported
   question types before any I/O and validates the answers once after the
   retries, with the upstream messages. The model call runs inside
@@ -895,9 +914,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `supported_question_types` and `do_decide(&DecisionCallOptions)`;
   `capabilities()` and `DecisionCapabilities` are removed, and provider limits
   are checked in `do_decide` before HTTP. Images and OpenAI typed choice
-  values move to `provider_options.<provider>`; the probability source,
-  confidence, OpenAI typed values, Laya abstentions and `latency_ms` move to
-  `provider_metadata.<provider>`. An OpenAI refusal or a vLLM skipped question
+  values move to `providerOptions.<provider>`; the probability source,
+  confidence, OpenAI typed values, Laya abstentions and `latencyMs` move to
+  `providerMetadata.<provider>`. An OpenAI refusal or a vLLM skipped question
   fails the decision instead of returning a partial answer. Decision
   recordings hold the `DecideOptions` and the `DecideResult`; recordings made
   before this change load but do not replay.
@@ -920,7 +939,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failures used to surface as `AIMUX_E_INVALID_ARGUMENT`.
 - `aimux_decide` takes `DecideOptions` JSON and returns `DecideResult` JSON.
   `aimux_decision_capabilities` keeps its name and signature but returns
-  `{specification_version, provider, model_id, supported_question_types}`.
+  `{specificationVersion, provider, modelId, supportedQuestionTypes}`.
   `aimux_provider_decision_model` on a provider without decision models
   returns `AIMUX_E_NO_SUCH_MODEL` (was `AIMUX_E_UNSUPPORTED_FUNCTIONALITY`).
 - `aimux_provider_new`, `aimux_provider_handle_new` and `config_json` resolve

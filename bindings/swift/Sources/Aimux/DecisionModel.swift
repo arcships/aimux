@@ -26,7 +26,7 @@ public final class DecisionModel: @unchecked Sendable {
     }
 
     /// The model's DecisionModelV4 properties as JSON
-    /// (`{specification_version, provider, model_id, supported_question_types}`), without HTTP.
+    /// (`{specificationVersion, provider, modelId, supportedQuestionTypes}`), without HTTP.
     public func describe() throws -> String {
         let handle = try snapshot()
         return try ffiStringCall { aimux_decision_capabilities(handle, $0) }

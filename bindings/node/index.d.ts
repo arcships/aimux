@@ -34,8 +34,8 @@ export declare class AbortBridge {
 
 export declare class DecisionModel {
   /**
-   * The DecisionModelV4 properties as JSON: `specification_version`,
-   * `provider`, `model_id`, `supported_question_types`.
+   * The DecisionModelV4 properties as JSON: `specificationVersion`,
+   * `provider`, `modelId`, `supportedQuestionTypes`.
    */
   describe(): AimuxResult<string>
   /** `opts_json` is `DecideOptions` JSON; resolves to `DecideResult` JSON. */

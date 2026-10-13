@@ -33,9 +33,9 @@ fn fixture() -> Value {
 fn options() -> DecideOptions {
     serde_json::from_value(fixture()["options"].clone()).unwrap()
 }
-/// `provider_metadata.<provider>.probability_source`.
+/// `providerMetadata.<provider>.probabilitySource`.
 fn source(result: &DecideResult, provider: &str) -> DecisionProbabilitySource {
-    result.provider_metadata.as_ref().unwrap()[provider]["probability_source"]
+    result.provider_metadata.as_ref().unwrap()[provider]["probabilitySource"]
         .as_str()
         .unwrap()
         .parse()
@@ -178,7 +178,7 @@ async fn media_is_native_per_runtime_and_recorded_for_replay() {
         "../../contract-tests/fixtures/decision-openai-full.json"
     ))
     .unwrap();
-    let mut image = full["options"]["provider_options"]["openai"]["images"][0].clone();
+    let mut image = full["options"]["providerOptions"]["openai"]["images"][0].clone();
     image.as_object_mut().unwrap().remove("detail");
     for provider in [
         "ollama",
@@ -367,10 +367,10 @@ fn scoring_options(provider: &str) -> DecideOptions {
     request.provider_options = Some(SharedProviderOptions::from([(
         provider.into(),
         object(
-            json!({"protocol":if provider=="sglang" {"score"} else {"generative_scoring"},"model_revision":"weights-commit","tokenizer_revision":"tokenizer-commit","prompt_format_version":"test-v1","encoded":{
-                "urgent":{"prompt_token_ids":[11,12],"label_token_ids":[1,2]},
-                "team":{"prompt_token_ids":[21,22],"label_token_ids":[3,4]},
-                "severity":{"prompt_token_ids":[31,32],"label_token_ids":[5,6,7]}
+            json!({"protocol":if provider=="sglang" {"score"} else {"generative_scoring"},"modelRevision":"weights-commit","tokenizerRevision":"tokenizer-commit","promptFormatVersion":"test-v1","encoded":{
+                "urgent":{"promptTokenIds":[11,12],"labelTokenIds":[1,2]},
+                "team":{"promptTokenIds":[21,22],"labelTokenIds":[3,4]},
+                "severity":{"promptTokenIds":[31,32],"labelTokenIds":[5,6,7]}
             }}),
         ),
     )]));
@@ -548,12 +548,12 @@ async fn unsupported_fields_and_bad_encodings_fail_before_http() {
                 .get_mut(provider)
                 .unwrap();
             match mutation {
-                0 => opts["encoded"]["urgent"]["label_token_ids"] = json!([1, 1]),
+                0 => opts["encoded"]["urgent"]["labelTokenIds"] = json!([1, 1]),
                 1 => {
                     opts["encoded"].as_object_mut().unwrap().remove("team");
                 }
-                2 => opts["tokenizer_revision"] = json!(""),
-                _ => opts["encoded"]["severity"]["prompt_token_ids"] = json!([]),
+                2 => opts["tokenizerRevision"] = json!(""),
+                _ => opts["encoded"]["severity"]["promptTokenIds"] = json!([]),
             }
             assert!(matches!(
                 decide(model(provider, &server).as_ref(), request).await,
@@ -767,7 +767,7 @@ async fn runtime_errors_preserve_native_message_code_and_status() {
 #[serial]
 async fn runtime_limits_are_checked_before_http() {
     let server = MockServer::start().await;
-    let image = json!({"data": "iVBORw0KGgo=", "media_type": "image/png"});
+    let image = json!({"data": "iVBORw0KGgo=", "mediaType": "image/png"});
     let with_images = |provider: &str, count: usize| {
         let mut request = options();
         request.provider_options = Some(SharedProviderOptions::from([(

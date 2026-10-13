@@ -10,7 +10,7 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * The result of [`decide`] (`DecisionResult` of
  * `ai@7.0.128 src/decide/decision-result.ts:22-39`).
  */
-export type DecideResult = { answers: { [key in string]: DecisionAnswer }, usage: DecideUsage, warnings: Array<Warning>, rounding?: DecisionRounding, provider_metadata?: { [key in string]: { [key in string]: JsonValue } }, 
+export type DecideResult = { answers: { [key in string]: DecisionAnswer }, usage: DecideUsage, warnings: Array<Warning>, rounding?: DecisionRounding, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * The model's response information; the timestamp defaults to the end of
  * the call and the model id to the model's.

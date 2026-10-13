@@ -29,7 +29,7 @@ class DecisionModel internal constructor(handle: Long) : Closeable {
 
     /**
      * The model's DecisionModelV4 properties as JSON
-     * ({specification_version, provider, model_id, supported_question_types}), without HTTP.
+     * ({specificationVersion, provider, modelId, supportedQuestionTypes}), without HTTP.
      */
     fun describe(): String = stringResult("decision model description") { out ->
         FFI.lib.aimux_decision_capabilities(requireHandle(), out)

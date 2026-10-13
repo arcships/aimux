@@ -165,6 +165,7 @@ pub type DecisionQuestions = IndexMap<String, DecisionQuestion>;
 /// (`DecisionModelV4CallOptions`,
 /// `@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4-call-options.ts:7-14`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct DecisionCallOptions {
     /// One shared state, even when the value is an array.
@@ -236,8 +237,9 @@ pub enum DecisionAnswer {
 
 /// Decimal places the provider rounded its output to; omit for full
 /// precision. Validation allows half a unit in the last place per rounded
-/// value.
+/// value (`decision-model-v4-result.ts:39-42`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct DecisionRounding {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -248,8 +250,10 @@ pub struct DecisionRounding {
     pub score_decimals: Option<u32>,
 }
 
-/// Token usage reported by a decision model.
+/// Token usage reported by a decision model
+/// (`decision-model-v4-result.ts:43-46`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct DecisionUsage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -263,6 +267,7 @@ pub struct DecisionUsage {
 /// The result of [`DecisionModel::do_decide`] (`DecisionModelV4Result`,
 /// `@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4-result.ts:31-56`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct DecisionResult {
     /// Exactly one answer per question, under the original question ids.
@@ -311,6 +316,19 @@ pub trait DecisionModel: Send + Sync {
     async fn do_decide(&self, options: &DecisionCallOptions) -> Result<DecisionResult, AiMuxError>;
 }
 
+/// A model's `DecisionModelV4` properties as JSON, as the AI SDK names them
+/// (`decision-model-v4.ts:7-11`): `{specificationVersion, provider, modelId,
+/// supportedQuestionTypes}`. The bindings' `describe` returns this.
+#[must_use]
+pub fn decision_model_properties(model: &dyn DecisionModel) -> Value {
+    serde_json::json!({
+        "specificationVersion": model.specification_version(),
+        "provider": model.provider(),
+        "modelId": model.model_id(),
+        "supportedQuestionTypes": model.supported_question_types(),
+    })
+}
+
 /// The AI SDK's `DecisionUnsupportedQuestionTypeError`
 /// (`@ai-sdk/provider@4.0.22 src/errors/decision-unsupported-question-type-error.ts:10-37`),
 /// with its message. The error taxonomy has no variant for it (one would
@@ -328,8 +346,10 @@ pub fn unsupported_question_type_error(
     ))
 }
 
-/// Options of [`decide`]: the call options plus the operation settings.
+/// Options of [`decide`]: the call options plus the operation settings
+/// (`ai@7.0.128 src/decide/decide.ts:53-61`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct DecideOptions {
     pub state: DecisionInput,
@@ -370,18 +390,28 @@ impl DecideOptions {
     }
 }
 
-/// Token usage of a decision, with the total when both counts are known.
+/// Token usage of a decision, with the total when both counts are known
+/// (`ai@7.0.128 src/decide/decision-result.ts:27-31`): an unknown count is
+/// `undefined` there, so it is omitted.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct DecideUsage {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub input_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub output_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub total_tokens: Option<u32>,
 }
 
 /// The result of [`decide`] (`DecisionResult` of
 /// `ai@7.0.128 src/decide/decision-result.ts:22-39`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct DecideResult {
     #[ts(as = "std::collections::HashMap<String, DecisionAnswer>")]

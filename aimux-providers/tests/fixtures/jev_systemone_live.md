@@ -26,7 +26,10 @@ recording time as its timestamp). The HTTP exchanges, including the request
 and response bodies, are unchanged. The file as master recorded it is kept as
 `aimux-core/tests/fixtures/master_decision_recordings.jsonl`.
 
-The public JSON layer writes the recording envelope and the shared usage and
-timeout types camelCase, still as schema 2; readers also accept the
-snake_case envelope keys master writes. The original HTTP request and
-response body strings remain unchanged.
+The public JSON layer writes the recording envelope, the shared timeout type
+and the decision options and results camelCase (`maxRetries`, usage
+`inputTokens` / `outputTokens` / `totalTokens`, `rounding.probabilityDecimals`,
+`providerMetadata.jev.probabilitySource`), still as schema 2; readers also
+accept the snake_case envelope keys master writes. The converted keys were
+renamed in place, and the original HTTP request and response bodies, including
+the vendor body kept in the result's `response.body`, remain unchanged.

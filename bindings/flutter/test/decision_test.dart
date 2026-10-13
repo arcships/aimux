@@ -12,7 +12,7 @@ Future<Map<String, dynamic>> runDecision(
   try {
     final description = model.describe();
     if (description['provider'] != 'jev' ||
-        (description['supported_question_types'] as List).length != 3) {
+        (description['supportedQuestionTypes'] as List).length != 3) {
       throw StateError('incorrect description');
     }
     return model.decide(options);
@@ -44,7 +44,7 @@ void main() {
     final result = await runOpenAIDecision('http://127.0.0.1:${server.port}/v1', options);
     expect(captures, [fixture['request']]);
     expect(result['answers']['choice']['choice'], 'boolean_true');
-    expect(result['provider_metadata']['openai']['answers']['choice']['value'], isTrue);
+    expect(result['providerMetadata']['openai']['answers']['choice']['value'], isTrue);
     expect(result['answers']['score']['score'], 0.75);
   });
 
@@ -54,8 +54,9 @@ void main() {
     addTearDown(provider.close);
     addTearDown(model.close);
     provider.close();
-    expect(model.describe()['specification_version'], 'v4');
+    expect(model.describe()['specificationVersion'], 'v4');
     expect(model.describe()['provider'], 'openai');
+    expect(model.describe()['modelId'], 'gpt-6-luna');
     expect(() => provider.decisionModel('gpt-6-luna'), throwsStateError);
   });
 
@@ -78,7 +79,8 @@ void main() {
     final result = await runDecision(endpoint, options);
     expect(captures.length, 1);
     expect(result['answers']['urgent']['probability'], 0.9);
-    expect(result['rounding']['score_decimals'], 2);
+    expect(result['rounding']['scoreDecimals'], 2);
+    expect(result['usage'], {'inputTokens': 50, 'outputTokens': 10, 'totalTokens': 60});
     expect(captures.single['questions']['severity']['criteria'], options['questions']['severity']['criteria']);
     expect(captures.single['questions']['urgent']['criteria'], options['questions']['urgent']['criteria']);
     final model = DecisionModel.jev('test-key', 'jev-latest');

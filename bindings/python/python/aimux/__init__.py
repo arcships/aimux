@@ -182,8 +182,8 @@ __all__ = [
 
 
 def describe_decision_model(model: DecisionModel) -> Dict[str, Any]:
-    """The model's DecisionModelV4 properties (specification_version, provider,
-    model_id, supported_question_types), without HTTP."""
+    """The model's DecisionModelV4 properties (specificationVersion, provider,
+    modelId, supportedQuestionTypes), without HTTP."""
     return json.loads(model.describe())
 
 
@@ -191,14 +191,18 @@ def decide(model: DecisionModel, state: Any, questions: Dict[str, Dict[str, Any]
            **options: Any) -> Dict[str, Any]:
     """Answer typed questions, keyed by ID, over one shared state.
 
-    Options are those of ``DecideOptions`` (max_retries, timeout, headers,
-    provider_options); the result is ``DecideResult``. Boolean answers are
-    P(true). A provider's ``images[].data`` is a base64 string, the AI SDK's
-    JSON for bytes; ``bytes`` are encoded here.
+    The keyword options are the ``DecideOptions`` JSON keys, camelCase as
+    the AI SDK's: ``maxRetries``, ``timeout`` (``{"totalMs": ...}``),
+    ``headers``, ``providerOptions``. The result is the ``DecideResult`` dict
+    (``answers``, ``usage`` with ``inputTokens`` / ``outputTokens`` /
+    ``totalTokens``, an unknown count absent, ``warnings``, ``rounding``,
+    ``providerMetadata``, ``response``). Boolean answers are P(true). A
+    provider's ``images[].data`` is a base64 string, the AI SDK's JSON for
+    bytes; ``bytes`` are encoded here.
     """
-    provider_options = options.get('provider_options')
+    provider_options = options.get('providerOptions')
     if isinstance(provider_options, dict):
-        options['provider_options'] = {
+        options['providerOptions'] = {
             name: _base64_images(value) for name, value in provider_options.items()
         }
     payload = dict(options, state=state, questions=questions)

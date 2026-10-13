@@ -3071,7 +3071,7 @@ pub extern "C" fn aimux_jev_decision_new_with_probability_source(
 }
 
 /// Describe the model without a network call. Writes JSON
-/// `{specification_version, provider, model_id, supported_question_types}`,
+/// `{specificationVersion, provider, modelId, supportedQuestionTypes}`,
 /// the `DecisionModelV4` properties.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_decision_capabilities(
@@ -3085,13 +3085,7 @@ pub extern "C" fn aimux_decision_capabilities(
             }
             .into());
         };
-        let description = serde_json::json!({
-            "specification_version": model.specification_version(),
-            "provider": model.provider(),
-            "model_id": model.model_id(),
-            "supported_question_types": model.supported_question_types(),
-        });
-        Ok(description.to_string())
+        Ok(aimux_core::decision_model::decision_model_properties(model.as_ref()).to_string())
     })
 }
 

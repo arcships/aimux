@@ -7,7 +7,11 @@ import java.io.Closeable;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** A DecisionModelV4 model. Requests (DecideOptions) and results (DecideResult) use the core JSON contract. */
+/**
+ * A DecisionModelV4 model. Requests (DecideOptions) and results (DecideResult) use the core JSON
+ * contract, camelCase as the AI SDK's ({@code maxRetries}, {@code providerOptions}, usage
+ * {@code inputTokens} / {@code outputTokens} / {@code totalTokens}, {@code providerMetadata}).
+ */
 public final class DecisionModel implements Closeable {
     private final AtomicLong handle;
 
@@ -39,7 +43,7 @@ public final class DecisionModel implements Closeable {
 
     /**
      * The model's DecisionModelV4 properties as JSON
-     * ({specification_version, provider, model_id, supported_question_types}), without HTTP.
+     * ({specificationVersion, provider, modelId, supportedQuestionTypes}), without HTTP.
      */
     public String describe() {
         PointerByReference out = new PointerByReference();

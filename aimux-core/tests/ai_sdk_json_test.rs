@@ -746,6 +746,75 @@ fn output_specifications_are_tagged() {
     assert!(serde_json::from_value::<Output>(json!({ "Object": { "schema": {} } })).is_err());
 }
 
+/// Decisions are the AI SDK's JSON. The model's call options
+/// (`@ai-sdk/provider@4.0.22 decision-model/v4/decision-model-v4-call-options.ts:7-14`)
+/// and result (`decision-model-v4-result.ts:31-56`: `rounding
+/// {probabilityDecimals, scoreDecimals}`, `usage {inputTokens,
+/// outputTokens}`, `providerMetadata`, `response {id, timestamp, modelId,
+/// headers, body}`), and `decide`'s options (`ai@7.0.128
+/// src/decide/decide.ts:53-61`) and result (`decision-result.ts:22-39`,
+/// whose unknown usage counts are `undefined`, so absent) are camelCase.
+#[test]
+fn decisions_are_the_ai_sdk_json() {
+    use aimux_core::decision_model::{
+        DecideOptions, DecideResult, DecideUsage, DecisionCallOptions, DecisionResult,
+    };
+    let questions = json!({
+        "urgent": { "type": "boolean", "instructions": "Urgent?", "criteria": { "true": null } },
+        "team": { "type": "choice", "instructions": "Team?", "criteria": { "a": "A", "b": null } },
+    });
+    assert_json_back::<DecisionCallOptions>(json!({
+        "state": "text",
+        "questions": questions,
+        "headers": { "x-a": "1" },
+        "providerOptions": { "openai": { "safetyIdentifier": "u" } },
+    }));
+    let options: DecideOptions = assert_json_back(json!({
+        "state": { "ticket": 1 },
+        "questions": questions,
+        "maxRetries": 0,
+        "timeout": { "totalMs": 1000 },
+        "providerOptions": { "jev": {} },
+    }));
+    assert_eq!(options.max_retries, Some(0));
+
+    let answers = json!({
+        "urgent": { "type": "boolean", "probability": 0.75 },
+        "team": { "type": "choice", "choice": "a", "probabilities": { "a": 0.5, "b": 0.5 } },
+    });
+    let response = json!({
+        "id": "r1",
+        "timestamp": "2026-10-06T13:24:17.375Z",
+        "modelId": "m",
+        "headers": { "content-type": "application/json" },
+        "body": null,
+    });
+    assert_json_back::<DecisionResult>(json!({
+        "answers": answers,
+        "rounding": { "probabilityDecimals": 2, "scoreDecimals": 1 },
+        "usage": { "inputTokens": 3 },
+        "warnings": [],
+        "providerMetadata": { "jev": { "probabilitySource": "native" } },
+        "response": response,
+    }));
+    assert_json_back::<DecideResult>(json!({
+        "answers": answers,
+        "usage": { "inputTokens": 3, "outputTokens": 2, "totalTokens": 5 },
+        "warnings": [],
+        "rounding": { "probabilityDecimals": 2 },
+        "providerMetadata": { "jev": {} },
+        "response": response,
+    }));
+    assert_eq!(
+        serde_json::to_value(DecideUsage {
+            input_tokens: Some(3),
+            ..Default::default()
+        })
+        .unwrap(),
+        json!({ "inputTokens": 3 })
+    );
+}
+
 /// Parse `wire` and check that it serializes back unchanged.
 fn assert_json_back<T: Serialize + DeserializeOwned>(wire: Value) -> T {
     let value: T = serde_json::from_value(wire.clone()).unwrap();

@@ -12,4 +12,4 @@ export type DecisionCallOptions = {
 /**
  * One shared state, even when the value is an array.
  */
-state: DecisionInput, questions: { [key in string]: DecisionQuestion }, headers?: { [key in string]: string }, provider_options?: { [key in string]: { [key in string]: JsonValue } }, };
+state: DecisionInput, questions: { [key in string]: DecisionQuestion }, headers?: { [key in string]: string }, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

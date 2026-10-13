@@ -32,7 +32,7 @@ func TestProviderDecisionModelOwnsHandle(t *testing.T) {
 	if err := json.Unmarshal([]byte(description), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded["specification_version"] != "v4" || decoded["provider"] != "openai" || decoded["model_id"] != "gpt-6-luna" {
+	if decoded["specificationVersion"] != "v4" || decoded["provider"] != "openai" || decoded["modelId"] != "gpt-6-luna" {
 		t.Fatal(description)
 	}
 	if _, err := provider.DecisionModel("gpt-6-luna"); !errors.Is(err, ErrClosed) {
@@ -74,7 +74,7 @@ func TestDecisionNativeContract(t *testing.T) {
 	}
 	var properties map[string]any
 	json.Unmarshal([]byte(description), &properties)
-	if !reflect.DeepEqual(properties["supported_question_types"], []any{"choice", "score", "boolean"}) || properties["provider"] != "jev" {
+	if !reflect.DeepEqual(properties["supportedQuestionTypes"], []any{"choice", "score", "boolean"}) || properties["provider"] != "jev" {
 		t.Fatalf("unexpected description: %s", description)
 	}
 	if len(requests) != 0 {
@@ -90,7 +90,12 @@ func TestDecisionNativeContract(t *testing.T) {
 	if answers["urgent"].(map[string]any)["probability"] != 0.9 {
 		t.Fatal(result)
 	}
-	if decoded["rounding"].(map[string]any)["probability_decimals"] != float64(2) {
+	if decoded["rounding"].(map[string]any)["probabilityDecimals"] != float64(2) {
+		t.Fatal(result)
+	}
+	// decide's usage is the AI SDK's camelCase DecisionResult usage
+	// (decision-result.ts:27-31).
+	if !reflect.DeepEqual(decoded["usage"], map[string]any{"inputTokens": float64(50), "outputTokens": float64(10), "totalTokens": float64(60)}) {
 		t.Fatal(result)
 	}
 	var original map[string]any
@@ -197,7 +202,7 @@ func TestOpenAIDecisionMediaAndNativeValues(t *testing.T) {
 	if choice["choice"] != "boolean_true" {
 		t.Fatal(result)
 	}
-	metadata := decoded["provider_metadata"].(map[string]any)["openai"].(map[string]any)
+	metadata := decoded["providerMetadata"].(map[string]any)["openai"].(map[string]any)
 	if metadata["answers"].(map[string]any)["choice"].(map[string]any)["value"] != true {
 		t.Fatal(result)
 	}

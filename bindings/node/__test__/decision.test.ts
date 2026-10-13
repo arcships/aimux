@@ -26,10 +26,10 @@ test('provider handle creates native OpenAI decisions that answer every question
   const provider = await createProvider('openai', 'test-key', { baseUrl: `http://127.0.0.1:${address.port}/v1` })
   const model = await provider.decisionModel('gpt-6-luna')
   t.deepEqual(describeDecisionModel(model), {
-    specification_version: 'v4',
+    specificationVersion: 'v4',
     provider: 'openai',
-    model_id: 'gpt-6-luna',
-    supported_question_types: ['choice', 'score', 'boolean'],
+    modelId: 'gpt-6-luna',
+    supportedQuestionTypes: ['choice', 'score', 'boolean'],
   })
   const result = await decide(model, contract.options)
   t.deepEqual(captured, contract.request)
@@ -43,7 +43,7 @@ const options: DecideOptions = {
     department: { type: 'choice', instructions: 'Which team should handle this', criteria: { billing: null, technical: null, sales: null } },
     frustration: { type: 'score', instructions: 'How frustrated the customer appears', criteria: ['Calm, just stating facts', 'Frustrated but civil', 'Very angry, strong language'] },
   },
-  max_retries: 0,
+  maxRetries: 0,
 }
 
 test('missing or null usage counts preserve valid decision answers', async t => {
@@ -62,9 +62,11 @@ test('missing or null usage counts preserve valid decision answers', async t => 
     usage = counts
     const result = await decide(model, options)
     t.is(Object.keys(result.answers).length, 3)
-    t.is(result.usage.input_tokens, counts.input_tokens ?? null)
-    t.is(result.usage.output_tokens, counts.output_tokens ?? null)
-    t.is(result.usage.total_tokens, null)
+    // Unknown counts are absent, as the AI SDK's `undefined` is in JSON.
+    t.is(result.usage.inputTokens, counts.input_tokens ?? undefined)
+    t.is(result.usage.outputTokens, counts.output_tokens ?? undefined)
+    t.false('totalTokens' in result.usage)
+    t.false(Object.values(result.usage).includes(null as never))
     t.deepEqual((result.response.body as any).usage, counts)
   }
 })
@@ -98,9 +100,9 @@ test('typed decide maps all question types and preserves response metadata', asy
   t.deepEqual(result.answers.is_urgent, { type: 'boolean', probability: 1.0 })
   t.like(result.answers.department, { type: 'choice', choice: 'technical' })
   t.deepEqual(result.answers.frustration, { type: 'score', score: 1.0, probabilities: { 0: 0, 1: 1.0, 2: 0 } })
-  t.deepEqual(result.usage, { input_tokens: 392, output_tokens: 65, total_tokens: 457 })
+  t.deepEqual(result.usage, { inputTokens: 392, outputTokens: 65, totalTokens: 457 })
   t.deepEqual(result.response.body, fixture)
-  t.is((result.provider_metadata?.jev as any).probability_source, 'native')
+  t.is((result.providerMetadata?.jev as any).probabilitySource, 'native')
 })
 
 test('decision abort uses the canonical JavaScript error class', async t => {
@@ -145,7 +147,7 @@ test('self-hosted probability provenance survives the Node boundary', async t =>
   for (const source of ['native', 'logit_scoring', 'model_estimate'] as const) {
     const model = await jevDecision('test-key', 'jev-latest', `http://127.0.0.1:${address.port}/v1/systemone`, source)
     const result = await decide(model, options)
-    t.is((result.provider_metadata?.jev as any).probability_source, source)
+    t.is((result.providerMetadata?.jev as any).probabilitySource, source)
   }
 })
 
@@ -179,7 +181,7 @@ test('official structured fields and the model description preserve the native c
   t.deepEqual(requests[0].questions.department.instructions, fixture.request.questions.department.instructions)
   t.deepEqual(requests[0].questions.severity.criteria, fixture.request.questions.severity.criteria)
   t.deepEqual(result.answers.severity, { type: 'score', score: 0.25, probabilities: { 0: 0.75, 1: 0.25 } })
-  t.deepEqual(result.rounding, { probability_decimals: 2, score_decimals: 2 })
+  t.deepEqual(result.rounding, { probabilityDecimals: 2, scoreDecimals: 2 })
 })
 
 test('OpenAI images, typed choice values and score descriptions cross the typed boundary', async t => {
@@ -203,7 +205,7 @@ test('OpenAI images, typed choice values and score descriptions cross the typed 
   const result = await decide(model, request)
   t.deepEqual(captured, contract.request)
   t.deepEqual(result.answers.choice, { type: 'choice', choice: 'boolean_true', probabilities: { boolean_true: 0.75, text_true: 0.25 } })
-  t.is((result.provider_metadata?.openai as any).answers.choice.value, true)
+  t.is((result.providerMetadata?.openai as any).answers.choice.value, true)
   t.deepEqual(result.answers.score, { type: 'score', score: 0.75, probabilities: { 0: 0.25, 1: 0.75 } })
 })
 
@@ -222,6 +224,6 @@ test('local runtime factory preserves provider identity with no API key', async 
   const model = await provider.decisionModel('served-decision')
   t.is(describeDecisionModel(model).provider, 'ollama')
   const result = await decide(model, contract.options)
-  t.is((result.provider_metadata?.ollama as any).probability_source, 'native')
+  t.is((result.providerMetadata?.ollama as any).probabilitySource, 'native')
   t.is(result.response.modelId, 'served-decision')
 })

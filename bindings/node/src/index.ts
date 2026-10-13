@@ -255,12 +255,15 @@ export async function decide(
   return JSON.parse(await model.decide(JSON.stringify(options), bridge)) as DecideResult
 }
 
-/** The DecisionModelV4 properties of a decision model, without a network request. */
+/**
+ * The DecisionModelV4 properties of a decision model, without a network
+ * request, named as the AI SDK names them (`decision-model-v4.ts:7-11`).
+ */
 export interface DecisionModelDescription {
-  specification_version: 'v4'
+  specificationVersion: 'v4'
   provider: string
-  model_id: string
-  supported_question_types: DecisionQuestionType[]
+  modelId: string
+  supportedQuestionTypes: DecisionQuestionType[]
 }
 
 /** Describe a native decision model without making a network request. */

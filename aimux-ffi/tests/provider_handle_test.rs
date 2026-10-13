@@ -48,10 +48,10 @@ fn provider_decision_factory_keeps_model_alive_after_provider_drop() {
     assert_eq!(
         json,
         serde_json::json!({
-            "specification_version": "v4",
+            "specificationVersion": "v4",
             "provider": "openai",
-            "model_id": "gpt-6-luna",
-            "supported_question_types": ["choice", "score", "boolean"]
+            "modelId": "gpt-6-luna",
+            "supportedQuestionTypes": ["choice", "score", "boolean"]
         })
     );
     // SAFETY: capabilities was allocated by aimux_decision_capabilities above.
