@@ -328,18 +328,23 @@ impl AiMuxError {
             return None;
         };
         let headers = detail.response_headers.as_ref()?;
+        // Rust's float parser accepts `inf`, `Infinity` and `NaN`. A
+        // non-finite value is no hint: `as i64` would saturate it to
+        // `i64::MAX`, and upstream never uses it either (it fails the
+        // `ms < 60000 || ms < backoff` window).
         headers
             .get("retry-after-ms")
             .and_then(|value| value.parse::<f64>().ok())
-            .filter(|value| !value.is_nan())
+            .filter(|value| value.is_finite())
             .map(|value| value as i64)
             .or_else(|| {
                 headers.get("retry-after").and_then(|value| {
                     value
                         .parse::<f64>()
                         .ok()
-                        .filter(|value| !value.is_nan())
-                        .map(|seconds| (seconds * 1_000.0) as i64)
+                        .map(|seconds| seconds * 1_000.0)
+                        .filter(|milliseconds| milliseconds.is_finite())
+                        .map(|milliseconds| milliseconds as i64)
                         .or_else(|| {
                             httpdate::parse_http_date(value).ok().map(|date| {
                                 match date.duration_since(SystemTime::now()) {
@@ -471,6 +476,37 @@ mod tests {
             "Retry failed without recorded errors"
         );
         assert_eq!(serde_json::to_string(&error).unwrap(), json);
+    }
+
+    fn hint_from(name: &str, value: &str) -> Option<i64> {
+        AiMuxError::ApiCall(Box::new(ApiCallError {
+            response_headers: Some(HashMap::from([(name.into(), value.into())])),
+            ..api_error("rate limited")
+        }))
+        .retry_after_hint()
+    }
+
+    /// `str::parse::<f64>` accepts `inf`, `Infinity` and `NaN`; none of them
+    /// is a delay, so the hint is absent instead of `i64::MAX`.
+    #[test]
+    fn non_finite_retry_after_is_no_hint() {
+        for value in ["Infinity", "inf", "-Infinity", "NaN"] {
+            assert_eq!(
+                hint_from("retry-after-ms", value),
+                None,
+                "retry-after-ms: {value}"
+            );
+            assert_eq!(
+                hint_from("retry-after", value),
+                None,
+                "retry-after: {value}"
+            );
+        }
+        // Finite seconds that overflow once converted to milliseconds.
+        assert_eq!(hint_from("retry-after", "1e308"), None);
+        // Finite values keep working.
+        assert_eq!(hint_from("retry-after-ms", "250"), Some(250));
+        assert_eq!(hint_from("retry-after", "1.5"), Some(1_500));
     }
 
     /// A 429 is retryable and carries its hint wherever it lives — the
