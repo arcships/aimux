@@ -122,7 +122,21 @@ AI SDK 的规则是"没给工具集的调用从不修复",宿主看到 `null` �
 
 ## 6. 契约
 
-`contract-tests/fixtures/tool-call-repair.json` 固定每个分支的输入/期望输出,P2 的七家绑定对同一份文件断言。Rust 侧 `contract_fixture_matches_the_implementation` 回放同一份文件,防止其漂移。
+没有共享的契约 fixture:仓库里没有 `contract-tests/fixtures/tool-call-repair.json`,也没有回放它的 `contract_fixture_matches_the_implementation`。原计划的“七家绑定对同一份文件断言”(P2)尚未实现。各分支目前由下列测试固定:
+
+- **core**:`aimux-core/tests/tool_input_test.rs` 覆盖控制流的每个分支:修复只运行一次且结果重新校验;已修复过的调用不再修复;修复结果校验失败时不包装;无工具集不进修复;返回空时保留原错误;抛错时保留两个类型化错误。`aimux-core/src/parse_tool_call.rs` 的单元测试覆盖 `apply_tool_call_repair_to_result`:改写 content 中的调用、改名后的审批请求,以及 tool-error。
+- **C ABI**:`aimux-ffi/tests/exports_smoke_test.rs` 中的四个测试:
+  - `tool_call_repair_exports_round_trip`
+  - `a_repaired_result_converts_to_a_chat_completion`
+  - `tool_call_repair_without_a_tool_set_yields_null_then_rejects`
+  - `tool_call_repair_exports_reject_bad_arguments`
+- **绑定**:各自调用原生导出,并断言独立 `toolCall` 带 `"type":"tool-call"`:
+  - Go:`roundtrip_test.go`
+  - Java / Kotlin:`TypedModelTest`
+  - Node:`roundtrip-fields.test.ts`
+  - Python:`test_wrapper.py`
+  - Swift:`WrapperTests.swift`
+  - Dart:`tool_call_repair_typed_test.dart`,经 `TypedModel` 端到端运行钩子。
 
 ## 7. 宿主循环的边界行为
 

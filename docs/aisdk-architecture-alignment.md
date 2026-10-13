@@ -1511,6 +1511,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - Bedrock Mantle 仍是 registry 预设（OpenAI 兼容 chat），只对齐了 user-agent。上游 `createBedrockMantle` 是完整 provider，有 chat、responses 两种模型和自己的鉴权（amazon-bedrock 5.0.100 `mantle/bedrock-mantle-provider.ts:122-273`；§4.1）。
 - `decide` 的 onStart / onEnd 回调与 tracing span（`ai@7.0.128 src/decide/decide.ts:95-190`），随 Telemetry 一起做（§3.5）。
 - AWS SigV4 fetch（Bedrock、Anthropic-AWS）也给 GET 请求签名，即 `list_models`；上游只签带 body 的 POST（`amazon-bedrock-sigv4-fetch.ts:57-62`、`anthropic-aws-fetch.ts:57-62`）。模型列表是 aimux 独有的接口，不签名就调不通，所以保留这一差异，不再修改（§3.3）。
+- Swift 绑定的类型化值不保键序：`ProviderOptions`、`ProviderMetadata`、`UploadFileResult.providerReference` 与 `JSONValue.object` 是 Swift `Dictionary`，经 `JSONEncoder` / `JSONSerialization` 解码再编码后键的顺序可能改变；上游是 JS 对象，按插入顺序保留（#229 NP2-1，附录"namespace map 的顺序"）。Swift API 返回的 JSON 字符串保序，需要顺序时原样传递字符串（`docs/api/swift.md`）。要消除这一差异，需要把这些类型换成保序的容器，随绑定迁移那一层做。
 
 ### 9.2 必须通过的构建检查
 
@@ -1878,7 +1879,7 @@ pub enum Optional<T> {
 
 落地形式(#232 C34)：`Option<Value>` 字段使用 `#[serde(default, deserialize_with = "crate::wire::present", skip_serializing_if = "Option::is_none")]`，`None` 即 Missing，`Some(Value::Null)` 即显式 null，序列化时各自写回。已覆盖上游为 `unknown` 的字段：各模型结果的 response/request `body`(`language-model-v4-generate-result.ts:41, :56` 等)、`APICallError.data`(`errors/api-call-error.ts:18`)与工具审批请求的 `inputSchemaInput`(`provider-utils` `types/tool-approval-request.ts:41`)。绑定同样区分：Python 不再以 `exclude_none` 序列化，`Any` 字段显式设为 `None` 时写出 null；Go 以 `json.RawMessage` 读取这些 body 与 API 调用错误的 `Error.Data`；Kotlin 以 `JsonValuePresentSerializer`、Swift 以 `KeyedDecodingContainer.decodeIfPresent(JSONValue.self)` 重载、Dart 以 `hasBody`/`hasInputSchemaInput` 保留显式 null；Java 的 `JsonNode` 字段由 Jackson 读成 `NullNode`。
 
-namespace map 的顺序(#229 NP2-1)：Rust 侧 `NamespaceMap`/`SharedProviderReference` 按插入顺序读写，绑定侧也不得重排。Node(`JSON.parse`)、Python(`json.loads`/pydantic `dict`)、Java(Jackson `JsonNode`，`UploadFileResult.providerReference` 默认 `LinkedHashMap`)、Kotlin(`kotlinx.serialization` 的 `Map`)与 Dart(`jsonDecode` 的 `LinkedHashMap`)天然保序；Go 的 map 编码时按键排序，因此 `Tool.ProviderOptions`、`TranscriptionSessionOpts.ProviderOptions` 改为 `json.RawMessage`，`UploadFileResult.ProviderReference` 改为保存原始 JSON 的 `ProviderReference` 类型(以 `Get(provider)` 读取)。已知限制：Swift 的 `[String: String]` 与 `JSONValue.object` 是无序 `Dictionary`，经 `JSONEncoder` 写出时不保证顺序。
+namespace map 的顺序(#229 NP2-1)：Rust 侧 `NamespaceMap`/`SharedProviderReference` 按插入顺序读写，绑定侧也不得重排。Node(`JSON.parse`)、Python(`json.loads`/pydantic `dict`)、Java(Jackson `JsonNode`，`UploadFileResult.providerReference` 默认 `LinkedHashMap`)、Kotlin(`kotlinx.serialization` 的 `Map`)与 Dart(`jsonDecode` 的 `LinkedHashMap`)天然保序；Go 的 map 编码时按键排序，因此 `Tool.ProviderOptions`、`TranscriptionSessionOpts.ProviderOptions` 改为 `json.RawMessage`，`UploadFileResult.ProviderReference` 改为保存原始 JSON 的 `ProviderReference` 类型(以 `Get(provider)` 读取)。已知限制：Swift 的 `[String: String]` 与 `JSONValue.object` 是无序 `Dictionary`，经 `JSONEncoder` 写出时不保证顺序（§9.1 已知差距）。
 
 生成的 JSON TypeScript DTO 对缺失属性使用 `?`。上游运行时的 `number | undefined` 可在 SDK facade 中恢复，但不能要求 JSON 对象携带不存在的 undefined。
 
