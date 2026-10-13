@@ -14,8 +14,13 @@ use aimux_core::language_model_message::{
     convert_file_part_data, convert_to_language_model_prompt,
 };
 use aimux_core::message::{MessageContent, ModelMessage, Role};
+use aimux_core::result::{
+    GenerateContent, GeneratedFile, GeneratedFileOutput, LanguageModelFile, TextContent,
+};
 use aimux_core::shared::{FileBytes, FileData, GeneratedFileData, RequestInfo, ResponseInfo};
 use aimux_core::speech_model::AudioData;
+use aimux_core::stream_part::TextStreamPart;
+use aimux_core::types::ProviderMetadata;
 use aimux_core::video_model::VideoData;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -336,6 +341,79 @@ fn file_part_data_converts_as_the_ai_sdk_does() {
         json!([{ "role": "user", "content": [
             { "type": "file", "data": { "type": "data", "data": "iVBORw==" }, "mediaType": "image/png" }
         ] }])
+    );
+}
+
+// ── Generated files (#232 C46) ──────────────────────────────────────────────
+
+/// `GeneratedFile` (`ai` `generate-text/generated-file.ts:10-32`) is
+/// `{ base64, mediaType, providerMetadata? }` in the JSON, never tagged
+/// `{ type: 'data' | 'url' }` data. A text-generation file part is
+/// `{ type: 'file' | 'reasoning-file', file, providerMetadata? }` with the
+/// provider metadata on the part (`convert-language-model-content.ts:55-70`,
+/// `stream-language-model-call.ts:569-590`). The provider's
+/// `LanguageModelV4File` keeps `{ type: 'file', mediaType, data }`
+/// (`provider` `language-model-v4-file.ts`).
+#[test]
+fn generated_files_are_base64_and_media_type() {
+    let file = GeneratedFile {
+        data: FileBytes::Binary(b"hi".to_vec()),
+        media_type: "text/plain".into(),
+        provider_metadata: None,
+    };
+    let back = assert_json(
+        &file,
+        json!({ "base64": "aGk=", "mediaType": "text/plain" }),
+    );
+    assert_eq!(back, file);
+    assert_eq!(back.base64(), "aGk=");
+    assert_eq!(back.bytes().unwrap().as_ref(), b"hi");
+    assert!(
+        serde_json::from_value::<GeneratedFile>(
+            json!({ "data": { "type": "data", "data": "aGk=" }, "mediaType": "text/plain" })
+        )
+        .is_err()
+    );
+
+    let metadata: ProviderMetadata =
+        serde_json::from_value(json!({ "google": { "thoughtSignature": "sig" } })).unwrap();
+    let output = GeneratedFileOutput {
+        file: file.clone(),
+        provider_metadata: Some(metadata),
+    };
+    let wire = |tag: &str| {
+        json!({
+            "type": tag,
+            "file": { "base64": "aGk=", "mediaType": "text/plain" },
+            "providerMetadata": { "google": { "thoughtSignature": "sig" } },
+        })
+    };
+    assert_json(&TextContent::File(output.clone()), wire("file"));
+    assert_json(
+        &TextContent::ReasoningFile(output.clone()),
+        wire("reasoning-file"),
+    );
+    assert_json(&TextStreamPart::File(output.clone()), wire("file"));
+    assert_json(
+        &TextStreamPart::ReasoningFile(output),
+        wire("reasoning-file"),
+    );
+
+    let raw: GenerateContent = GenerateContent::File(LanguageModelFile {
+        data: GeneratedFileData::Url {
+            url: "https://example.com/a.png".into(),
+            original_url: None,
+        },
+        media_type: "image/png".into(),
+        provider_metadata: None,
+    });
+    assert_json(
+        &raw,
+        json!({
+            "type": "file",
+            "data": { "type": "url", "url": "https://example.com/a.png" },
+            "mediaType": "image/png",
+        }),
     );
 }
 

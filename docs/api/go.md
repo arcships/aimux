@@ -582,7 +582,7 @@ Typed structs live in `bindings/go/types.go` (text) and
 (with helpers `ToolChoiceAuto()` / `ToolChoiceNone()`), `ToolCall`,
 `ToolResult`, `Usage`, `FinishReason`, `Role`, `MessageContent`, `ContentPart`,
 `ResponseFormat`, `ReasoningEffort`, `Warning`, `GenerateResult`,
-`RawToolCall`, `ToolCallRepairContext`, `RepairToolCallFunc`, plus
+`RawToolCall`, `ToolCallRepairContext`, `RepairToolCallFunc`, `GeneratedFile`, plus
 `EmbeddingCallOptions/Result`, `SpeechCallOptions/Result`,
 `ImageCallOptions/Result`, `TranscriptionCallOptions/Result`,
 `VideoCallOptions/Result`, `RerankingCallOptions/Result`,
@@ -606,6 +606,12 @@ typed struct marshals to exactly that JSON. An `unknown` value keeps a JSON
 `null` apart from a missing field: response and request `Body` fields are
 `json.RawMessage`, `nil` when the field was missing and `null` when the JSON
 carried `null`. `APICallError.Data` is `any` and cannot tell the two apart.
+
+A generated file (`GenerateTextResult.Files`) is a `GeneratedFile`, the AI
+SDK's `{"base64", "mediaType", "providerMetadata"?}`; `Bytes()` decodes it.
+A `file` / `reasoning-file` content or stream part wraps it as
+`{"type": "file", "file": {...}, "providerMetadata"?}`; the provider-level
+`raw.content` keeps `{"type": "file", "mediaType", "data": {"type": "data" | "url", ...}}`.
 
 A tool result goes back to the model as a `tool-result` content part in a
 `tool` message; its `output` is a union:

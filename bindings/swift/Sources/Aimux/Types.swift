@@ -580,7 +580,10 @@ public enum ReasoningFilePartData: Codable, Equatable {
     }
 }
 
-public struct GeneratedFile: Codable, Equatable {
+/// A file in a provider's output (Rust `LanguageModelFile`,
+/// `LanguageModelV4File`): tagged base64 data or a URL. The payload of the
+/// raw `GenerateContent` file parts.
+public struct LanguageModelFile: Codable, Equatable {
     public var data: GeneratedFileData
     public var mediaType: String
     public var providerMetadata: ProviderMetadata?
@@ -588,6 +591,23 @@ public struct GeneratedFile: Codable, Equatable {
     public init(data: GeneratedFileData, mediaType: String, providerMetadata: ProviderMetadata? = nil) {
         self.data = data; self.mediaType = mediaType; self.providerMetadata = providerMetadata
     }
+}
+
+/// A generated file (Rust `GeneratedFile`, the AI SDK's `GeneratedFile`,
+/// `generate-text/generated-file.ts:10-32`). Wire:
+/// `{"base64":…,"mediaType":…,"providerMetadata"?}`.
+public struct GeneratedFile: Codable, Equatable {
+    /// The file as a base64 string.
+    public var base64: String
+    public var mediaType: String
+    public var providerMetadata: ProviderMetadata?
+
+    public init(base64: String, mediaType: String, providerMetadata: ProviderMetadata? = nil) {
+        self.base64 = base64; self.mediaType = mediaType; self.providerMetadata = providerMetadata
+    }
+
+    /// The file's bytes, or nil when `base64` is not base64.
+    public func bytes() -> [UInt8]? { Base64Bytes.decode(base64) }
 }
 
 /// A source / citation. Wire: `{"sourceType":"url","id","url","title"?,…}` or
@@ -958,21 +978,30 @@ public struct ReasoningOutput: Codable, Equatable {
     public var providerMetadata: ProviderMetadata?
 }
 
-/// A file generated as part of reasoning (call-layer shape).
-public struct ReasoningFileOutput: Codable, Equatable {
+/// A file part of text generation (call-layer shape):
+/// `{"file": GeneratedFile, "providerMetadata"?}` under the `file` or
+/// `reasoning-file` tag (`convert-language-model-content.ts:55-70`).
+public struct GeneratedFileOutput: Codable, Equatable {
     public var file: GeneratedFile
     public var providerMetadata: ProviderMetadata?
+
+    public init(file: GeneratedFile, providerMetadata: ProviderMetadata? = nil) {
+        self.file = file; self.providerMetadata = providerMetadata
+    }
 }
+
+/// The former name of `GeneratedFileOutput`.
+public typealias ReasoningFileOutput = GeneratedFileOutput
 
 /// Reasoning text or a generated file produced during reasoning.
 public enum ReasoningPart: Codable, Equatable {
     case reasoning(ReasoningOutput)
-    case reasoningFile(ReasoningFileOutput)
+    case reasoningFile(GeneratedFileOutput)
 
     public init(from decoder: Decoder) throws {
         switch try decoder.tag() {
         case "reasoning": self = .reasoning(try ReasoningOutput(from: decoder))
-        case "reasoning-file": self = .reasoningFile(try ReasoningFileOutput(from: decoder))
+        case "reasoning-file": self = .reasoningFile(try GeneratedFileOutput(from: decoder))
         case let t: throw decoder.unknownTag(t, in: "reasoning part")
         }
     }
@@ -1012,7 +1041,9 @@ public enum GenerateContent<
     case toolCall(C)
     case source(Source)
     case reasoning(ReasoningOutput)
-    case file(GeneratedFile)
+    /// A file: the provider's `LanguageModelFile` in raw content, a
+    /// `GeneratedFileOutput` in text content.
+    case file(R)
     case reasoningFile(R)
     case custom(kind: String, providerMetadata: ProviderMetadata?)
     case toolApprovalRequest(A)
@@ -1032,7 +1063,7 @@ public enum GenerateContent<
         case "tool-call": self = .toolCall(try C(from: decoder))
         case "source": self = .source(try Source(from: decoder))
         case "reasoning": self = .reasoning(try ReasoningOutput(from: decoder))
-        case "file": self = .file(try GeneratedFile(from: decoder))
+        case "file": self = .file(try R(from: decoder))
         case "reasoning-file": self = .reasoningFile(try R(from: decoder))
         case "tool-approval-request": self = .toolApprovalRequest(try A(from: decoder))
         case "tool-result": self = .toolResult(try ToolResult(from: decoder))
@@ -1062,9 +1093,9 @@ public enum GenerateContent<
 }
 
 /// Provider-facing content (`GenerateResult.content`): raw tool calls.
-public typealias RawGenerateContent = GenerateContent<RawToolCall, RawToolApprovalRequest, GeneratedFile>
+public typealias RawGenerateContent = GenerateContent<RawToolCall, RawToolApprovalRequest, LanguageModelFile>
 /// Call-layer content (`GenerateTextResult.content`): parsed tool calls.
-public typealias TextContent = GenerateContent<ToolCall, ToolApprovalRequestOutput, ReasoningFileOutput>
+public typealias TextContent = GenerateContent<ToolCall, ToolApprovalRequestOutput, GeneratedFileOutput>
 
 /// Raw provider result (the `raw` field of `GenerateTextResult`).
 public struct GenerateResult: Codable, Equatable {
@@ -1277,8 +1308,8 @@ public enum TextStreamPart: Codable, Equatable {
     case toolInputEnd(id: String, providerMetadata: ProviderMetadata?)
     case toolCall(ToolCall)
     case toolResult(ToolResult)
-    case file(GeneratedFile)
-    case reasoningFile(ReasoningFileOutput)
+    case file(GeneratedFileOutput)
+    case reasoningFile(GeneratedFileOutput)
     case custom(kind: String, providerMetadata: ProviderMetadata?)
     case toolApprovalRequest(ToolApprovalRequestOutput)
     case reasoningStart(id: String, providerMetadata: ProviderMetadata?)
@@ -1320,8 +1351,8 @@ public enum TextStreamPart: Codable, Equatable {
         case "tool-input-end": self = .toolInputEnd(id: try id(), providerMetadata: try pm())
         case "tool-call": self = .toolCall(try ToolCall(from: decoder))
         case "tool-result": self = .toolResult(try ToolResult(from: decoder))
-        case "file": self = .file(try GeneratedFile(from: decoder))
-        case "reasoning-file": self = .reasoningFile(try ReasoningFileOutput(from: decoder))
+        case "file": self = .file(try GeneratedFileOutput(from: decoder))
+        case "reasoning-file": self = .reasoningFile(try GeneratedFileOutput(from: decoder))
         case "custom": self = .custom(kind: try c.decode(String.self, forKey: .kind), providerMetadata: try pm())
         case "tool-approval-request": self = .toolApprovalRequest(try ToolApprovalRequestOutput(from: decoder))
         case "reasoning-start": self = .reasoningStart(id: try id(), providerMetadata: try pm())

@@ -63,6 +63,8 @@ __all__ = [
     "InputTokenUsage",
     "OutputTokenUsage",
     "GeneratedFileData",
+    "GeneratedFile",
+    "LanguageModelFile",
     "Usage",
     "FinishReason",
     "ResponseMetadata",
@@ -320,9 +322,24 @@ GeneratedFileData = Annotated[
 ]
 
 
-class GeneratedFile(_Meta):
+class LanguageModelFile(_Meta):
+    """A file in a provider's output (Rust ``LanguageModelFile``,
+    ``LanguageModelV4File``): tagged base64 data or a URL."""
+
     data: GeneratedFileData
     media_type: str
+
+
+class GeneratedFile(_Meta):
+    """A generated file (Rust ``GeneratedFile``, the AI SDK's
+    ``GeneratedFile``): ``{"base64": ..., "mediaType": ...}`` on the wire."""
+
+    base64: FileBytes
+    media_type: str
+
+    def to_bytes(self) -> bytes:
+        """The file's bytes, decoded from ``base64``."""
+        return base64.b64decode(self.base64)
 
 
 # ── Content / stream parts ──────────────────────────────────────────────────
@@ -373,12 +390,19 @@ class _Custom(_Meta):
     kind: str
 
 
-class _File(GeneratedFile):
+class _File(LanguageModelFile):
     type: Literal["file"]
 
 
-class _ReasoningFile(GeneratedFile):
+class _ReasoningFile(LanguageModelFile):
     type: Literal["reasoning-file"]
+
+
+class _FileOutput(_Meta):
+    """``{"type": "file", "file": GeneratedFile, "providerMetadata"?}``."""
+
+    type: Literal["file"]
+    file: GeneratedFile
 
 
 class _ReasoningFileOutput(_Meta):
@@ -442,7 +466,7 @@ TextContent = Annotated[
         _ToolCallPart,
         _ContentSource,
         _Reasoning,
-        _File,
+        _FileOutput,
         _ReasoningFileOutput,
         _Custom,
         _ApprovalRequest,
@@ -544,7 +568,7 @@ StreamPart = Annotated[
         _SPToolInputEnd,
         _ToolCallPart,
         _ToolResultPart,
-        _File,
+        _FileOutput,
         _ReasoningFileOutput,
         _Custom,
         _ApprovalRequest,

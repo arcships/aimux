@@ -3,8 +3,8 @@ import type { FinishReason } from "./FinishReason";
 import type { GenerateContent } from "./GenerateContent";
 import type { GenerateResult } from "./GenerateResult";
 import type { GeneratedFile } from "./GeneratedFile";
+import type { GeneratedFileOutput } from "./GeneratedFileOutput";
 import type { ModelMessage } from "./ModelMessage";
-import type { ReasoningFileOutput } from "./ReasoningFileOutput";
 import type { ReasoningPart } from "./ReasoningPart";
 import type { RequestInfo } from "./RequestInfo";
 import type { ResponseInfo } from "./ResponseInfo";
@@ -22,7 +22,7 @@ export type GenerateTextResult = {
 /**
  * Ordered generated content with parsed tool calls.
  */
-content?: Array<GenerateContent<ToolCall, ToolApprovalRequestOutput, ReasoningFileOutput>>, 
+content?: Array<GenerateContent<ToolCall, ToolApprovalRequestOutput, GeneratedFileOutput>>, 
 /**
  * The generated text (concatenated from all text content parts).
  */

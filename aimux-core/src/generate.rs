@@ -23,8 +23,9 @@ use crate::message::{ModelMessage, ModelPrompt};
 use crate::options::{CallOptions, ResponseFormat, ToolChoice};
 use crate::parse_tool_call::{ToolCallRepair, parse_tool_call};
 use crate::result::{
-    GenerateContent, GenerateResult, GeneratedFile, ReasoningFileOutput, ReasoningPart, Source,
-    StreamResult, StreamTextResultAggregated, TextContent, ToolApprovalRequestOutput,
+    GenerateContent, GenerateResult, GeneratedFile, GeneratedFileOutput, LanguageModelFile,
+    ReasoningPart, Source, StreamResult, StreamTextResultAggregated, TextContent,
+    ToolApprovalRequestOutput,
 };
 use crate::shared::SharedProviderOptions;
 use crate::stream_part::{StreamPart, TextStreamPart};
@@ -63,14 +64,22 @@ fn is_output_chunk<C, A, R>(part: &StreamPart<C, A, R>) -> bool {
     }
 }
 
+/// The text-generation file part for a provider file: its URL is downloaded,
+/// the file is `{ base64, mediaType }`, and the part keeps the provider
+/// metadata (`convert-language-model-content.ts:55-70`,
+/// `stream-language-model-call.ts:569-590`).
 async fn resolve_file(
-    mut file: GeneratedFile,
+    file: LanguageModelFile,
     abort_signal: Option<&AbortSignal>,
-) -> Result<GeneratedFile, AiMuxError> {
-    file.data = crate::shared::GeneratedFileData::Data {
-        data: crate::download::resolve_generated_file_data(&file.data, abort_signal).await?,
-    };
-    Ok(file)
+) -> Result<GeneratedFileOutput, AiMuxError> {
+    Ok(GeneratedFileOutput {
+        file: GeneratedFile {
+            data: crate::download::resolve_generated_file_data(&file.data, abort_signal).await?,
+            media_type: file.media_type,
+            provider_metadata: None,
+        },
+        provider_metadata: file.provider_metadata,
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -474,11 +483,11 @@ impl StreamTextResult {
                     rm.source(source.clone());
                     sources.push(source);
                 }
-                TextStreamPart::File(file) => {
-                    rm.file(&file, false);
-                    files.push(file);
+                TextStreamPart::File(output) => {
+                    files.push(output.file.clone());
+                    rm.file(output, false);
                 }
-                TextStreamPart::ReasoningFile(output) => rm.file(&output.file, true),
+                TextStreamPart::ReasoningFile(output) => rm.file(output, true),
                 TextStreamPart::Custom {
                     kind,
                     provider_metadata,
@@ -751,23 +760,23 @@ pub(crate) async fn generate_text_from_language_model_prompt(
                 sources.push(source.clone());
             }
             GenerateContent::File(file) => {
-                let file = timeout::run(
+                let output = timeout::run(
                     resolve_file(file.clone(), abort_signal.as_ref()),
                     abort_signal.as_ref(),
                     operation_timeout,
                 )
                 .await?;
-                rm.file(&file, false);
-                files.push(file);
+                files.push(output.file.clone());
+                rm.file(output, false);
             }
             GenerateContent::ReasoningFile(file) => {
-                let file = timeout::run(
+                let output = timeout::run(
                     resolve_file(file.clone(), abort_signal.as_ref()),
                     abort_signal.as_ref(),
                     operation_timeout,
                 )
                 .await?;
-                rm.file(&file, true);
+                rm.file(output, true);
             }
             GenerateContent::Custom {
                 kind,
@@ -1215,9 +1224,7 @@ pub async fn stream_text(
                     }
                     Ok(StreamPart::ReasoningFile(file)) => {
                         match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
-                            Ok(file) => yield Ok(TextStreamPart::ReasoningFile(ReasoningFileOutput {
-                                provider_metadata: file.provider_metadata.clone(), file,
-                            })),
+                            Ok(output) => yield Ok(TextStreamPart::ReasoningFile(output)),
                             Err(error) => yield Ok(TextStreamPart::Error { error }),
                         }
                     }
@@ -1234,7 +1241,7 @@ pub async fn stream_text(
                         }
                     }
                     Ok(part) => yield Ok(part.map_payloads(|_| unreachable!("matched above"), |_| unreachable!("matched above"))
-                        .map_reasoning_file(|file| ReasoningFileOutput { provider_metadata: file.provider_metadata.clone(), file })
+                        .map_file(|_| unreachable!("matched above"))
                         .into_text_stream_part().expect("provider lifecycle parts handled above")),
                     Err(error) => {
                         let terminal = !error.is_recoverable_stream_error();

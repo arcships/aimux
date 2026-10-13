@@ -12,10 +12,10 @@ use crate::content::{ContentPart, FilePartData, ReasoningFilePartData};
 use crate::language_model_message::ToolResultOutput;
 use crate::message::{MessageContent, ModelMessage, Role};
 use crate::result::{
-    GenerateContent, GeneratedFile, ReasoningFileOutput, ReasoningOutput, ReasoningPart, Source,
-    TextContent, ToolApprovalRequestOutput,
+    GenerateContent, GeneratedFileOutput, ReasoningOutput, ReasoningPart, Source, TextContent,
+    ToolApprovalRequestOutput,
 };
-use crate::shared::{FileBytes, FileData, GeneratedFileData, SharedProviderMetadata};
+use crate::shared::SharedProviderMetadata;
 
 /// Match the AI SDK's response-message safety rule for invalid tool calls:
 /// malformed primitive input must not be replayed as a prompt tool-call input.
@@ -147,14 +147,11 @@ impl ResponseMessageBuilder {
         });
     }
 
-    pub fn file(&mut self, file: &GeneratedFile, reasoning: bool) {
+    pub fn file(&mut self, output: GeneratedFileOutput, reasoning: bool) {
         self.content.push(if reasoning {
-            GenerateContent::ReasoningFile(ReasoningFileOutput {
-                file: file.clone(),
-                provider_metadata: file.provider_metadata.clone(),
-            })
+            GenerateContent::ReasoningFile(output)
         } else {
-            GenerateContent::File(file.clone())
+            GenerateContent::File(output)
         });
     }
 
@@ -210,29 +207,16 @@ impl ResponseMessageBuilder {
                     provider_options: provider_metadata.clone(),
                 },
                 // `to-response-messages.ts:69-84`: `data` is the file's base64.
-                GenerateContent::File(file) => ContentPart::File {
-                    data: match &file.data {
-                        GeneratedFileData::Data { data } => FilePartData::String(file_base64(data)),
-                        GeneratedFileData::Url { url, original_url } => {
-                            FilePartData::Tagged(FileData::Url {
-                                url: url.clone(),
-                                original_url: original_url.clone(),
-                            })
-                        }
-                    },
-                    media_type: file.media_type.clone(),
+                GenerateContent::File(output) => ContentPart::File {
+                    data: FilePartData::String(output.file.base64().into_owned()),
+                    media_type: output.file.media_type.clone(),
                     filename: None,
-                    provider_options: file.provider_metadata.clone(),
+                    provider_options: output.provider_metadata.clone(),
                 },
                 GenerateContent::ReasoningFile(output) => {
                     reasoning.push(ReasoningPart::File(output.clone()));
                     ContentPart::ReasoningFile {
-                        data: match &output.file.data {
-                            GeneratedFileData::Data { data } => {
-                                ReasoningFilePartData::String(file_base64(data))
-                            }
-                            url => ReasoningFilePartData::Tagged(url.clone()),
-                        },
+                        data: ReasoningFilePartData::String(output.file.base64().into_owned()),
                         media_type: output.file.media_type.clone(),
                         provider_options: output.provider_metadata.clone(),
                     }
@@ -304,12 +288,5 @@ fn tool_model_output(result: &Value, is_error: bool) -> ToolResultOutput {
             value: result.to_string(),
             provider_options,
         },
-    }
-}
-
-fn file_base64(data: &FileBytes) -> String {
-    match data {
-        FileBytes::Base64(data) => data.clone(),
-        FileBytes::Binary(data) => crate::wire::encode_base64(data),
     }
 }

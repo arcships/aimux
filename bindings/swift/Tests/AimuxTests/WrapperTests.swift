@@ -165,6 +165,26 @@ final class WrapperTests: XCTestCase {
         XCTAssertEqual(request.body, .null)
     }
 
+    /// GeneratedFile is {base64, mediaType, providerMetadata?} (ai
+    /// generate-text/generated-file.ts:10-32); a text file part is
+    /// {type, file, providerMetadata?} (convert-language-model-content.ts:55-70);
+    /// the provider's LanguageModelV4File keeps {type, data, mediaType}.
+    func testGeneratedFilesAreBase64AndMediaType() throws {
+        let file = GeneratedFile(base64: "aGk=", mediaType: "text/plain")
+        let decoded = try JSONDecoder().decode(GeneratedFile.self, from: Data(#"{"base64":"aGk=","mediaType":"text/plain"}"#.utf8))
+        XCTAssertEqual(decoded, file)
+        XCTAssertEqual(file.bytes(), [104, 105])
+
+        let output = GeneratedFileOutput(file: file, providerMetadata: ["google": ["thoughtSignature": .string("sig")]])
+        let wire = #"{"type":"file","file":{"base64":"aGk=","mediaType":"text/plain"},"providerMetadata":{"google":{"thoughtSignature":"sig"}}}"#
+        XCTAssertEqual(try JSONDecoder().decode(TextStreamPart.self, from: Data(wire.utf8)), .file(output))
+        XCTAssertEqual(try JSONDecoder().decode(TextContent.self, from: Data(wire.utf8)), .file(output))
+
+        let raw = #"{"type":"file","data":{"type":"url","url":"https://example.com/a.png"},"mediaType":"image/png"}"#
+        XCTAssertEqual(try JSONDecoder().decode(RawGenerateContent.self, from: Data(raw.utf8)),
+                       .file(LanguageModelFile(data: .url(url: "https://example.com/a.png"), mediaType: "image/png")))
+    }
+
     /// FilePart.data is FileData | DataContent | URL | ProviderReference
     /// (provider-utils types/content-part.ts:75, file-data.ts:44-48);
     /// ReasoningFilePart.data is tagged data or a URL, or a string (:164).

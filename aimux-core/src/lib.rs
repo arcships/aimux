@@ -122,8 +122,9 @@ pub mod prelude {
         RerankingCallOptions, RerankingModel, RerankingResult, rerank,
     };
     pub use crate::result::{
-        GenerateResult, GeneratedFile, RawToolApprovalRequest, ReasoningOutput, ReasoningPart,
-        Source, StreamResult, TextContent, ToolApprovalRequestOutput,
+        GenerateResult, GeneratedFile, GeneratedFileOutput, LanguageModelFile,
+        RawToolApprovalRequest, ReasoningOutput, ReasoningPart, Source, StreamResult, TextContent,
+        ToolApprovalRequestOutput,
     };
     pub use crate::router::{
         FallbackPolicy, Router, RouterConfig, RouterModel, RuleRouter, WeightedRouter,

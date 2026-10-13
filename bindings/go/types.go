@@ -12,6 +12,7 @@
 package aimux
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 )
@@ -96,6 +97,19 @@ type DocumentSource struct {
 	Title            string          `json:"title"`
 	Filename         *string         `json:"filename,omitempty"`
 	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`
+}
+
+// GeneratedFile is a file the model generated: the AI SDK's GeneratedFile,
+// whose JSON is {"base64", "mediaType"} (ai generate-text/generated-file.ts).
+type GeneratedFile struct {
+	Base64           string          `json:"base64"`
+	MediaType        string          `json:"mediaType"`
+	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`
+}
+
+// Bytes decodes the file's base64 data.
+func (f GeneratedFile) Bytes() ([]byte, error) {
+	return base64.StdEncoding.DecodeString(f.Base64)
 }
 
 func (s Source) MarshalJSON() ([]byte, error) {
@@ -250,7 +264,7 @@ type GenerateTextResult struct {
 	Reasoning        []json.RawMessage `json:"reasoning,omitempty"`
 	ReasoningText    string            `json:"reasoningText,omitempty"`
 	Sources          []Source          `json:"sources,omitempty"`
-	Files            []json.RawMessage `json:"files,omitempty"`
+	Files            []GeneratedFile   `json:"files,omitempty"`
 	ResponseMessages []ModelMessage    `json:"responseMessages,omitempty"`
 	// RawFinishReason is the raw provider-specific finish reason string.
 	RawFinishReason *string `json:"rawFinishReason,omitempty"`

@@ -320,6 +320,10 @@ and writes exactly the shapes of the generated TypeScript types
   (a base64 or URL string) or `FilePartDataReference` (`{provider: id}`);
   `ContentPartFile.bytes(...)` writes inline bytes as tagged data. There is no
   `file-base64` / `file-url` / `file-reference` part;
+- a generated file is a `GeneratedFile` (`{base64, mediaType}`, `bytes`
+  decodes it); `StreamPartFile` / `StreamPartReasoningFile` carry it as
+  `{type: 'file', file: {...}}`, while the provider-level `raw.content` keeps
+  a `LanguageModelFile` (`mediaType` and tagged `data`);
 - optional fields are absent, never `null`, except an `unknown` value
   (`body`, `inputSchemaInput`): a JSON `null` there is kept, and `hasBody` /
   `hasInputSchemaInput` tell it apart from a missing field;

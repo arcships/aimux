@@ -421,6 +421,26 @@ class TypedModelRoundTripTest {
     }
 
     @Test
+    fun `generated files are base64 and mediaType`() {
+        // GeneratedFile is {base64, mediaType, providerMetadata?} (ai
+        // generate-text/generated-file.ts:10-32); a stream file part is
+        // {type, file, providerMetadata?} (stream-language-model-call.ts:569-590);
+        // the provider's LanguageModelV4File keeps {type, data, mediaType}.
+        for (tag in listOf("file", "reasoning-file")) {
+            val wire = """{"type":"$tag","file":{"base64":"aGk=","mediaType":"text/plain"},""" +
+                """"providerMetadata":{"google":{"thoughtSignature":"sig"}}}"""
+            val part = AimuxJson.decodeFromString(StreamPart.serializer(), wire)
+            assertThat(AimuxJson.encodeToString(StreamPart.serializer(), part)).isEqualTo(wire)
+        }
+        val file = AimuxJson.decodeFromString(GeneratedFile.serializer(), """{"base64":"aGk=","mediaType":"text/plain"}""")
+        assertThat(file.bytes()).isEqualTo(listOf(104, 105))
+
+        val raw = """{"type":"file","data":{"type":"url","url":"https://example.com/a.png"},"mediaType":"image/png"}"""
+        val content = AimuxJson.decodeFromString(GenerateContent.serializer(), raw)
+        assertThat(AimuxJson.encodeToString(GenerateContent.serializer(), content)).isEqualTo(raw)
+    }
+
+    @Test
     fun `file parts are the AI SDK file part`() {
         // FilePart.data is FileData | DataContent | URL | ProviderReference
         // (provider-utils types/content-part.ts:75, file-data.ts:44-48) and

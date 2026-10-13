@@ -303,7 +303,9 @@ encoding exactly the JSON of the generated `bindings/node/src/types/*.ts`
 `ToolResultContent`, `MessageContent`, `ModelMessage`, `ModelPrompt`,
 `ToolCall`, `ToolResult`, `FileBytes`, `FileData`, `FilePartData` (the AI SDK
 `FilePart.data`: `.tagged(FileData)`, `.bare(String)` or `.reference`),
-`ReasoningFilePartData`, `GeneratedFile`, `Source`,
+`ReasoningFilePartData`, `GeneratedFile` (the AI SDK's `{base64, mediaType}`;
+`GeneratedFileOutput` wraps it as a `file` / `reasoning-file` part and
+`LanguageModelFile` is the provider-level file), `Source`,
 `GenerateContent` (`RawGenerateContent` / `TextContent`), `GenerateResult`,
 `GenerateTextResult`, `GenerateObjectResult`, `StreamTextResultAggregated`,
 `GenerateTextOptions`, `TimeoutConfiguration`, `TextStreamPart`, `RawToolCall`,

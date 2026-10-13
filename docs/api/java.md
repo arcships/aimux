@@ -447,6 +447,13 @@ bare `{provider: id}`); the builder also takes a `FileData` or inline bytes
 `ReasoningFilePartData`. There is no `file-base64` / `file-url` /
 `file-reference` part.
 
+A generated file is a `Types.GeneratedFile`, the AI SDK's
+`{"base64", "mediaType", "providerMetadata"?}` (`getBytes()` decodes it).
+`StreamPart.File` and `StreamPart.ReasoningFile` (also the result's `content`
+and `reasoning` file parts) carry it as `{"type": "file", "file": {...},
+"providerMetadata"?}`; the provider-level `raw.content` keeps `mediaType` and
+tagged `data`.
+
 A `ContentPart.ToolResult` (`type: "tool-result"`) carries `toolCallId`,
 `toolName`, `output` and `providerOptions`; `output` is a `ToolResultOutput`
 built with `text` / `json` / `executionDenied` / `errorText` / `errorJson` /

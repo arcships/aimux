@@ -314,6 +314,7 @@ properties carry the same names), unions tagged on `type` (`Source` on
 | `ContentPart.ToolResult(toolCallId, toolName, output, providerOptions)` | `output` is a `ToolResultOutput`: `text`, `json` (`ToolResultOutput.JsonValue`), `execution-denied`, `error-text`, `error-json`, `content` |
 | `FileBytes` | a base64 string; `Binary` is written as base64 (also audio / image / video file data, image and file part bytes) |
 | `FileData` / `GeneratedFileData` | `type`: `data`, `url`, `reference`, `text` |
+| `GeneratedFile(base64, mediaType, providerMetadata)` | a generated file: `{"base64", "mediaType"}`; `StreamPart.File` / `ReasoningFile(file, providerMetadata)` are `{"type": "file", "file": {...}}` (provider-level `raw.content` keeps `mediaType` and tagged `data`) |
 | `GenerateContent` (provider-level `raw.content`) | `type`: `text`, `tool-call` (`input` is the raw argument text), `source`, `reasoning`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `tool-result` |
 | `StreamPart` (sealed) | `type`: `text-start/delta/end`, `stream-start`, `finish`, `finish-step`, `error`, `tool-input-start/delta/end`, `tool-call`, `tool-result`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `reasoning-start/delta/end`, `source`, `raw` |
 | `Warning` (sealed) | `type`: `unsupported`, `compatibility`, `deprecated`, `other` |

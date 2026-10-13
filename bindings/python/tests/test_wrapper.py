@@ -15,9 +15,13 @@ from pydantic import TypeAdapter
 from aimux import deepseek, anthropic
 from aimux.wrapper import (
     ContentPart,
+    GenerateContent,
+    GeneratedFile,
     GenerateTextOptions,
     GenerateTextResult,
     ModelMessage,
+    StreamPart,
+    TextContent,
     TextContentPart,
     FunctionTool,
     ToolChoiceTool,
@@ -355,6 +359,38 @@ class TestPromptMessages:
         content = body["messages"][0]["content"]
         assert content[0]["source"] == {"type": "base64", "media_type": "image/png", "data": "iVBORw=="}
         assert content[1] == {"type": "document", "source": {"type": "file", "file_id": "file-abc"}}
+
+
+# ── Generated files (#232 C46) ─────────────────────────────────────────────
+
+class TestGeneratedFiles:
+
+    def test_generated_file_is_base64_and_media_type(self):
+        """GeneratedFile is {base64, mediaType, providerMetadata?} (ai
+        generate-text/generated-file.ts:10-32); a text file part is
+        {type, file, providerMetadata?} (convert-language-model-content.ts:55-70);
+        the provider's LanguageModelV4File keeps {type, mediaType, data}."""
+        file = GeneratedFile.model_validate({"base64": "aGk=", "mediaType": "text/plain"})
+        assert file.model_dump(by_alias=True) == {"base64": "aGk=", "mediaType": "text/plain"}
+        assert GeneratedFile(base64=b"hi", media_type="text/plain").base64 == "aGk="
+        assert file.to_bytes() == b"hi"
+
+        for tag in ("file", "reasoning-file"):
+            wire = {
+                "type": tag,
+                "file": {"base64": "aGk=", "mediaType": "text/plain"},
+                "providerMetadata": {"google": {"thoughtSignature": "sig"}},
+            }
+            for adapter in (TypeAdapter(TextContent), TypeAdapter(StreamPart)):
+                assert adapter.dump_python(adapter.validate_python(wire), by_alias=True) == wire
+
+        raw = {
+            "type": "file",
+            "data": {"type": "url", "url": "https://example.com/a.png"},
+            "mediaType": "image/png",
+        }
+        adapter = TypeAdapter(GenerateContent)
+        assert adapter.dump_python(adapter.validate_python(raw), by_alias=True) == raw
 
 
 # ── JSON null and undefined (#232 C34) ───────────────────────────────────────

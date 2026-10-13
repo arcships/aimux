@@ -426,6 +426,30 @@ class MultimodalTypesTest {
     }
 
     @Test
+    void generatedFilesAreBase64AndMediaType() throws Exception {
+        // GeneratedFile is {base64, mediaType, providerMetadata?} (ai
+        // generate-text/generated-file.ts:10-32); a stream file part is
+        // {type, file, providerMetadata?} (stream-language-model-call.ts:569-590);
+        // the provider's LanguageModelV4File keeps {type, data, mediaType}.
+        ObjectMapper t = Types.AimuxJson.MAPPER;
+        for (String tag : new String[] {"file", "reasoning-file"}) {
+            String wire = "{\"type\":\"" + tag + "\",\"file\":{\"base64\":\"aGk=\",\"mediaType\":\"text/plain\"},"
+                + "\"providerMetadata\":{\"google\":{\"thoughtSignature\":\"sig\"}}}";
+            Types.StreamPart part = t.readValue(wire, Types.StreamPart.class);
+            assertThat(t.writeValueAsString(part)).isEqualTo(wire);
+        }
+        Types.StreamPart.File file = (Types.StreamPart.File) t.readValue(
+            "{\"type\":\"file\",\"file\":{\"base64\":\"aGk=\",\"mediaType\":\"text/plain\"}}",
+            Types.StreamPart.class);
+        assertThat(file.getFile().getBase64()).isEqualTo("aGk=");
+        assertThat(file.getFile().getBytes()).containsExactly(104, 105);
+
+        String raw = "{\"type\":\"file\",\"data\":{\"type\":\"url\",\"url\":\"https://example.com/a.png\"},"
+            + "\"mediaType\":\"image/png\"}";
+        assertThat(t.writeValueAsString(t.readValue(raw, Types.GenerateContent.class))).isEqualTo(raw);
+    }
+
+    @Test
     void unknownFieldsKeepNullApartFromMissing() throws Exception {
         // body?: unknown (provider language-model-v4-generate-result.ts:41, :56)
         // and inputSchemaInput?: unknown (provider-utils

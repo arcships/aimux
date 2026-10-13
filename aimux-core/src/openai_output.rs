@@ -35,7 +35,10 @@ use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::parse_tool_call::raw_tool_call_text;
-use crate::result::{GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source};
+use crate::result::{
+    GenerateContent, GenerateResult, GeneratedFileOutput, LanguageModelFile, ReasoningOutput,
+    Source,
+};
 use crate::shared::GeneratedFileData;
 use crate::stream_part::TextStreamPart;
 use crate::tool::{ToolCall, ToolResult};
@@ -279,7 +282,7 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                 }
                 content_text.push_str(url);
             }
-            GenerateContent::File(GeneratedFile {
+            GenerateContent::File(LanguageModelFile {
                 data, media_type, ..
             }) => {
                 if !content_text.is_empty() {
@@ -823,13 +826,11 @@ impl StreamState {
                 chunks.push(chunk);
             }
 
-            TextStreamPart::File(GeneratedFile {
-                data, media_type, ..
-            }) => {
+            TextStreamPart::File(GeneratedFileOutput { file, .. }) => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
-                let text = file_data_to_text(data, media_type);
+                let text = format!("data:{};base64,{}", file.media_type, file.base64());
                 let mut chunk = self.base_chunk();
                 chunk.choices = vec![ChatCompletionChunkChoice {
                     index: 0,

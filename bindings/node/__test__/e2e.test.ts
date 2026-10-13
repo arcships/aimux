@@ -8,7 +8,7 @@
 
 import test from 'ava'
 import { createServer, type Server } from 'node:http'
-import { deepseek, anthropic } from '../src/native.ts'
+import { deepseek, anthropic, google } from '../src/native.ts'
 
 // ── Mock server helpers ─────────────────────────────────────────────────────
 
@@ -257,6 +257,35 @@ test('e2e: file parts take the AI SDK file part data', async (t) => {
       const part = { type: removed, data: 'aGk=', url: 'https://example.com/a.pdf', mediaType: 'application/pdf' }
       await t.throwsAsync(model.generateText(JSON.stringify([{ role: 'user', content: [part] }])))
     }
+  } finally {
+    await closeServer(server)
+  }
+})
+
+test('e2e: generated files are base64 and mediaType', async (t) => {
+  // A generated file is GeneratedFile upstream, whose JSON is
+  // { base64, mediaType } (ai generate-text/generated-file.ts:10-32); the
+  // content part wraps it as { type: 'file', file }
+  // (generate-text/convert-language-model-content.ts:55-70).
+  const { server, url } = await startMockServer((req, res) => {
+    req.resume()
+    req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({
+        candidates: [{
+          content: { role: 'model', parts: [{ text: 'Here:' }, { inlineData: { mimeType: 'image/png', data: 'iVBORw==' } }] },
+          finishReason: 'STOP',
+        }],
+        usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5 },
+      }))
+    })
+  })
+
+  try {
+    const model = await google('test-key', 'gemini-2.0-flash', url)
+    const r = JSON.parse(await model.generateText(JSON.stringify('draw')))
+    t.deepEqual(r.files, [{ base64: 'iVBORw==', mediaType: 'image/png' }])
+    t.deepEqual(r.content[1], { type: 'file', file: { base64: 'iVBORw==', mediaType: 'image/png' } })
   } finally {
     await closeServer(server)
   }

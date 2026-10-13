@@ -2,8 +2,8 @@
 import type { FinishReason } from "./FinishReason";
 import type { GenerateContent } from "./GenerateContent";
 import type { GeneratedFile } from "./GeneratedFile";
+import type { GeneratedFileOutput } from "./GeneratedFileOutput";
 import type { ModelMessage } from "./ModelMessage";
-import type { ReasoningFileOutput } from "./ReasoningFileOutput";
 import type { ReasoningPart } from "./ReasoningPart";
 import type { RequestInfo } from "./RequestInfo";
 import type { ResponseInfo } from "./ResponseInfo";
@@ -23,7 +23,7 @@ export type StreamTextResultAggregated = {
 /**
  * Ordered content from the last generation step.
  */
-content?: Array<GenerateContent<ToolCall, ToolApprovalRequestOutput, ReasoningFileOutput>>, 
+content?: Array<GenerateContent<ToolCall, ToolApprovalRequestOutput, GeneratedFileOutput>>, 
 /**
  * The generated text (concatenated `TextDelta`).
  */

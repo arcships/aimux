@@ -2309,6 +2309,8 @@ pub struct GeneratedFile {
 
 V4 file URL 在进入 core GeneratedFile 前按上游行为下载，见 `A/generate-text/resolve-generated-file-data.ts:14`。普通生成文件与 reasoning 文件分别进入相应输出分支。
 
+已落地(#232 C46，`ai` `generate-text/generated-file.ts:10-32`)：`GeneratedFile` 的 JSON 为 `{base64, mediaType, providerMetadata?}`，`files[]` 与 content/stream 的 `file`/`reasoning-file` 部件均为 `{type, file: GeneratedFile, providerMetadata?}`(`convert-language-model-content.ts:55-70`、`stream-language-model-call.ts:569-590`)；部件的 `providerMetadata` 留在部件上，文件本身不带。provider 层仍用 `LanguageModelFile` = `{mediaType, data: GeneratedFileData, providerMetadata?}`(V4 `LanguageModelV4File`)。与上游的已知差异：上游流中的文件对象是 `DefaultGeneratedFileWithType`，`JSON.stringify` 时多一个 `type:'file'` 字段，aimux 不输出该字段。
+
 core `ContentPart` 为 **11 类**：
 
 ```rust

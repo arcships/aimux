@@ -36,7 +36,9 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GeneratedFile, ReasoningOutput, Source, StreamResult};
+use aimux_core::result::{
+    GenerateContent, LanguageModelFile, ReasoningOutput, Source, StreamResult,
+};
 use aimux_core::shared::{FileBytes, GeneratedFileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{ProviderTool, Tool};
@@ -162,7 +164,7 @@ async fn collect(result: StreamResult) -> Vec<StreamPart> {
 
 fn file_base64(content: &GenerateContent) -> &str {
     match content {
-        GenerateContent::File(GeneratedFile {
+        GenerateContent::File(LanguageModelFile {
             data:
                 GeneratedFileData::Data {
                     data: FileBytes::Base64(data),
@@ -355,7 +357,7 @@ async fn finding_1_gemini_inline_data_surfaces_as_file() {
     let f = files(&result.content);
     assert_eq!(f.len(), 1, "exactly one inlineData part → one File");
     match f[0] {
-        GenerateContent::File(GeneratedFile { media_type, .. }) => {
+        GenerateContent::File(LanguageModelFile { media_type, .. }) => {
             assert_eq!(media_type, "image/png");
         }
         other => panic!("expected File, got {other:?}"),
@@ -399,6 +401,40 @@ async fn generated_file_reaches_response_messages_as_a_base64_file_part() {
     assert!(data.starts_with(PNG_BASE64_PREFIX));
 }
 
+/// A text result's file is the AI SDK's `GeneratedFile`, `{ base64,
+/// mediaType }` (`ai` `generate-text/generated-file.ts:10-32`), and its content
+/// part is `{ type: 'file', file, providerMetadata? }`
+/// (`convert-language-model-content.ts:55-70`) (#232 C46).
+#[tokio::test]
+async fn generated_file_is_base64_and_media_type_in_text_results() {
+    let c = cassette("gemini/test_google_image_and_text_output.json");
+    let server = MockServer::start().await;
+    mount(&server, &c).await;
+
+    let model = google_at(&server.uri()).chat("gemini-2.5-flash-image");
+    let result = aimux_core::generate::generate_text(
+        &model,
+        "Tell a story and draw it",
+        aimux_core::generate::GenerateTextOptions::default(),
+    )
+    .await
+    .expect("generate_text should succeed");
+
+    let wire = serde_json::to_value(&result).unwrap();
+    let file = &wire["files"][0];
+    assert_eq!(file["mediaType"], "image/png");
+    assert!(
+        file["base64"]
+            .as_str()
+            .unwrap()
+            .starts_with(PNG_BASE64_PREFIX)
+    );
+    assert!(file.get("data").is_none(), "no tagged data: {file}");
+    let part = &wire["content"][1];
+    assert_eq!(part["type"], "file");
+    assert_eq!(part["file"], *file);
+}
+
 #[tokio::test]
 async fn finding_1_gemini_image_and_text_output_both_survive() {
     let c = cassette("gemini/test_google_image_and_text_output.json");
@@ -434,7 +470,7 @@ async fn finding_1_gemini_image_and_text_output_both_survive() {
     let f = files(&result.content);
     assert_eq!(f.len(), 1);
     match f[0] {
-        GenerateContent::File(GeneratedFile { media_type, .. }) => {
+        GenerateContent::File(LanguageModelFile { media_type, .. }) => {
             assert_eq!(media_type, "image/png")
         }
         other => panic!("expected File, got {other:?}"),
@@ -481,7 +517,7 @@ async fn finding_1_gemini_inline_data_streams_as_file_part() {
     let file_parts: Vec<_> = parts
         .iter()
         .filter_map(|p| match p {
-            StreamPart::File(GeneratedFile {
+            StreamPart::File(LanguageModelFile {
                 data:
                     GeneratedFileData::Data {
                         data: FileBytes::Base64(b64),

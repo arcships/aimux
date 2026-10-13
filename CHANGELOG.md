@@ -47,6 +47,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   strings. Bindings replace the three part classes with a typed `FilePartData`
   (#232 C35).
 
+- Generated files are the AI SDK's `GeneratedFile`: `files[]` holds
+  `{base64, mediaType, providerMetadata?}` instead of
+  `{type:"data"|"url", ...}`, and the text results' and stream's `file` /
+  `reasoning-file` parts are `{type, file: GeneratedFile, providerMetadata?}`.
+  `ReasoningFileOutput` is replaced by `GeneratedFileOutput`; the
+  provider-level `raw.content` keeps the V4 file
+  (`LanguageModelFile`: `{mediaType, data}`). Bindings gain a `GeneratedFile`
+  type with a bytes accessor (#232 C46).
+
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
   model and provider ids take precedence over middleware overrides.

@@ -10,10 +10,15 @@ import 'package:test/test.dart';
 const _meta = {
   'openai': {'itemId': 'item_1'}
 };
+// The provider's LanguageModelV4File (`language-model-v4-file.ts`).
 const _file = {
   'data': {'type': 'data', 'data': 'aGk='},
   'mediaType': 'image/png',
 };
+// The AI SDK's GeneratedFile is {base64, mediaType, providerMetadata?}
+// (`generate-text/generated-file.ts:10-32`); a stream file part is
+// {type, file, providerMetadata?} (`stream-language-model-call.ts:569-590`).
+const _generatedFile = {'base64': 'aGk=', 'mediaType': 'image/png'};
 const _usage = {
   'inputTokens': {'total': 5, 'noCache': 5},
   'outputTokens': {'total': 2},
@@ -156,8 +161,8 @@ void main() {
         'toolName': 'w',
         'result': {'count': 3},
       },
-      {'type': 'file', ..._file},
-      {'type': 'reasoning-file', 'file': _file},
+      {'type': 'file', 'file': _generatedFile, 'providerMetadata': _meta},
+      {'type': 'reasoning-file', 'file': _generatedFile},
       {'type': 'custom', 'kind': 'k'},
       {
         'type': 'tool-approval-request',
@@ -187,6 +192,14 @@ void main() {
       expect(p.type, 'future-part');
       expect(p.toJson(), json);
     });
+  });
+
+  test('GeneratedFile is base64 and mediaType', () {
+    final file = GeneratedFile.fromJson(_generatedFile);
+    expect(file.bytes, [104, 105]);
+    expect(file.toJson(), _generatedFile);
+    final part = StreamPart.fromJson({'type': 'file', 'file': _generatedFile});
+    expect((part as StreamPartFile).file.base64, 'aGk=');
   });
 
   group('options and results', () {
