@@ -1,6 +1,7 @@
 # RFC-0006: Provider Development Specification
 
 > **Status**: ACCEPTED (in force — required reading in CONTRIBUTING.md and applied by provider-research batches; 2026-07-28)  
+> **Revised by**: [aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md) (D12, D20, §3.3, §4.1). In the target design each vendor is a package with a `create_*` factory and presets are descriptor rows reusing the openai-compatible package; the thin-wrapper and profile steps below describe the code on master until the corresponding V4 layer merges.  
 > **Date**: 2026-07-28  
 > **Scope**: Adding or redoing provider adapters in `aimux-providers`  
 > **Related**: [Archived Provider Inventory](../provider-inventory/README.md), [Provider Adapter Layer Improvements](0002-provider-improvements.md), [Cassette Test Plan](0003-test-cassette.md), [Protocol Conversion and Adapter Layer Design](0005-protocol-conversion.md)

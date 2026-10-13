@@ -12,7 +12,7 @@
 >
 > **Supersedes**: 早期仅对齐 provider 工厂外观的草案(本文件的前身);[RFC-0008](../rfc/0008-multimodal-bindings.md)「Alternative: Unified Provider Object」的 Decision;`docs/internal/handoff/HANDOFF.md` §11
 >
-> **Amends**: [ROADMAP](../ROADMAP.md) 与 [RFC-0036](../rfc/0036-positioning-and-layered-architecture.md) 中与一次性切换、L2 选型相关的承诺(逐项见 §0.7,旧文档中对应段落已加注指向本文);[RFC-0031](ai-sdk-request-pipeline.md)(provider 默认 retry、composite 零重试、helper 录制等有意差异被撤销或改写,见第一部分 §9.4)、[RFC-0017](../rfc/0017-provider-config-dx.md)(通用 body override 路线撤销)、[RFC-0020](../rfc/0020-external-provider-config.md)(全局 overlay 撤销)、[RFC-0023](../rfc/0023-runtime-request-recording.md)(录制 schema 3)、[RFC-0027](../rfc/0027-model-catalogue-and-list-api.md)(one-shot 工厂承诺撤销)
+> **Amends**: [ROADMAP](../ROADMAP.md) 与 [RFC-0036](../rfc/0036-positioning-and-layered-architecture.md) 中与一次性切换、L2 选型相关的承诺(逐项见 §0.7,旧文档中对应段落已加注指向本文);[RFC-0031](ai-sdk-request-pipeline.md)(provider 默认 retry、composite 零重试、helper 录制等有意差异被撤销或改写,见第一部分 §9.4)、[RFC-0017](../rfc/0017-provider-config-dx.md)(通用 body override 路线撤销)、[RFC-0020](../rfc/0020-external-provider-config.md)(全局 overlay 撤销)、[RFC-0023](../rfc/0023-runtime-request-recording.md)(录制 schema 3)、[RFC-0027](../rfc/0027-model-catalogue-and-list-api.md)(one-shot 工厂承诺撤销)、[RFC-0016](../rfc/0016-align-with-aisdk.md)(L2 tool-call input 维持 `Value`、L7 不做 metadataExtractor 等结论由第二部分与 D15 取代)
 >
 > **Appendix**: [aisdk-architecture-impact-map.md](aisdk-architecture-impact-map.md) —— 全仓库 12 模块、201 条经对抗核验的发现与跨模块耦合链路
 
@@ -428,7 +428,7 @@ pub type FetchFunction = Arc<dyn Fetch>;
 - 重定向由 helper 逐跳处理，transport（含注入的 `Fetch`）不跟随重定向、原样返回 `3xx`。普通 API 调用跟随所有重定向（同上游 `postToApi` 在 fetch 默认 `redirect: "follow"` 下的行为，provider-utils@5.0.53 `post-to-api.ts:98-107`）；一旦离开请求的 origin，只保留 `User-Agent`，其余请求头全部丢弃，并以 `RequestCredentials::Omit` 通知 transport（同 `fetch-with-validated-redirects.ts:195-206`），请求头与 fetch 装饰器注入的凭证都不会到达另一个 origin；每一跳重新经过请求的 `Fetch`，签名装饰器对实际发送的 URL 重新签名。校验下载（D26）沿用逐跳校验、pin 与离开 credentialed origin 后剥离调用方头的规则。
 - 默认 HTTP client 按 Tokio runtime 分片，保留现有连接池生命周期约束。
 - `settings.fetch == None` 时，每次请求读取当前默认 leaf；不在工厂创建时冻结全局 fetch。
-- WebSocket 使用独立 connector，和默认 HTTP leaf 共用显式 `TransportSettings`。
+- WebSocket 使用独立 connector（`TungsteniteConnector::new(ProxyConfig)`）；未注入 connector 时，连接时读取默认 HTTP leaf 的 `ProxyConfig`。
 - 代理与 TLS 设置属于 transport 实例，不保留初始化时机敏感的 `init_proxy`。
 - 30 秒非流式 whole-response 上限留在 helper，覆盖注入 fetch 后的完整响应处理；streaming 不套用该上限。
 - helper 不执行完整 model operation 的 retry。
@@ -449,7 +449,7 @@ pub enum Resolvable<T> {
 
 `Future` 表示一次 Promise 值；`AsyncFn` 表示每次重新求值。两者不能混为一谈。`Shared` 所需的 Clone/Send 约束落实在类型定义和构造器中。
 
-Headers 采用大小写不敏感的覆盖语义：
+Headers 采用大小写不敏感的覆盖语义（有意差异，见 §5：上游 `combineHeaders` 合并时大小写敏感，`normalizeHeaders` 之后才转小写并丢弃 undefined，见 `@ai-sdk/provider-utils` 5.0.53 `combine-headers.ts:1-11`、`normalize-headers.ts:8-38`；因此上游 `{a: undefined}` 不会删除先前的 `A`）：
 
 1. 名称统一小写；
 2. 后者覆盖前者；
@@ -1126,6 +1126,8 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 语言适配 | 泛型 telemetry wrapper | `Box<dyn Any + Send>` 擦除结果类型，保留所有权 |
 | 语言适配 | 工厂抛异常 | `Result<_, AiMuxError>` |
 | 产品选择 | 不可失败的默认 provider 访问 | 延后失败配置的解析；显式工厂仍返回 Result |
+| 产品选择 | headers 合并大小写不敏感 | 名称先转小写再按后者覆盖，`None` 删除同名头；上游 `combineHeaders` 按原样合并、`normalizeHeaders` 之后才转小写（`@ai-sdk/provider-utils` 5.0.53 `combine-headers.ts:1-11`、`normalize-headers.ts:8-38`），`{a: undefined}` 不删除先前的 `A`（§3.3） |
+| 语言适配 | 全局 fetch | Rust 没有 `globalThis.fetch`：代理属于 transport 实例（`ReqwestFetch::new(ProxyConfig)` 作为 provider 的 `fetch`）；未给 `fetch` 的 provider 每次请求读取进程默认 transport，`set_default_transport` 替换它，内建 WebSocket connector 与下载跳共用其代理设置（§3.3） |
 | 产品选择 | 默认字符串模型 | 绑定/工具安装本地 registry；不隐式请求 Vercel Gateway |
 | 产品选择 | 观测范围 | 为 object 和非 LM 模态增加 operation/attempt 事件 |
 | 产品选择 | telemetry 关闭 | 关闭观测，保留功能性 scope 与 session affinity |
@@ -1882,7 +1884,7 @@ pub enum Optional<T> {
 
 生成的 JSON TypeScript DTO 对缺失属性使用 `?`。上游运行时的 `number | undefined` 可在 SDK facade 中恢复，但不能要求 JSON 对象携带不存在的 undefined。
 
-provider options/metadata 的内部键完全透传，不执行 camelCase 改写，不从 `model.provider()` 拆字符串推导 namespace。
+provider options/metadata 的内部键完全透传，不执行 camelCase 改写。从 `model.provider()` 拆字符串推导 namespace 不作为通用规则；个别厂商包按上游各自的做法从 provider 名取 options 名（例如 `@ai-sdk/openai-compatible` 3.0.62 `openai-compatible-chat-language-model.ts:157-159`、`@ai-sdk/anthropic` 4.0.71 `anthropic-language-model.ts:373`），见下文衔接第 5 条。
 
 **用户输入 `ModelMessage` 应按 role 建模。**
 
