@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::shared::{SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning};
+use crate::shared::{
+    JsonObject, SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning,
+};
 use crate::{AbortSignal, retry, timeout};
 
 /// Generated audio: a base64-encoded string or raw binary bytes.
@@ -99,6 +101,11 @@ pub struct SpeechResult {
 
     /// Warnings for the call, e.g. unsupported settings.
     pub warnings: Vec<Warning>,
+
+    /// Usage information reported by the provider, in the provider's native
+    /// JSON shape (`SpeechModelV4Result.usage?: JSONObject`,
+    /// `@ai-sdk/provider@4.0.22 src/speech-model/v4/speech-model-v4-result.ts:23-27`).
+    pub usage: Option<JsonObject>,
 
     /// Optional request information for telemetry and debugging.
     pub request: Option<SpeechRequest>,

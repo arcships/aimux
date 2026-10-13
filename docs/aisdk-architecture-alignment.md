@@ -396,6 +396,8 @@ fn do_stream<'a>(
 
 没有该方法的模型（如 Groq、Mistral）返回 `None`，`stream_transcribe` 在任何 I/O 之前报 `UnsupportedFunctionality`，文案同上游 `The {provider} model "{modelId}" does not support streaming transcription.`（`ai@7.0.127 src/transcribe/stream-transcribe.ts:125-138`；方法可选见 `@ai-sdk/provider@4.0.22 src/transcription-model/v4/transcription-model-v4.ts:44-46`）。有该方法的模型返回 `Some`，不能流式的模型 ID 等失败由返回的 future 报告，同上游各厂商 `doStream` 内的检查。
 
+语音结果 `SpeechResult.usage: Option<JsonObject>` 同上游 `SpeechModelV4Result.usage?: JSONObject`（`@ai-sdk/provider@4.0.22 src/speech-model/v4/speech-model-v4-result.ts:23-27`），按厂商原样保存用量，不归一化为 token 计数。Google 在响应带 `usageMetadata` 时原样传出（`@ai-sdk/google@4.0.87 src/google-speech-model.ts:356-358`），未报告或为 `null` 时为 `None`；其他厂商不报告用量。speech 结束事件上的 usage（`ai@7.0.127 src/generate-speech/generate-speech.ts:245`）属于 telemetry 接入，尚未完成。
+
 本地 `AI:@ai-sdk/provider/src/provider/v4/provider-v4.ts:13`（ProviderV4）没有 `evaluationModel`。Evaluation、Realtime、SpeechTranslation、Batch 的具体能力不在本文交付范围；不注册空实现，不宣称已支持。
 
 ### 3.2 provider-utils：传输、设置与诊断

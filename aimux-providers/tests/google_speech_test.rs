@@ -140,7 +140,40 @@ async fn preserves_raw_response_body() {
             .do_generate(&options("Hello."))
             .await
             .unwrap();
-        assert_eq!(result.response.body, Some(body), "{model_id}");
+        assert_eq!(result.response.body, Some(body.clone()), "{model_id}");
+        // The provider's usage object, passed through unchanged
+        // (`@ai-sdk/google@4.0.87 src/google-speech-model.ts:356-358`).
+        assert_eq!(
+            result.usage.map(Value::Object),
+            Some(body["usageMetadata"].clone()),
+            "{model_id}"
+        );
+    }
+}
+
+/// A response without usage (or with `usageMetadata: null`, which
+/// `google-speech-api.ts:35` reads as `.nullish()`) leaves `usage` unset
+/// (`@ai-sdk/google@4.0.87 src/google-speech-model.ts:356`:
+/// `...(response.usageMetadata != null && { usage })`).
+#[tokio::test]
+async fn omits_usage_the_response_does_not_report() {
+    for usage in [None, Some(Value::Null)] {
+        let server = MockServer::start().await;
+        let mut body = json!({
+            "candidates": [{"content": {"parts": [{"inlineData": {"data": WAV_BASE64, "mimeType": "audio/wav"}}]}}],
+        });
+        if let Some(usage) = usage.clone() {
+            body["usageMetadata"] = usage;
+        }
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&server)
+            .await;
+        let result = model(&server, LEGACY_MODEL)
+            .do_generate(&options("Hello."))
+            .await
+            .unwrap();
+        assert_eq!(result.usage, None, "{usage:?}");
     }
 }
 

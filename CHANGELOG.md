@@ -398,6 +398,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   return `Some(Box::pin(…))`. `stream_transcribe` reports a model without the
   method as `UnsupportedFunctionality` before any I/O
   (`The {provider} model "{id}" does not support streaming transcription.`).
+- `SpeechResult` has `usage: Option<JsonObject>`, the provider's usage in its
+  native shape, as the AI SDK's `SpeechModelV4Result.usage`. Google speech
+  passes its `usageMetadata` through; other vendors report `None`. Speech
+  model implementors set the field.
 
 **C ABI**
 
