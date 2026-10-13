@@ -973,3 +973,285 @@ async fn an_invalid_tool_call_is_followed_by_a_tool_error() {
     };
     assert_eq!(provider_call.invalid, Some(true));
 }
+
+/// The `type` of each AI SDK `TextStreamPart`, in the union's order
+/// (stream-text-result.ts:581-607).
+const UPSTREAM_STREAM_PART_TYPES: [&str; 26] = [
+    "text-start",
+    "text-end",
+    "text-delta",
+    "reasoning-start",
+    "reasoning-end",
+    "reasoning-delta",
+    "custom",
+    "tool-input-start",
+    "tool-input-end",
+    "tool-input-delta",
+    "source",
+    "file",
+    "reasoning-file",
+    "tool-call",
+    "tool-result",
+    "tool-error",
+    "tool-output-denied",
+    "tool-approval-request",
+    "tool-approval-response",
+    "start-step",
+    "finish-step",
+    "start",
+    "finish",
+    "abort",
+    "error",
+    "raw",
+];
+
+/// `TextStream` → `text-stream`.
+fn kebab(name: &str) -> String {
+    let mut out = String::new();
+    for (index, c) in name.chars().enumerate() {
+        if c.is_ascii_uppercase() {
+            if index > 0 {
+                out.push('-');
+            }
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// NP2-5: `TextStreamPart` has exactly the AI SDK's 26 part types, in the
+/// union's order (stream-text-result.ts:581-607). The variant tags are read
+/// from the exported TypeScript type.
+#[test]
+fn the_stream_part_set_is_the_ai_sdks() {
+    let ts = <TextStreamPart as ts_rs::TS>::inline(&ts_rs::Config::default());
+    let tags: Vec<String> = ts
+        .match_indices("{ \"")
+        .filter_map(|(index, _)| {
+            let rest = &ts[index + 3..];
+            let tag = &rest[..rest.find('"')?];
+            tag.starts_with(|c: char| c.is_ascii_uppercase())
+                .then(|| kebab(tag))
+        })
+        .collect();
+    assert_eq!(tags, UPSTREAM_STREAM_PART_TYPES);
+}
+
+/// NP2-5 stream state: text and reasoning segments keep the position of
+/// their start part while deltas update them by id, interleaved or not
+/// (stream-text.ts:1540-1600); the response message replays them in that
+/// order.
+#[tokio::test]
+async fn interleaved_segments_keep_their_start_positions() {
+    let mut parts = text_stream(&[], FinishReasonUnified::Stop);
+    let finish = parts.pop().unwrap();
+    let _text_end = parts.pop().unwrap();
+    let text = |id: &str, delta: &str| {
+        Ok(StreamPart::TextDelta {
+            id: id.into(),
+            delta: delta.into(),
+            provider_metadata: None,
+        })
+    };
+    parts.extend([
+        Ok(StreamPart::TextStart {
+            id: "t2".into(),
+            provider_metadata: None,
+        }),
+        text("t2", "B"),
+        text("t1", "A"),
+        Ok(StreamPart::ReasoningStart {
+            id: "r1".into(),
+            provider_metadata: None,
+        }),
+        Ok(StreamPart::ReasoningDelta {
+            id: "r1".into(),
+            delta: "think".into(),
+            provider_metadata: None,
+        }),
+        text("t1", "a"),
+        Ok(StreamPart::TextEnd {
+            id: "t2".into(),
+            provider_metadata: None,
+        }),
+        Ok(StreamPart::TextEnd {
+            id: "t1".into(),
+            provider_metadata: None,
+        }),
+        Ok(StreamPart::ReasoningEnd {
+            id: "r1".into(),
+            provider_metadata: None,
+        }),
+        finish,
+    ]);
+    let model = ScriptedModel::streaming(parts);
+    let result = stream_text(&model, "hi", GenerateTextOptions::default())
+        .await
+        .unwrap()
+        .consume()
+        .await
+        .unwrap();
+    let content: Vec<(&str, &str)> = result
+        .final_step()
+        .content
+        .iter()
+        .map(|part| match part {
+            GenerateContent::Text { text, .. } => ("text", text.as_str()),
+            GenerateContent::Reasoning(reasoning) => ("reasoning", reasoning.text.as_str()),
+            other => panic!("unexpected content {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        content,
+        [("text", "Aa"), ("text", "B"), ("reasoning", "think")]
+    );
+    let messages = serde_json::to_value(result.response_messages()).unwrap();
+    let replayed: Vec<String> = messages[0]["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|part| {
+            part.as_object().unwrap()["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(replayed, ["Aa", "B", "think"]);
+}
+
+/// NP2-5 stream state: a preliminary tool result reaches the stream but not
+/// the step content (stream-text.ts:1648-1650; alignment doc rule 6).
+#[tokio::test]
+async fn a_preliminary_tool_result_stays_out_of_the_step_content() {
+    let mut parts = text_stream(&["hi"], FinishReasonUnified::Stop);
+    let finish = parts.pop().unwrap();
+    let mut preliminary = provider_result("srv-1", "image_generation", json!("partial"), None);
+    preliminary.preliminary = Some(true);
+    parts.extend([
+        Ok(provider_call("srv-1", "image_generation", "{}")),
+        Ok(StreamPart::ToolResult(preliminary)),
+        Ok(StreamPart::ToolResult(provider_result(
+            "srv-1",
+            "image_generation",
+            json!("final"),
+            None,
+        ))),
+        finish,
+    ]);
+    let model = ScriptedModel::streaming(parts.clone());
+    let streamed = collect(
+        stream_text(&model, "hi", GenerateTextOptions::default())
+            .await
+            .unwrap(),
+    )
+    .await;
+    let outputs: Vec<(Value, Option<bool>)> = streamed
+        .iter()
+        .filter_map(|part| match part {
+            TextStreamPart::ToolResult(result) => Some((result.output.clone(), result.preliminary)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        outputs,
+        [(json!("partial"), Some(true)), (json!("final"), None)]
+    );
+
+    let model = ScriptedModel::streaming(parts);
+    let result = stream_text(&model, "hi", GenerateTextOptions::default())
+        .await
+        .unwrap()
+        .consume()
+        .await
+        .unwrap();
+    let kept: Vec<&Value> = result
+        .final_step()
+        .content
+        .iter()
+        .filter_map(|part| match part {
+            GenerateContent::ToolResult(result) => Some(&result.result),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(kept, [&json!("final")]);
+}
+
+/// NP2-5 message replay: the same model output gives the same response
+/// messages whether it was generated or streamed (generate-text.ts:1437-1455
+/// and stream-text.ts build both with `toResponseMessages`).
+#[tokio::test]
+async fn generated_and_streamed_output_replay_the_same_messages() {
+    let generated_model = ScriptedModel::generating(generated(
+        vec![
+            GenerateContent::Reasoning(crate::result::ReasoningOutput {
+                text: "think".into(),
+                provider_metadata: None,
+            }),
+            text_content("hi"),
+            GenerateContent::ToolCall(RawToolCall {
+                tool_call_id: "srv-1".into(),
+                tool_name: "web_search".into(),
+                input: r#"{"q":"rust"}"#.into(),
+                provider_executed: Some(true),
+                dynamic: Some(true),
+                provider_metadata: None,
+            }),
+            GenerateContent::ToolResult(provider_result(
+                "srv-1",
+                "web_search",
+                json!([{ "url": "https://example.com" }]),
+                None,
+            )),
+        ],
+        FinishReasonUnified::Stop,
+    ));
+    let generated = generate_text(&generated_model, "hi", GenerateTextOptions::default())
+        .await
+        .unwrap();
+
+    let mut parts = text_stream(&["hi"], FinishReasonUnified::Stop);
+    let finish = parts.pop().unwrap();
+    parts.splice(
+        2..2,
+        [
+            Ok(StreamPart::ReasoningStart {
+                id: "r1".into(),
+                provider_metadata: None,
+            }),
+            Ok(StreamPart::ReasoningDelta {
+                id: "r1".into(),
+                delta: "think".into(),
+                provider_metadata: None,
+            }),
+            Ok(StreamPart::ReasoningEnd {
+                id: "r1".into(),
+                provider_metadata: None,
+            }),
+        ],
+    );
+    parts.extend([
+        Ok(provider_call("srv-1", "web_search", r#"{"q":"rust"}"#)),
+        Ok(StreamPart::ToolResult(provider_result(
+            "srv-1",
+            "web_search",
+            json!([{ "url": "https://example.com" }]),
+            None,
+        ))),
+        finish,
+    ]);
+    let streamed_model = ScriptedModel::streaming(parts);
+    let streamed = stream_text(&streamed_model, "hi", GenerateTextOptions::default())
+        .await
+        .unwrap()
+        .consume()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        serde_json::to_value(streamed.response_messages()).unwrap(),
+        serde_json::to_value(generated.response_messages()).unwrap()
+    );
+}
