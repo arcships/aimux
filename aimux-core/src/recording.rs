@@ -591,6 +591,9 @@ pub(crate) fn new_call_id() -> String {
 /// 精确匹配常见 bearer-token 字段和 AWS Bedrock sigv4 的
 /// `x-amz-security-token`(name 已 lowercase 归一化)。其余 needle 维持 contains,以覆盖
 /// `x-goog-api-key`/`proxy-authorization` 等变体。
+///
+/// Provider auth headers whose names match none of these are listed by name:
+/// Prodia's `X-Prodia-Key` and the Azure `Ocp-Apim-Subscription-Key`.
 #[must_use]
 pub fn is_sensitive_key(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
@@ -602,6 +605,8 @@ pub fn is_sensitive_key(name: &str) -> bool {
     n == "cookie"
         || n == "set-cookie"
         || n == "key"
+        || squashed == "xprodiakey"
+        || squashed.ends_with("subscriptionkey")
         || squashed.ends_with("token")
         || n.contains("authorization")
         || squashed.contains("apikey")
@@ -1975,6 +1980,9 @@ mod tests {
             "Authorization",
             "x-api-key",
             "apiKey",
+            "X-Prodia-Key",
+            "Ocp-Apim-Subscription-Key",
+            "ocp_apim_subscription_key",
         ] {
             assert!(is_sensitive_key(key), "{key} must be redacted");
         }

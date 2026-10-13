@@ -469,6 +469,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `store`, otherwise one `reasoning` item whose summary collects the
   parts and whose `encrypted_content` is the last one given. Each part used
   to become its own item, which the API rejects as a duplicate id.
+- Recordings and logs redact Prodia's `X-Prodia-Key` and any header ending in
+  `subscription-key` (Azure's `Ocp-Apim-Subscription-Key`), with or without
+  separators; both were stored in clear text.
 
 ### RFCs
 
