@@ -1,0 +1,363 @@
+//! User-facing messages by role and their conversion to the provider prompt,
+//! checked against the AI SDK (`ai@7.0.127`
+//! `prompt/convert-to-language-model-prompt.ts`, `@ai-sdk/provider-utils@5.0.53`
+//! `types/*-model-message.ts`).
+
+use aimux_core::content::{
+    AssistantContentPart, ToolContentPart, ToolResultOutput, ToolResultPart, UserContentPart,
+};
+use aimux_core::language_model_message::{
+    self as v4, AssistantPart, LanguageModelMessage, ToolPart, UserPart,
+    convert_to_language_model_prompt,
+};
+use aimux_core::message::{ModelMessage, UserContent};
+use aimux_core::shared::provider_namespace;
+use serde_json::{Value, json};
+
+fn messages(value: Value) -> Vec<ModelMessage> {
+    serde_json::from_value(value).expect("valid messages")
+}
+
+fn convert(value: Value) -> Vec<LanguageModelMessage> {
+    convert_to_language_model_prompt(&messages(value), None).expect("converts")
+}
+
+// C32: every message role carries `providerOptions`, and the conversion
+// copies it onto the provider message (`:211-216`, `:219-245`, `:252-258`,
+// `:362`, `:405`).
+#[test]
+fn message_provider_options_reach_the_provider_prompt() {
+    let options = json!({ "anthropic": { "cacheControl": { "type": "ephemeral" } } });
+    let prompt = convert(json!([
+        { "role": "system", "content": "be brief", "provider_options": options },
+        { "role": "user", "content": "hi", "provider_options": options },
+        { "role": "assistant", "content": [
+            { "type": "tool_call", "tool_call_id": "c1", "tool_name": "t", "input": {} }
+        ], "provider_options": options },
+        { "role": "tool", "content": [
+            { "type": "tool_result", "tool_call_id": "c1", "result": "ok" }
+        ], "provider_options": options },
+    ]));
+    let expected = provider_namespace(
+        "anthropic",
+        json!({ "cacheControl": { "type": "ephemeral" } }),
+    )
+    .unwrap();
+    assert_eq!(prompt.len(), 4);
+    for message in &prompt {
+        let provider_options = match message {
+            LanguageModelMessage::System {
+                provider_options, ..
+            }
+            | LanguageModelMessage::User {
+                provider_options, ..
+            }
+            | LanguageModelMessage::Assistant {
+                provider_options, ..
+            }
+            | LanguageModelMessage::Tool {
+                provider_options, ..
+            } => provider_options,
+        };
+        assert_eq!(provider_options.as_ref(), Some(&expected), "{message:?}");
+    }
+    // The option survives a JSON round trip of the message.
+    let message =
+        &messages(json!([{ "role": "user", "content": "hi", "provider_options": options }]))[0];
+    assert_eq!(
+        serde_json::to_value(message).unwrap(),
+        json!({ "role": "user", "content": "hi", "provider_options": options })
+    );
+}
+
+// C31: content parts are a union per role (`UserContent`,
+// `user-model-message.ts:22`; `AssistantContent`,
+// `assistant-model-message.ts:32`; `ToolContent`, `tool-model-message.ts:23`).
+#[test]
+fn content_parts_are_checked_by_role() {
+    let rejected = [
+        // A tool call is not user content.
+        json!({ "role": "user", "content": [
+            { "type": "tool_call", "tool_call_id": "c1", "tool_name": "t", "input": {} }
+        ] }),
+        // An image part is user content only.
+        json!({ "role": "assistant", "content": [
+            { "type": "image", "image": [1], "media_type": "image/png" }
+        ] }),
+        // A tool message holds tool results and approval responses only.
+        json!({ "role": "tool", "content": [{ "type": "text", "text": "x" }] }),
+        json!({ "role": "tool", "content": "x" }),
+        // System content is a string.
+        json!({ "role": "system", "content": [{ "type": "text", "text": "x" }] }),
+    ];
+    for message in rejected {
+        assert!(
+            serde_json::from_value::<ModelMessage>(message.clone()).is_err(),
+            "accepted {message}"
+        );
+    }
+
+    let user = &messages(json!([{ "role": "user", "content": [
+        { "type": "text", "text": "look" },
+        { "type": "image", "image": [1, 2], "media_type": "image/png" },
+    ] }]))[0];
+    assert!(matches!(
+        user,
+        ModelMessage::User { content: UserContent::Parts(parts), .. }
+            if matches!(parts[1], UserContentPart::Image { .. })
+    ));
+}
+
+// Empty text parts: a user message drops every one (`:242-243`); an
+// assistant message drops one only when it has no provider options
+// (`:263-269`). String content is never filtered (`:220-225`, `:253-258`).
+#[test]
+fn empty_text_parts_are_dropped_as_upstream_drops_them() {
+    let options = json!({ "openai": { "x": 1 } });
+    let prompt = convert(json!([
+        { "role": "user", "content": [
+            { "type": "text", "text": "" },
+            { "type": "text", "text": "", "provider_options": options },
+            { "type": "text", "text": "q" },
+        ] },
+        { "role": "assistant", "content": [
+            { "type": "text", "text": "" },
+            { "type": "text", "text": "", "provider_options": options },
+        ] },
+        { "role": "user", "content": "" },
+    ]));
+    let LanguageModelMessage::User { content, .. } = &prompt[0] else {
+        panic!()
+    };
+    assert_eq!(content.len(), 1);
+    let LanguageModelMessage::Assistant { content, .. } = &prompt[1] else {
+        panic!()
+    };
+    assert!(
+        matches!(&content[..], [AssistantPart::Text(v4::TextPart { text, provider_options: Some(_) })] if text.is_empty())
+    );
+    let LanguageModelMessage::User { content, .. } = &prompt[2] else {
+        panic!()
+    };
+    assert!(matches!(&content[..], [UserPart::Text(v4::TextPart { text, .. })] if text.is_empty()));
+}
+
+// C36: a tool approval request stays out of the provider prompt
+// (`:270-281`); a tool approval response reaches the provider only for a
+// provider-executed tool, without `providerExecuted` (`:374-378`,
+// `:395-402`); a tool message left empty is dropped (`:177-183`).
+#[test]
+fn tool_approvals_reach_the_provider_only_for_provider_executed_tools() {
+    let prompt = convert(json!([
+        { "role": "user", "content": "search" },
+        { "role": "assistant", "content": [
+            { "type": "tool_call", "tool_call_id": "c1", "tool_name": "web_search",
+              "input": {}, "provider_executed": true },
+            { "type": "tool_approval_request", "approval_id": "a1", "tool_call_id": "c1" },
+            { "type": "tool_call", "tool_call_id": "c2", "tool_name": "delete", "input": {} },
+            { "type": "tool_approval_request", "approval_id": "a2", "tool_call_id": "c2" },
+        ] },
+        { "role": "tool", "content": [
+            { "type": "tool_approval_response", "approval_id": "a1", "approved": true,
+              "reason": "fine", "provider_executed": true },
+        ] },
+        { "role": "tool", "content": [
+            { "type": "tool_approval_response", "approval_id": "a2", "approved": false },
+        ] },
+    ]));
+    assert_eq!(
+        prompt.len(),
+        3,
+        "the tool message left empty is dropped: {prompt:#?}"
+    );
+    let LanguageModelMessage::Assistant { content, .. } = &prompt[1] else {
+        panic!()
+    };
+    assert_eq!(content.len(), 2);
+    assert!(
+        content
+            .iter()
+            .all(|part| matches!(part, AssistantPart::ToolCall(_)))
+    );
+    let LanguageModelMessage::Tool { content, .. } = &prompt[2] else {
+        panic!()
+    };
+    assert_eq!(
+        content,
+        &[ToolPart::ToolApprovalResponse(
+            v4::ToolApprovalResponsePart {
+                approval_id: "a1".into(),
+                approved: true,
+                reason: Some("fine".into()),
+                provider_options: None,
+            }
+        )]
+    );
+}
+
+// The upstream `ToolResultPart` carries a typed `output`
+// (`content-part.ts:218-247`), which the conversion hands to the provider
+// unchanged (`mapToolResultOutput`, `:610-626`).
+#[test]
+fn typed_tool_result_output_reaches_the_provider() {
+    let prompt = convert(json!([
+        { "role": "assistant", "content": [
+            { "type": "tool_call", "tool_call_id": "c1", "tool_name": "delete", "input": {} }
+        ] },
+        { "role": "tool", "content": [
+            { "type": "tool_result", "tool_call_id": "c1", "tool_name": "delete",
+              "output": { "type": "execution-denied", "reason": "no" } }
+        ] },
+    ]));
+    let LanguageModelMessage::Tool { content, .. } = &prompt[1] else {
+        panic!()
+    };
+    let [ToolPart::ToolResult(result)] = &content[..] else {
+        panic!()
+    };
+    assert_eq!(
+        result.output,
+        v4::ToolResultOutput::ExecutionDenied {
+            reason: Some("no".into()),
+            provider_options: None
+        }
+    );
+}
+
+// The JSON of this layer keeps the earlier `result` form of a tool result,
+// read as `createToolModelOutput` reads a raw tool value
+// (`prompt/create-tool-model-output.ts:4`): a string is text, anything else
+// JSON, an error is error text holding `getErrorMessage(value)`.
+#[test]
+fn earlier_tool_result_json_still_reads_and_writes() {
+    let part = |value: Value| -> ToolResultPart {
+        let ToolContentPart::ToolResult(part) = serde_json::from_value(value).unwrap() else {
+            panic!()
+        };
+        part
+    };
+    let text = |value: &str| ToolResultOutput::Text {
+        value: value.into(),
+        provider_options: None,
+    };
+    let error = |value: &str| ToolResultOutput::ErrorText {
+        value: value.into(),
+        provider_options: None,
+    };
+
+    let cases = [
+        (json!({ "result": "ok" }), text("ok")),
+        (json!({ "output": "bare string" }), text("bare string")),
+        (
+            json!({ "result": { "temp": 22 } }),
+            ToolResultOutput::Json {
+                value: json!({ "temp": 22 }),
+                provider_options: None,
+            },
+        ),
+        (
+            json!({ "output": { "temp": 22 } }),
+            ToolResultOutput::Json {
+                value: json!({ "temp": 22 }),
+                provider_options: None,
+            },
+        ),
+        (
+            json!({ "result": null }),
+            ToolResultOutput::Json {
+                value: Value::Null,
+                provider_options: None,
+            },
+        ),
+        (json!({ "result": "boom", "is_error": true }), error("boom")),
+        (
+            json!({ "result": { "code": 1 }, "is_error": true }),
+            error(r#"{"code":1}"#),
+        ),
+        (
+            json!({ "result": null, "is_error": true }),
+            error("unknown error"),
+        ),
+        // A JSON value that only looks typed through `result` stays JSON.
+        (
+            json!({ "result": { "type": "text", "value": "x" } }),
+            ToolResultOutput::Json {
+                value: json!({ "type": "text", "value": "x" }),
+                provider_options: None,
+            },
+        ),
+        (
+            json!({ "output": { "type": "text", "value": "x" } }),
+            text("x"),
+        ),
+    ];
+    for (fields, expected) in cases {
+        let mut value = json!({ "type": "tool_result", "tool_call_id": "c1" });
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        assert_eq!(part(value.clone()).output, expected, "{value}");
+    }
+
+    for invalid in [
+        json!({ "type": "tool_result", "tool_call_id": "c1" }),
+        json!({ "type": "tool_result", "tool_call_id": "c1", "result": 1, "output": 1 }),
+        json!({ "type": "tool_result", "tool_call_id": "c1", "is_error": true,
+                "output": { "type": "text", "value": "x" } }),
+        json!({ "type": "tool_result", "tool_call_id": "c1", "output": { "type": "text" } }),
+    ] {
+        assert!(
+            serde_json::from_value::<ToolContentPart>(invalid.clone()).is_err(),
+            "{invalid}"
+        );
+    }
+
+    // Written in the earlier form where it has one, so readers of this
+    // layer's JSON (the bindings) keep parsing it.
+    let written = |output: ToolResultOutput| {
+        serde_json::to_value(ToolContentPart::tool_result("c1", "t", output)).unwrap()
+    };
+    assert_eq!(
+        written(text("ok")),
+        json!({ "type": "tool_result", "tool_call_id": "c1", "tool_name": "t", "result": "ok" })
+    );
+    assert_eq!(
+        written(error("boom")),
+        json!({ "type": "tool_result", "tool_call_id": "c1", "tool_name": "t",
+                "result": "boom", "is_error": true })
+    );
+    assert_eq!(
+        written(ToolResultOutput::ExecutionDenied {
+            reason: None,
+            provider_options: None
+        }),
+        json!({ "type": "tool_result", "tool_call_id": "c1", "tool_name": "t",
+                "output": { "type": "execution-denied" } })
+    );
+}
+
+// A provider-executed tool result replays in the assistant message.
+#[test]
+fn assistant_tool_result_converts_like_a_tool_message_result() {
+    let message = ModelMessage::assistant_parts(vec![
+        AssistantContentPart::tool_call("c1", "web_search", json!({})),
+        AssistantContentPart::ToolResult(ToolResultPart {
+            tool_call_id: "c1".into(),
+            tool_name: None,
+            output: ToolResultOutput::Json {
+                value: json!([1]),
+                provider_options: None,
+            },
+            provider_options: None,
+        }),
+    ]);
+    let prompt = convert_to_language_model_prompt(&[message], None).unwrap();
+    let LanguageModelMessage::Assistant { content, .. } = &prompt[0] else {
+        panic!()
+    };
+    let AssistantPart::ToolResult(result) = &content[1] else {
+        panic!()
+    };
+    assert_eq!(result.tool_name, "web_search");
+}

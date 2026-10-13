@@ -6,11 +6,10 @@
 //! file part. `convert_to_language_model_prompt` is the single conversion from
 //! the user-facing `ModelMessage`s.
 
-use crate::content::ContentPart;
+use crate::content::{self as user, AssistantContentPart, ToolContentPart, UserContentPart};
 use crate::error::AiMuxError;
-use crate::message::{MessageContent, ModelMessage, Role};
+use crate::message::{AssistantContent, ModelMessage, UserContent};
 use crate::shared::{FileBytes, FileData, GeneratedFileData, SharedProviderOptions};
-use std::borrow::Cow;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -93,6 +92,7 @@ pub struct ToolCallPart {
 /// Tool result content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
+#[ts(rename = "LanguageModelToolResultPart")]
 pub struct ToolResultPart {
     pub tool_call_id: String,
     pub tool_name: String,
@@ -105,6 +105,7 @@ pub struct ToolResultPart {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 #[ts(export)]
+#[ts(rename = "LanguageModelToolResultOutput")]
 pub enum ToolResultOutput {
     Text {
         value: String,
@@ -227,103 +228,194 @@ impl LanguageModelMessage {
     }
 }
 
-/// Map a user-facing part onto the widest provider part (the assistant union);
-/// the role then narrows it.
-fn to_assistant_part(
-    part: &ContentPart,
-    tool_names: &HashMap<String, String>,
-) -> Result<AssistantPart, AiMuxError> {
-    let file = |data, media_type: &String, filename: &Option<String>, po: &Option<_>| {
-        AssistantPart::File(FilePart {
-            data,
-            media_type: media_type.clone(),
-            filename: filename.clone(),
-            provider_options: po.clone(),
-        })
-    };
+fn file_part(
+    data: FileData,
+    media_type: &str,
+    filename: Option<&String>,
+    provider_options: Option<&SharedProviderOptions>,
+) -> FilePart {
+    FilePart {
+        data,
+        media_type: media_type.to_owned(),
+        filename: filename.cloned(),
+        provider_options: provider_options.cloned(),
+    }
+}
+
+fn reference(reference: &Value) -> Result<FileData, AiMuxError> {
+    Ok(FileData::Reference {
+        reference: serde_json::from_value(reference.clone())
+            .map_err(|e| AiMuxError::InvalidPrompt(format!("invalid file reference: {e}")))?,
+    })
+}
+
+fn bytes(data: &[u8]) -> FileData {
+    FileData::Data {
+        data: FileBytes::Binary(data.to_vec()),
+    }
+}
+
+fn base64(data: &str) -> FileData {
+    FileData::Data {
+        data: FileBytes::Base64(data.to_owned()),
+    }
+}
+
+fn url(url: &str) -> FileData {
+    FileData::Url {
+        url: url.to_owned(),
+        original_url: None,
+    }
+}
+
+fn text_part(text: &str, provider_options: Option<&SharedProviderOptions>) -> TextPart {
+    TextPart {
+        text: text.to_owned(),
+        provider_options: provider_options.cloned(),
+    }
+}
+
+/// A user part as the provider sees it: text, or one `file` part.
+fn user_part(part: &UserContentPart) -> Result<UserPart, AiMuxError> {
     Ok(match part {
-        ContentPart::Text {
+        UserContentPart::Text {
             text,
             provider_options,
-        } => AssistantPart::Text(TextPart {
-            text: text.clone(),
-            provider_options: provider_options.clone(),
-        }),
-        ContentPart::Image {
+        } => UserPart::Text(text_part(text, provider_options.as_ref())),
+        UserContentPart::Image {
             image,
             media_type,
             provider_options,
-        } => file(
-            FileData::Data {
-                data: FileBytes::Binary(image.clone()),
-            },
+        } => UserPart::File(file_part(
+            bytes(image),
             media_type,
-            &None,
-            provider_options,
-        ),
-        ContentPart::File {
+            None,
+            provider_options.as_ref(),
+        )),
+        UserContentPart::File {
             data,
             media_type,
             filename,
             provider_options,
-        } => file(
-            FileData::Data {
-                data: FileBytes::Binary(data.clone()),
-            },
+        } => UserPart::File(file_part(
+            bytes(data),
             media_type,
-            filename,
-            provider_options,
-        ),
-        ContentPart::FileBase64 {
+            filename.as_ref(),
+            provider_options.as_ref(),
+        )),
+        UserContentPart::FileBase64 {
             data,
             media_type,
             filename,
             provider_options,
-        } => file(
-            FileData::Data {
-                data: FileBytes::Base64(data.clone()),
-            },
+        } => UserPart::File(file_part(
+            base64(data),
             media_type,
+            filename.as_ref(),
+            provider_options.as_ref(),
+        )),
+        UserContentPart::FileUrl {
+            url: file_url,
+            media_type,
+            provider_options,
+        } => UserPart::File(file_part(
+            url(file_url),
+            media_type,
+            None,
+            provider_options.as_ref(),
+        )),
+        UserContentPart::FileReference {
+            media_type,
+            reference: file_reference,
             filename,
             provider_options,
-        ),
-        ContentPart::FileUrl {
-            url,
+        } => UserPart::File(file_part(
+            reference(file_reference)?,
             media_type,
-            provider_options,
-        } => file(
-            FileData::Url {
-                url: url.clone(),
-                original_url: None,
-            },
-            media_type,
-            &None,
-            provider_options,
-        ),
-        ContentPart::FileReference {
-            media_type,
-            reference,
-            filename,
-            provider_options,
-        } => file(
-            FileData::Reference {
-                reference: serde_json::from_value(reference.clone()).map_err(|e| {
-                    AiMuxError::InvalidPrompt(format!("invalid file reference: {e}"))
-                })?,
-            },
-            media_type,
-            filename,
-            provider_options,
-        ),
-        ContentPart::Reasoning {
+            filename.as_ref(),
+            provider_options.as_ref(),
+        )),
+    })
+}
+
+/// An assistant part as the provider sees it. `ToolApprovalRequest` is
+/// filtered out before this is called.
+fn assistant_part(
+    part: &AssistantContentPart,
+    tool_names: &HashMap<String, String>,
+) -> Result<AssistantPart, AiMuxError> {
+    Ok(match part {
+        AssistantContentPart::Text {
             text,
             provider_options,
-            ..
+        } => AssistantPart::Text(text_part(text, provider_options.as_ref())),
+        AssistantContentPart::Custom {
+            kind,
+            provider_options,
+        } => AssistantPart::Custom(CustomPart {
+            kind: kind.clone(),
+            provider_options: provider_options.clone(),
+        }),
+        AssistantContentPart::File {
+            data,
+            media_type,
+            filename,
+            provider_options,
+        } => AssistantPart::File(file_part(
+            bytes(data),
+            media_type,
+            filename.as_ref(),
+            provider_options.as_ref(),
+        )),
+        AssistantContentPart::FileBase64 {
+            data,
+            media_type,
+            filename,
+            provider_options,
+        } => AssistantPart::File(file_part(
+            base64(data),
+            media_type,
+            filename.as_ref(),
+            provider_options.as_ref(),
+        )),
+        AssistantContentPart::FileUrl {
+            url: file_url,
+            media_type,
+            provider_options,
+        } => AssistantPart::File(file_part(
+            url(file_url),
+            media_type,
+            None,
+            provider_options.as_ref(),
+        )),
+        AssistantContentPart::FileReference {
+            media_type,
+            reference: file_reference,
+            filename,
+            provider_options,
+        } => AssistantPart::File(file_part(
+            reference(file_reference)?,
+            media_type,
+            filename.as_ref(),
+            provider_options.as_ref(),
+        )),
+        AssistantContentPart::Reasoning {
+            text,
+            provider_options,
         } => AssistantPart::Reasoning(ReasoningPart {
             text: text.clone(),
             provider_options: provider_options.clone(),
         }),
-        ContentPart::ToolCall {
+        AssistantContentPart::ReasoningFile {
+            data,
+            media_type,
+            provider_options,
+        } => AssistantPart::ReasoningFile(ReasoningFilePart {
+            data: data.clone(),
+            media_type: media_type.clone(),
+            provider_options: provider_options.clone(),
+        }),
+        AssistantContentPart::ToolCall {
             tool_call_id,
             tool_name,
             input,
@@ -336,81 +428,206 @@ fn to_assistant_part(
             provider_executed: *provider_executed,
             provider_options: provider_options.clone(),
         }),
-        ContentPart::ToolResult {
-            tool_call_id,
-            result,
-            tool_name,
-            is_error,
-            provider_options,
-            ..
-        } => AssistantPart::ToolResult(ToolResultPart {
-            tool_call_id: tool_call_id.clone(),
-            tool_name: tool_name
-                .as_ref()
-                .or_else(|| tool_names.get(tool_call_id))
-                .cloned()
-                .ok_or_else(|| {
-                    AiMuxError::InvalidPrompt(format!(
-                        "tool result {tool_call_id} has no tool name or preceding tool call"
-                    ))
-                })?,
-            output: if *is_error == Some(true) {
-                ToolResultOutput::ErrorText {
-                    value: match result {
-                        Value::Null => "unknown error".into(),
-                        Value::String(value) => value.clone(),
-                        _ => result.to_string(),
-                    },
-                    provider_options: None,
-                }
-            } else if let Value::String(value) = result {
-                ToolResultOutput::Text {
-                    value: value.clone(),
-                    provider_options: None,
-                }
-            } else {
-                ToolResultOutput::Json {
-                    value: result.clone(),
-                    provider_options: None,
-                }
-            },
-            provider_options: provider_options.clone(),
-        }),
-        ContentPart::Custom {
-            kind,
-            provider_options,
-        } => AssistantPart::Custom(CustomPart {
-            kind: kind.clone(),
-            provider_options: provider_options.clone(),
-        }),
-        ContentPart::ReasoningFile {
-            data,
-            media_type,
-            provider_options,
-        } => AssistantPart::ReasoningFile(ReasoningFilePart {
-            data: data.clone(),
-            media_type: media_type.clone(),
-            provider_options: provider_options.clone(),
-        }),
-        ContentPart::ToolApprovalRequest { .. } => {
-            return Err(AiMuxError::InvalidPrompt(
-                "tool approval requests are only allowed in assistant messages".into(),
-            ));
+        AssistantContentPart::ToolResult(result) => {
+            AssistantPart::ToolResult(tool_result_part(result, tool_names)?)
+        }
+        AssistantContentPart::ToolApprovalRequest { .. } => {
+            unreachable!("tool approval requests are filtered out before conversion")
         }
     })
 }
 
-/// Convert user-facing `ModelMessage`s into a `LanguageModelPrompt`.
+fn tool_result_part(
+    part: &user::ToolResultPart,
+    tool_names: &HashMap<String, String>,
+) -> Result<ToolResultPart, AiMuxError> {
+    let tool_call_id = &part.tool_call_id;
+    Ok(ToolResultPart {
+        tool_call_id: tool_call_id.clone(),
+        tool_name: part
+            .tool_name
+            .as_ref()
+            .or_else(|| tool_names.get(tool_call_id))
+            .cloned()
+            .ok_or_else(|| {
+                AiMuxError::InvalidPrompt(format!(
+                    "tool result {tool_call_id} has no tool name or preceding tool call"
+                ))
+            })?,
+        output: tool_result_output(&part.output),
+        provider_options: part.provider_options.clone(),
+    })
+}
+
+/// Upstream `mapToolResultOutput` (`ai` `prompt/convert-to-language-model-prompt.ts:610`).
+fn tool_result_output(output: &user::ToolResultOutput) -> ToolResultOutput {
+    match output.clone() {
+        user::ToolResultOutput::Text {
+            value,
+            provider_options,
+        } => ToolResultOutput::Text {
+            value,
+            provider_options,
+        },
+        user::ToolResultOutput::Json {
+            value,
+            provider_options,
+        } => ToolResultOutput::Json {
+            value,
+            provider_options,
+        },
+        user::ToolResultOutput::ExecutionDenied {
+            reason,
+            provider_options,
+        } => ToolResultOutput::ExecutionDenied {
+            reason,
+            provider_options,
+        },
+        user::ToolResultOutput::ErrorText {
+            value,
+            provider_options,
+        } => ToolResultOutput::ErrorText {
+            value,
+            provider_options,
+        },
+        user::ToolResultOutput::ErrorJson {
+            value,
+            provider_options,
+        } => ToolResultOutput::ErrorJson {
+            value,
+            provider_options,
+        },
+        user::ToolResultOutput::Content { value } => ToolResultOutput::Content {
+            value: value
+                .into_iter()
+                .map(|item| match item {
+                    user::ToolResultContentPart::Text {
+                        text,
+                        provider_options,
+                    } => ToolResultContent::Text(TextPart {
+                        text,
+                        provider_options,
+                    }),
+                    user::ToolResultContentPart::File {
+                        data,
+                        media_type,
+                        filename,
+                        provider_options,
+                    } => ToolResultContent::File(FilePart {
+                        data,
+                        media_type,
+                        filename,
+                        provider_options,
+                    }),
+                    user::ToolResultContentPart::Custom { provider_options } => {
+                        ToolResultContent::Custom { provider_options }
+                    }
+                })
+                .collect(),
+        },
+    }
+}
+
+/// Convert one message (upstream `convertToLanguageModelMessage`,
+/// `ai` `prompt/convert-to-language-model-prompt.ts:193`).
+fn convert_message(
+    message: &ModelMessage,
+    tool_names: &HashMap<String, String>,
+) -> Result<LanguageModelMessage, AiMuxError> {
+    Ok(match message {
+        ModelMessage::System {
+            content,
+            provider_options,
+        } => LanguageModelMessage::System {
+            content: content.clone(),
+            provider_options: provider_options.clone(),
+        },
+        ModelMessage::User {
+            content,
+            provider_options,
+        } => LanguageModelMessage::User {
+            content: match content {
+                UserContent::Text(text) => vec![UserPart::Text(text_part(text, None))],
+                UserContent::Parts(parts) => parts
+                    .iter()
+                    .map(user_part)
+                    .filter(|part| {
+                        // remove empty text parts (`:242-243`)
+                        !matches!(part, Ok(UserPart::Text(TextPart { text, .. })) if text.is_empty())
+                    })
+                    .collect::<Result<_, _>>()?,
+            },
+            provider_options: provider_options.clone(),
+        },
+        ModelMessage::Assistant {
+            content,
+            provider_options,
+        } => LanguageModelMessage::Assistant {
+            content: match content {
+                AssistantContent::Text(text) => vec![AssistantPart::Text(text_part(text, None))],
+                AssistantContent::Parts(parts) => parts
+                    .iter()
+                    // remove empty text parts without provider options (`:263-269`)
+                    .filter(|part| {
+                        !matches!(part, AssistantContentPart::Text { text, provider_options: None }
+                            if text.is_empty())
+                    })
+                    // approval requests are not sent to the provider (`:270-281`)
+                    .filter(|part| !matches!(part, AssistantContentPart::ToolApprovalRequest { .. }))
+                    .map(|part| assistant_part(part, tool_names))
+                    .collect::<Result<_, _>>()?,
+            },
+            provider_options: provider_options.clone(),
+        },
+        ModelMessage::Tool {
+            content,
+            provider_options,
+        } => LanguageModelMessage::Tool {
+            content: content
+                .iter()
+                .filter_map(|part| match part {
+                    ToolContentPart::ToolResult(result) => {
+                        Some(tool_result_part(result, tool_names).map(ToolPart::ToolResult))
+                    }
+                    // only a provider-executed tool's approval reaches the
+                    // provider (`:374-378`, `:395-402`)
+                    ToolContentPart::ToolApprovalResponse {
+                        approval_id,
+                        approved,
+                        reason,
+                        provider_executed,
+                    } => (*provider_executed == Some(true)).then(|| {
+                        Ok(ToolPart::ToolApprovalResponse(ToolApprovalResponsePart {
+                            approval_id: approval_id.clone(),
+                            approved: *approved,
+                            reason: reason.clone(),
+                            provider_options: None,
+                        }))
+                    }),
+                })
+                .collect::<Result<_, _>>()?,
+            provider_options: provider_options.clone(),
+        },
+    })
+}
+
+/// Convert user-facing `ModelMessage`s into a `LanguageModelPrompt`
+/// (upstream `convertToLanguageModelPrompt`,
+/// `ai` `prompt/convert-to-language-model-prompt.ts:36`).
 ///
-/// - String content is normalized to a single text part.
+/// - `instructions`, when given, becomes the leading system message.
+/// - Each message keeps its role and its message-level `provider_options`.
+/// - String content becomes a single text part.
 /// - The five user-facing file variants become one `FilePart`.
-/// - If `instructions` is provided, it is prepended as a system message.
+/// - Empty text parts are dropped (on an assistant message only when they
+///   have no provider options), as are assistant tool approval requests and
+///   tool approval responses for tools the provider does not execute; a tool
+///   message left empty is dropped.
 ///
 /// # Errors
 ///
-/// `InvalidPrompt` when a part is not allowed for its role (user: text/file;
-/// tool: tool-result), a system message is not plain text, or a file
-/// reference is not a `{ provider: id }` map.
+/// `InvalidPrompt` when a tool result has no tool name and no preceding tool
+/// call, or a file reference is not a `{ provider: id }` map.
 pub fn convert_to_language_model_prompt(
     messages: &[ModelMessage],
     instructions: Option<&str>,
@@ -424,25 +641,14 @@ pub fn convert_to_language_model_prompt(
     }
 
     let mut tool_names = HashMap::new();
-    for msg in messages {
-        let bad = |what: &str| AiMuxError::InvalidPrompt(format!("{:?} message: {what}", msg.role));
-        if msg.role == Role::System {
-            match &msg.content {
-                MessageContent::Text(text) => result.push(LanguageModelMessage::System {
-                    content: text.clone(),
-                    provider_options: None,
-                }),
-                _ => return Err(bad("system content must be plain text")),
-            }
-            continue;
-        }
-        let parts: Cow<'_, [ContentPart]> = match &msg.content {
-            MessageContent::Text(text) => Cow::Owned(vec![ContentPart::text(text)]),
-            MessageContent::Parts(parts) => Cow::Borrowed(parts),
-        };
-        if msg.role == Role::Assistant {
-            for part in parts.iter() {
-                if let ContentPart::ToolCall {
+    for message in messages {
+        if let ModelMessage::Assistant {
+            content: AssistantContent::Parts(parts),
+            ..
+        } = message
+        {
+            for part in parts {
+                if let AssistantContentPart::ToolCall {
                     tool_call_id,
                     tool_name,
                     ..
@@ -452,50 +658,13 @@ pub fn convert_to_language_model_prompt(
                 }
             }
         }
-        let parts = parts
-            .iter()
-            .filter(|part| {
-                msg.role != Role::Assistant
-                    || !matches!(part, ContentPart::ToolApprovalRequest { .. })
-            })
-            .filter(|part| {
-                !matches!(&msg.content, MessageContent::Parts(_))
-                    || !matches!(part, ContentPart::Text { text, provider_options }
-                        if text.is_empty() && (msg.role == Role::User
-                            || (msg.role == Role::Assistant && provider_options.is_none())))
-            })
-            .map(|part| to_assistant_part(part, &tool_names))
-            .collect::<Result<Vec<_>, _>>()?;
-        let provider_options = None;
-        result.push(match msg.role {
-            Role::System => unreachable!(),
-            Role::Assistant => LanguageModelMessage::Assistant {
-                content: parts,
-                provider_options,
-            },
-            Role::User => LanguageModelMessage::User {
-                content: parts
-                    .into_iter()
-                    .map(|p| match p {
-                        AssistantPart::Text(t) => Ok(UserPart::Text(t)),
-                        AssistantPart::File(f) => Ok(UserPart::File(f)),
-                        _ => Err(bad("only text and file parts are allowed")),
-                    })
-                    .collect::<Result<_, _>>()?,
-                provider_options,
-            },
-            Role::Tool => LanguageModelMessage::Tool {
-                content: parts
-                    .into_iter()
-                    .map(|p| match p {
-                        AssistantPart::ToolResult(r) => Ok(ToolPart::ToolResult(r)),
-                        _ => Err(bad("only tool-result parts are allowed")),
-                    })
-                    .collect::<Result<_, _>>()?,
-                provider_options,
-            },
-        });
+        result.push(convert_message(message, &tool_names)?);
     }
 
+    // Filter out empty tool messages, e.g. one that held only tool approval
+    // responses that were removed (`:177-183`).
+    result.retain(|message| {
+        !matches!(message, LanguageModelMessage::Tool { content, .. } if content.is_empty())
+    });
     Ok(result)
 }

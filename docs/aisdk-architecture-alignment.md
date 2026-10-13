@@ -1883,7 +1883,7 @@ provider options/metadata 的内部键完全透传，不执行 camelCase 改写�
 | assistant | String 或数组 | text、custom、file、reasoning、reasoning-file、tool-call、tool-result、tool-approval-request |
 | tool | 数组 | tool-result、tool-approval-response |
 
-四种消息都允许消息级 `providerOptions?`。依据是 `U/*-model-message.ts`，尤其 `assistant-model-message.ts:32` 和 `tool-model-message.ts:23`。
+四种消息都允许消息级 `providerOptions?`。依据是 `U/*-model-message.ts`，尤其 `assistant-model-message.ts:25` 和 `tool-model-message.ts:17`。
 
 ```rust
 #[derive(Serialize, Deserialize)]

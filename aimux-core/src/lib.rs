@@ -66,7 +66,10 @@ pub mod video_model;
 pub mod prelude {
     pub use crate::abort_signal::AbortSignal;
     pub use crate::composite::ChildModel;
-    pub use crate::content::ContentPart;
+    pub use crate::content::{
+        AssistantContentPart, ToolContentPart, ToolResultContentPart, ToolResultOutput,
+        ToolResultPart, UserContentPart,
+    };
     pub use crate::decision_model::{
         DecisionAnswer, DecisionBooleanCriteria, DecisionCallOptions, DecisionCapabilities,
         DecisionDescription, DecisionImage, DecisionModel, DecisionOption,
@@ -86,7 +89,9 @@ pub mod prelude {
     pub use crate::image_model::{ImageCallOptions, ImageModel, ImageResult, generate_image};
     pub use crate::language_model::LanguageModel;
     pub use crate::language_model_message::LanguageModelPrompt;
-    pub use crate::message::{MessageContent, ModelMessage, ModelPrompt, Role};
+    pub use crate::message::{
+        AssistantContent, ModelMessage, ModelPrompt, ToolContent, UserContent,
+    };
     pub use crate::moa::{MoaConfig, MoaFailMode, MoaModel};
     pub use crate::model_catalogue::{
         CatalogueSource, Modality, ModelCapabilities, ModelCost, ModelLimits, ModelModalities,

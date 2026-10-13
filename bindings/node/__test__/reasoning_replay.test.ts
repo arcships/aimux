@@ -5,12 +5,12 @@
 // Issue 1: a `tool`-role message carrying `ContentPart[]` with a `tool_result`
 //   part built from the legacy `output` field was rejected by `ModelPrompt`
 //   deserialization ("data did not match any variant of untagged enum
-//   ModelPrompt"). The Rust `ContentPart::ToolResult.result` field now accepts
-//   `output` as a serde alias, so both shapes round-trip.
+//   ModelPrompt"). The Rust `ToolResultPart` reads `output` as well as the
+//   earlier `result` field, so both shapes round-trip.
 //
 // Issue 2: thinking models require prior assistant `reasoning_content` to be
 //   replayed on later turns. The OpenAI message converter now lifts
-//   `ContentPart::Reasoning` parts to a top-level `reasoning_content` string.
+//   assistant reasoning parts to a top-level `reasoning_content` string.
 //
 // These tests use a mock HTTP server (no real API) and assert the outbound
 // request body shape that the Rust engine produces.

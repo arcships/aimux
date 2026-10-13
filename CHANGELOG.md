@@ -18,10 +18,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   part, `FilePart { data: FileData, media_type, filename }`; the five
   user-facing file variants are folded into it by
   `convert_to_language_model_prompt`, which now returns `Result` and rejects a
-  part its role does not allow. `LanguageModelPromptMessage` is removed. The
-  user-facing `ModelMessage` and `ContentPart` are unchanged. Recordings store
-  the new prompt JSON: a system message's `content` is a string and every file
-  input is a `file` part.
+  part its role does not allow. `LanguageModelPromptMessage` is removed.
+  Recordings store the new prompt JSON: a system message's `content` is a
+  string and every file input is a `file` part. In TypeScript the provider
+  `ToolResultPart` / `ToolResultOutput` are `LanguageModelToolResultPart` /
+  `LanguageModelToolResultOutput`; the plain names are the user-facing types.
+
+- The user-facing `ModelMessage` is a union by role, as the AI SDK's
+  (`aimux-core`): `System { content: String }`, `User { content: UserContent }`,
+  `Assistant { content: AssistantContent }`, `Tool { content: ToolContent }`,
+  each with message-level `provider_options`, which now reach the provider
+  prompt (they were dropped). Each role has its own part union:
+  `UserContentPart` (text, image and the file variants),
+  `AssistantContentPart` (text, custom, the file variants, reasoning,
+  reasoning file, tool call, tool result, tool approval request) and
+  `ToolContentPart` (tool result, tool approval response). `ContentPart`,
+  `MessageContent` and `Role` are removed; `ModelMessage::role()` returns the
+  role name. A tool result is `ToolResultPart { tool_call_id, tool_name,
+  output: ToolResultOutput, provider_options }`, the AI SDK's typed output
+  (`text`, `json`, `execution-denied`, `error-text`, `error-json`, `content`);
+  `preliminary` and `dynamic` are gone from it. A tool message can carry a
+  `tool_approval_response { approval_id, approved, reason, provider_executed }`,
+  which reaches the provider only for a provider-executed tool, as upstream;
+  a tool message left empty is dropped. Wire format: the role and part tags
+  are unchanged; a tool result still reads the earlier `result` (or untyped
+  `output`) value with `is_error` and writes `text` / `json` / error outputs
+  that way, while `output` holding an AI SDK output object is read as typed;
+  a part its role does not allow (an `image` in an assistant message, a
+  non-text system message, a string or text part in a tool message) is now
+  rejected when the prompt is parsed instead of when it is converted.
 
 - Provider options and provider metadata have one typed shape, the AI SDK's
   `Record<string, JSONObject>`: `SharedProviderOptions` and

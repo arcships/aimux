@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use base64::Engine;
 use serde_json::Value;
 
-use crate::content::ContentPart;
-use crate::message::{MessageContent, ModelMessage, Role};
+use crate::content::{AssistantContentPart, ToolResultOutput, ToolResultPart};
+use crate::message::ModelMessage;
 use crate::result::{
     GenerateContent, GeneratedFile, ReasoningFileOutput, ReasoningOutput, ReasoningPart, Source,
     TextContent, ToolApprovalRequestOutput,
@@ -176,14 +176,14 @@ impl ResponseMessageBuilder {
                     if text.is_empty() {
                         continue;
                     }
-                    ContentPart::Text {
+                    AssistantContentPart::Text {
                         text: text.clone(),
                         provider_options: provider_metadata.clone(),
                     }
                 }
                 GenerateContent::Reasoning(output) => {
                     reasoning.push(ReasoningPart::Text(output.clone()));
-                    ContentPart::Reasoning {
+                    AssistantContentPart::Reasoning {
                         text: output.text.clone(),
                         provider_options: output.provider_metadata.clone(),
                     }
@@ -191,18 +191,18 @@ impl ResponseMessageBuilder {
                 GenerateContent::Custom {
                     kind,
                     provider_metadata,
-                } => ContentPart::Custom {
+                } => AssistantContentPart::Custom {
                     kind: kind.clone(),
                     provider_options: provider_metadata.clone(),
                 },
                 GenerateContent::File(file) => match &file.data {
-                    GeneratedFileData::Data { data } => ContentPart::FileBase64 {
+                    GeneratedFileData::Data { data } => AssistantContentPart::FileBase64 {
                         data: file_base64(data),
                         media_type: file.media_type.clone(),
                         filename: None,
                         provider_options: file.provider_metadata.clone(),
                     },
-                    GeneratedFileData::Url { url, .. } => ContentPart::FileUrl {
+                    GeneratedFileData::Url { url, .. } => AssistantContentPart::FileUrl {
                         url: url.clone(),
                         media_type: file.media_type.clone(),
                         provider_options: file.provider_metadata.clone(),
@@ -210,7 +210,7 @@ impl ResponseMessageBuilder {
                 },
                 GenerateContent::ReasoningFile(output) => {
                     reasoning.push(ReasoningPart::File(output.clone()));
-                    ContentPart::ReasoningFile {
+                    AssistantContentPart::ReasoningFile {
                         data: match &output.file.data {
                             GeneratedFileData::Data { data } => GeneratedFileData::Data {
                                 data: FileBytes::Base64(file_base64(data)),
@@ -222,7 +222,7 @@ impl ResponseMessageBuilder {
                     }
                 }
                 GenerateContent::ToolApprovalRequest(approval) => {
-                    ContentPart::ToolApprovalRequest {
+                    AssistantContentPart::ToolApprovalRequest {
                         approval_id: approval.approval_id.clone(),
                         tool_call_id: approval.tool_call.tool_call_id.clone(),
                         reason: approval.reason.clone(),
@@ -231,32 +231,39 @@ impl ResponseMessageBuilder {
                         input_schema_input: None,
                     }
                 }
-                GenerateContent::ToolCall(call) => ContentPart::ToolCall {
+                GenerateContent::ToolCall(call) => AssistantContentPart::ToolCall {
                     tool_call_id: call.tool_call_id.clone(),
                     tool_name: call.tool_name.clone(),
                     input: response_tool_call_input(&call.input, call.invalid),
                     provider_executed: call.provider_executed,
                     provider_options: call.provider_metadata.clone(),
                 },
-                GenerateContent::ToolResult(result) => ContentPart::ToolResult {
-                    tool_call_id: result.tool_call_id.clone(),
-                    tool_name: Some(result.tool_name.clone()),
-                    result: result.result.clone(),
-                    is_error: result.is_error,
-                    preliminary: result.preliminary,
-                    dynamic: result.dynamic,
-                    provider_options: result.provider_metadata.clone(),
-                },
+                // A provider-executed result replays as upstream's
+                // `createToolModelOutput` builds it: `errorMode: 'none'` for
+                // a result, `'json'` for an error
+                // (`ai` `generate-text/to-response-messages.ts:103-127`).
+                GenerateContent::ToolResult(result) => {
+                    AssistantContentPart::ToolResult(ToolResultPart {
+                        tool_call_id: result.tool_call_id.clone(),
+                        tool_name: Some(result.tool_name.clone()),
+                        output: if result.is_error == Some(true) {
+                            ToolResultOutput::ErrorJson {
+                                value: result.result.clone(),
+                                provider_options: None,
+                            }
+                        } else {
+                            ToolResultOutput::from_result(result.result.clone(), false)
+                        },
+                        provider_options: result.provider_metadata.clone(),
+                    })
+                }
                 GenerateContent::Source(_) => continue,
             });
         }
         let messages = if parts.is_empty() {
             Vec::new()
         } else {
-            vec![ModelMessage {
-                role: Role::Assistant,
-                content: MessageContent::Parts(parts),
-            }]
+            vec![ModelMessage::assistant_parts(parts)]
         };
         ResponseMessages {
             messages,
@@ -286,11 +293,9 @@ mod tests {
     // signature stays in its namespace; there is no top-level signature.
     #[test]
     fn reasoning_signature_is_replayed_only_in_provider_options() {
-        let metadata = crate::shared::provider_namespace(
-            "anthropic",
-            json!({ "signature": "sig-1" }),
-        )
-        .unwrap();
+        let metadata =
+            crate::shared::provider_namespace("anthropic", json!({ "signature": "sig-1" }))
+                .unwrap();
         let mut builder = ResponseMessageBuilder::new();
         builder.reasoning(&ReasoningOutput {
             text: "thinking".into(),
