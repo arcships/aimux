@@ -49,6 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `NamespacedKind::new` / `parse` check it when built in Rust. The JSON
   is still a plain string.
 
+- A provider-executed `tool::ToolResult` whose `result` is `null` no longer
+  deserializes: the V4 `result` is `NonNullable<JSONValue>`.
+
 - Removed the generated `ProviderName` type in every binding (Rust enum, TS
   const object, Go/Java/Kotlin consts, Swift enum, Dart consts, Python
   `Literal`) and `scripts/gen_provider_names.py`. Provider names are plain

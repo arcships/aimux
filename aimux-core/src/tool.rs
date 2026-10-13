@@ -165,7 +165,11 @@ pub struct ToolResult {
     /// Must match the corresponding call's `tool_call_id`.
     pub tool_call_id: String,
     pub tool_name: String,
-    /// The tool's output (usually a JSON-serializable value or plain text).
+    /// The tool's output: any JSON value but `null`, as the V4
+    /// `result: NonNullable<JSONValue>` (`@ai-sdk/provider@4.0.21
+    /// src/language-model/v4/language-model-v4-tool-result.ts:23`); a `null`
+    /// result does not deserialize.
+    #[serde(deserialize_with = "non_null_json")]
     pub result: Value,
     /// Whether the result is an error or error message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -179,6 +183,19 @@ pub struct ToolResult {
     /// Additional provider-specific metadata for the tool result.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
+}
+
+/// A JSON value other than `null` (`NonNullable<JSONValue>`).
+fn non_null_json<'de, D>(deserializer: D) -> Result<Value, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    match Value::deserialize(deserializer)? {
+        Value::Null => Err(serde::de::Error::custom(
+            "a tool result's `result` must not be null",
+        )),
+        value => Ok(value),
+    }
 }
 
 /// How the model should choose tools, as the caller gives it

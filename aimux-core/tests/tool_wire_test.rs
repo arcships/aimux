@@ -1,6 +1,6 @@
 //! V4 tool types that constrain their JSON beyond its shape.
 
-use aimux_core::tool::{ProviderTool, Tool};
+use aimux_core::tool::{ProviderTool, Tool, ToolResult};
 use aimux_core::types::NamespacedKind;
 use serde_json::json;
 
@@ -46,4 +46,23 @@ fn a_namespaced_kind_is_any_text_with_a_dot() {
         assert!(NamespacedKind::new(kind).is_err(), "{kind:?}");
         assert!(serde_json::from_value::<NamespacedKind>(json!(kind)).is_err());
     }
+}
+
+/// `LanguageModelV4ToolResult.result` is `NonNullable<JSONValue>`
+/// (`@ai-sdk/provider@4.0.21
+/// src/language-model/v4/language-model-v4-tool-result.ts:23`).
+#[test]
+fn a_tool_result_is_never_null() {
+    let result = |value| {
+        serde_json::from_value::<ToolResult>(json!({
+            "tool_call_id": "call-1",
+            "tool_name": "web_search",
+            "result": value,
+        }))
+    };
+    for value in [json!(false), json!(0), json!(""), json!([]), json!({})] {
+        assert_eq!(result(value.clone()).unwrap().result, value);
+    }
+    let err = result(json!(null)).unwrap_err();
+    assert!(err.to_string().contains("must not be null"), "{err}");
 }
