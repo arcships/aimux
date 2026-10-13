@@ -34,7 +34,7 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::parse_tool_call::raw_tool_call_text;
+use crate::parse_tool_call::original_tool_call_text;
 use crate::result::GenerateContent;
 use crate::result::GenerateResult;
 use crate::shared::FileData;
@@ -1020,8 +1020,8 @@ fn now_unix() -> u64 {
 /// wire text: the provider's raw argument text verbatim for an invalid call,
 /// compact JSON of the parsed value otherwise.
 ///
-/// Older errors without raw argument text fall back to serializing the
-/// parsed input as JSON.
+/// Errors without the original argument text (older errors, or the error
+/// of a rejected repair) fall back to serializing the parsed input as JSON.
 pub(crate) fn parsed_tool_call_arguments(
     input: &Value,
     invalid: Option<bool>,
@@ -1029,7 +1029,7 @@ pub(crate) fn parsed_tool_call_arguments(
 ) -> String {
     if invalid == Some(true)
         && let Some(error) = error
-        && let Some(raw) = raw_tool_call_text(error)
+        && let Some(raw) = original_tool_call_text(input, error)
     {
         // Blank text still fails validation against a schema with required
         // properties, but OpenAI's wire format has no representation for

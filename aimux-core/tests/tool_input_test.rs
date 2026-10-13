@@ -8,7 +8,9 @@ use aimux_core::generate::{
 use aimux_core::language_model::LanguageModel;
 use aimux_core::openai_output::OpenAiStreamOptions;
 use aimux_core::options::CallOptions;
-use aimux_core::parse_tool_call::{ToolCallRepair, parse_tool_call};
+use aimux_core::parse_tool_call::{
+    ToolCallRepair, ToolCallRepairReply, apply_tool_call_repair, parse_tool_call,
+};
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, RawToolCall, Tool, ToolCall};
@@ -250,13 +252,41 @@ async fn an_invalid_repair_is_not_repaired_again() {
     .await;
 
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+    // The invalid call is built from the original call (ai@7.0.127
+    // parse-tool-call.ts:112-133) and carries the repaired call's own
+    // validation error, not wrapped: only a failing repair function is
+    // wrapped in ToolCallRepairError (:90-96, :103-110).
     assert_eq!(call.input, json!("{"));
     assert_eq!(call.invalid, Some(true));
     assert!(matches!(
         call.error,
-        Some(AiMuxError::ToolCallRepair { original_error, cause })
-            if matches!(*original_error, AiMuxError::InvalidToolInput { ref tool_input, .. } if tool_input == "{")
-                && matches!(*cause, AiMuxError::InvalidToolInput { ref tool_input, .. } if tool_input == r#"{"city":7}"#)
+        Some(AiMuxError::InvalidToolInput { ref tool_input, .. }) if tool_input == r#"{"city":7}"#
+    ));
+}
+
+/// The host-reply path shares the post-repair contract: a `repaired` reply
+/// that still fails validation leaves the original call invalid with the
+/// reply's own error, not a `ToolCallRepair` error (ai@7.0.127
+/// parse-tool-call.ts:103-133).
+#[tokio::test]
+async fn a_repaired_reply_that_fails_validation_is_not_wrapped() {
+    let tools = [weather_tool()];
+    let invalid = parse_tool_call(raw("weather", "{"), Some(&tools), None, &[], None).await;
+
+    let call = apply_tool_call_repair(
+        &invalid,
+        Some(&tools),
+        ToolCallRepairReply::Repaired {
+            tool_call: raw("weather", r#"{"city":7}"#),
+        },
+    )
+    .unwrap();
+
+    assert_eq!(call.input, json!("{"));
+    assert_eq!(call.invalid, Some(true));
+    assert!(matches!(
+        call.error,
+        Some(AiMuxError::InvalidToolInput { ref tool_input, .. }) if tool_input == r#"{"city":7}"#
     ));
 }
 

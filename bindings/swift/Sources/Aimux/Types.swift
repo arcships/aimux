@@ -1149,8 +1149,9 @@ public struct GenerateTextOptions: Codable, Equatable {
     ///
     /// Runs after generation, on every tool call the engine marked invalid, in
     /// document order and at most once per call. Return a corrected
-    /// ``RawToolCall`` (it is re-validated: still invalid means the call keeps
-    /// an `invalid` flag carrying a `ToolCallRepair` error), `nil` to leave the
+    /// ``RawToolCall`` (it is re-validated: still invalid means the original
+    /// call stays invalid, carrying the new parse or validation error, not a
+    /// `ToolCallRepair` error), `nil` to leave the
     /// call untouched with its original error, or throw to fail the repair
     /// with the thrown error's message as cause. A call made without a tool set
     /// is never repaired and the function is not invoked for it.

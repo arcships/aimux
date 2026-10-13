@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deserializes; the standalone `tool::ToolResult` gains a required
   `tool_name` and optional `dynamic` / `provider_metadata`.
 
+- A repaired tool call that still fails to parse or validate is reported as
+  the AI SDK reports it: the original call stays invalid and carries the
+  replacement's own `InvalidToolInput` / `NoSuchTool` error, no longer wrapped
+  in `ToolCallRepair` (only a failing repair function is wrapped). This holds
+  for the `repair_tool_call` closure and for a host's `repaired` reply in every
+  binding.
+
 - Removed the generated `ProviderName` type in every binding (Rust enum, TS
   const object, Go/Java/Kotlin consts, Swift enum, Dart consts, Python
   `Literal`) and `scripts/gen_provider_names.py`. Provider names are plain
