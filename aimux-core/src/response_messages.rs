@@ -29,19 +29,6 @@ pub(crate) fn response_tool_call_input(input: &Value, invalid: Option<bool>) -> 
     }
 }
 
-/// Reasoning signature echoed back on the next turn (Anthropic:
-/// `provider_metadata.anthropic.signature`; Bedrock: `.bedrock.signature` /
-/// `.amazonBedrock.signature`).
-pub(crate) fn extract_reasoning_signature(
-    provider_metadata: Option<&SharedProviderMetadata>,
-) -> Option<String> {
-    let metadata = provider_metadata?;
-    ["anthropic", "bedrock", "amazonBedrock"]
-        .into_iter()
-        .find_map(|ns| metadata.get(ns)?.get("signature")?.as_str())
-        .map(str::to_owned)
-}
-
 /// Accumulates generated content in provider order, updating streamed segments by ID.
 #[derive(Default)]
 pub(crate) struct ResponseMessageBuilder {
@@ -198,7 +185,6 @@ impl ResponseMessageBuilder {
                     reasoning.push(ReasoningPart::Text(output.clone()));
                     ContentPart::Reasoning {
                         text: output.text.clone(),
-                        signature: extract_reasoning_signature(output.provider_metadata.as_ref()),
                         provider_options: output.provider_metadata.clone(),
                     }
                 }
@@ -284,5 +270,43 @@ fn file_base64(data: &FileBytes) -> String {
     match data {
         FileBytes::Base64(data) => data.clone(),
         FileBytes::Binary(data) => base64::engine::general_purpose::STANDARD.encode(data),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // The AI SDK's `ReasoningPart` is `{ type, text, providerOptions? }`
+    // (`@ai-sdk/provider-utils@5.0.53` `types/content-part.ts:107`), and
+    // `toResponseMessages` replays a reasoning output as
+    // `{ type: 'reasoning', text, providerOptions: part.providerMetadata }`
+    // (`ai@7.0.127` `generate-text/to-response-messages.ts:62`). A provider's
+    // signature stays in its namespace; there is no top-level signature.
+    #[test]
+    fn reasoning_signature_is_replayed_only_in_provider_options() {
+        let metadata = crate::shared::provider_namespace(
+            "anthropic",
+            json!({ "signature": "sig-1" }),
+        )
+        .unwrap();
+        let mut builder = ResponseMessageBuilder::new();
+        builder.reasoning(&ReasoningOutput {
+            text: "thinking".into(),
+            provider_metadata: Some(metadata),
+        });
+        let messages = builder.finish().messages;
+        assert_eq!(
+            serde_json::to_value(&messages).unwrap(),
+            json!([{
+                "role": "assistant",
+                "content": [{
+                    "type": "reasoning",
+                    "text": "thinking",
+                    "provider_options": { "anthropic": { "signature": "sig-1" } }
+                }]
+            }])
+        );
     }
 }

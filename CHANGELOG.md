@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-object at the top) is rejected when deserialized. Build one with
   `provider_namespace(ns, json!({..}))`.
 
+- `ContentPart::Reasoning` has no `signature` field any more, as the AI SDK's
+  `ReasoningPart` (`text` and `provider_options` only). A reasoning signature
+  travels in its provider's namespace (`provider_options.anthropic.signature`,
+  `provider_options.bedrock.signature`), which is where the providers already
+  read it; response messages no longer copy it to a top-level field. A
+  `signature` key in input JSON is ignored.
+
 - Tool-call and tool-result types are unified, one per protocol layer
   (`aimux-core`). A provider emits `tool::RawToolCall` (`input` is the raw
   argument text) in `GenerateContent::ToolCall(..)` and

@@ -841,8 +841,6 @@ pub async fn generate_object(
     })
 }
 
-/// Extract the reasoning signature from provider metadata, checking all known
-/// provider keys (Anthropic, Bedrock).
 /// Stream text from the model.
 ///
 /// # Example

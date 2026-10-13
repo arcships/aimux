@@ -125,7 +125,7 @@ test('issue 2: assistant reasoning + tool_call lifts reasoning to reasoning_cont
       {
         role: 'assistant',
         content: [
-          { type: 'reasoning', text: 'I need to inspect files before answering.', signature: null },
+          { type: 'reasoning', text: 'I need to inspect files before answering.' },
           { type: 'tool_call', tool_call_id: 'call_1', tool_name: 'read_file', input: { path: 'README.md' } },
         ],
       },
@@ -173,7 +173,7 @@ test('issue 2: assistant reasoning + text (no tool calls) emits reasoning_conten
       {
         role: 'assistant',
         content: [
-          { type: 'reasoning', text: '2 plus 2 equals 4.', signature: null },
+          { type: 'reasoning', text: '2 plus 2 equals 4.' },
           { type: 'text', text: '4' },
         ],
       },

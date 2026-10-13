@@ -109,14 +109,13 @@ pub enum ContentPart {
 
     /// A reasoning / thinking segment produced by the model.
     ///
-    /// Mirrors the Vercel AI SDK `reasoning` part. `signature` is the Anthropic
-    /// thinking-block signature (from `providerOptions.anthropic.signature`);
-    /// when absent the part is treated as having unsupported metadata (unless
-    /// `providerOptions.anthropic.redactedData` is present, in which case a
-    /// `redacted_thinking` block is emitted).
+    /// Mirrors the AI SDK `ReasoningPart` (`provider-utils` `content-part.ts`),
+    /// which has only `text` and `providerOptions`: a provider's reasoning
+    /// signature travels in its namespace (e.g. `anthropic.signature`,
+    /// `bedrock.signature`), as the provider wrote it into the response's
+    /// provider metadata.
     Reasoning {
         text: String,
-        signature: Option<String>,
         /// Provider-specific options for this part (e.g.
         /// `anthropic.signature`, `anthropic.redactedData`,
         /// `anthropic.cacheControl`).
@@ -211,11 +210,10 @@ impl ContentPart {
     }
 
     /// Convenience constructor for a reasoning/thinking part (no provider
-    /// options, no signature).
+    /// options).
     pub fn reasoning(text: impl Into<String>) -> Self {
         ContentPart::Reasoning {
             text: text.into(),
-            signature: None,
             provider_options: None,
         }
     }
