@@ -781,3 +781,45 @@ async fn provider_tools_member_makes_the_provider_tools() {
         json!([{"type":"web_search","search_context_size":"high"}])
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-language-model.ts:1660-1663
+/// enqueues `{ type: 'raw', rawValue }` for every chunk, before the parts
+/// derived from it, when `includeRawChunks` is set, and nothing otherwise.
+#[tokio::test]
+async fn responses_stream_emits_raw_chunks_when_asked() {
+    let events = vec![
+        json!({"type":"response.created","response":{"id":"resp_raw","created_at":1741630255,"model":"test-model"}}),
+        json!({"type":"response.completed","response":{"id":"resp_raw","usage":{"input_tokens":1,"output_tokens":1}}}),
+    ];
+    let fetch = MockFetch::new(vec![sse(events.clone()), sse(events.clone())]);
+    let model = provider(&fetch).responses("test-model");
+    let mut call = options();
+    call.include_raw_chunks = Some(true);
+    let with_raw: Vec<_> = model
+        .do_stream(&call)
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect()
+        .await;
+    assert!(matches!(&with_raw[0], StreamPart::StreamStart { .. }));
+    assert!(matches!(&with_raw[1], StreamPart::Raw { raw_value } if *raw_value == events[0]));
+    assert!(matches!(&with_raw[2], StreamPart::ResponseMetadata(_)));
+    assert!(matches!(&with_raw[3], StreamPart::Raw { raw_value } if *raw_value == events[1]));
+    assert!(matches!(with_raw.last(), Some(StreamPart::Finish { .. })));
+
+    let without_raw: Vec<_> = model
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect()
+        .await;
+    assert!(
+        !without_raw
+            .iter()
+            .any(|part| matches!(part, StreamPart::Raw { .. }))
+    );
+}
