@@ -71,7 +71,7 @@ func (m *Model) Generate(prompt any, opts *GenerateTextOptions) (*GenerateTextRe
 // GenerateObj is the typed object-generation method (M12, RFC-0016).
 //
 // Same signature as Generate; returns a typed *GenerateObjectResult. Pass
-// Output: {"Object":{"schema":{...}}} in opts to describe the object; the
+// Output: {"type":"object","schema":{...}} in opts to describe the object; the
 // model's text must parse as JSON and match the schema. The AI SDK
 // deprecates generateObject for generateText with an output; Generate with
 // opts.Output returns the parsed value as GenerateTextResult.Output.

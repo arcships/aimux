@@ -849,7 +849,7 @@ func (m *Model) GenerateText(promptJson, optsJson string) (string, error) {
 // GenerateObject generates a structured JSON object (M12, RFC-0016).
 //
 // Same signature as GenerateText; returns the JSON-serialized
-// GenerateObjectResult. Pass "output": {"Object": {"schema": {...}}} via
+// GenerateObjectResult. Pass "output": {"type": "object", "schema": {...}} via
 // optsJson to describe the object; the model's text must parse as JSON and
 // match the schema.
 func (m *Model) GenerateObject(promptJson, optsJson string) (string, error) {

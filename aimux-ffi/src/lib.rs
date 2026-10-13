@@ -1764,7 +1764,7 @@ pub extern "C" fn aimux_generate_text(
 ///
 /// Same signature as [`aimux_generate_text`]; writes the serialized
 /// `GenerateObjectResult`. The caller passes `output` (for example
-/// `{ "Object": { "schema": ... } }`) via `opts_json` to describe the value;
+/// `{ "type": "object", "schema": ... }`) via `opts_json` to describe the value;
 /// without one any JSON value is accepted. The model's text must parse as
 /// JSON and match the schema.
 #[unsafe(no_mangle)]

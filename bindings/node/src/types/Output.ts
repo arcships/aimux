@@ -3,5 +3,12 @@ import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
  * What the final text of a generation is parsed into.
+ *
+ * Upstream's `Output` is a JavaScript object with functions and has no JSON
+ * form; aimux's JSON follows the public JSON rules: tagged by `type` with the
+ * output kind (upstream's mode `name`, `output.ts:68`, `:114`, `:241`, `:520`, `:657`;
+ * the field `name` stays the schema name), and the arguments of
+ * `Output.object()` / `array()` / `choice()` / `json()` camelCase
+ * (`{"type":"array","element":{...},"minItems":1}`).
  */
-export type Output = { "Text": Record<symbol, never> } | { "Object": { schema: JsonValue, name?: string | null, description?: string | null, } } | { "Array": { element: JsonValue, min_items?: number | null, max_items?: number | null, name?: string | null, description?: string | null, } } | { "Choice": { options: Array<string>, name?: string | null, description?: string | null, } } | { "Json": { name?: string | null, description?: string | null, } };
+export type Output = { "type": "text", } | { "type": "object", schema: JsonValue, name?: string, description?: string, } | { "type": "array", element: JsonValue, minItems?: number, maxItems?: number, name?: string, description?: string, } | { "type": "choice", options: Array<string>, name?: string, description?: string, } | { "type": "json", name?: string, description?: string, };

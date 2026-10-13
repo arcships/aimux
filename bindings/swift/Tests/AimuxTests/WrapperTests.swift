@@ -182,6 +182,31 @@ final class WrapperTests: XCTestCase {
                        .file(LanguageModelFile(data: .url(url: "https://example.com/a.png"), mediaType: "image/png")))
     }
 
+    /// The text stream's tool parts are the AI SDK's TypedToolResult and
+    /// TypedToolOutputDenied, camelCase (ai generate-text/tool-result.ts:10-42,
+    /// tool-output-denied.ts:7-15), and a finish part's totalUsage is its
+    /// LanguageModelUsage (types/usage.ts:10-67): camelCase counts, an unknown
+    /// count absent.
+    func testTextStreamToolPartsAndUsageAreCamelCase() throws {
+        let cases: [(String, TextStreamPart)] = [
+            (#"{"type":"tool-result","toolCallId":"srv-1","toolName":"web_search","input":{"q":"rust"},"output":"ok","providerExecuted":true}"#,
+             .toolResult(TypedToolResult(toolCallId: "srv-1", toolName: "web_search", input: .object(["q": .string("rust")]),
+                                         output: .string("ok"), providerExecuted: true, providerMetadata: nil,
+                                         dynamic: nil, preliminary: nil))),
+            (#"{"type":"tool-output-denied","toolCallId":"c","toolName":"t"}"#,
+             .toolOutputDenied(ToolOutputDenied(toolCallId: "c", toolName: "t", providerExecuted: nil, dynamic: nil))),
+            (#"{"type":"finish","finishReason":"stop","totalUsage":{"inputTokens":3,"inputTokenDetails":{"cacheReadTokens":1},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5}}"#,
+             .finish(finishReason: .stop, rawFinishReason: nil,
+                     totalUsage: LanguageModelUsage(inputTokens: 3, inputTokenDetails: InputTokenDetails(cacheReadTokens: 1),
+                                                    outputTokens: 2, totalTokens: 5))),
+        ]
+        for (wire, part) in cases {
+            XCTAssertEqual(try JSONDecoder().decode(TextStreamPart.self, from: Data(wire.utf8)), part)
+            let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(part)) as? NSDictionary
+            XCTAssertEqual(encoded, try JSONSerialization.jsonObject(with: Data(wire.utf8)) as? NSDictionary)
+        }
+    }
+
     /// The text stream's text-delta and reasoning-delta carry `text` (ai
     /// generate-text/stream-text-result.ts:435-440, :466-471); a
     /// tool-input-delta keeps `delta` (:496-501).
@@ -406,11 +431,11 @@ final class WrapperTests: XCTestCase {
           "toolResults": [],
           "finishReason": "tool-calls",
           "rawFinishReason": "tool_calls",
-          "usage": {"input_tokens":3,"input_token_details":{},"output_tokens":2,"output_token_details":{},"total_tokens":5},
-          "totalUsage": {"input_tokens":3,"input_token_details":{},"output_tokens":2,"output_token_details":{},"total_tokens":5},
+          "usage": {"inputTokens":3,"inputTokenDetails":{},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5},
+          "totalUsage": {"inputTokens":3,"inputTokenDetails":{},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5},
           "warnings": [{"type":"other","message":"careful"}],
           "request": {},
-          "response": {"id":"resp_1","timestamp":"2026-01-01T00:00:00.000Z","model_id":"gpt-4o","messages":[]},
+          "response": {"id":"resp_1","timestamp":"2026-01-01T00:00:00.000Z","modelId":"gpt-4o","messages":[]},
           "responseMessages": [
             {"role":"assistant","content":[
               {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
@@ -420,7 +445,7 @@ final class WrapperTests: XCTestCase {
                "output":{"type":"json","value":{"temp":22}}}
             ]}
           ],
-          "steps": [{"call_id":"c1","step_number":0}]
+          "steps": [{"callId":"c1","stepNumber":0}]
         }
         """
         let original = try JSONDecoder().decode(GenerateTextResult.self,
@@ -433,6 +458,7 @@ final class WrapperTests: XCTestCase {
         XCTAssertEqual(original.reasoningText, "hmm")
         XCTAssertNil(original.output)
         XCTAssertEqual(original.response.id, "resp_1")
+        XCTAssertEqual(original.response.modelId, "gpt-4o")
         XCTAssertEqual(original.warnings, [.other(message: "careful")])
         XCTAssertEqual(original.reasoning, [.reasoning(ReasoningOutput(text: "hmm"))])
         guard case .parts(let toolContent) = original.responseMessages[1].content,

@@ -141,11 +141,15 @@ for its own declaration):
 `provider_metadata` and `total_usage` are also present: the final step's
 values (`total_usage` equals `usage`), deprecated in the AI SDK.
 
-`LanguageModelUsage` is flat, as in the AI SDK: `input_tokens`,
-`input_token_details { no_cache_tokens, cache_read_tokens,
-cache_write_tokens }`, `output_tokens`, `output_token_details { text_tokens,
-reasoning_tokens }`, `total_tokens` and the provider's `raw` usage object.
-Unknown counts are `null`, never zero.
+`LanguageModelUsage` is flat and camelCase, as in the AI SDK's JSON:
+`inputTokens`, `inputTokenDetails { noCacheTokens, cacheReadTokens,
+cacheWriteTokens }`, `outputTokens`, `outputTokenDetails { textTokens,
+reasoningTokens }`, `totalTokens` and the provider's `raw` usage object.
+An unknown count is absent (the AI SDK's `undefined`), never zero; the two
+detail objects are always present. `steps` entries are camelCase as well
+(`stepNumber`, `callId`, `model { provider, modelId }`, `performance`,
+`response { id, timestamp, modelId, headers?, body?, messages }`), and each
+`toolResults` entry carries `type: "tool-result"`.
 
 > **Note**: `text`, `tool_calls` and the other top-level fields are read from
 > the final step's `content`. Tool calls are parsed and validated per the

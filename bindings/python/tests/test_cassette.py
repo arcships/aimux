@@ -79,7 +79,7 @@ class TestDeepSeekCassette:
         assert isinstance(raw.get("prompt_cache_miss_tokens"), int)
         assert result["usage"].get("raw") is None
         # Typed totals still work alongside the raw object.
-        assert result["usage"]["input_tokens"] is not None
+        assert result["usage"]["inputTokens"] is not None
 
 
 class TestGroqCassette:

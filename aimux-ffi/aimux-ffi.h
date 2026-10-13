@@ -243,7 +243,7 @@ aimux_error_t *aimux_generate_text(uint64_t handle,
 /* [AiMuxError] Generate a structured JSON object (M12, RFC-0016) with the core's
    deprecated generate_object wrapper. Same signature as aimux_generate_text;
    writes serialized GenerateObjectResult JSON. Pass
-   output: { "Object": { "schema": ... } } via opts_json to describe the value;
+   output: { "type": "object", "schema": ... } via opts_json to describe the value;
    the model's text must parse and match the schema. */
 aimux_error_t *aimux_generate_object(uint64_t handle,
                                          const char *prompt_json,

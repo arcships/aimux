@@ -971,9 +971,11 @@ class GenerateTextOptions(_Wire):
     frequency_penalty: Optional[float] = None
     output: Optional[Dict[str, Any]] = None
     """What the final text is parsed into (Rust ``Output``), in its wire
-    form: ``{"Text": {}}``, ``{"Object": {"schema": ...}}``,
-    ``{"Array": {"element": ...}}``, ``{"Choice": {"options": [...]}}`` or
-    ``{"Json": {}}``. The parsed value lands on ``GenerateTextResult.output``.
+    form, tagged by ``type``: ``{"type": "text"}``,
+    ``{"type": "object", "schema": ...}``,
+    ``{"type": "array", "element": ..., "minItems": 1}``,
+    ``{"type": "choice", "options": [...]}`` or ``{"type": "json"}``. The
+    parsed value lands on ``GenerateTextResult.output``.
     """
     seed: Optional[int] = None
     tools: Optional[List[Tool]] = None

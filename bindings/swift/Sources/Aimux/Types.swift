@@ -204,9 +204,9 @@ public struct InputTokenDetails: Codable, Equatable {
     public var cacheReadTokens: UInt32?
     public var cacheWriteTokens: UInt32?
     enum CodingKeys: String, CodingKey {
-        case noCacheTokens = "no_cache_tokens"
-        case cacheReadTokens = "cache_read_tokens"
-        case cacheWriteTokens = "cache_write_tokens"
+        case noCacheTokens
+        case cacheReadTokens
+        case cacheWriteTokens
     }
     public init(noCacheTokens: UInt32? = nil, cacheReadTokens: UInt32? = nil,
                 cacheWriteTokens: UInt32? = nil) {
@@ -220,16 +220,17 @@ public struct OutputTokenDetails: Codable, Equatable {
     public var textTokens: UInt32?
     public var reasoningTokens: UInt32?
     enum CodingKeys: String, CodingKey {
-        case textTokens = "text_tokens"
-        case reasoningTokens = "reasoning_tokens"
+        case textTokens
+        case reasoningTokens
     }
     public init(textTokens: UInt32? = nil, reasoningTokens: UInt32? = nil) {
         self.textTokens = textTokens; self.reasoningTokens = reasoningTokens
     }
 }
 
-/// Call-level token usage, the AI SDK's `LanguageModelUsage`: flat counts,
-/// unknown counts `nil`. Provider results keep `Usage`.
+/// Call-level token usage, the AI SDK's `LanguageModelUsage`: flat camelCase
+/// counts, an unknown count `nil` here and absent in the JSON. Provider
+/// results keep `Usage`.
 public struct LanguageModelUsage: Codable, Equatable {
     public var inputTokens: UInt32?
     public var inputTokenDetails: InputTokenDetails
@@ -240,11 +241,11 @@ public struct LanguageModelUsage: Codable, Equatable {
     public var raw: [String: JSONValue]?
 
     enum CodingKeys: String, CodingKey {
-        case inputTokens = "input_tokens"
-        case inputTokenDetails = "input_token_details"
-        case outputTokens = "output_tokens"
-        case outputTokenDetails = "output_token_details"
-        case totalTokens = "total_tokens"
+        case inputTokens
+        case inputTokenDetails
+        case outputTokens
+        case outputTokenDetails
+        case totalTokens
         case raw
     }
 
@@ -1226,11 +1227,11 @@ public struct TypedToolResult: Codable, Equatable {
     public var preliminary: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case toolCallId = "tool_call_id"
-        case toolName = "tool_name"
+        case toolCallId
+        case toolName
         case input, output
-        case providerExecuted = "provider_executed"
-        case providerMetadata = "provider_metadata"
+        case providerExecuted
+        case providerMetadata
         case dynamic, preliminary
     }
 }
@@ -1248,11 +1249,11 @@ public struct TypedToolError: Codable, Equatable {
     public var dynamic: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case toolCallId = "tool_call_id"
-        case toolName = "tool_name"
+        case toolCallId
+        case toolName
         case input, error
-        case providerExecuted = "provider_executed"
-        case providerMetadata = "provider_metadata"
+        case providerExecuted
+        case providerMetadata
         case dynamic
     }
 }
@@ -1265,9 +1266,9 @@ public struct ToolOutputDenied: Codable, Equatable {
     public var dynamic: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case toolCallId = "tool_call_id"
-        case toolName = "tool_name"
-        case providerExecuted = "provider_executed"
+        case toolCallId
+        case toolName
+        case providerExecuted
         case dynamic
     }
 }
@@ -1281,10 +1282,10 @@ public struct ToolApprovalResponseOutput: Codable, Equatable {
     public var providerExecuted: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case approvalId = "approval_id"
-        case toolCall = "tool_call"
+        case approvalId
+        case toolCall
         case approved, reason
-        case providerExecuted = "provider_executed"
+        case providerExecuted
     }
 }
 
@@ -1331,7 +1332,8 @@ public struct GenerateTextResult: Codable, Equatable {
     public var providerMetadata: ProviderMetadata?
     /// Every step of the call. Weak type.
     public var steps: [JSONValue]
-    /// The value parsed by the `output` option, `nil` when it was not parsed.
+    /// The value parsed by the `output` option: `nil` when it was not parsed
+    /// (absent from the JSON), `.null` when the parsed value is JSON `null`.
     public var output: JSONValue?
 }
 
@@ -1390,10 +1392,11 @@ public struct GenerateTextOptions: Codable, Equatable {
     public var topK: Double?
     public var presencePenalty: Double?
     public var frequencyPenalty: Double?
-    /// Structured output, the AI SDK's `output`: for example
-    /// `{"Object": {"schema": {...}}}`, `{"Array": {"element": {...}}}`,
-    /// `{"Choice": {"options": [...]}}` or `{"Json": {}}`. The parsed value is
-    /// `GenerateTextResult.output`.
+    /// Structured output, the AI SDK's `output`, tagged by `type`: for example
+    /// `{"type": "object", "schema": {...}}`,
+    /// `{"type": "array", "element": {...}, "minItems": 1}`,
+    /// `{"type": "choice", "options": [...]}` or `{"type": "json"}`. The parsed
+    /// value is `GenerateTextResult.output`.
     public var output: JSONValue?
     public var seed: UInt64?
     public var tools: [Tool]?
@@ -1895,7 +1898,7 @@ public extension Model {
     /// Generate a structured JSON object with typed inputs/outputs (M12, RFC-0016).
     ///
     /// Same signature as the typed `generateText`; returns a decoded
-    /// `GenerateObjectResult`. Pass `output: {"Object": {"schema": ...}}` via
+    /// `GenerateObjectResult`. Pass `output: {"type": "object", "schema": ...}` via
     /// `options` to describe the object; the model's text must parse as JSON
     /// and match the schema.
     ///

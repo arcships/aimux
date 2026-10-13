@@ -150,13 +150,22 @@ test('wrapper: generateText returns a typed object (.text / .usage / .finishReas
 
     // Top-level convenience fields are typed and present.
     t.is(result.text, 'Rust is a systems programming language.')
-    t.is(result.usage.input_tokens, 10)
-    t.is(result.usage.output_tokens, 8)
+    t.is(result.usage.inputTokens, 10)
+    t.is(result.usage.outputTokens, 8)
     t.is(result.finishReason, 'stop')
     t.true(Array.isArray(result.warnings))
 
     // .content is the final step's typed content; .steps holds every step.
     t.is(result.steps.length, 1)
+    // A step and the usage are the AI SDK's JSON, camelCase
+    // (ai generate-text/step-result.ts:138-278, types/usage.ts:10-67).
+    const [step] = result.steps
+    t.is(step.stepNumber, 0)
+    t.is(step.model.modelId, 'gpt-4o')
+    t.is(step.response.modelId, result.response.modelId)
+    t.is(typeof step.performance.responseTimeMs, 'number')
+    t.deepEqual(step.usage.outputTokenDetails, result.usage.outputTokenDetails)
+    t.false('input_tokens' in result.usage)
     t.true(Array.isArray(result.content), 'content is a typed array')
     const textPart = result.content.find((c) => c.type === 'text')
     t.truthy(textPart, 'content contains a text content part')

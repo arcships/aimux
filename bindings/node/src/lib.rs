@@ -252,7 +252,7 @@ impl Model {
     ///
     /// Same signature as [`Model::generate_text`]; returns a JSON-serialized
     /// `GenerateObjectResult` (core's deprecated `generate_object` wrapper).
-    /// Pass `output: { "Object": { "schema": ... } }`
+    /// Pass `output: { "type": "object", "schema": ... }`
     /// via `options` to describe the value; the model's text must parse and
     /// match the schema.
     #[napi(ts_return_type = "Promise<string>")]

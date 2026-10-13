@@ -366,7 +366,7 @@ def generate_object(
     """Generate a structured JSON object from the model (M12, RFC-0016).
 
     Same signature as ``generate_text``; core's deprecated
-    ``generate_object`` wrapper. Pass ``output: {"Object": {"schema": ...}}``
+    ``generate_object`` wrapper. Pass ``output: {"type": "object", "schema": ...}``
     via options to describe the value; the model's text must parse and match
     the schema.
 

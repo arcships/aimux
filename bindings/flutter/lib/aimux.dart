@@ -540,7 +540,7 @@ class Model implements Finalizable {
   /// Generate a structured JSON object (M12, RFC-0016).
   ///
   /// Same signature as [generateText]; returns the parsed
-  /// GenerateObjectResult as a Map. Pass `'output': {'Object': {'schema': ...}}`
+  /// GenerateObjectResult as a Map. Pass `'output': {'type': 'object', 'schema': ...}`
   /// via [options] to describe the object; the model's text must parse as
   /// JSON and match the schema.
   ///

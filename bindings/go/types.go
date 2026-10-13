@@ -307,26 +307,26 @@ type GenerateResult struct {
 
 // InputTokenDetails is the input-token breakdown of a LanguageModelUsage.
 type InputTokenDetails struct {
-	NoCacheTokens    *uint32 `json:"no_cache_tokens,omitempty"`
-	CacheReadTokens  *uint32 `json:"cache_read_tokens,omitempty"`
-	CacheWriteTokens *uint32 `json:"cache_write_tokens,omitempty"`
+	NoCacheTokens    *uint32 `json:"noCacheTokens,omitempty"`
+	CacheReadTokens  *uint32 `json:"cacheReadTokens,omitempty"`
+	CacheWriteTokens *uint32 `json:"cacheWriteTokens,omitempty"`
 }
 
 // OutputTokenDetails is the output-token breakdown of a LanguageModelUsage.
 type OutputTokenDetails struct {
-	TextTokens      *uint32 `json:"text_tokens,omitempty"`
-	ReasoningTokens *uint32 `json:"reasoning_tokens,omitempty"`
+	TextTokens      *uint32 `json:"textTokens,omitempty"`
+	ReasoningTokens *uint32 `json:"reasoningTokens,omitempty"`
 }
 
 // LanguageModelUsage is the call-level token usage, the AI SDK's
 // LanguageModelUsage: flat counts, unknown counts nil. Provider results
 // (GenerateResult) keep the nested Usage.
 type LanguageModelUsage struct {
-	InputTokens        *uint32                    `json:"input_tokens,omitempty"`
-	InputTokenDetails  InputTokenDetails          `json:"input_token_details"`
-	OutputTokens       *uint32                    `json:"output_tokens,omitempty"`
-	OutputTokenDetails OutputTokenDetails         `json:"output_token_details"`
-	TotalTokens        *uint32                    `json:"total_tokens,omitempty"`
+	InputTokens        *uint32                    `json:"inputTokens,omitempty"`
+	InputTokenDetails  InputTokenDetails          `json:"inputTokenDetails"`
+	OutputTokens       *uint32                    `json:"outputTokens,omitempty"`
+	OutputTokenDetails OutputTokenDetails         `json:"outputTokenDetails"`
+	TotalTokens        *uint32                    `json:"totalTokens,omitempty"`
 	Raw                map[string]json.RawMessage `json:"raw,omitempty"`
 }
 
@@ -335,7 +335,7 @@ type LanguageModelUsage struct {
 type StepResponse struct {
 	ID        string            `json:"id"`
 	Timestamp string            `json:"timestamp"`
-	ModelID   string            `json:"model_id"`
+	ModelID   string            `json:"modelId"`
 	Headers   map[string]string `json:"headers,omitempty"`
 	Body      json.RawMessage   `json:"body,omitempty"`
 	Messages  []ModelMessage    `json:"messages,omitempty"`
@@ -344,24 +344,24 @@ type StepResponse struct {
 // StepModel names the model that ran a step.
 type StepModel struct {
 	Provider string `json:"provider"`
-	ModelID  string `json:"model_id"`
+	ModelID  string `json:"modelId"`
 }
 
 // StepResult is one generation step, the AI SDK's StepResult. aimux runs one
 // step per call. Performance is a weak type (json.RawMessage).
 type StepResult struct {
-	CallID           string              `json:"call_id"`
-	StepNumber       uint32              `json:"step_number"`
+	CallID           string              `json:"callId"`
+	StepNumber       uint32              `json:"stepNumber"`
 	Model            StepModel           `json:"model"`
 	Content          []ContentPart       `json:"content,omitempty"`
-	FinishReason     FinishReasonUnified `json:"finish_reason"`
-	RawFinishReason  *string             `json:"raw_finish_reason,omitempty"`
+	FinishReason     FinishReasonUnified `json:"finishReason"`
+	RawFinishReason  *string             `json:"rawFinishReason,omitempty"`
 	Usage            LanguageModelUsage  `json:"usage"`
 	Performance      json.RawMessage     `json:"performance,omitempty"`
 	Warnings         []json.RawMessage   `json:"warnings,omitempty"`
 	Request          *RequestInfo        `json:"request,omitempty"`
 	Response         StepResponse        `json:"response"`
-	ProviderMetadata json.RawMessage     `json:"provider_metadata,omitempty"`
+	ProviderMetadata json.RawMessage     `json:"providerMetadata,omitempty"`
 }
 
 // GenerateTextResult is the typed result of a GenerateText call and of a
@@ -490,10 +490,11 @@ type GenerateTextOptions struct {
 	TopK             *float64 `json:"topK,omitempty"`
 	PresencePenalty  *float64 `json:"presencePenalty,omitempty"`
 	FrequencyPenalty *float64 `json:"frequencyPenalty,omitempty"`
-	// Output is the structured output, the AI SDK's `output`: for example
-	// {"Object":{"schema":{...}}}, {"Array":{"element":{...}}},
-	// {"Choice":{"options":[...]}} or {"Json":{}}. The parsed value is
-	// GenerateTextResult.Output.
+	// Output is the structured output, the AI SDK's `output`, tagged by
+	// type: for example {"type":"object","schema":{...}},
+	// {"type":"array","element":{...},"minItems":1},
+	// {"type":"choice","options":[...]} or {"type":"json"}. The parsed value
+	// is GenerateTextResult.Output.
 	Output           json.RawMessage       `json:"output,omitempty"`
 	Seed             *uint64               `json:"seed,omitempty"`
 	Tools            []Tool                `json:"tools,omitempty"`

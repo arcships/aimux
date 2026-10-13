@@ -531,7 +531,7 @@ class Model internal constructor(handle: Long) : Closeable {
      * Generate a structured JSON object (M12, RFC-0016).
      *
      * Same signature as [generateText]; returns a JSON-serialized
-     * `GenerateObjectResult`. Pass `"output": {"Object": {"schema": ...}}` via
+     * `GenerateObjectResult`. Pass `"output": {"type": "object", "schema": ...}` via
      * [optsJson] to describe the object; the model's text must parse as JSON
      * and match the schema.
      *

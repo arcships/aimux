@@ -406,8 +406,9 @@ async fn generate_text_derives_its_result_from_the_step() {
 
 /// The serialized result writes the derived values next to the stored ones
 /// and reads back only `steps`, `total_usage` and `output`. The finish reason
-/// is a string and the usage is the flat `LanguageModelUsage`
-/// (usage.ts:10-68).
+/// is a string and the usage is the flat `LanguageModelUsage` (usage.ts:10-67),
+/// camelCase with an unknown count absent; a step is its own fields
+/// (step-result.ts:138-278), camelCase.
 #[tokio::test]
 async fn the_result_snapshot_round_trips() {
     let model = ScriptedModel::generating(generated(
@@ -421,14 +422,23 @@ async fn the_result_snapshot_round_trips() {
     assert_eq!(wire["text"], json!("Hello"));
     assert_eq!(wire["finishReason"], json!("stop"));
     assert_eq!(wire["rawFinishReason"], json!("stop"));
-    assert_eq!(wire["usage"]["input_tokens"], json!(10));
+    assert_eq!(wire["usage"]["inputTokens"], json!(10));
     assert_eq!(
-        wire["usage"]["input_token_details"],
-        json!({ "no_cache_tokens": 6, "cache_read_tokens": 4, "cache_write_tokens": null })
+        wire["usage"]["inputTokenDetails"],
+        json!({ "noCacheTokens": 6, "cacheReadTokens": 4 })
     );
-    assert_eq!(wire["usage"]["total_tokens"], json!(16));
+    assert_eq!(wire["usage"]["totalTokens"], json!(16));
     assert_eq!(wire["output"], json!("Hello"));
     assert_eq!(wire["steps"].as_array().unwrap().len(), 1);
+    let step = &wire["steps"][0];
+    assert_eq!(step["stepNumber"], json!(0));
+    assert_eq!(step["finishReason"], json!("stop"));
+    assert_eq!(step["rawFinishReason"], json!("stop"));
+    assert!(step["callId"].is_string());
+    assert!(step["model"]["modelId"].is_string());
+    assert!(step["response"]["modelId"].is_string());
+    assert!(step["performance"]["responseTimeMs"].is_number());
+    assert!(step["performance"].get("timeToFirstOutputMs").is_none());
     assert!(wire.get("raw").is_none());
 
     let back: GenerateTextResult = serde_json::from_value(wire.clone()).unwrap();
@@ -839,11 +849,11 @@ async fn stream_tool_results_and_errors_follow_the_ai_sdk() {
         serde_json::to_value(&parts[6]).unwrap(),
         json!({
             "type": "tool-result",
-            "tool_call_id": "srv-1",
-            "tool_name": "web_search",
+            "toolCallId": "srv-1",
+            "toolName": "web_search",
             "input": { "q": "rust" },
             "output": [{ "url": "https://example.com" }],
-            "provider_executed": true,
+            "providerExecuted": true,
             "dynamic": true,
         })
     );
@@ -851,11 +861,11 @@ async fn stream_tool_results_and_errors_follow_the_ai_sdk() {
         serde_json::to_value(&parts[8]).unwrap(),
         json!({
             "type": "tool-error",
-            "tool_call_id": "srv-2",
-            "tool_name": "code_execution",
+            "toolCallId": "srv-2",
+            "toolName": "code_execution",
             "input": { "code": "1/0" },
             "error": { "error_code": "unavailable" },
-            "provider_executed": true,
+            "providerExecuted": true,
             "dynamic": true,
         })
     );
@@ -863,10 +873,10 @@ async fn stream_tool_results_and_errors_follow_the_ai_sdk() {
         serde_json::to_value(&parts[9]).unwrap(),
         json!({
             "type": "tool-result",
-            "tool_call_id": "srv-0",
-            "tool_name": "code_execution",
+            "toolCallId": "srv-0",
+            "toolName": "code_execution",
             "output": { "stdout": "2" },
-            "provider_executed": true,
+            "providerExecuted": true,
             "dynamic": true,
         })
     );

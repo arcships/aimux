@@ -1122,9 +1122,9 @@ const REPAIR_REPLY: &str = r#"{"type":"repaired","toolCall":{"toolCallId":"call-
 /// calls and holds `content` (a JSON array of content parts). Only the steps
 /// and the total usage are read back from a result.
 fn tool_call_result(content: &str) -> String {
-    let usage = r#"{"input_tokens":1,"output_tokens":1,"total_tokens":2}"#;
+    let usage = r#"{"inputTokens":1,"outputTokens":1,"totalTokens":2}"#;
     format!(
-        r#"{{"steps":[{{"call_id":"","step_number":0,"model":{{"provider":"openai","model_id":"gpt-4o-mini"}},"content":{content},"finish_reason":"tool-calls","usage":{usage},"performance":{{"effective_output_tokens_per_second":0.0,"effective_total_tokens_per_second":0.0,"step_time_ms":0.0,"response_time_ms":0.0}},"response":{{"id":"","timestamp":"2024-01-01T00:00:00.000Z","model_id":""}}}}],"totalUsage":{usage}}}"#
+        r#"{{"steps":[{{"callId":"","stepNumber":0,"model":{{"provider":"openai","modelId":"gpt-4o-mini"}},"content":{content},"finishReason":"tool-calls","usage":{usage},"performance":{{"effectiveOutputTokensPerSecond":0.0,"effectiveTotalTokensPerSecond":0.0,"stepTimeMs":0.0,"responseTimeMs":0.0}},"response":{{"id":"","timestamp":"2024-01-01T00:00:00.000Z","modelId":""}}}}],"totalUsage":{usage}}}"#
     )
 }
 

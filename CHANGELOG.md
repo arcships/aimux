@@ -104,6 +104,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   integers from floats (Python `int`, Go raw JSON, Jackson `IntNode`) now see
   integers (#229).
 
+- The text results' usage, steps and typed tool outputs follow the same JSON
+  rules. `LanguageModelUsage` (`usage`, `totalUsage`, each step's and the
+  `finish` / `finish-step` parts' usage) is camelCase: `inputTokens`,
+  `inputTokenDetails {noCacheTokens, cacheReadTokens, cacheWriteTokens}`,
+  `outputTokens`, `outputTokenDetails {textTokens, reasoningTokens}`,
+  `totalTokens`, `raw?`; an unknown count is omitted instead of `null`, the
+  two detail objects are always written. `steps[]` are camelCase (`callId`,
+  `stepNumber`, `model {provider, modelId}`, `rawFinishReason?`,
+  `performance {stepTimeMs, responseTimeMs, timeToFirstOutputMs?, ...}`,
+  `response {id, timestamp, modelId, headers?, body?, messages}`). Tool
+  results, tool errors, `tool-output-denied` and `tool-approval-response`
+  parts write `toolCallId`, `toolName`, `providerExecuted`, `approvalId`; an
+  approval response's `toolCall` carries `type: "tool-call"`, and the
+  results' `toolResults[]` are `{"type": "tool-result", ...}` (the AI SDK's
+  `TypedToolResult`; TypeScript `TaggedToolResult`). Recordings write the
+  outcome's usage the same way. Go, Java, Kotlin, Swift and Dart read and
+  write the camelCase keys with unchanged field names; Python dicts and Node
+  objects carry the new keys. Kotlin, Swift and Dart keep a parsed JSON
+  `null` output apart from no output (Kotlin `JsonNull`, Swift `.null`, Dart
+  `hasOutput`).
+
+- `Output` (the `output` option of `generateText` / `streamText` and
+  `generate_object`) is tagged by `type`, as the AI SDK names its output
+  modes: `{"type": "text"}`, `{"type": "object", "schema", "name?",
+  "description?"}`, `{"type": "array", "element", "minItems?", "maxItems?",
+  ...}`, `{"type": "choice", "options"}`, `{"type": "json"}`. The externally
+  tagged `{"Object": {...}}` form is no longer read.
+
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
   model and provider ids take precedence over middleware overrides.

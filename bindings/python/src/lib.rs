@@ -174,7 +174,7 @@ impl Model {
     /// prompt_json: JSON string (bare prompt or {"prompt": ...})
     /// opts_json: optional JSON-serialized GenerateTextOptions
     /// Returns JSON-serialized GenerateObjectResult (core's deprecated
-    /// `generate_object` wrapper). Pass `output: { "Object": { "schema": ... } }`
+    /// `generate_object` wrapper). Pass `output: { "type": "object", "schema": ... }`
     /// via opts_json to describe the value; the model's text must parse and
     /// match the schema.
     #[pyo3(signature = (prompt_json, opts_json=None))]

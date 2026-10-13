@@ -322,7 +322,7 @@ func TestStreamPartParseRoundTrip(t *testing.T) {
 		typ  string
 	}{
 		{"text-delta", `{"type":"text-delta","id":"tx1","text":"Hello"}`, "text-delta"},
-		{"finish", `{"type":"finish","finishReason":"stop","totalUsage":{"input_tokens":3}}`, "finish"},
+		{"finish", `{"type":"finish","finishReason":"stop","totalUsage":{"inputTokens":3,"inputTokenDetails":{},"outputTokenDetails":{}}}`, "finish"},
 		{"start-step", `{"type":"start-step","request":{},"warnings":[]}`, "start-step"},
 	}
 	for _, c := range cases {
@@ -362,8 +362,10 @@ func TestStreamPartSource(t *testing.T) {
 	}
 }
 
+// The finish part's totalUsage is the AI SDK's LanguageModelUsage (ai
+// types/usage.ts:10-67): camelCase counts, an unknown count absent.
 func TestParseFinishPayload(t *testing.T) {
-	sp, _ := ParseStreamPart(`{"type":"finish","finishReason":"tool-calls","rawFinishReason":"tool_use","totalUsage":{"input_tokens":3,"input_token_details":{"cache_read_tokens":1},"output_tokens":2,"output_token_details":{},"total_tokens":5}}`)
+	sp, _ := ParseStreamPart(`{"type":"finish","finishReason":"tool-calls","rawFinishReason":"tool_use","totalUsage":{"inputTokens":3,"inputTokenDetails":{"cacheReadTokens":1},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5}}`)
 	var finish FinishPayload
 	if err := json.Unmarshal(sp.Raw, &finish); err != nil {
 		t.Fatal(err)
@@ -375,6 +377,9 @@ func TestParseFinishPayload(t *testing.T) {
 	if u.InputTokens == nil || *u.InputTokens != 3 || u.TotalTokens == nil || *u.TotalTokens != 5 ||
 		u.InputTokenDetails.CacheReadTokens == nil || *u.InputTokenDetails.CacheReadTokens != 1 {
 		t.Errorf("total usage: %+v", u)
+	}
+	if out, _ := json.Marshal(u); string(out) != `{"inputTokens":3,"inputTokenDetails":{"cacheReadTokens":1},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5}` {
+		t.Errorf("marshal: %s", out)
 	}
 }
 

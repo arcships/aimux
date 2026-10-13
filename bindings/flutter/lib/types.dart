@@ -161,13 +161,13 @@ class InputTokenDetails {
   final int? cacheWriteTokens;
   const InputTokenDetails({this.noCacheTokens, this.cacheReadTokens, this.cacheWriteTokens});
   factory InputTokenDetails.fromJson(Json j) => InputTokenDetails(
-      noCacheTokens: j['no_cache_tokens'] as int?,
-      cacheReadTokens: j['cache_read_tokens'] as int?,
-      cacheWriteTokens: j['cache_write_tokens'] as int?);
+      noCacheTokens: j['noCacheTokens'] as int?,
+      cacheReadTokens: j['cacheReadTokens'] as int?,
+      cacheWriteTokens: j['cacheWriteTokens'] as int?);
   Json toJson() => {
-        'no_cache_tokens': noCacheTokens,
-        'cache_read_tokens': cacheReadTokens,
-        'cache_write_tokens': cacheWriteTokens,
+        if (noCacheTokens != null) 'noCacheTokens': noCacheTokens,
+        if (cacheReadTokens != null) 'cacheReadTokens': cacheReadTokens,
+        if (cacheWriteTokens != null) 'cacheWriteTokens': cacheWriteTokens,
       };
 }
 
@@ -177,17 +177,17 @@ class OutputTokenDetails {
   final int? reasoningTokens;
   const OutputTokenDetails({this.textTokens, this.reasoningTokens});
   factory OutputTokenDetails.fromJson(Json j) => OutputTokenDetails(
-      textTokens: j['text_tokens'] as int?,
-      reasoningTokens: j['reasoning_tokens'] as int?);
+      textTokens: j['textTokens'] as int?,
+      reasoningTokens: j['reasoningTokens'] as int?);
   Json toJson() => {
-        'text_tokens': textTokens,
-        'reasoning_tokens': reasoningTokens,
+        if (textTokens != null) 'textTokens': textTokens,
+        if (reasoningTokens != null) 'reasoningTokens': reasoningTokens,
       };
 }
 
-/// Call-level token usage, the AI SDK's `LanguageModelUsage`: flat counts,
-/// unknown counts `null`. Provider results keep [Usage]. Mirrors
-/// `LanguageModelUsage.ts`.
+/// Call-level token usage, the AI SDK's `LanguageModelUsage`: flat camelCase
+/// counts, an unknown count `null` here and absent in the JSON. Provider
+/// results keep [Usage]. Mirrors `LanguageModelUsage.ts`.
 class LanguageModelUsage {
   final int? inputTokens;
   final InputTokenDetails inputTokenDetails;
@@ -207,22 +207,22 @@ class LanguageModelUsage {
     this.raw,
   });
   factory LanguageModelUsage.fromJson(Json j) => LanguageModelUsage(
-      inputTokens: j['input_tokens'] as int?,
-      inputTokenDetails: j['input_token_details'] == null
+      inputTokens: j['inputTokens'] as int?,
+      inputTokenDetails: j['inputTokenDetails'] == null
           ? const InputTokenDetails()
-          : InputTokenDetails.fromJson(j['input_token_details'] as Json),
-      outputTokens: j['output_tokens'] as int?,
-      outputTokenDetails: j['output_token_details'] == null
+          : InputTokenDetails.fromJson(j['inputTokenDetails'] as Json),
+      outputTokens: j['outputTokens'] as int?,
+      outputTokenDetails: j['outputTokenDetails'] == null
           ? const OutputTokenDetails()
-          : OutputTokenDetails.fromJson(j['output_token_details'] as Json),
-      totalTokens: j['total_tokens'] as int?,
+          : OutputTokenDetails.fromJson(j['outputTokenDetails'] as Json),
+      totalTokens: j['totalTokens'] as int?,
       raw: _opt(j['raw']));
   Json toJson() => {
-        'input_tokens': inputTokens,
-        'input_token_details': inputTokenDetails.toJson(),
-        'output_tokens': outputTokens,
-        'output_token_details': outputTokenDetails.toJson(),
-        'total_tokens': totalTokens,
+        if (inputTokens != null) 'inputTokens': inputTokens,
+        'inputTokenDetails': inputTokenDetails.toJson(),
+        if (outputTokens != null) 'outputTokens': outputTokens,
+        'outputTokenDetails': outputTokenDetails.toJson(),
+        if (totalTokens != null) 'totalTokens': totalTokens,
         if (raw != null) 'raw': raw,
       };
 }
@@ -1496,8 +1496,15 @@ class GenerateTextResult {
   /// Every step of the call. Weak type.
   final List<Json> steps;
 
-  /// The value parsed by the `output` option, `null` when it was not parsed.
+  /// The value parsed by the `output` option, `null` when it was not parsed
+  /// or when the parsed value is JSON `null` ([hasOutput] tells them apart).
   final Object? output;
+  final bool? _hasOutput;
+
+  /// Whether the output was parsed (`output` is present in the JSON, even
+  /// as `null`); `hasOutput: true` with a null [output] writes
+  /// `"output": null`.
+  bool get hasOutput => _hasOutput ?? output != null;
 
   const GenerateTextResult({
     this.content = const [],
@@ -1519,7 +1526,8 @@ class GenerateTextResult {
     this.providerMetadata,
     this.steps = const [],
     this.output,
-  });
+    bool? hasOutput,
+  }) : _hasOutput = hasOutput;
 
   factory GenerateTextResult.fromJson(Json j) => GenerateTextResult(
         content: _maps(j['content']),
@@ -1541,6 +1549,7 @@ class GenerateTextResult {
         providerMetadata: _opt(j['providerMetadata']),
         steps: _maps(j['steps']),
         output: j['output'],
+        hasOutput: j.containsKey('output'),
       );
 
   Json toJson() => {
@@ -1562,7 +1571,7 @@ class GenerateTextResult {
         'responseMessages': [for (final m in responseMessages) m.toJson()],
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
         'steps': steps,
-        if (output != null) 'output': output,
+        if (hasOutput) 'output': output,
       };
 }
 
@@ -1656,10 +1665,11 @@ class GenerateTextOptions {
   final double? presencePenalty;
   final double? frequencyPenalty;
 
-  /// Structured output, the AI SDK's `output`: for example
-  /// `{'Object': {'schema': {...}}}`, `{'Array': {'element': {...}}}`,
-  /// `{'Choice': {'options': [...]}}` or `{'Json': {}}`. The parsed value is
-  /// [GenerateTextResult.output].
+  /// Structured output, the AI SDK's `output`, tagged by `type`: for example
+  /// `{'type': 'object', 'schema': {...}}`,
+  /// `{'type': 'array', 'element': {...}, 'minItems': 1}`,
+  /// `{'type': 'choice', 'options': [...]}` or `{'type': 'json'}`. The parsed
+  /// value is [GenerateTextResult.output].
   final Json? output;
   final int? seed;
   final List<Tool>? tools;
@@ -2061,24 +2071,24 @@ final class StreamPartToolResult extends StreamPart {
     this.preliminary,
   });
   factory StreamPartToolResult.fromJson(Json j) => StreamPartToolResult(
-        toolCallId: j['tool_call_id'] as String,
-        toolName: j['tool_name'] as String,
+        toolCallId: j['toolCallId'] as String,
+        toolName: j['toolName'] as String,
         input: j['input'],
         output: j['output'],
-        providerExecuted: j['provider_executed'] as bool?,
-        providerMetadata: _opt(j['provider_metadata']),
+        providerExecuted: j['providerExecuted'] as bool?,
+        providerMetadata: _opt(j['providerMetadata']),
         isDynamic: j['dynamic'] as bool?,
         preliminary: j['preliminary'] as bool?,
       );
   @override
   Json toJson() => {
         'type': 'tool-result',
-        'tool_call_id': toolCallId,
-        'tool_name': toolName,
+        'toolCallId': toolCallId,
+        'toolName': toolName,
         if (input != null) 'input': input,
         'output': output,
-        if (providerExecuted != null) 'provider_executed': providerExecuted,
-        if (providerMetadata != null) 'provider_metadata': providerMetadata,
+        if (providerExecuted != null) 'providerExecuted': providerExecuted,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
         if (isDynamic != null) 'dynamic': isDynamic,
         if (preliminary != null) 'preliminary': preliminary,
       };
@@ -2104,23 +2114,23 @@ final class StreamPartToolError extends StreamPart {
     this.isDynamic,
   });
   factory StreamPartToolError.fromJson(Json j) => StreamPartToolError(
-        toolCallId: j['tool_call_id'] as String,
-        toolName: j['tool_name'] as String,
+        toolCallId: j['toolCallId'] as String,
+        toolName: j['toolName'] as String,
         input: j['input'],
         error: j['error'],
-        providerExecuted: j['provider_executed'] as bool?,
-        providerMetadata: _opt(j['provider_metadata']),
+        providerExecuted: j['providerExecuted'] as bool?,
+        providerMetadata: _opt(j['providerMetadata']),
         isDynamic: j['dynamic'] as bool?,
       );
   @override
   Json toJson() => {
         'type': 'tool-error',
-        'tool_call_id': toolCallId,
-        'tool_name': toolName,
+        'toolCallId': toolCallId,
+        'toolName': toolName,
         if (input != null) 'input': input,
         'error': error,
-        if (providerExecuted != null) 'provider_executed': providerExecuted,
-        if (providerMetadata != null) 'provider_metadata': providerMetadata,
+        if (providerExecuted != null) 'providerExecuted': providerExecuted,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
         if (isDynamic != null) 'dynamic': isDynamic,
       };
 }
@@ -2138,17 +2148,17 @@ final class StreamPartToolOutputDenied extends StreamPart {
     this.isDynamic,
   });
   factory StreamPartToolOutputDenied.fromJson(Json j) => StreamPartToolOutputDenied(
-        toolCallId: j['tool_call_id'] as String,
-        toolName: j['tool_name'] as String,
-        providerExecuted: j['provider_executed'] as bool?,
+        toolCallId: j['toolCallId'] as String,
+        toolName: j['toolName'] as String,
+        providerExecuted: j['providerExecuted'] as bool?,
         isDynamic: j['dynamic'] as bool?,
       );
   @override
   Json toJson() => {
         'type': 'tool-output-denied',
-        'tool_call_id': toolCallId,
-        'tool_name': toolName,
-        if (providerExecuted != null) 'provider_executed': providerExecuted,
+        'toolCallId': toolCallId,
+        'toolName': toolName,
+        if (providerExecuted != null) 'providerExecuted': providerExecuted,
         if (isDynamic != null) 'dynamic': isDynamic,
       };
 }
@@ -2232,20 +2242,20 @@ final class StreamPartToolApprovalResponse extends StreamPart {
     this.providerExecuted,
   });
   factory StreamPartToolApprovalResponse.fromJson(Json j) => StreamPartToolApprovalResponse(
-        approvalId: j['approval_id'] as String,
-        toolCall: ToolCall.fromJson(j['tool_call'] as Json),
+        approvalId: j['approvalId'] as String,
+        toolCall: ToolCall.fromJson(j['toolCall'] as Json),
         approved: j['approved'] as bool,
         reason: j['reason'] as String?,
-        providerExecuted: j['provider_executed'] as bool?,
+        providerExecuted: j['providerExecuted'] as bool?,
       );
   @override
   Json toJson() => {
         'type': 'tool-approval-response',
-        'approval_id': approvalId,
-        'tool_call': toolCall.toJson(),
+        'approvalId': approvalId,
+        'toolCall': toolCall.toJson(),
         'approved': approved,
         if (reason != null) 'reason': reason,
-        if (providerExecuted != null) 'provider_executed': providerExecuted,
+        if (providerExecuted != null) 'providerExecuted': providerExecuted,
       };
 }
 

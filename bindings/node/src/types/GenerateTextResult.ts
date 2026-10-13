@@ -8,9 +8,9 @@ import type { ReasoningPart } from "./ReasoningPart";
 import type { RequestInfo } from "./RequestInfo";
 import type { StepResponse } from "./StepResponse";
 import type { StepResult } from "./StepResult";
+import type { TaggedToolResult } from "./TaggedToolResult";
 import type { TypedSource } from "./TypedSource";
 import type { TypedToolCall } from "./TypedToolCall";
-import type { TypedToolResult } from "./TypedToolResult";
 import type { Warning } from "./Warning";
 import type { JsonValue } from "./serde_json/JsonValue";
 
@@ -36,7 +36,11 @@ sources: Array<TypedSource>,
 /**
  * Each with its `type` tag (`generate-text-result.ts:78`).
  */
-toolCalls: Array<TypedToolCall>, toolResults: Array<TypedToolResult>, finishReason: FinishReasonUnified, rawFinishReason?: string, usage: LanguageModelUsage, 
+toolCalls: Array<TypedToolCall>, 
+/**
+ * Each with its `type` tag (`generate-text-result.ts:93`).
+ */
+toolResults: Array<TaggedToolResult>, finishReason: FinishReasonUnified, rawFinishReason?: string, usage: LanguageModelUsage, 
 /**
  * Deprecated upstream: equal to `usage`.
  */

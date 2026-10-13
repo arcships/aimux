@@ -123,5 +123,5 @@ test('non-traced model still generates normally', async (t) => {
   const model = await deepseek('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
   const result: GenerateTextResult = await generateText(model, 'hello')
   t.truthy(result.text)
-  t.is(result.usage.input_tokens, 200)
+  t.is(result.usage.inputTokens, 200)
 })

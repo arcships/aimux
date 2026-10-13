@@ -623,6 +623,129 @@ fn standalone_tool_calls_and_sources_are_tagged() {
     );
 }
 
+/// A step is what `JSON.stringify` writes for the AI SDK's `DefaultStepResult`
+/// (`generate-text/step-result.ts:138-278`): its own fields camelCase, `model`
+/// `{provider, modelId}` (`:155-161`), the performance (`:62-133`) and the
+/// response `{id, timestamp, modelId, headers?, body?, messages}`
+/// (`types/language-model-response-metadata.ts:6-38`), an `undefined` field
+/// absent. The usage is `LanguageModelUsage` (`types/usage.ts:10-67`): flat
+/// camelCase counts, an unknown count absent, the detail objects present.
+/// A result's `toolResults` are tagged `TypedToolResult`s
+/// (`generate-text-result.ts:93`, `tool-result.ts:10-42`); tool errors
+/// (`tool-error.ts:6-36`), denied outputs (`tool-output-denied.ts:7-15`) and
+/// approval responses, whose `toolCall` is a tagged `TypedToolCall`
+/// (`tool-approval-response-output.ts:7-35`), are camelCase.
+#[test]
+fn steps_usage_and_tool_outputs_are_the_ai_sdk_json() {
+    let call = json!({ "type": "tool-call", "toolCallId": "c1", "toolName": "t", "input": {} });
+    let result = json!({
+        "type": "tool-result",
+        "toolCallId": "c1",
+        "toolName": "t",
+        "input": {},
+        "output": "ok",
+        "providerExecuted": true,
+    });
+    let step_wire = json!({
+        "callId": "call",
+        "stepNumber": 0,
+        "model": { "provider": "test", "modelId": "model" },
+        "content": [call, result],
+        "finishReason": "tool-calls",
+        "usage": {
+            "inputTokens": 3,
+            "inputTokenDetails": {},
+            "outputTokens": 2,
+            "outputTokenDetails": { "reasoningTokens": 1 },
+            "totalTokens": 5,
+        },
+        "performance": {
+            "effectiveOutputTokensPerSecond": 20.0,
+            "effectiveTotalTokensPerSecond": 50.0,
+            "stepTimeMs": 120.0,
+            "responseTimeMs": 100.0,
+            "toolExecutionMs": {},
+        },
+        "warnings": [],
+        "request": {},
+        "response": {
+            "id": "r1",
+            "timestamp": "1970-01-01T00:00:00.000Z",
+            "modelId": "model",
+            "body": null,
+            "messages": [],
+        },
+    });
+    let step: StepResult = assert_json_back(step_wire.clone());
+    assert_eq!(step.response.body, Some(Value::Null));
+    assert_eq!(step.usage.input_token_details.cache_read_tokens, None);
+
+    let generated: GenerateTextResult = serde_json::from_value(json!({
+        "steps": [step_wire],
+        "totalUsage": LanguageModelUsage::default(),
+    }))
+    .unwrap();
+    let written = serde_json::to_value(&generated).unwrap();
+    assert_eq!(written["toolResults"], json!([result]));
+    assert_eq!(
+        written["totalUsage"],
+        json!({ "inputTokenDetails": {}, "outputTokenDetails": {} })
+    );
+    assert_eq!(written["response"]["modelId"], "model");
+    assert!(written.get("rawFinishReason").is_none());
+
+    assert_json_back::<ContentPart>(json!({
+        "type": "tool-error",
+        "toolCallId": "c2",
+        "toolName": "t",
+        "input": { "q": 1 },
+        "error": "boom",
+        "dynamic": true,
+    }));
+    assert_json_back::<TextStreamPart>(json!({
+        "type": "tool-output-denied",
+        "toolCallId": "c3",
+        "toolName": "t",
+    }));
+    let response = json!({
+        "type": "tool-approval-response",
+        "approvalId": "a1",
+        "toolCall": call,
+        "approved": false,
+        "reason": "no",
+    });
+    assert_json_back::<ContentPart>(response.clone());
+    assert_json_back::<TextStreamPart>(response);
+}
+
+/// `Output` has no JSON upstream (it carries functions); aimux's JSON is
+/// tagged by `type` with the output kind, upstream's mode `name`
+/// (`generate-text/output.ts:68`, `:114`, `:241`, `:520`, `:657`), and the
+/// `Output.array()` arguments are camelCase (`:200-215`).
+#[test]
+fn output_specifications_are_tagged() {
+    use aimux_core::output::Output;
+    assert_json_back::<Output>(json!({ "type": "text" }));
+    assert_json_back::<Output>(json!({ "type": "object", "schema": {}, "name": "person" }));
+    let array: Output = assert_json_back(json!({
+        "type": "array",
+        "element": { "type": "string" },
+        "minItems": 1,
+        "maxItems": 3,
+    }));
+    assert!(matches!(
+        array,
+        Output::Array {
+            min_items: Some(1),
+            max_items: Some(3),
+            ..
+        }
+    ));
+    assert_json_back::<Output>(json!({ "type": "choice", "options": ["a", "b"] }));
+    assert_json_back::<Output>(json!({ "type": "json", "description": "any" }));
+    assert!(serde_json::from_value::<Output>(json!({ "Object": { "schema": {} } })).is_err());
+}
+
 /// Parse `wire` and check that it serializes back unchanged.
 fn assert_json_back<T: Serialize + DeserializeOwned>(wire: Value) -> T {
     let value: T = serde_json::from_value(wire.clone()).unwrap();

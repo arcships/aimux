@@ -20,13 +20,14 @@ const _file = {
 // {type, file, providerMetadata?} (`stream-language-model-call.ts:569-590`).
 const _generatedFile = {'base64': 'aGk=', 'mediaType': 'image/png'};
 // The call-level LanguageModelUsage of a result and of the stream's
-// finish-step / finish parts.
+// finish-step / finish parts: the AI SDK's (`types/usage.ts:10-67`),
+// camelCase, an unknown count absent.
 const _lmUsage = {
-  'input_tokens': 3,
-  'input_token_details': {'no_cache_tokens': null, 'cache_read_tokens': 1, 'cache_write_tokens': null},
-  'output_tokens': 2,
-  'output_token_details': {'text_tokens': null, 'reasoning_tokens': null},
-  'total_tokens': 5,
+  'inputTokens': 3,
+  'inputTokenDetails': {'cacheReadTokens': 1},
+  'outputTokens': 2,
+  'outputTokenDetails': {},
+  'totalTokens': 5,
 };
 
 void main() {
@@ -185,7 +186,7 @@ void main() {
         'type': 'finish-step',
         'response': {'id': 'r', 'modelId': 'gpt-4o'},
         'usage': _lmUsage,
-        'performance': {'step_time_ms': 1.0},
+        'performance': {'stepTimeMs': 1.0},
         'finishReason': 'tool-calls',
         'rawFinishReason': 'tool_calls',
       },
@@ -208,23 +209,23 @@ void main() {
       {'type': 'tool-call', ...call},
       {
         'type': 'tool-result',
-        'tool_call_id': 'c1',
-        'tool_name': 'w',
+        'toolCallId': 'c1',
+        'toolName': 'w',
         'input': {'q': 'rust'},
         'output': {'count': 3},
-        'provider_executed': true,
+        'providerExecuted': true,
       },
       // A deferred result has no input.
-      {'type': 'tool-result', 'tool_call_id': 'srv-0', 'tool_name': 'code_execution', 'output': 'done'},
+      {'type': 'tool-result', 'toolCallId': 'srv-0', 'toolName': 'code_execution', 'output': 'done'},
       {
         'type': 'tool-error',
-        'tool_call_id': 'srv-2',
-        'tool_name': 'code_execution',
+        'toolCallId': 'srv-2',
+        'toolName': 'code_execution',
         'input': {'code': '1/0'},
         'error': {'error_code': 'unavailable'},
-        'provider_executed': true,
+        'providerExecuted': true,
       },
-      {'type': 'tool-output-denied', 'tool_call_id': 'c', 'tool_name': 't'},
+      {'type': 'tool-output-denied', 'toolCallId': 'c', 'toolName': 't'},
       {'type': 'file', 'file': _generatedFile, 'providerMetadata': _meta},
       {'type': 'reasoning-file', 'file': _generatedFile},
       {'type': 'custom', 'kind': 'k'},
@@ -236,8 +237,8 @@ void main() {
       },
       {
         'type': 'tool-approval-response',
-        'approval_id': 'a',
-        'tool_call': call,
+        'approvalId': 'a',
+        'toolCall': call,
         'approved': false,
       },
       {'type': 'reasoning-start', 'id': 'r1'},
@@ -335,7 +336,7 @@ void main() {
           {'role': 'assistant', 'content': 'hi'}
         ],
         'steps': [
-          {'call_id': 'c1', 'step_number': 0}
+          {'callId': 'c1', 'stepNumber': 0}
         ],
       })) as Map<String, dynamic>;
       final result = GenerateTextResult.fromJson(json);
@@ -344,8 +345,17 @@ void main() {
       expect(result.totalUsage.inputTokenDetails.cacheReadTokens, 1);
       expect(result.reasoningText, isNull);
       expect(result.output, isNull);
+      expect(result.hasOutput, isFalse);
       expect(result.steps, hasLength(1));
       expect(jsonDecode(jsonEncode(result)), json);
+
+      // A parsed JSON null output is written back as null, apart from no
+      // output (the public JSON keeps null apart from undefined).
+      final parsedNull = Map<String, dynamic>.of(json)..['output'] = null;
+      final withNull = GenerateTextResult.fromJson(parsedNull);
+      expect(withNull.output, isNull);
+      expect(withNull.hasOutput, isTrue);
+      expect(jsonDecode(jsonEncode(withNull)), parsedNull);
     });
 
     test('GenerateObjectResult round-trips', () {

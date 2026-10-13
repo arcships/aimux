@@ -467,8 +467,9 @@ the call's `input`), next to `StreamPart.ToolError` and
 `StreamPart.ToolOutputDenied`.
 
 `GenerateTextOptions.output` is the AI SDK's `output` as a JSON node, for
-example `{"Object":{"schema":{...}}}`; the parsed value is
-`GenerateTextResult.output`.
+example `{"type":"object","schema":{...}}` (tagged by `type`: `text`,
+`object`, `array`, `choice` or `json`); the parsed value is
+`GenerateTextResult.output`, a `NullNode` when the model produced JSON `null`.
 `ImageCallOptions` / `VideoCallOptions` take `size` / `resolution` as `"WxH"`
 strings (e.g. `"1024x1024"`) and `aspectRatio` as `"W:H"` (e.g. `"16:9"`).
 

@@ -7,8 +7,8 @@ export type OutputTokenDetails = {
 /**
  * Output tokens of text.
  */
-text_tokens: number | null, 
+textTokens?: number, 
 /**
  * Output tokens spent on reasoning.
  */
-reasoning_tokens: number | null, };
+reasoningTokens?: number, };

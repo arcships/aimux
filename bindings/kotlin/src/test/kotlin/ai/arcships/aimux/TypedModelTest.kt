@@ -1,6 +1,7 @@
 package ai.arcships.aimux
 
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -492,6 +493,23 @@ class TypedModelRoundTripTest {
     }
 
     @Test
+    fun `a parsed null output stays apart from no output`() {
+        // aimux writes `output` only when the output was parsed; a parsed JSON
+        // null is written as null (Rust GenerateTextResult, the public JSON
+        // keeping null apart from undefined).
+        val parsedNull = AimuxJson.decodeFromString(
+            GenerateTextResult.serializer(), """{"text":"null","finishReason":"stop","output":null}""",
+        )
+        assertThat(parsedNull.output).isEqualTo(JsonNull)
+        assertThat(AimuxJson.encodeToString(GenerateTextResult.serializer(), parsedNull)).contains(""""output":null""")
+        val notParsed = AimuxJson.decodeFromString(
+            GenerateTextResult.serializer(), """{"text":"","finishReason":"tool-calls"}""",
+        )
+        assertThat(notParsed.output).isNull()
+        assertThat(AimuxJson.encodeToString(GenerateTextResult.serializer(), notParsed)).doesNotContain("output")
+    }
+
+    @Test
     fun `namespace maps keep insertion order`() {
         // Provider options, provider metadata and provider references are JS
         // objects upstream (@ai-sdk/provider shared-v4-provider-options.ts:24,
@@ -589,47 +607,57 @@ class TypedModelRoundTripTest {
             .isEqualTo(StreamPart.TextDelta(id = "t", text = "Hi"))
         val finish = decode(
             """{"type":"finish","finishReason":"tool-calls","rawFinishReason":"tool_use",""" +
-                """"totalUsage":{"input_tokens":3,"input_token_details":{"cache_read_tokens":1},""" +
-                """"output_tokens":2,"output_token_details":{},"total_tokens":5}}""",
+                """"totalUsage":{"inputTokens":3,"inputTokenDetails":{"cacheReadTokens":1},""" +
+                """"outputTokens":2,"outputTokenDetails":{},"totalTokens":5}}""",
         ) as StreamPart.Finish
         assertThat(finish.finishReason).isEqualTo(FinishReasonUnified.TOOL_CALLS)
         assertThat(finish.rawFinishReason).isEqualTo("tool_use")
         assertThat(finish.totalUsage.totalTokens).isEqualTo(5L)
         assertThat(finish.totalUsage.inputTokenDetails.cacheReadTokens).isEqualTo(1L)
+        // LanguageModelUsage (ai types/usage.ts:10-67): camelCase, an unknown
+        // count absent.
+        assertThat(AimuxJson.encodeToString(LanguageModelUsage.serializer(), finish.totalUsage))
+            .isEqualTo("""{"inputTokens":3,"inputTokenDetails":{"cacheReadTokens":1},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5}""")
         assertThat(decode("""{"type":"abort","reason":"stop"}""")).isEqualTo(StreamPart.Abort("stop"))
         // Encoding writes the type tag back.
         assertThat(AimuxJson.encodeToString(StreamPart.serializer(), StreamPart.Start()))
             .isEqualTo("""{"type":"start"}""")
     }
 
+    // The text stream's tool parts are the AI SDK's TypedToolResult,
+    // TypedToolError, TypedToolOutputDenied and ToolApprovalResponseOutput,
+    // camelCase (ai generate-text/tool-result.ts:10-42, tool-error.ts:6-36,
+    // tool-output-denied.ts:7-15, tool-approval-response-output.ts:7-35).
     @Test
     fun `stream parts decode tool results and tool errors`() {
         val decode = { json: String -> AimuxJson.decodeFromString(StreamPart.serializer(), json) }
         val result = decode(
-            """{"type":"tool-result","tool_call_id":"srv-1","tool_name":"web_search","input":{"q":"rust"},""" +
-                """"output":[{"url":"https://example.com"}],"provider_executed":true,"dynamic":true}""",
+            """{"type":"tool-result","toolCallId":"srv-1","toolName":"web_search","input":{"q":"rust"},""" +
+                """"output":[{"url":"https://example.com"}],"providerExecuted":true,"dynamic":true}""",
         ) as StreamPart.ToolResult
         assertThat(result.toolCallId).isEqualTo("srv-1")
         assertThat(result.input.toString()).isEqualTo("""{"q":"rust"}""")
         assertThat(result.output.toString()).isEqualTo("""[{"url":"https://example.com"}]""")
         assertThat(result.providerExecuted).isTrue()
         val deferred = decode(
-            """{"type":"tool-result","tool_call_id":"srv-0","tool_name":"code_execution","output":{"stdout":"2"},"provider_executed":true}""",
+            """{"type":"tool-result","toolCallId":"srv-0","toolName":"code_execution","output":{"stdout":"2"},"providerExecuted":true}""",
         ) as StreamPart.ToolResult
         assertThat(deferred.input).isNull()
         val error = decode(
-            """{"type":"tool-error","tool_call_id":"call-1","tool_name":"weather","input":{"city":"Paris"},""" +
+            """{"type":"tool-error","toolCallId":"call-1","toolName":"weather","input":{"city":"Paris"},""" +
                 """"error":"no such tool","dynamic":true}""",
         ) as StreamPart.ToolError
         assertThat(error.error.toString()).isEqualTo("\"no such tool\"")
         assertThat(error.providerExecuted).isNull()
         assertThat(error.dynamic).isTrue()
-        assertThat(decode("""{"type":"tool-output-denied","tool_call_id":"c","tool_name":"t"}"""))
+        assertThat(decode("""{"type":"tool-output-denied","toolCallId":"c","toolName":"t"}"""))
             .isEqualTo(StreamPart.ToolOutputDenied(toolCallId = "c", toolName = "t"))
         val response = decode(
-            """{"type":"tool-approval-response","approval_id":"a","tool_call":{"toolCallId":"c","toolName":"t","input":{}},"approved":false}""",
+            """{"type":"tool-approval-response","approvalId":"a","toolCall":{"type":"tool-call","toolCallId":"c","toolName":"t","input":{}},"approved":false}""",
         ) as StreamPart.ToolApprovalResponse
         assertThat(response.approved).isFalse()
+        assertThat(AimuxJson.encodeToString(StreamPart.serializer(), StreamPart.ToolOutputDenied(toolCallId = "c", toolName = "t")))
+            .isEqualTo("""{"type":"tool-output-denied","toolCallId":"c","toolName":"t"}""")
     }
 
     @Test

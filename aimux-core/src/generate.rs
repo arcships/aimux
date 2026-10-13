@@ -579,6 +579,9 @@ struct GenerateTextResultSnapshot<'a> {
     #[serde(with = "crate::wire::typed_vec")]
     #[ts(as = "Vec<crate::tool::TypedToolCall>")]
     tool_calls: Vec<&'a ToolCall>,
+    /// Each with its `type` tag (`generate-text-result.ts:93`).
+    #[serde(with = "crate::wire::typed_vec")]
+    #[ts(as = "Vec<crate::result::TaggedToolResult>")]
     tool_results: Vec<&'a TypedToolResult>,
     finish_reason: FinishReasonUnified,
     #[serde(skip_serializing_if = "Option::is_none")]

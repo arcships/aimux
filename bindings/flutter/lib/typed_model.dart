@@ -67,7 +67,7 @@ class TypedModel {
   /// Generate a structured JSON object from a string [prompt] (M12).
   ///
   /// Same signature as [generateText]; returns a typed
-  /// [GenerateObjectResult]. Pass `output: {'Object': {'schema': ...}}` via
+  /// [GenerateObjectResult]. Pass `output: {'type': 'object', 'schema': ...}` via
   /// [options] to describe the object; the model's text must parse as JSON
   /// and match the schema.
   GenerateObjectResult generateObject(

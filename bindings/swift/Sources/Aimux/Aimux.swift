@@ -948,7 +948,7 @@ public final class Model: @unchecked Sendable {
     /// Generate a structured JSON object (M12, RFC-0016).
     ///
     /// Same signature as `generateText`; returns a JSON-serialized
-    /// `GenerateObjectResult`. Pass `"output": {"Object": {"schema": ...}}`
+    /// `GenerateObjectResult`. Pass `"output": {"type": "object", "schema": ...}`
     /// via `options` to describe the object; the model's text must parse as
     /// JSON and match the schema.
     ///

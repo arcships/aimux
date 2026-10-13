@@ -153,31 +153,36 @@ data class Usage(
 /** Input-token breakdown of a [LanguageModelUsage]. Mirrors `InputTokenDetails.ts`. */
 @Serializable
 data class InputTokenDetails(
-    @SerialName("no_cache_tokens") val noCacheTokens: Long? = null,
-    @SerialName("cache_read_tokens") val cacheReadTokens: Long? = null,
-    @SerialName("cache_write_tokens") val cacheWriteTokens: Long? = null,
+    val noCacheTokens: Long? = null,
+    val cacheReadTokens: Long? = null,
+    val cacheWriteTokens: Long? = null,
 )
 
 /** Output-token breakdown of a [LanguageModelUsage]. Mirrors `OutputTokenDetails.ts`. */
 @Serializable
 data class OutputTokenDetails(
-    @SerialName("text_tokens") val textTokens: Long? = null,
-    @SerialName("reasoning_tokens") val reasoningTokens: Long? = null,
+    val textTokens: Long? = null,
+    val reasoningTokens: Long? = null,
 )
 
 /**
- * Call-level token usage, the AI SDK's `LanguageModelUsage`: flat counts,
- * unknown counts `null`. Provider results keep [Usage].
+ * Call-level token usage, the AI SDK's `LanguageModelUsage`: flat camelCase
+ * counts, an unknown count `null` here and absent in the JSON. Provider
+ * results keep [Usage].
  *
  * Mirrors `LanguageModelUsage.ts`.
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class LanguageModelUsage(
-    @SerialName("input_tokens") val inputTokens: Long? = null,
-    @SerialName("input_token_details") val inputTokenDetails: InputTokenDetails = InputTokenDetails(),
-    @SerialName("output_tokens") val outputTokens: Long? = null,
-    @SerialName("output_token_details") val outputTokenDetails: OutputTokenDetails = OutputTokenDetails(),
-    @SerialName("total_tokens") val totalTokens: Long? = null,
+    val inputTokens: Long? = null,
+    /** Always written, `{}` when every count is unknown, as upstream. */
+    @EncodeDefault
+    val inputTokenDetails: InputTokenDetails = InputTokenDetails(),
+    val outputTokens: Long? = null,
+    @EncodeDefault
+    val outputTokenDetails: OutputTokenDetails = OutputTokenDetails(),
+    val totalTokens: Long? = null,
     val raw: JsonObject? = null,
 )
 
@@ -936,9 +941,10 @@ data class GenerateTextOptions(
     val presencePenalty: Double? = null,
     val frequencyPenalty: Double? = null,
     /**
-     * Structured output, the AI SDK's `output`: for example
-     * `{"Object": {"schema": {...}}}`, `{"Array": {"element": {...}}}`,
-     * `{"Choice": {"options": [...]}}` or `{"Json": {}}`. Untyped
+     * Structured output, the AI SDK's `output`, tagged by `type`: for example
+     * `{"type": "object", "schema": {...}}`,
+     * `{"type": "array", "element": {...}, "minItems": 1}`,
+     * `{"type": "choice", "options": [...]}` or `{"type": "json"}`. Untyped
      * ([JsonElement]). The parsed value is [GenerateTextResult.output].
      */
     val output: JsonElement? = null,
@@ -1160,7 +1166,8 @@ data class GenerateResult(
  * over the steps. [reasoning], [reasoningText] (`null` when there is none),
  * [totalUsage] (equal to [usage]), [request], [response] and
  * [providerMetadata] are deprecated upstream. [output] is the value parsed by
- * the `output` option, `null` when it was not parsed.
+ * the `output` option: `null` when it was not parsed (absent from the JSON),
+ * [JsonNull] when the parsed value is JSON `null`.
  *
  * Mirrors `GenerateTextResult.ts`; [response] reads the id, timestamp and
  * model id of the step response. `content`, `reasoning`, the tool results and
@@ -1186,6 +1193,7 @@ data class GenerateTextResult(
     val responseMessages: List<ModelMessage> = emptyList(),
     val providerMetadata: ProviderMetadata? = null,
     val steps: List<JsonElement> = emptyList(),
+    @Serializable(with = JsonValuePresentSerializer::class)
     val output: JsonElement? = null,
 )
 
@@ -1335,12 +1343,12 @@ sealed interface StreamPart {
     @Serializable
     @SerialName("tool-result")
     data class ToolResult(
-        @SerialName("tool_call_id") val toolCallId: String = "",
-        @SerialName("tool_name") val toolName: String = "",
+        val toolCallId: String = "",
+        val toolName: String = "",
         val input: JsonElement? = null,
         val output: JsonElement = JsonNull,
-        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
-        @SerialName("provider_metadata") val providerMetadata: ProviderMetadata? = null,
+        val providerExecuted: Boolean? = null,
+        val providerMetadata: ProviderMetadata? = null,
         val dynamic: Boolean? = null,
         val preliminary: Boolean? = null,
     ) : StreamPart
@@ -1352,12 +1360,12 @@ sealed interface StreamPart {
     @Serializable
     @SerialName("tool-error")
     data class ToolError(
-        @SerialName("tool_call_id") val toolCallId: String = "",
-        @SerialName("tool_name") val toolName: String = "",
+        val toolCallId: String = "",
+        val toolName: String = "",
         val input: JsonElement? = null,
         val error: JsonElement = JsonNull,
-        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
-        @SerialName("provider_metadata") val providerMetadata: ProviderMetadata? = null,
+        val providerExecuted: Boolean? = null,
+        val providerMetadata: ProviderMetadata? = null,
         val dynamic: Boolean? = null,
     ) : StreamPart
 
@@ -1365,9 +1373,9 @@ sealed interface StreamPart {
     @Serializable
     @SerialName("tool-output-denied")
     data class ToolOutputDenied(
-        @SerialName("tool_call_id") val toolCallId: String = "",
-        @SerialName("tool_name") val toolName: String = "",
-        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
+        val toolCallId: String = "",
+        val toolName: String = "",
+        val providerExecuted: Boolean? = null,
         val dynamic: Boolean? = null,
     ) : StreamPart
 
@@ -1409,11 +1417,11 @@ sealed interface StreamPart {
     @Serializable
     @SerialName("tool-approval-response")
     data class ToolApprovalResponse(
-        @SerialName("approval_id") val approvalId: String,
-        @SerialName("tool_call") val toolCall: ai.arcships.aimux.ToolCall,
+        val approvalId: String,
+        val toolCall: ai.arcships.aimux.ToolCall,
         val approved: Boolean,
         val reason: String? = null,
-        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
+        val providerExecuted: Boolean? = null,
     ) : StreamPart
 
     @Serializable

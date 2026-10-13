@@ -500,6 +500,34 @@ class TestNullIsKeptApartFromMissing:
             "type": "text", "text": "x"}
 
 
+class TestStepsAndUsageAreCamelCase:
+
+    def test_usage_and_step_round_trip(self):
+        """``LanguageModelUsage`` (ai types/usage.ts:10-67) is camelCase with
+        an unknown count absent; a step is ``StepResult``'s own fields
+        (generate-text/step-result.ts:138-278), camelCase."""
+        from aimux.wrapper import LanguageModelUsage, StepResult
+
+        usage = {"inputTokens": 3, "inputTokenDetails": {"cacheReadTokens": 1},
+                 "outputTokens": 2, "outputTokenDetails": {}, "totalTokens": 5}
+        parsed = LanguageModelUsage.model_validate(usage)
+        assert parsed.input_token_details.cache_read_tokens == 1
+        assert parsed.model_dump(mode="json", by_alias=True) == usage
+
+        step = {
+            "callId": "c1", "stepNumber": 0,
+            "model": {"provider": "openai", "modelId": "gpt-4o"},
+            "content": [], "finishReason": "stop", "usage": usage,
+            "performance": {"stepTimeMs": 1.0}, "warnings": [], "request": {},
+            "response": {"id": "r1", "timestamp": "2026-01-01T00:00:00.000Z",
+                         "modelId": "gpt-4o", "body": None, "messages": []},
+        }
+        parsed_step = StepResult.model_validate(step)
+        assert parsed_step.model.model_id == "gpt-4o"
+        assert parsed_step.response.model_id == "gpt-4o"
+        assert parsed_step.model_dump(mode="json", by_alias=True) == step
+
+
 # ── tool-call round trip with typed content parts ────────────────────────────
 
 class TestToolCallRoundTrip:

@@ -322,7 +322,7 @@ Decoding is lenient
 | `StreamPart` (sealed) | `type`: `text-start/delta/end`, `start`, `start-step`, `finish-step`, `finish`, `abort`, `error`, `tool-input-start/delta/end`, `tool-call`, `tool-result`, `tool-error`, `tool-output-denied`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `tool-approval-response`, `reasoning-start/delta/end`, `source`, `raw` |
 | `Warning` (sealed) | `type`: `unsupported`, `compatibility`, `deprecated`, `other` |
 | `GenerateTextResult`, `GenerateObjectResult` | `toolCalls`, `finishReason` (`FinishReasonUnified`), `usage` / `totalUsage` (`LanguageModelUsage`), `responseMessages`, `reasoningText`, `request`, `response`, `steps`, `output` |
-| `GenerateTextOptions` | `maxOutputTokens`, `stopSequences`, `topP`, `providerOptions`, `output` (the AI SDK's `output` as JSON, e.g. `{"Object":{"schema":{...}}}`), `maxRetries`, `includeRawChunks`, `sessionId`, ... |
+| `GenerateTextOptions` | `maxOutputTokens`, `stopSequences`, `topP`, `providerOptions`, `output` (the AI SDK's `output` as JSON, e.g. `{"type":"object","schema":{...}}`, tagged by `type`), `maxRetries`, `includeRawChunks`, `sessionId`, ... |
 
 Provider options / metadata are `Map<String, Map<String, JsonElement>>`
 (`ProviderOptions` / `ProviderMetadata`).

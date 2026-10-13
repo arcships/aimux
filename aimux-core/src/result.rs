@@ -118,43 +118,76 @@ pub enum ContentPart {
 /// `generate-text/tool-result.ts:10-42`).
 ///
 /// aimux has no user-level tool definitions, so upstream's `toolMetadata`
-/// and `title`, which come from them, are absent.
+/// and `title`, which come from them, are absent. Its `type` tag is written
+/// by the union that holds it (`content`, the text stream) or, in a result's
+/// `toolResults`, by [`crate::wire::typed_vec`] ([`TaggedToolResult`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct TypedToolResult {
     pub tool_call_id: String,
     pub tool_name: String,
     /// The input of the tool call the result answers; absent for a deferred
     /// provider result, whose call is not in this response.
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input: Option<serde_json::Value>,
     pub output: serde_json::Value,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_executed: Option<bool>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<bool>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preliminary: Option<bool>,
+}
+
+impl crate::wire::TypeTag for TypedToolResult {
+    const TYPE: &'static str = "tool-result";
+}
+
+/// A tool result in a text result's `toolResults`: a [`TypedToolResult`]
+/// with its `type` tag, as the AI SDK writes it (`ai`
+/// `generate-text/tool-result.ts:12`, `generate-text-result.ts:93`).
+///
+/// Only the TypeScript type is generated from this struct; Rust fields hold a
+/// [`TypedToolResult`] and serde writes the tag ([`crate::wire::typed_vec`]).
+#[derive(TS)]
+#[ts(export)]
+#[allow(dead_code)]
+pub struct TaggedToolResult {
+    #[ts(rename = "type", type = "\"tool-result\"")]
+    tag: (),
+    #[ts(flatten)]
+    result: TypedToolResult,
 }
 
 /// A tool error (the AI SDK's `TypedToolError`, `ai`
 /// `generate-text/tool-error.ts:6-36`). `toolMetadata` and `title` are
 /// absent, as on [`TypedToolResult`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct TypedToolError {
     pub tool_call_id: String,
     pub tool_name: String,
     /// The input of the tool call; absent for a deferred provider result.
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input: Option<serde_json::Value>,
     pub error: serde_json::Value,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_executed: Option<bool>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<bool>,
 }
@@ -163,13 +196,20 @@ pub struct TypedToolError {
 /// `ToolApprovalResponseOutput`, `ai`
 /// `generate-text/tool-approval-response-output.ts:7-35`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ToolApprovalResponseOutput {
     pub approval_id: String,
+    /// The answered call, with its `type` tag (`TypedToolCall`,
+    /// `tool-approval-response-output.ts:18`).
+    #[serde(with = "crate::wire::typed")]
+    #[ts(as = "crate::tool::TypedToolCall")]
     pub tool_call: crate::tool::ToolCall,
     pub approved: bool,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_executed: Option<bool>,
 }
@@ -177,12 +217,15 @@ pub struct ToolApprovalResponseOutput {
 /// The output of a tool whose execution was denied (the AI SDK's
 /// `StaticToolOutputDenied`, `ai` `generate-text/tool-output-denied.ts:7-15`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ToolOutputDenied {
     pub tool_call_id: String,
     pub tool_name: String,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_executed: Option<bool>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<bool>,
 }

@@ -11,16 +11,20 @@ import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
  * One model call of a text generation (`StepResult`, `step-result.ts:138-278`).
+ *
+ * The JSON holds what `JSON.stringify` writes for upstream's
+ * `DefaultStepResult`: its own fields, camelCase, without the derived
+ * getters (`text`, `toolCalls`, ...) and without `undefined` fields.
  */
 export type StepResult = { 
 /**
  * Identifies the generation call the step belongs to.
  */
-call_id: string, 
+callId: string, 
 /**
  * Zero-based step index.
  */
-step_number: number, 
+stepNumber: number, 
 /**
  * The model that ran the step.
  */
@@ -32,11 +36,11 @@ content: Array<ContentPart>,
 /**
  * Why the step finished.
  */
-finish_reason: FinishReasonUnified, 
+finishReason: FinishReasonUnified, 
 /**
  * The provider's own finish reason.
  */
-raw_finish_reason: string | null, 
+rawFinishReason?: string, 
 /**
  * Token usage of this step.
  */
@@ -60,4 +64,4 @@ response: StepResponse,
 /**
  * Provider metadata of the model call.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, };
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, };

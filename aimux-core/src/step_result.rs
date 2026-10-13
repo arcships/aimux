@@ -25,8 +25,9 @@ use crate::timestamp::Timestamp;
 use crate::tool::ToolCall;
 use crate::types::{FinishReasonUnified, LanguageModelUsage, ProviderMetadata, Warning};
 
-/// The model that ran a step (`StepResult.model`).
+/// The model that ran a step (`StepResult.model`, `step-result.ts:155-161`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct StepModel {
     pub provider: String,
@@ -76,14 +77,17 @@ impl OutputChunkTimingStats {
 /// Timing of a step (`StepResultPerformance`, `step-result.ts:62-133`).
 /// Durations are milliseconds.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct StepResultPerformance {
     /// Output tokens per second over the whole response time.
     pub effective_output_tokens_per_second: f64,
     /// Output tokens per second after the first output chunk (streaming only).
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_tokens_per_second: Option<f64>,
     /// Input tokens per second until the first output chunk (streaming only).
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens_per_second: Option<f64>,
     /// Input plus output tokens per second over the whole response time.
@@ -97,9 +101,11 @@ pub struct StepResultPerformance {
     #[serde(default)]
     pub tool_execution_ms: BTreeMap<String, f64>,
     /// From the model call to its first output chunk (streaming only).
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_to_first_output_ms: Option<f64>,
     /// Gaps between output chunks (streaming only, two or more chunks).
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_between_output_chunks_ms: Option<OutputChunkTimingStats>,
 }
@@ -160,6 +166,7 @@ impl StepResultPerformance {
 /// `Omit<LanguageModelResponseMetadata, 'messages' | 'body'>`, carried by the
 /// `finish-step` stream part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct StepResponseMetadata {
     /// Response id; the call layer generates one when the provider sent none.
@@ -169,22 +176,32 @@ pub struct StepResponseMetadata {
     pub timestamp: Timestamp,
     /// The model that produced the response.
     pub model_id: String,
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
 }
 
 /// The response of a step (`LanguageModelResponseMetadata`,
-/// `types/language-model-response-metadata.ts`).
+/// `types/language-model-response-metadata.ts:6-38`: the step's `messages`
+/// with the response `id`, `timestamp`, `modelId`, `headers?` and `body?`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct StepResponse {
     pub id: String,
     pub timestamp: Timestamp,
     pub model_id: String,
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
-    /// The raw response body (non-streaming calls).
-    #[serde(default)]
+    /// The raw response body (non-streaming calls): `unknown`, so a JSON
+    /// `null` is kept apart from a missing body.
+    #[ts(optional)]
+    #[serde(
+        default,
+        deserialize_with = "crate::wire::present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub body: Option<Value>,
     /// The assistant and tool messages of this step, ready to append to the
     /// prompt of the next call.
@@ -206,7 +223,12 @@ impl StepResponse {
 }
 
 /// One model call of a text generation (`StepResult`, `step-result.ts:138-278`).
+///
+/// The JSON holds what `JSON.stringify` writes for upstream's
+/// `DefaultStepResult`: its own fields, camelCase, without the derived
+/// getters (`text`, `toolCalls`, ...) and without `undefined` fields.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct StepResult {
     /// Identifies the generation call the step belongs to.
@@ -220,7 +242,8 @@ pub struct StepResult {
     /// Why the step finished.
     pub finish_reason: FinishReasonUnified,
     /// The provider's own finish reason.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_finish_reason: Option<String>,
     /// Token usage of this step.
     pub usage: LanguageModelUsage,
@@ -235,7 +258,8 @@ pub struct StepResult {
     /// The response of the model call, with the step's response messages.
     pub response: StepResponse,
     /// Provider metadata of the model call.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
 }
 

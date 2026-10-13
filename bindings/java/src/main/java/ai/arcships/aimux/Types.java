@@ -307,9 +307,9 @@ public final class Types {
      * Mirrors `InputTokenDetails.ts`.
      */
     public static class InputTokenDetails {
-        @JsonProperty("no_cache_tokens") private Long noCacheTokens;
-        @JsonProperty("cache_read_tokens") private Long cacheReadTokens;
-        @JsonProperty("cache_write_tokens") private Long cacheWriteTokens;
+        @JsonProperty("noCacheTokens") private Long noCacheTokens;
+        @JsonProperty("cacheReadTokens") private Long cacheReadTokens;
+        @JsonProperty("cacheWriteTokens") private Long cacheWriteTokens;
 
         @JsonCreator
         InputTokenDetails() {}
@@ -358,8 +358,8 @@ public final class Types {
      * Mirrors `OutputTokenDetails.ts`.
      */
     public static class OutputTokenDetails {
-        @JsonProperty("text_tokens") private Long textTokens;
-        @JsonProperty("reasoning_tokens") private Long reasoningTokens;
+        @JsonProperty("textTokens") private Long textTokens;
+        @JsonProperty("reasoningTokens") private Long reasoningTokens;
 
         @JsonCreator
         OutputTokenDetails() {}
@@ -404,11 +404,11 @@ public final class Types {
      * Mirrors `LanguageModelUsage.ts`.
      */
     public static class LanguageModelUsage {
-        @JsonProperty("input_tokens") private Long inputTokens;
-        @JsonProperty("input_token_details") private InputTokenDetails inputTokenDetails = new InputTokenDetails();
-        @JsonProperty("output_tokens") private Long outputTokens;
-        @JsonProperty("output_token_details") private OutputTokenDetails outputTokenDetails = new OutputTokenDetails();
-        @JsonProperty("total_tokens") private Long totalTokens;
+        @JsonProperty("inputTokens") private Long inputTokens;
+        @JsonProperty("inputTokenDetails") private InputTokenDetails inputTokenDetails = new InputTokenDetails();
+        @JsonProperty("outputTokens") private Long outputTokens;
+        @JsonProperty("outputTokenDetails") private OutputTokenDetails outputTokenDetails = new OutputTokenDetails();
+        @JsonProperty("totalTokens") private Long totalTokens;
         @JsonProperty("raw") private ObjectNode raw;
 
         @JsonCreator
@@ -2010,10 +2010,11 @@ public final class Types {
         @JsonProperty("presencePenalty") private Double presencePenalty;
         @JsonProperty("frequencyPenalty") private Double frequencyPenalty;
         /**
-         * Structured output, the AI SDK's {@code output}: for example
-         * {@code {"Object": {"schema": {...}}}}, {@code {"Array": {"element": {...}}}},
-         * {@code {"Choice": {"options": [...]}}} or {@code {"Json": {}}}. The parsed
-         * value is {@link GenerateTextResult#getOutput()}.
+         * Structured output, the AI SDK's {@code output}, tagged by {@code type}: for
+         * example {@code {"type": "object", "schema": {...}}},
+         * {@code {"type": "array", "element": {...}, "minItems": 1}},
+         * {@code {"type": "choice", "options": [...]}} or {@code {"type": "json"}}. The
+         * parsed value is {@link GenerateTextResult#getOutput()}.
          */
         @JsonProperty("output") private JsonNode output;
         @JsonProperty("seed") private Long seed;
@@ -4336,12 +4337,12 @@ public final class Types {
          * input of the call it answers ({@code null} for a deferred result).
          */
         public static class ToolResult extends StreamPart {
-            @JsonProperty("tool_call_id") private String toolCallId = "";
-            @JsonProperty("tool_name") private String toolName = "";
+            @JsonProperty("toolCallId") private String toolCallId = "";
+            @JsonProperty("toolName") private String toolName = "";
             @JsonProperty("input") private JsonNode input;
             @JsonProperty("output") private JsonNode output;
-            @JsonProperty("provider_executed") private Boolean providerExecuted;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerExecuted") private Boolean providerExecuted;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
             @JsonProperty("dynamic") private Boolean dynamic;
             @JsonProperty("preliminary") private Boolean preliminary;
             @JsonCreator ToolResult() {}
@@ -4383,12 +4384,12 @@ public final class Types {
          * invalid tool call (Rust {@code TypedToolError}).
          */
         public static class ToolError extends StreamPart {
-            @JsonProperty("tool_call_id") private String toolCallId = "";
-            @JsonProperty("tool_name") private String toolName = "";
+            @JsonProperty("toolCallId") private String toolCallId = "";
+            @JsonProperty("toolName") private String toolName = "";
             @JsonProperty("input") private JsonNode input;
             @JsonProperty("error") private JsonNode error;
-            @JsonProperty("provider_executed") private Boolean providerExecuted;
-            @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("providerExecuted") private Boolean providerExecuted;
+            @JsonProperty("providerMetadata") private JsonNode providerMetadata;
             @JsonProperty("dynamic") private Boolean dynamic;
             @JsonCreator ToolError() {}
             public ToolError(String toolCallId, String toolName, JsonNode input, JsonNode error, Boolean providerExecuted,
@@ -4423,9 +4424,9 @@ public final class Types {
 
         /** A tool whose execution was denied (Rust {@code ToolOutputDenied}). */
         public static class ToolOutputDenied extends StreamPart {
-            @JsonProperty("tool_call_id") private String toolCallId = "";
-            @JsonProperty("tool_name") private String toolName = "";
-            @JsonProperty("provider_executed") private Boolean providerExecuted;
+            @JsonProperty("toolCallId") private String toolCallId = "";
+            @JsonProperty("toolName") private String toolName = "";
+            @JsonProperty("providerExecuted") private Boolean providerExecuted;
             @JsonProperty("dynamic") private Boolean dynamic;
             @JsonCreator ToolOutputDenied() {}
             public ToolOutputDenied(String toolCallId, String toolName, Boolean providerExecuted, Boolean dynamic) {
@@ -4806,11 +4807,11 @@ public final class Types {
         }
         /** The answer to a tool approval request (Rust {@code ToolApprovalResponseOutput}). */
         public static class ToolApprovalResponse extends StreamPart {
-            @JsonProperty("approval_id") private String approvalId;
-            @JsonProperty("tool_call") private Types.ToolCall toolCall;
+            @JsonProperty("approvalId") private String approvalId;
+            @JsonProperty("toolCall") private Types.ToolCall toolCall;
             @JsonProperty("approved") private boolean approved;
             @JsonProperty("reason") private String reason;
-            @JsonProperty("provider_executed") private Boolean providerExecuted;
+            @JsonProperty("providerExecuted") private Boolean providerExecuted;
             @JsonCreator ToolApprovalResponse() {}
             public ToolApprovalResponse(String approvalId, Types.ToolCall toolCall, boolean approved, String reason, Boolean providerExecuted) {
                 this.approvalId = approvalId;

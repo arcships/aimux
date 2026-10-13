@@ -153,11 +153,29 @@ class TypedModelTest {
 
     // ── Tests ───────────────────────────────────────────────────────────
 
+    // LanguageModelUsage is the AI SDK's (ai types/usage.ts:10-67): camelCase
+    // counts and detail objects, an unknown count absent.
+    @Test
+    void languageModelUsageIsCamelCase() throws Exception {
+        String wire = "{\"inputTokens\":3,\"inputTokenDetails\":{\"cacheReadTokens\":1},"
+            + "\"outputTokens\":2,\"outputTokenDetails\":{},\"totalTokens\":5}";
+        Types.LanguageModelUsage usage = Types.AimuxJson.MAPPER.readValue(wire, Types.LanguageModelUsage.class);
+        assertThat(usage.getInputTokens()).isEqualTo(3L);
+        assertThat(usage.getInputTokenDetails().getCacheReadTokens()).isEqualTo(1L);
+        assertThat(usage.getTotalTokens()).isEqualTo(5L);
+        assertThat(Types.AimuxJson.MAPPER.readTree(Types.AimuxJson.MAPPER.writeValueAsString(usage)))
+            .isEqualTo(Types.AimuxJson.MAPPER.readTree(wire));
+    }
+
+    // The text stream's tool parts are the AI SDK's TypedToolResult,
+    // TypedToolError, TypedToolOutputDenied and ToolApprovalResponseOutput,
+    // camelCase (ai generate-text/tool-result.ts:10-42, tool-error.ts:6-36,
+    // tool-output-denied.ts:7-15, tool-approval-response-output.ts:7-35).
     @Test
     void streamPartsDecodeToolResultsAndToolErrors() throws Exception {
         Types.StreamPart result = Types.AimuxJson.MAPPER.readValue(
-            "{\"type\":\"tool-result\",\"tool_call_id\":\"srv-1\",\"tool_name\":\"web_search\",\"input\":{\"q\":\"rust\"},"
-                + "\"output\":[{\"url\":\"https://example.com\"}],\"provider_executed\":true,\"dynamic\":true}",
+            "{\"type\":\"tool-result\",\"toolCallId\":\"srv-1\",\"toolName\":\"web_search\",\"input\":{\"q\":\"rust\"},"
+                + "\"output\":[{\"url\":\"https://example.com\"}],\"providerExecuted\":true,\"dynamic\":true}",
             Types.StreamPart.class);
         assertThat(result).isInstanceOf(Types.StreamPart.ToolResult.class);
         Types.StreamPart.ToolResult toolResult = (Types.StreamPart.ToolResult) result;
@@ -166,7 +184,7 @@ class TypedModelTest {
         assertThat(toolResult.getProviderExecuted()).isTrue();
 
         Types.StreamPart error = Types.AimuxJson.MAPPER.readValue(
-            "{\"type\":\"tool-error\",\"tool_call_id\":\"call-1\",\"tool_name\":\"weather\",\"input\":{\"city\":\"Paris\"},"
+            "{\"type\":\"tool-error\",\"toolCallId\":\"call-1\",\"toolName\":\"weather\",\"input\":{\"city\":\"Paris\"},"
                 + "\"error\":\"no such tool\",\"dynamic\":true}",
             Types.StreamPart.class);
         assertThat(error).isInstanceOf(Types.StreamPart.ToolError.class);
@@ -174,14 +192,15 @@ class TypedModelTest {
         assertThat(((Types.StreamPart.ToolError) error).getProviderExecuted()).isNull();
 
         Types.StreamPart denied = Types.AimuxJson.MAPPER.readValue(
-            "{\"type\":\"tool-output-denied\",\"tool_call_id\":\"c\",\"tool_name\":\"t\"}", Types.StreamPart.class);
+            "{\"type\":\"tool-output-denied\",\"toolCallId\":\"c\",\"toolName\":\"t\"}", Types.StreamPart.class);
         assertThat(denied).isEqualTo(new Types.StreamPart.ToolOutputDenied("c", "t", null, null));
         assertThat(Types.variantTag(denied)).isEqualTo("tool-output-denied");
         String json = Types.AimuxJson.MAPPER.writeValueAsString(denied);
+        assertThat(json).contains("\"toolCallId\":\"c\"").doesNotContain("tool_call_id");
         assertThat(Types.AimuxJson.MAPPER.readValue(json, Types.StreamPart.class)).isEqualTo(denied);
 
         Types.StreamPart response = Types.AimuxJson.MAPPER.readValue(
-            "{\"type\":\"tool-approval-response\",\"approval_id\":\"a\",\"tool_call\":{\"toolCallId\":\"c\",\"toolName\":\"t\","
+            "{\"type\":\"tool-approval-response\",\"approvalId\":\"a\",\"toolCall\":{\"type\":\"tool-call\",\"toolCallId\":\"c\",\"toolName\":\"t\","
                 + "\"input\":{}},\"approved\":false}",
             Types.StreamPart.class);
         assertThat(response).isInstanceOf(Types.StreamPart.ToolApprovalResponse.class);

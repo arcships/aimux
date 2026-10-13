@@ -19,4 +19,4 @@ timestamp: Timestamp,
 /**
  * The model that produced the response.
  */
-model_id: string, headers: { [key in string]: string } | null, };
+modelId: string, headers?: { [key in string]: string }, };
