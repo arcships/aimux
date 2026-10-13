@@ -224,7 +224,7 @@ internal interface AimuxFFI : Library {
     // [AiMuxError] Register external providers from JSON config (RFC-0020).
     fun aimux_register_providers(configJson: String): Pointer?
 
-    // [AiMuxError] Set the global proxy configuration (M6, RFC-0016).
+    // [AiMuxError] Replace the default transport's proxy configuration (M6, RFC-0016).
     fun aimux_init_proxy(configJson: String): Pointer?
 
     // [AiMuxError] Create a RouterModel (RFC-0021) over child handles (LongArray is
@@ -534,9 +534,9 @@ class Model internal constructor(handle: Long) : Closeable {
      * Generate a structured JSON object (M12, RFC-0016).
      *
      * Same signature as [generateText]; returns a JSON-serialized
-     * `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }` via
-     * [optsJson] for schema control; aimux-core applies JSON repair before
-     * parsing.
+     * `GenerateObjectResult`. Pass `"output": {"Object": {"schema": ...}}` via
+     * [optsJson] to describe the object; the model's text must parse as JSON
+     * and match the schema.
      *
      * @param promptJson JSON prompt string (bare value or {"prompt": ...}).
      * @param optsJson Optional JSON-serialized GenerateTextOptions.
@@ -559,11 +559,11 @@ class Model internal constructor(handle: Long) : Closeable {
      * (M11, RFC-0016). Synchronous (blocks until the stream finishes).
      *
      * Same signature as [generateText]; returns a JSON-serialized
-     * `StreamTextResultAggregated`.
+     * `GenerateTextResult`.
      *
      * @param promptJson JSON prompt string (bare value or {"prompt": ...}).
      * @param optsJson Optional JSON-serialized GenerateTextOptions.
-     * @return JSON-serialized StreamTextResultAggregated.
+     * @return JSON-serialized GenerateTextResult.
      * @throws AimuxException on AiMuxError.
      * @throws IllegalArgumentException when a raw JSON argument is malformed; IllegalStateException after [close].
      */
@@ -999,9 +999,9 @@ class Model internal constructor(handle: Long) : Closeable {
         }
 
         /**
-         * Set the global proxy configuration (M6, RFC-0016). Must be called
-         * before the first `generateText` / `streamText` call; a no-op if the
-         * shared HTTP client is already initialised.
+         * Replace the default transport with one routed by this proxy
+         * configuration (M6, RFC-0016). Requests started afterwards use it;
+         * calling it again replaces the previous configuration.
          *
          * @param configJson ProxyConfig JSON (`http_url`, `https_url`,
          *   `all_url`, `no_proxy` — all optional).

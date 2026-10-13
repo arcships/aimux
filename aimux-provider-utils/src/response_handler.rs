@@ -215,28 +215,6 @@ pub fn invalid_response_api_call(
     }))
 }
 
-/// Handler for the `{ "error": { "message", "type" | "code" } }` error shape,
-/// which several providers share verbatim. Providers whose error JSON differs
-/// keep their own mapping via [`create_json_error_response_handler`].
-#[must_use]
-pub fn create_standard_json_error_response_handler() -> ResponseHandler<AiMuxError> {
-    create_json_error_response_handler(|data| {
-        let error = data.get("error").unwrap_or(data);
-        ProviderErrorParts {
-            message: error
-                .get("message")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            provider_code: error
-                .get("type")
-                .or_else(|| error.get("code"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
-        }
-    })
-}
-
 /// Parse an error JSON and map its data to a provider message and code.
 #[must_use]
 pub fn create_json_error_response_handler<F>(

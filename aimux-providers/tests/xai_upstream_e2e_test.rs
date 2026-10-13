@@ -172,7 +172,7 @@ async fn tool_results_preserve_actions_and_sources() {
     let fetch = MockFetch::new(vec![Canned::json(&body)]);
     let mut options = options();
     options.tools = Some(vec![Tool::Provider(ProviderTool {
-        id: "xai.web_search".into(),
+        id: "xai.web_search".parse().unwrap(),
         name: "web_search".into(),
         args: serde_json::Map::new(),
     })]);
@@ -263,4 +263,19 @@ async fn failed_response_emits_error_and_finish() {
     assert_eq!(reason.raw.as_deref(), Some("error"));
     assert_eq!(usage.input_tokens.total, Some(50));
     assert_eq!(usage.output_tokens.total, Some(0));
+}
+
+/// TS: `xaiResponsesSupportedUrls` (xai-responses-language-model.ts:142-149):
+/// image, PDF and text URLs go to the API as they are.
+#[tokio::test]
+async fn responses_support_http_image_pdf_and_text_urls() {
+    let fetch = MockFetch::new(vec![]);
+    let urls = model(&fetch).supported_urls().await;
+    let mut kinds: Vec<_> = urls.0.keys().map(String::as_str).collect();
+    kinds.sort_unstable();
+    assert_eq!(kinds, ["application/pdf", "image/*", "text/*"]);
+    for patterns in urls.0.values() {
+        assert!(patterns[0].is_match("https://example.com/file"));
+        assert!(!patterns[0].is_match("ftp://example.com/file"));
+    }
 }

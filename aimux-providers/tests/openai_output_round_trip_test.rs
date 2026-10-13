@@ -133,7 +133,9 @@ async fn round_trip_text_only() {
 /// `{ "content": [{ token, logprob, bytes, top_logprobs }], "refusal": null }`.
 /// The OpenAI chat model keeps only the `content` list as provider metadata
 /// (@ai-sdk/openai 4.0.83 src/chat/openai-chat-language-model.ts:459-461),
-/// so the converter puts it back in that object.
+/// so the converter puts it back in that object. The list is the parsed one,
+/// whose schema has no `bytes` (openai-chat-api.ts:71-87), so every token
+/// comes back with `"bytes": null`.
 #[tokio::test]
 async fn round_trip_with_logprobs() {
     let logprobs = json!({
@@ -182,10 +184,14 @@ async fn round_trip_with_logprobs() {
 
     let completion = generate_text_result_to_chat_completion(&result, "gpt-4o");
     let wire = serde_json::to_value(&completion).unwrap();
-    assert_eq!(
-        wire["choices"][0]["logprobs"],
-        original["choices"][0]["logprobs"]
-    );
+    let mut expected = original["choices"][0]["logprobs"].clone();
+    for token in expected["content"].as_array_mut().unwrap() {
+        token["bytes"] = Value::Null;
+        for top in token["top_logprobs"].as_array_mut().unwrap() {
+            top["bytes"] = Value::Null;
+        }
+    }
+    assert_eq!(wire["choices"][0]["logprobs"], expected);
 }
 
 #[tokio::test]

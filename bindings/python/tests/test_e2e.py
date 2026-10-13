@@ -3,9 +3,9 @@
 Verifies the FULL chain: Python → PyO3 → aimux-core → HTTP mock →
 response parsing → typed result.
 
-The mock server runs in a separate process (multiprocessing) because
-PyO3's block_on blocks the calling thread — a threading-based server
-would deadlock.
+The mock server runs in a separate process (multiprocessing). Native calls
+release the GIL, so a server thread in this process works too
+(test_gil.py relies on it).
 """
 
 import json
@@ -154,7 +154,7 @@ class TestOpenAIE2E:
             parts = list(stream_text(model, "Say hello"))
             assert len(parts) > 0
             text = "".join(
-                p["TextDelta"]["delta"] for p in parts if "TextDelta" in p
+                p["TextDelta"]["text"] for p in parts if "TextDelta" in p
             )
             assert text == "Hello world"
 
@@ -181,7 +181,7 @@ class TestAnthropicE2E:
             parts = list(stream_text(model, "Hello"))
             assert len(parts) > 0
             text = "".join(
-                p["TextDelta"]["delta"] for p in parts if "TextDelta" in p
+                p["TextDelta"]["text"] for p in parts if "TextDelta" in p
             )
             assert text == "Hello from Claude"
 
@@ -365,16 +365,14 @@ class TestStructuredContent:
             assert result["tool_calls"][0]["tool_call_id"] == "call_abc"
             assert result["tool_calls"][0]["input"] == {"location": "Tokyo"}
 
-            # Structured content: raw.content contains the ToolCall variant
-            assert "raw" in result
-            assert isinstance(result["raw"]["content"], list)
-            tc = next((c for c in result["raw"]["content"] if "ToolCall" in c), None)
-            assert tc is not None, "raw.content must contain a ToolCall variant"
+            # Structured content: the final step's content holds the parsed
+            # ToolCall variant
+            assert isinstance(result["content"], list)
+            tc = next((c for c in result["content"] if "ToolCall" in c), None)
+            assert tc is not None, "content must contain a ToolCall variant"
             assert tc["ToolCall"]["tool_name"] == "get_weather"
             assert tc["ToolCall"]["tool_call_id"] == "call_abc"
-            # raw content keeps the provider's argument text; parsing happens
-            # at the Core boundary (top-level tool_calls carry the object).
-            assert tc["ToolCall"]["input"] == '{"location":"Tokyo"}'
+            assert tc["ToolCall"]["input"] == {"location": "Tokyo"}
 
     def test_multi_role_messages_reach_provider(self):
         with RecordingMockServer(OPENAI_CHAT) as mock:

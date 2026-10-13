@@ -61,15 +61,13 @@ async fn sent(server: &MockServer) -> Sent {
 }
 
 fn prompt() -> CallOptions {
-    let mut options = CallOptions::new(vec![LanguageModelMessage::User {
+    CallOptions::new(vec![LanguageModelMessage::User {
         content: vec![UserPart::Text(TextPart {
             text: "hi".into(),
             provider_options: None,
         })],
         provider_options: None,
-    }]);
-    options.max_retries = Some(0);
-    options
+    }])
 }
 
 fn bedrock(server: &MockServer, token: bool) -> aimux_providers::bedrock::AmazonBedrockProvider {

@@ -122,7 +122,11 @@ impl DecisionConfig {
             Self::Compatible(config) => {
                 let headers = config.request_headers(options.headers.as_ref()).await?;
                 let origin = config.base_url.resolve()?;
-                config.with_transport(HttpRequest::new(url, headers, options), origin)
+                config.with_transport(
+                    HttpRequest::new(url, headers.list, options),
+                    origin,
+                    headers.fetch_user_agent,
+                )
             }
         })
     }
@@ -230,7 +234,7 @@ pub(crate) fn provider_metadata(
     if !answers.is_empty() {
         metadata.insert("answers".into(), Value::Object(answers));
     }
-    HashMap::from([(provider.into(), metadata)])
+    SharedProviderMetadata::from([(provider.into(), metadata)])
 }
 
 /// The V4 response information of a native exchange: the model the server

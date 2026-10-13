@@ -60,7 +60,7 @@ fn input_schema(id: &str) -> Option<Value> {
 
 use aimux_core::AiMuxError;
 
-use aimux_core::tool::{Tool, ToolChoice};
+use aimux_core::tool::{LanguageModelV4ToolChoice, Tool};
 use aimux_core::types::Warning;
 use serde_json::json;
 
@@ -76,7 +76,7 @@ pub(crate) struct PreparedProviderTools {
 
 pub(crate) fn prepare_provider_tools(
     tools: Option<&[Tool]>,
-    choice: Option<&ToolChoice>,
+    choice: Option<&LanguageModelV4ToolChoice>,
     anthropic: bool,
     disable_parallel: bool,
     rejects_forced: bool,
@@ -101,7 +101,7 @@ pub(crate) fn prepare_provider_tools(
                     | "anthropic.web_search_20260318"
                     | "anthropic.web_fetch_20260318"
             ) {
-                let kind = tool.id.strip_prefix("anthropic.").unwrap();
+                let kind = tool.id.as_str().strip_prefix("anthropic.").unwrap();
                 result.warnings.push(Warning::Unsupported {
                     feature: format!("{kind} tool"),
                     details: Some(format!(
@@ -120,7 +120,7 @@ pub(crate) fn prepare_provider_tools(
         .filter(|tool| {
             !anthropic
                 || !rejects_forced
-                || !matches!(choice, Some(ToolChoice::Tool { tool_name }) if tool_name != &tool.name)
+                || !matches!(choice, Some(LanguageModelV4ToolChoice::Tool { tool_name }) if tool_name != &tool.name)
         })
         .collect();
     if !anthropic || selected.is_empty() {
@@ -136,17 +136,20 @@ pub(crate) fn prepare_provider_tools(
     let anthropic_tools: Vec<_> = providers
         .iter()
         .map(|tool| AnthropicTool::Provider {
-            id: tool.id.clone(),
+            id: tool.id.to_string(),
             name: tool.name.clone(),
             args: tool.args.clone(),
         })
         .collect();
-    let fallback =
-        rejects_forced && matches!(choice, Some(ToolChoice::Required | ToolChoice::Tool { .. }));
+    let fallback = rejects_forced
+        && matches!(
+            choice,
+            Some(LanguageModelV4ToolChoice::Required | LanguageModelV4ToolChoice::Tool { .. })
+        );
     let prepared = prepare_tools_with_provider(
         Some(&anthropic_tools),
         if fallback {
-            Some(&ToolChoice::Auto)
+            Some(&LanguageModelV4ToolChoice::Auto)
         } else {
             choice
         },
@@ -157,13 +160,13 @@ pub(crate) fn prepare_provider_tools(
     );
     result.tool_choice = prepared.tool_choice;
     for tool in &providers {
-        validate_args(&tool.id, &tool.args)?;
+        validate_args(tool.id.as_str(), &tool.args)?;
     }
     result.betas.extend(prepared.betas);
     result.warnings.extend(prepared.tool_warnings);
     if fallback {
         let details = match choice {
-            Some(ToolChoice::Tool { tool_name }) => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
+            Some(LanguageModelV4ToolChoice::Tool { tool_name }) => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
             _ => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".to_owned(),
         };
         result.warnings.push(Warning::Unsupported {
@@ -172,7 +175,7 @@ pub(crate) fn prepare_provider_tools(
         });
     }
     for tool in selected {
-        if let Some(schema) = input_schema(&tool.id) {
+        if let Some(schema) = input_schema(tool.id.as_str()) {
             result
                 .tools
                 .push(json!({"toolSpec":{"name":tool.name,"inputSchema":{"json":schema}}}));

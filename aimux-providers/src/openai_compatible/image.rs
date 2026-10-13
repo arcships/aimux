@@ -69,17 +69,9 @@ async fn file_bytes(file: &ImageFile) -> Result<(Vec<u8>, String), AiMuxError> {
             Ok((bytes, media_type.clone()))
         }
         ImageFile::Url { url } => {
-            // Upstream downloads file URLs with the default transport, without provider headers.
-            let response = aimux_provider_utils::get_from_api(
-                aimux_provider_utils::HttpRequest {
-                    url: url.clone(),
-                    validate_url: true,
-                    ..Default::default()
-                },
-                aimux_provider_utils::create_binary_response_handler(),
-                aimux_provider_utils::create_status_code_error_response_handler(),
-            )
-            .await?;
+            // openai-compatible-image-model.ts:241-244: `downloadBlob(file.url)`,
+            // with no headers and no abort signal.
+            let response = aimux_provider_utils::download_blob(url.clone(), None).await?;
             let media_type = response
                 .response_headers
                 .get("content-type")

@@ -1,0 +1,690 @@
+{
+  "source": "@ai-sdk/provider-utils@5.0.55 src/streaming-tool-call-tracker.ts (sha256 2ab3b949ea588c1fbdb3501d2ff14525fbf2389f110893a1fecd1f0787192d80)",
+  "typeValidation": "per case: 'if-present' as @ai-sdk/openai@4.0.83 openai-chat-language-model.ts:541, 'required' as @ai-sdk/groq@4.0.52 groq-chat-language-model.ts:393, 'none' (the default) as @ai-sdk/openai-compatible@3.0.62 openai-compatible-chat-language-model.ts:555",
+  "generatedBy": "node scripts/gen-t3-tracker-fixture.mjs <node_modules with the @ai-sdk/provider-utils version pinned in fixtures/aisdk/VERSIONS.json>",
+  "cases": [
+    {
+      "name": "ambiguous_delta_across_open_calls_is_dropped",
+      "tracker": "streaming-tool-call-tracker.ts:144-146 (resolveToolCall :305-308 -> resolveMatchingToolCall :349-351 -> ambiguous)",
+      "deltas": [
+        {
+          "index": 0,
+          "id": "call_a",
+          "type": "function",
+          "function": {
+            "name": "alpha",
+            "arguments": "{\"a\":"
+          }
+        },
+        {
+          "index": 1,
+          "id": "call_b",
+          "type": "function",
+          "function": {
+            "name": "beta",
+            "arguments": "{\"b\":"
+          }
+        },
+        {
+          "function": {
+            "arguments": "\"LOST\""
+          }
+        },
+        {
+          "index": 0,
+          "function": {
+            "arguments": "1}"
+          }
+        },
+        {
+          "index": 1,
+          "function": {
+            "arguments": "2}"
+          }
+        }
+      ],
+      "aisdk": {
+        "steps": [
+          {
+            "parts": [
+              {
+                "type": "tool-input-start",
+                "id": "call_a",
+                "toolName": "alpha"
+              },
+              {
+                "type": "tool-input-delta",
+                "id": "call_a",
+                "delta": "{\"a\":"
+              }
+            ]
+          },
+          {
+            "parts": [
+              {
+                "type": "tool-input-start",
+                "id": "call_b",
+                "toolName": "beta"
+              },
+              {
+                "type": "tool-input-delta",
+                "id": "call_b",
+                "delta": "{\"b\":"
+              }
+            ]
+          },
+          {
+            "parts": []
+          },
+          {
+            "parts": [
+              {
+                "type": "tool-input-delta",
+                "id": "call_a",
+                "delta": "1}"
+              }
+            ]
+          },
+          {
+            "parts": [
+              {
+                "type": "tool-input-delta",
+                "id": "call_b",
+                "delta": "2}"
+              }
+            ]
+          }
+        ],
+        "error": null,
+        "flush": [
+          {
+            "type": "tool-input-end",
+            "id": "call_a"
+          },
+          {
+            "type": "tool-call",
+            "toolCallId": "call_a",
+            "toolName": "alpha",
+            "input": "{\"a\":1}"
+          },
+          {
+            "type": "tool-input-end",
+            "id": "call_b"
+          },
+          {
+            "type": "tool-call",
+            "toolCallId": "call_b",
+            "toolName": "beta",
+            "input": "{\"b\":2}"
+          }
+        ]
+      },
+      "typeValidation": "if-present"
+    },
+    {
+      "name": "blank_name_matching_no_call_is_dropped",
+      "tracker": "streaming-tool-call-tracker.ts:153-155",
+      "deltas": [
+        {
+          "index": 0,
+          "id": "call_blank",
+          "type": "function",
+          "function": {
+            "name": "",
+            "arguments": "{\"x\":1}"
+          }
+        },
+        {
+          "index": 1,
+          "id": "call_ws",
+          "type": "function",
+          "function": {
+            "name": "   ",
+            "arguments": "{}"
+          }
+        }
+      ],
+      "aisdk": {
+        "steps": [
+          {
+            "parts": []
+          },
+          {
+            "parts": []
+          }
+        ],
+        "error": null,
+        "flush": []
+      },
+      "typeValidation": "if-present"
+    },
+    {
+      "name": "nameless_delta_without_open_call_is_invalid_response_data",
+      "tracker": "streaming-tool-call-tracker.ts:305-308 -> new (:328-330), then :384-389 throws InvalidResponseDataError",
+      "deltas": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"orphan\":true}"
+          }
+        }
+      ],
+      "aisdk": {
+        "steps": [
+          {
+            "parts": []
+          }
+        ],
+        "error": {
+          "name": "AI_InvalidResponseDataError",
+          "message": "Expected 'function.name' to be a string."
+        },
+        "flush": null
+      },
+      "typeValidation": "if-present"
+    },
+    {
+      "name": "non_function_type_is_invalid_response_data",
+      "tracker": "streaming-tool-call-tracker.ts:375-381",
+      "deltas": [
+        {
+          "index": 0,
+          "id": "call_c",
+          "type": "custom",
+          "function": {
+            "name": "gamma",
+            "arguments": "{}"
+          }
+        }
+      ],
+      "aisdk": {
+        "steps": [
+          {
+            "parts": []
+          }
+        ],
+        "error": {
+          "name": "AI_InvalidResponseDataError",
+          "message": "Expected 'function' type."
+        },
+        "flush": null
+      },
+      "typeValidation": "if-present"
+    },
+    {
+      "name": "required_missing_type_on_start_is_invalid_response_data",
+      "typeValidation": "required",
+      "tracker": "typeValidation 'required' (groq); streaming-tool-call-tracker.ts:368-374",
+      "deltas": [
+        {
+          "index": 0,
+          "id": "call_a",
+          "function": {
+            "name": "alpha",
+            "arguments": "{}"
+          }
+        }
+      ],
+      "aisdk": {
+        "steps": [
+          {
+            "parts": []
+          }
+        ],
+        "error": {
+          "name": "AI_InvalidResponseDataError",
+          "message": "Expected 'function' type."
+        },
+        "flush": null
+      }
+    },
+    {
+      "name": "required_non_function_type_is_invalid_response_data",
+      "typeValidation": "required",
+      "tracker": "typeValidation 'required' (groq); streaming-tool-call-tracker.ts:368-374",
+      "deltas": [
+        {
+          "index": 0,
+          "id": "call_a",
+          "type": "custom",
+          "function": {
+            "name": "alpha",
+            "arguments": "{}"
+          }
+        }
+      ],
+      "aisdk": {
+        "steps": [
+          {
+            "parts": []
+          }
+        ],
+        "error": {
+          "name": "AI_InvalidResponseDataError",
+          "message": "Expected 'function' type."
+        },
+        "flush": null
+      }
+    },
+    {
+      "name": "required_continuation_without_type",
+      "typeValidation": "required",
+      "tracker": "typeValidation 'required' (groq); continuation deltas carry no type",
+      "deltas": [
+        {
+          "index": 0,
+          "id": "call_a",
+          "type": "function",
+          "function": {
+            "name": "alpha",
+            "arguments": "{\"a\":"
+          }
+        },
+        {
+          "index": 0,
+          "function": {
+            "arguments": "1}"
+          }
+        }
+      ],
+      "aisdk": {
+        "steps": [
+          {
+            "parts": [
+              {
+                "type": "tool-input-start",
+                "id": "call_a",
+                "toolName": "alpha"
+              },
+              {
+                "type": "tool-input-delta",
+                "id": "call_a",
+                "delta": "{\"a\":"
+              }
+            ]
+          },
+          {
+            "parts": [
+              {
+                "type": "tool-input-delta",
+                "id": "call_a",
+                "delta": "1}"
+              }
+            ]
+          }
+        ],
+        "error": null,
+        "flush": [
+          {
+            "type": "tool-input-end",
+            "id": "call_a"
+          },
+          {
+            "type": "tool-call",
+            "toolCallId": "call_a",
+            "toolName": "alpha",
+            "input": "{\"a\":1}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "none_missing_type_is_accepted",
+      "typeValidation": "none",
+      "tracker": "typeValidation 'none' (openai-compatible)",
+      "deltas": [
+        {
+          "index": 0,
+          "id": "call_a",
+          "function": {
+            "name": "alpha",
+            "arguments": "{\"a\":1}"
+          }
+        }
+      ],
+      "aisdk": {
+        "steps": [
+          {
+            "parts": [
+              {
+                "type": "tool-input-start",
+                "id": "call_a",
+                "toolName": "alpha"
+              },
+              {
+                "type": "tool-input-delta",
+                "id": "call_a",
+                "delta": "{\"a\":1}"
+              }
+            ]
+          }
+        ],
+        "error": null,
+        "flush": [
+          {
+            "type": "tool-input-end",
+            "id": "call_a"
+          },
+          {
+            "type": "tool-call",
+            "toolCallId": "call_a",
+            "toolName": "alpha",
+            "input": "{\"a\":1}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "none_non_function_type_is_accepted",
+      "typeValidation": "none",
+      "tracker": "typeValidation 'none' (openai-compatible)",
+      "deltas": [
+        {
+          "index": 0,
+          "id": "call_a",
+          "type": "custom",
+          "function": {
+            "name": "alpha",
+            "arguments": "{\"a\":1}"
+          }
+        }
+      ],
+      "aisdk": {
+        "steps": [
+          {
+            "parts": [
+              {
+                "type": "tool-input-start",
+                "id": "call_a",
+                "toolName": "alpha"
+              },
+              {
+                "type": "tool-input-delta",
+                "id": "call_a",
+                "delta": "{\"a\":1}"
+              }
+            ]
+          }
+        ],
+        "error": null,
+        "flush": [
+          {
+            "type": "tool-input-end",
+            "id": "call_a"
+          },
+          {
+            "type": "tool-call",
+            "toolCallId": "call_a",
+            "toolName": "alpha",
+            "input": "{\"a\":1}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "name_without_index",
+      "typeValidation": "if-present",
+      "tracker": "interleaved: start and continuation without index",
+      "deltas": [
+        {
+          "id": "call_a",
+          "type": "function",
+          "function": {
+            "name": "alpha",
+            "arguments": "{\"a\":"
+          }
+        },
+        {
+          "function": {
+            "arguments": "1}"
+          }
+        }
+      ],
+      "aisdk": {
+        "steps": [
+          {
+            "parts": [
+              {
+                "type": "tool-input-start",
+                "id": "call_a",
+                "toolName": "alpha"
+              },
+              {
+                "type": "tool-input-delta",
+                "id": "call_a",
+                "delta": "{\"a\":"
+              }
+            ]
+          },
+          {
+            "parts": [
+              {
+                "type": "tool-input-delta",
+                "id": "call_a",
+                "delta": "1}"
+              }
+            ]
+          }
+        ],
+        "error": null,
+        "flush": [
+          {
+            "type": "tool-input-end",
+            "id": "call_a"
+          },
+          {
+            "type": "tool-call",
+            "toolCallId": "call_a",
+            "toolName": "alpha",
+            "input": "{\"a\":1}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "index_reuse_with_new_id",
+      "typeValidation": "if-present",
+      "tracker": "interleaved: index 0 reused by a second call id; the index-only continuation goes to the only call at that index whose structured arguments are incomplete (:291-298 -> resolveMatchingToolCall :345-347)",
+      "deltas": [
+        {
+          "index": 0,
+          "id": "call_a",
+          "type": "function",
+          "function": {
+            "name": "alpha",
+            "arguments": "{\"a\":1}"
+          }
+        },
+        {
+          "index": 0,
+          "id": "call_b",
+          "type": "function",
+          "function": {
+            "name": "beta",
+            "arguments": "{\"b\":"
+          }
+        },
+        {
+          "index": 0,
+          "function": {
+            "arguments": "2}"
+          }
+        }
+      ],
+      "aisdk": {
+        "steps": [
+          {
+            "parts": [
+              {
+                "type": "tool-input-start",
+                "id": "call_a",
+                "toolName": "alpha"
+              },
+              {
+                "type": "tool-input-delta",
+                "id": "call_a",
+                "delta": "{\"a\":1}"
+              }
+            ]
+          },
+          {
+            "parts": [
+              {
+                "type": "tool-input-start",
+                "id": "call_b",
+                "toolName": "beta"
+              },
+              {
+                "type": "tool-input-delta",
+                "id": "call_b",
+                "delta": "{\"b\":"
+              }
+            ]
+          },
+          {
+            "parts": [
+              {
+                "type": "tool-input-delta",
+                "id": "call_b",
+                "delta": "2}"
+              }
+            ]
+          }
+        ],
+        "error": null,
+        "flush": [
+          {
+            "type": "tool-input-end",
+            "id": "call_a"
+          },
+          {
+            "type": "tool-call",
+            "toolCallId": "call_a",
+            "toolName": "alpha",
+            "input": "{\"a\":1}"
+          },
+          {
+            "type": "tool-input-end",
+            "id": "call_b"
+          },
+          {
+            "type": "tool-call",
+            "toolCallId": "call_b",
+            "toolName": "beta",
+            "input": "{\"b\":2}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "duplicate_id_across_indices",
+      "typeValidation": "if-present",
+      "tracker": "interleaved: same id on two indices",
+      "deltas": [
+        {
+          "index": 0,
+          "id": "call_a",
+          "type": "function",
+          "function": {
+            "name": "alpha",
+            "arguments": "{\"a\":"
+          }
+        },
+        {
+          "index": 1,
+          "id": "call_a",
+          "type": "function",
+          "function": {
+            "name": "beta",
+            "arguments": "{\"b\":"
+          }
+        },
+        {
+          "index": 0,
+          "function": {
+            "arguments": "1}"
+          }
+        },
+        {
+          "index": 1,
+          "function": {
+            "arguments": "2}"
+          }
+        }
+      ],
+      "aisdk": {
+        "steps": [
+          {
+            "parts": [
+              {
+                "type": "tool-input-start",
+                "id": "call_a",
+                "toolName": "alpha"
+              },
+              {
+                "type": "tool-input-delta",
+                "id": "call_a",
+                "delta": "{\"a\":"
+              }
+            ]
+          },
+          {
+            "parts": [
+              {
+                "type": "tool-input-start",
+                "id": "gen-0",
+                "toolName": "beta"
+              },
+              {
+                "type": "tool-input-delta",
+                "id": "gen-0",
+                "delta": "{\"b\":"
+              }
+            ]
+          },
+          {
+            "parts": [
+              {
+                "type": "tool-input-delta",
+                "id": "call_a",
+                "delta": "1}"
+              }
+            ]
+          },
+          {
+            "parts": [
+              {
+                "type": "tool-input-delta",
+                "id": "gen-0",
+                "delta": "2}"
+              }
+            ]
+          }
+        ],
+        "error": null,
+        "flush": [
+          {
+            "type": "tool-input-end",
+            "id": "call_a"
+          },
+          {
+            "type": "tool-call",
+            "toolCallId": "call_a",
+            "toolName": "alpha",
+            "input": "{\"a\":1}"
+          },
+          {
+            "type": "tool-input-end",
+            "id": "gen-0"
+          },
+          {
+            "type": "tool-call",
+            "toolCallId": "gen-0",
+            "toolName": "beta",
+            "input": "{\"b\":2}"
+          }
+        ]
+      }
+    }
+  ]
+}

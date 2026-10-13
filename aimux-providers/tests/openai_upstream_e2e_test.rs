@@ -4,7 +4,9 @@ mod mock_fetch;
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
 use aimux_core::error::AiMuxError;
-use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs};
+use aimux_core::image_model::{
+    ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs,
+};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::CallOptions;
@@ -348,6 +350,61 @@ async fn chat_cache_read_is_only_the_nested_cached_tokens() {
     assert_eq!(top_level_only.raw.unwrap()["cached_tokens"], json!(7));
 }
 
+/// openai-chat-api.ts:71-87 (response) and :159-175 (chunk) parse a logprobs
+/// entry as `{token, logprob, top_logprobs: [{token, logprob}]}`, so `bytes`
+/// never reaches `providerMetadata.openai.logprobs`
+/// (openai-chat-language-model.ts:459-461 generate, :613-615 stream), and a
+/// `null` `content` sets none.
+#[tokio::test]
+async fn chat_logprobs_metadata_has_no_bytes() {
+    let wire = json!({"content":[{"token":"Hello","logprob":-0.5,"bytes":[72,101,108,108,111],
+        "top_logprobs":[{"token":"Hello","logprob":-0.5,"bytes":[72,101,108,108,111]},
+            {"token":"Hi","logprob":-1.5,"bytes":[72,105]}]}],"refusal":null});
+    let expected = json!([{"token":"Hello","logprob":-0.5,
+        "top_logprobs":[{"token":"Hello","logprob":-0.5},{"token":"Hi","logprob":-1.5}]}]);
+    let generated_metadata = |logprobs: Value| async move {
+        let mut response = chat_response();
+        response["choices"][0]["logprobs"] = logprobs;
+        let fetch = MockFetch::new(vec![Canned::json(&response)]);
+        let result = provider(&fetch)
+            .chat("test-model")
+            .do_generate(&options())
+            .await
+            .unwrap();
+        serde_json::to_value(result.provider_metadata).unwrap()
+    };
+    assert_eq!(
+        generated_metadata(wire.clone()).await["openai"]["logprobs"],
+        expected
+    );
+    let metadata = generated_metadata(json!({"content": null})).await;
+    assert_eq!(metadata["openai"].get("logprobs"), None, "{metadata}");
+
+    let fetch = MockFetch::new(vec![sse(vec![json!({
+        "id":"chatcmpl-test","model":"test-model","created":1702657020,
+        "choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},
+            "logprobs":wire,"finish_reason":"stop"}]})])]);
+    let parts = provider(&fetch)
+        .chat("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect::<Vec<_>>()
+        .await;
+    let Some(StreamPart::Finish {
+        provider_metadata, ..
+    }) = parts.last()
+    else {
+        panic!("no finish part: {parts:?}");
+    };
+    assert_eq!(
+        serde_json::to_value(provider_metadata).unwrap()["openai"]["logprobs"],
+        expected
+    );
+}
+
 /// TS: "should parse OpenRouter resource exhausted error" (src/openai-error.test.ts)
 #[tokio::test]
 async fn chat_error_response() {
@@ -651,6 +708,39 @@ async fn image_generate() {
     assert!(matches!(result.images,ImageOutputs::Base64(images) if images==expected));
 }
 
+/// openai-image-model.ts:166 (files) and :357 (mask) fetch a URL file with
+/// `downloadBlob(file.url, {abortSignal})`, which goes through
+/// `fetchUntrustedUrl` (provider-utils download-blob.ts:111-114): a
+/// non-public target is refused before any request, and the edit request is
+/// never sent.
+#[tokio::test]
+async fn image_edit_url_files_are_downloaded_through_the_guard() {
+    let url = || ImageFile::Url {
+        url: "http://169.254.169.254/latest/meta-data/image.png".into(),
+    };
+    let mut files = ImageCallOptions::new("Edit");
+    files.files = Some(vec![url()]);
+    let mut mask = ImageCallOptions::new("Edit");
+    mask.files = Some(vec![ImageFile::File {
+        media_type: "image/png".into(),
+        data: ImageFileData::Binary(vec![1, 2, 3]),
+    }]);
+    mask.mask = Some(url());
+    for options in [files, mask] {
+        let fetch = MockFetch::new(vec![Canned::json(&image_response())]);
+        let error = provider(&fetch)
+            .image("gpt-image-1")
+            .do_generate(&options)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, AiMuxError::InvalidArgument(ref message) if message.contains("non-public")),
+            "{error:?}"
+        );
+        assert!(fetch.seen().is_empty());
+    }
+}
+
 /// TS: "should pass the model and text" (src/speech/openai-speech-model.test.ts)
 /// TS: "should return audio data with correct content type" (src/speech/openai-speech-model.test.ts)
 #[tokio::test]
@@ -717,7 +807,7 @@ async fn responses_web_search_stream() {
     ])]);
     let mut call = options();
     call.tools = Some(vec![Tool::Provider(aimux_core::tool::ProviderTool {
-        id: "openai.web_search".into(),
+        id: "openai.web_search".parse().unwrap(),
         name: "webSearch".into(),
         args: serde_json::Map::new(),
     })]);

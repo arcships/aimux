@@ -207,7 +207,7 @@ if err != nil {
 fmt.Println(result)
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -385,7 +385,8 @@ if err != nil {
 
 ## Video Generation
 
-Video generation typically returns a URL (not binary).
+Most video models return a URL; `Generate` downloads it, as the AI SDK's
+`generateVideo` does, and returns the video's bytes.
 
 ```go
 prompt := "A cat playing piano"
@@ -414,7 +415,7 @@ result, err := aimux.ParseVideoResult(resultJSON)
 if err != nil {
     log.Fatal(err)
 }
-// result.Videos[0].Url.URL — video URL
+// result.Videos[0].Binary.Data — the downloaded video
 ```
 
 ## Reranking
@@ -567,8 +568,9 @@ Typed structs live in `bindings/go/types.go` (text) and
 `bindings/go/multimodal_types.go` (multimodal): `GenerateTextOptions`,
 `GenerateTextResult`, `StreamPart`, `ModelMessage`, `Tool`, `ToolChoice`
 (with helpers `ToolChoiceAuto()` / `ToolChoiceNone()`), `ToolCall`,
-`ToolResult`, `Usage`, `FinishReason`, `Role`, `MessageContent`, `ContentPart`,
-`ResponseFormat`, `ReasoningEffort`, `Warning`, `GenerateResult`,
+`ToolResult`, `LanguageModelUsage`, `StepResult`, `FinishReasonUnified`,
+`Usage`, `FinishReason`, `Role`, `MessageContent`, `ContentPart`,
+`ReasoningEffort`, `Warning`, `GenerateResult`, `GenerateObjectResult`,
 `RawToolCall`, `ToolCallRepairContext`, `RepairToolCallFunc`, plus
 `EmbeddingCallOptions/Result`, `SpeechCallOptions/Result`,
 `ImageCallOptions/Result`, `TranscriptionCallOptions/Result`,

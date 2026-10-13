@@ -47,10 +47,7 @@ fn message() -> Canned {
 }
 
 fn options() -> CallOptions {
-    CallOptions {
-        max_retries: Some(0),
-        ..CallOptions::new(vec![LanguageModelMessage::user_text("hi")])
-    }
+    CallOptions::new(vec![LanguageModelMessage::user_text("hi")])
 }
 
 fn api_key() -> Option<AnthropicAwsAuth> {

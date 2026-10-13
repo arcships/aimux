@@ -94,7 +94,7 @@ async fn native_wire_maps_all_questions_to_v4_answers() {
         .await;
     let mut request = options();
     request.headers = Some(HashMap::from([("X-Per-Call".into(), "yes".into())]));
-    request.provider_options = Some(HashMap::from([
+    request.provider_options = Some(aimux_core::shared::SharedProviderOptions::from([
         (
             "openai".into(),
             object(json!({"safety_identifier":"opaque-user"})),

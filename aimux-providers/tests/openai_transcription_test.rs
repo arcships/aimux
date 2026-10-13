@@ -12,7 +12,9 @@
 //! rather than asserting an exact timestamp value.
 //!
 //! The TS `doStream` tests are translated in
-//! `openai_transcription_stream_test.rs` (RFC-0028: local WebSocket server).
+//! `openai_transcription_stream_test.rs` (RFC-0028: local WebSocket server)
+//! and `openai_realtime_ws_replay_test.rs` (offline, through the provider's
+//! `web_socket` connector).
 
 use std::collections::HashMap;
 

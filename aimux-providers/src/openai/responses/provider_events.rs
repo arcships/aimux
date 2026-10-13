@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use aimux_core::result::{GenerateContent, RawToolApprovalRequest};
 use aimux_core::shared::provider_namespace;
 use aimux_core::tool::{RawToolCall, ToolResult};
+use aimux_core::types::NamespacedKind;
 use serde_json::{Value, json};
 
 pub(crate) fn provider_tool_content(
@@ -170,7 +171,8 @@ pub(crate) fn provider_tool_content(
             metadata(),
         )],
         "compaction" => vec![GenerateContent::Custom {
-            kind: "openai.compaction".into(),
+            kind: NamespacedKind::new("openai.compaction")
+                .expect("openai.compaction is namespaced"),
             provider_metadata: Some(
                 provider_namespace(
                     provider_key,

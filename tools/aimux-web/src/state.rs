@@ -129,8 +129,25 @@ impl AppState {
 
     /// Wrap a model in a `TraceLayer` bound to the shared sink, so every call
     /// is both recorded (RFC-0023) and probed (RFC-0015).
-    pub fn traced(&self, model: Arc<dyn LanguageModel>) -> Arc<dyn LanguageModel> {
-        Arc::new(TraceLayer::new(model, self.trace_sink.clone()))
+    ///
+    /// The trace scope isolates by provider name and model, and every call of
+    /// one provider has the same name, so a call at a custom `base_url` gets
+    /// a scope named after that endpoint: two endpoints never share cache
+    /// history.
+    pub fn traced(
+        &self,
+        model: Arc<dyn LanguageModel>,
+        provider: &str,
+        base_url: Option<&str>,
+    ) -> Arc<dyn LanguageModel> {
+        let layer = match base_url {
+            Some(url) if crate::model_builder::is_custom_base_url(provider, Some(url)) => {
+                let scope = format!("{} @ {}", model.provider(), url.trim_end_matches('/'));
+                TraceLayer::new(model, self.trace_sink.clone()).with_scope_name(scope)
+            }
+            _ => TraceLayer::new(model, self.trace_sink.clone()),
+        };
+        Arc::new(layer)
     }
 
     /// All completed recordings: in-ring plus imported (imported appended).

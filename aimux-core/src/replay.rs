@@ -23,11 +23,12 @@ use crate::language_model::LanguageModel;
 use crate::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, UserPart,
 };
+use crate::operation::OperationSettings;
 use crate::options::CallOptions;
 use crate::recording::Recording;
 use crate::result::{GenerateContent, GenerateResult, StreamResult};
 use crate::stream_part::StreamPart;
-use crate::tool::RawToolCall;
+use crate::tool::{LanguageModelV4ToolChoice, RawToolCall, ToolChoice};
 use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 pub use crate::decision_replay::{MockDecisionReplayModel, replay_decision_with_model};
@@ -968,8 +969,11 @@ pub async fn replay_with_model(
             "language replay requires a language-model recording".into(),
         ));
     }
-    // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)。
+    // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)
+    //    and the operation settings recorded next to them.
     let mut call_options: CallOptions = serde_json::from_value(recording.input.options.clone())
+        .map_err(|e| AiMuxError::JsonParse(format!("mock replay: input options invalid: {e}")))?;
+    let settings: OperationSettings = serde_json::from_value(recording.input.options.clone())
         .map_err(|e| AiMuxError::JsonParse(format!("mock replay: input options invalid: {e}")))?;
 
     // 2. 应用 overrides。
@@ -988,15 +992,31 @@ pub async fn replay_with_model(
     // Recorded options already contain the complete provider-facing prompt.
     // Repair callbacks are runtime-only and are not restored from recordings.
     let prompt = std::mem::take(&mut call_options.prompt);
-    let options = generate_options_from_call_options(call_options);
+    let options = generate_options_from_call_options(call_options, settings);
     generate_text_from_language_model_prompt(model, prompt, Vec::new(), options).await
 }
 
-/// `CallOptions` → `GenerateTextOptions`(record 侧到用户侧的反向映射)。
+/// The recorded V4 tool choice as the user-level choice that
+/// [`prepare_tool_choice`](crate::tool::prepare_tool_choice) maps back to it.
+fn user_tool_choice(choice: LanguageModelV4ToolChoice) -> ToolChoice {
+    match choice {
+        LanguageModelV4ToolChoice::Auto => ToolChoice::Auto,
+        LanguageModelV4ToolChoice::None => ToolChoice::None,
+        LanguageModelV4ToolChoice::Required => ToolChoice::Required,
+        LanguageModelV4ToolChoice::Tool { tool_name } => ToolChoice::Tool { tool_name },
+    }
+}
+
+/// `CallOptions` and the operation settings → `GenerateTextOptions`(record
+/// 侧到用户侧的反向映射)。
 ///
 /// `instructions` 已烘焙进 prompt(system 消息),重建时置 None;
-/// `abort_signal` 运行时句柄不跨 JSON,重建时置 None。
-fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
+/// `abort_signal` 运行时句柄不跨 JSON,重建时置 None;回放原样发送录制的
+/// prompt,不再下载其中的 URL,`download` 置 None。
+fn generate_options_from_call_options(
+    o: CallOptions,
+    settings: OperationSettings,
+) -> GenerateTextOptions {
     GenerateTextOptions {
         max_output_tokens: o.max_output_tokens,
         temperature: o.temperature,
@@ -1005,20 +1025,45 @@ fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
         top_k: o.top_k,
         presence_penalty: o.presence_penalty,
         frequency_penalty: o.frequency_penalty,
-        response_format: o.response_format,
+        output: o.response_format.map(output_for_response_format),
         seed: o.seed,
         tools: o.tools,
-        tool_choice: o.tool_choice,
+        tool_choice: o.tool_choice.map(user_tool_choice),
         headers: o.headers,
         provider_options: o.provider_options,
         reasoning: o.reasoning,
         instructions: None,
-        max_retries: o.max_retries,
-        timeout: o.timeout,
-        session_id: o.session_id,
+        max_retries: settings.max_retries,
+        timeout: settings.timeout,
+        session_id: settings.session_id,
         abort_signal: None,
         include_raw_chunks: o.include_raw_chunks,
         repair_tool_call: None,
+        download: None,
+    }
+}
+
+/// The output that sends a recorded `response_format` again: a JSON format
+/// with a schema replays as an object output with that schema, one without a
+/// schema as the JSON output. The replayed request carries the same response
+/// format as the recorded one.
+fn output_for_response_format(format: crate::options::ResponseFormat) -> crate::output::Output {
+    match format {
+        crate::options::ResponseFormat::Text => crate::output::Output::Text {},
+        crate::options::ResponseFormat::Json {
+            schema: Some(schema),
+            name,
+            description,
+        } => crate::output::Output::Object {
+            schema,
+            name,
+            description,
+        },
+        crate::options::ResponseFormat::Json {
+            schema: None,
+            name,
+            description,
+        } => crate::output::Output::Json { name, description },
     }
 }
 
@@ -1064,7 +1109,11 @@ mod tests {
             input: InputRecord {
                 operation: Default::default(),
                 prompt: input_prompt,
-                options: serde_json::json!({ "temperature": 0.7 }),
+                // A recorded call always carries the prepared tool choice.
+                options: serde_json::json!({
+                    "temperature": 0.7,
+                    "tool_choice": { "type": "auto" },
+                }),
             },
             provider: ProviderRecord::new("openai", "openai", "gpt-4o"),
             exchanges: vec![HttpExchange {

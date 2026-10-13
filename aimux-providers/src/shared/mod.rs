@@ -37,6 +37,33 @@ pub(crate) fn is_valid_hostname_part(part: &str) -> bool {
         && bytes[bytes.len() - 1] != b'-'
 }
 
+/// The base URL of a native package: the explicit setting, else the
+/// environment variable `var` read when the provider is created (the AI SDK's
+/// `loadOptionalSetting`), else `default`.
+///
+/// An invalid explicit value fails the factory (`Err` from the outer
+/// result). An invalid environment value does not: the AI SDK does not
+/// validate it when the provider is created and the first request fails, so
+/// the inner `Err` is kept and reported by every request of that provider.
+/// Creating a default provider therefore never fails on the environment.
+pub(crate) fn base_url_setting(
+    explicit: Option<&str>,
+    var: &str,
+    default: &str,
+    normalize: impl Fn(&str) -> Result<String, AiMuxError>,
+) -> Result<Result<String, AiMuxError>, AiMuxError> {
+    if let Some(url) = explicit {
+        return normalize(url).map(Ok);
+    }
+    Ok(
+        match aimux_provider_utils::load_optional_setting(None, var) {
+            Some(url) => normalize(&url)
+                .map_err(|error| AiMuxError::InvalidArgument(format!("{var}: {error}"))),
+            None => Ok(default.to_string()),
+        },
+    )
+}
+
 /// A provider-level rewrite of every JSON request body, called once after the
 /// body is serialized and before it is sent.
 pub type TransformRequestBody = Arc<dyn Fn(Value) -> Value + Send + Sync>;
@@ -227,8 +254,11 @@ pub(crate) fn transport_user_agent(
         .iter_mut()
         .rev()
         .find(|part| part.starts_with("ai-sdk-provider-utils/"));
-    if let (Some(version), Some(part)) = (provider_utils, last_utils) {
-        *part = format!("ai-sdk-provider-utils/{version}");
+    match (provider_utils, last_utils) {
+        (Some(version), Some(part)) => *part = format!("ai-sdk-provider-utils/{version}"),
+        // Nothing to rename or append: the header stays exactly as it is.
+        _ if suffix.is_none() => return,
+        _ => {}
     }
     parts.extend(suffix.map(String::from));
     let user_agent = parts.join(" ");

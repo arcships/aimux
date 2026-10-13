@@ -132,7 +132,7 @@ impl LanguageModel for BedrockModel {
         &self.model_id
     }
 
-    fn supported_urls(&self) -> SupportedUrls {
+    async fn supported_urls(&self) -> SupportedUrls {
         let s3 = regex::Regex::new(r"^s3://").expect("static pattern");
         SupportedUrls(
             [

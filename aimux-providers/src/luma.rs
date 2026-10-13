@@ -56,8 +56,8 @@ const MAX_POLL_ATTEMPTS: u32 = 120;
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://api.lumalabs.ai";
-const API_KEY_ENV_VAR: &str = "LUMA_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.lumalabs.ai";
+pub(crate) const API_KEY_ENV_VAR: &str = "LUMA_API_KEY";
 const DEFAULT_NAME: &str = "luma";
 
 /// Settings of [`create_luma`].

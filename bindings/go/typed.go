@@ -71,8 +71,10 @@ func (m *Model) Generate(prompt any, opts *GenerateTextOptions) (*GenerateTextRe
 // GenerateObj is the typed object-generation method (M12, RFC-0016).
 //
 // Same signature as Generate; returns a typed *GenerateObjectResult. Pass
-// response_format: { "Json": { ... } } via opts for schema control; the
-// engine applies JSON repair before parsing.
+// Output: {"Object":{"schema":{...}}} in opts to describe the object; the
+// model's text must parse as JSON and match the schema. The AI SDK
+// deprecates generateObject for generateText with an output; Generate with
+// opts.Output returns the parsed value as GenerateTextResult.Output.
 func (m *Model) GenerateObj(prompt any, opts *GenerateTextOptions) (*GenerateObjectResult, error) {
 	promptJSON, err := marshalPrompt(prompt)
 	if err != nil {
@@ -95,9 +97,9 @@ func (m *Model) GenerateObj(prompt any, opts *GenerateTextOptions) (*GenerateObj
 
 // ConsumeStream is the typed stream-aggregation method (M11, RFC-0016).
 //
-// Drives stream_text to completion and returns the aggregated
-// *StreamTextResultAggregated (the fully-consumed stream summary).
-func (m *Model) ConsumeStream(prompt any, opts *GenerateTextOptions) (*StreamTextResultAggregated, error) {
+// Drives stream_text to completion and returns the *GenerateTextResult the
+// stream aggregates to.
+func (m *Model) ConsumeStream(prompt any, opts *GenerateTextOptions) (*GenerateTextResult, error) {
 	promptJSON, err := marshalPrompt(prompt)
 	if err != nil {
 		return nil, err
@@ -114,7 +116,7 @@ func (m *Model) ConsumeStream(prompt any, opts *GenerateTextOptions) (*StreamTex
 	if err != nil {
 		return nil, err
 	}
-	return ParseStreamTextResultAggregated(resultJSON)
+	return ParseGenerateTextResult(resultJSON)
 }
 
 // TypedStream is a handle to an in-progress typed stream.
@@ -147,7 +149,7 @@ func (s *TypedStream) Cancel() { s.raw.Cancel() }
 //	    if part.Tag == "TextDelta" {
 //	        var td TextDeltaPayload
 //	        json.Unmarshal(part.Payload, &td)
-//	        fmt.Print(td.Delta)
+//	        fmt.Print(td.Text)
 //	    }
 //	}
 func (m *Model) Stream(prompt any, opts *GenerateTextOptions) (*TypedStream, error) {

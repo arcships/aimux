@@ -326,7 +326,7 @@ async fn should_pass_provider_specific_options() {
     let mut options = speech_options("Hello, world!");
     options.voice = Some("test-voice-id".to_string());
 
-    let mut provider_options = HashMap::new();
+    let mut provider_options = aimux_core::shared::SharedProviderOptions::new();
     provider_options.insert(
         "cartesia".to_string(),
         serde_json::from_value(json!({
@@ -371,7 +371,7 @@ async fn should_ignore_encoding_for_mp3_output() {
     let mut options = speech_options("Hello, world!");
     options.voice = Some("test-voice-id".to_string());
 
-    let mut provider_options = HashMap::new();
+    let mut provider_options = aimux_core::shared::SharedProviderOptions::new();
     provider_options.insert(
         "cartesia".to_string(),
         serde_json::from_value(json!({ "encoding": "pcm_s16le" })).unwrap(),

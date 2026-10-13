@@ -385,7 +385,7 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
     fn model_id(&self) -> &str {
         &self.model_id
     }
-    fn supported_urls(&self) -> SupportedUrls {
+    async fn supported_urls(&self) -> SupportedUrls {
         match &self.config {
             CompletionConfig::Compatible(_) => SupportedUrls::default(),
             CompletionConfig::Native(_) => SupportedUrls::default(),

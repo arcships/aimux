@@ -279,7 +279,7 @@ async fn should_handle_different_audio_formats() {
         let model = provider.speech("aurora");
 
         let mut options = speech_options("Hello from the AI SDK!");
-        let mut provider_options = HashMap::new();
+        let mut provider_options = aimux_core::shared::SharedProviderOptions::new();
         provider_options.insert(
             "lmnt".to_string(),
             serde_json::from_value(json!({ "format": format })).unwrap(),

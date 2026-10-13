@@ -1,5 +1,5 @@
 //! Synthetic contracts from official implementations, never presented as live recordings.
-use std::collections::HashMap;
+use aimux_core::shared::SharedProviderOptions;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -227,7 +227,7 @@ async fn conditional_skips_fail_and_abstention_is_answer_metadata() {
         let mut response = fixture()["response"].clone();
         let mut expected = fixture()["request"].clone();
         if provider == "vllm" {
-            request.provider_options = Some(HashMap::from([(
+            request.provider_options = Some(SharedProviderOptions::from([(
                 "vllm".into(),
                 object(
                     json!({"samples":"auto","steps":4,"questions":{"severity":{"ask_if":{"team":["billing"]}}}}),
@@ -239,7 +239,7 @@ async fn conditional_skips_fail_and_abstention_is_answer_metadata() {
             response["answers"]["severity"] = Value::Null;
             response["diagnostics"] = json!({"skipped":{"severity":{"because":"team","was":"support","wanted":["billing"]}}});
         } else {
-            request.provider_options = Some(HashMap::from([(
+            request.provider_options = Some(SharedProviderOptions::from([(
                 "laya".into(),
                 object(json!({"min_confidence":0.8,"lang":"en"})),
             )]));
@@ -285,7 +285,7 @@ async fn conditional_skips_fail_and_abstention_is_answer_metadata() {
 async fn sglang_native_decisions_keeps_label_mass_separate_from_confidence() {
     let server = MockServer::start().await;
     let mut request = options();
-    request.provider_options = Some(HashMap::from([(
+    request.provider_options = Some(SharedProviderOptions::from([(
         "sglang".into(),
         object(
             json!({"protocol":"decisions","temperature":0.7,"return_prompt_token_ids":true,"prompt_format_version":1}),
@@ -364,7 +364,7 @@ async fn sglang_systemone_reports_the_actual_readout_source_through_replay() {
 
 fn scoring_options(provider: &str) -> DecideOptions {
     let mut request = options();
-    request.provider_options = Some(HashMap::from([(
+    request.provider_options = Some(SharedProviderOptions::from([(
         provider.into(),
         object(
             json!({"protocol":if provider=="sglang" {"score"} else {"generative_scoring"},"model_revision":"weights-commit","tokenizer_revision":"tokenizer-commit","prompt_format_version":"test-v1","encoded":{
@@ -562,7 +562,7 @@ async fn unsupported_fields_and_bad_encodings_fail_before_http() {
         }
     }
     let mut request = options();
-    request.provider_options = Some(HashMap::from([(
+    request.provider_options = Some(SharedProviderOptions::from([(
         "ollama".into(),
         object(json!({"temperature":0.7})),
     )]));
@@ -572,7 +572,7 @@ async fn unsupported_fields_and_bad_encodings_fail_before_http() {
             .is_err()
     );
     let mut request = options();
-    request.provider_options = Some(HashMap::from([(
+    request.provider_options = Some(SharedProviderOptions::from([(
         "vllm".into(),
         object(json!({"ask":["urgent"]})),
     )]));
