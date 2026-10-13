@@ -360,7 +360,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
 
                 // Build provider metadata from extra fields.
                 let mut provider_metadata: Option<SharedProviderMetadata> = None;
-                let mut md = HashMap::new();
+                let mut md = SharedProviderMetadata::new();
                 let mut aai_meta = Map::new();
                 if parsed.utterances.is_some() {
                     aai_meta.insert(

@@ -251,6 +251,10 @@ pub struct VideoOperationStart {
 ///
 /// Aligned with V4 `VideoModelV4OperationStatusResult`; its `error` arm maps
 /// to `Err(AiMuxError)` (a terminally failed task should be non-retryable).
+// One value per status poll, matched at once by the poll loop: boxing the
+// completed arm would only add an allocation. Insertion-ordered metadata maps
+// (`IndexMap`) put `VideoResult` just over clippy's size threshold.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum VideoOperationStatus {
     /// The generation is still in progress; poll again later.

@@ -599,7 +599,7 @@ impl LanguageModel for BedrockModel {
             let provider_metadata = if finish_meta.is_empty() {
                 None
             } else {
-                Some(HashMap::from([
+                Some(aimux_core::shared::NamespaceMap::from([
                     ("amazonBedrock".to_string(), finish_meta.clone()),
                     ("bedrock".to_string(), finish_meta),
                 ]))

@@ -344,7 +344,7 @@ fn resolve_full_media_type(media_type: &str, b64_data: &str) -> String {
 
 /// Resolve a provider reference, throwing if the provider is not found.
 fn resolve_provider_reference(
-    reference: &std::collections::HashMap<String, String>,
+    reference: &aimux_core::shared::SharedProviderReference,
     provider: &str,
 ) -> Result<String, String> {
     reference.get(provider).cloned().ok_or_else(|| {
@@ -1095,7 +1095,7 @@ fn parse_chat_provider_options(
         };
         Some(if valid { Ok(value.clone()) } else { Err(()) })
     })?;
-    Ok(Some(std::collections::HashMap::from([(
+    Ok(Some(aimux_core::shared::NamespaceMap::from([(
         provider.to_string(),
         parsed,
     )])))

@@ -25,10 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Provider options and provider metadata have one typed shape, the AI SDK's
   `Record<string, JSONObject>`: `SharedProviderOptions` and
-  `SharedProviderMetadata` (`ProviderMetadata` is an alias) are
-  `HashMap<String, JsonObject>`, namespace to JSON object. They replace
-  `serde_json::Value`, `HashMap<String, Value>` and the per-part
-  `Option<Value>`. Every `provider_options` / `provider_metadata` field of
+  `SharedProviderMetadata` (`ProviderMetadata` is an alias) are one type,
+  `NamespaceMap` = `IndexMap<String, JsonObject>`, namespace to JSON object.
+  Like the AI SDK's JS objects they keep insertion order: a value serializes
+  with its keys in the order it was built or parsed.
+  `SharedProviderReference` is `IndexMap<String, String>` for the same
+  reason. They replace `serde_json::Value`, `HashMap<String, Value>` and the
+  per-part `Option<Value>`. Every `provider_options` / `provider_metadata` field of
   content parts, messages, call options, tools, results and stream parts uses
   them. `{"namespace": {"key": value}}` serializes as before; a value that is
   not namespace -> object (a number, string or array under a namespace, or a
