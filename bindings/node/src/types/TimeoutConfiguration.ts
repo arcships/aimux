@@ -3,22 +3,27 @@
 /**
  * Per-call timeout configuration.
  *
- * Aligned with V4 `LanguageModelV4CallOptions.timeout`
- * (`TimeoutConfiguration`). All values are milliseconds; `None` disables the
- * corresponding limit. A `total` timeout also covers retry backoff and the
- * whole streamed response.
+ * The object form of the AI SDK's `TimeoutConfiguration`
+ * (`ai/src/prompt/request-options.ts:13-22`), a request option of
+ * `generateText` / `streamText` (`RequestOptions.timeout`, `:126`).
+ * `LanguageModelV4CallOptions` has no timeout. Aimux runs no tools, so
+ * upstream's `toolMs` / `tools` keys and the bare-number form of `totalMs`
+ * are absent.
+ *
+ * All values are milliseconds; `None` disables the corresponding limit. A
+ * `total` timeout also covers retry backoff and the whole streamed response.
  */
-export type TimeoutConfiguration = { 
+export type TimeoutConfiguration = {
 /**
  * Overall timeout for the entire call (including retries and, for
  * streaming, the whole stream), in milliseconds.
  */
-total_ms: number | null, 
+total_ms: number | null,
 /**
  * Timeout for one generation step, including that step's attempts and
  * retry backoff, in milliseconds. Aimux currently has one step.
  */
-step_ms: number | null, 
+step_ms: number | null,
 /**
  * Timeout waiting for the first stream chunk (streaming only).
  *
@@ -26,7 +31,7 @@ step_ms: number | null,
  * and any retries before the first semantic output: it is the
  * user-perceived time-to-first-output budget, not a per-attempt timer.
  */
-first_chunk_ms: number | null, 
+first_chunk_ms: number | null,
 /**
  * Maximum idle time between consecutive stream chunks (streaming only).
  */

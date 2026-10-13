@@ -30,10 +30,15 @@ pub enum ResponseFormat {
 
 /// Per-call timeout configuration.
 ///
-/// Aligned with V4 `LanguageModelV4CallOptions.timeout`
-/// (`TimeoutConfiguration`). All values are milliseconds; `None` disables the
-/// corresponding limit. A `total` timeout also covers retry backoff and the
-/// whole streamed response.
+/// The object form of the AI SDK's `TimeoutConfiguration`
+/// (`ai/src/prompt/request-options.ts:13-22`), a request option of
+/// `generateText` / `streamText` (`RequestOptions.timeout`, `:126`).
+/// `LanguageModelV4CallOptions` has no timeout. Aimux runs no tools, so
+/// upstream's `toolMs` / `tools` keys and the bare-number form of `totalMs`
+/// are absent.
+///
+/// All values are milliseconds; `None` disables the corresponding limit. A
+/// `total` timeout also covers retry backoff and the whole streamed response.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct TimeoutConfiguration {
