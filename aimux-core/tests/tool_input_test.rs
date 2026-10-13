@@ -4,7 +4,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::parse_tool_call::{ToolCallRepair, parse_tool_call};
+use aimux_core::parse_tool_call::{
+    RepairToolCall, ToolCallRepair, ToolCallRepairContext, parse_tool_call,
+};
 use aimux_core::tool::{FunctionTool, RawToolCall, Tool};
 use serde_json::json;
 
@@ -127,6 +129,46 @@ async fn repair_runs_once_and_the_replacement_is_fully_revalidated() {
         Some(&repair),
         &[],
         Some("Use metric units"),
+    )
+    .await;
+
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(call.input, json!({ "city": "Singapore", "days": 3 }));
+    assert_eq!(call.invalid, None);
+}
+
+/// A struct implementing `RepairToolCall` is used as the hook, like a closure.
+#[tokio::test]
+async fn repair_hook_can_be_a_trait_implementation() {
+    struct FixInput {
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait::async_trait]
+    impl RepairToolCall for FixInput {
+        async fn repair(
+            &self,
+            context: ToolCallRepairContext,
+        ) -> Result<Option<RawToolCall>, AiMuxError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(Some(RawToolCall {
+                input: r#"{"city":"Singapore","days":3}"#.into(),
+                ..context.tool_call
+            }))
+        }
+    }
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let repair = ToolCallRepair::from(FixInput {
+        calls: Arc::clone(&calls),
+    });
+
+    let call = parse_tool_call(
+        raw("weather", r#"{"city":"Singapore"#),
+        Some(&[weather_tool()]),
+        Some(&repair),
+        &[],
+        None,
     )
     .await;
 

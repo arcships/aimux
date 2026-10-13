@@ -6,9 +6,9 @@
 //! rejection, schema validation, and the one-shot repair callback.
 
 use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
@@ -55,31 +55,92 @@ impl ToolCallRepairContext {
     }
 }
 
-type ToolCallRepairFuture =
-    Pin<Box<dyn Future<Output = Result<Option<RawToolCall>, AiMuxError>> + Send>>;
-
-/// Async callback that may replace one invalid tool call.
+/// A one-shot repair hook for invalid tool calls.
 ///
-/// Core invokes this at most once, and parses and validates the returned call
-/// from scratch. Returning `None` keeps the original validation error.
+/// The Rust form of the AI SDK's `experimental_repairToolCall`. Core calls
+/// [`repair`](Self::repair) at most once per invalid call, and parses and
+/// validates the returned call from scratch. Returning `Ok(None)` keeps the
+/// original validation error; an `Err` becomes a `ToolCallRepair` error that
+/// keeps both the original failure and the cause.
+///
+/// Any `Fn(ToolCallRepairContext) -> impl Future<Output = Result<Option<RawToolCall>, AiMuxError>>`
+/// implements this trait, so a closure works wherever a hook does.
+///
+/// ```
+/// use aimux_core::error::AiMuxError;
+/// use aimux_core::parse_tool_call::{RepairToolCall, ToolCallRepair, ToolCallRepairContext};
+/// use aimux_core::tool::RawToolCall;
+///
+/// struct RenameTool(&'static str);
+///
+/// #[async_trait::async_trait]
+/// impl RepairToolCall for RenameTool {
+///     async fn repair(
+///         &self,
+///         context: ToolCallRepairContext,
+///     ) -> Result<Option<RawToolCall>, AiMuxError> {
+///         Ok(Some(RawToolCall {
+///             tool_name: self.0.into(),
+///             ..context.tool_call
+///         }))
+///     }
+/// }
+///
+/// let repair = ToolCallRepair::from(RenameTool("weather"));
+/// ```
+#[async_trait]
+pub trait RepairToolCall: Send + Sync {
+    /// Return a replacement call, `None` to keep the original error, or an
+    /// error to report the repair as failed.
+    async fn repair(
+        &self,
+        context: ToolCallRepairContext,
+    ) -> Result<Option<RawToolCall>, AiMuxError>;
+}
+
+#[async_trait]
+impl<F, Fut> RepairToolCall for F
+where
+    F: Fn(ToolCallRepairContext) -> Fut + Send + Sync,
+    Fut: Future<Output = Result<Option<RawToolCall>, AiMuxError>> + Send,
+{
+    async fn repair(
+        &self,
+        context: ToolCallRepairContext,
+    ) -> Result<Option<RawToolCall>, AiMuxError> {
+        self(context).await
+    }
+}
+
+/// A shared [`RepairToolCall`] hook, as carried by `GenerateTextOptions`.
+///
+/// Build one from a closure with [`ToolCallRepair::new`], or from any
+/// [`RepairToolCall`] implementation with `From`.
 #[derive(Clone)]
-pub struct ToolCallRepair(Arc<dyn Fn(ToolCallRepairContext) -> ToolCallRepairFuture + Send + Sync>);
+pub struct ToolCallRepair(Arc<dyn RepairToolCall>);
 
 impl ToolCallRepair {
+    /// Wrap a repair closure.
     #[must_use]
     pub fn new<F, Fut>(repair: F) -> Self
     where
         F: Fn(ToolCallRepairContext) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<Option<RawToolCall>, AiMuxError>> + Send + 'static,
     {
-        Self(Arc::new(move |context| Box::pin(repair(context))))
+        Self(Arc::new(repair))
     }
 
     async fn repair(
         &self,
         context: ToolCallRepairContext,
     ) -> Result<Option<RawToolCall>, AiMuxError> {
-        (self.0)(context).await
+        self.0.repair(context).await
+    }
+}
+
+impl<T: RepairToolCall + 'static> From<T> for ToolCallRepair {
+    fn from(repair: T) -> Self {
+        Self(Arc::new(repair))
     }
 }
 
