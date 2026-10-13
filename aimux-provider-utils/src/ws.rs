@@ -13,11 +13,12 @@
 //!   the loop alone does not cover the send path).
 //! - **Backpressure is socket-level**: tungstenite's `send().await` drives
 //!   flush and pends while the socket write buffer is full.
-//! - **Proxy support (RFC-0034 §2)**: the global `ProxyConfig` that governs
-//!   HTTP also governs `ws://`/`wss://` — `wss` uses `https_url` (or
-//!   `all_url`), `ws` uses `http_url` (or `all_url`), `no_proxy` entries are
-//!   honored, and tunneled connections are established with a manual HTTP
-//!   CONNECT before the WebSocket handshake. tokio-tungstenite has no proxy
+//! - **Proxy support (RFC-0034 §2)**: a [`TungsteniteConnector`] carries its
+//!   own `ProxyConfig`; the built-in default shares the default HTTP
+//!   transport's. `wss` uses `https_url` (or `all_url`), `ws` uses `http_url`
+//!   (or `all_url`), `no_proxy` entries are honored, and tunneled
+//!   connections are established with a manual HTTP CONNECT before the
+//!   WebSocket handshake. tokio-tungstenite has no proxy
 //!   support (and will not add it), so the tunnel is ours. SOCKS proxies are
 //!   rejected loudly rather than silently bypassed.
 
@@ -51,9 +52,11 @@ pub struct WebSocketRequest {
     /// session establishment, `chunk_ms` bounds the gap between events,
     /// `total_ms` bounds the whole connection lifetime.
     pub timeout: Option<TimeoutConfiguration>,
-    /// Transport that performs the handshake. `None` uses the built-in
-    /// tungstenite connector (with the process-wide proxy tunnel). Injection
-    /// point for tests and for providers that bring their own socket.
+    /// Transport that performs the handshake. `None` uses a
+    /// [`TungsteniteConnector`] with the default HTTP transport's proxy
+    /// settings, read at connect time. Injection point for tests, for a
+    /// connector with its own proxy, and for providers that bring their own
+    /// socket.
     pub connector: Option<Arc<dyn WsConnector>>,
 }
 
@@ -204,13 +207,13 @@ pub struct ProxyTunnel {
     pub target_authority: String,
 }
 
-/// Test-only exposure of [`resolve_proxy`] (integration tests construct
-/// arbitrary configs without the set-once global).
+/// Test-only exposure of [`resolve_proxy`] (integration tests check proxy
+/// selection for arbitrary configs without connecting).
 #[doc(hidden)]
 #[allow(non_snake_case)]
 pub fn ws__proxy_decision_for(
     target: &url::Url,
-    config: &crate::http::ProxyConfig,
+    config: &crate::fetch::ProxyConfig,
 ) -> Result<Option<ProxyTunnel>, AiMuxError> {
     resolve_proxy(target, config)
 }
@@ -236,10 +239,10 @@ fn sanitized_proxy_url(raw: &str) -> String {
     raw.to_string()
 }
 
-/// Pick direct vs. tunneled for a WS target under the global proxy config.
+/// Pick direct vs. tunneled for a WS target under a proxy config.
 fn resolve_proxy(
     target: &url::Url,
-    config: &crate::http::ProxyConfig,
+    config: &crate::fetch::ProxyConfig,
 ) -> Result<Option<ProxyTunnel>, AiMuxError> {
     let raw = match target.scheme() {
         "wss" => config.https_url.clone().or_else(|| config.all_url.clone()),
@@ -454,22 +457,40 @@ async fn connect_through_proxy(
 pub async fn ws_connect(req: &WebSocketRequest) -> Result<WsConnection, AiMuxError> {
     match &req.connector {
         Some(connector) => connector.connect(req).await,
-        None => TungsteniteConnector.connect(req).await,
+        None => {
+            let proxy = crate::fetch::default_transport().proxy().clone();
+            TungsteniteConnector::new(proxy).connect(req).await
+        }
     }
 }
 
-/// The built-in connector: tungstenite, with the process-wide proxy tunnel.
-#[derive(Debug, Clone, Copy, Default)]
-struct TungsteniteConnector;
+/// The built-in connector: tungstenite, tunneled through its own proxy
+/// settings (the WebSocket counterpart of a
+/// [`ReqwestFetch`](crate::fetch::ReqwestFetch)).
+#[derive(Debug, Clone, Default)]
+pub struct TungsteniteConnector {
+    proxy: crate::fetch::ProxyConfig,
+}
+
+impl TungsteniteConnector {
+    /// A connector routed by `proxy`.
+    #[must_use]
+    pub fn new(proxy: crate::fetch::ProxyConfig) -> Self {
+        Self { proxy }
+    }
+}
 
 #[async_trait]
 impl WsConnector for TungsteniteConnector {
     async fn connect(&self, request: &WebSocketRequest) -> Result<WsConnection, AiMuxError> {
-        connect_tungstenite(request).await
+        connect_tungstenite(request, &self.proxy).await
     }
 }
 
-async fn connect_tungstenite(req: &WebSocketRequest) -> Result<WsConnection, AiMuxError> {
+async fn connect_tungstenite(
+    req: &WebSocketRequest,
+    config: &crate::fetch::ProxyConfig,
+) -> Result<WsConnection, AiMuxError> {
     let mut http_req = req
         .url
         .as_str()
@@ -504,12 +525,11 @@ async fn connect_tungstenite(req: &WebSocketRequest) -> Result<WsConnection, AiM
         .map(|ms| tokio::time::Instant::now() + tokio::time::Duration::from_millis(ms));
     let connect_deadline = first_chunk_deadline;
 
-    // Proxy resolution (RFC-0034 §2): the global ProxyConfig governs WS too.
+    // Proxy resolution (RFC-0034 §2): the connector's ProxyConfig.
     // no_proxy hits and a proxy-less config keep the direct path unchanged.
     let target = url::Url::parse(&req.url)
         .map_err(|e| AiMuxError::InvalidArgument(format!("invalid WebSocket URL: {e}")))?;
     let proxy = {
-        let config = crate::http::global_proxy();
         let target_host = target.host_str().unwrap_or_default();
         let target_port = target.port_or_known_default().unwrap_or(80);
         if config
@@ -519,7 +539,7 @@ async fn connect_tungstenite(req: &WebSocketRequest) -> Result<WsConnection, AiM
         {
             None
         } else {
-            resolve_proxy(&target, &config)?
+            resolve_proxy(&target, config)?
         }
     };
 

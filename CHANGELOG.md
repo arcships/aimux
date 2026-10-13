@@ -22,7 +22,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build_aggregator_prompt, extract_text}`, `recording::new_call_id`,
   `util::rfc3339_now`, two session helpers, `fetch_error_to_ai_mux_error`,
   `extract_response_header_pairs`, the SigV4 signing internals, the logging
-  internals, `DEFAULT_MAX_JSON_RESPONSE_SIZE` and `TungsteniteConnector`.
+  internals and `DEFAULT_MAX_JSON_RESPONSE_SIZE`.
+
+- Proxy settings belong to a transport instance, not to the process
+  (`aimux-provider-utils`). `init_proxy` and its set-once global are
+  removed; `ProxyConfig` moves to `fetch`. `ReqwestFetch::new(proxy)` is a
+  transport with its own proxy and connection pool, given to a provider as
+  its `fetch` setting, as the AI SDK leaves routing to `fetch`; the
+  WebSocket counterpart is `ws::TungsteniteConnector::new(proxy)`, given as
+  `web_socket`. `set_default_transport` replaces the default that providers
+  without `fetch`, built-in WebSocket connects and download hops read per
+  request. `PinnedFetch::new` takes the hop's `ProxyConfig`.
+  `aimux_init_proxy` (C ABI unchanged) and the Node and Python `initProxy` /
+  `init_proxy` now replace the default transport for later requests, every
+  time they are called, instead of taking effect only before the first
+  request.
 
 - Removed items the AI SDK has no counterpart for: `aimux_core::ModelId`
   (and `model_id`, the Node `ModelId` type), the hidden

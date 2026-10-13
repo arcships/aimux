@@ -772,10 +772,9 @@ pub fn register_providers(config_json: String) -> error::AimuxResult<()> {
     })())
 }
 
-/// Set the global proxy configuration (M6, RFC-0016). Must be called before
-/// the first `generateText` / `streamText` call; a no-op if the shared HTTP
-/// client is already initialised (the shared client is lazily built on first
-/// use and locked for the process lifetime).
+/// Replace the default transport with one routed by this proxy configuration
+/// (M6, RFC-0016). Requests started afterwards use it; calling it again
+/// replaces the previous configuration.
 ///
 /// `configJson` shape: `{ "http_url": "...", "https_url": "...", "all_url":
 /// "...", "no_proxy": "..." }` (all fields optional; omitting all is equivalent
@@ -788,9 +787,11 @@ pub fn init_proxy(config_json: String) -> error::AimuxResult<()> {
     AimuxResult((|| -> error::MResult<()> {
         let config: aimux_provider_utils::ProxyConfig =
             parse_wire_json("config_json", &config_json)?;
-        // `init_proxy` returns false when the shared client is already up; treat
-        // that as success (idempotent) so callers don't reason about ordering.
-        let _ = aimux_provider_utils::init_proxy(config);
+        // Replaces the default transport for later requests (see
+        // `aimux_init_proxy`).
+        aimux_provider_utils::set_default_transport(aimux_provider_utils::ReqwestFetch::new(
+            config,
+        ));
         Ok(())
     })())
 }

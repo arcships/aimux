@@ -3501,9 +3501,11 @@ pub extern "C" fn aimux_register_providers(config_json: *const c_char) -> *mut a
     })
 }
 
-/// Set the global proxy configuration (M6, RFC-0016). Must be called before
-/// the first `aimux_generate_text` / `aimux_stream_text` call; a no-op if the
-/// shared HTTP client is already initialised.
+/// Replace the default Rust transport with one routed by this proxy
+/// configuration (M6, RFC-0016). Every later request of a provider without
+/// its own transport, every built-in WebSocket connect and every validated
+/// download hop uses it; requests already in flight keep theirs. Calling it
+/// again replaces the previous configuration.
 ///
 /// `config_json` is a serialized `ProxyConfig`:
 /// `{ "http_url": "...", "https_url": "...", "all_url": "...", "no_proxy":
@@ -3513,10 +3515,9 @@ pub extern "C" fn aimux_register_providers(config_json: *const c_char) -> *mut a
 pub extern "C" fn aimux_init_proxy(config_json: *const c_char) -> *mut aimux_error_t {
     no_result(|| {
         let config: aimux_provider_utils::ProxyConfig = parse_json_arg(config_json, "config_json")?;
-        // `init_proxy` returns false when the shared client is already up; treat
-        // that as success (idempotent) so callers don't need to reason about
-        // ordering races.
-        let _ = aimux_provider_utils::init_proxy(config);
+        aimux_provider_utils::set_default_transport(aimux_provider_utils::ReqwestFetch::new(
+            config,
+        ));
         Ok(())
     })
 }

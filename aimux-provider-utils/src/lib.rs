@@ -36,15 +36,15 @@ pub mod ws;
 pub use aimux_core::download_guard::same_origin;
 pub use api_key::{load_api_key, load_optional_setting, load_setting};
 pub use fetch::{
-    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, RequestCredentials,
-    ReqwestFetch, default_fetch,
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, ProxyConfig,
+    RequestCredentials, ReqwestFetch, default_fetch, set_default_transport,
 };
 pub use generate_id::generate_id;
 pub use get_from_api::get_from_api;
 pub use headers::{
     HeaderMapOpt, HeadersFn, combine_headers, normalize_headers, with_user_agent_suffix,
 };
-pub use http::{ExchangeContext, HttpBody, HttpRequest, ProxyConfig, init_proxy, sleep_or_abort};
+pub use http::{ExchangeContext, HttpBody, HttpRequest, sleep_or_abort};
 pub use logging::{init_logging, redact_error_context};
 pub use media_type::{
     MAX_ID3_TAG_BYTES, MediaTypeData, detect_media_type, get_top_level_media_type,

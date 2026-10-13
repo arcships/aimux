@@ -884,9 +884,9 @@ fn register_providers(config_json: &str) -> PyResult<()> {
     })
 }
 
-/// Set the global proxy configuration (M6, RFC-0016). Must be called before the
-/// first `generate_text` / `stream_text` call; a no-op if the shared HTTP
-/// client is already initialised.
+/// Replace the default transport with one routed by this proxy configuration
+/// (M6, RFC-0016). Requests started afterwards use it; calling it again
+/// replaces the previous configuration.
 ///
 /// `config_json` shape: `{ "http_url": "...", "https_url": "...", "all_url":
 /// "...", "no_proxy": "..." }` (all fields optional). Raises `ValueError` on
@@ -894,9 +894,11 @@ fn register_providers(config_json: &str) -> PyResult<()> {
 #[pyfunction]
 fn init_proxy(config: &str) -> PyResult<()> {
     let proxy_config: aimux_provider_utils::ProxyConfig = wire_json("config", config)?;
-    // `init_proxy` returns false when the shared client is already up; treat
-    // that as success (idempotent).
-    let _ = aimux_provider_utils::init_proxy(proxy_config);
+    // Replaces the default transport for later requests (see
+    // `aimux_init_proxy`).
+    aimux_provider_utils::set_default_transport(aimux_provider_utils::ReqwestFetch::new(
+        proxy_config,
+    ));
     Ok(())
 }
 

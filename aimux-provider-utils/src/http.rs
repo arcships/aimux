@@ -6,13 +6,11 @@
 //! response handlers selected by the provider.
 
 use std::pin::Pin;
-use std::sync::OnceLock;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use futures::{Stream, StreamExt, stream::BoxStream};
-use serde::{Deserialize, Serialize};
 
 use aimux_core::recording::{
     HttpExchange, HttpRecord, RecordingContext, ResponseRecord, TimingRecord,
@@ -25,35 +23,6 @@ use crate::fetch::{
 };
 use crate::handle_fetch_error::fetch_error_to_ai_mux_error;
 use crate::logging::{body_logging_enabled, redact_body};
-
-/// Process-wide proxy configuration, fixed before the first HTTP client is built.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ProxyConfig {
-    pub http_url: Option<String>,
-    pub https_url: Option<String>,
-    pub all_url: Option<String>,
-    pub no_proxy: Option<String>,
-}
-
-static GLOBAL_PROXY: OnceLock<ProxyConfig> = OnceLock::new();
-
-/// Set proxy configuration before the first HTTP operation.
-///
-/// The HTTP client snapshots this config when it is first built; the
-/// WebSocket connect path (RFC-0034 §2) re-reads it live on every connect,
-/// so a late `init_proxy` can affect WS while HTTP keeps its first-built
-/// client. Set it before any traffic either way.
-pub fn init_proxy(config: ProxyConfig) -> bool {
-    GLOBAL_PROXY.set(config).is_ok()
-}
-
-/// Return the process-wide proxy configuration (empty default when
-/// `init_proxy` was never called). Read by both the HTTP client builder and
-/// the WebSocket connect path (RFC-0034 §2), so `ws://`/`wss://` traffic
-/// honors the same proxy/no_proxy settings as HTTP.
-pub(crate) fn global_proxy() -> ProxyConfig {
-    GLOBAL_PROXY.get().cloned().unwrap_or_default()
-}
 
 /// Redirect ceiling for the manual validated-download loop.
 const MAX_REDIRECTS: usize = 10;
@@ -476,7 +445,15 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
     for redirect_count in 0..=MAX_REDIRECTS {
         let response = match &pinned {
             // Empty pins mean the hop is on the trusted origin.
-            Some(pins) => send_one_request(&PinnedFetch::new(pins.clone()), &current).await?,
+            // D26: the download hop is never provider-injected; it routes
+            // through the default transport's proxy settings.
+            Some(pins) => {
+                let hop = PinnedFetch::new(
+                    pins.clone(),
+                    crate::fetch::default_transport().proxy().clone(),
+                );
+                send_one_request(&hop, &current).await?
+            }
             None => send_one_request(api_fetch.as_ref(), &current).await?,
         };
         let status = response.status;
