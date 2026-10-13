@@ -11,8 +11,8 @@ export type Recording = {
 /**
  * 格式版本。Written as [`RECORDING_SCHEMA`]; schemas 1 and 2 are read.
  * Recordings written by aimux 0.5 and earlier also carry a configuration
- * snapshot (`provider.base_url`, `api_key_source`, `profile`,
- * `provider_options`), which is ignored.
+ * snapshot under `provider` (base URL, key source, profile, provider
+ * options), which is ignored.
  */
 schema: number,
 /**
