@@ -53,8 +53,8 @@ aimux 是 **provider 接入与治理的运行时**：
 | #185 | `ToolInput{Raw,Parsed}`；tracker 不删，改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils（#204）；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系) |
 | #170 / #171 前半 | sync/probe 脚本 + scheduled Action；27 个 base_url 分歧 triage |
 | **B1 + C2** | 解锁项：protocol 列 + `from_resolved`；40 个 FFI 构造器转发 shim（B1 形式由 descriptor 数据源 + `create_xxx` 工厂替代，C2 shim 已取消；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
-| **ops 协议 schema** | op 表、消息与错误信封、二进制帧、版本协商——先以文档 + 测试落地（RFC-0036 §4） |
-| **L0 passthrough** | 原样调用任意 provider 端点，享受 auth / 重试 / 录制 |
+| **ops 协议 schema** | op 表、消息与错误信封、二进制帧、版本协商——先以文档 + 测试落地（RFC-0036 §4）；后置到全链路对齐切换之后，设计由 RFC-0039 承接（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
+| **L0 passthrough** | 原样调用任意 provider 端点，享受 auth / 重试 / 录制；后置到全链路对齐切换之后，作为新增能力单独评审（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 
 版本语义：
 - **Rust 层 breaking**：A2 删枚举、#185 换类型。
@@ -77,7 +77,7 @@ aimux 是 **provider 接入与治理的运行时**：
 
 | 项 | 内容 |
 |---|---|
-| C1 | 9 个导出 + `dispatch`，**同一 dispatch 同时服务 FFI 与 stdio CLI**；旧导出保留共存 |
+| C1 | ops 协议入口 + `dispatch`，**同一 dispatch 同时服务 FFI 与 stdio CLI**；导出数量不再固定为 9 个，按对齐文档 §6.2–§6.3 的函数组设计；旧符号按切换门一次替换，不共存（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 | C3 | `aimux_error_*` 访问器 → 错误 JSON 信封（含派生 `retry_after_ms`） |
 | D1–D7 | 8 种绑定迁到 ops 薄封装。D1 Kotlin（只依赖 Java artifact）与 D5 Flutter ffigen 过渡版不依赖 C1，可在 0.6/0.7 提前做 |
 | D8 | 类型镜像生成：serde → JSON Schema → 各语言，`--check` 门禁扩到全部输出 |

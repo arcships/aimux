@@ -2,7 +2,7 @@
 
 > **性质**: [RFC-0036](../rfc/0036-positioning-and-layered-architecture.md)(定位与分层架构)之下的实施设计文档,不是独立 RFC,不占 RFC 编号。随本文件合入生效;§0.4 的四项决定、§0.7 对 ROADMAP 既有承诺的保留 / 调整 / 后置清单,以本文件为准,后续变更直接修改本文件并在 CHANGELOG 记录
 >
-> **Date**: 2026-09-29 · 2026-10-04 修订（撤销切换后的 ABI 共存承诺、登记 xAI/HF chat 扩展、修复附录 §6.4-14 裁定缺失等评审问题）
+> **Date**: 2026-09-29 · 2026-10-04 修订（撤销切换后的 ABI 共存承诺、登记 xAI/HF chat 扩展、修复附录 §6.4-14 裁定缺失等评审问题）· 2026-10-12 修订（§9.1 / Q3 / D31 改为逐层合入主线、全部合完前不发布；新 C ABI、生成链、完整录制 schema 3 与绑定迁移排在最后）
 >
 > **Reference baseline**: `reference/aisdk-review/node_modules`(本地安装、带 `src/`):`ai` 7.0.122、`@ai-sdk/provider` 4.0.19、`@ai-sdk/provider-utils` 5.0.51、openai 4.0.80、anthropic 4.0.68、google 4.0.85、google-vertex 5.0.98、amazon-bedrock 5.0.100、azure 4.0.84、xai 5.0.12、mistral 4.0.54、cohere 4.0.52、deepseek 3.0.56、groq 4.0.52、openai-compatible 3.0.59、gateway 4.0.100
 >
@@ -12,7 +12,7 @@
 >
 > **Supersedes**: 早期仅对齐 provider 工厂外观的草案(本文件的前身);[RFC-0008](../rfc/0008-multimodal-bindings.md)「Alternative: Unified Provider Object」的 Decision;`docs/internal/handoff/HANDOFF.md` §11
 >
-> **Amends**: [ROADMAP](../ROADMAP.md) 与 [RFC-0036](../rfc/0036-positioning-and-layered-architecture.md) 中与一次性切换、L2 选型相关的承诺(逐项见 §0.7,旧文档中对应段落已加注指向本文);[RFC-0031](ai-sdk-request-pipeline.md)(provider 默认 retry、composite 零重试、helper 录制等有意差异被撤销或改写,见第一部分 §9.4)、[RFC-0017](../rfc/0017-provider-config-dx.md)(通用 body override 路线撤销)、[RFC-0020](../rfc/0020-external-provider-config.md)(全局 overlay 撤销)、[RFC-0023](../rfc/0023-runtime-request-recording.md)(录制 schema 3)、[RFC-0027](../rfc/0027-model-catalogue-and-list-api.md)(one-shot 工厂承诺撤销)
+> **Amends**: [ROADMAP](../ROADMAP.md) 与 [RFC-0036](../rfc/0036-positioning-and-layered-architecture.md) 中与切换方式、L2 选型相关的承诺(逐项见 §0.7,旧文档中对应段落已加注指向本文);[RFC-0031](ai-sdk-request-pipeline.md)(provider 默认 retry、composite 零重试、helper 录制等有意差异被撤销或改写,见第一部分 §9.4)、[RFC-0017](../rfc/0017-provider-config-dx.md)(通用 body override 路线撤销)、[RFC-0020](../rfc/0020-external-provider-config.md)(全局 overlay 撤销)、[RFC-0023](../rfc/0023-runtime-request-recording.md)(录制 schema 3)、[RFC-0027](../rfc/0027-model-catalogue-and-list-api.md)(one-shot 工厂承诺撤销)
 >
 > **Appendix**: [aisdk-architecture-impact-map.md](aisdk-architecture-impact-map.md) —— 全仓库 12 模块、201 条经对抗核验的发现与跨模块耦合链路
 
@@ -72,10 +72,12 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 - AI SDK 默认回退到 Vercel AI Gateway(`openai/gpt-5` 整串交给 gateway)。
 - **推荐(第一部分 D16 已采用)**:`aimux` 不内建默认 provider、不隐式请求 Gateway;`aimux_providers::default_providers()` 返回本地注册条目,绑定与工具在初始化时组装成 registry(`:` 分隔)。登记为产品差异。
 
-**Q3 一次性原子切换 —— 决定:一次性做完**
+**Q3 切换方式 —— 决定:一次做到目标设计,逐层合入主线(2026-10-12 修订)**
 
-- 第一部分 §9 把实施定为 P0 准备 → **P1 在集成分支上一次性切换完整依赖闭包**(拆 crate、全部 provider、运行时、录制回放、消息协议、FFI、8 个绑定、3 个工具)→ P2 验收后合入主线;不做纵向切片、不留过渡转发层。
-- 这是"不考虑 breaking + workspace 必须全绿"两个约束的直接推论(FFI 与工具在同一 workspace,提前删符号即编译失败)。代价是集成分支存续期长、主线同期冻结相关改动。**推荐**:接受。对 ROADMAP 既有承诺(旧 ABI 共存一个 minor、L2 独立版本化等)的影响见 §0.7。
+- 原决定:第一部分 §9 把实施定为 P0 准备 → **P1 在集成分支上一次性切换完整依赖闭包** → P2 验收后合入主线。
+- 修订原因:完整依赖闭包作为一次合入,规模过大,无法逐项审阅;改为每个 PR 只做一个方向,审一个、合一个。
+- 修订后:P1 按依赖顺序拆成若干层,每层一个 PR 直接合入主线,合入时 workspace 全绿(§9.1)。"不考虑 breaking、不留过渡转发层"的立场不变:每层直接写成目标设计,并在同一 PR 内改完它影响到的全部消费方(FFI、八种接口、三个工具)。新 C ABI、生成链、完整录制 schema 3 与绑定迁移排在最后几层(§9.1)。
+- 代价:全部层合入并通过 P2 之前,主线处于迁移中途,不从主线发布;已发布版本的修复走维护分支。对 ROADMAP 既有承诺(旧 ABI 共存一个 minor、L2 独立版本化等)的影响见 §0.7。
 
 **Q4 宿主回调 —— 决定:全部语言本期不做,后续单独立项**
 
@@ -88,7 +90,7 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 ### 0.5 两部分之间的衔接约定
 
 - 第二部分提出的"无运行时依赖的 `aimux-protocol` crate"即第一部分的 `aimux-provider`(V4 类型)加 `aimux-provider-utils` 中的用户层 `ModelMessage`,按 AI SDK 的包归属放置,不再另建第三个 crate。
-- 第二部分的 JSON 适配规则(base64 字节、ISO 时间、缺失属性省略、JSON null 保留、结构化错误)采纳;第一部分 §6.5 的 descriptor + manifest 生成链是唯一生成来源,ts-rs 与 `scripts/gen_*` 退役(第二部分"ts-rs 可继续"的建议不采纳)。
+- 第二部分的 JSON 适配规则(base64 字节、ISO 时间、缺失属性省略、JSON null 保留、结构化错误)采纳;第一部分 §6.5 的 descriptor + manifest 生成链是唯一生成来源,ts-rs 与 `scripts/gen_*` 在该生成链落地时退役,落地前保留为过渡生成来源,不另建第二条生成链(第二部分"ts-rs 可继续"的建议不采纳)。
 - 第二部分对 `ProviderOptions`(工厂配置)与 `providerOptions`(消息)同名异义的处理,落在第一部分 §3.3:工厂配置改名为各包 `XxxProviderSettings`。
 - 第二部分 §与 provider→model 重构的衔接 中"遵循显示身份、options namespace、catalogue、重建身份分离"一句,以第一部分 §7 的三类信息(模型身份 / 可寻址引用 / 元数据来源)为准;不存在"重建身份"。
 
@@ -107,7 +109,7 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 |---|---|---|
 | RFC-0036 §0 六条原则(性能体积门禁、行为统一、治理一等、数据真相下沉、harness 解耦、不做 agent) | 保留 | 本文是原则 2 / 4 在 provider → model → core 链路上的实施设计 |
 | L2 是"版本化投影",选型(AI SDK 形态 / Open Responses / 自有)另立调研 RFC(RFC-0036 §3;ROADMAP 0.7) | 调整 | 选型由本文第二部分定为 **AI SDK V4 形态**,调研 RFC 撤销。"投影不下的进 `provider_metadata` / `Raw`,不得静默丢弃"保留(第二部分 provider namespace 规则)。"不随 1.0 冻结"保留:V4 类型跟随头部锁定的上游基线演进,升级基线即 L2 的版本变更 |
-| 0.6 版本语义"binding wire 与 C ABI 不变";0.8 C1 "旧导出保留共存(#166 要求共存至少一个 minor 版本)";1.0 C4 删除旧导出 | 调整 | 本文的切换(§9.1 P1)是一次 **breaking 发布**:对象模型、wire、C ABI 同时替换,不提供旧导出共存、deprecated 别名或转发层(D31、§5"不采用")。发布为一个 0.x minor,CHANGELOG 给迁移说明。此后 ops 协议(见下一行)引入时的旧符号同样按切换门一次替换,不再承诺"共存一个 minor"(与 #207 §12.2 的 C2 / C4 行一致;切换门由 RFC-0039 定义) |
+| 0.6 版本语义"binding wire 与 C ABI 不变";0.8 C1 "旧导出保留共存(#166 要求共存至少一个 minor 版本)";1.0 C4 删除旧导出 | 调整 | 本文的切换(§9.1 P1,逐层合入主线,全部合完后统一发布)是一次 **breaking 发布**:对象模型、wire、C ABI 同时替换,不提供旧导出共存、deprecated 别名或转发层(D31、§5"不采用")。发布为一个 0.x minor,CHANGELOG 给迁移说明。此后 ops 协议(见下一行)引入时的旧符号同样按切换门一次替换,不再承诺"共存一个 minor"(与 #207 §12.2 的 C2 / C4 行一致;切换门由 RFC-0039 定义) |
 | ops 协议(op 表 / 错误信封 / 二进制帧 / 版本协商)、stdio CLI 入口(RFC-0036 §4;ROADMAP 0.6 schema、0.8 C1) | 保留,后置到本文切换之后 | 本文 §6 替换的是现有 123 个 `extern "C"` 的句柄对象模型与错误传输;`dispatch(op, handle, json)` 应建立在 §6.1 的句柄种类与 §6.5 的 manifest 之上,因此排在 P1 之后。本文不设计 ops 协议 |
 | L0 native passthrough(RFC-0036 §3 原则 4;ROADMAP 0.6) | 保留,后置到本文切换之后 | 落点是 §3.2 的 `Fetch` / `WsConnector` 注入与 leaf 诊断:passthrough 复用同一传输边界即可获得 auth / 重试 / 录制。本文不实现它 |
 | B 轨 protocol registry = L1 协议层(RFC-0032,B1 "protocol 列 + `from_resolved`",B2–B8 "17 个 LanguageModel → ~7 个协议、33 个 wrapper 退役") | 保留方向,形式调整 | "协议"对应本文 §3.3 / §4.1 的模型实现家族(OpenAI chat / Responses、Anthropic Messages、Google、compat 等);251 个 registry preset 由 descriptor 生成独立厂商工厂并复用 compat 实现(D12、D20),wrapper 退役由此完成。RFC-0032 的 registry 列保留为 descriptor 的数据来源;`from_resolved` 式构造由 `create_xxx` 工厂替代;C2 "FFI 构造器转发 shim"不再需要(§6 一次切换) |
@@ -172,7 +174,7 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 | D28 | middleware 规范放在 `aimux-provider` | generate/stream wrapper 同时取得两个执行方向；`override_supported_urls` 支持异步 |
 | D29 | 注册条目携带厂商扩展和无凭证元数据 | 解决 registry 下 list models、命名方法、catalogue 与 audit 的可达性 |
 | D30 | operation 运行时共享 seq 分配器和 dispatcher | composite 子调用使用统一 helper；并发 child 保持独立 scope 和明确父子关系 |
-| D31 | 所有破坏性接口替换按完整依赖闭包一次切换 | 不再承诺“先删核心符号、几期后才改消费方”仍能 workspace 全绿 |
+| D31 | 每个破坏性接口替换连同它的完整消费闭包在同一个 PR 内完成；各层按依赖顺序合入主线（2026-10-12 修订，见 §9.1） | 不接受“先删核心符号、几期后才改消费方”；每层合入时 workspace 全绿 |
 
 ---
 
@@ -1494,19 +1496,19 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 
 ### 9.1 集成原则
 
-不采用“先删除核心类型，暂时允许 FFI 和工具失效数期”的方案，也不使用 deprecated 适配层保持编译。
+不采用“先删除核心类型，暂时允许 FFI 和工具失效数期”的方案，也不使用 deprecated 适配层或旧 API 转发保持编译。
 
-实施分为准备、完整切换、验证三个阶段：
+实施分为准备、分层切换、验证三个阶段（2026-10-12 修订：原方案在集成分支上一次性切换后整体合入主线，改为逐层合入主线，原因见 §0.4 Q3）：
 
-| 阶段 | 内容 | 集成门槛 |
+| 阶段 | 内容 | 合入门槛 |
 |---|---|---|
 | P0：基线与生成准备 | 固定源码基线、建立协议 fixtures、确定目标 schema/descriptor、生成器 PoC、列出完整消费闭包 | 不删除现有运行路径；当前 workspace 保持可构建 |
-| P1：原子对象模型切换 | 拆 crate、改全部 model/provider 实现、operation/runtime、录制回放、composite、FFI、八种接口、三个工具及全部必改项 | 整个依赖闭包作为一次可构建切换合入集成分支 |
-| P2：协议与生命周期验收 | 完成逐包差分、离线回放、并发、取消、认证、流、生成物检查和文档核对 | 全部发布门槛通过后合入主线 |
+| P1：分层切换 | 按依赖顺序拆成若干层（core 类型 → provider 工厂与请求层 → 厂商包与其余模型种类 → 公共 JSON → 下文所列的最后几层），每层一个 PR，直接合入主线 | 每层在同一 PR 内改完它删除或改动的符号在整个依赖闭包（FFI、八种接口、三个工具）中的全部消费方；合入时 §9.2 中已具备的检查全部通过 |
+| P2：协议与生命周期验收 | 完成逐包差分、离线回放、并发、取消、认证、流、生成物检查和文档核对 | 全部发布门槛通过后才发布 |
 
-P1 可以拆成多个审阅工作包，但这些工作包不被描述为独立可合入、全绿的纵向切片。只有完整替换后的集成结果进入可发布分支。
+每层直接写成目标设计，不引入之后要删除的过渡代码、deprecated 别名或旧 API 转发（D31）。某一层暂时达不到本文的某项要求时，在该层 PR 描述中写明缺什么、由哪一层补齐；与该层代码直接相关的本文修订随该层 PR 一起提交。例外：新 C ABI 与句柄对象模型（§6.1–§6.3）、descriptor/manifest/codegen（§6.5）、录制 schema 3 的完整形态（§4.3、§4.4），以及八种接口与工具的迁移（§6.4、§4.6），排在其余各层之后、发布之前。在此之前，现有按厂商命名的 C 构造器与按名字创建 provider 的入口保持对外签名，内部改调新工厂；它们随绑定迁移那一层一次替换，不另设 deprecated 别名，任何发布版本中都不会出现。
 
-准备期间主线仍使用当前完整实现；切换后只保留新实现。release/hotfix 从当时已通过完整门槛的主线或发布分支产生，不从半完成集成状态发布。
+全部层合入并通过 P2 之前，主线处于迁移中途，**不从主线发布**。此期间已发布版本的修复，从对应 release 标签拉出维护分支发布（如 0.5.x 从 `v0.5.0` 拉出）。
 
 ### 9.2 必须通过的构建检查
 
@@ -1593,7 +1595,7 @@ P1 可以拆成多个审阅工作包，但这些工作包不被描述为独立�
 | C2：Vertex mock 可直接改用 express | **不接受通用切换。**express 可能改变 URL、参数及可用模型；本地源码明确拒绝某些 tuned endpoint 与 express 组合。离线应保持原协议路径，注入固定认证能力 |
 | I7：auth 装饰器检测 replay leaf 后短路 | **不采用。**这会让正常 provider 鉴权实现依赖测试传输类型。离线组装层显式注入假凭证或固定 resolver，即可保留相同调用链 |
 | C3：boundary 由 call_id 派生即可保证回放 | **不足以解决问题。**回放 operation 会产生新 call ID，同一次调用也可能有多个 multipart 请求。采用 MIME 内容规范化，不以 operation ID 作为请求等价依据 |
-| I1 方案 A：保留 deprecated 旧符号直到后期删除 | **与用户立场冲突。**不引入过渡转发层，改用完整消费闭包的原子切换 |
+| I1 方案 A：保留 deprecated 旧符号直到后期删除 | **与用户立场冲突。**不引入过渡转发层；每层连同完整消费闭包一起切换（§9.1） |
 | 未覆盖项：补回 onStepFinish 转发 | **不接受历史兼容转发。**只保留 onStepEnd；Evaluation 等能力按完整范围处理，不为消除表面缺项增加空事件 |
 | 影响面 S0-2/S0-3：统一 `<optionsName>.<endpoint>` 和首段 namespace | **源码反例足够，不能作为全局规则。**Bedrock 身份不符合该模板，Google/Vertex 与 Responses 有包内分支，Anthropic 有 canonical/custom 合并。保留逐包规则 |
 | 影响面 S1-4：必须使用 RecordingFetch 装饰器 | **机制不必照搬。**需要的是可替换传输与同一录制/回放边界；provider-utils 的统一 leaf 诊断满足要求，且不要求用户手工排列录制包装器 |
@@ -2677,7 +2679,7 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 - 不再手写第二份消息 enum、result struct 或字段名映射。
 - Schema 是生成物，不与 Rust 同时人工维护。
 - 自定义 serde 类型必须同时提供生成描述：Optional、base64、ToolChoice、受约束静态/动态工具调用、日期和错误。
-- ~~`ts-rs` 可以继续生成原生 Rust DTO 的 TS 声明~~（**§0.5 已裁定不采纳**：ts-rs 与 `scripts/gen_*` 全部退役，第一部分 §6.5 的 descriptor + manifest 生成链是唯一生成来源）。若日后重新引入任何 TS 生成器，必须与同源 schema/serde fixture 校验，不能只靠 `derive(TS)` 推断自定义行为。
+- ~~`ts-rs` 可以继续生成原生 Rust DTO 的 TS 声明~~（**§0.5 已裁定不采纳**：ts-rs 与 `scripts/gen_*` 全部退役，第一部分 §6.5 的 descriptor + manifest 生成链是唯一生成来源；生成链落地前 ts-rs 保留为过渡，见 §0.5）。若日后重新引入任何 TS 生成器，必须与同源 schema/serde fixture 校验，不能只靠 `derive(TS)` 推断自定义行为。
 - Go 不再用 RawMessage 代替已知协议联合；opaque JSON 字段才使用通用 JSON 类型。
 - Java/Kotlin 不再为必填字段默认填空字符串、空对象。
 - Python/Dart 不再对同一 providerMetadata 字段一处接受 Any、一处强制字典。
@@ -2748,18 +2750,17 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 7. **recording 保存层级明确的数据。** 记录原始用户输入、规范 V4 prompt、V4 输出/事件及 core 步骤；finish raw 和结构化 usage 原样保存。replay 不能继续把 V4 prompt 有损转换回旧 ModelMessage。
 8. **OpenAI 兼容输出接受 core 输出。** `to_chat_completion_stream` 参数改成 TextStreamPart；如确需接受 V4 流，另设显式转换入口，不能继续依赖同一 input 字段的隐含阶段。
 
-实施依赖顺序建议为：
+实施依赖顺序建议为（各步按 §9.1 逐层合入 master）：
 
 ```text
 固定 SDK 基线
-→ 协议基础类型与四层 DTO
-→ 同源生成与 wire fixtures
+→ 协议基础类型与四层 DTO（wire 形状先由 golden fixtures 固定）
 → prompt / tool / file 标准化
 → provider 输入输出适配
 → core content、stream、step、responseMessages
-→ FFI 与各语言 facade
-→ recording/replay、OpenAI 输出和组合模型
+→ OpenAI 输出和组合模型
 → 删除旧类型与旧 codec
+→ 最后、发版之前（§9.1）：同源生成链、新 C ABI 与各语言 facade、recording/replay 完整形态（schema 3）
 ```
 
 类型壳补齐不代表完成。例如只有审批 variant 而没有审批状态转换，或只有 file 分支而仍不进入 responseMessages，都不能算对齐。
