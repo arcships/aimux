@@ -251,6 +251,13 @@ pub struct StreamErrorData {
     #[serde(default, rename = "type")]
     pub error_type: Option<String>,
     pub message: String,
+    /// A status the frame itself carries (upstream's error-chunk schema,
+    /// @ai-sdk/anthropic 4.0.71 src/anthropic-api.ts:1450-1459).
+    #[serde(default, rename = "statusCode")]
+    pub status_code: Option<Value>,
+    /// A retry flag the frame itself carries (same schema).
+    #[serde(default, rename = "isRetryable")]
+    pub is_retryable: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
