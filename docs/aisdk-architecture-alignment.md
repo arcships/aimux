@@ -2283,8 +2283,8 @@ core ToolCall 的 input 是解析后的值；provider raw input String 在解析
 |---|---|
 | StaticToolCall | `toolCallId, toolName, input, providerExecuted?, providerMetadata?, toolMetadata?, title?, dynamic?:false, invalid?:false`；无 error |
 | DynamicToolCall | 同上，`dynamic:true, invalid?:bool, error?` |
-| TypedToolResult | `toolCallId, toolName, input, output, providerExecuted?, providerMetadata?, toolMetadata?, dynamic, preliminary?, title?` |
-| TypedToolError | `toolCallId, toolName, input, error, providerExecuted?, providerMetadata?, toolMetadata?, dynamic, title?` |
+| TypedToolResult | `toolCallId, toolName, input, output, providerExecuted?, providerMetadata?, toolMetadata?, dynamic?:false`（static）/ `dynamic:true`（dynamic）`, preliminary?, title?` |
+| TypedToolError | `toolCallId, toolName, input, error, providerExecuted?, providerMetadata?, toolMetadata?, dynamic?:false`（static）/ `dynamic:true`（dynamic）`, title?` |
 | ToolApprovalRequestOutput | `approvalId, toolCall: TypedToolCall, reason?, isAutomatic?, signature?` |
 | ToolApprovalResponseOutput | `approvalId, toolCall: TypedToolCall, approved, reason?, providerExecuted?` |
 | ToolOutputDenied | `toolCallId, toolName, providerExecuted?, dynamic?:false` |
@@ -2293,7 +2293,7 @@ core ToolCall 的 input 是解析后的值；provider raw input String 在解析
 
 core 自己可以用 `ParseOutcome::Invalid { error, ... }` 保证解析失败一定携带错误，但不能把这个内部不变量误称为 SDK DynamicToolCall 的静态类型要求。
 
-provider deferred tool result 可能没有本轮可关联的调用输入，SDK 会设置 `input: undefined`，见 `A/generate-text/convert-language-model-content.ts:87`。wire 必须能表示这种缺失，不能凭空填 `{}` 或 null。
+provider deferred tool result 可能没有本轮可关联的调用输入，SDK 会设置 `input: undefined`，见 `A/generate-text/convert-language-model-content.ts:87`。只有对应工具是 provider 工具且声明了 `supportsDeferredResults` 时才允许这种结果，否则报 “Tool call … not found”（同文件 `:96-103`）。wire 必须能表示这种缺失，不能凭空填 `{}` 或 null。
 
 GeneratedFile 使用一个数据来源：
 
@@ -2572,8 +2572,7 @@ responseMessages 是 `AssistantModelMessage | ToolModelMessage` 的子集联合�
   "type": "tool-call",
   "toolCallId": "call_1",
   "toolName": "weather",
-  "input": {"city": "Shanghai"},
-  "dynamic": false
+  "input": {"city": "Shanghai"}
 }
 ```
 

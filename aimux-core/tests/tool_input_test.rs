@@ -46,6 +46,24 @@ async fn parses_and_validates_exact_json() {
     assert!(call.error.is_none());
 }
 
+/// A static call has no `dynamic` key at all (`ai@7.0.127
+/// src/generate-text/parse-tool-call.ts:279-288`), as in the core output
+/// example of the alignment doc.
+#[tokio::test]
+async fn a_static_call_serializes_without_dynamic() {
+    let call = parse_tool_call(
+        raw("weather", r#"{"city":"Shanghai"}"#),
+        Some(&[weather_tool()]),
+        None,
+        &[],
+        None,
+    )
+    .await;
+    let wire = serde_json::to_value(&call).unwrap();
+    assert_eq!(wire["input"], json!({ "city": "Shanghai" }));
+    assert!(wire.get("dynamic").is_none(), "{wire}");
+}
+
 #[tokio::test]
 async fn validates_empty_input_as_an_empty_object() {
     let no_arg_tool = FunctionTool::new(
