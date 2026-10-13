@@ -29,7 +29,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat, Tool};
 use aimux_core::result::{GenerateContent, ReasoningOutput};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
@@ -814,7 +814,7 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: Some(ToolChoice::Auto),
+            tool_choice: Some(LanguageModelV4ToolChoice::Auto),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -834,7 +834,7 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: Some(ToolChoice::Required),
+            tool_choice: Some(LanguageModelV4ToolChoice::Required),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -854,7 +854,7 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: Some(ToolChoice::None),
+            tool_choice: Some(LanguageModelV4ToolChoice::None),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -874,7 +874,7 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: Some(ToolChoice::Tool {
+            tool_choice: Some(LanguageModelV4ToolChoice::Tool {
                 tool_name: "testFunction".to_string(),
             }),
             ..default_options(test_prompt())
@@ -1212,7 +1212,7 @@ mod do_generate {
         );
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: Some(ToolChoice::Tool {
+            tool_choice: Some(LanguageModelV4ToolChoice::Tool {
                 tool_name: "test-tool".to_string(),
             }),
             ..default_options(test_prompt())

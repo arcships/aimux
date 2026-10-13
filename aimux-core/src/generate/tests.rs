@@ -174,7 +174,7 @@ fn generated(content: Vec<GenerateContent>, reason: FinishReasonUnified) -> Gene
         warnings: vec![Warning::Other {
             message: "careful".into(),
         }],
-        provider_metadata: Some(HashMap::from([(
+        provider_metadata: Some(indexmap::IndexMap::from([(
             "mock".to_string(),
             serde_json::Map::from_iter([("k".to_string(), json!(1))]),
         )])),
@@ -671,7 +671,7 @@ async fn generate_object_wraps_the_output() {
 /// non-empty or it carries provider metadata.
 #[tokio::test]
 async fn an_empty_text_delta_is_forwarded_only_with_provider_metadata() {
-    let metadata = HashMap::from([(
+    let metadata = indexmap::IndexMap::from([(
         "mock".to_string(),
         serde_json::Map::from_iter([("itemId".to_string(), json!("msg_1"))]),
     )]);
@@ -745,7 +745,7 @@ async fn generate_text_rejects_a_tool_result_without_its_call() {
     ));
     let options = GenerateTextOptions {
         tools: Some(vec![Tool::Provider(crate::tool::ProviderTool {
-            id: "anthropic.code_execution_20250825".into(),
+            id: crate::types::NamespacedKind::new("anthropic.code_execution_20250825").unwrap(),
             name: "code_execution".into(),
             args: serde_json::Map::new(),
         })]),
@@ -754,7 +754,7 @@ async fn generate_text_rejects_a_tool_result_without_its_call() {
     let result = generate_text(&model, "hi", options).await.unwrap();
     assert!(result.final_step().content.iter().any(|part| matches!(
         part,
-        GenerateContent::ToolResult(result) if result.tool_call_id == "srv-0"
+        ContentPart::ToolResult(result) if result.tool_call_id == "srv-0"
     )));
 }
 
@@ -881,24 +881,19 @@ async fn a_consumed_stream_keeps_provider_tool_results_and_errors() {
         .consume()
         .await
         .unwrap();
-    let results: Vec<(String, Option<bool>)> = result
+    let results: Vec<(&str, &str)> = result
         .final_step()
         .content
         .iter()
         .filter_map(|part| match part {
-            GenerateContent::ToolResult(result) => {
-                Some((result.tool_call_id.clone(), result.is_error))
-            }
+            ContentPart::ToolResult(result) => Some((result.tool_call_id.as_str(), "result")),
+            ContentPart::ToolError(error) => Some((error.tool_call_id.as_str(), "error")),
             _ => None,
         })
         .collect();
     assert_eq!(
         results,
-        [
-            ("srv-1".to_string(), None),
-            ("srv-2".to_string(), Some(true)),
-            ("srv-0".to_string(), None),
-        ]
+        [("srv-1", "result"), ("srv-2", "error"), ("srv-0", "result")]
     );
 }
 
@@ -972,6 +967,69 @@ async fn an_invalid_tool_call_is_followed_by_a_tool_error() {
         unreachable!()
     };
     assert_eq!(provider_call.invalid, Some(true));
+}
+
+/// stream-text.ts:1529-1538 records a `tool-error` part in the step content
+/// where it arrives, so a consumed stream keeps an invalid call's tool error
+/// right after the call (the generated path appends it after the content,
+/// generate-text.ts:1303-1323). The response messages replay it in a tool
+/// message as error text (to-response-messages.ts:158-225).
+#[tokio::test]
+async fn a_consumed_stream_keeps_an_invalid_calls_tool_error_in_place() {
+    let mut parts = text_stream(&["hi"], FinishReasonUnified::ToolCalls);
+    let finish = parts.pop().unwrap();
+    // The call goes before the text, so "in place" differs from "appended".
+    parts.insert(
+        1,
+        Ok(StreamPart::ToolCall(RawToolCall {
+            tool_call_id: "call-1".into(),
+            tool_name: "weather".into(),
+            input: r#"{"city":"Paris"}"#.into(),
+            provider_executed: None,
+            dynamic: None,
+            provider_metadata: None,
+        })),
+    );
+    parts.push(finish);
+    let model = ScriptedModel::streaming(parts);
+    let result = stream_text(&model, "hi", GenerateTextOptions::default())
+        .await
+        .unwrap()
+        .consume()
+        .await
+        .unwrap();
+    let step = result.final_step();
+    let kinds: Vec<&str> = step
+        .content
+        .iter()
+        .map(|part| match part {
+            ContentPart::ToolCall(_) => "ToolCall",
+            ContentPart::ToolError(_) => "ToolError",
+            ContentPart::Text { .. } => "Text",
+            other => panic!("unexpected content {other:?}"),
+        })
+        .collect();
+    assert_eq!(kinds, ["ToolCall", "ToolError", "Text"]);
+    let ContentPart::ToolError(error) = &step.content[1] else {
+        unreachable!()
+    };
+    assert_eq!(error.tool_call_id, "call-1");
+    assert_eq!(error.dynamic, Some(true));
+    let [
+        ModelMessage::Assistant { .. },
+        ModelMessage::Tool { content, .. },
+    ] = &step.response.messages[..]
+    else {
+        panic!("{:#?}", step.response.messages)
+    };
+    let [crate::content::ToolContentPart::ToolResult(result)] = &content[..] else {
+        panic!("{content:#?}")
+    };
+    assert_eq!(result.tool_call_id, "call-1");
+    assert!(matches!(
+        result.output,
+        crate::content::ToolResultOutput::ErrorText { .. }
+    ));
 }
 
 /// The `type` of each AI SDK `TextStreamPart`, in the union's order
@@ -1098,8 +1156,8 @@ async fn interleaved_segments_keep_their_start_positions() {
         .content
         .iter()
         .map(|part| match part {
-            GenerateContent::Text { text, .. } => ("text", text.as_str()),
-            GenerateContent::Reasoning(reasoning) => ("reasoning", reasoning.text.as_str()),
+            ContentPart::Text { text, .. } => ("text", text.as_str()),
+            ContentPart::Reasoning(reasoning) => ("reasoning", reasoning.text.as_str()),
             other => panic!("unexpected content {other:?}"),
         })
         .collect();
@@ -1172,7 +1230,7 @@ async fn a_preliminary_tool_result_stays_out_of_the_step_content() {
         .content
         .iter()
         .filter_map(|part| match part {
-            GenerateContent::ToolResult(result) => Some(&result.result),
+            ContentPart::ToolResult(result) => Some(&result.output),
             _ => None,
         })
         .collect();

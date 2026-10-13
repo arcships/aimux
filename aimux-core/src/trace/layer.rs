@@ -99,7 +99,7 @@ struct RecordCtx {
     scope_salt: u64,
     session_tracker: Arc<Mutex<HashMap<String, SessionTracker>>>,
     ctx: RequestCtx,
-    /// RFC-0023 关联 ID:复用 `options.call_id`(缺失时由构造处生成)。
+    /// RFC-0023 关联 ID:取自 `options.recording_context`(缺失时由构造处生成)。
     call_id: Option<String>,
     request_body: Option<serde_json::Value>,
     response_headers: Option<HashMap<String, String>>,
@@ -195,7 +195,10 @@ impl TraceLayer {
             strict: self.strict,
             scope_salt: self.scope_salt,
             session_tracker: self.session_tracker.clone(),
-            call_id: options.call_id.clone(),
+            call_id: options
+                .recording_context
+                .as_ref()
+                .map(|context| context.call_id.clone()),
             ctx: RequestCtx {
                 session_id,
                 scope_key,

@@ -45,16 +45,16 @@ aimux 是 **provider 接入与治理的运行时**：
 | 项 | 内容 |
 |---|---|
 | RFC | RFC-0031 / 0032（写入 #166 的 7 条修正）/ 0033 入库——B1、#170、#174、#175 均引用它们 |
-| **S1** | 桌面 `.a` 切 LTO-off staticlib profile（`ios-release` 改名 `staticlib-release`）。**只改 staticlib job**：`aimux-ffi` 同时产出 cdylib，`.so/.dylib/.dll` 保持 fat-LTO。实测 138.4 → 66.5 MB |
-| **S2** | 体积门禁推广到所有发布产物，**每个产物给具体阈值**（初期取当前值 +10%），CI 输出体积报告 |
-| **P** | 性能回归门禁：单请求开销、流式吞吐、RSS 增长 |
+| **S1** | 桌面 `.a` 切 LTO-off staticlib profile（`ios-release` 改名 `staticlib-release`）。**只改 staticlib job**：`aimux-ffi` 同时产出 cdylib，`.so/.dylib/.dll` 保持 fat-LTO。实测 138.4 → 66.5 MB；后置到全链路对齐迁移之后（见 §6.1） |
+| **S2** | 体积门禁推广到所有发布产物，**每个产物给具体阈值**（初期取当前值 +10%），CI 输出体积报告；后置到全链路对齐迁移之后（见 §6.1） |
+| **P** | 性能回归门禁：单请求开销、流式吞吐、RSS 增长；后置到全链路对齐迁移之后（见 §6.1） |
 | A2–A5 | 删 `ProviderName` 枚举及各语言副本；归档 `provider-inventory/`；aimux-web 类型副本；Flutter example 桌面脚手架 |
 | E1 | 内部清理 + 文档三层重组 |
 | #185 | `ToolInput{Raw,Parsed}`；tracker 不删，改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils（#204）；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系) |
 | #170 / #171 前半 | sync/probe 脚本 + scheduled Action；27 个 base_url 分歧 triage |
 | **B1 + C2** | 解锁项：protocol 列 + `from_resolved`；40 个 FFI 构造器转发 shim（B1 形式由 descriptor 数据源 + `create_xxx` 工厂替代，C2 shim 已取消；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
-| **ops 协议 schema** | op 表、消息与错误信封、二进制帧、版本协商——先以文档 + 测试落地（RFC-0036 §4） |
-| **L0 passthrough** | 原样调用任意 provider 端点，享受 auth / 重试 / 录制 |
+| **ops 协议 schema** | op 表、消息与错误信封、二进制帧、版本协商——先以文档 + 测试落地（RFC-0036 §4）；后置到全链路对齐切换之后，设计由 RFC-0039 承接（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
+| **L0 passthrough** | 原样调用任意 provider 端点，享受 auth / 重试 / 录制；后置到全链路对齐切换之后，作为新增能力单独评审（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 
 版本语义：
 - **Rust 层 breaking**：A2 删枚举、#185 换类型。
@@ -68,7 +68,7 @@ aimux 是 **provider 接入与治理的运行时**：
 | B2–B8 | 17 个 LanguageModel 实现 → ~7 个协议；33 个 wrapper 退役；responses 家族合并（遵循 #166 修正 3/6） |
 | #174 / #175 | registry `auth` schema + `apply_auth()`；Credential 解析序 + CredentialStore + TokenRefresher |
 | L2 补齐 | `StreamPart::Raw` / `provider_metadata` 在各协议接线——投影不下的不得静默丢弃 |
-| **S3** | `cargo-bloat` 审计 0.5.0 增重（Android `.so` 13.4 → 21 MB）；feature gating 仅作可选小体积路径，默认全量 |
+| **S3** | `cargo-bloat` 审计 0.5.0 增重（Android `.so` 13.4 → 21 MB）；feature gating 仅作可选小体积路径，默认全量；后置到全链路对齐迁移之后（见 §6.1） |
 | ~~调研 RFC~~ | ~~L2 数据模型选型（AI SDK 形态 / Open Responses items / 自有），指标见 RFC-0036 §3~~ 撤销：选型已定为 AI SDK V4 形态（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 
 版本语义：Rust API 大 breaking（33 wrapper 退役）；C ABI 经 C2 转发不受影响。
@@ -77,7 +77,7 @@ aimux 是 **provider 接入与治理的运行时**：
 
 | 项 | 内容 |
 |---|---|
-| C1 | 9 个导出 + `dispatch`，**同一 dispatch 同时服务 FFI 与 stdio CLI**；旧导出保留共存 |
+| C1 | ops 协议入口 + `dispatch`，**同一 dispatch 同时服务 FFI 与 stdio CLI**；导出数量不再固定为 9 个，按对齐文档 §6.2–§6.3 的函数组设计；旧符号按切换门一次替换，不共存（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 | C3 | `aimux_error_*` 访问器 → 错误 JSON 信封（含派生 `retry_after_ms`） |
 | D1–D7 | 8 种绑定迁到 ops 薄封装。D1 Kotlin（只依赖 Java artifact）与 D5 Flutter ffigen 过渡版不依赖 C1，可在 0.6/0.7 提前做 |
 | D8 | 类型镜像生成：serde → JSON Schema → 各语言，`--check` 门禁扩到全部输出 |
@@ -91,7 +91,7 @@ aimux 是 **provider 接入与治理的运行时**：
 |---|---|
 | #167 | transport-level replay：mock 挂 HTTP 层跑真协议代码，覆盖全协议 / 全模态；`ProviderRecord` = registry 行 + protocol |
 | 漂移检测 | #170 扩展：定期重录，与 cassette 字节级 diff |
-| 能力矩阵 | provider × 能力，每格由探测或录制支撑 |
+| 能力矩阵 | provider × 能力，每格由探测或录制支撑；后置到全链路对齐迁移之后（见 §6.1） |
 | CLI | `aimux probe / replay / diff`（#179 replay 子命令并入）；#181 debug CLI 并入 |
 
 ### 1.0 ——「冻结」（~1-2 周）
@@ -114,7 +114,7 @@ aimux 是 **provider 接入与治理的运行时**：
 ## 4. 近期第一步（本周可并行开）
 
 1. **RFC-0032 / 0033 入库**：B1 与 #174 的前提。
-2. **S1 + S2**：一个小 PR——改 profile 名、staticlib job 换 profile、全产物体积阈值。
+2. **S1 + S2**：一个小 PR——改 profile 名、staticlib job 换 profile、全产物体积阈值（后置，见 §6.1）。
 3. **A2–A5**：四个独立 PR；#166 的 A1 checkbox 补勾（#169 已合入）。
 4. **#185**：先删 tracker，再换 `ToolInput`。
 5. **B1 + C2**：解锁项。
@@ -136,6 +136,8 @@ aimux 是 **provider 接入与治理的运行时**：
 ## 6. 横切需求
 
 ### 6.1 产物体积与性能（硬门禁）
+
+> 2026-10-13 调整：全链路对齐迁移按 [docs/aisdk-architecture-alignment.md §9.1](docs/aisdk-architecture-alignment.md#91-集成原则) 逐层合入主线。S1–S3、P、`aimux` CLI 体积预算与 0.9 能力矩阵排在迁移之后；体积与性能门禁的阈值和形式等维护者改写 #208（RFC-0038 体积/性能预算）后再定。在此之前，每个迁移层的 PR 描述列出产物改前改后的体积。
 
 | 产物 | v0.5.0 | 目标 | 手段 |
 |---|---|---|---|

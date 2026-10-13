@@ -16,8 +16,8 @@ use crate::shared::RequestInfo;
 use crate::step_result::{StepResponseMetadata, StepResultPerformance};
 use crate::tool::{RawToolCall, ToolCall, ToolResult};
 use crate::types::{
-    FinishReason, FinishReasonUnified, LanguageModelUsage, ProviderMetadata, ResponseMetadata,
-    Usage, Warning,
+    FinishReason, FinishReasonUnified, LanguageModelUsage, NamespacedKind, ProviderMetadata,
+    ResponseMetadata, Usage, Warning,
 };
 
 /// A single chunk in the stream returned by `do_stream`.
@@ -108,7 +108,7 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = GeneratedFi
     File(GeneratedFile),
     ReasoningFile(R),
     Custom {
-        kind: String,
+        kind: NamespacedKind,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -211,7 +211,7 @@ pub enum TextStreamPart {
 
     /// Provider-specific content.
     Custom {
-        kind: String,
+        kind: NamespacedKind,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },

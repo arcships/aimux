@@ -420,7 +420,7 @@ fn extract_imagen_images(response: &Value) -> ImageOutputs {
 
 /// Extract provider metadata from an Imagen response.
 fn extract_imagen_metadata(response: &Value) -> SharedProviderMetadata {
-    let mut metadata = HashMap::new();
+    let mut metadata = aimux_core::shared::NamespaceMap::new();
     let predictions = response
         .get("predictions")
         .and_then(|p| p.as_array())
@@ -489,7 +489,7 @@ fn extract_gemini_result(
     });
 
     // Provider metadata
-    let mut metadata = HashMap::new();
+    let mut metadata = aimux_core::shared::NamespaceMap::new();
     let mut google_meta = Map::new();
     let image_metas: Vec<Value> = images.iter().map(|_| json!({})).collect();
     google_meta.insert("images".to_string(), json!(image_metas));

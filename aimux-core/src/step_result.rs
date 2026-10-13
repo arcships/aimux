@@ -17,11 +17,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-use crate::content::ContentPart;
+use crate::content::AssistantContentPart;
 use crate::message::ModelMessage;
-use crate::result::{GeneratedFile, ReasoningPart, Source, TextContent};
+use crate::result::{ContentPart, GeneratedFile, ReasoningPart, Source, TypedToolResult};
 use crate::shared::{RequestInfo, SharedHeaders};
-use crate::tool::{ToolCall, ToolResult};
+use crate::tool::ToolCall;
 use crate::types::{FinishReasonUnified, LanguageModelUsage, ProviderMetadata, Warning};
 
 /// The model that ran a step (`StepResult.model`).
@@ -214,7 +214,7 @@ pub struct StepResult {
     /// The model that ran the step.
     pub model: StepModel,
     /// The content generated in this step, in order.
-    pub content: Vec<TextContent>,
+    pub content: Vec<ContentPart>,
     /// Why the step finished.
     pub finish_reason: FinishReasonUnified,
     /// The provider's own finish reason.
@@ -244,7 +244,7 @@ impl StepResult {
         self.content
             .iter()
             .filter_map(|part| match part {
-                TextContent::Text { text, .. } => Some(text.as_str()),
+                ContentPart::Text { text, .. } => Some(text.as_str()),
                 _ => None,
             })
             .collect()
@@ -254,16 +254,15 @@ impl StepResult {
     /// SDK's `convertFromReasoningOutputs` (`generate-text/reasoning-output.ts:57-80`)
     /// turns `providerMetadata` into `providerOptions`.
     #[must_use]
-    pub fn reasoning(&self) -> Vec<ContentPart> {
+    pub fn reasoning(&self) -> Vec<AssistantContentPart> {
         self.reasoning_outputs()
             .into_iter()
             .map(|part| match part {
-                ReasoningPart::Text(reasoning) => ContentPart::Reasoning {
+                ReasoningPart::Text(reasoning) => AssistantContentPart::Reasoning {
                     text: reasoning.text,
-                    signature: None,
                     provider_options: reasoning.provider_metadata,
                 },
-                ReasoningPart::File(file) => ContentPart::ReasoningFile {
+                ReasoningPart::File(file) => AssistantContentPart::ReasoningFile {
                     data: file.file.data,
                     media_type: file.file.media_type,
                     provider_options: file.provider_metadata,
@@ -279,8 +278,8 @@ impl StepResult {
         self.content
             .iter()
             .filter_map(|part| match part {
-                TextContent::Reasoning(reasoning) => Some(ReasoningPart::Text(reasoning.clone())),
-                TextContent::ReasoningFile(file) => Some(ReasoningPart::File(file.clone())),
+                ContentPart::Reasoning(reasoning) => Some(ReasoningPart::Text(reasoning.clone())),
+                ContentPart::ReasoningFile(file) => Some(ReasoningPart::File(file.clone())),
                 _ => None,
             })
             .collect()
@@ -294,7 +293,7 @@ impl StepResult {
             .content
             .iter()
             .filter_map(|part| match part {
-                TextContent::Reasoning(reasoning) => Some(reasoning.text.as_str()),
+                ContentPart::Reasoning(reasoning) => Some(reasoning.text.as_str()),
                 _ => None,
             })
             .collect();
@@ -307,7 +306,7 @@ impl StepResult {
         self.content
             .iter()
             .filter_map(|part| match part {
-                TextContent::File(file) => Some(file),
+                ContentPart::File { file, .. } => Some(file),
                 _ => None,
             })
             .collect()
@@ -319,7 +318,7 @@ impl StepResult {
         self.content
             .iter()
             .filter_map(|part| match part {
-                TextContent::Source(source) => Some(source),
+                ContentPart::Source(source) => Some(source),
                 _ => None,
             })
             .collect()
@@ -331,7 +330,7 @@ impl StepResult {
         self.content
             .iter()
             .filter_map(|part| match part {
-                TextContent::ToolCall(call) => Some(call),
+                ContentPart::ToolCall(call) => Some(call),
                 _ => None,
             })
             .collect()
@@ -355,11 +354,11 @@ impl StepResult {
 
     /// Tool results of this step.
     #[must_use]
-    pub fn tool_results(&self) -> Vec<&ToolResult> {
+    pub fn tool_results(&self) -> Vec<&TypedToolResult> {
         self.content
             .iter()
             .filter_map(|part| match part {
-                TextContent::ToolResult(result) => Some(result),
+                ContentPart::ToolResult(result) => Some(result),
                 _ => None,
             })
             .collect()
@@ -367,7 +366,7 @@ impl StepResult {
 
     /// Tool results of tools known in advance (`dynamic` is not `true`).
     #[must_use]
-    pub fn static_tool_results(&self) -> Vec<&ToolResult> {
+    pub fn static_tool_results(&self) -> Vec<&TypedToolResult> {
         let mut results = self.tool_results();
         results.retain(|result| result.dynamic != Some(true));
         results
@@ -375,7 +374,7 @@ impl StepResult {
 
     /// Tool results of dynamic tools (`dynamic: true`).
     #[must_use]
-    pub fn dynamic_tool_results(&self) -> Vec<&ToolResult> {
+    pub fn dynamic_tool_results(&self) -> Vec<&TypedToolResult> {
         let mut results = self.tool_results();
         results.retain(|result| result.dynamic == Some(true));
         results

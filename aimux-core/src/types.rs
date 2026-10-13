@@ -266,7 +266,7 @@ impl std::str::FromStr for ReasoningEffort {
 }
 
 /// A warning issued by the provider (e.g. unsupported parameter).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub enum Warning {
     /// A feature is not supported by this provider.
@@ -296,6 +296,107 @@ pub struct ResponseMetadata {
 
 /// Provider-specific metadata: namespace -> JSON object.
 pub type ProviderMetadata = crate::shared::SharedProviderMetadata;
+
+/// A `${string}.${string}` identifier, `<provider-id>.<name>`: the V4
+/// provider tool `id` (`@ai-sdk/provider@4.0.21
+/// src/language-model/v4/language-model-v4-provider-tool.ts:17`) and custom
+/// content `kind` (`language-model-v4-custom-content.ts:13`,
+/// `language-model-v4-prompt.ts:138`).
+///
+/// The TypeScript type admits any string with a `.`; a value without one
+/// does not construct or deserialize.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, TS)]
+#[serde(transparent)]
+#[ts(export, type = "`${string}.${string}`")]
+pub struct NamespacedKind(String);
+
+impl NamespacedKind {
+    /// Checks that `value` has the `${string}.${string}` shape.
+    ///
+    /// # Errors
+    ///
+    /// [`AiMuxError::InvalidArgument`](crate::error::AiMuxError::InvalidArgument)
+    /// when `value` has no `.`.
+    pub fn new(value: impl Into<String>) -> Result<Self, crate::error::AiMuxError> {
+        let value = value.into();
+        if value.contains('.') {
+            Ok(Self(value))
+        } else {
+            Err(crate::error::AiMuxError::InvalidArgument(format!(
+                "expected a `<provider-id>.<name>` identifier, got {value:?}"
+            )))
+        }
+    }
+
+    /// The identifier text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for NamespacedKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl AsRef<str> for NamespacedKind {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl PartialEq<str> for NamespacedKind {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+impl PartialEq<&str> for NamespacedKind {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+impl From<NamespacedKind> for String {
+    fn from(kind: NamespacedKind) -> Self {
+        kind.0
+    }
+}
+
+impl TryFrom<String> for NamespacedKind {
+    type Error = crate::error::AiMuxError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for NamespacedKind {
+    type Error = crate::error::AiMuxError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl std::str::FromStr for NamespacedKind {
+    type Err = crate::error::AiMuxError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::new(value)
+    }
+}
+
+impl<'de> Deserialize<'de> for NamespacedKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::new(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
 
 #[cfg(test)]
 mod tests {

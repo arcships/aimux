@@ -18,7 +18,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, UserPart,
 };
-use aimux_core::options::{CallOptions, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified};
@@ -615,7 +615,7 @@ pub fn supports_strict_tools(model_id: &str) -> bool {
 #[must_use]
 pub fn prepare_tools(
     tools: &Option<Vec<FunctionTool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
     model_id: &str,
 ) -> Value {
     let non_empty = tools.as_ref().filter(|t| !t.is_empty());
@@ -624,13 +624,13 @@ pub fn prepare_tools(
     };
 
     // `toolChoice: none` clears tools entirely (matches TS).
-    if matches!(tool_choice, Some(ToolChoice::None)) {
+    if matches!(tool_choice, Some(LanguageModelV4ToolChoice::None)) {
         return json!({});
     }
 
     // `toolChoice: tool` filters function tools to the named one.
     let filtered: Vec<&FunctionTool> = match tool_choice {
-        Some(ToolChoice::Tool { tool_name }) => {
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
             tools.iter().filter(|t| &t.name == tool_name).collect()
         }
         _ => tools.iter().collect(),
@@ -662,10 +662,12 @@ pub fn prepare_tools(
     }
 
     let tool_choice_val = match tool_choice {
-        Some(ToolChoice::Auto) => json!({ "auto": {} }),
-        Some(ToolChoice::Required) => json!({ "any": {} }),
-        Some(ToolChoice::Tool { tool_name }) => json!({ "tool": { "name": tool_name } }),
-        Some(ToolChoice::None) => unreachable!(),
+        Some(LanguageModelV4ToolChoice::Auto) => json!({ "auto": {} }),
+        Some(LanguageModelV4ToolChoice::Required) => json!({ "any": {} }),
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
+            json!({ "tool": { "name": tool_name } })
+        }
+        Some(LanguageModelV4ToolChoice::None) => unreachable!(),
         None => return json!({ "tools": tool_specs }),
     };
 

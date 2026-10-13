@@ -11,7 +11,10 @@ export type ToolResult = {
  */
 tool_call_id: string, tool_name: string, 
 /**
- * The tool's output (usually a JSON-serializable value or plain text).
+ * The tool's output: any JSON value but `null`, as the V4
+ * `result: NonNullable<JSONValue>` (`@ai-sdk/provider@4.0.21
+ * src/language-model/v4/language-model-v4-tool-result.ts:23`); a `null`
+ * result does not deserialize.
  */
 result: JsonValue, 
 /**

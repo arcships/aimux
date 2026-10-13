@@ -636,7 +636,7 @@ impl ImageModel for FalImageModel {
             }
         }
 
-        let mut metadata = HashMap::new();
+        let mut metadata = aimux_core::shared::NamespaceMap::new();
         let mut fm = Map::new();
         let im: Vec<Value> = target_images
             .iter()

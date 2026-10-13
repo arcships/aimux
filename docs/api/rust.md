@@ -154,18 +154,16 @@ Set `tool_choice` on `GenerateTextOptions` (`ToolChoice::Auto` / `None` /
 // Rust — tool round-trip
 let messages = vec![
     ModelMessage::user("What's the weather in Tokyo?"),
-    ModelMessage {
-        role: Role::Assistant,
-        content: MessageContent::Parts(vec![ContentPart::tool_call(
-            "call_abc", "get_weather", json!({"location": "Tokyo"}),
-        )]),
-    },
-    ModelMessage {
-        role: Role::Tool,
-        content: MessageContent::Parts(vec![ContentPart::tool_result(
-            "call_abc", json!({"temperature": 22, "condition": "sunny"}),
-        )]),
-    },
+    ModelMessage::assistant_parts(vec![AssistantContentPart::tool_call(
+        "call_abc", "get_weather", json!({"location": "Tokyo"}),
+    )]),
+    ModelMessage::tool(vec![ToolContentPart::tool_result(
+        "call_abc", "get_weather",
+        ToolResultOutput::Json {
+            value: json!({"temperature": 22, "condition": "sunny"}),
+            provider_options: None,
+        },
+    )]),
 ];
 let result = generate_text(&model, messages, opts).await?;
 ```
@@ -318,12 +316,12 @@ Rust types are the canonical definitions — one module per feature in
 | `step_result` | `StepResult`, `StepResponse`, `StepResultPerformance` |
 | `output` | `Output` (the `output` option: Text / Object / Array / Choice / Json) |
 | `language_model` | `LanguageModel` |
-| `result` | `GenerateResult` (provider result), `TextContent`, `Source`, `GeneratedFile` |
+| `result` | `GenerateResult` (provider result), `ContentPart` (the core content part), `TypedToolResult`, `TypedToolError`, `Source`, `GeneratedFile` |
 | `stream_part` | `StreamPart` (provider stream), `TextStreamPart` (the AI SDK's full stream) |
 | `types` | `LanguageModelUsage`, `Usage`, `FinishReasonUnified`, `Warning` |
 | `options` | `GenerateTextOptions`, `CallOptions`, `ResponseFormat`, `ToolChoice`, `ReasoningEffort` |
-| `message` / `language_model_message` | `ModelMessage`, `ModelPrompt`, `MessageContent`, `Role` |
-| `content` | `ContentPart` (Text / Image / File / Reasoning / ToolCall / ToolResult) |
+| `message` / `language_model_message` | `ModelMessage` (by role: `System` / `User` / `Assistant` / `Tool`), `UserContent`, `AssistantContent`, `ToolContent`, `ModelPrompt` |
+| `content` | `UserContentPart`, `AssistantContentPart`, `ToolContentPart`, `ToolResultPart`, `ToolResultOutput` |
 | `tool` | `Tool`, `FunctionTool`, `ProviderTool`, `ToolCall`, `ToolResult` |
 | `types` | `Usage`, `TokenUsage`, `FinishReason`, `ResponseMetadata`, `Warning` |
 | `shared` | `FileBytes`, `FileData`, `Size`, `AspectRatio`, `ResponseInfo` |

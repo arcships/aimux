@@ -51,7 +51,7 @@ import type {
   Output,
   GenerateObjectResult,
   GenerateObjectResponse,
-  TextContent,
+  ContentPart,
   ReasoningPart,
   GeneratedFile,
   Source,
@@ -64,9 +64,13 @@ import type {
   ToolApprovalResponseOutput,
   FinishReason,
   Warning,
-  Role,
-  MessageContent,
-  ContentPart,
+  UserContent,
+  AssistantContent,
+  UserContentPart,
+  AssistantContentPart,
+  ToolContentPart,
+  ToolResultPart,
+  ToolResultOutput,
   ResponseFormat,
   ReasoningEffort,
   GenerateResult,
@@ -190,7 +194,7 @@ export type {
   Output,
   GenerateObjectResult,
   GenerateObjectResponse,
-  TextContent,
+  ContentPart,
   ReasoningPart,
   GeneratedFile,
   Source,
@@ -203,9 +207,13 @@ export type {
   ToolApprovalResponseOutput,
   FinishReason,
   Warning,
-  Role,
-  MessageContent,
-  ContentPart,
+  UserContent,
+  AssistantContent,
+  UserContentPart,
+  AssistantContentPart,
+  ToolContentPart,
+  ToolResultPart,
+  ToolResultOutput,
   ResponseFormat,
   ReasoningEffort,
   GenerateResult,
@@ -297,8 +305,9 @@ export type ToolCallRepairContext = {
  * Return a replacement call, or `null` to leave the call invalid with its
  * original error. Throwing marks the repair as failed: the call stays invalid
  * and carries a {@link ToolCallRepairError} whose cause is the thrown message.
- * A returned call is re-parsed and re-validated; if it still does not match the
- * schema the result is likewise a {@link ToolCallRepairError}.
+ * A returned call is re-parsed and re-validated; if it still does not parse or
+ * match the schema, the original call stays invalid with that new error
+ * (not wrapped), as in the AI SDK.
  *
  * Runs outside any native call, so it may itself call back into aimux (the
  * usual implementation asks a model to rewrite the arguments). It is invoked at

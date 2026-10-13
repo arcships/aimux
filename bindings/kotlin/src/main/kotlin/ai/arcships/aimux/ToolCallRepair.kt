@@ -106,7 +106,9 @@ fun toolCallRepairContext(toolCallJson: String, promptJson: String, optsJson: St
 
 /**
  * Resolve one invalid tool call against a repair reply, returning the final
- * `ToolCall` JSON — valid, or invalid carrying a nested `ToolCallRepair` error.
+ * `ToolCall` JSON — valid, or invalid: with its original error (`unchanged`),
+ * the replacement's own parse or validation error (`repaired`), or a nested
+ * `ToolCallRepair` error (`failed`).
  *
  * @param replyJson `{"type":"repaired","tool_call":…}` | `{"type":"unchanged"}`
  *   | `{"type":"failed","message":…}`.

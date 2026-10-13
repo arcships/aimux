@@ -211,7 +211,7 @@ impl Files for OpenAIFiles {
             metadata.insert("expiresAt".to_string(), json!(expires_at));
         }
 
-        let mut provider_ref = HashMap::new();
+        let mut provider_ref = aimux_core::shared::SharedProviderReference::new();
         provider_ref.insert("openai".to_string(), data.id);
 
         // Filename: prefer response filename, fall back to options filename.
@@ -221,7 +221,10 @@ impl Files for OpenAIFiles {
             provider_reference: provider_ref,
             media_type: Some(options.media_type.clone()),
             filename: result_filename,
-            provider_metadata: Some(HashMap::from([("openai".to_string(), metadata)])),
+            provider_metadata: Some(aimux_core::shared::NamespaceMap::from([(
+                "openai".to_string(),
+                metadata,
+            )])),
             warnings: Vec::new(),
         })
     }

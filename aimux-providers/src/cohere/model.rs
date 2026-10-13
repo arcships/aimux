@@ -216,7 +216,10 @@ impl LanguageModel for CohereModel {
                     media_type: "text/plain".to_string(),
                     title,
                     filename: None,
-                    provider_metadata: Some(HashMap::from([("cohere".to_string(), cohere_meta)])),
+                    provider_metadata: Some(aimux_core::shared::NamespaceMap::from([(
+                        "cohere".to_string(),
+                        cohere_meta,
+                    )])),
                 }));
             }
         }

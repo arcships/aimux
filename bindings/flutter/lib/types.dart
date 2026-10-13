@@ -248,8 +248,9 @@ class ToolCall {
 /// ([ToolCallRepairContext.toolCall]) and the replacement it returns. The
 /// replacement is re-parsed and re-validated against the tool's schema, so
 /// [input] must be the argument text the tool expects (usually a JSON object
-/// literal); returning text that still fails validation leaves the call
-/// invalid, now carrying a [ToolCallRepairError].
+/// literal); returning text that still fails validation leaves the original
+/// call invalid, now carrying that parse or validation error (not a
+/// [ToolCallRepairError]).
 class RawToolCall {
   final String toolCallId;
   final String toolName;

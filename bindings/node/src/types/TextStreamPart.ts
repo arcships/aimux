@@ -3,6 +3,7 @@ import type { AiMuxError } from "./AiMuxError";
 import type { FinishReasonUnified } from "./FinishReasonUnified";
 import type { GeneratedFile } from "./GeneratedFile";
 import type { LanguageModelUsage } from "./LanguageModelUsage";
+import type { NamespacedKind } from "./NamespacedKind";
 import type { ReasoningFileOutput } from "./ReasoningFileOutput";
 import type { RequestInfo } from "./RequestInfo";
 import type { Source } from "./Source";
@@ -37,7 +38,7 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * first model call (`stream-text.ts:2030-2090`), which needs the prompt's
  * approval collection (`collect-tool-approvals.ts`), not ported.
  */
-export type TextStreamPart = { "TextStart": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextDelta": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, text: string, } } | { "ReasoningStart": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningDelta": { provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, id: string, text: string, } } | { "Custom": { kind: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputStart": { id: string, tool_name: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null,
+export type TextStreamPart = { "TextStart": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextDelta": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, text: string, } } | { "ReasoningStart": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningDelta": { provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, id: string, text: string, } } | { "Custom": { kind: NamespacedKind, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputStart": { id: string, tool_name: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null,
 /**
  * Whether the tool call will be executed by the provider.
  */

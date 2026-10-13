@@ -1387,7 +1387,7 @@ fn convert_reasoning_part(
 /// Resolve the Anthropic file id from a provider-reference object, mirroring the
 /// TS `resolveProviderReference`. Returns an error when the key is missing.
 fn resolve_anthropic_reference(
-    reference: &std::collections::HashMap<String, String>,
+    reference: &aimux_core::shared::SharedProviderReference,
 ) -> Result<String, AiMuxError> {
     if let Some(id) = reference.get("anthropic") {
         return Ok(id.to_string());
@@ -2251,7 +2251,7 @@ fn apply_anthropic_tools(
             .map(|t| match t {
                 Tool::Function(ft) => AnthropicTool::Function(ft.clone()),
                 Tool::Provider(pt) => AnthropicTool::Provider {
-                    id: pt.id.clone(),
+                    id: pt.id.to_string(),
                     name: pt.name.clone(),
                     args: pt.args.clone(),
                 },

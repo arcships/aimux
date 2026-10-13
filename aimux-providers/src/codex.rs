@@ -391,14 +391,7 @@ impl CodexModel {
 
         let endpoint = self.endpoint();
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: endpoint.clone(),
-                headers: build_header_list(&headers),
-                abort_signal: opts.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
+            HttpRequest::new(endpoint.clone(), build_header_list(&headers), &opts),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             crate::openai::openai_failed_response_handler(),

@@ -753,10 +753,50 @@ class _SPReasoningFile(BaseModel):
     provider_metadata: Optional[Dict[str, Any]] = None
 
 
+class _TCFile(BaseModel):
+    type: Literal["File"]
+    file: _GeneratedFile
+    provider_metadata: Optional[Dict[str, Any]] = None
+
+
+class _TCToolResult(BaseModel):
+    type: Literal["ToolResult"]
+    tool_call_id: str
+    tool_name: str
+    input: Any = None
+    output: Any
+    provider_executed: Optional[bool] = None
+    provider_metadata: Optional[Any] = None
+    dynamic: Optional[bool] = None
+    preliminary: Optional[bool] = None
+
+
+class _TCToolError(BaseModel):
+    type: Literal["ToolError"]
+    tool_call_id: str
+    tool_name: str
+    input: Any = None
+    error: Any
+    provider_executed: Optional[bool] = None
+    provider_metadata: Optional[Any] = None
+    dynamic: Optional[bool] = None
+
+
+class _TCToolApprovalResponse(BaseModel):
+    type: Literal["ToolApprovalResponse"]
+    approval_id: str
+    tool_call: ToolCall
+    approved: bool
+    reason: Optional[str] = None
+    provider_executed: Optional[bool] = None
+
+
+# The core ``ContentPart`` of a text result (Rust ``result::ContentPart``).
 _TextContentUnion = Annotated[
     Union[
-        _ContentText, _SPToolCall, _ContentSource, _ContentReasoning,
-        _SPFile, _SPReasoningFile, _ContentToolResult, _ContentCustom, _SPToolApprovalRequest,
+        _ContentText, _ContentCustom, _ContentReasoning, _SPReasoningFile, _ContentSource,
+        _TCFile, _SPToolCall, _TCToolResult, _TCToolError, _SPToolApprovalRequest,
+        _TCToolApprovalResponse,
     ],
     Field(discriminator="type"),
 ]

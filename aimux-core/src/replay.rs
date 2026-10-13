@@ -27,7 +27,7 @@ use crate::options::CallOptions;
 use crate::recording::Recording;
 use crate::result::{GenerateContent, GenerateResult, StreamResult};
 use crate::stream_part::StreamPart;
-use crate::tool::RawToolCall;
+use crate::tool::{LanguageModelV4ToolChoice, RawToolCall, ToolChoice};
 use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 pub use crate::decision_replay::{MockDecisionReplayModel, replay_decision_with_model};
@@ -986,6 +986,17 @@ pub async fn replay_with_model(
     generate_text_from_language_model_prompt(model, prompt, Vec::new(), options).await
 }
 
+/// The recorded V4 tool choice as the user-level choice that
+/// [`prepare_tool_choice`](crate::tool::prepare_tool_choice) maps back to it.
+fn user_tool_choice(choice: LanguageModelV4ToolChoice) -> ToolChoice {
+    match choice {
+        LanguageModelV4ToolChoice::Auto => ToolChoice::Auto,
+        LanguageModelV4ToolChoice::None => ToolChoice::None,
+        LanguageModelV4ToolChoice::Required => ToolChoice::Required,
+        LanguageModelV4ToolChoice::Tool { tool_name } => ToolChoice::Tool { tool_name },
+    }
+}
+
 /// `CallOptions` → `GenerateTextOptions`(record 侧到用户侧的反向映射)。
 ///
 /// `instructions` 已烘焙进 prompt(system 消息),重建时置 None;
@@ -1002,7 +1013,7 @@ fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
         output: o.response_format.map(output_for_response_format),
         seed: o.seed,
         tools: o.tools,
-        tool_choice: o.tool_choice,
+        tool_choice: o.tool_choice.map(user_tool_choice),
         headers: o.headers,
         provider_options: o.provider_options,
         reasoning: o.reasoning,
@@ -1083,7 +1094,11 @@ mod tests {
             input: InputRecord {
                 operation: Default::default(),
                 prompt: input_prompt,
-                options: serde_json::json!({ "temperature": 0.7 }),
+                // A recorded call always carries the prepared tool choice.
+                options: serde_json::json!({
+                    "temperature": 0.7,
+                    "tool_choice": { "type": "auto" },
+                }),
             },
             provider: ProviderRecord {
                 provider: "openai".into(),

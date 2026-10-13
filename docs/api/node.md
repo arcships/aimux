@@ -527,8 +527,8 @@ them, not a local copy):
 ```typescript
 import type {
   GenerateTextOptions, GenerateTextResult, TextStreamPart, ModelMessage,
-  Tool, ToolChoice, ToolCall, ToolResult, LanguageModelUsage, StepResult,
-  FinishReasonUnified, Warning, Role, MessageContent, ContentPart, Output,
+  Tool, ToolChoice, ToolCall, TypedToolResult, LanguageModelUsage, StepResult,
+  FinishReasonUnified, Warning, UserContent, AssistantContent, ContentPart, Output,
   ReasoningEffort, FunctionTool,
 } from '@arcships/aimux'
 ```
@@ -536,10 +536,10 @@ import type {
 ```typescript
 // bindings/node/src/types/GenerateTextResult.ts (ts-rs generated, abridged)
 export type GenerateTextResult = {
-  content: Array<TextContent>             // the final step's content parts
+  content: Array<ContentPart>             // the final step's content parts (the core ContentPart)
   text: string                            // the final step's text
   tool_calls: Array<ToolCall>             // the final step's tool calls (parsed)
-  tool_results: Array<ToolResult>         // the final step's provider-executed tool results
+  tool_results: Array<TypedToolResult>    // the final step's provider-executed tool results
   finish_reason: FinishReasonUnified      // 'stop' | 'length' | 'content-filter' | 'tool-calls' | 'error' | 'other'
   raw_finish_reason: string | null        // provider's own finish-reason string
   usage: LanguageModelUsage               // token usage summed over the steps

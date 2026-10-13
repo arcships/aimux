@@ -6,10 +6,10 @@
 //! response fixtures mirror the per-provider wiremock test files
 //! (`google_model_test.rs` / `mistral_model_test.rs` / `cohere_model_test.rs`).
 
-use aimux_core::content::ContentPart;
+use aimux_core::content::{AssistantContentPart, ToolContentPart, ToolResultOutput};
 use aimux_core::error::AiMuxError;
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
-use aimux_core::message::{MessageContent, ModelMessage, Role};
+use aimux_core::message::ModelMessage;
 use aimux_core::stream_part::TextStreamPart;
 use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
 use aimux_core::types::FinishReasonUnified;
@@ -574,21 +574,19 @@ async fn e2e_openai_tool_call_round_trip() {
     //   user → assistant(tool_call) → tool(result)
     let messages = vec![
         ModelMessage::user("What's the weather in Tokyo?"),
-        ModelMessage {
-            role: Role::Assistant,
-            content: MessageContent::Parts(vec![ContentPart::tool_call(
-                "call_abc",
-                "get_weather",
-                json!({"location": "Tokyo"}),
-            )]),
-        },
-        ModelMessage {
-            role: Role::Tool,
-            content: MessageContent::Parts(vec![ContentPart::tool_result(
-                "call_abc",
-                json!({"temperature": 22, "condition": "sunny"}),
-            )]),
-        },
+        ModelMessage::assistant_parts(vec![AssistantContentPart::tool_call(
+            "call_abc",
+            "get_weather",
+            json!({"location": "Tokyo"}),
+        )]),
+        ModelMessage::tool(vec![ToolContentPart::tool_result(
+            "call_abc",
+            "get_weather",
+            ToolResultOutput::Json {
+                value: json!({"temperature": 22, "condition": "sunny"}),
+                provider_options: None,
+            },
+        )]),
     ];
 
     // Step 3: second call — model returns final text after the tool result.

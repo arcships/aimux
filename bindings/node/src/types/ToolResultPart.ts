@@ -3,6 +3,26 @@ import type { ToolResultOutput } from "./ToolResultOutput";
 import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
- * Tool result content part.
+ * The result of a tool call (upstream `ToolResultPart`).
+ *
+ * JSON: besides the upstream `output` object, the part keeps accepting the
+ * earlier `result` form, an arbitrary JSON value read by
+ * [`ToolResultOutput::from_result`] (with `is_error: true` the value is an
+ * error). `output` holding a value that is not a [`ToolResultOutput`] object
+ * is read the same way. A `text`, `json`, `error-text` or `error-json`
+ * output without its own `provider_options` is written in the `result`
+ * form; any other output is written as `output`.
  */
-export type ToolResultPart = { tool_call_id: string, tool_name: string, output: ToolResultOutput, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type ToolResultPart = { tool_call_id: string, tool_name?: string,
+/**
+ * A `ToolResultOutput`, or any other JSON value, read as `result` is.
+ */
+output?: ToolResultOutput | JsonValue,
+/**
+ * Any JSON value: a string is a `text` output, anything else `json`.
+ */
+result?: JsonValue,
+/**
+ * With `result`: the value is an error, an `error-text` output.
+ */
+is_error?: boolean, provider_options?: { [key in string]: { [key in string]: JsonValue } }, };

@@ -24,12 +24,13 @@ use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
 use crate::language_model_message::convert_to_language_model_prompt;
 use crate::message::{ModelMessage, ModelPrompt};
-use crate::options::{CallOptions, ToolChoice};
+use crate::options::{CallOptions, ToolChoice, prepare_tool_choice};
 use crate::output::Output;
 use crate::parse_tool_call::{ToolCallRepair, parse_tool_call};
 use crate::result::{
-    GenerateContent, GenerateResult, GeneratedFile, ReasoningFileOutput, ReasoningPart, Source,
-    StreamResult, TextContent, ToolApprovalRequestOutput, TypedToolError, TypedToolResult,
+    ContentPart, GenerateContent, GenerateResult, GeneratedFile, ReasoningFileOutput,
+    ReasoningPart, Source, StreamResult, ToolApprovalRequestOutput, TypedToolError,
+    TypedToolResult,
 };
 use crate::shared::{RequestInfo, SharedHeaders, SharedProviderOptions};
 use crate::step_result::{
@@ -162,12 +163,10 @@ impl GenerateTextOptions {
         self,
         prompt: crate::language_model_message::LanguageModelPrompt,
     ) -> CallOptions {
-        let tool_choice = self.tool_choice.or_else(|| {
-            self.tools
-                .as_ref()
-                .filter(|tools| !tools.is_empty())
-                .map(|_| ToolChoice::Auto)
-        });
+        // `generateText` / `streamText` always send the prepared choice,
+        // `{type:"auto"}` when none is given (ai@7.0.127
+        // src/generate-text/generate-text.ts:953-955, stream-text.ts:2382-2384).
+        let tool_choice = Some(prepare_tool_choice(self.tool_choice));
         CallOptions {
             prompt,
             max_output_tokens: self.max_output_tokens,
@@ -191,7 +190,6 @@ impl GenerateTextOptions {
             timeout: self.timeout,
             session_id: self.session_id,
             abort_signal: self.abort_signal,
-            call_id: None,
             recording_context: None,
             include_raw_chunks: self.include_raw_chunks,
         }
@@ -278,7 +276,7 @@ impl GenerateTextResult {
 
     /// The content of every step.
     #[must_use]
-    pub fn content(&self) -> Vec<&TextContent> {
+    pub fn content(&self) -> Vec<&ContentPart> {
         self.steps.iter().flat_map(|step| &step.content).collect()
     }
 
@@ -344,7 +342,7 @@ impl GenerateTextResult {
 
     /// The tool results of every step.
     #[must_use]
-    pub fn tool_results(&self) -> Vec<&ToolResult> {
+    pub fn tool_results(&self) -> Vec<&TypedToolResult> {
         self.steps
             .iter()
             .flat_map(StepResult::tool_results)
@@ -353,7 +351,7 @@ impl GenerateTextResult {
 
     /// The tool results of tools known in advance, from every step.
     #[must_use]
-    pub fn static_tool_results(&self) -> Vec<&ToolResult> {
+    pub fn static_tool_results(&self) -> Vec<&TypedToolResult> {
         self.steps
             .iter()
             .flat_map(StepResult::static_tool_results)
@@ -362,7 +360,7 @@ impl GenerateTextResult {
 
     /// The tool results of dynamic tools, from every step.
     #[must_use]
-    pub fn dynamic_tool_results(&self) -> Vec<&ToolResult> {
+    pub fn dynamic_tool_results(&self) -> Vec<&TypedToolResult> {
         self.steps
             .iter()
             .flat_map(StepResult::dynamic_tool_results)
@@ -495,7 +493,7 @@ impl GenerateTextResult {
 #[derive(Serialize, TS)]
 #[ts(export, rename = "GenerateTextResult")]
 struct GenerateTextResultSnapshot<'a> {
-    content: Vec<&'a TextContent>,
+    content: Vec<&'a ContentPart>,
     text: String,
     /// Deprecated upstream: the last step's reasoning.
     reasoning: Vec<ReasoningPart>,
@@ -504,7 +502,7 @@ struct GenerateTextResultSnapshot<'a> {
     files: Vec<&'a GeneratedFile>,
     sources: Vec<&'a Source>,
     tool_calls: Vec<&'a ToolCall>,
-    tool_results: Vec<&'a ToolResult>,
+    tool_results: Vec<&'a TypedToolResult>,
     finish_reason: FinishReasonUnified,
     raw_finish_reason: Option<&'a str>,
     usage: &'a LanguageModelUsage,
@@ -747,30 +745,12 @@ impl StreamTextResult {
                     provider_metadata,
                 } => rm.reasoning_end(id, provider_metadata),
                 TextStreamPart::ToolCall(call) => rm.tool_call(&call),
-                TextStreamPart::ToolResult(result) => rm.tool_result(ToolResult {
-                    tool_call_id: result.tool_call_id,
-                    tool_name: result.tool_name,
-                    result: result.output,
-                    is_error: None,
-                    preliminary: result.preliminary,
-                    dynamic: result.dynamic,
-                    provider_metadata: result.provider_metadata,
-                }),
-                // A provider-executed tool's error result. The error that
-                // follows an invalid client tool call has no place in this
-                // layer's step content (the generated path does not keep it
-                // either).
-                TextStreamPart::ToolError(error) if error.provider_executed == Some(true) => {
-                    rm.tool_result(ToolResult {
-                        tool_call_id: error.tool_call_id,
-                        tool_name: error.tool_name,
-                        result: error.error,
-                        is_error: Some(true),
-                        preliminary: None,
-                        dynamic: error.dynamic,
-                        provider_metadata: error.provider_metadata,
-                    });
-                }
+                // Tool results (not preliminary ones), tool errors and
+                // approval responses enter the step content as they arrive
+                // (stream-text.ts:1529-1538, :1648-1650).
+                TextStreamPart::ToolResult(result) => rm.typed_tool_result(result),
+                TextStreamPart::ToolError(error) => rm.tool_error(error),
+                TextStreamPart::ToolApprovalResponse(response) => rm.approval_response(response),
                 TextStreamPart::Source(source) => rm.source(source),
                 TextStreamPart::File(file) => rm.file(&file, false),
                 TextStreamPart::ReasoningFile(output) => rm.file(&output.file, true),
@@ -831,9 +811,7 @@ impl StreamTextResult {
                 TextStreamPart::ToolInputStart { .. }
                 | TextStreamPart::ToolInputDelta { .. }
                 | TextStreamPart::ToolInputEnd { .. }
-                | TextStreamPart::ToolError(_)
                 | TextStreamPart::ToolOutputDenied(_)
-                | TextStreamPart::ToolApprovalResponse(_)
                 | TextStreamPart::Start {}
                 | TextStreamPart::Raw { .. } => {}
             }
@@ -861,6 +839,14 @@ impl StreamTextResult {
 // ─────────────────────────────────────────────────────────────────────────────
 // User-facing functions
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// The provider id the prompt conversion gets: `'openai'` for `'openai.chat'`
+/// (upstream passes `model.provider.split('.')[0]`, `ai`
+/// `generate-text/generate-text.ts:970` and
+/// `generate-text/stream-language-model-call.ts:311`).
+fn provider_id(model: &dyn LanguageModel) -> Option<&str> {
+    model.provider().split('.').next()
+}
 
 /// Generate text (non-streaming).
 ///
@@ -891,8 +877,9 @@ pub async fn generate_text(
     prompt: impl Into<ModelPrompt>,
     options: GenerateTextOptions,
 ) -> Result<GenerateTextResult, AiMuxError> {
-    let (messages, instructions) = split_prompt(prompt.into(), options.instructions.as_deref());
-    let lm_prompt = convert_to_language_model_prompt(&messages, instructions)?;
+    let (messages, instructions) =
+        standardize_prompt(prompt.into(), options.instructions.as_deref())?;
+    let lm_prompt = convert_to_language_model_prompt(&messages, instructions, provider_id(model))?;
     generate_text_from_language_model_prompt(model, lm_prompt, messages, options).await
 }
 
@@ -927,9 +914,8 @@ pub(crate) async fn generate_text_from_language_model_prompt(
     //     并绑定 recorder 快照;传输封闭由层 A 收尾声明(P1 无层 B,barrier
     //     前提;P2 移交层 B)。
     let context = crate::recording::recorder().map(|recorder| {
-        let call_id = crate::recording::new_call_id();
-        call_options.call_id = Some(call_id.clone());
-        let ctx = crate::recording::RecordingContext::new(call_id.clone(), recorder);
+        let ctx =
+            crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);
         call_options.recording_context = Some(ctx.clone());
         ctx.recorder.record_input(
             &ctx.call_id,
@@ -961,7 +947,7 @@ pub(crate) async fn generate_text_from_language_model_prompt(
         ),
         crate::session::session_store(),
     ) {
-        let call = store.append(&session_id, call_options.call_id.as_deref(), source);
+        let call = store.append(&session_id, call_id.as_deref(), source);
         // RFC-0024 P3: 录制带上会话归组信息(仅录制开启时有效;
         // recorder/call_id 同时存在才可能被写入)。
         if let (Some(recorder), Some(call_id)) = (&recorder, &call_id) {
@@ -1018,6 +1004,15 @@ pub(crate) async fn generate_text_from_language_model_prompt(
                 );
             }
         }
+        if let Some(error) = tool_choice_violation(
+            call_options.tool_choice.as_ref(),
+            tool_calls.iter().map(|call| call.tool_name.as_str()),
+            result.finish_reason.unified,
+            model,
+            || result.content.clone(),
+        ) {
+            return Err(error);
+        }
         // The step time ends after tool handling and before content
         // conversion (generate-text.ts:1382, :1437-1446).
         let step_time_ms = ms_between(started, Instant::now());
@@ -1061,7 +1056,7 @@ pub(crate) async fn generate_text_from_language_model_prompt(
 /// The tool error that follows a client tool call that could not be parsed
 /// (`stream-language-model-call.ts:709-725`): the call's input, its error
 /// message, and `dynamic`.
-fn invalid_tool_call_error(call: &ToolCall) -> Option<TypedToolError> {
+pub(crate) fn invalid_tool_call_error(call: &ToolCall) -> Option<TypedToolError> {
     (call.invalid == Some(true) && call.provider_executed != Some(true)).then(|| TypedToolError {
         tool_call_id: call.tool_call_id.clone(),
         tool_name: call.tool_name.clone(),
@@ -1198,6 +1193,14 @@ async fn convert_generated_content(
                 }
                 rm.tool_result(result.clone());
             }
+        }
+    }
+    // A tool call that could not be parsed gets a tool error, after the
+    // model's content (`generate-text.ts:1303-1323`,
+    // `convert-language-model-content.ts:208-214`).
+    for call in tool_calls.iter().filter(|call| call.dynamic == Some(true)) {
+        if let Some(error) = invalid_tool_call_error(call) {
+            rm.tool_error(error);
         }
     }
     Ok(rm.finish())
@@ -1382,8 +1385,9 @@ pub async fn stream_text(
     if let Some(output) = &output {
         output.validate()?;
     }
-    let (messages, instructions) = split_prompt(prompt.into(), operation_instructions.as_deref());
-    let lm_prompt = convert_to_language_model_prompt(&messages, instructions)?;
+    let (messages, instructions) =
+        standardize_prompt(prompt.into(), operation_instructions.as_deref())?;
+    let lm_prompt = convert_to_language_model_prompt(&messages, instructions, provider_id(model))?;
 
     // 2. Build CallOptions.
     let mut call_options = options.into_call_options(lm_prompt);
@@ -1408,9 +1412,8 @@ pub async fn stream_text(
     //     并绑定 recorder 快照;传输封闭由层 A 收尾声明(P1 无层 B,barrier
     //     前提;P2 移交层 B)。
     let context = crate::recording::recorder().map(|recorder| {
-        let call_id = crate::recording::new_call_id();
-        call_options.call_id = Some(call_id.clone());
-        let ctx = crate::recording::RecordingContext::new(call_id.clone(), recorder);
+        let ctx =
+            crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);
         call_options.recording_context = Some(ctx.clone());
         ctx.recorder.record_input(
             &ctx.call_id,
@@ -1449,7 +1452,7 @@ pub async fn stream_text(
         ),
         crate::session::session_store(),
     ) {
-        let call = store.append(&session_id, call_options.call_id.as_deref(), source);
+        let call = store.append(&session_id, call_id.as_deref(), source);
         // RFC-0024 P3: 录制带上会话归组信息(仅录制开启时有效;
         // recorder/call_id 同时存在才可能被写入)。
         if let (Some(recorder), Some(call_id)) = (&recorder, &call_id) {
@@ -1577,6 +1580,9 @@ pub async fn stream_text(
     let pump = AbortOnDrop(pump);
 
     let file_abort_signal = abort_signal.clone();
+    let tool_choice = call_options.tool_choice.clone();
+    let step_provider = model.provider().to_owned();
+    let step_model_id = model.model_id().to_owned();
     let response_metadata =
         response_metadata_defaults(crate::types::ResponseMetadata::default(), model.model_id());
     let stream_response_headers = response_headers.clone();
@@ -1588,6 +1594,7 @@ pub async fn stream_text(
             let _pump = pump;
             let mut step = StreamStep::new(call_started, response_metadata);
             let mut tool_calls: HashMap<String, ToolCall> = HashMap::new();
+            let mut content = StreamedContent::default();
             yield Ok(TextStreamPart::Start {});
             loop {
                 let next = tokio::select! {
@@ -1617,12 +1624,31 @@ pub async fn stream_text(
                 }
                 if let Ok(part) = &item {
                     step.record_chunk(part, arrived);
+                    content.observe(part);
                 }
                 match item {
                     Ok(StreamPart::StreamStart { .. }) => unreachable!("handled above"),
                     Ok(StreamPart::ResponseMetadata(metadata)) => step.response_metadata(metadata),
-                    Ok(StreamPart::Finish { finish_reason, usage, provider_metadata }) => {
+                    // `stream-language-model-call.ts:644-687`: a response that
+                    // breaks an enforced tool choice finishes the model call
+                    // with an `error` finish reason (the raw reason is kept),
+                    // followed by an error part.
+                    Ok(StreamPart::Finish { mut finish_reason, usage, provider_metadata }) => {
+                        let violation = tool_choice_violation_error(
+                            tool_choice.as_ref(),
+                            tool_calls.values().map(|call| call.tool_name.as_str()),
+                            finish_reason.unified,
+                            &step_provider,
+                            &step_model_id,
+                            || std::mem::take(&mut content.content),
+                        );
+                        if violation.is_some() {
+                            finish_reason.unified = FinishReasonUnified::Error;
+                        }
                         step.finish(finish_reason, &usage, provider_metadata, arrived);
+                        if let Some(error) = violation {
+                            yield Ok(TextStreamPart::Error { error });
+                        }
                     }
                     Ok(StreamPart::Error { error }) => {
                         step.terminal = true;
@@ -1852,6 +1878,175 @@ impl StreamStep {
     }
 }
 
+/// The AI SDK's tool choice check after a model call (`generate-text.ts:1155-1176`,
+/// `stream-language-model-call.ts:644-662`): a `required` tool choice needs
+/// some tool call, a `tool` choice a call to that tool. Every parsed call
+/// counts, invalid ones too.
+fn tool_choice_violation<'a>(
+    tool_choice: Option<&crate::tool::LanguageModelV4ToolChoice>,
+    tool_names: impl IntoIterator<Item = &'a str>,
+    finish_reason: crate::types::FinishReasonUnified,
+    model: &dyn LanguageModel,
+    content: impl FnOnce() -> Vec<GenerateContent>,
+) -> Option<AiMuxError> {
+    tool_choice_violation_error(
+        tool_choice,
+        tool_names,
+        finish_reason,
+        model.provider(),
+        model.model_id(),
+        content,
+    )
+}
+
+fn tool_choice_violation_error<'a>(
+    tool_choice: Option<&crate::tool::LanguageModelV4ToolChoice>,
+    tool_names: impl IntoIterator<Item = &'a str>,
+    finish_reason: crate::types::FinishReasonUnified,
+    provider: &str,
+    model_id: &str,
+    content: impl FnOnce() -> Vec<GenerateContent>,
+) -> Option<AiMuxError> {
+    use crate::tool::LanguageModelV4ToolChoice as Choice;
+    let tool_choice = tool_choice?;
+    let satisfied = match tool_choice {
+        Choice::Required => tool_names.into_iter().next().is_some(),
+        Choice::Tool { tool_name } => tool_names.into_iter().any(|name| name == tool_name),
+        Choice::Auto | Choice::None => return None,
+    };
+    (!satisfied).then(|| {
+        AiMuxError::ToolChoiceViolation(Box::new(crate::error::ToolChoiceViolationError {
+            tool_choice: tool_choice.clone(),
+            finish_reason,
+            provider: provider.to_owned(),
+            model_id: model_id.to_owned(),
+            content: content(),
+        }))
+    })
+}
+
+/// The provider content of a streamed model call, collected as upstream
+/// collects `rawModelCallContent` (`stream-language-model-call.ts:434`): text
+/// and reasoning blocks by id (`upsertTextContentPart`, `:892-953`), the
+/// other content parts as they arrive (`:583`, `:692`, `:734`, `:761`,
+/// `:836-842`).
+#[derive(Default)]
+struct StreamedContent {
+    content: Vec<GenerateContent>,
+    text: HashMap<String, usize>,
+    reasoning: HashMap<String, usize>,
+}
+
+impl StreamedContent {
+    fn observe(&mut self, part: &StreamPart) {
+        match part {
+            StreamPart::TextStart {
+                id,
+                provider_metadata,
+            } => self.upsert_text(id, None, provider_metadata.as_ref()),
+            StreamPart::TextDelta {
+                id,
+                delta,
+                provider_metadata,
+            } => self.upsert_text(id, Some(delta), provider_metadata.as_ref()),
+            StreamPart::TextEnd {
+                id,
+                provider_metadata,
+            } => {
+                self.upsert_text(id, None, provider_metadata.as_ref());
+                self.text.remove(id);
+            }
+            StreamPart::ReasoningStart {
+                id,
+                provider_metadata,
+            } => self.upsert_reasoning(id, None, provider_metadata.as_ref()),
+            StreamPart::ReasoningDelta {
+                id,
+                delta,
+                provider_metadata,
+            } => self.upsert_reasoning(id, Some(delta), provider_metadata.as_ref()),
+            StreamPart::ReasoningEnd {
+                id,
+                provider_metadata,
+            } => {
+                self.upsert_reasoning(id, None, provider_metadata.as_ref());
+                self.reasoning.remove(id);
+            }
+            StreamPart::File(file) => self.content.push(GenerateContent::File(file.clone())),
+            StreamPart::ReasoningFile(file) => self
+                .content
+                .push(GenerateContent::ReasoningFile(file.clone())),
+            StreamPart::ToolCall(call) => {
+                self.content.push(GenerateContent::ToolCall(call.clone()))
+            }
+            StreamPart::ToolApprovalRequest(request) => self
+                .content
+                .push(GenerateContent::ToolApprovalRequest(request.clone())),
+            StreamPart::ToolResult(result) => self
+                .content
+                .push(GenerateContent::ToolResult(result.clone())),
+            StreamPart::Custom {
+                kind,
+                provider_metadata,
+            } => self.content.push(GenerateContent::Custom {
+                kind: kind.clone(),
+                provider_metadata: provider_metadata.clone(),
+            }),
+            StreamPart::Source(source) => {
+                self.content.push(GenerateContent::Source(source.clone()))
+            }
+            _ => {}
+        }
+    }
+
+    fn upsert_text(
+        &mut self,
+        id: &str,
+        delta: Option<&str>,
+        provider_metadata: Option<&ProviderMetadata>,
+    ) {
+        let index = *self.text.entry(id.to_owned()).or_insert_with(|| {
+            self.content.push(GenerateContent::Text {
+                text: String::new(),
+                provider_metadata: provider_metadata.cloned(),
+            });
+            self.content.len() - 1
+        });
+        if let GenerateContent::Text {
+            text,
+            provider_metadata: metadata,
+        } = &mut self.content[index]
+        {
+            text.push_str(delta.unwrap_or_default());
+            if provider_metadata.is_some() {
+                metadata.clone_from(&provider_metadata.cloned());
+            }
+        }
+    }
+
+    fn upsert_reasoning(
+        &mut self,
+        id: &str,
+        delta: Option<&str>,
+        provider_metadata: Option<&ProviderMetadata>,
+    ) {
+        let index = *self.reasoning.entry(id.to_owned()).or_insert_with(|| {
+            self.content
+                .push(GenerateContent::Reasoning(crate::result::ReasoningOutput {
+                    text: String::new(),
+                    provider_metadata: provider_metadata.cloned(),
+                }));
+            self.content.len() - 1
+        });
+        if let GenerateContent::Reasoning(reasoning) = &mut self.content[index] {
+            reasoning.text.push_str(delta.unwrap_or_default());
+            if provider_metadata.is_some() {
+                reasoning.provider_metadata = provider_metadata.cloned();
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod pipeline_tests;
 #[cfg(test)]
@@ -1902,6 +2097,37 @@ async fn do_generate_with_logging(
 /// If the prompt is messages, they are used as-is.
 /// Instructions are passed through separately (they get prepended by
 /// `convert_to_language_model_prompt`).
+/// The AI SDK's `standardizePrompt` (`ai` `prompt/standardize-prompt.ts:34-112`)
+/// for the prompt forms aimux takes.
+///
+/// - A text prompt becomes one user message (`:67-68`).
+/// - An empty message list is rejected: `messages must not be empty`
+///   (`:78-83`).
+/// - `prompt` and `messages` cannot both be given and the messages match
+///   the `ModelMessage` schema by construction (`ModelPrompt` is one or the
+///   other, and parts are checked by role when they are parsed).
+///
+/// Not ported yet: upstream rejects system messages in the messages unless
+/// `allowSystemInMessages` is set (`:85-96`), and accepts system messages as
+/// `instructions` (`:55-65`). The bindings, CLI and web tool still send
+/// system messages in the messages, and `instructions` is a string here.
+///
+/// # Errors
+///
+/// `InvalidPrompt` when there are no messages.
+pub(crate) fn standardize_prompt(
+    prompt: ModelPrompt,
+    instructions: Option<&str>,
+) -> Result<(Vec<ModelMessage>, Option<&str>), AiMuxError> {
+    let (messages, instructions) = split_prompt(prompt, instructions);
+    if messages.is_empty() {
+        return Err(AiMuxError::InvalidPrompt(
+            "messages must not be empty".into(),
+        ));
+    }
+    Ok((messages, instructions))
+}
+
 pub(crate) fn split_prompt(
     prompt: ModelPrompt,
     instructions: Option<&str>,
