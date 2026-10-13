@@ -455,7 +455,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (an OpenAI-compatible provider named `vertex.maas`) and
   `create_google_vertex_xai` / `google_vertex_xai` (Grok chat models named
   `googleVertex.xai`), over the project/location `endpoints/openapi` URL with
-  a Google OAuth token.
+  a Google OAuth token. As in the Node wrappers, the provider headers and the
+  token go over the per-call headers.
 - `OpenAIProvider::tools` and `AzureOpenAIProvider::tools`: the provider tools
   on the provider instance, as the AI SDK's `openai.tools` and `azure.tools`
   (`openai().tools.web_search(…)`). Azure's holds its upstream subset.

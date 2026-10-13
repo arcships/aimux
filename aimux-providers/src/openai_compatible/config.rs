@@ -151,6 +151,11 @@ pub(crate) struct CompatModelConfig {
     pub query_params: Option<Arc<Vec<(String, String)>>>,
     /// Provider headers (credential, user headers), resolved on every request.
     pub headers: HeadersFn,
+    /// Headers layered over the per-call headers, resolved on every request
+    /// after `headers`: what an AI SDK package that builds on
+    /// `createOpenAICompatible` adds in its own fetch wrapper (google-vertex's
+    /// Node MaaS and xAI providers).
+    pub fetch_headers: Option<HeadersFn>,
     /// Transport; `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
     pub transform_request_body: Option<TransformRequestBody>,
@@ -183,9 +188,9 @@ impl CompatModelConfig {
         Ok((url.to_string(), base))
     }
 
-    /// Resolve the provider headers, layer the per-call headers over them
-    /// (case-insensitive, later wins, `None` removes) and return the list that
-    /// goes on the wire.
+    /// Resolve the provider headers, layer the per-call headers over them,
+    /// then the fetch headers (case-insensitive, later wins, `None` removes),
+    /// and return the list that goes on the wire.
     pub(crate) async fn request_headers(
         &self,
         call_headers: Option<&HashMap<String, String>>,
@@ -199,7 +204,13 @@ impl CompatModelConfig {
                     .collect()
             })
             .unwrap_or_default();
-        Ok(normalize_headers(combine_headers(&[&provider, &call])))
+        let fetch = match &self.fetch_headers {
+            Some(headers) => headers.resolve().await?,
+            None => HeaderMapOpt::new(),
+        };
+        Ok(normalize_headers(combine_headers(&[
+            &provider, &call, &fetch,
+        ])))
     }
 
     /// An exchange for `path` that inherits the operation's cancellation and

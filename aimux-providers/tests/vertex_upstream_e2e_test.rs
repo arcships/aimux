@@ -554,7 +554,7 @@ fn partner_settings(
 /// Upstream: @ai-sdk/google-vertex 5.0.98 src/maas/google-vertex-maas-provider.ts:77-118
 /// (the project/location URL, `global` by default, the `vertex.maas` name,
 /// the llama-4 `max_tokens` default at :14-25) and
-/// google-vertex-maas-provider-node.ts:170-189 (the headers, then the bearer token).
+/// google-vertex-maas-provider-node.ts:34-58 (the headers, then the bearer token).
 #[tokio::test]
 async fn maas_sub_provider_builds_on_openai_compatible() {
     let fetch = MockFetch::new(vec![
@@ -664,6 +664,62 @@ async fn partner_sub_providers_require_a_project() {
         "{error:?}"
     );
     assert!(fetch.seen().is_empty());
+}
+
+/// Upstream: @ai-sdk/google-vertex 5.0.98 maas/google-vertex-maas-provider-node.ts:34-58
+/// and xai/google-vertex-xai-provider-node.ts:33-55 hand no headers to
+/// `createOpenAICompatible`; their fetch spreads the provider headers, then
+/// `Authorization`, over the request's headers. So a provider header and the
+/// bearer token win over a per-call header of the same name, a per-call header
+/// of another name is kept, and the user-agent is the request's own.
+#[tokio::test]
+async fn partner_headers_win_over_per_call_headers() {
+    let fetch = MockFetch::new(vec![
+        partner_response(json!({"prompt_tokens": 1, "completion_tokens": 1})),
+        partner_response(json!({"prompt_tokens": 1, "completion_tokens": 1})),
+    ]);
+    let mut options = prompt();
+    options.headers = Some(
+        [
+            ("custom-header", "call-value"),
+            ("authorization", "Bearer call-token"),
+            ("x-call-only", "kept"),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.to_string(), value.to_string()))
+        .collect(),
+    );
+    aimux_providers::create_google_vertex_maas(partner_settings(&fetch, None))
+        .unwrap()
+        .chat("meta/llama-3.3-70b-instruct-maas")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    aimux_providers::create_google_vertex_xai(partner_settings(&fetch, None))
+        .unwrap()
+        .chat("xai/grok-4.1-fast-reasoning")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    for seen in fetch.seen() {
+        assert_eq!(
+            seen.headers["custom-header"], "custom-value",
+            "{}",
+            seen.url
+        );
+        assert_eq!(
+            seen.headers["authorization"], "Bearer test-token",
+            "{}",
+            seen.url
+        );
+        assert_eq!(seen.headers["x-call-only"], "kept", "{}", seen.url);
+        assert_eq!(
+            seen.headers["user-agent"],
+            "ai-sdk-openai-compatible/3.0.59 ai-sdk-provider-utils/5.0.51",
+            "{}",
+            seen.url
+        );
+    }
 }
 
 /// Upstream: @ai-sdk/google-vertex 5.0.98 src/google-vertex-provider-base.ts:270-276

@@ -157,6 +157,7 @@ pub fn create_openai_compatible(
         settings,
         BaseUrl::Fixed(base_url),
         headers,
+        None,
         crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
     )
 }
@@ -166,11 +167,13 @@ pub fn create_openai_compatible(
 /// call `createOpenAICompatible`). `settings.base_url`, `api_key` and
 /// `headers` are not read; the user-agent part of `package` (the
 /// openai-compatible version the calling package depends on) is added to
-/// `headers`.
+/// `headers`. `fetch_headers` go over the per-call headers, as headers a
+/// package adds in its own fetch wrapper do.
 pub(crate) fn build(
     settings: OpenAICompatibleProviderSettings,
     base_url: BaseUrl,
     headers: HeadersFn,
+    fetch_headers: Option<HeadersFn>,
     package: Package,
 ) -> Result<OpenAICompatibleProvider, AiMuxError> {
     let mut provider = OpenAICompatibleProvider::assemble(Assembly {
@@ -200,6 +203,7 @@ pub(crate) fn build(
         package.name,
         package.version,
     );
+    provider.fetch_headers = fetch_headers;
     Ok(provider)
 }
 
@@ -239,6 +243,7 @@ pub struct OpenAICompatibleProvider {
     base_url: BaseUrl,
     query_params: Option<Arc<Vec<(String, String)>>>,
     headers: HeadersFn,
+    fetch_headers: Option<HeadersFn>,
     fetch: Option<FetchFunction>,
     transform_request_body: Option<TransformRequestBody>,
     chat: ChatSettings,
@@ -282,6 +287,7 @@ impl OpenAICompatibleProvider {
                 assembly.package.name,
                 assembly.package.version,
             ),
+            fetch_headers: None,
             fetch: Some(crate::shared::package_fetch(
                 assembly.fetch,
                 assembly.package,
@@ -303,6 +309,7 @@ impl OpenAICompatibleProvider {
             base_url: self.base_url.clone(),
             query_params: self.query_params.clone(),
             headers: self.headers.clone(),
+            fetch_headers: self.fetch_headers.clone(),
             fetch: self.fetch.clone(),
             transform_request_body: if method == "chat" {
                 self.transform_request_body.clone()
