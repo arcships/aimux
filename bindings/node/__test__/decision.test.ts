@@ -57,8 +57,9 @@ test('missing or null usage counts preserve valid decision answers', async t => 
     usage = counts
     const result = await decide(model, options)
     t.is(Object.keys(result.answers).length, 3)
-    t.is(result.usage?.inputTokens.total ?? null, counts.input_tokens ?? null)
-    t.is(result.usage?.outputTokens.total ?? null, counts.output_tokens ?? null)
+    // Unknown counts are omitted, never null (AI SDK `total: number | undefined`).
+    t.is(result.usage?.inputTokens.total, counts.input_tokens ?? undefined)
+    t.is(result.usage?.outputTokens.total, counts.output_tokens ?? undefined)
     t.deepEqual(result.usage?.raw, counts)
   }
 })

@@ -83,8 +83,12 @@ def test_optional_usage_counts_preserve_answers(server, monkeypatch, usage):
     result = decide(jev_decision('test-key', 'jev-latest', base + '/v1/systemone'),
                     {'message': 'Billed twice'}, QUESTIONS, max_retries=0)
     assert len(result['answers']) == 3
-    assert result['usage']['inputTokens'].get('total') == usage.get('input_tokens')
-    assert result['usage']['outputTokens'].get('total') == usage.get('output_tokens')
+    for field, count in (('inputTokens', 'input_tokens'), ('outputTokens', 'output_tokens')):
+        if usage.get(count) is None:
+            # Unknown counts are omitted, never null (AI SDK `total: number | undefined`).
+            assert 'total' not in result['usage'][field]
+        else:
+            assert result['usage'][field]['total'] == usage[count]
     assert result['usage']['raw'] == usage
 
 
