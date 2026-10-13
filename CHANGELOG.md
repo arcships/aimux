@@ -433,6 +433,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read when the provider is created, as the AI SDK does; an invalid value now
   fails each call of that provider with `InvalidArgument` naming the
   variable. An invalid explicit `base_url` still fails the factory.
+- Anthropic Messages streams honor `include_raw_chunks`: each SSE chunk is
+  sent as `StreamPart::Raw` before the parts made from it, a chunk that is
+  not JSON as `Raw` with `null`, as the AI SDK does.
 
 ## [0.5.0] - 2026-09-27
 

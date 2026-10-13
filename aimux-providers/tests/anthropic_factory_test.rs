@@ -481,6 +481,101 @@ async fn messages_custom_name_reads_both_namespaces_and_the_custom_one_wins() {
     );
 }
 
+/// `includeRawChunks`: every SSE chunk is forwarded as a `Raw` part before
+/// the parts made from it, a chunk that is not JSON included (it has no raw
+/// value), as anthropic@4.0.71 `anthropic-language-model.ts:1956-1963` does;
+/// that chunk is then reported as an error and the stream goes on. Without
+/// the option no `Raw` part is sent.
+#[tokio::test]
+async fn messages_stream_emits_raw_chunks_when_asked() {
+    let fixture = Fixture::load("messages-stream-basic");
+    let mock = fixture.mock();
+    let body = {
+        let mut canned = mock.canned.lock().unwrap();
+        let body = String::from_utf8(canned[0].body.clone()).unwrap();
+        let (first, rest) = body.split_once("\n\n").unwrap();
+        let body = format!("{first}\n\ndata: {{not json\n\n{rest}");
+        canned[0].body = body.clone().into_bytes();
+        body
+    };
+    let expected: Vec<Value> = body
+        .lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .map(|data| serde_json::from_str(data).unwrap_or(Value::Null))
+        .collect();
+    let model = create_anthropic(settings(&mock))
+        .unwrap()
+        .messages(fixture.model_id());
+    let options = CallOptions {
+        include_raw_chunks: Some(true),
+        ..fixture.call_options()
+    };
+    let items: Vec<_> = model
+        .do_stream(&options)
+        .await
+        .unwrap()
+        .stream
+        .collect()
+        .await;
+
+    let raw: Vec<Value> = items
+        .iter()
+        .filter_map(|item| match item {
+            Ok(StreamPart::Raw { raw_value }) => Some(raw_value.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(raw, expected);
+    let not_json = items
+        .iter()
+        .position(|item| {
+            matches!(
+                item,
+                Ok(StreamPart::Raw {
+                    raw_value: Value::Null
+                })
+            )
+        })
+        .unwrap();
+    assert!(
+        matches!(&items[not_json + 1], Err(error) if error.is_recoverable_stream_error()),
+        "{:?}",
+        items[not_json + 1]
+    );
+    let first_delta = items
+        .iter()
+        .position(|item| matches!(item, Ok(StreamPart::TextDelta { .. })))
+        .unwrap();
+    // The chunk a delta was made from is the last raw part before it.
+    let source = items[..first_delta]
+        .iter()
+        .rev()
+        .find_map(|item| match item {
+            Ok(StreamPart::Raw { raw_value }) => Some(raw_value),
+            _ => None,
+        });
+    assert_eq!(source.unwrap()["delta"]["text"], "Hello");
+    let text: String = items
+        .iter()
+        .filter_map(|item| match item {
+            Ok(StreamPart::TextDelta { delta, .. }) => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(text, "Hello world");
+
+    let model = create_anthropic(settings(&fixture.mock()))
+        .unwrap()
+        .messages(fixture.model_id());
+    let result = model.do_stream(&fixture.call_options()).await.unwrap();
+    let parts: Vec<_> = result.stream.collect().await;
+    assert!(
+        !parts
+            .iter()
+            .any(|item| matches!(item, Ok(StreamPart::Raw { .. })))
+    );
+}
+
 #[tokio::test]
 async fn messages_stream_basic() {
     let fixture = Fixture::load("messages-stream-basic");

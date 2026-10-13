@@ -123,11 +123,7 @@ impl LanguageModel for AnthropicMessagesModel {
             call.body,
             call.warnings,
             &self.config,
-            options
-                .provider_options
-                .as_ref()
-                .is_some_and(|options| options.contains_key(&self.config.provider_options_name)),
-            ToolNameMapping::new(options.tools.as_deref()),
+            options,
             self.generate_id.clone(),
         )
         .await

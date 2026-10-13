@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use futures::StreamExt;
 
 use aimux_core::error::AiMuxError;
+use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
@@ -886,27 +887,45 @@ pub(crate) async fn anthropic_stream_core(
     body: serde_json::Value,
     warnings: Vec<Warning>,
     config: &AnthropicModelConfig,
-    used_custom_provider_key: bool,
-    tool_names: ToolNameMapping,
+    options: &CallOptions,
     generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 ) -> Result<StreamResult, AiMuxError> {
+    let used_custom_provider_key = options
+        .provider_options
+        .as_ref()
+        .is_some_and(|options| options.contains_key(&config.provider_options_name));
+    let tool_names = ToolNameMapping::new(options.tools.as_deref());
+    let include_raw_chunks = options.include_raw_chunks == Some(true);
     let endpoint = request.url.clone();
     let options_name = config.provider_options_name.clone();
     let resp = aimux_provider_utils::post_json_to_api(
         request,
         body.clone(),
-        aimux_provider_utils::create_event_source_response_handler::<StreamEvent>(),
+        aimux_provider_utils::create_event_source_response_handler::<Value>(),
         config.failed_response_handler(),
     )
     .await?;
 
     let response_headers = resp.response_headers;
-    let mut sse_stream = resp.value;
+    // Each event as the AI SDK's `ParseResult`: the raw JSON when the data
+    // parsed as JSON, and the chunk schema's result.
+    let mut sse_stream = resp.value.map(move |item| match item {
+        Ok(raw) if include_raw_chunks => {
+            let event =
+                serde_json::from_value::<StreamEvent>(raw.clone()).map_err(AiMuxError::from);
+            (Some(raw), event)
+        }
+        Ok(raw) => (
+            None,
+            serde_json::from_value::<StreamEvent>(raw).map_err(AiMuxError::from),
+        ),
+        Err(error) => (None, Err(error)),
+    });
     let first_event = match sse_stream.next().await {
-        Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+        Some((_, Err(error @ AiMuxError::ApiCall(_)))) => return Err(error),
         first_event => first_event,
     };
-    if let Some(Ok(StreamEvent::Error { error })) = first_event.as_ref() {
+    if let Some((_, Ok(StreamEvent::Error { error }))) = first_event.as_ref() {
         return Err(anthropic_stream_error(
             error,
             &endpoint,
@@ -942,7 +961,18 @@ pub(crate) async fn anthropic_stream_core(
         // one result block type, so the id is required to disambiguate aliases.
         let mut server_tool_calls: HashMap<String, String> = HashMap::new();
 
-        while let Some(event) = sse.next().await {
+        while let Some((raw, event)) = sse.next().await {
+            // Every chunk, valid or not, is forwarded first when raw chunks
+            // are requested (anthropic@4.0.71 `anthropic-language-model.ts:1956-1958`);
+            // a chunk that is not JSON has no raw value.
+            if include_raw_chunks
+                && (raw.is_some()
+                    || event.as_ref().is_err_and(AiMuxError::is_recoverable_stream_error))
+            {
+                yield Ok(StreamPart::Raw {
+                    raw_value: raw.unwrap_or(Value::Null),
+                });
+            }
             match event {
                 Ok(stream_event) => {
                     match stream_event {
