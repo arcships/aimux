@@ -85,6 +85,10 @@ pub struct OpenAICompatibleProviderSettings {
     /// Whether the chat endpoint accepts `json_schema` response formats; when
     /// not, a schema degrades to `json_object` with a warning.
     pub supports_structured_outputs: Option<bool>,
+    /// Whether chat tool results may carry multi-part content: a `content`
+    /// tool output is then sent as an array of content parts instead of a
+    /// JSON string. Default `false`.
+    pub supports_multi_part_tool_content: Option<bool>,
     /// Rewrites each chat JSON request body once, after it is serialized and
     /// before it is sent.
     pub transform_request_body: Option<TransformRequestBody>,
@@ -113,6 +117,10 @@ impl std::fmt::Debug for OpenAICompatibleProviderSettings {
             .field(
                 "supports_structured_outputs",
                 &self.supports_structured_outputs,
+            )
+            .field(
+                "supports_multi_part_tool_content",
+                &self.supports_multi_part_tool_content,
             )
             .field(
                 "transform_request_body",
@@ -160,6 +168,8 @@ pub fn create_openai_compatible(
             dialect: ChatDialect::baseline(),
         },
     })?;
+    provider.chat.supports_multi_part_tool_content =
+        settings.supports_multi_part_tool_content.unwrap_or(false);
     let dialect = Arc::make_mut(&mut provider.chat.dialect);
     dialect.metadata_extractor = settings.metadata_extractor;
     dialect.supported_urls = settings.supported_urls;
@@ -262,6 +272,7 @@ impl OpenAICompatibleProvider {
             chat: ChatSettings {
                 include_usage: assembly.profile.include_usage,
                 supports_structured_outputs: assembly.profile.supports_structured_outputs,
+                supports_multi_part_tool_content: false,
                 supported_urls: SupportedUrls::default(),
                 dialect: Arc::new(assembly.profile.dialect),
             },

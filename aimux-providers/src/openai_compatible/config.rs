@@ -135,6 +135,8 @@ pub type SupportedUrlsFn = Arc<dyn Fn() -> SupportedUrls + Send + Sync>;
 pub(crate) struct ChatSettings {
     pub include_usage: bool,
     pub supports_structured_outputs: bool,
+    /// `supportsMultiPartToolContent` of the AI SDK compat settings.
+    pub supports_multi_part_tool_content: bool,
     pub supported_urls: SupportedUrls,
     pub dialect: Arc<ChatDialect>,
 }
