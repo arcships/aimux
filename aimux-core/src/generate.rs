@@ -143,7 +143,6 @@ impl GenerateTextOptions {
             timeout: self.timeout,
             session_id: self.session_id,
             abort_signal: self.abort_signal,
-            call_id: None,
             recording_context: None,
             include_raw_chunks: self.include_raw_chunks,
         }
@@ -567,9 +566,8 @@ pub(crate) async fn generate_text_from_language_model_prompt(
     //     并绑定 recorder 快照;传输封闭由层 A 收尾声明(P1 无层 B,barrier
     //     前提;P2 移交层 B)。
     let context = crate::recording::recorder().map(|recorder| {
-        let call_id = crate::recording::new_call_id();
-        call_options.call_id = Some(call_id.clone());
-        let ctx = crate::recording::RecordingContext::new(call_id.clone(), recorder);
+        let ctx =
+            crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);
         call_options.recording_context = Some(ctx.clone());
         ctx.recorder.record_input(
             &ctx.call_id,
@@ -601,7 +599,7 @@ pub(crate) async fn generate_text_from_language_model_prompt(
         ),
         crate::session::session_store(),
     ) {
-        let call = store.append(&session_id, call_options.call_id.as_deref(), source);
+        let call = store.append(&session_id, call_id.as_deref(), source);
         // RFC-0024 P3: 录制带上会话归组信息(仅录制开启时有效;
         // recorder/call_id 同时存在才可能被写入)。
         if let (Some(recorder), Some(call_id)) = (&recorder, &call_id) {
@@ -954,9 +952,8 @@ pub async fn stream_text(
     //     并绑定 recorder 快照;传输封闭由层 A 收尾声明(P1 无层 B,barrier
     //     前提;P2 移交层 B)。
     let context = crate::recording::recorder().map(|recorder| {
-        let call_id = crate::recording::new_call_id();
-        call_options.call_id = Some(call_id.clone());
-        let ctx = crate::recording::RecordingContext::new(call_id.clone(), recorder);
+        let ctx =
+            crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);
         call_options.recording_context = Some(ctx.clone());
         ctx.recorder.record_input(
             &ctx.call_id,
@@ -988,7 +985,7 @@ pub async fn stream_text(
         ),
         crate::session::session_store(),
     ) {
-        let call = store.append(&session_id, call_options.call_id.as_deref(), source);
+        let call = store.append(&session_id, call_id.as_deref(), source);
         // RFC-0024 P3: 录制带上会话归组信息(仅录制开启时有效;
         // recorder/call_id 同时存在才可能被写入)。
         if let (Some(recorder), Some(call_id)) = (&recorder, &call_id) {

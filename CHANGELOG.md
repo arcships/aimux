@@ -172,6 +172,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on `LanguageModelV4ToolChoice`. Recordings store the object form, so an
   `ExactMatcher` no longer matches recordings made before this change.
 
+- `CallOptions.call_id` and `CallOptions::for_step` are removed
+  (`aimux-core`); the V4 call options have no call id. The recording
+  correlation id is `recording_context.call_id`, and `HttpRequest::new` takes
+  it from there. Provider code that built `HttpRequest { call_id:
+  options.call_id.clone(), .. }` uses `HttpRequest::new(url, headers,
+  options)`. The JSON is unchanged (both were internal and never serialized).
+
 - `ProviderTool.id` is a `types::NamespacedKind`, the V4
   `${string}.${string}` identifier: an id without a `.` (for example
   `"web_search"` instead of `"openai.web_search"`) no longer deserializes,

@@ -202,15 +202,7 @@ impl LanguageModel for BedrockModel {
         let url = self.endpoint(false);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url,
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
+            HttpRequest::new(url, headers, options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_json_response_handler(),
             super::bedrock_failed_response_handler(),
@@ -273,15 +265,7 @@ impl LanguageModel for BedrockModel {
         let url = self.endpoint(true);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url,
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
+            HttpRequest::new(url, headers, options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             bedrock_event_stream_response_handler(),
             super::bedrock_failed_response_handler(),

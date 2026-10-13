@@ -13,7 +13,9 @@ use async_trait::async_trait;
 use futures::{StreamExt, future::join_all};
 use serde::Deserialize;
 
-use crate::composite::{ChildModel, add_usage, build_aggregator_prompt, extract_text};
+use crate::composite::{
+    ChildModel, add_usage, build_aggregator_prompt, extract_text, step_options,
+};
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
 use crate::options::CallOptions;
@@ -122,8 +124,10 @@ impl MoaModel {
         }
         let ref_opts = self.reference_options(options);
         let results = join_all(self.references.iter().enumerate().map(|(i, m)| {
-            let child_opts =
-                ref_opts.for_step(format!("moa.ref[{i}]:{}/{}", m.provider(), m.model_id()));
+            let child_opts = step_options(
+                &ref_opts,
+                format!("moa.ref[{i}]:{}/{}", m.provider(), m.model_id()),
+            );
             async move {
                 let retries = retry::prepare_retries(
                     child_opts.max_retries,
@@ -211,11 +215,14 @@ impl LanguageModel for MoaModel {
             self.aggregator.retry_config(),
             agg_opts.abort_signal.clone(),
         );
-        let agg_opts = agg_opts.for_step(format!(
-            "moa.aggregator:{}/{}",
-            self.aggregator.provider(),
-            self.aggregator.model_id()
-        ));
+        let agg_opts = step_options(
+            &agg_opts,
+            format!(
+                "moa.aggregator:{}/{}",
+                self.aggregator.provider(),
+                self.aggregator.model_id()
+            ),
+        );
         let mut agg = retries
             .retry(|| {
                 if let Some(context) = &agg_opts.recording_context {
@@ -253,11 +260,14 @@ impl LanguageModel for MoaModel {
             self.aggregator.retry_config(),
             agg_opts.abort_signal.clone(),
         );
-        let agg_opts = agg_opts.for_step(format!(
-            "moa.aggregator:{}/{}",
-            self.aggregator.provider(),
-            self.aggregator.model_id()
-        ));
+        let agg_opts = step_options(
+            &agg_opts,
+            format!(
+                "moa.aggregator:{}/{}",
+                self.aggregator.provider(),
+                self.aggregator.model_id()
+            ),
+        );
         let agg = retries
             .retry(|| {
                 if let Some(context) = &agg_opts.recording_context {

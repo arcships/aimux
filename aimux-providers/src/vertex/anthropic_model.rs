@@ -184,15 +184,7 @@ impl LanguageModel for VertexAnthropicModel {
         let url = self.generate_endpoint();
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: url.clone(),
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
+            HttpRequest::new(url.clone(), headers, options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler(),
             crate::google::google_failed_response_handler(),
@@ -247,15 +239,7 @@ impl LanguageModel for VertexAnthropicModel {
         let url = self.stream_endpoint();
         let headers = self.build_headers(options.headers.as_ref());
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: url.clone(),
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
+            HttpRequest::new(url.clone(), headers, options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<StreamEvent>(),
             crate::google::google_failed_response_handler(),

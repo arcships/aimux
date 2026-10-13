@@ -154,11 +154,6 @@ pub struct CallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
-    /// RFC-0023 recording correlation id (internal; never serialized).
-    #[serde(skip)]
-    #[ts(skip)]
-    pub call_id: Option<String>,
-
     /// RFC-0023 recording context (R7 快照绑定;internal;never serialized)。
     /// 层 A 入口构造一次,provider 复制到 `HttpRequest`。None = 不录制。
     #[serde(skip)]
@@ -177,21 +172,6 @@ pub struct CallOptions {
 }
 
 impl CallOptions {
-    /// Clone these options for one composite child step (Router child, MoA
-    /// reference or aggregator): the recording context, when present, is
-    /// replaced by a child context labeled `step`, so the child's exchanges
-    /// and retry attempts are recorded as their own step instead of blending
-    /// into the parent operation's.
-    #[must_use]
-    pub fn for_step(&self, step: impl Into<String>) -> Self {
-        let mut child = self.clone();
-        child.recording_context = self
-            .recording_context
-            .as_ref()
-            .map(|context| context.child(step.into()));
-        child
-    }
-
     /// Create a `CallOptions` with the given prompt and all other fields set
     /// to `None`.
     ///
@@ -222,7 +202,6 @@ impl CallOptions {
             timeout: None,
             session_id: None,
             abort_signal: None,
-            call_id: None,
             recording_context: None,
             include_raw_chunks: None,
         }
