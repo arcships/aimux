@@ -396,7 +396,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
     }
 
     /// The model has a streaming method, as upstream; the session itself is
-    /// [`OpenAITranscriptionModel::stream_transcription`].
+    /// `OpenAITranscriptionModel::stream_transcription`.
     fn do_stream(
         &self,
         options: aimux_core::transcription_model::TranscriptionStreamOptions,

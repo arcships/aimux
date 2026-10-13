@@ -820,7 +820,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
     }
 
     /// The model has a streaming method; the session itself is
-    /// [`ElevenLabsTranscriptionModel::stream_transcription`].
+    /// `ElevenLabsTranscriptionModel::stream_transcription`.
     fn do_stream(
         &self,
         options: aimux_core::transcription_model::TranscriptionStreamOptions,
