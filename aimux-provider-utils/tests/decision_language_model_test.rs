@@ -1,8 +1,12 @@
-//! Port of `provider-utils/src/evaluation-language-model.test.ts`.
+//! Port of `provider-utils/src/evaluation-language-model.test.ts`, which
+//! `@ai-sdk/provider-utils@5.0.55` renamed with its subject to
+//! `src/decision-language-model.ts`. The renamed texts (provider suffix,
+//! response-format name, error messages) are pinned to that file.
 //!
 //! Not ported: the WORKFLOW_SERIALIZE / WORKFLOW_DESERIALIZE hook case (a
-//! TypeScript workflow runtime feature) and the `specificationVersion`
-//! constructor check (there is one language-model trait version here).
+//! TypeScript workflow runtime feature), the `specificationVersion`
+//! constructor check (there is one language-model trait version here) and
+//! the deprecated `doEvaluate` alias (aimux has `do_decide` only).
 
 use std::sync::{Arc, Mutex};
 
@@ -11,11 +15,11 @@ use indexmap::IndexMap;
 use serde_json::{Value, json};
 
 use aimux_core::AbortSignal;
-use aimux_core::error::{AiMuxError, ApiCallError};
-use aimux_core::evaluation_model::{
-    EvaluationAnswer, EvaluationCallOptions, EvaluationModel, EvaluationQuestion,
-    EvaluationQuestionType, EvaluationResult,
+use aimux_core::decision_model::{
+    DecisionAnswer, DecisionCallOptions, DecisionModel, DecisionQuestion, DecisionQuestionType,
+    DecisionResult,
 };
+use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, UserPart};
 use aimux_core::options::{CallOptions, ResponseFormat};
@@ -24,7 +28,7 @@ use aimux_core::shared::ResponseInfo;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, Usage, Warning,
 };
-use aimux_provider_utils::EvaluationLanguageModel;
+use aimux_provider_utils::DecisionLanguageModel;
 
 struct MockLanguageModel {
     result: Mutex<Result<GenerateResult, AiMuxError>>,
@@ -49,11 +53,11 @@ impl LanguageModel for MockLanguageModel {
         self.result.lock().unwrap().clone()
     }
     async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        unreachable!("evaluation never streams")
+        unreachable!("decisions never stream")
     }
 }
 
-fn questions(value: Value) -> IndexMap<String, EvaluationQuestion> {
+fn questions(value: Value) -> IndexMap<String, DecisionQuestion> {
     serde_json::from_value(value).unwrap()
 }
 
@@ -76,14 +80,14 @@ fn base_questions() -> Value {
     })
 }
 
-fn options(questions_value: Value) -> EvaluationCallOptions {
-    EvaluationCallOptions {
-        state: serde_json::from_value(json!({ "text": "test", "events": [1, null] })).unwrap(),
-        questions: questions(questions_value),
-        abort_signal: None,
-        headers: None,
-        provider_options: None,
-    }
+fn options(questions_value: Value) -> DecisionCallOptions {
+    DecisionCallOptions::new(
+        serde_json::from_value::<aimux_core::decision_model::DecisionInput>(
+            json!({ "text": "test", "events": [1, null] }),
+        )
+        .unwrap(),
+        questions(questions_value),
+    )
 }
 
 fn generate_result(text: &str) -> GenerateResult {
@@ -128,18 +132,17 @@ fn generate_result(text: &str) -> GenerateResult {
 fn setup_with(
     result: Result<GenerateResult, AiMuxError>,
     abort_during_call: Option<AbortSignal>,
-) -> (EvaluationLanguageModel, Arc<MockLanguageModel>) {
+) -> (DecisionLanguageModel, Arc<MockLanguageModel>) {
     let language_model = Arc::new(MockLanguageModel {
         result: Mutex::new(result),
         calls: Mutex::default(),
         abort_during_call,
     });
-    let model =
-        EvaluationLanguageModel::new(language_model.clone(), Some("test.evaluation".into()));
+    let model = DecisionLanguageModel::new(language_model.clone(), Some("test.decision".into()));
     (model, language_model)
 }
 
-fn setup(text: &str) -> (EvaluationLanguageModel, Arc<MockLanguageModel>) {
+fn setup(text: &str) -> (DecisionLanguageModel, Arc<MockLanguageModel>) {
     setup_with(Ok(generate_result(text)), None)
 }
 
@@ -162,7 +165,7 @@ fn schema(call: &CallOptions) -> Value {
     }
 }
 
-fn mixed(extra: Value) -> EvaluationCallOptions {
+fn mixed(extra: Value) -> DecisionCallOptions {
     let mut all = base_questions();
     all.as_object_mut()
         .unwrap()
@@ -178,17 +181,17 @@ fn flag_boolean() -> Value {
 #[tokio::test]
 async fn maps_exact_labels_and_fractional_scores() {
     let (model, mock) = setup(DEFAULT_TEXT);
-    let result = model.do_evaluate(&options(base_questions())).await.unwrap();
+    let result = model.do_decide(&options(base_questions())).await.unwrap();
     assert_eq!(
         result.answers["category"],
-        EvaluationAnswer::Choice {
+        DecisionAnswer::Choice {
             choice: "Needs review".into(),
             probabilities: None
         }
     );
     assert_eq!(
         result.answers["severity"],
-        EvaluationAnswer::Score {
+        DecisionAnswer::Score {
             score: 1.25,
             probabilities: None
         }
@@ -201,13 +204,14 @@ async fn maps_exact_labels_and_fractional_scores() {
 async fn uses_flat_schema_with_internal_option_codes() {
     let (model, mock) = setup(DEFAULT_TEXT);
     let opts = options(base_questions());
-    model.do_evaluate(&opts).await.unwrap();
+    model.do_decide(&opts).await.unwrap();
     let calls = mock.calls.lock().unwrap();
     let call = &calls[0];
     let Some(ResponseFormat::Json { name, .. }) = &call.response_format else {
         panic!("expected json");
     };
-    assert_eq!(name.as_deref(), Some("evaluation"));
+    // decision-language-model.ts:158
+    assert_eq!(name.as_deref(), Some("decision"));
     let schema = schema(call);
     assert_eq!(schema["type"], "object");
     assert_eq!(
@@ -259,7 +263,7 @@ async fn uses_flat_schema_with_internal_option_codes() {
 #[tokio::test]
 async fn preserves_usage_response_warnings_and_metadata() {
     let (model, _) = setup(DEFAULT_TEXT);
-    let output = model.do_evaluate(&options(base_questions())).await.unwrap();
+    let output = model.do_decide(&options(base_questions())).await.unwrap();
     let expected = generate_result(DEFAULT_TEXT);
     let usage = output.usage.unwrap();
     assert_eq!(
@@ -283,7 +287,7 @@ async fn forwards_cancellation_headers_and_provider_options() {
     opts.abort_signal = Some(signal.clone());
     opts.headers = Some([("test".to_string(), "header".to_string())].into());
     opts.provider_options = serde_json::from_value(json!({ "test": { "reasoning": "low" } })).ok();
-    model.do_evaluate(&opts).await.unwrap();
+    model.do_decide(&opts).await.unwrap();
     let calls = mock.calls.lock().unwrap();
     assert!(calls[0].abort_signal.is_some());
     assert_eq!(calls[0].headers, opts.headers);
@@ -294,9 +298,9 @@ async fn forwards_cancellation_headers_and_provider_options() {
     );
 }
 
-/// TS: preserves Boolean P(true) %s without thresholding in a mixed evaluation
+/// TS: preserves Boolean P(true) %s without thresholding in a mixed decision
 #[tokio::test]
-async fn preserves_boolean_probability_in_mixed_evaluation() {
+async fn preserves_boolean_probability_in_mixed_decision() {
     for probability in [0.0, 0.02, 0.5, 0.98, 1.0] {
         let text = json!({ "q2": probability, "q1": 1.25, "q0": "c1" }).to_string();
         let (model, mock) = setup(&text);
@@ -308,21 +312,21 @@ async fn preserves_boolean_probability_in_mixed_evaluation() {
                 "false": ["No refund requested"]
             }
         });
-        let result: EvaluationResult = model
-            .do_evaluate(&mixed(json!({ "flag": flag })))
+        let result: DecisionResult = model
+            .do_decide(&mixed(json!({ "flag": flag })))
             .await
             .unwrap();
         assert_eq!(
             model.supported_question_types(),
             [
-                EvaluationQuestionType::Choice,
-                EvaluationQuestionType::Score,
-                EvaluationQuestionType::Boolean
+                DecisionQuestionType::Choice,
+                DecisionQuestionType::Score,
+                DecisionQuestionType::Boolean
             ]
         );
         assert_eq!(
             result.answers["flag"],
-            EvaluationAnswer::Boolean { probability }
+            DecisionAnswer::Boolean { probability }
         );
         assert_eq!(
             result.answers.keys().collect::<Vec<_>>(),
@@ -353,15 +357,15 @@ async fn preserves_boolean_probability_in_mixed_evaluation() {
 #[tokio::test]
 async fn supports_boolean_without_criteria() {
     let (model, _) = setup(r#"{"q0":0.25}"#);
-    let opts = EvaluationCallOptions {
+    let opts = DecisionCallOptions {
         state: serde_json::from_value(json!("test")).unwrap(),
         questions: questions(flag_boolean()),
         ..options(json!({}))
     };
-    let result = model.do_evaluate(&opts).await.unwrap();
+    let result = model.do_decide(&opts).await.unwrap();
     assert_eq!(
         result.answers["flag"],
-        EvaluationAnswer::Boolean { probability: 0.25 }
+        DecisionAnswer::Boolean { probability: 0.25 }
     );
 }
 
@@ -379,12 +383,12 @@ async fn rejects_invalid_boolean_probability() {
         "-0.01", "1.01", "1e999", "-1e999", "null", "true", "false", "\"0.5\"", "{}", "[]",
     ] {
         let (model, _) = setup(&format!(r#"{{"q0":"c1","q1":1.25,"q2":{value}}}"#));
-        let error = model.do_evaluate(&mixed(flag_boolean())).await.unwrap_err();
+        let error = model.do_decide(&mixed(flag_boolean())).await.unwrap_err();
         assert_invalid_response(&error);
     }
 }
 
-/// TS: rejects missing or extra answers for mixed Boolean evaluations: %s
+/// TS: rejects missing or extra answers for mixed Boolean decisions: %s
 #[tokio::test]
 async fn rejects_missing_or_extra_answers_for_mixed_boolean() {
     for text in [
@@ -392,7 +396,7 @@ async fn rejects_missing_or_extra_answers_for_mixed_boolean() {
         r#"{"q0":"c1","q1":1.25,"q2":0.5,"extra":0.5}"#,
     ] {
         let (model, _) = setup(text);
-        let error = model.do_evaluate(&mixed(flag_boolean())).await.unwrap_err();
+        let error = model.do_decide(&mixed(flag_boolean())).await.unwrap_err();
         assert_invalid_response(&error);
     }
 }
@@ -414,16 +418,16 @@ async fn rejects_unfinished_generations_even_with_valid_json() {
         };
         let (model, _) = setup_with(Ok(result), None);
         let error = model
-            .do_evaluate(&options(base_questions()))
+            .do_decide(&options(base_questions()))
             .await
             .unwrap_err();
         assert_invalid_response(&error);
     }
 }
 
-/// TS: rejects malformed evaluation output %s
+/// TS: rejects malformed decision output %s
 #[tokio::test]
-async fn rejects_malformed_evaluation_output() {
+async fn rejects_malformed_decision_output() {
     for text in [
         "",
         "not JSON",
@@ -447,7 +451,7 @@ async fn rejects_malformed_evaluation_output() {
     ] {
         let (model, _) = setup(text);
         let error = model
-            .do_evaluate(&options(base_questions()))
+            .do_decide(&options(base_questions()))
             .await
             .unwrap_err();
         assert_invalid_response(&error);
@@ -471,10 +475,10 @@ async fn joins_text_parts_and_ignores_reasoning() {
         text(r#""q1":1}"#),
     ];
     let (model, _) = setup_with(Ok(result), None);
-    let output = model.do_evaluate(&options(base_questions())).await.unwrap();
+    let output = model.do_decide(&options(base_questions())).await.unwrap();
     assert_eq!(
         output.answers["severity"],
-        EvaluationAnswer::Score {
+        DecisionAnswer::Score {
             score: 1.0,
             probabilities: None
         }
@@ -487,7 +491,7 @@ async fn preserves_unusual_ids() {
     let (model, _) = setup(DEFAULT_TEXT);
     let base = base_questions();
     let weird = json!({ "__proto__": base["category"], "a.b [✓]": base["severity"] });
-    let output = model.do_evaluate(&options(weird)).await.unwrap();
+    let output = model.do_decide(&options(weird)).await.unwrap();
     assert_eq!(
         output.answers.keys().collect::<Vec<_>>(),
         ["__proto__", "a.b [✓]"]
@@ -504,7 +508,7 @@ async fn does_not_retry_or_wrap_language_model_errors() {
     }));
     let (model, mock) = setup_with(Err(error), None);
     let got = model
-        .do_evaluate(&options(base_questions()))
+        .do_decide(&options(base_questions()))
         .await
         .unwrap_err();
     assert!(matches!(&got, AiMuxError::ApiCall(d) if d.message == "retry later"));
@@ -519,7 +523,7 @@ async fn rejects_pre_aborted_requests() {
     signal.abort();
     let mut opts = options(base_questions());
     opts.abort_signal = Some(signal);
-    let error = model.do_evaluate(&opts).await.unwrap_err();
+    let error = model.do_decide(&opts).await.unwrap_err();
     assert!(matches!(error, AiMuxError::Aborted(_)));
     assert!(mock.calls.lock().unwrap().is_empty());
 }
@@ -531,7 +535,7 @@ async fn checks_cancellation_after_the_model_returns() {
     let (model, _) = setup_with(Ok(generate_result(DEFAULT_TEXT)), Some(signal.clone()));
     let mut opts = options(base_questions());
     opts.abort_signal = Some(signal);
-    let error = model.do_evaluate(&opts).await.unwrap_err();
+    let error = model.do_decide(&opts).await.unwrap_err();
     assert!(matches!(error, AiMuxError::Aborted(_)));
 }
 
@@ -545,16 +549,113 @@ async fn rejects_invalid_rubric_shapes_before_model_io() {
         json!({ "severity": { "type": "score", "instructions": base["severity"]["instructions"], "criteria": ["only"] } }),
     ] {
         let (model, mock) = setup(DEFAULT_TEXT);
-        let opts = EvaluationCallOptions {
+        let opts = DecisionCallOptions {
             state: serde_json::from_value(json!("text")).unwrap(),
             questions: questions(invalid),
             ..options(json!({}))
         };
-        let error = model.do_evaluate(&opts).await.unwrap_err();
+        let error = model.do_decide(&opts).await.unwrap_err();
         assert!(
             matches!(error, AiMuxError::InvalidArgument(_)),
             "got {error:?}"
         );
         assert!(mock.calls.lock().unwrap().is_empty());
     }
+}
+
+/// `@ai-sdk/provider-utils@5.0.55 src/decision-language-model.ts:22-37`:
+/// the provider defaults to the language model's with a `.decision` suffix.
+#[test]
+fn provider_defaults_to_the_language_provider_with_a_decision_suffix() {
+    let language_model = Arc::new(MockLanguageModel {
+        result: Mutex::new(Ok(generate_result(DEFAULT_TEXT))),
+        calls: Mutex::default(),
+        abort_during_call: None,
+    });
+    let model = DecisionLanguageModel::new(language_model.clone(), None);
+    assert_eq!(model.provider(), "test.language.decision");
+    assert_eq!(model.model_id(), "test-model");
+    assert_eq!(model.specification_version(), "v4");
+    let named = DecisionLanguageModel::new(language_model, Some("custom".into()));
+    assert_eq!(named.provider(), "custom");
+}
+
+fn error_message(error: AiMuxError) -> String {
+    match error {
+        AiMuxError::InvalidArgument(message) | AiMuxError::InvalidResponseData(message) => message,
+        other => panic!("unexpected error {other:?}"),
+    }
+}
+
+/// `decision-language-model.ts:79-96,170-200,204-250`: the error texts.
+#[tokio::test]
+async fn errors_use_the_upstream_decision_messages() {
+    let mut unfinished = generate_result(DEFAULT_TEXT);
+    unfinished.finish_reason.unified = FinishReasonUnified::Length;
+    let (model, _) = setup_with(Ok(unfinished), None);
+    assert_eq!(
+        error_message(
+            model
+                .do_decide(&options(base_questions()))
+                .await
+                .unwrap_err()
+        ),
+        "Decision did not complete: length."
+    );
+    for (text, expected) in [
+        ("not JSON", "Decision did not return valid JSON."),
+        ("{}", "Decision must return exactly one value per question."),
+        (
+            r#"{"q0":"c9","q1":1}"#,
+            "Question \"category\" selected an unknown option.",
+        ),
+        (
+            r#"{"q0":"c1","q1":2.5}"#,
+            "Question \"severity\" returned a score outside its rubric.",
+        ),
+    ] {
+        let (model, _) = setup(text);
+        assert_eq!(
+            error_message(
+                model
+                    .do_decide(&options(base_questions()))
+                    .await
+                    .unwrap_err()
+            ),
+            expected
+        );
+    }
+    let (model, _) = setup(r#"{"q0":"c1","q1":1,"q2":2}"#);
+    assert_eq!(
+        error_message(model.do_decide(&mixed(flag_boolean())).await.unwrap_err()),
+        "Question \"flag\" must return P(true) as a finite probability in [0, 1]."
+    );
+    let (model, _) = setup(DEFAULT_TEXT);
+    assert_eq!(
+        error_message(model.do_decide(&options(json!({}))).await.unwrap_err()),
+        "Invalid argument for parameter questions: Decision requires at least one question."
+    );
+}
+
+/// The language-model exchange belongs to the decision's recording: the
+/// call carries the recording scope `decide` set (aimux; upstream has no
+/// recorder).
+#[tokio::test]
+async fn the_language_model_call_joins_the_decision_recording() {
+    let (model, mock) = setup(DEFAULT_TEXT);
+    let mut opts = options(base_questions());
+    opts.recording_context = Some(aimux_core::recording::RecordingContext::new(
+        "call-decision",
+        Arc::new(aimux_core::recording::RingRecorder::new()),
+    ));
+    model.do_decide(&opts).await.unwrap();
+    let calls = mock.calls.lock().unwrap();
+    assert_eq!(calls[0].call_id.as_deref(), Some("call-decision"));
+    assert_eq!(
+        calls[0]
+            .recording_context
+            .as_ref()
+            .map(|context| context.call_id.as_str()),
+        Some("call-decision")
+    );
 }

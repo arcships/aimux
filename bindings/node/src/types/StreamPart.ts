@@ -30,7 +30,7 @@ dynamic?: boolean | null,
 /**
  * Optional title for the tool call.
  */
-title?: string | null, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolCall": RawToolCall } | { "ToolResult": ToolResult } | { "File": GeneratedFile } | { "ReasoningFile": GeneratedFile } | { "Custom": { kind: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolApprovalRequest": RawToolApprovalRequest } | { "ReasoningStart": { id: string,
+title?: string | null, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolCall": RawToolCall } | { "ToolResult": ToolResult } | { "File": GeneratedFile } | { "ReasoningFile": GeneratedFile } | { "Custom": { kind: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolApprovalRequest": RawToolApprovalRequest } | { "ReasoningStart": { id: string, 
 /**
  * Provider-specific metadata (e.g. xAI `itemId`).
  */

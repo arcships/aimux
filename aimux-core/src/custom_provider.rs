@@ -16,9 +16,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::decision_model::DecisionModel;
 use crate::embedding_model::EmbeddingModel;
 use crate::error::AiMuxError;
-use crate::evaluation_model::EvaluationModel;
 use crate::files_model::Files;
 use crate::image_model::ImageModel;
 use crate::language_model::LanguageModel;
@@ -41,7 +41,7 @@ pub struct CustomProviderOptions {
     pub reranking_models: HashMap<String, Arc<dyn RerankingModel>>,
     pub video_models: HashMap<String, Arc<dyn VideoModel>>,
     pub search_models: HashMap<String, Arc<dyn SearchModel>>,
-    pub evaluation_models: HashMap<String, Arc<dyn EvaluationModel>>,
+    pub decision_models: HashMap<String, Arc<dyn DecisionModel>>,
     /// A files interface for uploading files.
     pub files: Option<Arc<dyn Files>>,
     /// A skills interface for uploading skills.
@@ -144,10 +144,12 @@ impl Provider for CustomProvider {
         }))
     }
 
-    fn evaluation_model(&self, id: &str) -> Option<Result<Arc<dyn EvaluationModel>, AiMuxError>> {
+    /// `ai@7.0.128 src/registry/custom-provider.ts:241-258`: the alias, else
+    /// the fallback provider's decision model, else `NoSuchModel`.
+    fn decision_model(&self, id: &str) -> Option<Result<Arc<dyn DecisionModel>, AiMuxError>> {
         let o = &self.options;
-        Some(resolve(&o.evaluation_models, id, "evaluationModel", || {
-            o.fallback_provider.as_ref()?.evaluation_model(id)
+        Some(resolve(&o.decision_models, id, "decisionModel", || {
+            o.fallback_provider.as_ref()?.decision_model(id)
         }))
     }
 

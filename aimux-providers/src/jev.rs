@@ -5,16 +5,24 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde_json::Value;
 
+use std::sync::Arc;
+
 use aimux_core::decision_model::*;
 use aimux_core::{AiMuxError, Provider};
 use aimux_provider_utils::{HttpRequest, load_api_key};
 
+use crate::decision_support::DecisionProbabilitySource;
 use crate::systemone::{ResponseProfile, WireResponse};
 
+/// Jev rounds probabilities and scores to two decimals.
 const JEV_ROUNDING: DecisionRounding = DecisionRounding {
     probability_decimals: Some(2),
     score_decimals: Some(2),
 };
+
+/// TypeSafe's criteria limits, checked before any request.
+const MAX_CHOICES: usize = 255;
+const MAX_SCORE_LEVELS: usize = 10;
 
 #[derive(Clone)]
 pub struct JevConfig {
@@ -66,16 +74,16 @@ impl Provider for JevProvider {
     crate::__unsupported_required_model!(embedding_model, EmbeddingModel, "embeddingModel");
     crate::__unsupported_required_model!(image_model, ImageModel, "imageModel");
 
-    fn decision_model(&self, model_id: &str) -> Result<Box<dyn DecisionModel>, AiMuxError> {
+    fn decision_model(&self, model_id: &str) -> Option<Result<Arc<dyn DecisionModel>, AiMuxError>> {
         if model_id.trim().is_empty() {
-            return Err(AiMuxError::InvalidArgument(
+            return Some(Err(AiMuxError::InvalidArgument(
                 "decision model ID cannot be empty".into(),
-            ));
+            )));
         }
-        Ok(Box::new(JevDecisionModel {
+        Some(Ok(Arc::new(JevDecisionModel {
             config: self.config.clone(),
             model_id: model_id.into(),
-        }))
+        })))
     }
 }
 
@@ -92,22 +100,8 @@ impl DecisionModel for JevDecisionModel {
     fn model_id(&self) -> &str {
         &self.model_id
     }
-    fn capabilities(&self) -> DecisionCapabilities {
-        DecisionCapabilities {
-            supports_images: false,
-            max_images: None,
-            supports_typed_choices: false,
-            rounding: JEV_ROUNDING,
-            probability_source: self.config.probability_source,
-            supports_boolean: true,
-            supports_choice: true,
-            supports_score: true,
-            returns_distributions: true,
-            max_questions: None,
-            min_choices: Some(1),
-            max_choices: Some(255),
-            max_score_levels: Some(10),
-        }
+    fn supported_question_types(&self) -> &[DecisionQuestionType] {
+        DecisionQuestionType::ALL
     }
 
     async fn do_decide(&self, options: &DecisionCallOptions) -> Result<DecisionResult, AiMuxError> {
@@ -120,20 +114,19 @@ impl DecisionModel for JevDecisionModel {
                 "Jev decision provider options are not defined".into(),
             ));
         }
-        for question in &options.questions {
+        for (id, question) in &options.questions {
             let over_limit = match question {
-                DecisionQuestion::Choice { options, .. } => options.len() > 255,
-                DecisionQuestion::Score { levels, .. } => levels.len() > 10,
+                DecisionQuestion::Choice { criteria, .. } => criteria.len() > MAX_CHOICES,
+                DecisionQuestion::Score { criteria, .. } => criteria.len() > MAX_SCORE_LEVELS,
                 DecisionQuestion::Boolean { .. } => false,
             };
             if over_limit {
                 return Err(AiMuxError::InvalidArgument(format!(
-                    "question {:?} exceeds TypeSafe criteria limits",
-                    question.id()
+                    "question {id:?} exceeds TypeSafe criteria limits"
                 )));
             }
         }
-        let body = crate::systemone::request_body(&self.model_id, options)?;
+        let body = crate::systemone::request_body(&self.model_id, options);
         let mut headers = self.config.headers.clone();
         if !self.config.api_key.is_empty() {
             headers.insert(
@@ -158,35 +151,16 @@ impl DecisionModel for JevDecisionModel {
         let raw = response.raw_value.unwrap_or(Value::Null);
         let response_headers = response.response_headers;
         let result = crate::systemone::convert_response(
+            options,
             response.value,
             raw.clone(),
             response_headers.clone(),
             ResponseProfile {
                 provider: self.provider(),
-                rounding: JEV_ROUNDING,
+                rounding: Some(JEV_ROUNDING),
                 probability_source: self.config.probability_source,
             },
-        )
-        .and_then(|result| {
-            result.validate(options)?;
-            for (id, answer) in &result.answers {
-                if let DecisionAnswer::Choice {
-                    selected,
-                    probabilities: Some(probabilities),
-                    ..
-                } = answer
-                {
-                    // Jev's selected choice is an argmax; ties are valid.
-                    let selected_probability = probabilities[selected];
-                    if probabilities.values().any(|p| *p > selected_probability) {
-                        return Err(AiMuxError::InvalidResponseData(format!(
-                            "Jev choice {id:?} is not a highest-probability option"
-                        )));
-                    }
-                }
-            }
-            Ok(result)
-        });
+        );
         result.map_err(|error| {
             aimux_provider_utils::invalid_response_api_call(
                 error.to_string(),

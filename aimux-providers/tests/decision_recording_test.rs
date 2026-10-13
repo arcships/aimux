@@ -35,17 +35,18 @@ fn example() -> Recording {
     )
     .unwrap()
 }
-fn options() -> DecisionCallOptions {
+fn options() -> DecideOptions {
     serde_json::from_value(example().input.options).unwrap()
 }
 fn response() -> Value {
     example().outcome.decision_result.unwrap()["response"]["body"].clone()
 }
-fn model(server: &MockServer) -> Box<dyn DecisionModel> {
+fn model(server: &MockServer) -> Arc<dyn DecisionModel> {
     let config =
         JevConfig::new("live-key-secret").with_endpoint(format!("{}/v1/systemone", server.uri()));
     JevProvider::new(config)
         .decision_model("jev-latest")
+        .unwrap()
         .unwrap()
 }
 async fn mount(server: &MockServer, response: Value) {
@@ -111,7 +112,7 @@ async fn ring_records_one_complete_call_and_replays_exact_inputs_with_redaction(
         serde_json::to_value(result.answers).unwrap()
     );
     let matching_request = request.clone();
-    request.state = json!("a different input");
+    request.state = "a different input".into();
     assert!(decide(&mock, request).await.is_err());
     let mut incomplete = records;
     incomplete[0].complete = false;
@@ -270,9 +271,20 @@ async fn recorded_native_calls_replay_offline_and_rebuild_uses_registered_endpoi
             Default::default(),
         );
         let model = aimux_providers::rebuild_decision_provider(&rec.provider, &registry).unwrap();
-        replay_decision_with_model(&rec, model.as_ref())
+        let live = replay_decision_with_model(&rec, model.as_ref())
             .await
             .unwrap();
+        // The recorded wire, decoded again, gives the recorded result. The
+        // timestamp is the end of the call, and the replay server does not
+        // repeat the recorded response headers.
+        let mut live = serde_json::to_value(live).unwrap();
+        let mut recorded = rec.outcome.decision_result.clone().unwrap();
+        for result in [&mut live, &mut recorded] {
+            let response = result["response"].as_object_mut().unwrap();
+            response.remove("timestamp");
+            response.remove("headers");
+        }
+        assert_eq!(live, recorded);
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests[0].headers["x-routing"], "billing");
         assert_eq!(requests[0].headers["authorization"], "Bearer test-key");

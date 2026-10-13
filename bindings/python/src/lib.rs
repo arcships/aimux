@@ -773,15 +773,15 @@ struct ProviderHandle {
 
 #[pymethods]
 impl ProviderHandle {
-    /// Build a native decision model with this provider's existing config.
+    /// This provider's decision model, with its existing config; a provider
+    /// without decision models raises `NoSuchModelError`.
     fn decision_model(&self, model_id: &str) -> PyResult<DecisionModel> {
         let model = self
             .inner
             .decision_model(model_id)
+            .unwrap_or_else(|| Err(AiMuxError::no_such_model(model_id, "decisionModel")))
             .map_err(|error| to_py_err(&error))?;
-        Ok(DecisionModel {
-            inner: Arc::from(model),
-        })
+        Ok(DecisionModel { inner: model })
     }
 
     /// List models available on this provider (runtime discovery + anya2a spec).

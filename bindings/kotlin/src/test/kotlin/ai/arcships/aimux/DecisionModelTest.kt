@@ -14,13 +14,15 @@ class DecisionModelTest {
         Model.createProvider("openai", "test-key").use { provider ->
             provider.decisionModel("gpt-6-luna").use { model ->
                 provider.close()
-                assertEquals(2, JSONObject(model.capabilities()).getInt("min_choices"))
+                val description = JSONObject(model.describe())
+                assertEquals("v4", description.getString("specification_version"))
+                assertEquals("openai", description.getString("provider"))
                 assertThrows(IllegalStateException::class.java) { provider.decisionModel("gpt-6-luna") }
             }
         }
     }
 
-    @Test fun officialStructuredContractAndCapabilities() {
+    @Test fun officialStructuredContractAndDescription() {
         val fixture = JSONObject(String(Files.readAllBytes(Paths.get("../../contract-tests/fixtures/decision-native.json"))))
         val captured = AtomicReference<JSONObject>()
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
@@ -35,20 +37,22 @@ class DecisionModelTest {
         server.start()
         try {
             DecisionModel.jev("test-key", "jev-latest", "http://127.0.0.1:${server.address.port}/v1/systemone").use { model ->
-                val caps = JSONObject(model.capabilities())
-                assertEquals(255, caps.getInt("max_choices"))
-                assertEquals(2, caps.getJSONObject("rounding").getInt("probability_decimals"))
+                val description = JSONObject(model.describe())
+                assertEquals("jev", description.getString("provider"))
+                assertEquals(3, description.getJSONArray("supported_question_types").length())
                 assertNull(captured.get())
                 val request = fixture.getJSONObject("request")
                 val result = JSONObject(model.decide(request.toString()))
-                assertEquals(0.9, result.getJSONObject("answers").getJSONObject("urgent").getDouble("probability_true"))
-                assertTrue(request.getJSONArray("questions").getJSONObject(0).getJSONObject("criteria")
+                assertEquals(0.9, result.getJSONObject("answers").getJSONObject("urgent").getDouble("probability"))
+                assertEquals(2, result.getJSONObject("rounding").getInt("probability_decimals"))
+                val questions = request.getJSONObject("questions")
+                assertTrue(questions.getJSONObject("urgent").getJSONObject("criteria")
                     .similar(captured.get().getJSONObject("questions").getJSONObject("urgent").getJSONObject("criteria")))
-                assertTrue(request.getJSONArray("questions").getJSONObject(2).getJSONArray("levels")
-                    .similar(result.getJSONObject("answers").getJSONObject("severity").getJSONArray("levels")))
+                assertTrue(questions.getJSONObject("severity").getJSONArray("criteria")
+                    .similar(captured.get().getJSONObject("questions").getJSONObject("severity").getJSONArray("criteria")))
                 assertThrows(IllegalArgumentException::class.java) { model.decide("{") }
                 model.close()
-                assertThrows(IllegalStateException::class.java) { model.capabilities() }
+                assertThrows(IllegalStateException::class.java) { model.describe() }
             }
         } finally { server.stop(0) }
         assertThrows(AimuxException::class.java) { DecisionModel.jev("test-key", "jev-latest", probabilitySource = "unknown") }
@@ -73,9 +77,10 @@ class DecisionModelTest {
                 provider.decisionModel("gpt-6-luna").use { model ->
                     val result = JSONObject(model.decide(fixture.getJSONObject("options").toString()))
                     assertTrue(fixture.getJSONObject("request").similar(captured.get()))
-                    assertEquals(true, result.getJSONObject("answers").getJSONObject("choice").get("value"))
-                    assertTrue(fixture.getJSONObject("options").getJSONArray("questions").getJSONObject(1).getJSONArray("levels")
-                        .similar(result.getJSONObject("answers").getJSONObject("score").getJSONArray("levels")))
+                    assertEquals("boolean_true", result.getJSONObject("answers").getJSONObject("choice").getString("choice"))
+                    assertEquals(true, result.getJSONObject("provider_metadata").getJSONObject("openai")
+                        .getJSONObject("answers").getJSONObject("choice").get("value"))
+                    assertEquals(0.75, result.getJSONObject("answers").getJSONObject("score").getDouble("score"))
                 }
             }
         } finally { server.stop(0) }

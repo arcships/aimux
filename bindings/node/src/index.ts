@@ -69,10 +69,9 @@ import type {
   JsonValue,
   RawToolCall,
   ToolCallRepairReply,
-  DecisionCallOptions,
-  DecisionResult,
-  DecisionProbabilitySource,
-  DecisionCapabilities,
+  DecideOptions,
+  DecideResult,
+  DecisionQuestionType,
 } from './types'
 
 // Error hierarchy (throw/catch). Wire payload type `AiMuxError` lives under StreamPart only.
@@ -187,24 +186,40 @@ export type {
   VideoPollOptions,
   RawToolCall,
   ToolCallRepairReply,
-  DecisionCallOptions,
-  DecisionResult,
+  DecideOptions,
+  DecideResult,
 }
 
-/** Typed decisions with the same JSON contract as Rust and C. */
+/**
+ * Answer questions about one shared state (AI SDK `decide`): validates the
+ * input, retries transient failures (two retries by default), validates the
+ * answers and completes usage and response information. Same JSON contract
+ * as Rust and C.
+ */
 export async function decide(
   model: native.DecisionModel,
-  options: DecisionCallOptions,
+  options: DecideOptions,
   signal?: AbortSignal,
-): Promise<DecisionResult> {
+): Promise<DecideResult> {
   const bridge = signal ? new AbortBridge(signal) : undefined
-  return JSON.parse(await model.decide(JSON.stringify(options), bridge)) as DecisionResult
+  return JSON.parse(await model.decide(JSON.stringify(options), bridge)) as DecideResult
 }
 
-/** Query native decision capabilities without making a network request. */
-export function decisionCapabilities(model: native.DecisionModel): DecisionCapabilities {
-  return JSON.parse(model.capabilities()) as DecisionCapabilities
+/** The DecisionModelV4 properties of a decision model, without a network request. */
+export interface DecisionModelDescription {
+  specification_version: 'v4'
+  provider: string
+  model_id: string
+  supported_question_types: DecisionQuestionType[]
 }
+
+/** Describe a native decision model without making a network request. */
+export function describeDecisionModel(model: native.DecisionModel): DecisionModelDescription {
+  return JSON.parse(model.describe()) as DecisionModelDescription
+}
+
+/** How a System One endpoint produces probabilities (reported as provider metadata). */
+export type DecisionProbabilitySource = 'native' | 'logit_scoring' | 'model_estimate'
 
 /** Declare how a hosted or self-hosted System One endpoint produces probabilities. */
 export async function jevDecision(
@@ -227,17 +242,15 @@ export type RawModel = Model
 
 export type {
   DecisionAnswer,
-  DecisionDescription,
-  DecisionImage,
-  DecisionValue,
-  DecisionScoreLevel,
   DecisionBooleanCriteria,
-  DecisionRounding,
+  DecisionCallOptions,
+  DecisionInput,
   DecisionQuestion,
-  DecisionOption,
-  DecisionCapabilities,
-  DecisionProbabilitySource,
-  DecisionResponse,
+  DecisionQuestionType,
+  DecisionResult,
+  DecisionRounding,
+  DecisionUsage,
+  DecideUsage,
 } from './types'
 
 // ─────────────────────────────────────────────────────────────────────────────

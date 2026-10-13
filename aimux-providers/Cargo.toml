@@ -28,6 +28,7 @@ tracing = { workspace = true }
 async-stream = { workspace = true }
 base64 = "0.22"
 chrono = "0.4"
+indexmap = { version = "2", features = ["serde"] }
 url = { workspace = true }
 percent-encoding = "2"
 regex = "1"

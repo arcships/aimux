@@ -42,9 +42,9 @@ use std::sync::{Arc, OnceLock};
 use futures::future::BoxFuture;
 use serde_json::Value;
 
+use aimux_core::decision_model::DecisionModel;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
-use aimux_core::evaluation_model::EvaluationModel;
 use aimux_core::files_model::Files;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
@@ -53,7 +53,7 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{
-    EvaluationLanguageModel, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable,
+    DecisionLanguageModel, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable,
     load_optional_setting, validate_base_url,
 };
 
@@ -354,14 +354,26 @@ impl OpenAIProvider {
         OpenAIEmbeddingModel::from_config(model_id.to_string(), self.model_config("embedding"))
     }
 
-    /// A native Decisions model (an aimux extension; the AI SDK has no
-    /// decision model). Its `provider()` is `"openai"`.
+    /// A native Decisions model (an aimux extension: the AI SDK's OpenAI
+    /// provider has no native decision endpoint). Its `provider()` is
+    /// `"openai"`. It is the provider's [`decision_model`](Provider::decision_model).
     ///
     /// # Errors
     ///
     /// `InvalidArgument` for an empty model id.
     pub fn decision(&self, model_id: &str) -> Result<OpenAIDecisionModel, AiMuxError> {
         OpenAIDecisionModel::from_config(model_id, self.model_config("decision"))
+    }
+
+    /// Decisions from structured Responses output; `provider()` is
+    /// `"{name}.evaluation"` (`@ai-sdk/openai@4.0.83
+    /// src/openai-provider.ts:355-358`, `evaluationModel`).
+    #[must_use]
+    pub fn evaluation(&self, model_id: &str) -> DecisionLanguageModel {
+        DecisionLanguageModel::new(
+            Arc::new(self.responses(model_id)),
+            Some(format!("{}.evaluation", self.name)),
+        )
     }
 
     /// An image model; `provider()` is `"{name}.image"`.
@@ -421,11 +433,14 @@ impl Provider for OpenAIProvider {
         Ok(Arc::new(self.image(model_id)))
     }
 
-    fn decision_model(
-        &self,
-        model_id: &str,
-    ) -> Result<Box<dyn aimux_core::DecisionModel>, AiMuxError> {
-        Ok(Box::new(self.decision(model_id)?))
+    /// The native Decisions model; the registry takes it before the
+    /// evaluation model (`ai@7.0.128 src/registry/provider-registry.ts:447-461`),
+    /// which stays reachable as [`OpenAIProvider::evaluation`].
+    fn decision_model(&self, model_id: &str) -> Option<Result<Arc<dyn DecisionModel>, AiMuxError>> {
+        Some(
+            self.decision(model_id)
+                .map(|model| Arc::new(model) as Arc<dyn DecisionModel>),
+        )
     }
 
     fn transcription_model(
@@ -437,16 +452,6 @@ impl Provider for OpenAIProvider {
 
     fn speech_model(&self, model_id: &str) -> Option<Result<Arc<dyn SpeechModel>, AiMuxError>> {
         Some(Ok(Arc::new(self.speech(model_id))))
-    }
-
-    fn evaluation_model(
-        &self,
-        model_id: &str,
-    ) -> Option<Result<Arc<dyn EvaluationModel>, AiMuxError>> {
-        Some(Ok(Arc::new(EvaluationLanguageModel::new(
-            Arc::new(self.responses(model_id)),
-            Some(format!("{}.evaluation", self.name)),
-        ))))
     }
 
     fn files(&self) -> Option<Arc<dyn Files>> {

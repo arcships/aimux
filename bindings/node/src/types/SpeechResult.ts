@@ -10,29 +10,29 @@ import type { JsonValue } from "./serde_json/JsonValue";
  *
  * Aligned with V4 `SpeechModelV4Result`.
  */
-export type SpeechResult = {
+export type SpeechResult = { 
 /**
  * Generated audio (base64 string or binary data).
  */
-audio: AudioData,
+audio: AudioData, 
 /**
  * Warnings for the call, e.g. unsupported settings.
  */
-warnings: Array<Warning>,
+warnings: Array<Warning>, 
 /**
  * Usage information reported by the provider, in the provider's native
  * JSON shape (`SpeechModelV4Result.usage?: JSONObject`,
  * `@ai-sdk/provider@4.0.22 src/speech-model/v4/speech-model-v4-result.ts:23-27`).
  */
-usage: { [key in string]: JsonValue } | null,
+usage: { [key in string]: JsonValue } | null, 
 /**
  * Optional request information for telemetry and debugging.
  */
-request: SpeechRequest | null,
+request: SpeechRequest | null, 
 /**
  * Response information for telemetry and debugging.
  */
-response: SpeechResponse,
+response: SpeechResponse, 
 /**
  * Additional provider-specific metadata, keyed by provider name.
  */

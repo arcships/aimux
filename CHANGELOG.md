@@ -424,6 +424,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer take capabilities. `MockDecisionReplayModel` does not read the
   field; replay rebuilds the model from the host registry. The recording
   schema stays 3, and older recordings with the field still load.
+- Decisions follow the AI SDK's `DecisionModelV4` (`@ai-sdk/provider@4.0.22`)
+  and `decide` (`ai@7.0.128`). Questions are a map keyed by id; Choice and
+  Score questions take `criteria` (option names to descriptions, ordered
+  levels). Answers are `{choice, probabilities?}`, `{score, probabilities?}`
+  (keyed `"0"`, `"1"`, …) and `{probability}`. `decide` takes `DecideOptions`
+  (the call options plus `max_retries`, default 2, and `timeout`) and returns
+  `DecideResult` (answers, usage with `total_tokens`, warnings, rounding,
+  provider metadata, response). It validates the input, rejects unsupported
+  question types before any I/O and validates the answers once after the
+  retries, with the upstream messages.
+- `DecisionModel` has `specification_version`, `provider`, `model_id`,
+  `supported_question_types` and `do_decide(&DecisionCallOptions)`;
+  `capabilities()` and `DecisionCapabilities` are removed, and provider limits
+  are checked in `do_decide` before HTTP. Images and OpenAI typed choice
+  values move to `provider_options.<provider>`; the probability source,
+  confidence, OpenAI typed values, Laya abstentions and `latency_ms` move to
+  `provider_metadata.<provider>`. An OpenAI refusal or a vLLM skipped question
+  fails the decision instead of returning a partial answer. Decision
+  recordings hold the `DecideOptions` and the `DecideResult`; recordings made
+  before this change load but do not replay.
+- `Provider::decision_model` returns `Option<Result<Arc<dyn DecisionModel>, _>>`,
+  `None` by default; the registry and `custom_provider` report `None` as
+  `NoSuchModel` with `model_type = "decisionModel"`. `Provider::evaluation_model`
+  and the `evaluation_model` module are removed: Google's `decision_model` is
+  the language-model adapter (`google.evaluation`), OpenAI's stays the native
+  Decisions API and `OpenAIProvider::evaluation` builds the Responses adapter.
+  `EvaluationLanguageModel` is renamed `DecisionLanguageModel`; its default
+  provider is `"{language provider}.decision"`.
 
 **C ABI**
 
@@ -433,6 +461,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the key's description (`"OpenAI"`) or the setting name (`"region"`); no new
   symbol. `aimux_error_model_type` carries `NoSuchModel.model_type`. These two
   failures used to surface as `AIMUX_E_INVALID_ARGUMENT`.
+- `aimux_decide` takes `DecideOptions` JSON and returns `DecideResult` JSON.
+  `aimux_decision_capabilities` keeps its name and signature but returns
+  `{specification_version, provider, model_id, supported_question_types}`.
+  `aimux_provider_decision_model` on a provider without decision models
+  returns `AIMUX_E_NO_SUCH_MODEL` (was `AIMUX_E_UNSUPPORTED_FUNCTIONALITY`).
 - `aimux_provider_new`, `aimux_provider_handle_new` and `config_json` resolve
   names through the binding compatibility module (overlays, vendor packages
   and presets); `config_json` accepts
@@ -459,6 +492,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `InvalidArgumentError`.
 - Recorded and traced provider strings follow `"{name}.{method}"`
   (`openai.chat`, not `openai`).
+- Decisions use the `DecideOptions` / `DecideResult` JSON. Node
+  `decisionCapabilities(model)` is replaced by `describeDecisionModel(model)`
+  and Python `decision_capabilities` by `describe_decision_model`; the native
+  `capabilities()` method is `describe()`. Python
+  `decide(model, state, questions, **options)` takes the questions as a dict
+  keyed by id.
 
 **Go / Java / Kotlin / Swift / Dart**
 
@@ -470,6 +509,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   have been silently ignored). The provider `config_json` helpers
   (`ProviderConfig` in Go and Dart) drop `max_retries` / `body_overrides` and
   gain `params`; call-level `max_retries` is unchanged.
+- Decisions use the `DecideOptions` / `DecideResult` JSON; the decision model's
+  `Capabilities()` / `capabilities()` is `Describe()` / `describe()` and
+  returns the model's V4 properties.
 
 ### Added
 

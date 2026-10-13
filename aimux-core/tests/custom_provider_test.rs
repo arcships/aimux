@@ -1,6 +1,10 @@
 //! Port of `ai/src/registry/custom-provider.test.ts`, plus the
 //! `custom evaluation models` and `evaluation registry` cases of
-//! `ai/src/registry/evaluation-model.test.ts` that apply here.
+//! `ai/src/registry/evaluation-model.test.ts` that apply here. Since
+//! `ai@7.0.128` those lookups are `decisionModel`
+//! (`src/registry/custom-provider.ts:241-258`,
+//! `src/registry/provider-registry.ts:447-461`); aimux has the decision
+//! lookup only.
 //!
 //! Not ported, with the reason:
 //! - `should convert v2 and v3 ... to v4 on demand` and the v2/v3 fallback
@@ -21,11 +25,11 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 
+use aimux_core::decision_model::{
+    DecisionCallOptions, DecisionModel, DecisionQuestionType, DecisionResult,
+};
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel, EmbeddingResult};
 use aimux_core::error::AiMuxError;
-use aimux_core::evaluation_model::{
-    EvaluationCallOptions, EvaluationModel, EvaluationQuestionType, EvaluationResult,
-};
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileResult};
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageResult};
 use aimux_core::language_model::LanguageModel;
@@ -94,9 +98,9 @@ stub!(MockVideo: VideoModel {
 stub!(MockSearch: SearchModel {
     async fn do_search(&self, _: &SearchCallOptions) -> Result<SearchResult, AiMuxError> { unreachable!() }
 });
-stub!(MockEvaluation: EvaluationModel {
-    fn supported_question_types(&self) -> &[EvaluationQuestionType] { &[] }
-    async fn do_evaluate(&self, _: &EvaluationCallOptions) -> Result<EvaluationResult, AiMuxError> { unreachable!() }
+stub!(MockDecision: DecisionModel {
+    fn supported_question_types(&self) -> &[DecisionQuestionType] { &[] }
+    async fn do_decide(&self, _: &DecisionCallOptions) -> Result<DecisionResult, AiMuxError> { unreachable!() }
 });
 
 struct MockFiles;
@@ -142,12 +146,12 @@ impl Skills for MockSkills {
 }
 
 /// A provider that serves a `"fallback"` model for every modality and records
-/// each lookup as `"{method}:{id}"`; `evaluation`, `files`, `skills` and
+/// each lookup as `"{method}:{id}"`; `decision`, `files`, `skills` and
 /// `discovery` choose whether it offers those at all.
 #[derive(Default)]
 struct Fallback {
     calls: Mutex<Vec<String>>,
-    evaluation: bool,
+    decision: bool,
     files: bool,
     skills: bool,
     discovery: bool,
@@ -198,10 +202,10 @@ impl Provider for Fallback {
         self.record("search_model", id);
         Some(Ok(Arc::new(MockSearch("fallback"))))
     }
-    fn evaluation_model(&self, id: &str) -> Option<Result<Arc<dyn EvaluationModel>, AiMuxError>> {
-        self.record("evaluation_model", id);
-        self.evaluation
-            .then(|| Ok(Arc::new(MockEvaluation("fallback")) as _))
+    fn decision_model(&self, id: &str) -> Option<Result<Arc<dyn DecisionModel>, AiMuxError>> {
+        self.record("decision_model", id);
+        self.decision
+            .then(|| Ok(Arc::new(MockDecision("fallback")) as _))
     }
     fn files(&self) -> Option<Arc<dyn Files>> {
         self.record("files", "");
@@ -255,7 +259,7 @@ macro_rules! modality_cases {
             #[test]
             fn uses_the_fallback_provider() {
                 let fallback = Arc::new(Fallback {
-                    evaluation: true,
+                    decision: true,
                     ..Default::default()
                 });
                 let provider = custom_provider(CustomProviderOptions {
@@ -334,11 +338,11 @@ modality_cases!(
     |p: &aimux_core::CustomProvider| p.search_model("test-model").unwrap()
 );
 modality_cases!(
-    evaluation_model,
-    MockEvaluation,
-    evaluation_models,
-    "evaluationModel",
-    |p: &aimux_core::CustomProvider| p.evaluation_model("test-model").unwrap()
+    decision_model,
+    MockDecision,
+    decision_models,
+    "decisionModel",
+    |p: &aimux_core::CustomProvider| p.decision_model("test-model").unwrap()
 );
 
 /// TS: should return the files interface if it exists
@@ -482,26 +486,26 @@ fn does_not_expose_discovery_without_configuration_or_fallback_support() {
     assert!(provider.discovery().is_none());
 }
 
-// ── evaluation-model.test.ts ────────────────────────────────────────────────
+// ── evaluation-model.test.ts (decision lookups) ─────────────────────────────
 
 /// TS: resolves an alias before consulting the fallback
 #[test]
-fn evaluation_alias_wins_over_the_fallback() {
+fn decision_alias_wins_over_the_fallback() {
     let fallback = Arc::new(Fallback {
-        evaluation: true,
+        decision: true,
         ..Default::default()
     });
     let provider = custom_provider(CustomProviderOptions {
-        evaluation_models: HashMap::from([(
+        decision_models: HashMap::from([(
             "alias".to_string(),
-            Arc::new(MockEvaluation("table")) as _,
+            Arc::new(MockDecision("table")) as _,
         )]),
         fallback_provider: Some(fallback.clone()),
         ..Default::default()
     });
     assert_eq!(
         provider
-            .evaluation_model("alias")
+            .decision_model("alias")
             .unwrap()
             .unwrap()
             .model_id(),
@@ -512,9 +516,9 @@ fn evaluation_alias_wins_over_the_fallback() {
 
 /// TS: preserves the fallback receiver
 #[test]
-fn evaluation_fallback_serves_ids_missing_from_the_table() {
+fn decision_fallback_serves_ids_missing_from_the_table() {
     let fallback = Arc::new(Fallback {
-        evaluation: true,
+        decision: true,
         ..Default::default()
     });
     let provider = custom_provider(CustomProviderOptions {
@@ -523,45 +527,41 @@ fn evaluation_fallback_serves_ids_missing_from_the_table() {
     });
     assert_eq!(
         provider
-            .evaluation_model("model:version")
+            .decision_model("model:version")
             .unwrap()
             .unwrap()
             .model_id(),
         "fallback"
     );
-    assert_eq!(fallback.calls(), ["evaluation_model:model:version"]);
+    assert_eq!(fallback.calls(), ["decision_model:model:version"]);
 }
 
 /// TS: reports missing alias %s without treating inherited properties as models
 #[test]
-fn evaluation_reports_missing_aliases() {
+fn decision_reports_missing_aliases() {
     let provider = custom_provider(CustomProviderOptions {
-        evaluation_models: HashMap::from([(
+        decision_models: HashMap::from([(
             "known".to_string(),
-            Arc::new(MockEvaluation("table")) as _,
+            Arc::new(MockDecision("table")) as _,
         )]),
         ..Default::default()
     });
     for id in ["missing", "toString", "constructor", "__proto__"] {
-        assert_no_such_model(
-            provider.evaluation_model(id).unwrap(),
-            id,
-            "evaluationModel",
-        );
+        assert_no_such_model(provider.decision_model(id).unwrap(), id, "decisionModel");
     }
 }
 
 /// TS: reports an unavailable fallback model
 #[test]
-fn evaluation_reports_an_unavailable_fallback_model() {
+fn decision_reports_an_unavailable_fallback_model() {
     let provider = custom_provider(CustomProviderOptions {
         fallback_provider: Some(Arc::new(Fallback::default())),
         ..Default::default()
     });
     assert_no_such_model(
-        provider.evaluation_model("missing").unwrap(),
+        provider.decision_model("missing").unwrap(),
         "missing",
-        "evaluationModel",
+        "decisionModel",
     );
 }
 
@@ -585,34 +585,32 @@ fn registry(
 #[test]
 fn registry_keeps_colons_inside_model_ids() {
     let provider = Arc::new(Fallback {
-        evaluation: true,
+        decision: true,
         ..Default::default()
     });
     let registry = registry(vec![("provider", provider.clone())], ":");
-    let model = registry.evaluation_model("provider:model:version").unwrap();
+    let model = registry.decision_model("provider:model:version").unwrap();
     assert_eq!(model.model_id(), "fallback");
-    assert_eq!(provider.calls(), ["evaluation_model:model:version"]);
+    assert_eq!(provider.calls(), ["decision_model:model:version"]);
 }
 
 /// TS: preserves legacy provider extensions and custom separators
 #[test]
 fn registry_honors_a_custom_separator() {
     let provider = Arc::new(Fallback {
-        evaluation: true,
+        decision: true,
         ..Default::default()
     });
     let registry = registry(vec![("provider", provider.clone())], "::");
-    registry
-        .evaluation_model("provider::model::version")
-        .unwrap();
-    assert_eq!(provider.calls(), ["evaluation_model:model::version"]);
+    registry.decision_model("provider::model::version").unwrap();
+    assert_eq!(provider.calls(), ["decision_model:model::version"]);
 }
 
 /// TS: identifies unknown providers with the existing marker-based error
 #[test]
 fn registry_identifies_unknown_providers() {
     let registry = registry(vec![("known", Arc::new(Fallback::default()))], ":");
-    match registry.evaluation_model("missing:model") {
+    match registry.decision_model("missing:model") {
         Err(AiMuxError::NoSuchProvider {
             provider_id,
             model_type,
@@ -620,7 +618,7 @@ fn registry_identifies_unknown_providers() {
             ..
         }) => {
             assert_eq!(provider_id, "missing");
-            assert_eq!(model_type, "evaluationModel");
+            assert_eq!(model_type, "decisionModel");
             assert_eq!(available_providers, ["known"]);
         }
         other => panic!("expected NoSuchProvider, got {:?}", other.err()),
@@ -631,21 +629,21 @@ fn registry_identifies_unknown_providers() {
 #[test]
 fn registry_reports_malformed_ids() {
     assert_no_such_model(
-        registry(vec![], ":").evaluation_model("model"),
+        registry(vec![], ":").decision_model("model"),
         "model",
-        "evaluationModel",
+        "decisionModel",
     );
 }
 
 /// TS: reports missing evaluation capabilities or models
 #[test]
-fn registry_reports_missing_evaluation_models() {
-    // A provider that offers no evaluation models at all, and one that
+fn registry_reports_missing_decision_models() {
+    // A provider that offers no decision models at all, and one that
     // declines this id, are the same to the registry.
     let registry = registry(vec![("provider", Arc::new(Fallback::default()))], ":");
     assert_no_such_model(
-        registry.evaluation_model("provider:model"),
+        registry.decision_model("provider:model"),
         "provider:model",
-        "evaluationModel",
+        "decisionModel",
     );
 }

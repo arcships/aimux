@@ -28,7 +28,6 @@ pub(crate) mod download;
 pub mod download_guard;
 pub mod embedding_model;
 pub mod error;
-pub mod evaluation_model;
 pub mod files_model;
 pub mod generate;
 pub mod image_model;
@@ -74,19 +73,14 @@ pub mod prelude {
     pub use crate::composite::ChildModel;
     pub use crate::content::ContentPart;
     pub use crate::decision_model::{
-        DecisionAnswer, DecisionBooleanCriteria, DecisionCallOptions, DecisionCapabilities,
-        DecisionDescription, DecisionImage, DecisionModel, DecisionOption,
-        DecisionProbabilitySource, DecisionQuestion, DecisionResponse, DecisionResult,
-        DecisionRounding, DecisionScoreLevel, DecisionState, DecisionValue, decide,
+        DecideOptions, DecideResult, DecideUsage, DecisionAnswer, DecisionBooleanCriteria,
+        DecisionCallOptions, DecisionInput, DecisionModel, DecisionQuestion, DecisionQuestionType,
+        DecisionQuestions, DecisionResult, DecisionRounding, DecisionUsage, decide,
     };
     pub use crate::embedding_model::{
         EmbeddingCallOptions, EmbeddingModel, EmbeddingResult, embed,
     };
     pub use crate::error::{AiMuxError, ApiCallError};
-    pub use crate::evaluation_model::{
-        EvaluationAnswer, EvaluationCallOptions, EvaluationInput, EvaluationModel,
-        EvaluationQuestion, EvaluationQuestionType, EvaluationResult,
-    };
     pub use crate::files_model::{Files, UploadFileCallOptions, UploadFileResult};
     pub use crate::generate::{
         GenerateObjectResult, GenerateTextOptions, GenerateTextResult, StreamTextResult,
@@ -167,7 +161,6 @@ pub use custom_provider::{CustomProvider, CustomProviderOptions, custom_provider
 pub use decision_model::DecisionModel;
 pub use embedding_model::EmbeddingModel;
 pub use error::{AiMuxError, ApiCallError, RetryError, RetryErrorReason};
-pub use evaluation_model::EvaluationModel;
 pub use files_model::Files;
 pub use image_model::ImageModel;
 pub use language_model::LanguageModel;

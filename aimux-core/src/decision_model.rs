@@ -1,599 +1,626 @@
-//! Typed finite-answer decisions. Providers perform one attempt; [`decide`]
-//! owns validation, retries, cancellation and the operation deadline.
-
-use std::collections::{BTreeMap, HashSet};
+//! Typed decisions: Choice, Score and Boolean answers against one shared
+//! state.
+//!
+//! [`DecisionModel`] is the provider contract, the AI SDK's
+//! `DecisionModelV4` (`@ai-sdk/provider@4.0.22 src/decision-model/v4/`).
+//! [`decide`] is the operation (`ai@7.0.128 src/decide/decide.ts`): it
+//! validates the input, rejects unsupported question types before any I/O,
+//! retries the model call, and validates the answers after the retries.
+//!
+//! Retries, the timeout and recording are operation settings
+//! ([`DecideOptions`]). What a provider needs beyond the V4 call options
+//! (images, typed choice values, runtime protocols) goes in its
+//! `provider_options`; what it reports beyond the V4 result (probability
+//! source, confidence) goes in its `provider_metadata`.
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use indexmap::IndexMap;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 use ts_rs::TS;
 
-use crate::shared::{SharedHeaders, SharedProviderMetadata, SharedProviderOptions};
-use crate::{AbortSignal, AiMuxError, retry, timeout};
+use crate::error::AiMuxError;
+use crate::shared::{
+    JsonObject, ResponseInfo, SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning,
+};
+use crate::{AbortSignal, retry, timeout};
 
-/// Text or JSON context shared by all questions. Images are supplied separately;
-/// JSON objects are not interpreted as media parts.
-pub type DecisionState = serde_json::Value;
-
-/// An inline image shared by all questions, placed before the textual state.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct DecisionImage {
-    pub data: crate::shared::FileBytes,
-    pub media_type: String,
-    /// Provider image detail, for example OpenAI's `low`, `high`, `auto`, `original`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
-}
-
-/// A native choice value, distinct from the canonical option label used as a key.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-#[serde(untagged)]
-#[ts(export)]
-pub enum DecisionValue {
-    Text(String),
-    Boolean(bool),
-}
-
-/// Native question text or structured guidance, serialized without coercion.
+/// Shared state or structured instructions for a decision
+/// (`DecisionModelV4Input`: a string, a JSON object or a JSON array).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(untagged)]
 #[ts(export)]
-pub enum DecisionDescription {
+pub enum DecisionInput {
     Text(String),
-    Object(#[ts(type = "Record<string, unknown>")] serde_json::Map<String, serde_json::Value>),
-    Array(#[ts(type = "unknown[]")] Vec<serde_json::Value>),
+    #[ts(type = "Record<string, unknown>")]
+    Object(JsonObject),
+    #[ts(type = "Array<unknown>")]
+    Array(Vec<Value>),
 }
 
-impl From<String> for DecisionDescription {
+impl From<&str> for DecisionInput {
+    fn from(value: &str) -> Self {
+        Self::Text(value.to_owned())
+    }
+}
+
+impl From<String> for DecisionInput {
     fn from(value: String) -> Self {
         Self::Text(value)
     }
 }
 
-impl From<&str> for DecisionDescription {
-    fn from(value: &str) -> Self {
-        Self::Text(value.into())
-    }
-}
-
-/// A named score level with a separate description (OpenAI's native rubric).
-/// Convert into `DecisionDescription` to use it in `DecisionQuestion::Score`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(deny_unknown_fields)]
+/// The kind of a question (`DecisionModelV4Question['type']`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
 #[ts(export)]
-pub struct DecisionScoreLevel {
-    pub label: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+pub enum DecisionQuestionType {
+    Choice,
+    Score,
+    Boolean,
 }
 
-impl From<DecisionScoreLevel> for DecisionDescription {
-    fn from(level: DecisionScoreLevel) -> Self {
-        let mut object = serde_json::Map::new();
-        object.insert("label".into(), level.label.into());
-        if let Some(description) = level.description {
-            object.insert("description".into(), description.into());
-        }
-        Self::Object(object)
-    }
-}
+impl DecisionQuestionType {
+    /// Every question type, for models that support them all.
+    pub const ALL: &'static [Self] = &[Self::Choice, Self::Score, Self::Boolean];
 
-impl DecisionDescription {
-    fn is_empty(&self) -> bool {
+    /// The wire name (`"choice"`, `"score"`, `"boolean"`).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
         match self {
-            Self::Text(text) => text.trim().is_empty(),
-            Self::Object(object) => object.is_empty(),
-            Self::Array(array) => array.is_empty(),
+            Self::Choice => "choice",
+            Self::Score => "score",
+            Self::Boolean => "boolean",
         }
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+/// The optional descriptions of a Boolean question's outcomes. An absent key
+/// and an explicit `null` differ: `Some(None)` is `null` (no description).
+/// Other keys are rejected: Boolean criteria may only describe `true` and
+/// `false` (`ai@7.0.128 src/decide/validate-decision.ts:94-105`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 #[ts(export)]
 pub struct DecisionBooleanCriteria {
-    #[serde(rename = "true", default, skip_serializing_if = "Option::is_none")]
-    pub true_description: Option<DecisionDescription>,
-    #[serde(rename = "false", default, skip_serializing_if = "Option::is_none")]
-    pub false_description: Option<DecisionDescription>,
+    #[serde(
+        rename = "true",
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(optional)]
+    pub true_: Option<Option<DecisionInput>>,
+    #[serde(
+        rename = "false",
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(optional)]
+    pub false_: Option<Option<DecisionInput>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct DecisionOption {
-    pub label: String,
-    /// Native value; when omitted, the label is sent as the value.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<DecisionValue>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<DecisionDescription>,
+fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
+/// A judgment to make about the shared state (`DecisionModelV4Question`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "lowercase")]
 #[ts(export)]
 pub enum DecisionQuestion {
-    Boolean {
-        id: String,
-        instructions: DecisionDescription,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        criteria: Option<DecisionBooleanCriteria>,
-    },
     Choice {
-        id: String,
-        instructions: DecisionDescription,
-        options: Vec<DecisionOption>,
+        instructions: DecisionInput,
+        /// Nonempty map of option names to descriptions; `None` means no
+        /// description. Insertion order is the option order.
+        #[ts(as = "std::collections::HashMap<String, Option<DecisionInput>>")]
+        criteria: IndexMap<String, Option<DecisionInput>>,
     },
-    /// Ordered labels, from lowest to highest. Scores use zero-based positions.
     Score {
-        id: String,
-        instructions: DecisionDescription,
-        levels: Vec<DecisionDescription>,
+        instructions: DecisionInput,
+        /// At least two ordered levels, indexed from zero.
+        criteria: Vec<Option<DecisionInput>>,
+    },
+    Boolean {
+        instructions: DecisionInput,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        criteria: Option<DecisionBooleanCriteria>,
     },
 }
 
 impl DecisionQuestion {
+    /// The kind of this question.
     #[must_use]
-    pub fn id(&self) -> &str {
+    pub fn question_type(&self) -> DecisionQuestionType {
         match self {
-            Self::Boolean { id, .. } | Self::Choice { id, .. } | Self::Score { id, .. } => id,
+            Self::Choice { .. } => DecisionQuestionType::Choice,
+            Self::Score { .. } => DecisionQuestionType::Score,
+            Self::Boolean { .. } => DecisionQuestionType::Boolean,
         }
     }
 
+    /// The question's instructions.
     #[must_use]
-    pub fn instructions(&self) -> &DecisionDescription {
+    pub fn instructions(&self) -> &DecisionInput {
         match self {
-            Self::Boolean { instructions, .. }
-            | Self::Choice { instructions, .. }
-            | Self::Score { instructions, .. } => instructions,
+            Self::Choice { instructions, .. }
+            | Self::Score { instructions, .. }
+            | Self::Boolean { instructions, .. } => instructions,
         }
     }
 }
 
+/// Questions by id; insertion order is the question order.
+pub type DecisionQuestions = IndexMap<String, DecisionQuestion>;
+
+/// Options passed to [`DecisionModel::do_decide`]
+/// (`DecisionModelV4CallOptions`,
+/// `@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4-call-options.ts:7-14`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DecisionCallOptions {
-    #[serde(skip)]
-    #[ts(skip)]
-    pub recording_context: Option<crate::recording::RecordingContext>,
-    pub state: DecisionState,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub images: Vec<DecisionImage>,
-    pub questions: Vec<DecisionQuestion>,
+    /// One shared state, even when the value is an array.
+    pub state: DecisionInput,
+    #[ts(as = "std::collections::HashMap<String, DecisionQuestion>")]
+    pub questions: DecisionQuestions,
+    /// Abort signal for cancelling the call.
     #[serde(skip)]
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_retries: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout: Option<crate::options::TimeoutConfiguration>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_options: Option<SharedProviderOptions>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub headers: Option<SharedHeaders>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub provider_options: Option<SharedProviderOptions>,
+    /// The operation's recording scope, set by [`decide`] for the transport
+    /// (as `CallOptions::recording_context` is for language models). Never
+    /// serialized, and not part of `DecisionModelV4CallOptions`.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub recording_context: Option<crate::recording::RecordingContext>,
 }
 
 impl DecisionCallOptions {
+    /// Call options with only a state and questions.
     #[must_use]
-    pub fn new(state: DecisionState, questions: Vec<DecisionQuestion>) -> Self {
+    pub fn new(state: impl Into<DecisionInput>, questions: DecisionQuestions) -> Self {
         Self {
-            state,
-            images: Vec::new(),
+            state: state.into(),
             questions,
-            recording_context: None,
             abort_signal: None,
-            max_retries: None,
-            timeout: None,
-            provider_options: None,
             headers: None,
-        }
-    }
-
-    /// Validate provider-independent request invariants before any HTTP call.
-    /// # Errors
-    /// Returns `InvalidArgument` for empty questions, duplicate IDs or labels,
-    /// blank instructions, empty choices, or a score with fewer than two levels.
-    pub fn validate(&self) -> Result<(), AiMuxError> {
-        let invalid = |message: String| AiMuxError::InvalidArgument(message);
-        if self.questions.is_empty() {
-            return Err(invalid("decide requires at least one question".into()));
-        }
-        let mut ids = HashSet::new();
-        for question in &self.questions {
-            let id = question.id();
-            if id.trim().is_empty() || !ids.insert(id) {
-                return Err(invalid(format!(
-                    "empty or duplicate decision question ID: {id:?}"
-                )));
-            }
-            if question.instructions().is_empty() {
-                return Err(invalid(format!("question {id:?} requires instructions")));
-            }
-            let labels: Vec<&str> = match question {
-                DecisionQuestion::Boolean { .. } => continue,
-                DecisionQuestion::Choice { options, .. } => {
-                    if options.is_empty() {
-                        return Err(invalid(format!("question {id:?} requires choices")));
-                    }
-                    let mut values = HashSet::new();
-                    if options.iter().any(|option| {
-                        !values.insert(
-                            option
-                                .value
-                                .clone()
-                                .unwrap_or_else(|| DecisionValue::Text(option.label.clone())),
-                        )
-                    }) {
-                        return Err(invalid(format!(
-                            "question {id:?} has duplicate native values"
-                        )));
-                    }
-                    options.iter().map(|option| option.label.as_str()).collect()
-                }
-                DecisionQuestion::Score { levels, .. } => {
-                    if levels.len() < 2 {
-                        return Err(invalid(format!(
-                            "question {id:?} requires at least two score levels"
-                        )));
-                    }
-                    if levels.iter().any(DecisionDescription::is_empty)
-                        || levels
-                            .iter()
-                            .enumerate()
-                            .any(|(i, level)| levels[..i].contains(level))
-                    {
-                        return Err(invalid(format!(
-                            "question {id:?} has empty or duplicate levels"
-                        )));
-                    }
-                    continue;
-                }
-            };
-            let mut unique = HashSet::new();
-            if labels
-                .iter()
-                .any(|label| label.trim().is_empty() || !unique.insert(*label))
-            {
-                return Err(invalid(format!(
-                    "question {id:?} has empty or duplicate labels"
-                )));
-            }
-        }
-        Ok(())
-    }
-}
-
-/// How the provider produced probability values. This is provenance, not a
-/// calibration guarantee. Raw provider metadata retains calibration details.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-#[ts(export)]
-pub enum DecisionProbabilitySource {
-    Native,
-    LogitScoring,
-    ModelEstimate,
-}
-
-impl std::str::FromStr for DecisionProbabilitySource {
-    type Err = AiMuxError;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "native" => Ok(Self::Native),
-            "logit_scoring" => Ok(Self::LogitScoring),
-            "model_estimate" => Ok(Self::ModelEstimate),
-            _ => Err(AiMuxError::InvalidArgument(format!(
-                "unknown decision probability source: {value:?}"
-            ))),
+            provider_options: None,
+            recording_context: None,
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
+/// The answer to one question (`DecisionModelV4Answer`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "lowercase")]
 #[ts(export)]
 pub enum DecisionAnswer {
-    /// The provider declined this question; other answers remain usable.
-    Refusal,
-    /// A conditional question was not evaluated. Provider details remain in raw.
-    Skipped,
-    /// The provider abstained rather than selecting an answer.
-    Abstention,
-    /// P(true); callers choose their own thresholds.
-    Boolean { probability_true: f64 },
     Choice {
-        selected: String,
+        /// The selected option, with maximal probability when a distribution
+        /// exists.
+        choice: String,
+        /// Complete distribution over the question's options, when available.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        value: Option<DecisionValue>,
-        probabilities: Option<BTreeMap<String, f64>>,
-        confidence: Option<f64>,
+        #[ts(optional, as = "Option<std::collections::HashMap<String, f64>>")]
+        probabilities: Option<IndexMap<String, f64>>,
     },
     Score {
-        expected_value: f64,
-        levels: Vec<DecisionDescription>,
-        probabilities: Option<Vec<f64>>,
-        confidence: Option<f64>,
+        /// Fractional position in `[0, levels - 1]`.
+        score: f64,
+        /// Complete distribution keyed by zero-based level indices as
+        /// strings; when supplied, `score` is its probability-weighted mean.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional, as = "Option<std::collections::HashMap<String, f64>>")]
+        probabilities: Option<IndexMap<String, f64>>,
+    },
+    Boolean {
+        /// Model-estimated P(true), in `[0, 1]`. Not confidence in either
+        /// outcome.
+        probability: f64,
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct DecisionCapabilities {
-    #[serde(default)]
-    pub supports_images: bool,
-    #[serde(default)]
-    pub max_images: Option<usize>,
-    #[serde(default)]
-    pub supports_typed_choices: bool,
-    #[serde(default)]
-    pub rounding: DecisionRounding,
-    pub probability_source: DecisionProbabilitySource,
-    pub supports_boolean: bool,
-    pub supports_choice: bool,
-    pub supports_score: bool,
-    pub returns_distributions: bool,
-    pub max_questions: Option<usize>,
-    pub min_choices: Option<usize>,
-    pub max_choices: Option<usize>,
-    pub max_score_levels: Option<usize>,
-}
-
-/// Declared decimal rounding precision. None means only floating-point noise
-/// is tolerated, not decimal rounding. Providers must report their actual rule.
+/// Decimal places the provider rounded its output to; omit for full
+/// precision. Validation allows half a unit in the last place per rounded
+/// value.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DecisionRounding {
-    pub probability_decimals: Option<u8>,
-    pub score_decimals: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub probability_decimals: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub score_decimals: Option<u32>,
 }
 
-impl DecisionRounding {
-    fn error(decimals: Option<u8>) -> f64 {
-        decimals.map_or(0.0, |digits| 0.5 * 10_f64.powi(-i32::from(digits)))
-    }
-
-    fn is_valid(self) -> bool {
-        [self.probability_decimals, self.score_decimals]
-            .into_iter()
-            .flatten()
-            .all(|digits| digits <= 15)
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+/// Token usage reported by a decision model.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct DecisionResponse {
-    pub headers: Option<SharedHeaders>,
-    pub body: Option<serde_json::Value>,
+pub struct DecisionUsage {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub input_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub output_tokens: Option<u32>,
 }
 
+/// The result of [`DecisionModel::do_decide`] (`DecisionModelV4Result`,
+/// `@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4-result.ts:31-56`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DecisionResult {
+    /// Exactly one answer per question, under the original question ids.
+    #[ts(as = "std::collections::HashMap<String, DecisionAnswer>")]
+    pub answers: IndexMap<String, DecisionAnswer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub rounding: Option<DecisionRounding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub usage: Option<DecisionUsage>,
     #[serde(default)]
-    pub rounding: DecisionRounding,
-    pub answers: BTreeMap<String, DecisionAnswer>,
-    pub provider: String,
-    pub model: String,
-    pub model_version: Option<String>,
-    pub probability_source: DecisionProbabilitySource,
-    pub usage: Option<crate::types::Usage>,
-    pub latency_ms: Option<f64>,
+    pub warnings: Vec<Warning>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub provider_metadata: Option<SharedProviderMetadata>,
-    pub response: Option<DecisionResponse>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub response: Option<ResponseInfo>,
 }
 
-fn is_probability(value: f64) -> bool {
-    value.is_finite() && (0.0..=1.0).contains(&value)
-}
-
-/// Allow independent rounding at the provider-declared precision and f32
-/// softmax noise. Many runtimes return f32 probabilities as JSON f64 values.
-/// Do not normalize them: preserve the provider's numbers and raw response.
-fn valid_distribution(values: &[f64], rounding: DecisionRounding) -> bool {
-    values.iter().all(|p| is_probability(*p))
-        && (values.iter().sum::<f64>() - 1.0).abs()
-            <= DecisionRounding::error(rounding.probability_decimals) * values.len() as f64
-                + f64::from(f32::EPSILON) * 2.0
-}
-
-/// If the unrounded probabilities q sum to one, their expected index t
-/// satisfies sum((i - t) * q[i]) = 0. With probabilities and score independently
-/// rounded at their declared precisions, the residual is bounded by the
-/// corresponding per-term and score errors. Centering on the score also accounts for a
-/// rounded distribution whose sum is slightly different from one.
-fn consistent_score(score: f64, probabilities: &[f64], rounding: DecisionRounding) -> bool {
-    let residual: f64 = probabilities
-        .iter()
-        .enumerate()
-        .map(|(index, probability)| (index as f64 - score) * probability)
-        .sum();
-    let tolerance = DecisionRounding::error(rounding.score_decimals)
-        + DecisionRounding::error(rounding.probability_decimals)
-            * (0..probabilities.len())
-                .map(|index| (index as f64 - score).abs())
-                .sum::<f64>();
-    residual.abs() <= tolerance + f64::from(f32::EPSILON) * 2.0 * probabilities.len() as f64
-}
-
-impl DecisionResult {
-    /// Reject partial, mistyped, out-of-range and mismatched answers.
-    /// # Errors
-    /// Returns `InvalidResponseData` when the response violates the request.
-    pub fn validate(&self, request: &DecisionCallOptions) -> Result<(), AiMuxError> {
-        if !self.rounding.is_valid() {
-            return Err(AiMuxError::InvalidResponseData(
-                "invalid decision rounding precision".into(),
-            ));
-        }
-        let invalid = |id: &str| {
-            AiMuxError::InvalidResponseData(format!("invalid decision answer for {id:?}"))
-        };
-        if self.answers.len() != request.questions.len() {
-            return Err(AiMuxError::InvalidResponseData(
-                "decision answers do not match question IDs".into(),
-            ));
-        }
-        for question in &request.questions {
-            let id = question.id();
-            let answer = self.answers.get(id).ok_or_else(|| invalid(id))?;
-            let valid = match (question, answer) {
-                (
-                    _,
-                    DecisionAnswer::Refusal | DecisionAnswer::Skipped | DecisionAnswer::Abstention,
-                ) => true,
-                (
-                    DecisionQuestion::Boolean { .. },
-                    DecisionAnswer::Boolean { probability_true },
-                ) => is_probability(*probability_true),
-                (
-                    DecisionQuestion::Choice { options, .. },
-                    DecisionAnswer::Choice {
-                        selected,
-                        value,
-                        probabilities,
-                        confidence,
-                    },
-                ) => {
-                    options.iter().any(|option| {
-                        &option.label == selected
-                            && match (&option.value, value) {
-                                (Some(expected), Some(actual)) => expected == actual,
-                                (None, None) => true,
-                                (None, Some(DecisionValue::Text(actual))) => actual == selected,
-                                _ => false,
-                            }
-                    }) && confidence.is_none_or(is_probability)
-                        && probabilities.as_ref().is_none_or(|distribution| {
-                            distribution.len() == options.len()
-                                && options
-                                    .iter()
-                                    .all(|option| distribution.contains_key(&option.label))
-                                && valid_distribution(
-                                    &distribution.values().copied().collect::<Vec<_>>(),
-                                    self.rounding,
-                                )
-                        })
-                }
-                (
-                    DecisionQuestion::Score { levels, .. },
-                    DecisionAnswer::Score {
-                        expected_value,
-                        levels: actual_levels,
-                        probabilities,
-                        confidence,
-                    },
-                ) => {
-                    levels.len() >= 2
-                        && levels == actual_levels
-                        && expected_value.is_finite()
-                        && (0.0..=(levels.len() - 1) as f64).contains(expected_value)
-                        && confidence.is_none_or(is_probability)
-                        && probabilities.as_ref().is_none_or(|distribution| {
-                            distribution.len() == levels.len()
-                                && valid_distribution(distribution, self.rounding)
-                                && consistent_score(*expected_value, distribution, self.rounding)
-                        })
-                }
-                _ => false,
-            };
-            if !valid {
-                return Err(invalid(id));
-            }
-        }
-        Ok(())
-    }
-}
-
+/// The experimental decision model contract
+/// (`@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4.ts:6-16`).
 #[async_trait]
 pub trait DecisionModel: Send + Sync {
     /// Specification version (always `"v4"`).
     fn specification_version(&self) -> &'static str {
         "v4"
     }
+
+    /// Provider name, e.g. `"jev"` or `"google.evaluation"`.
     fn provider(&self) -> &str;
+
+    /// Provider-specific model ID.
     fn model_id(&self) -> &str;
-    fn capabilities(&self) -> DecisionCapabilities;
-    /// Perform one provider attempt.
+
+    /// Supported question types, used to reject unsupported calls before any
+    /// I/O.
+    fn supported_question_types(&self) -> &[DecisionQuestionType];
+
+    /// Decide every answer against the same state. No partial results.
+    ///
     /// # Errors
-    /// Returns provider, transport or invalid response errors.
+    ///
+    /// Provider, transport and invalid response errors.
     async fn do_decide(&self, options: &DecisionCallOptions) -> Result<DecisionResult, AiMuxError>;
 }
 
-/// Make one typed decision with Core-owned retries and timeout.
+/// The AI SDK's `DecisionUnsupportedQuestionTypeError`
+/// (`@ai-sdk/provider@4.0.22 src/errors/decision-unsupported-question-type-error.ts:10-37`),
+/// with its message. The error taxonomy has no variant for it (one would
+/// ripple into the C ABI), so it is reported as unsupported functionality.
+#[must_use]
+pub fn unsupported_question_type_error(
+    question_id: &str,
+    question_type: DecisionQuestionType,
+    provider: &str,
+    model_id: &str,
+) -> AiMuxError {
+    AiMuxError::UnsupportedFunctionality(format!(
+        "Question \"{question_id}\" has type \"{}\", which is not supported by provider \"{provider}\" and model \"{model_id}\".",
+        question_type.as_str()
+    ))
+}
+
+/// Options of [`decide`]: the call options plus the operation settings.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DecideOptions {
+    pub state: DecisionInput,
+    #[ts(as = "std::collections::HashMap<String, DecisionQuestion>")]
+    pub questions: DecisionQuestions,
+    /// Maximum retries for transient provider failures. Defaults to 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub max_retries: Option<u32>,
+    /// Operation deadline (aimux extension).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub timeout: Option<crate::options::TimeoutConfiguration>,
+    #[serde(skip)]
+    #[ts(skip)]
+    pub abort_signal: Option<AbortSignal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub headers: Option<SharedHeaders>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub provider_options: Option<SharedProviderOptions>,
+}
+
+impl DecideOptions {
+    /// Options with only a state and questions.
+    #[must_use]
+    pub fn new(state: impl Into<DecisionInput>, questions: DecisionQuestions) -> Self {
+        Self {
+            state: state.into(),
+            questions,
+            max_retries: None,
+            timeout: None,
+            abort_signal: None,
+            headers: None,
+            provider_options: None,
+        }
+    }
+}
+
+/// Token usage of a decision, with the total when both counts are known.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DecideUsage {
+    pub input_tokens: Option<u32>,
+    pub output_tokens: Option<u32>,
+    pub total_tokens: Option<u32>,
+}
+
+/// The result of [`decide`] (`DecisionResult` of
+/// `ai@7.0.128 src/decide/decision-result.ts:22-39`).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DecideResult {
+    #[ts(as = "std::collections::HashMap<String, DecisionAnswer>")]
+    pub answers: IndexMap<String, DecisionAnswer>,
+    pub usage: DecideUsage,
+    #[serde(default)]
+    pub warnings: Vec<Warning>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub rounding: Option<DecisionRounding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub provider_metadata: Option<SharedProviderMetadata>,
+    /// The model's response information; the timestamp defaults to the end of
+    /// the call and the model id to the model's.
+    pub response: ResponseInfo,
+}
+
+fn invalid_input(parameter: &str, message: &str) -> AiMuxError {
+    AiMuxError::InvalidArgument(format!(
+        "Invalid argument for parameter {parameter}: {message}"
+    ))
+}
+
+/// Reject a request no model can answer
+/// (`ai@7.0.128 src/decide/validate-decision.ts:50-125`). The state,
+/// instructions and descriptions are JSON inputs by type, and Boolean
+/// criteria cannot carry other keys; what remains is the question map and
+/// the criteria sizes.
+///
 /// # Errors
-/// Returns invalid request, unsupported capability, provider, invalid response,
-/// retry exhaustion, timeout or caller abort errors.
+///
+/// `InvalidArgument` with the upstream message.
+pub fn validate_decision_input(questions: &DecisionQuestions) -> Result<(), AiMuxError> {
+    if questions.is_empty() {
+        return Err(invalid_input(
+            "questions",
+            "must be a nonempty question map",
+        ));
+    }
+    for (id, question) in questions {
+        let parameter = format!("questions.{id}");
+        match question {
+            DecisionQuestion::Choice { criteria, .. } if criteria.is_empty() => {
+                return Err(invalid_input(
+                    &parameter,
+                    "choice criteria must be a nonempty option map",
+                ));
+            }
+            DecisionQuestion::Score { criteria, .. } if criteria.len() < 2 => {
+                return Err(invalid_input(
+                    &parameter,
+                    "score criteria must contain at least two ordered levels",
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Absolute tolerance for sums and means; provider output is never
+/// renormalized (`ai@7.0.128 src/decide/validate-decision.ts:8-9`).
+const TOLERANCE: f64 = 1e-6;
+
+fn invalid_answer(message: String) -> AiMuxError {
+    AiMuxError::InvalidResponseData(message)
+}
+
+fn is_probability(value: f64) -> bool {
+    value.is_finite() && (0.0..=1.0).contains(&value)
+}
+
+fn validate_distribution(
+    distribution: &IndexMap<String, f64>,
+    keys: &[String],
+    id: &str,
+    rounding_error: f64,
+) -> Result<(), AiMuxError> {
+    if distribution.len() != keys.len()
+        || !keys.iter().all(|key| distribution.contains_key(key))
+        || !distribution.values().all(|p| is_probability(*p))
+    {
+        return Err(invalid_answer(format!(
+            "Question \"{id}\" must have a complete distribution of finite probabilities in [0, 1]."
+        )));
+    }
+    let sum: f64 = distribution.values().sum();
+    if (sum - 1.0).abs() > TOLERANCE + keys.len() as f64 * rounding_error {
+        return Err(invalid_answer(format!(
+            "Question \"{id}\" probabilities must sum to 1 within the declared rounding precision."
+        )));
+    }
+    Ok(())
+}
+
+fn rounding_error(decimals: Option<u32>) -> Result<f64, AiMuxError> {
+    match decimals {
+        None => Ok(0.0),
+        Some(decimals @ 0..=15) => Ok(0.5 * 10_f64.powi(-(decimals as i32))),
+        Some(_) => Err(invalid_answer(
+            "Decision rounding decimals must be integers between 0 and 15.".into(),
+        )),
+    }
+}
+
+/// Check the answers against the questions
+/// (`ai@7.0.128 src/decide/validate-decision.ts:176-298`): exactly one
+/// answer of the right type per question, choices among the options and of
+/// maximal probability, scores within the rubric and equal to the
+/// distribution's mean, probabilities in `[0, 1]` and summing to 1, each
+/// within the declared rounding.
+///
+/// # Errors
+///
+/// `InvalidResponseData` with the upstream message.
+pub fn validate_decision_answers(
+    questions: &DecisionQuestions,
+    answers: &IndexMap<String, DecisionAnswer>,
+    rounding: Option<DecisionRounding>,
+) -> Result<(), AiMuxError> {
+    let rounding = rounding.unwrap_or_default();
+    let probability_error = rounding_error(rounding.probability_decimals)?;
+    let score_error = rounding_error(rounding.score_decimals)?;
+    if answers.len() != questions.len() || !questions.keys().all(|id| answers.contains_key(id)) {
+        return Err(invalid_answer(
+            "Decision must return exactly one answer for every question.".into(),
+        ));
+    }
+    for (id, question) in questions {
+        match (question, &answers[id]) {
+            (
+                DecisionQuestion::Choice { criteria, .. },
+                DecisionAnswer::Choice {
+                    choice,
+                    probabilities,
+                },
+            ) => {
+                if !criteria.contains_key(choice) {
+                    return Err(invalid_answer(format!(
+                        "Question \"{id}\" selected an unknown option."
+                    )));
+                }
+                if let Some(probabilities) = probabilities {
+                    let keys: Vec<String> = criteria.keys().cloned().collect();
+                    validate_distribution(probabilities, &keys, id, probability_error)?;
+                    let selected = probabilities[choice];
+                    if probabilities.values().any(|p| *p > selected + TOLERANCE) {
+                        return Err(invalid_answer(format!(
+                            "Question \"{id}\" did not select a highest-probability option."
+                        )));
+                    }
+                }
+            }
+            (
+                DecisionQuestion::Score { criteria, .. },
+                DecisionAnswer::Score {
+                    score,
+                    probabilities,
+                },
+            ) => {
+                let max = criteria.len() - 1;
+                if !score.is_finite() || *score < 0.0 || *score > max as f64 {
+                    return Err(invalid_answer(format!(
+                        "Question \"{id}\" score must be in [0, {max}]."
+                    )));
+                }
+                if let Some(probabilities) = probabilities {
+                    let keys: Vec<String> = (0..criteria.len()).map(|i| i.to_string()).collect();
+                    validate_distribution(probabilities, &keys, id, probability_error)?;
+                    let mean: f64 = keys
+                        .iter()
+                        .enumerate()
+                        .map(|(index, key)| index as f64 * probabilities[key])
+                        .sum();
+                    let mean_rounding_error: f64 = (0..criteria.len())
+                        .map(|index| index as f64 * probability_error)
+                        .sum();
+                    if (mean - score).abs() > TOLERANCE + mean_rounding_error + score_error {
+                        return Err(invalid_answer(format!(
+                            "Question \"{id}\" score must equal the probability-weighted mean within the declared rounding precision."
+                        )));
+                    }
+                }
+            }
+            (DecisionQuestion::Boolean { .. }, DecisionAnswer::Boolean { probability }) => {
+                if !is_probability(*probability) {
+                    return Err(invalid_answer(format!(
+                        "Question \"{id}\" must return P(true) as a finite probability in [0, 1]."
+                    )));
+                }
+            }
+            _ => {
+                return Err(invalid_answer(format!(
+                    "Question \"{id}\" returned an answer with the wrong type."
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_abort(signal: Option<&AbortSignal>) -> Result<(), AiMuxError> {
+    match signal {
+        Some(signal) if signal.is_aborted() => Err(AiMuxError::from_abort_signal(signal)),
+        _ => Ok(()),
+    }
+}
+
+/// Decide answers to typed questions against one shared state
+/// (`ai@7.0.128 src/decide/decide.ts:36-200`).
+///
+/// In order: the input is validated; a question whose type the model does
+/// not support is rejected before any I/O; the model is called with retries
+/// (`max_retries`, default 2) within the timeout; the answers are validated
+/// after the retries, so invalid answers are not retried. The response
+/// timestamp defaults to now and its model id to the model's. With a
+/// recorder installed, the call is recorded with its options and result.
+///
+/// The operation's telemetry callbacks and tracing are not part of this
+/// port.
+///
+/// # Errors
+///
+/// `InvalidArgument` for an invalid request, `UnsupportedFunctionality` for
+/// an unsupported question type, provider and transport errors, retry
+/// exhaustion, timeout, abort, and `InvalidResponseData` for invalid answers.
 pub async fn decide(
     model: &dyn DecisionModel,
-    mut options: DecisionCallOptions,
-) -> Result<DecisionResult, AiMuxError> {
-    options.validate()?;
-    let capabilities = model.capabilities();
-    if !options.images.is_empty() && !capabilities.supports_images {
-        return Err(AiMuxError::UnsupportedFunctionality(format!(
-            "{} decisions do not support images",
-            model.provider()
-        )));
-    }
-    if capabilities
-        .max_images
-        .is_some_and(|max| options.images.len() > max)
-    {
-        return Err(AiMuxError::InvalidArgument(
-            "too many decision images".into(),
-        ));
-    }
-    if !capabilities.supports_typed_choices && options.questions.iter().any(|q| {
-        matches!(q, DecisionQuestion::Choice { options, .. } if options.iter().any(|o| o.value.is_some()))
-    }) {
-        return Err(AiMuxError::UnsupportedFunctionality(format!(
-            "{} decisions do not support native typed choice values", model.provider()
-        )));
-    }
-    if !capabilities.rounding.is_valid() {
-        return Err(AiMuxError::InvalidArgument(
-            "invalid provider rounding precision".into(),
-        ));
-    }
-    if capabilities
-        .max_questions
-        .is_some_and(|max| options.questions.len() > max)
-    {
-        return Err(AiMuxError::InvalidArgument(
-            "too many decision questions for this provider".into(),
-        ));
-    }
-    for question in &options.questions {
-        let (supported, valid_size) = match question {
-            DecisionQuestion::Boolean { .. } => (capabilities.supports_boolean, true),
-            DecisionQuestion::Choice { options, .. } => (
-                capabilities.supports_choice,
-                capabilities
-                    .min_choices
-                    .is_none_or(|min| options.len() >= min)
-                    && capabilities
-                        .max_choices
-                        .is_none_or(|max| options.len() <= max),
-            ),
-            DecisionQuestion::Score { levels, .. } => (
-                capabilities.supports_score,
-                capabilities
-                    .max_score_levels
-                    .is_none_or(|max| levels.len() <= max),
-            ),
-        };
-        if !supported {
-            return Err(AiMuxError::UnsupportedFunctionality(format!(
-                "decision question type unsupported by {}",
-                model.provider()
-            )));
-        }
-        if !valid_size {
-            return Err(AiMuxError::InvalidArgument(format!(
-                "question {:?} exceeds provider criteria limits",
-                question.id()
-            )));
+    options: DecideOptions,
+) -> Result<DecideResult, AiMuxError> {
+    validate_decision_input(&options.questions)?;
+    for (id, question) in &options.questions {
+        let question_type = question.question_type();
+        if !model.supported_question_types().contains(&question_type) {
+            return Err(unsupported_question_type_error(
+                id,
+                question_type,
+                model.provider(),
+                model.model_id(),
+            ));
         }
     }
     let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
@@ -602,7 +629,6 @@ pub async fn decide(
     let context = crate::recording::recorder().map(|recorder| {
         let ctx =
             crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);
-        options.recording_context = Some(ctx.clone());
         ctx.recorder.record_decision_input(
             &ctx.call_id,
             &options,
@@ -615,47 +641,58 @@ pub async fn decide(
         );
         ctx
     });
+    let call = DecisionCallOptions {
+        state: options.state,
+        questions: options.questions,
+        abort_signal: abort_signal.clone(),
+        headers: options.headers,
+        provider_options: options.provider_options,
+        recording_context: context.clone(),
+    };
     let result = timeout::run(
         retries.retry(|| async {
-            if let Some(ctx) = &options.recording_context {
+            check_abort(abort_signal.as_ref())?;
+            if let Some(ctx) = &call.recording_context {
                 let _ = ctx.start_attempt();
             }
-            let result = model.do_decide(&options).await?;
-            if result.rounding != capabilities.rounding {
-                return Err(AiMuxError::InvalidResponseData(
-                    "decision rounding does not match provider capabilities".into(),
-                ));
-            }
-            result.validate(&options)?;
-            if capabilities.returns_distributions
-                && result.answers.values().any(|answer| {
-                    matches!(
-                        answer,
-                        DecisionAnswer::Choice {
-                            probabilities: None,
-                            ..
-                        } | DecisionAnswer::Score {
-                            probabilities: None,
-                            ..
-                        }
-                    )
-                })
-            {
-                return Err(AiMuxError::InvalidResponseData(
-                    "decision provider omitted promised distributions".into(),
-                ));
-            }
-            Ok(result)
+            model.do_decide(&call).await
         }),
         abort_signal.as_ref(),
         timeout,
     )
-    .await;
+    .await
+    .and_then(|result| {
+        check_abort(abort_signal.as_ref())?;
+        validate_decision_answers(&call.questions, &result.answers, result.rounding)?;
+        let usage = result.usage.unwrap_or_default();
+        let mut response = result.response.unwrap_or_default();
+        response
+            .timestamp
+            .get_or_insert_with(crate::util::rfc3339_now);
+        response
+            .model_id
+            .get_or_insert_with(|| model.model_id().to_owned());
+        Ok(DecideResult {
+            answers: result.answers,
+            usage: DecideUsage {
+                input_tokens: usage.input_tokens,
+                output_tokens: usage.output_tokens,
+                total_tokens: usage
+                    .input_tokens
+                    .zip(usage.output_tokens)
+                    .and_then(|(input, output)| input.checked_add(output)),
+            },
+            warnings: result.warnings,
+            rounding: result.rounding,
+            provider_metadata: result.provider_metadata,
+            response,
+        })
+    });
     if let Some(ctx) = context {
         let outcome = match &result {
             Ok(result) => crate::recording::OutcomeRecord {
                 status: crate::recording::OutcomeStatus::Success,
-                usage: serde_json::to_value(&result.usage).ok(),
+                usage: serde_json::to_value(result.usage).ok(),
                 decision_result: serde_json::to_value(result)
                     .ok()
                     .map(crate::recording::redact_json),
@@ -667,4 +704,33 @@ pub async fn decide(
         ctx.recorder.record_outcome(&ctx.call_id, &outcome);
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn boolean_criteria_keep_null_apart_from_absent() {
+        let criteria: DecisionBooleanCriteria =
+            serde_json::from_value(serde_json::json!({"true": null})).unwrap();
+        assert_eq!(criteria.true_, Some(None));
+        assert_eq!(criteria.false_, None);
+        assert_eq!(
+            serde_json::to_value(&criteria).unwrap(),
+            serde_json::json!({"true": null})
+        );
+    }
+
+    /// `ai@7.0.128 src/decide/validate-decision.ts:96-105`: Boolean criteria
+    /// may only describe true and false.
+    #[test]
+    fn boolean_criteria_reject_other_keys() {
+        assert!(
+            serde_json::from_value::<DecisionBooleanCriteria>(
+                serde_json::json!({"true": "yes", "maybe": "no"})
+            )
+            .is_err()
+        );
+    }
 }

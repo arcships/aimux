@@ -1,4 +1,7 @@
-//! Port of `google/src/google-evaluation.test.ts`.
+//! Port of `google/src/google-evaluation.test.ts` (`@ai-sdk/google@4.0.87`).
+//! The tested `evaluationModel` is what the registry's decision lookup falls
+//! back to (`ai@7.0.128 src/registry/provider-registry.ts:447-461`); in
+//! aimux it is the provider's `decision_model`, a `DecisionModel`.
 //!
 //! The upstream fixture `google/src/__fixtures__/evaluation.json` is inlined
 //! below. Not ported: the `request.signal` identity assertion (the injected
@@ -13,10 +16,10 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 
 use aimux_core::AbortSignal;
-use aimux_core::error::AiMuxError;
-use aimux_core::evaluation_model::{
-    EvaluationAnswer, EvaluationCallOptions, EvaluationModel, EvaluationQuestionType,
+use aimux_core::decision_model::{
+    DecisionAnswer, DecisionCallOptions, DecisionModel, DecisionQuestionType,
 };
+use aimux_core::error::AiMuxError;
 use aimux_core::provider::Provider;
 use aimux_providers::google::{GoogleProviderSettings, create_google};
 
@@ -44,7 +47,7 @@ fn fixture() -> Value {
     })
 }
 
-fn options() -> EvaluationCallOptions {
+fn options() -> DecisionCallOptions {
     serde_json::from_value(json!({
         "state": { "message": "A billing issue with a workaround." },
         "questions": {
@@ -65,7 +68,7 @@ fn options() -> EvaluationCallOptions {
     .unwrap()
 }
 
-fn setup(body: &Value) -> (Arc<dyn EvaluationModel>, Arc<MockFetch>) {
+fn setup(body: &Value) -> (Arc<dyn DecisionModel>, Arc<MockFetch>) {
     let mock = MockFetch::new(vec![Canned {
         headers: vec![
             ("content-type".into(), "application/json".into()),
@@ -85,7 +88,7 @@ fn setup(body: &Value) -> (Arc<dyn EvaluationModel>, Arc<MockFetch>) {
     })
     .unwrap();
     let model = provider
-        .evaluation_model("gemini-3.5-flash-lite")
+        .decision_model("gemini-3.5-flash-lite")
         .unwrap()
         .unwrap();
     (model, mock)
@@ -114,26 +117,26 @@ async fn uses_structured_output_and_forwards_thinking_options() {
         json!({ "google": { "thinkingConfig": { "thinkingLevel": "high" } } }),
     )
     .ok();
-    let result = model.do_evaluate(&opts).await.unwrap();
+    let result = model.do_decide(&opts).await.unwrap();
     assert_eq!(model.provider(), "google.evaluation");
     assert_eq!(
         model.supported_question_types(),
         [
-            EvaluationQuestionType::Choice,
-            EvaluationQuestionType::Score,
-            EvaluationQuestionType::Boolean
+            DecisionQuestionType::Choice,
+            DecisionQuestionType::Score,
+            DecisionQuestionType::Boolean
         ]
     );
     assert_eq!(
         result.answers["department"],
-        EvaluationAnswer::Choice {
+        DecisionAnswer::Choice {
             choice: "billing".into(),
             probabilities: None
         }
     );
     assert_eq!(
         result.answers["severity"],
-        EvaluationAnswer::Score {
+        DecisionAnswer::Score {
             score: 1.25,
             probabilities: None
         }
@@ -177,7 +180,7 @@ async fn uses_structured_output_and_forwards_thinking_options() {
 #[tokio::test]
 async fn defaults_to_the_minimum_thinking_level() {
     let (model, mock) = setup(&fixture());
-    model.do_evaluate(&options()).await.unwrap();
+    model.do_decide(&options()).await.unwrap();
     assert_eq!(
         mock.seen()[0].json_body()["generationConfig"]["thinkingConfig"],
         json!({ "thinkingLevel": "minimal" })
@@ -193,10 +196,10 @@ async fn ignores_thought_text_while_counting_reasoning_tokens() {
     body["usageMetadata"]["thoughtsTokenCount"] = json!(10);
     body["usageMetadata"]["totalTokenCount"] = json!(55);
     let (model, _) = setup(&body);
-    let result = model.do_evaluate(&options()).await.unwrap();
+    let result = model.do_decide(&options()).await.unwrap();
     assert_eq!(
         result.answers["severity"],
-        EvaluationAnswer::Score {
+        DecisionAnswer::Score {
             score: 1.25,
             probabilities: None
         }
@@ -212,7 +215,7 @@ async fn rejects_unfinished_generations_even_with_valid_json() {
             fixture(),
             json!({ "finishReason": finish_reason }),
         ));
-        let error = model.do_evaluate(&options()).await.unwrap_err();
+        let error = model.do_decide(&options()).await.unwrap_err();
         assert!(
             matches!(error, AiMuxError::InvalidResponseData(_)),
             "got {error:?}"
@@ -224,7 +227,7 @@ async fn rejects_unfinished_generations_even_with_valid_json() {
 #[tokio::test]
 async fn validates_score_bounds_locally() {
     let (model, _) = setup(&with_candidate(fixture(), parts(r#"{"q0":"c1","q1":3}"#)));
-    let error = model.do_evaluate(&options()).await.unwrap_err();
+    let error = model.do_decide(&options()).await.unwrap_err();
     assert!(
         matches!(error, AiMuxError::InvalidResponseData(_)),
         "got {error:?}"
@@ -246,14 +249,14 @@ async fn evaluates_boolean_alongside_choice_and_score_in_one_request() {
         )
         .unwrap(),
     );
-    let result = model.do_evaluate(&opts).await.unwrap();
+    let result = model.do_decide(&opts).await.unwrap();
     assert_eq!(
         result.answers["flag"],
-        EvaluationAnswer::Boolean { probability: 0.02 }
+        DecisionAnswer::Boolean { probability: 0.02 }
     );
     assert_eq!(
         result.answers["department"],
-        EvaluationAnswer::Choice {
+        DecisionAnswer::Choice {
             choice: "billing".into(),
             probabilities: None
         }
@@ -273,7 +276,7 @@ async fn rejects_an_aborted_evaluation_without_a_request() {
     signal.abort();
     let mut opts = options();
     opts.abort_signal = Some(signal);
-    let error = model.do_evaluate(&opts).await.unwrap_err();
+    let error = model.do_decide(&opts).await.unwrap_err();
     assert!(matches!(error, AiMuxError::Aborted(_)));
     assert!(mock.seen().is_empty());
 }

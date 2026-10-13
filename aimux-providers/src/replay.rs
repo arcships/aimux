@@ -21,11 +21,12 @@ use aimux_core::recording::ProviderRecord;
 
 /// Rebuild a decision model using the caller's registered provider configuration.
 /// # Errors
-/// Rejects missing identities, missing providers and a different model provider.
+/// Rejects missing identities, missing providers, a provider without
+/// decision models (`NoSuchModel`) and a different model provider.
 pub fn rebuild_decision_provider(
     p: &ProviderRecord,
     registry: &ProviderRegistry,
-) -> Result<Box<dyn aimux_core::DecisionModel>, AiMuxError> {
+) -> Result<Arc<dyn aimux_core::DecisionModel>, AiMuxError> {
     if p.provider_id.is_empty() || p.model_id.is_empty() {
         return Err(AiMuxError::InvalidArgument(
             "decision replay: empty provider/model identity".into(),
@@ -33,7 +34,8 @@ pub fn rebuild_decision_provider(
     }
     let model = registry
         .provider(&p.provider_id)?
-        .decision_model(&p.model_id)?;
+        .decision_model(&p.model_id)
+        .unwrap_or_else(|| Err(AiMuxError::no_such_model(&p.model_id, "decisionModel")))?;
     if model.provider() != p.provider {
         return Err(AiMuxError::InvalidArgument(
             "decision replay: registered model provider differs from recording".into(),

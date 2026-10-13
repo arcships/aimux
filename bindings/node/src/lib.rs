@@ -1448,9 +1448,13 @@ impl ProviderHandle {
         AimuxResult(
             self.inner
                 .decision_model(&model_id)
-                .map(|model| DecisionModel {
-                    inner: Arc::from(model),
+                .unwrap_or_else(|| {
+                    Err(aimux_core::AiMuxError::no_such_model(
+                        &model_id,
+                        "decisionModel",
+                    ))
                 })
+                .map(|model| DecisionModel { inner: model })
                 .map_err(|error| AiMuxBindingError::from(&error)),
         )
     }

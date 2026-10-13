@@ -399,5 +399,6 @@ pub use you_com::{
 
 mod decision_scoring;
 mod decision_support;
+pub use decision_support::DecisionProbabilitySource;
 mod runtime_decision;
 mod systemone;

@@ -2993,8 +2993,11 @@ pub extern "C" fn aimux_provider_decision_model(
             .into());
         };
         let model_id = str_arg(model_id, "model_id")?;
-        let model = provider.provider.decision_model(&model_id)?;
-        Ok(intern_handle(HandleEntry::Decision(Arc::from(model))))
+        let model = provider
+            .provider
+            .decision_model(&model_id)
+            .unwrap_or_else(|| Err(AiMuxError::no_such_model(&model_id, "decisionModel")))?;
+        Ok(intern_handle(HandleEntry::Decision(model)))
     })
 }
 
@@ -3035,12 +3038,16 @@ pub extern "C" fn aimux_jev_decision_new_with_probability_source(
         if let Some(source) = opt_str_arg(probability_source, "probability_source")? {
             config.probability_source = source.parse()?;
         }
-        let model = aimux_providers::JevProvider::new(config).decision_model(&model_id)?;
-        Ok(intern_handle(HandleEntry::Decision(Arc::from(model))))
+        let model = aimux_providers::JevProvider::new(config)
+            .decision_model(&model_id)
+            .unwrap_or_else(|| Err(AiMuxError::no_such_model(&model_id, "decisionModel")))?;
+        Ok(intern_handle(HandleEntry::Decision(model)))
     })
 }
 
-/// Query native capabilities without a network call. Writes DecisionCapabilities JSON.
+/// Describe the model without a network call. Writes JSON
+/// `{specification_version, provider, model_id, supported_question_types}`,
+/// the `DecisionModelV4` properties.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_decision_capabilities(
     handle: u64,
@@ -3053,11 +3060,18 @@ pub extern "C" fn aimux_decision_capabilities(
             }
             .into());
         };
-        Ok(serde_json::to_string(&model.capabilities()).map_err(AiMuxError::from)?)
+        let description = serde_json::json!({
+            "specification_version": model.specification_version(),
+            "provider": model.provider(),
+            "model_id": model.model_id(),
+            "supported_question_types": model.supported_question_types(),
+        });
+        Ok(description.to_string())
     })
 }
 
-/// Execute a typed decision. Writes DecisionResult JSON.
+/// Execute a typed decision. `opts_json` is `DecideOptions` JSON; writes
+/// `DecideResult` JSON.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_decide(
     handle: u64,
@@ -3082,7 +3096,7 @@ pub extern "C" fn aimux_decide_with_abort(
             }
             .into());
         };
-        let mut opts: aimux_core::decision_model::DecisionCallOptions =
+        let mut opts: aimux_core::decision_model::DecideOptions =
             parse_json_arg(opts_json, "opts_json")?;
         if abort_handle != 0 {
             opts.abort_signal = Some(abort_of(abort_handle)?);

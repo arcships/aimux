@@ -13,37 +13,29 @@
     "state": {
       "message": "Checkout is broken"
     },
-    "questions": [
-      {
-        "id": "urgent",
+    "questions": {
+      "urgent": {
         "type": "boolean",
         "instructions": "Needs a response today?"
       },
-      {
-        "id": "team",
+      "team": {
         "type": "choice",
         "instructions": "Select a team",
-        "options": [
-          {
-            "label": "billing",
-            "description": "Invoices"
-          },
-          {
-            "label": "support"
-          }
-        ]
+        "criteria": {
+          "billing": "Invoices",
+          "support": null
+        }
       },
-      {
-        "id": "severity",
+      "severity": {
         "type": "score",
         "instructions": "How severe?",
-        "levels": [
+        "criteria": [
           "minor",
           "major",
           "critical"
         ]
       }
-    ],
+    },
     "max_retries": 0
   },
   "request": {
