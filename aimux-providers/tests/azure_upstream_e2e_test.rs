@@ -371,3 +371,55 @@ async fn speech_transcription_request() {
         );
     }
 }
+
+/// With a `token_provider`, the bearer token is added by the transport
+/// (azure-openai-provider.ts:248-262), once, before fetch follows a redirect;
+/// fetch drops `authorization` on a cross-origin hop. aimux follows redirects
+/// in the helper layer and sends such a hop through the transport again with
+/// `RequestCredentials::Omit`, so the token must not be added back there.
+#[tokio::test]
+async fn token_provider_bearer_is_not_sent_across_a_cross_origin_redirect() {
+    use wiremock::matchers::any;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let origin = MockServer::start().await;
+    let foreign = MockServer::start().await;
+    Mock::given(any())
+        .respond_with(
+            ResponseTemplate::new(307)
+                .insert_header("location", format!("{}/moved", foreign.uri()).as_str()),
+        )
+        .mount(&origin)
+        .await;
+    Mock::given(any())
+        .respond_with(ResponseTemplate::new(200).set_body_json(chat_response()))
+        .mount(&foreign)
+        .await;
+    let provider = create_azure(AzureOpenAIProviderSettings {
+        base_url: Some(format!("{}/openai", origin.uri())),
+        token_provider: Some(Resolvable::Value("test-token".into())),
+        ..Default::default()
+    })
+    .unwrap();
+    provider
+        .chat("test-deployment")
+        .do_generate(&prompt())
+        .await
+        .unwrap();
+
+    let first = origin.received_requests().await.unwrap();
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].headers["authorization"], "Bearer test-token");
+    let hop = foreign.received_requests().await.unwrap();
+    assert_eq!(hop.len(), 1);
+    assert!(
+        !hop[0].headers.contains_key("authorization"),
+        "the bearer token reached another origin"
+    );
+    assert!(
+        hop[0].headers["user-agent"]
+            .to_str()
+            .unwrap()
+            .contains("ai-sdk-azure/")
+    );
+}
