@@ -4,8 +4,6 @@
 //! Aligned with Vercel AI SDK `AnthropicFiles`
 //! (`reference/ai/packages/anthropic/src/anthropic-files.ts`).
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;

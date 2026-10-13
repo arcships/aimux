@@ -13,7 +13,6 @@
 //! 3. If the file state is `PROCESSING`, poll `{base_url}/{file.name}` until
 //!    the state becomes `ACTIVE` or `FAILED`.
 
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;

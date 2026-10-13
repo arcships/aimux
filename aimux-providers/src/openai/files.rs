@@ -4,8 +4,6 @@
 //! Aligned with Vercel AI SDK `OpenAIFiles`
 //! (`reference/ai/packages/openai/src/files/openai-files.ts`).
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;

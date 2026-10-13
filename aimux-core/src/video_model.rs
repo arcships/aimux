@@ -935,9 +935,8 @@ mod tests {
                     .await
                     .map_err(|error| match error {
                         AiMuxError::ApiCall(mut detail) => {
-                            detail.response_headers = Some(
-                                [("retry-after-ms".to_string(), "30000".to_string())].into(),
-                            );
+                            detail.response_headers =
+                                Some([("retry-after-ms".to_string(), "30000".to_string())].into());
                             AiMuxError::ApiCall(detail)
                         }
                         other => other,

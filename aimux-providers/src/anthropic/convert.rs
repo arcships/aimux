@@ -2390,7 +2390,7 @@ pub(crate) fn build_request_body_for(
         let namespaces = parsed_options
             .provider_options
             .get_or_insert_with(Default::default);
-        namespaces.remove(CANONICAL);
+        namespaces.shift_remove(CANONICAL);
         namespaces.insert(
             profile.options_name.clone(),
             parsed.as_object().unwrap().clone(),

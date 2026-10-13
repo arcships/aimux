@@ -30,7 +30,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput};
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
+use aimux_core::tool::{FunctionTool, LanguageModelV4ToolChoice, Tool};
 use aimux_core::types::FinishReasonUnified;
 use aimux_provider_utils::{Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse};
 use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
@@ -270,14 +270,14 @@ fn call_options_from(input: &Value) -> CallOptions {
         );
     }
     options.tool_choice = match input.get("toolChoice").and_then(Value::as_str) {
-        Some("required") => Some(ToolChoice::Required),
-        Some("none") => Some(ToolChoice::None),
-        Some("auto") => Some(ToolChoice::Auto),
+        Some("required") => Some(LanguageModelV4ToolChoice::Required),
+        Some("none") => Some(LanguageModelV4ToolChoice::None),
+        Some("auto") => Some(LanguageModelV4ToolChoice::Auto),
         None => options
             .tools
             .as_ref()
             .filter(|tools| !tools.is_empty())
-            .map(|_| ToolChoice::Auto),
+            .map(|_| LanguageModelV4ToolChoice::Auto),
         Some(other) => panic!("unmapped toolChoice {other}"),
     };
     options.provider_options = input

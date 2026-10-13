@@ -163,7 +163,7 @@ pub fn prepare_tools_with_provider(
 #[must_use]
 pub(crate) fn prepare_tools_for(
     tools: Option<&[AnthropicTool]>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
     disable_parallel_tool_use: bool,
     supports_structured_output: bool,
     supports_strict_tools: bool,

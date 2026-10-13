@@ -8,8 +8,6 @@
 //!
 //! Both endpoints return the same JSON response shape (`openaiImageResponseSchema`).
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 

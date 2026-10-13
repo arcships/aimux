@@ -1545,7 +1545,7 @@ mod do_generate_tests {
                 )
                 .with_description("Get the weather in a location"),
             )]),
-            tool_choice: Some(ToolChoice::Required),
+            tool_choice: Some(LanguageModelV4ToolChoice::Required),
             ..CallOptions::new(test_prompt())
         };
         let result = model.do_generate(&options).await.unwrap();
@@ -1580,7 +1580,7 @@ mod do_generate_tests {
                 FunctionTool::new("weather", json!({"type": "object"}))
                     .with_description("Get the weather in a location"),
             )]),
-            tool_choice: Some(ToolChoice::Required),
+            tool_choice: Some(LanguageModelV4ToolChoice::Required),
             ..CallOptions::new(test_prompt())
         };
         let result = model.do_generate(&options).await.unwrap();
@@ -1600,7 +1600,7 @@ mod do_generate_tests {
                 FunctionTool::new("weather", json!({"type": "object"}))
                     .with_description("Get the weather in a location"),
             )]),
-            tool_choice: Some(ToolChoice::Required),
+            tool_choice: Some(LanguageModelV4ToolChoice::Required),
             ..CallOptions::new(test_prompt())
         };
         let result = model.do_generate(&options).await.unwrap();
@@ -1637,7 +1637,7 @@ mod do_generate_tests {
         let model = make_model(&server, "gemma-7b-it");
         let options = CallOptions {
             tools: Some(vec![test_tool()]),
-            tool_choice: Some(ToolChoice::Auto),
+            tool_choice: Some(LanguageModelV4ToolChoice::Auto),
             ..CallOptions::new(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -1656,7 +1656,7 @@ mod do_generate_tests {
         let model = make_model(&server, "gemma-7b-it");
         let options = CallOptions {
             tools: Some(vec![test_tool()]),
-            tool_choice: Some(ToolChoice::None),
+            tool_choice: Some(LanguageModelV4ToolChoice::None),
             ..CallOptions::new(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -1674,7 +1674,7 @@ mod do_generate_tests {
         let model = make_model(&server, "gemma-7b-it");
         let options = CallOptions {
             tools: Some(vec![test_tool()]),
-            tool_choice: Some(ToolChoice::Required),
+            tool_choice: Some(LanguageModelV4ToolChoice::Required),
             ..CallOptions::new(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -1692,7 +1692,7 @@ mod do_generate_tests {
         let model = make_model(&server, "gemma-7b-it");
         let options = CallOptions {
             tools: Some(vec![test_tool()]),
-            tool_choice: Some(ToolChoice::Tool {
+            tool_choice: Some(LanguageModelV4ToolChoice::Tool {
                 tool_name: "get_weather".to_string(),
             }),
             ..CallOptions::new(test_prompt())

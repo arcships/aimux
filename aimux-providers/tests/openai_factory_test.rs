@@ -30,11 +30,10 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, TextPart,
 };
-use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
+use aimux_core::tool::{FunctionTool, LanguageModelV4ToolChoice, Tool};
 use aimux_core::types::FinishReasonUnified;
 use aimux_provider_utils::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
@@ -301,21 +300,21 @@ impl Fixture {
     }
 }
 
-fn message(role: Role, text: &str) -> LanguageModelMessage {
+fn message(role: &str, text: &str) -> LanguageModelMessage {
     match role {
-        Role::System => LanguageModelMessage::System {
+        "system" => LanguageModelMessage::System {
             content: text.into(),
             provider_options: None,
         },
-        Role::User => LanguageModelMessage::user_text(text),
-        Role::Assistant => LanguageModelMessage::Assistant {
+        "user" => LanguageModelMessage::user_text(text),
+        "assistant" => LanguageModelMessage::Assistant {
             content: vec![AssistantPart::Text(TextPart {
                 text: text.into(),
                 provider_options: None,
             })],
             provider_options: None,
         },
-        Role::Tool => panic!("unmapped tool role"),
+        other => panic!("unmapped role {other}"),
     }
 }
 
@@ -324,10 +323,10 @@ fn message(role: Role, text: &str) -> LanguageModelMessage {
 fn call_options_from(input: &Value) -> CallOptions {
     let mut prompt: LanguageModelPrompt = Vec::new();
     if let Some(system) = input.get("system").and_then(Value::as_str) {
-        prompt.push(message(Role::System, system));
+        prompt.push(message("system", system));
     }
     if let Some(text) = input.get("prompt").and_then(Value::as_str) {
-        prompt.push(message(Role::User, text));
+        prompt.push(message("user", text));
     }
     for entry in input
         .get("messages")
@@ -335,12 +334,10 @@ fn call_options_from(input: &Value) -> CallOptions {
         .into_iter()
         .flatten()
     {
-        let role = match entry["role"].as_str().unwrap() {
-            "user" => Role::User,
-            "assistant" => Role::Assistant,
-            other => panic!("unmapped role {other}"),
-        };
-        prompt.push(message(role, entry["content"].as_str().unwrap()));
+        prompt.push(message(
+            entry["role"].as_str().unwrap(),
+            entry["content"].as_str().unwrap(),
+        ));
     }
     let mut options = CallOptions::new(prompt);
     options.temperature = input.get("temperature").and_then(Value::as_f64);
@@ -369,14 +366,14 @@ fn call_options_from(input: &Value) -> CallOptions {
         );
     }
     options.tool_choice = match input.get("toolChoice").and_then(Value::as_str) {
-        Some("required") => Some(ToolChoice::Required),
-        Some("none") => Some(ToolChoice::None),
-        Some("auto") => Some(ToolChoice::Auto),
+        Some("required") => Some(LanguageModelV4ToolChoice::Required),
+        Some("none") => Some(LanguageModelV4ToolChoice::None),
+        Some("auto") => Some(LanguageModelV4ToolChoice::Auto),
         None => options
             .tools
             .as_ref()
             .filter(|tools| !tools.is_empty())
-            .map(|_| ToolChoice::Auto),
+            .map(|_| LanguageModelV4ToolChoice::Auto),
         Some(other) => panic!("unmapped toolChoice {other}"),
     };
     options.provider_options = input

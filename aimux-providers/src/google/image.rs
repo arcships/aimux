@@ -7,8 +7,6 @@
 //! - **Imagen** models (non-`gemini-*`): `POST {base_url}/models/{id}:predict`
 //! - **Gemini** image models (`gemini-*`): `POST {base_url}/models/{id}:generateContent`
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 

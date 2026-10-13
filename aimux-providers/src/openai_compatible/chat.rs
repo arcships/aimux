@@ -306,7 +306,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
 
         let mut namespace = Map::new();
         prediction_tokens(data.usage.as_ref(), &mut namespace);
-        let mut metadata = HashMap::new();
+        let mut metadata = aimux_core::shared::SharedProviderMetadata::new();
         metadata.insert(metadata_key, namespace);
         if let Some(extractor) = &dialect.metadata_extractor
             && let Some(extra) = extractor.extract_metadata(&raw)
@@ -657,7 +657,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
 
             let mut namespace = Map::new();
             prediction_tokens(final_usage_parsed.as_ref(), &mut namespace);
-            let mut metadata = HashMap::new();
+            let mut metadata = aimux_core::shared::SharedProviderMetadata::new();
             metadata.insert(metadata_key.clone(), namespace);
             if let Some(extractor) = &metadata_extractor
                 && let Some(extra) = extractor.build_metadata()

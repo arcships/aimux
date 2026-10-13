@@ -11,7 +11,6 @@
 //! there: it is loaded for every request, from the setting or from `PRODIA_API_KEY`.
 //! [`prodia()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use async_trait::async_trait;

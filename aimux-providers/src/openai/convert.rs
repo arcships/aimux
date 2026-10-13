@@ -924,7 +924,7 @@ pub(crate) fn build_request_body_with_chat_options(
         parse,
     )?
     .map(|parsed| {
-        std::collections::HashMap::from([(super::options::NAMESPACE.to_string(), parsed)])
+        aimux_core::shared::NamespaceMap::from([(super::options::NAMESPACE.to_string(), parsed)])
     });
     let provider_opts = &parsed_provider_opts;
 

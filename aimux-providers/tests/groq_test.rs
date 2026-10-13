@@ -749,7 +749,7 @@ mod prepare_tools {
         let model = make_provider(&server);
 
         let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "some.unsupported_tool".to_string(),
+            id: "some.unsupported_tool".parse().unwrap(),
             name: "unsupported_tool".to_string(),
             args: serde_json::Map::new(),
         });
@@ -933,7 +933,7 @@ mod prepare_tools {
         let model = model_at(&server, browser_search_model_ids()[1]);
 
         let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "groq.browser_search".to_string(),
+            id: "groq.browser_search".parse().unwrap(),
             name: "browser_search".to_string(),
             args: serde_json::Map::new(),
         });
@@ -956,7 +956,7 @@ mod prepare_tools {
         let model = make_provider(&server);
 
         let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "groq.browser_search".to_string(),
+            id: "groq.browser_search".parse().unwrap(),
             name: "browser_search".to_string(),
             args: serde_json::Map::new(),
         });
@@ -988,7 +988,7 @@ mod prepare_tools {
         let func_tool = FunctionTool::new("test-tool", json!({"type":"object","properties":{}}))
             .with_description("A test tool");
         let browser_tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "groq.browser_search".to_string(),
+            id: "groq.browser_search".parse().unwrap(),
             name: "browser_search".to_string(),
             args: serde_json::Map::new(),
         });
@@ -1016,7 +1016,7 @@ mod prepare_tools {
             let model = model_at(&server, model_id);
 
             let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-                id: "groq.browser_search".to_string(),
+                id: "groq.browser_search".parse().unwrap(),
                 name: "browser_search".to_string(),
                 args: serde_json::Map::new(),
             });
