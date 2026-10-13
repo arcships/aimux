@@ -504,6 +504,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attempt, an exchange update that matches no exchange) is written with
   `complete: false`, by the JSONL and the ring recorder, whether its last
   event or a flush writes it. Such calls used to be marked complete.
+- `aimux-replay` replays a decision recording live for any provider with a
+  decision model (OpenAI, the runtime presets, Jev), rebuilt from the same
+  registry as language recordings: the built-in providers, the recorded one
+  with `--api-key` when given. It accepted only Jev.
 
 ### RFCs
 
