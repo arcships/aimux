@@ -124,7 +124,7 @@ pub fn prepare_responses_tools(
                         Some(func)
                     }
                     Tool::Provider(pt) => {
-                        provider_tool_names.insert(pt.id.clone(), pt.name.clone());
+                        provider_tool_names.insert(pt.id.to_string(), pt.name.clone());
                         prepare_provider_tool(pt, &mut tool_warnings)
                     }
                 })

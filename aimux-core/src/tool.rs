@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::types::ProviderMetadata;
+use crate::types::{NamespacedKind, ProviderMetadata};
 
 /// A tool definition passed to the model in `CallOptions.tools`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -72,7 +72,9 @@ impl FunctionTool {
 }
 
 /// A provider-defined tool (e.g. `anthropic.web_search_20250305`,
-/// `google.googleSearch`). Mirrors the V4 `LanguageModelV4ProviderTool`.
+/// `google.googleSearch`). Mirrors the V4 `LanguageModelV4ProviderTool`
+/// (`@ai-sdk/provider@4.0.21
+/// src/language-model/v4/language-model-v4-provider-tool.ts:8-28`).
 ///
 /// Provider tools are specific to a certain provider. The input and output
 /// schemas are defined by the provider, and some are executed on the provider's
@@ -81,7 +83,7 @@ impl FunctionTool {
 #[ts(export)]
 pub struct ProviderTool {
     /// The ID of the tool, following the format `<provider-id>.<unique-tool-name>`.
-    pub id: String,
+    pub id: NamespacedKind,
     /// The name of the tool, unique within this model call.
     pub name: String,
     /// The arguments for configuring the tool. Must match the expected

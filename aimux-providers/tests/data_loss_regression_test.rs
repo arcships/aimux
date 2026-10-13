@@ -140,7 +140,7 @@ fn opts_with_tools(tools: Vec<Tool>) -> CallOptions {
 
 fn provider_tool(id: &str, name: &str) -> Tool {
     Tool::Provider(ProviderTool {
-        id: id.to_string(),
+        id: id.parse().unwrap(),
         name: name.to_string(),
         args: serde_json::Map::new(),
     })

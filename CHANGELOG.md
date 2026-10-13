@@ -43,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on `LanguageModelV4ToolChoice`. Recordings store the object form, so an
   `ExactMatcher` no longer matches recordings made before this change.
 
+- `ProviderTool.id` is a `types::NamespacedKind`, the V4
+  `${string}.${string}` identifier: an id without a `.` (for example
+  `"web_search"` instead of `"openai.web_search"`) no longer deserializes,
+  and `NamespacedKind::new` / `parse` check it when built in Rust. The JSON
+  is still a plain string.
+
 - Removed the generated `ProviderName` type in every binding (Rust enum, TS
   const object, Go/Java/Kotlin consts, Swift enum, Dart consts, Python
   `Literal`) and `scripts/gen_provider_names.py`. Provider names are plain
