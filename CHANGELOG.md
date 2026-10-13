@@ -479,6 +479,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ProviderHandle` calls `aimux_drop_handle_ptr`. It called
   `aimux_drop_handle(uint64_t)` through a `void (*)(void *)` pointer, which on
   32-bit ARM (armeabi-v7a) passes a garbage high word and leaks the handle.
+- Python: every blocking native call (`generate_text`, `generate_object`,
+  `consume_stream_text`, `generate_text_as_openai`,
+  `ProviderHandle.list_models`, `get_model_specs`, the multimodal calls and
+  the recording flushes) releases the GIL while it waits, so other Python
+  threads keep running.
 
 ### RFCs
 

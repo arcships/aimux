@@ -3,9 +3,9 @@
 Verifies the FULL chain: Python → PyO3 → aimux-core → HTTP mock →
 response parsing → typed result.
 
-The mock server runs in a separate process (multiprocessing) because
-PyO3's block_on blocks the calling thread — a threading-based server
-would deadlock.
+The mock server runs in a separate process (multiprocessing). Native calls
+release the GIL, so a server thread in this process works too
+(test_gil.py relies on it).
 """
 
 import json
