@@ -684,7 +684,7 @@ Telemetry 保留当前采用范围的生命周期回调、object callbacks、emb
 - 对应 scope；
 - 现有 object callback 语义。
 
-非 LM 模态增加 `ModelCall { modality }` attempt span。不能把 SDK 的 operation 级 embed span描述为天然的逐 attempt span。
+非 LM 模态增加 `ModelCall { modality }` attempt span。不能把 SDK 的 operation 级 embed span描述为天然的逐 attempt span。（基线 ai 7.0.122 没有 speech / transcription 的 tracing；7.0.127 起上游增加了 generateSpeech / transcribe / streamTranscribe 的 tracing 类型与回调，见 `telemetry/tracing-channel.ts:12-14`，升级基线时重新核对哪些仍属 aimux 扩展。）
 
 **流结果所有权：**
 
@@ -1587,6 +1587,8 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 ---
 
 # 第二部分:core 消息协议统一设计
+
+> 范围说明:按 §0.4 Q1,本部分涉及工具执行、审批状态转换、多步聚合的转换规则只要求类型与 wire 就位,运行时不在本期范围(§5 登记为"尚未对齐的行为")。
 
 建议把消息协议拆成四层：**用户输入、provider 输入、provider 输出、core 输出**。每层只有一套明确契约，跨层通过显式转换连接；相同字段结构复用，语义不同的类型保留边界。当前最严重的问题正是边界消失：同一个工具调用类型既表示原始字符串又表示解析值，同一个内容联合同时承担用户消息和 provider prompt。
 
@@ -2673,7 +2675,7 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 | optional/null | 缺失、null、false、0、空字符串、空数组、空对象分别测试 |
 | 二进制 | 空数据、0/255 字节、非 ASCII、原始 bytes/base64 同值 |
 | options/metadata | 双层对象约束、多个 namespace、深层任意 JSON、嵌套 null |
-| 工具调用 | 原始合法/非法 JSON、合法字符串参数、repair、static/dynamic、deferred result |
+| 工具调用 | 原始合法/非法 JSON、空或空白参数、合法字符串参数、repair、static/dynamic、deferred result |
 | 消息回放 | 生成图片、reasoning-file、signature-only reasoning、provider/server tools、审批拒绝 |
 | 流状态 | 交错 block id、metadata 增量、preliminary、finish-step/finish、abort/transport failure |
 | SDK 行为对照 | 相同 fixtures 比较本地 AI SDK 的标准化与 responseMessages 输出 |
