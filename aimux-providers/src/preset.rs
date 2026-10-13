@@ -246,11 +246,12 @@ fn load_registry() -> Vec<PresetEntry> {
         );
         // bedrock-mantle-provider.ts:236-240 (getHeaders) names the
         // amazon-bedrock package, not openai-compatible.
-        let user_agent = match row.profile.get("user_agent").copied() {
-            None => crate::openai_compatible::OPENAI_COMPATIBLE_USER_AGENT,
-            Some("amazon-bedrock") => ("amazon-bedrock", crate::shared::aisdk_pins::AMAZON_BEDROCK),
+        let package = match row.profile.get("user_agent").copied() {
+            None => crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
+            Some("amazon-bedrock") => crate::shared::aisdk_pins::AMAZON_BEDROCK,
             Some(value) => panic!("registry row '{}': unknown user_agent {value:?}", row.name),
         };
+        let user_agent = (package.name, package.version);
         let max_tokens_key = row.profile.get("max_tokens_key").copied();
         check(
             max_tokens_key.is_none_or(|key| matches!(key, "max_tokens" | "max_completion_tokens")),
@@ -433,20 +434,19 @@ fn assemble(
 
     // The Bedrock Mantle transport appends the package part a second time,
     // after `ai-sdk-provider-utils/<v>` (amazon-bedrock-sigv4-fetch.ts:126-130,
-    // the API-key fetch of bedrock-mantle-provider.ts).
-    let fetch = match descriptor.user_agent {
-        (package @ "amazon-bedrock", version) => {
-            let inner = settings
-                .fetch
-                .unwrap_or_else(aimux_provider_utils::default_fetch);
+    // the API-key fetch of bedrock-mantle-provider.ts). The assembly names
+    // the package's provider-utils in that part.
+    let (package, fetch) = match descriptor.user_agent.0 {
+        "amazon-bedrock" => {
+            let package = crate::shared::aisdk_pins::AMAZON_BEDROCK;
             let fetch: FetchFunction = Arc::new(crate::shared::UserAgentFetch {
-                inner,
-                suffix: format!("ai-sdk-{package}/{version}"),
-                provider_utils: Some(crate::shared::aisdk_pins::AMAZON_BEDROCK_PROVIDER_UTILS),
+                inner: settings.fetch,
+                provider_utils: None,
+                suffix: Some(format!("ai-sdk-{}/{}", package.name, package.version)),
             });
-            Some(fetch)
+            (package, Some(fetch))
         }
-        _ => settings.fetch,
+        _ => (crate::shared::aisdk_pins::OPENAI_COMPATIBLE, settings.fetch),
     };
     OpenAICompatibleProvider::assemble(Assembly {
         name: descriptor.name.to_string(),
@@ -458,7 +458,7 @@ fn assemble(
         fetch,
         transform_request_body: settings.transform_request_body,
         profile,
-        user_agent: descriptor.user_agent,
+        package,
     })
 }
 

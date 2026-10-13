@@ -100,10 +100,13 @@ pub fn create_groq(settings: GroqProviderSettings) -> Result<GroqProvider, AiMux
                 Vec::new(),
                 settings.headers,
             ),
-            "groq",
-            crate::shared::aisdk_pins::GROQ,
+            crate::shared::aisdk_pins::GROQ.name,
+            crate::shared::aisdk_pins::GROQ.version,
         ),
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::GROQ,
+        )),
     })
 }
 

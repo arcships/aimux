@@ -263,8 +263,8 @@ impl Resolver {
             Publisher::Google => {
                 aimux_provider_utils::headers::with_user_agent_suffix_fn(
                     Resolvable::Value(headers),
-                    "google-vertex",
-                    crate::shared::aisdk_pins::GOOGLE_VERTEX,
+                    crate::shared::aisdk_pins::GOOGLE_VERTEX.name,
+                    crate::shared::aisdk_pins::GOOGLE_VERTEX.version,
                 )
                 .resolve()
                 .await?
@@ -312,7 +312,10 @@ pub fn create_google_vertex(
             use_access_token_env: true,
             auth: auth::GoogleAuth::new(google_auth_options, settings.fetch.clone()),
         }),
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::GOOGLE_VERTEX,
+        )),
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
         transform_request_body: settings.transform_request_body,

@@ -233,17 +233,20 @@ pub fn create_azure(
         speech_base_url,
         speech_headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
             speech_headers,
-            options::NAMESPACE,
-            crate::shared::aisdk_pins::AZURE,
+            crate::shared::aisdk_pins::AZURE.name,
+            crate::shared::aisdk_pins::AZURE.version,
         ),
         info,
         api_version: settings.api_version,
         use_deployment_based_urls: settings.use_deployment_based_urls,
-        fetch,
+        fetch: Some(crate::shared::package_fetch(
+            fetch,
+            crate::shared::aisdk_pins::AZURE,
+        )),
         headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
             headers,
-            options::NAMESPACE,
-            crate::shared::aisdk_pins::AZURE,
+            crate::shared::aisdk_pins::AZURE.name,
+            crate::shared::aisdk_pins::AZURE.version,
         ),
         tools: crate::openai::tools::AzureOpenAITools,
     })

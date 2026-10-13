@@ -184,6 +184,7 @@ pub fn create_google_vertex_maas(
         },
         base_url,
         headers,
+        crate::shared::aisdk_pins::GOOGLE_VERTEX_OPENAI_COMPATIBLE,
     )
 }
 
@@ -269,6 +270,7 @@ pub fn create_google_vertex_xai(
         },
         base_url,
         headers,
+        crate::shared::aisdk_pins::GOOGLE_VERTEX_OPENAI_COMPATIBLE,
     )?;
     Ok(VertexXaiProvider(provider))
 }

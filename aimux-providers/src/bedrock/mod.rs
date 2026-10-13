@@ -376,13 +376,11 @@ impl Fetch for BedrockAuthFetch {
         // `ai-sdk-provider-utils/<v>` (the 5.0.51 that amazon-bedrock pins)
         // and before signing, like amazon-bedrock-sigv4-fetch.ts:42-46
         // (SigV4) and :126-130 (API key).
+        let package = crate::shared::aisdk_pins::AMAZON_BEDROCK;
         crate::shared::transport_user_agent(
             &mut request.headers,
-            Some(crate::shared::aisdk_pins::AMAZON_BEDROCK_PROVIDER_UTILS),
-            &format!(
-                "ai-sdk-amazon-bedrock/{}",
-                crate::shared::aisdk_pins::AMAZON_BEDROCK
-            ),
+            Some(package.provider_utils),
+            Some(&format!("ai-sdk-{}/{}", package.name, package.version)),
         );
         if request.headers.contains_key(reqwest::header::AUTHORIZATION) {
             self.inner.fetch(request).await
@@ -424,10 +422,8 @@ pub fn create_amazon_bedrock(
         // amazon-bedrock-provider.ts:292-295 (getHeaders) appends the pinned
         // package part. The helper then adds `ai-sdk-provider-utils/<v>` and
         // the transport (`BedrockAuthFetch`) the second occurrence.
-        let suffix = format!(
-            "ai-sdk-amazon-bedrock/{}",
-            crate::shared::aisdk_pins::AMAZON_BEDROCK
-        );
+        let package = crate::shared::aisdk_pins::AMAZON_BEDROCK;
+        let suffix = format!("ai-sdk-{}/{}", package.name, package.version);
         let agent = user
             .get("user-agent")
             .and_then(|value| value.as_deref())

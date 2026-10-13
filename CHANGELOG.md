@@ -35,6 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@ai-sdk/amazon-bedrock` 5.0.100 and `@ai-sdk/anthropic-aws` 2.0.63 (the
   package part is appended again by the transport).
 
+- The `ai-sdk-provider-utils/<v>` part of a pinned package's user-agent names
+  the provider-utils that the package's upstream `package.json` depends on, as
+  the AI SDK sends it. That is 5.0.51 for Azure, Bedrock, Cohere, DeepSeek,
+  Groq, Mistral, xAI and Google Vertex, and 5.0.53 for OpenAI,
+  OpenAI-compatible, Anthropic, Anthropic-AWS and Google. A per-call
+  `user-agent` keeps the package's part. The Vertex MaaS and xAI
+  sub-providers send `ai-sdk-openai-compatible/3.0.59`, the version
+  google-vertex depends on. Other packages send `ai-sdk-provider-utils/5.0.53`.
+
 - Anthropic-AWS follows `@ai-sdk/anthropic-aws` 2.0.63 settings: the region
   comes from the setting or `AWS_REGION` with no `us-east-1` default; the
   workspace id is required, from the setting or `ANTHROPIC_AWS_WORKSPACE_ID`;

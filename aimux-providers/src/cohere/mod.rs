@@ -122,14 +122,17 @@ pub fn create_cohere(settings: CohereProviderSettings) -> Result<CohereProvider,
     );
     let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
         headers,
-        options::NAMESPACE,
-        crate::shared::aisdk_pins::COHERE,
+        crate::shared::aisdk_pins::COHERE.name,
+        crate::shared::aisdk_pins::COHERE.version,
     );
     Ok(CohereProvider {
         generate_id: settings.generate_id,
         base_url,
         headers,
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::COHERE,
+        )),
     })
 }
 
