@@ -201,7 +201,7 @@ impl VertexImageModel {
             warnings,
             provider_metadata: Some(metadata),
             response: ImageResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(rh),
             },

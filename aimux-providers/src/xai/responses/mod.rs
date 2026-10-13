@@ -468,7 +468,7 @@ impl LanguageModel for XaiResponsesModel {
 
         let timestamp = data
             .created_at
-            .and_then(|c| chrono::DateTime::from_timestamp(c as i64, 0).map(|dt| dt.to_rfc3339()));
+            .and_then(|c| aimux_core::Timestamp::from_unix_seconds(c as f64));
 
         Ok(GenerateResult {
             content,
@@ -566,7 +566,7 @@ impl LanguageModel for XaiResponsesModel {
                                 let model = response.get("model").and_then(|v| v.as_str()).map(std::string::ToString::to_string);
                                 let created_at = response.get("created_at").and_then(serde_json::Value::as_u64);
                                 let timestamp = created_at.and_then(|c| {
-                                    chrono::DateTime::from_timestamp(c as i64, 0).map(|dt| dt.to_rfc3339())
+                                    aimux_core::Timestamp::from_unix_seconds(c as f64)
                                 });
                                 yield Ok(StreamPart::ResponseMetadata(ResponseMetadata { id, timestamp, model_id: model }));
                             }

@@ -88,6 +88,25 @@ test('e2e: OpenAI generateText via mock server', async (t) => {
   }
 })
 
+test('e2e: response timestamp is toISOString', async (t) => {
+  // The response timestamp is a Date (provider
+  // language-model-v4-response-metadata.ts:10), built as
+  // new Date(created * 1000); its JSON is toISOString().
+  const { server, url } = await startMockServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ ...JSON.parse(OPENAI_CHAT_RESPONSE), created: 1741269019 }))
+  })
+
+  try {
+    const model = await deepseek('test-key', 'gpt-4o', url)
+    const r = JSON.parse(await model.generateText(JSON.stringify('What is Rust?')))
+    t.is(r.response.timestamp, new Date(1741269019 * 1000).toISOString())
+    t.is(r.response.timestamp, '2025-03-06T13:50:19.000Z')
+  } finally {
+    await closeServer(server)
+  }
+})
+
 test('e2e: OpenAI streamText via mock server', async (t) => {
   const { server, url } = await startMockServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/event-stream' })

@@ -430,7 +430,7 @@ impl TranscriptionModel for FalTranscriptionModel {
             .and_then(|c| c.timestamp.as_ref())
             .and_then(|t| t.get(1).copied());
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(TranscriptionResult {
             text: parsed.text,
@@ -695,7 +695,7 @@ impl ImageModel for FalImageModel {
             warnings,
             provider_metadata: Some(metadata),
             response: ImageResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(rh),
             },
@@ -820,7 +820,7 @@ impl VideoModel for FalVideoModel {
             warnings,
             provider_metadata: None,
             response: VideoResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },
@@ -889,7 +889,7 @@ impl VideoModel for FalVideoModel {
             warnings: Vec::new(),
             provider_metadata: None,
             response: VideoResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },

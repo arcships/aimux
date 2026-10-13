@@ -552,7 +552,7 @@ export type GenerateTextResult = {
   rawFinishReason?: string                // provider's own finish-reason string
   providerMetadata?: Record<string, Record<string, JsonValue>>  // mirrored from raw.providerMetadata
   request: RequestInfo                    // sent request body
-  response: ResponseInfo                  // id, timestamp, modelId, headers and body
+  response: ResponseInfo                  // id, timestamp (a toISOString() string), modelId, headers and body
   totalUsage: Usage                       // usage across all steps (equals usage in single-step mode)
 }
 ```

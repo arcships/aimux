@@ -20,7 +20,8 @@ use aimux_core::result::{
 use aimux_core::shared::{FileBytes, FileData, GeneratedFileData, RequestInfo, ResponseInfo};
 use aimux_core::speech_model::AudioData;
 use aimux_core::stream_part::TextStreamPart;
-use aimux_core::types::ProviderMetadata;
+use aimux_core::timestamp::Timestamp;
+use aimux_core::types::{ProviderMetadata, ResponseMetadata};
 use aimux_core::video_model::VideoData;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -415,6 +416,58 @@ fn generated_files_are_base64_and_media_type() {
             "mediaType": "image/png",
         }),
     );
+}
+
+// ── Timestamps (#232 C48) ────────────────────────────────────────────────────
+
+/// Response timestamps are a `Date` (`provider` `language-model-v4-response-metadata.ts:10`,
+/// `ai` `types/language-model-response-metadata.ts:22`, and the image,
+/// speech, transcription, video and reranking metadata): `toISOString()` in
+/// the JSON, UTC with milliseconds. Providers build them as
+/// `new Date(created * 1000)` (`openai` `responses/openai-responses-language-model.ts:1509`)
+/// or from the `Date` header (`amazon-bedrock` `amazon-bedrock-chat-language-model.ts:864-867`).
+#[test]
+fn timestamps_are_iso_strings() {
+    let created = Timestamp::from_unix_seconds(1_741_269_019.0).unwrap();
+    let response = ResponseInfo {
+        id: Some("resp_1".into()),
+        timestamp: Some(created),
+        model_id: Some("gpt-4o".into()),
+        ..ResponseInfo::default()
+    };
+    assert_json(
+        &response,
+        json!({ "id": "resp_1", "timestamp": "2025-03-06T13:50:19.000Z", "modelId": "gpt-4o" }),
+    );
+    let metadata = ResponseMetadata {
+        id: None,
+        timestamp: Timestamp::from_http_date("Thu, 06 Mar 2025 13:50:19 GMT"),
+        model_id: None,
+    };
+    assert_json(
+        &metadata,
+        json!({ "timestamp": "2025-03-06T13:50:19.000Z" }),
+    );
+
+    // Reading is `new Date(text).toISOString()` for an RFC 3339 date-time.
+    let read: ResponseInfo =
+        serde_json::from_value(json!({ "timestamp": "2025-03-06T21:50:19.5+08:00" })).unwrap();
+    assert_eq!(
+        serde_json::to_value(&read).unwrap(),
+        json!({ "timestamp": "2025-03-06T13:50:19.500Z" })
+    );
+    for invalid in [
+        json!("1741269019"),
+        json!("2025-03-06"),
+        json!("2025-13-06T13:50:19Z"),
+        json!("Thu, 06 Mar 2025 13:50:19 GMT"),
+        json!(1_741_269_019),
+    ] {
+        assert!(
+            serde_json::from_value::<ResponseInfo>(json!({ "timestamp": invalid })).is_err(),
+            "{invalid} was read as a timestamp"
+        );
+    }
 }
 
 /// Parse `wire` and check that it serializes back unchanged.

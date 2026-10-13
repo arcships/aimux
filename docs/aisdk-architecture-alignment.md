@@ -1653,7 +1653,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 | `Usage`、`TokenUsage` | 普通对象 | snake_case；`total=None` 输出 null，细分计数多数省略 | `C/types.rs:30` |
 | `Warning` | externally tagged | `{"Unsupported":{...}}` 等 | `C/types.rs:133` |
 | `ResponseFormat` | externally tagged | 单元分支为 `"Text"`；对象分支为 `{"Json":{...}}` | `C/options.rs:17` |
-| `ResponseMetadata`、`RequestInfo`、`ResponseInfo` | 普通对象 | snake_case；大量缺值输出 null；timestamp 是无约束字符串 | `C/types.rs:153`；`C/shared.rs:227` |
+| `ResponseMetadata`、`RequestInfo`、`ResponseInfo` | 普通对象 | snake_case；大量缺值输出 null；timestamp 是无约束字符串(C48 已改为 `Timestamp`) | `C/types.rs:153`；`C/shared.rs:227` |
 | `GenerateResult`、`GenerateTextResult`、聚合结果、对象结果 | 普通对象 | snake_case；request/response 结构不统一；大量派生字段独立存储 | `C/result.rs:165、212`；`C/generate.rs:143、195` |
 | `CallOptions`、`GenerateTextOptions` | 普通对象 | snake_case；多数可选项输出 null；运行时 signal、callback 等 `serde(skip)` | `C/options.rs:67`；`C/generate.rs:54` |
 | `AiMuxError` | 默认外部标签枚举 | 嵌入流、工具调用 error 后继续形成 PascalCase 外层；其内部分支另有命名约定 | `C/error.rs:168` |
@@ -2552,6 +2552,8 @@ responseMessages 是 `AssistantModelMessage | ToolModelMessage` 的子集联合�
 | 非 JSON 宿主对象跨 ABI | 显式转换或报告序列化错误，不能静默 stringify |
 
 这些规则是 **aimux 的 AI SDK JSON 适配规范**，不能宣称是直接 `JSON.stringify` 任意 SDK 实例的结果。例如 GeneratedFile 含 getter 和内部缓存字段，必须通过 DTO 导出。
+
+timestamp 已落地(#232 C48)：core 的 `Timestamp` 对应上游 `Date`，按 UTC 毫秒精度保存，序列化为 `toISOString()` 形式(`2025-03-06T13:50:19.000Z`)，反序列化只接受 RFC 3339 日期时间(任意时区与小数位，读入后即 `new Date(text).toISOString()`)，其他文本报错。provider 按上游构造：`created` 秒数为 `new Date(created * 1000)`，Bedrock 取 `Date` 响应头。语言绑定的 wire 类型仍是字符串，文档说明用各语言的 ISO 8601 解析器读取；恢复原生日期类型尚未落地。
 
 同一工具调用在三个阶段的 JSON 应明确不同：
 

@@ -417,7 +417,7 @@ impl TranscriptionModel for RevaiTranscriptionModel {
         let full_text = full_text_parts.join(" ");
         let language = submission_language;
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(TranscriptionResult {
             text: full_text,

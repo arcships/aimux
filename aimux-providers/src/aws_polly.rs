@@ -392,7 +392,7 @@ impl SpeechModel for AwsPollySpeechModel {
 
         let audio_bytes = resp.value.to_vec();
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(SpeechResult {
             audio: AudioData::Binary(audio_bytes),

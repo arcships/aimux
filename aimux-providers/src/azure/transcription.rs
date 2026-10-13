@@ -194,7 +194,7 @@ impl TranscriptionModel for AzureTranscriptionModel {
             }
             return Ok(result);
         }
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
         let audio = match &options.audio {
             AudioInput::Binary(audio) => audio.clone(),
             AudioInput::Base64(audio) => {

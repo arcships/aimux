@@ -379,7 +379,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
         let language = result.transcription.languages.first().cloned();
         let duration_in_seconds = Some(result.metadata.audio_duration);
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         let provider_metadata: Option<SharedProviderMetadata> =
             Some(provider_namespace(options::NAMESPACE, raw_body.clone())?);

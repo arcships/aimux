@@ -216,7 +216,7 @@ impl SpeechModel for XaiSpeechModel {
             warnings,
             request: Some(SpeechRequest { body: Some(body) }),
             response: SpeechResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(String::new()),
                 headers: Some(headers),
                 body: raw,

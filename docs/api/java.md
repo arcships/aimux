@@ -438,7 +438,9 @@ and optional fields are absent, never `null`. Sealed hierarchies are tagged on
 base64 strings, as the AI SDK's JSON carries a `Uint8Array`. An `unknown`
 value (`body`, `inputSchemaInput`) is a `JsonNode`: a JSON `null` reads as
 `NullNode` and is written back as `null`, a missing field stays Java `null`
-and is omitted.
+and is omitted. A response `timestamp` is a JavaScript `Date` in the AI SDK's
+JSON: a `toISOString()` string, UTC with milliseconds
+(`"2025-03-06T13:50:19.000Z"`), which `Instant.parse` reads.
 
 A `ContentPart.File` is the AI SDK `FilePart`: its `data` is a `FilePartData`
 (`Tagged(FileData)`, `Bare` for a base64 or URL string, or `Reference` for a

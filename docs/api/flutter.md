@@ -327,6 +327,9 @@ and writes exactly the shapes of the generated TypeScript types
 - optional fields are absent, never `null`, except an `unknown` value
   (`body`, `inputSchemaInput`): a JSON `null` there is kept, and `hasBody` /
   `hasInputSchemaInput` tell it apart from a missing field;
+- a response `timestamp` is a JavaScript `Date` in the AI SDK's JSON: a
+  `toISOString()` string, UTC with milliseconds (`"2025-03-06T13:50:19.000Z"`),
+  which `DateTime.parse` reads;
 - bytes (`FileBytes`, image and file parts, audio and image outputs) are
   base64 strings, as the AI SDK's JSON carries a `Uint8Array`;
 - image `size` is a `"WxH"` string and `aspectRatio` a `"W:H"` string.

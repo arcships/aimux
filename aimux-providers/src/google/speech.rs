@@ -444,7 +444,7 @@ impl SpeechModel for GoogleSpeechModel {
     }
 
     async fn do_generate(&self, options: &SpeechCallOptions) -> Result<SpeechResult, AiMuxError> {
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
         let Args {
             body,
             mut warnings,

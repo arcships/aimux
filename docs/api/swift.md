@@ -68,7 +68,9 @@ print(result2)
 
 The JSON is the AI SDK JSON: camelCase fields, optional fields absent (never
 `null`; an `unknown` value such as `body` keeps a JSON `null` as
-`JSONValue.null`), unions tagged by `type` (`{"type":"tool-call","toolCallId":…}`). The
+`JSONValue.null`; a response `timestamp` is a `toISOString()` string such as
+`"2025-03-06T13:50:19.000Z"`, which `ISO8601DateFormatter` with
+`.withFractionalSeconds` reads), unions tagged by `type` (`{"type":"tool-call","toolCallId":…}`). The
 typed overloads take and return Codable values with exactly that shape:
 
 ```swift

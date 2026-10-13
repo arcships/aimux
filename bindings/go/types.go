@@ -224,7 +224,10 @@ type ContentPart = json.RawMessage
 
 // ResponseMetadata describes the provider response.
 type ResponseMetadata struct {
-	ID        *string `json:"id,omitempty"`
+	ID *string `json:"id,omitempty"`
+	// Timestamp is a JavaScript Date in the AI SDK's JSON: toISOString(),
+	// UTC with milliseconds ("2025-03-06T13:50:19.000Z"), which
+	// time.Parse(time.RFC3339, ...) reads.
 	Timestamp *string `json:"timestamp,omitempty"`
 	ModelID   *string `json:"modelId,omitempty"`
 }

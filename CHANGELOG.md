@@ -56,6 +56,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`LanguageModelFile`: `{mediaType, data}`). Bindings gain a `GeneratedFile`
   type with a bytes accessor (#232 C46).
 
+- Response timestamps are written as JavaScript's `Date.toISOString()`
+  (`"2025-03-06T13:50:19.000Z"`: UTC, milliseconds) instead of each
+  provider's own form (`+00:00` offsets, nanoseconds, Bedrock's HTTP date,
+  Open Responses' Unix seconds). Reading one requires an RFC 3339 date-time;
+  other text is an error, so stored results or recordings with another form
+  no longer parse. In Rust the fields are `Option<Timestamp>`
+  (`aimux_core::Timestamp`) instead of `Option<String>`. Binding types stay
+  strings (#232 C48).
+
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
   model and provider ids take precedence over middleware overrides.

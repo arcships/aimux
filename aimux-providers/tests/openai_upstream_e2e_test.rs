@@ -496,7 +496,7 @@ async fn responses_stream() {
                 "type": "response-metadata",
                 "id": "resp_67c9a81b6a048190a9ee441c5755a4e8",
                 "modelId": "test-model",
-                "timestamp": "2025-03-06T13:50:19+00:00"
+                "timestamp": "2025-03-06T13:50:19.000Z"
             },
             {
                 "type": "text-start",
@@ -834,7 +834,7 @@ async fn responses_web_search_stream() {
         serde_json::to_value(parts).unwrap(),
         json!([
             {"type":"stream-start","warnings":[]},
-            {"type":"response-metadata","id":"resp_missing_action","modelId":"test-model","timestamp":"2025-03-10T18:10:55+00:00"},
+            {"type":"response-metadata","id":"resp_missing_action","modelId":"test-model","timestamp":"2025-03-10T18:10:55.000Z"},
             {"type":"tool-input-start","id":"ws_missing_action","toolName":"webSearch","providerExecuted":true},
             {"type":"tool-input-end","id":"ws_missing_action"},
             {"type":"tool-call","toolCallId":"ws_missing_action","toolName":"webSearch","input":"{}","providerExecuted":true},

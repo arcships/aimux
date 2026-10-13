@@ -484,7 +484,9 @@ Python attributes and map them to the camelCase keys through a pydantic alias
 generator (both spellings validate; serialization uses camelCase). A field left
 unset is omitted; an `Any` field (`body`, `input_schema_input`) set to `None`
 is written as JSON `null`, as the AI SDK's JSON keeps `null` apart from a
-missing value.
+missing value. A response `timestamp` is a JavaScript `Date` in the AI SDK's
+JSON: a `toISOString()` string, UTC with milliseconds
+(`"2025-03-06T13:50:19.000Z"`), which `datetime.fromisoformat` reads.
 
 Key shapes (mirroring the shared JSON schema):
 

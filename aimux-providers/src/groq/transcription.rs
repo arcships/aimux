@@ -199,7 +199,7 @@ impl TranscriptionModel for GroqTranscriptionModel {
             warnings: Vec::new(),
             request: Some(TranscriptionRequest { body: None }),
             response: TranscriptionResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(headers),
                 body: Some(raw_body),

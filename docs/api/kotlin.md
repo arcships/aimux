@@ -300,7 +300,10 @@ TypeScript types in `bindings/node/src/types`: camelCase field names (Kotlin
 properties carry the same names), unions tagged on `type` (`Source` on
 `sourceType`), optional fields absent rather than null. An `unknown` value
 (`body`, `inputSchemaInput`) keeps a JSON `null` as `JsonNull`, written back as
-`null`; a missing field is Kotlin `null` and omitted. Decoding is lenient
+`null`; a missing field is Kotlin `null` and omitted. A response `timestamp`
+is a JavaScript `Date` in the AI SDK's JSON: a `toISOString()` string, UTC with
+milliseconds (`"2025-03-06T13:50:19.000Z"`), which `Instant.parse` reads.
+Decoding is lenient
 (unknown keys ignored).
 
 | Kotlin | Wire |

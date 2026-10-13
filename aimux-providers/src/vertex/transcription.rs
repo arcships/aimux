@@ -281,7 +281,7 @@ impl TranscriptionModel for VertexTranscriptionModel {
                 .and_then(|m| m.total_billed_duration.clone()),
         );
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(TranscriptionResult {
             text,

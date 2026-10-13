@@ -191,7 +191,7 @@ pub struct ResponseMetadata {
     pub id: Option<String>,
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<String>,
+    pub timestamp: Option<crate::timestamp::Timestamp>,
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,

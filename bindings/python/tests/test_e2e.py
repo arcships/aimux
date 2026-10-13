@@ -158,6 +158,16 @@ class TestOpenAIE2E:
             )
             assert text == "Hello world"
 
+    def test_response_timestamp_is_to_iso_string(self):
+        """The response timestamp is a Date (provider
+        language-model-v4-response-metadata.ts:10), built as
+        ``new Date(created * 1000)``; its JSON is ``toISOString()``."""
+        body = json.dumps({**json.loads(OPENAI_CHAT), "created": 1741269019})
+        with MockServer(body) as mock:
+            model = deepseek("test-key", "gpt-4o", mock.url)
+            result = generate_text(model, "What is Rust?")
+            assert result["response"]["timestamp"] == "2025-03-06T13:50:19.000Z"
+
     def test_generate_text_with_options(self):
         with MockServer(OPENAI_CHAT) as mock:
             model = deepseek("test-key", "gpt-4o", mock.url)

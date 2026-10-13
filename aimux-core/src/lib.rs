@@ -61,6 +61,7 @@ pub mod skills_model;
 pub mod speech_model;
 pub mod stream_part;
 mod timeout;
+pub mod timestamp;
 pub mod tool;
 pub mod trace;
 pub mod transcription_model;
@@ -144,6 +145,7 @@ pub mod prelude {
     pub use crate::skills_model::{SkillFile, Skills, UploadSkillCallOptions, UploadSkillResult};
     pub use crate::speech_model::{SpeechCallOptions, SpeechModel, SpeechResult, generate_speech};
     pub use crate::stream_part::{StreamPart, TextStreamPart};
+    pub use crate::timestamp::Timestamp;
     pub use crate::tool::{
         FunctionTool, FunctionToolInputExample, ProviderTool, RawToolCall, Tool, ToolCall,
         ToolResult,
@@ -179,5 +181,6 @@ pub use reranking_model::RerankingModel;
 pub use search_model::SearchModel;
 pub use skills_model::Skills;
 pub use speech_model::SpeechModel;
+pub use timestamp::{Timestamp, TimestampError};
 pub use transcription_model::TranscriptionModel;
 pub use video_model::VideoModel;

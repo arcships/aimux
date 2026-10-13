@@ -820,3 +820,29 @@ func TestE2E_GeneratedFilesAreBase64AndMediaType(t *testing.T) {
 		t.Errorf("typed file: %+v %v %v", typed.Files[0], bytes, err)
 	}
 }
+
+func TestE2E_ResponseTimestampIsToISOString(t *testing.T) {
+	// The response timestamp is a Date (provider
+	// language-model-v4-response-metadata.ts:10), built as
+	// new Date(created * 1000); its JSON is toISOString().
+	srv := newMockServer()
+	defer srv.Close()
+	srv.SetResponse(strings.Replace(plainOpenAIResponse, `"id": "chatcmpl-test",`, `"id": "chatcmpl-test", "created": 1741269019,`, 1))
+	m := chatModel(t, srv.URL)
+	defer m.Close()
+
+	out, err := m.GenerateText(`"What is Rust?"`, "")
+	if err != nil {
+		t.Fatalf("generate_text failed: %v", err)
+	}
+	parsed, err := ParseGenerateTextResult(out)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if parsed.Response.Timestamp == nil || *parsed.Response.Timestamp != "2025-03-06T13:50:19.000Z" {
+		t.Fatalf("timestamp: %v", parsed.Response.Timestamp)
+	}
+	if _, err := time.Parse(time.RFC3339, *parsed.Response.Timestamp); err != nil {
+		t.Errorf("not RFC 3339: %v", err)
+	}
+}

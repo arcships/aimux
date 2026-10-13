@@ -158,10 +158,10 @@ pub struct SpeechRequest {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SpeechResponse {
-    /// Timestamp for the start of the generated response (ISO 8601 string).
+    /// Timestamp for the start of the generated response (`toISOString()` in the JSON).
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<String>,
+    pub timestamp: Option<crate::timestamp::Timestamp>,
     /// The ID of the model that was used to generate the response.
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]

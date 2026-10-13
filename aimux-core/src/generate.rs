@@ -47,7 +47,7 @@ fn response_metadata_defaults(
     });
     metadata
         .timestamp
-        .get_or_insert_with(crate::util::rfc3339_now);
+        .get_or_insert_with(crate::timestamp::Timestamp::now);
     metadata.model_id.get_or_insert_with(|| model_id.to_owned());
     metadata
 }
@@ -917,7 +917,7 @@ pub async fn generate_object(
     let provider_metadata = text_result.raw.provider_metadata.clone();
     let response = crate::types::ResponseMetadata {
         id: text_result.response.id.clone(),
-        timestamp: text_result.response.timestamp.clone(),
+        timestamp: text_result.response.timestamp,
         model_id: text_result.response.model_id.clone(),
     };
     Ok(GenerateObjectResult {
