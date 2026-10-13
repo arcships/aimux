@@ -67,6 +67,9 @@ pub struct ChatCompletionChoice {
     pub index: u32,
     pub message: ChatCompletionMessage,
     pub finish_reason: Option<String>,
+    /// The Chat Completions logprobs object, `{ "content": [...], "refusal":
+    /// null }`, each entry `{ token, logprob, bytes, top_logprobs }`, when
+    /// the calling provider returned logprobs.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub logprobs: Option<Value>,
 }
@@ -346,11 +349,14 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
     // :1080), DeepSeek under `deepseek`. One model call carries one
     // provider's namespace, so the namespace holding `logprobs` is the
     // caller's.
-    let logprobs = result.provider_metadata.as_ref().and_then(|pm| {
-        pm.values()
-            .find_map(|namespace| namespace.get("logprobs").filter(|value| !value.is_null()))
-            .cloned()
-    });
+    let logprobs = result
+        .provider_metadata
+        .as_ref()
+        .and_then(|pm| {
+            pm.values()
+                .find_map(|namespace| namespace.get("logprobs").filter(|value| !value.is_null()))
+        })
+        .and_then(chat_logprobs);
 
     // id / model / created
     let id = result
@@ -965,6 +971,53 @@ pub const DONE_FRAME: &str = "data: [DONE]\n\n";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Map an aimux [`FinishReason`] to an OpenAI `finish_reason` string.
+/// A provider's `logprobs` metadata in the Chat Completions wire shape:
+/// `{ "content": [...], "refusal": null }`.
+///
+/// The OpenAI chat model stores the token list `choice.logprobs.content`
+/// (@ai-sdk/openai 4.0.83 src/chat/openai-chat-language-model.ts:459-461), and
+/// the Responses model one token list per text part
+/// (src/responses/openai-responses-language-model.ts:1062-1080), which
+/// becomes one list in output order. A provider that stores the whole
+/// logprobs object (DeepSeek's `{ content, reasoning_content }`,
+/// @ai-sdk/deepseek 3.0.56 src/chat/deepseek-chat-language-model.ts:497) is
+/// passed on as it is. An entry without `bytes` gets `null`, which the wire
+/// format allows for a token with no byte representation.
+fn chat_logprobs(logprobs: &Value) -> Option<Value> {
+    fn token(entry: &Value) -> Value {
+        let mut entry = entry.clone();
+        if let Some(object) = entry.as_object_mut() {
+            object.entry("bytes").or_insert(Value::Null);
+            let top = object
+                .entry("top_logprobs")
+                .or_insert_with(|| Value::Array(Vec::new()));
+            for alternative in top.as_array_mut().into_iter().flatten() {
+                if let Some(alternative) = alternative.as_object_mut() {
+                    alternative.entry("bytes").or_insert(Value::Null);
+                }
+            }
+        }
+        entry
+    }
+    match logprobs {
+        Value::Object(_) => Some(logprobs.clone()),
+        Value::Array(items) => {
+            let content: Vec<Value> = if items.iter().all(Value::is_array) {
+                items
+                    .iter()
+                    .filter_map(Value::as_array)
+                    .flatten()
+                    .map(token)
+                    .collect()
+            } else {
+                items.iter().map(token).collect()
+            };
+            Some(serde_json::json!({ "content": content, "refusal": null }))
+        }
+        _ => None,
+    }
+}
+
 fn finish_reason_to_openai(reason: &FinishReason) -> Option<String> {
     match reason.unified {
         FinishReasonUnified::Stop => Some("stop".to_string()),

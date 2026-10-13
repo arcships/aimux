@@ -44,6 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sub-providers send `ai-sdk-openai-compatible/3.0.59`, the version
   google-vertex depends on. Other packages send `ai-sdk-provider-utils/5.0.53`.
 
+- `to_chat_completion` reads `choices[].logprobs` from the calling
+  provider's metadata namespace (Azure's `azure`, DeepSeek's `deepseek`)
+  and returns it in the Chat Completions wire shape, `{ "content": [...],
+  "refusal": null }`. It used to return the provider's raw token list. A
+  Responses result's per-part lists become one list, and a token without
+  `bytes` gets `"bytes": null`.
+
 - Anthropic-AWS follows `@ai-sdk/anthropic-aws` 2.0.63 settings: the region
   comes from the setting or `AWS_REGION` with no `us-east-1` default; the
   workspace id is required, from the setting or `ANTHROPIC_AWS_WORKSPACE_ID`;
