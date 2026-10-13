@@ -157,7 +157,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marked `is_error` arrives as `ToolError` (`TypedToolError`, with
   `error`), and an invalid client tool call is followed by a `ToolError`
   holding its error message and `dynamic: true`
-  (stream-language-model-call.ts:709-725). Unlike upstream, the provider's `preliminary` flag is kept, so
+  (stream-language-model-call.ts:709-725). `ToolOutputDenied` and
+  `ToolApprovalResponse` are added to complete the AI SDK's set; aimux's
+  stream does not produce them yet. Unlike upstream, the provider's `preliminary` flag is kept, so
   a preliminary result stays out of the step content, as on the generated
   path.
 
@@ -248,7 +250,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `text`; `StreamStart` and `ResponseMetadata` give way to `Start`,
   `StartStep`, `FinishStep`, `Finish { finish_reason, raw_finish_reason,
   total_usage }` and `Abort`; `ToolResult` carries `output` and the call's
-  `input` (was `result`, `is_error`), and `ToolError` is decoded. Tool-call
+  `input` (was `result`, `is_error`), and `ToolError`, `ToolOutputDenied` and
+  `ToolApprovalResponse` are decoded. Tool-call
   repair reads the top-level `tool_calls` only.
 
 ## [0.5.0] - 2026-09-27

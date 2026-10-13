@@ -173,6 +173,19 @@ class TypedModelTest {
         assertThat(((Types.StreamPart.ToolError) error).getError().asText()).isEqualTo("no such tool");
         assertThat(((Types.StreamPart.ToolError) error).getProviderExecuted()).isNull();
 
+        Types.StreamPart denied = Types.AimuxJson.MAPPER.readValue(
+            "{\"ToolOutputDenied\":{\"tool_call_id\":\"c\",\"tool_name\":\"t\"}}", Types.StreamPart.class);
+        assertThat(denied).isEqualTo(new Types.StreamPart.ToolOutputDenied("c", "t", null, null));
+        assertThat(Types.variantTag(denied)).isEqualTo("ToolOutputDenied");
+        String json = Types.AimuxJson.MAPPER.writeValueAsString(denied);
+        assertThat(Types.AimuxJson.MAPPER.readValue(json, Types.StreamPart.class)).isEqualTo(denied);
+
+        Types.StreamPart response = Types.AimuxJson.MAPPER.readValue(
+            "{\"ToolApprovalResponse\":{\"approval_id\":\"a\",\"tool_call\":{\"tool_call_id\":\"c\",\"tool_name\":\"t\","
+                + "\"input\":{}},\"approved\":false}}",
+            Types.StreamPart.class);
+        assertThat(response).isInstanceOf(Types.StreamPart.ToolApprovalResponse.class);
+        assertThat(((Types.StreamPart.ToolApprovalResponse) response).getApproved()).isFalse();
     }
 
     @Test

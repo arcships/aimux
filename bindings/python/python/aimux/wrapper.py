@@ -673,6 +673,14 @@ class _SPToolError(BaseModel):
     dynamic: Optional[bool] = None
 
 
+class _SPToolOutputDenied(BaseModel):
+    type: Literal["ToolOutputDenied"]
+    tool_call_id: str
+    tool_name: str
+    provider_executed: Optional[bool] = None
+    dynamic: Optional[bool] = None
+
+
 class _SPReasoningStart(BaseModel):
     type: Literal["ReasoningStart"]
     id: str
@@ -724,6 +732,15 @@ class _SPToolApprovalRequest(BaseModel):
     signature: Optional[str] = None
 
 
+class _SPToolApprovalResponse(BaseModel):
+    type: Literal["ToolApprovalResponse"]
+    approval_id: str
+    tool_call: ToolCall
+    approved: bool
+    reason: Optional[str] = None
+    provider_executed: Optional[bool] = None
+
+
 class _GeneratedFile(BaseModel):
     data: GeneratedFileData
     media_type: str
@@ -772,6 +789,7 @@ _StreamPartUnion = Annotated[
         _SPToolCall,
         _SPToolResult,
         _SPToolError,
+        _SPToolOutputDenied,
         _SPFile,
         _SPReasoningFile,
         _SPReasoningStart,
@@ -782,6 +800,7 @@ _StreamPartUnion = Annotated[
         _SPRaw,
         _ContentCustom,
         _SPToolApprovalRequest,
+        _SPToolApprovalResponse,
     ],
     Field(discriminator="type"),
 ]

@@ -204,6 +204,7 @@ when the call is aborted.
 | `ToolResult` | Result of a provider-executed tool: `tool_call_id`, `tool_name`, `input?` (the call's input; absent for a deferred result), `output`, `provider_executed`, `dynamic?`, `provider_metadata?` |
 | `ToolError` | `tool_call_id`, `tool_name`, `input?`, `error`, `provider_executed?`, `dynamic?`, `provider_metadata?`: a provider-executed tool's error result (`provider_executed: true`), or the error that follows an invalid client tool call (its error message, `dynamic: true`) |
 | `ToolApprovalRequest` | Approval request for a provider-executed tool call |
+| `ToolOutputDenied` / `ToolApprovalResponse` | Part of the AI SDK's set for denied tools and answered approvals; aimux's stream does not produce them yet |
 | `ReasoningStart` / `ReasoningDelta` / `ReasoningEnd` | Reasoning segment lifecycle (`ReasoningDelta.text`) |
 | `Source` / `File` / `ReasoningFile` / `Custom` | Content parts, as in `content` |
 | `FinishStep` | Step end: `response` (id, timestamp, model_id, headers), `usage`, `performance`, `finish_reason`, `raw_finish_reason`, `provider_metadata` |

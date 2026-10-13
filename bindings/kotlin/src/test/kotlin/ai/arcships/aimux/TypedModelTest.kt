@@ -482,6 +482,13 @@ class TypedModelRoundTripTest {
         assertThat(error.error.toString()).isEqualTo("\"no such tool\"")
         assertThat(error.providerExecuted).isNull()
         assertThat(error.dynamic).isTrue()
+        assertThat(decode("""{"ToolOutputDenied":{"tool_call_id":"c","tool_name":"t"}}"""))
+            .isEqualTo(StreamPart.ToolOutputDenied(toolCallId = "c", toolName = "t"))
+        val response = decode(
+            """{"ToolApprovalResponse":{"approval_id":"a","tool_call":{"tool_call_id":"c","tool_name":"t","input":{}},"approved":false}}""",
+        ) as StreamPart.ToolApprovalResponse
+        assertThat(response.approved).isFalse()
+        assertThat(response.variantTag).isEqualTo("ToolApprovalResponse")
     }
 
     @Test

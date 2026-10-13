@@ -1413,6 +1413,8 @@ public enum StreamPart: Codable, Equatable {
     /// invalid tool call (Rust `TypedToolError`).
     case toolError(toolCallId: String, toolName: String, input: JSONValue?, error: JSONValue,
                    providerExecuted: Bool?, providerMetadata: JSONValue?, dynamic: Bool?)
+    /// A tool whose execution was denied (Rust `ToolOutputDenied`).
+    case toolOutputDenied(toolCallId: String, toolName: String, providerExecuted: Bool?, dynamic: Bool?)
     // P2: file
     case file(data: GeneratedFileData, mediaType: String, providerMetadata: JSONValue?)
     // P2: reasoning
@@ -1426,10 +1428,12 @@ public enum StreamPart: Codable, Equatable {
     case custom(kind: String, providerMetadata: JSONValue?)
     case reasoningFile(file: GeneratedFile, providerMetadata: JSONValue?)
     case toolApprovalRequest(approvalId: String, toolCall: ToolCall, reason: String?, isAutomatic: Bool?, signature: String?)
+    /// The answer to a tool approval request (Rust `ToolApprovalResponseOutput`).
+    case toolApprovalResponse(approvalId: String, toolCall: ToolCall, approved: Bool, reason: String?, providerExecuted: Bool?)
 
     private enum Field: String, CodingKey {
         case file, kind, approvalId = "approval_id", toolCall = "tool_call", reason, isAutomatic = "is_automatic", signature
-        case output
+        case approved, output
         case id, delta, warnings, usage, text, request, performance
         case finishReason = "finish_reason", providerMetadata = "provider_metadata"
         case rawFinishReason = "raw_finish_reason", totalUsage = "total_usage"
@@ -1522,6 +1526,17 @@ public enum StreamPart: Codable, Equatable {
                               providerExecuted: try n.decodeIfPresent(Bool.self, forKey: .providerExecuted),
                               providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata),
                               dynamic: try n.decodeIfPresent(Bool.self, forKey: .dynamic))
+        case "ToolOutputDenied":
+            self = .toolOutputDenied(toolCallId: try n.decode(String.self, forKey: .toolCallId),
+                                     toolName: try n.decode(String.self, forKey: .toolName),
+                                     providerExecuted: try n.decodeIfPresent(Bool.self, forKey: .providerExecuted),
+                                     dynamic: try n.decodeIfPresent(Bool.self, forKey: .dynamic))
+        case "ToolApprovalResponse":
+            self = .toolApprovalResponse(approvalId: try n.decode(String.self, forKey: .approvalId),
+                                         toolCall: try n.decode(ToolCall.self, forKey: .toolCall),
+                                         approved: try n.decode(Bool.self, forKey: .approved),
+                                         reason: try n.decodeIfPresent(String.self, forKey: .reason),
+                                         providerExecuted: try n.decodeIfPresent(Bool.self, forKey: .providerExecuted))
         case "Custom":
             self = .custom(kind: try n.decode(String.self, forKey: .kind),
                            providerMetadata: try n.decodeIfPresent(JSONValue.self, forKey: .providerMetadata))
@@ -1622,6 +1637,10 @@ public enum StreamPart: Codable, Equatable {
             try n.encodeIfPresent(input, forKey: .input); try n.encode(error, forKey: .error)
             try n.encodeIfPresent(pe, forKey: .providerExecuted); try n.encodeIfPresent(pm, forKey: .providerMetadata)
             try n.encodeIfPresent(dyn, forKey: .dynamic)
+        case .toolOutputDenied(let toolCallId, let toolName, let pe, let dyn):
+            var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("ToolOutputDenied"))
+            try n.encode(toolCallId, forKey: .toolCallId); try n.encode(toolName, forKey: .toolName)
+            try n.encodeIfPresent(pe, forKey: .providerExecuted); try n.encodeIfPresent(dyn, forKey: .dynamic)
         case .custom(let kind, let pm):
             var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("Custom"))
             try n.encode(kind, forKey: .kind); try n.encodeIfPresent(pm, forKey: .providerMetadata)
@@ -1634,6 +1653,11 @@ public enum StreamPart: Codable, Equatable {
             try n.encode(approvalId, forKey: .approvalId); try n.encode(toolCall, forKey: .toolCall)
             try n.encodeIfPresent(reason, forKey: .reason); try n.encodeIfPresent(isAutomatic, forKey: .isAutomatic)
             try n.encodeIfPresent(signature, forKey: .signature)
+        case .toolApprovalResponse(let approvalId, let toolCall, let approved, let reason, let pe):
+            var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("ToolApprovalResponse"))
+            try n.encode(approvalId, forKey: .approvalId); try n.encode(toolCall, forKey: .toolCall)
+            try n.encode(approved, forKey: .approved); try n.encodeIfPresent(reason, forKey: .reason)
+            try n.encodeIfPresent(pe, forKey: .providerExecuted)
         case .file(let data, let mediaType, let pm):
             var n = c.nestedContainer(keyedBy: Field.self, forKey: AnyCodingKey("File"))
             try n.encode(data, forKey: .data); try n.encode(mediaType, forKey: .mediaType)

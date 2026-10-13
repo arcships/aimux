@@ -412,6 +412,27 @@ void main() {
       expect(StreamPart.fromJson(error.toJson()).toJson(), error.toJson());
     });
 
+    test('ToolOutputDenied and ToolApprovalResponse variants', () {
+      final denied = StreamPart.fromJson({
+        'ToolOutputDenied': {'tool_call_id': 'c', 'tool_name': 't'},
+      });
+      expect(denied, isA<StreamPartToolOutputDenied>());
+      expect(denied.type, 'ToolOutputDenied');
+      expect(denied.toJson(), {
+        'ToolOutputDenied': {'tool_call_id': 'c', 'tool_name': 't'},
+      });
+
+      final response = StreamPart.fromJson({
+        'ToolApprovalResponse': {
+          'approval_id': 'a',
+          'tool_call': {'tool_call_id': 'c', 'tool_name': 't', 'input': <String, dynamic>{}},
+          'approved': false,
+        },
+      });
+      expect(response.type, 'ToolApprovalResponse');
+      expect((response as StreamPartToolApprovalResponse).approved, false);
+    });
+
     // ── File ──
 
 

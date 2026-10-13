@@ -101,6 +101,34 @@ pub struct TypedToolError {
     pub dynamic: Option<bool>,
 }
 
+/// The answer to a tool approval request (the AI SDK's
+/// `ToolApprovalResponseOutput`, `ai`
+/// `generate-text/tool-approval-response-output.ts:7-35`).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ToolApprovalResponseOutput {
+    pub approval_id: String,
+    pub tool_call: crate::tool::ToolCall,
+    pub approved: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_executed: Option<bool>,
+}
+
+/// The output of a tool whose execution was denied (the AI SDK's
+/// `StaticToolOutputDenied`, `ai` `generate-text/tool-output-denied.ts:7-15`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ToolOutputDenied {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_executed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamic: Option<bool>,
+}
+
 /// Provider approval request for a provider-executed call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]

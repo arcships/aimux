@@ -166,7 +166,10 @@ FFI 调用仅 8 个符号。[Types.swift](../../bindings/swift/Sources/Aimux/Typ
 同一契约下的其它设计内差异(均为有意为之,非缺口):
 
 - **Tool execution is not ported** (no executor / Agent loop), so the AI SDK's
-  tool-output machinery has no aimux counterpart. An invalid call surfaces
+  tool-output machinery has no aimux counterpart: the stream does not carry
+  `ToolOutputDenied` or `ToolApprovalResponse` parts (upstream also reports
+  approvals denied in the prompt as `ToolOutputDenied` before the first model
+  call; that is not ported either). An invalid call surfaces
   as the `invalid` / `error` fields on the `ToolCall` part, followed in the
   stream by a `ToolError` part with its error message, as upstream's model
   call emits it (`stream-language-model-call.ts:709-725`).

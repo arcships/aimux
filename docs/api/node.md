@@ -564,7 +564,7 @@ export type TextStreamPart =
   | { TextStart: ... } | { TextDelta: { id, text, ... } } | { TextEnd: ... }
   | { ToolInputStart: ... } | { ToolInputDelta: ... } | { ToolInputEnd: ... }
   | { ToolCall: ... } | { ToolResult: TypedToolResult } | { ToolError: TypedToolError }
-  | { ToolApprovalRequest: ... }
+  | { ToolOutputDenied: ... } | { ToolApprovalRequest: ... } | { ToolApprovalResponse: ... }
   | { ReasoningStart: ... } | { ReasoningDelta: ... } | { ReasoningEnd: ... }
   | { Source: ... } | { File: ... } | { ReasoningFile: ... } | { Custom: ... }
   | { Abort: ... } | { Error: ... } | { Raw: ... }

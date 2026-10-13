@@ -9,7 +9,9 @@ import type { Source } from "./Source";
 import type { StepResponseMetadata } from "./StepResponseMetadata";
 import type { StepResultPerformance } from "./StepResultPerformance";
 import type { ToolApprovalRequestOutput } from "./ToolApprovalRequestOutput";
+import type { ToolApprovalResponseOutput } from "./ToolApprovalResponseOutput";
 import type { ToolCall } from "./ToolCall";
+import type { ToolOutputDenied } from "./ToolOutputDenied";
 import type { TypedToolError } from "./TypedToolError";
 import type { TypedToolResult } from "./TypedToolResult";
 import type { Warning } from "./Warning";
@@ -27,6 +29,13 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * when it reports an error, `ToolError`, both carrying the input of the call
  * they answer; an invalid client tool call is followed by a `ToolError`
  * (`stream-language-model-call.ts:709-725`, `:760-792`).
+ * `ToolOutputDenied` and `ToolApprovalResponse` complete the AI SDK's set;
+ * aimux's stream does not produce them yet. Upstream answers approvals and
+ * reports denied tools when it executes tools (`execute-tools-from-stream.ts`
+ * `:170-210`), which aimux does not, and reports the approvals denied in the
+ * prompt's last tool message, provider-executed ones included, before the
+ * first model call (`stream-text.ts:2030-2090`), which needs the prompt's
+ * approval collection (`collect-tool-approvals.ts`), not ported.
  */
 export type TextStreamPart = { "TextStart": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "TextDelta": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, text: string, } } | { "ReasoningStart": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ReasoningDelta": { provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, id: string, text: string, } } | { "Custom": { kind: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputStart": { id: string, tool_name: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null,
 /**
@@ -40,7 +49,7 @@ dynamic?: boolean | null,
 /**
  * Optional title for the tool call.
  */
-title?: string | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "Source": Source } | { "File": GeneratedFile } | { "ReasoningFile": ReasoningFileOutput } | { "ToolCall": ToolCall } | { "ToolResult": TypedToolResult } | { "ToolError": TypedToolError } | { "ToolApprovalRequest": ToolApprovalRequestOutput } | { "StartStep": { request: RequestInfo, warnings: Array<Warning>, } } | { "FinishStep": {
+title?: string | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, } } | { "Source": Source } | { "File": GeneratedFile } | { "ReasoningFile": ReasoningFileOutput } | { "ToolCall": ToolCall } | { "ToolResult": TypedToolResult } | { "ToolError": TypedToolError } | { "ToolOutputDenied": ToolOutputDenied } | { "ToolApprovalRequest": ToolApprovalRequestOutput } | { "ToolApprovalResponse": ToolApprovalResponseOutput } | { "StartStep": { request: RequestInfo, warnings: Array<Warning>, } } | { "FinishStep": {
 /**
  * Response metadata without the messages and the body.
  */

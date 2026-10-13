@@ -832,6 +832,8 @@ impl StreamTextResult {
                 | TextStreamPart::ToolInputDelta { .. }
                 | TextStreamPart::ToolInputEnd { .. }
                 | TextStreamPart::ToolError(_)
+                | TextStreamPart::ToolOutputDenied(_)
+                | TextStreamPart::ToolApprovalResponse(_)
                 | TextStreamPart::Start {}
                 | TextStreamPart::Raw { .. } => {}
             }

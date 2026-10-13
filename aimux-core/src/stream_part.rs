@@ -10,7 +10,7 @@ use ts_rs::TS;
 use crate::error::AiMuxError;
 use crate::result::{
     GeneratedFile, RawToolApprovalRequest, ReasoningFileOutput, Source, ToolApprovalRequestOutput,
-    TypedToolError, TypedToolResult,
+    ToolApprovalResponseOutput, ToolOutputDenied, TypedToolError, TypedToolResult,
 };
 use crate::shared::RequestInfo;
 use crate::step_result::{StepResponseMetadata, StepResultPerformance};
@@ -159,6 +159,13 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = GeneratedFi
 /// when it reports an error, `ToolError`, both carrying the input of the call
 /// they answer; an invalid client tool call is followed by a `ToolError`
 /// (`stream-language-model-call.ts:709-725`, `:760-792`).
+/// `ToolOutputDenied` and `ToolApprovalResponse` complete the AI SDK's set;
+/// aimux's stream does not produce them yet. Upstream answers approvals and
+/// reports denied tools when it executes tools (`execute-tools-from-stream.ts`
+/// `:170-210`), which aimux does not, and reports the approvals denied in the
+/// prompt's last tool message, provider-executed ones included, before the
+/// first model call (`stream-text.ts:2030-2090`), which needs the prompt's
+/// approval collection (`collect-tool-approvals.ts`), not ported.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub enum TextStreamPart {
@@ -254,8 +261,12 @@ pub enum TextStreamPart {
     /// A tool error: a provider-executed tool's error result, or an invalid
     /// tool call.
     ToolError(TypedToolError),
+    /// A tool whose execution was denied.
+    ToolOutputDenied(ToolOutputDenied),
     /// A request to approve a tool call.
     ToolApprovalRequest(ToolApprovalRequestOutput),
+    /// The answer to a tool approval request.
+    ToolApprovalResponse(ToolApprovalResponseOutput),
 
     // ── lifecycle ──
     /// A model call (step) begins: the request and the call's warnings.

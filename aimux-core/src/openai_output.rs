@@ -985,7 +985,9 @@ impl StreamState {
             | TextStreamPart::Custom { .. }
             | TextStreamPart::ReasoningFile(_)
             | TextStreamPart::ToolError(_)
-            | TextStreamPart::ToolApprovalRequest(_) => { /* no OpenAI chat equivalent */ }
+            | TextStreamPart::ToolOutputDenied(_)
+            | TextStreamPart::ToolApprovalRequest(_)
+            | TextStreamPart::ToolApprovalResponse(_) => { /* no OpenAI chat equivalent */ }
         }
 
         chunks
