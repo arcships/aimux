@@ -171,6 +171,61 @@ async fn chat_tool_call() {
     );
 }
 
+/// Upstream: @ai-sdk/openai 4.0.83 src/chat/openai-chat-language-model.ts:539-542
+/// creates the stream's tool-call tracker with `typeValidation: 'if-present'`:
+/// a tool-call delta without `type` starts a call, one whose `type` is
+/// present and not `function` is invalid response data.
+#[tokio::test]
+async fn chat_stream_tool_call_type_is_validated_if_present() {
+    let tool_stream = |delta: Value| {
+        sse(vec![
+            json!({"id":"chatcmpl-test","model":"test-model","created":1702657020,"choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[delta]},"finish_reason":null}]}),
+            json!({"id":"chatcmpl-test","model":"test-model","created":1702657020,"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}),
+        ])
+    };
+    let fetch = MockFetch::new(vec![
+        tool_stream(
+            json!({"index":0,"id":"call_1","function":{"name":"test-tool","arguments":"{}"}}),
+        ),
+        tool_stream(
+            json!({"index":0,"id":"call_2","type":"custom","function":{"name":"test-tool","arguments":"{}"}}),
+        ),
+    ]);
+    let model = provider(&fetch).chat("test-model");
+
+    let untyped = model
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .collect::<Vec<_>>()
+        .await;
+    assert!(
+        untyped.iter().any(
+            |part| matches!(part, Ok(StreamPart::ToolCall(call)) if call.tool_call_id == "call_1")
+        ),
+        "{untyped:?}"
+    );
+    assert!(untyped.iter().all(Result::is_ok), "{untyped:?}");
+
+    let custom = model
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .collect::<Vec<_>>()
+        .await;
+    assert!(
+        custom.iter().any(|part| matches!(part, Err(error) if error.to_string().contains("Expected 'function' type."))),
+        "{custom:?}"
+    );
+    assert!(
+        !custom
+            .iter()
+            .any(|part| matches!(part, Ok(StreamPart::ToolCall(_))))
+    );
+}
+
 /// Upstream: @ai-sdk/openai 4.0.83 src/chat/map-openai-finish-reason.ts:13-15
 /// maps the legacy `function_call` finish reason to `tool-calls`; the raw
 /// value stays `function_call`.
