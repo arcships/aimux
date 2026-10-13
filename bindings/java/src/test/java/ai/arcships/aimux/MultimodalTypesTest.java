@@ -1,5 +1,6 @@
 package ai.arcships.aimux;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
@@ -467,6 +468,38 @@ class MultimodalTypesTest {
         assertThat(text.getText()).isEqualTo("Hello");
         assertThat(t.writeValueAsString(Types.StreamPart.ReasoningDelta.builder().id("t1").text("Hmm").build()))
             .isEqualTo(wires[1]);
+    }
+
+    @Test
+    void standaloneToolCallsAndSourcesAreTagged() throws Exception {
+        // A result's toolCalls and sources are the AI SDK's TypedToolCall and
+        // Source, tagged {type: 'tool-call'} (ai generate-text/tool-call.ts:8-14)
+        // and {type: 'source', sourceType} (provider language-model-v4-source.ts:8,
+        // :36); generate-text-result.ts:73, :78. A repair function's call is a
+        // tagged LanguageModelV4ToolCall (language-model-v4-tool-call.ts:7).
+        ObjectMapper t = Types.AimuxJson.MAPPER;
+        String call = "{\"type\":\"tool-call\",\"toolCallId\":\"call-1\",\"toolName\":\"weather\","
+            + "\"input\":{\"city\":\"SG\"}}";
+        assertThat(t.writeValueAsString(t.readValue(call, Types.ToolCall.class))).isEqualTo(call);
+        String raw = "{\"type\":\"tool-call\",\"toolCallId\":\"c\",\"toolName\":\"t\",\"input\":\"{}\"}";
+        assertThat(t.writeValueAsString(t.readValue(raw, Types.RawToolCall.class))).isEqualTo(raw);
+        String url = "{\"type\":\"source\",\"sourceType\":\"url\",\"id\":\"s1\",\"url\":\"https://example.com\"}";
+        assertThat(t.readTree(t.writeValueAsString(t.readValue(url, Types.Source.class)))).isEqualTo(t.readTree(url));
+
+        Types.GenerateTextResult result = t.readValue(
+            "{\"text\":\"\",\"toolCalls\":[" + call + "],\"sources\":[" + url + "]}", Types.GenerateTextResult.class);
+        JsonNode written = t.readTree(t.writeValueAsString(result));
+        assertThat(written.get("toolCalls").get(0)).isEqualTo(t.readTree(call));
+        assertThat(written.get("sources").get(0)).isEqualTo(t.readTree(url));
+        // In a stream part the union's tag and the source's agree.
+        String part = "{\"type\":\"source\",\"sourceType\":\"url\",\"id\":\"s1\",\"url\":\"https://example.com\"}";
+        assertThat(t.writeValueAsString(t.readValue(part, Types.StreamPart.class))).isEqualTo(part);
+
+        // JSON written before the tag still reads; another tag is rejected.
+        assertThat(t.readValue("{\"toolCallId\":\"c\",\"toolName\":\"t\",\"input\":{}}", Types.ToolCall.class)
+            .getType()).isEqualTo("tool-call");
+        assertThatThrownBy(() -> t.readValue("{\"type\":\"source\",\"toolCallId\":\"c\",\"toolName\":\"t\"}",
+            Types.ToolCall.class)).isInstanceOf(IOException.class);
     }
 
     @Test

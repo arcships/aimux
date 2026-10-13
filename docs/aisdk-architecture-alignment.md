@@ -2395,6 +2395,8 @@ toolCalls / staticToolCalls / dynamicToolCalls
 toolResults / staticToolResults / dynamicToolResults
 ```
 
+派生出的元素仍是上游的带标签对象(#229 NP2-7 已落地)：`toolCalls[]` 与审批请求的 `toolCall` 是 `TypedToolCall`，带 `type: "tool-call"`(`A/generate-text/tool-call.ts:8-14`、`A/generate-text/tool-approval-request-output.ts:20`)；`sources[]` 是 `Source` = `LanguageModelV4Source`，带 `type: "source"`(`A/types/language-model.ts:92`、`V4/language-model-v4-source.ts:8`、`:36`)。aimux 的 `ToolCall`/`Source` 本身不带标签(在 `content` 与流中由联合写出)，独立出现的字段经 `wire::typed`/`wire::typed_vec` 写出标签，标签在最前；读取时缺标签可接受(旧 JSON)，标签不符则报错。TypeScript 侧对应 `TypedToolCall`、`TypedSource`。修复函数参数里的 `toolCall` 与 `applyToolCallRepair` 的结果同样带 `type: "tool-call"`(上游 `LanguageModelV4ToolCall`，`V4/language-model-v4-tool-call.ts:7`)。各绑定的独立 ToolCall/RawToolCall/Source 类型同样写出标签。
+
 `StepResultPerformance` 不能遗漏本地 SDK 已有字段：
 
 ```text

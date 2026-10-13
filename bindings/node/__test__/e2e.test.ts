@@ -352,8 +352,11 @@ test('e2e: OpenAI generateText parses toolCalls (structured content)', async (t)
     })
     const r = JSON.parse(await model.generateText(JSON.stringify("What's the weather in Tokyo?"), opts))
 
-    // Convenience field: toolCalls extracted
+    // Convenience field: toolCalls extracted. Each is the AI SDK's tagged
+    // TypedToolCall (ai generate-text/tool-call.ts:8-14; #229 NP2-7).
     t.is(r.toolCalls.length, 1)
+    t.is(r.toolCalls[0].type, 'tool-call')
+    t.is(Object.keys(r.toolCalls[0])[0], 'type')
     t.is(r.toolCalls[0].toolName, 'get_weather')
     t.is(r.toolCalls[0].toolCallId, 'call_abc')
     t.deepEqual(r.toolCalls[0].input, { location: 'Tokyo' })

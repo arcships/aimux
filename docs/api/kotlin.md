@@ -310,7 +310,7 @@ Decoding is lenient
 |--------|------|
 | `Usage(inputTokens: InputTokenUsage(total, noCache, cacheRead, cacheWrite), outputTokens: OutputTokenUsage(total, text, reasoning), raw)` | `inputTokens` / `noCache` / `cacheRead` / `cacheWrite` |
 | `FinishReason(unified, raw)`, `ResponseMetadata` / `ResponseInfo(id, timestamp, modelId, headers, body)` | `modelId` |
-| `ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata, invalid, error)` | `error` is the `name`-tagged `AiMuxError` JSON |
+| `ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata, invalid, error)` | `error` is the `name`-tagged `AiMuxError` JSON; encodes `"type": "tool-call"` (the AI SDK's `TypedToolCall`), as `RawToolCall` does, and `Source` encodes `"type": "source"` |
 | `Tool` (`Function` / `Provider`), `ToolChoice` | `{"type":"function"}`, `inputSchema`, `toolChoice` |
 | `ContentPart` (sealed) | `type`: `text`, `custom`, `reasoning`, `reasoning-file`, `image`, `file`, `tool-call`, `tool-result`, `tool-approval-request` |
 | `FilePartData` | `File.data`: a tagged `FileData`, a bare string (base64 or a URL) or a bare `{provider: id}` reference (`Tagged` / `Bare` / `Reference`); `ReasoningFilePartData` is `Tagged(GeneratedFileData)` / `Bare` |

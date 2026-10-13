@@ -1939,7 +1939,8 @@ pub extern "C" fn aimux_tool_call_repair_context(
 /// `opts_json` is the same string the call was generated with; the tool set
 /// comes from it. `reply_json` is `{"type":"repaired","toolCall":{…}}`,
 /// `{"type":"unchanged"}`, or `{"type":"failed","message":"…"}`. Writes the
-/// resulting `ToolCall` — valid, or invalid with the AI SDK's nested
+/// resulting `ToolCall`, tagged `"type": "tool-call"` as a standalone call
+/// is — valid, or invalid with the AI SDK's nested
 /// `ToolCallRepairError` — to `*out_json`. Same purity as
 /// [`aimux_tool_call_repair_context`].
 ///
@@ -1957,11 +1958,8 @@ pub extern "C" fn aimux_apply_tool_call_repair(
         let tool_call: ToolCall = parse_json_arg(tool_call_json, "tool_call_json")?;
         let opts = parse_opts_arg(opts_json)?;
         let reply: ToolCallRepairReply = parse_json_arg(reply_json, "reply_json")?;
-        to_json(&apply_tool_call_repair(
-            &tool_call,
-            opts.tools.as_deref(),
-            reply,
-        )?)
+        let repaired = apply_tool_call_repair(&tool_call, opts.tools.as_deref(), reply)?;
+        to_json(&aimux_core::wire::Tagged(&repaired))
     })
 }
 

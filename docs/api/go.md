@@ -639,3 +639,9 @@ msg := aimux.ModelMessage{
 `ToolCall` carries `ProviderMetadata` plus `Invalid` (set by Core when tool
 lookup, input parse, or schema validation fails, even after repair) and `Error`
 (the serialized `AiMuxError` for that failure).
+
+`ToolCall` and `RawToolCall` marshal with `"type": "tool-call"` first, and
+`Source` with `"type": "source"` before its `sourceType`, as the AI SDK's
+`TypedToolCall` and `Source` (a result's `ToolCalls` and `Sources`, a repair
+context's `ToolCall`). Unmarshaling accepts JSON without the tag and rejects a
+different one.

@@ -317,6 +317,11 @@ encoding exactly the JSON of the generated `bindings/node/src/types/*.ts`
 `VideoResult`, `RerankingResult`, `SearchResult`, `UploadFileResult`), all
 `Codable, Equatable`.
 
+`ToolCall`, `RawToolCall` and `Source` encode their AI SDK `type` tag
+(`"tool-call"`, `"source"`) wherever they stand, as the AI SDK's
+`TypedToolCall` and `Source` do in a result's `toolCalls` and `sources`;
+decoding accepts JSON without the tag and rejects a different one.
+
 `ToolCall` (top-level and `TextStreamPart.toolCall`) carries `providerMetadata`
 plus `invalid` (set by Core when tool lookup, input parse, or schema validation
 fails, even after repair) and `error` (the `AiMuxError` object for that

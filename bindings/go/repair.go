@@ -22,7 +22,8 @@ import (
 
 // RawToolCall is a tool call as the provider emitted it: Input is the raw
 // argument *text*, not a parsed object. It is what a repair function reads
-// and what it returns.
+// and what it returns. Its JSON is the AI SDK's LanguageModelV4ToolCall,
+// tagged {"type":"tool-call",...}.
 type RawToolCall struct {
 	ToolCallID       string          `json:"toolCallId"`
 	ToolName         string          `json:"toolName"`
@@ -30,6 +31,33 @@ type RawToolCall struct {
 	ProviderExecuted *bool           `json:"providerExecuted,omitempty"`
 	Dynamic          *bool           `json:"dynamic,omitempty"`
 	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`
+}
+
+// MarshalJSON writes the call with its "type":"tool-call" tag first.
+func (c RawToolCall) MarshalJSON() ([]byte, error) {
+	type plain RawToolCall
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{"tool-call", plain(c)})
+}
+
+// UnmarshalJSON reads a call; a "type" field, when present, must be
+// "tool-call".
+func (c *RawToolCall) UnmarshalJSON(data []byte) error {
+	type plain RawToolCall
+	var tagged struct {
+		Type json.RawMessage `json:"type"`
+		plain
+	}
+	if err := json.Unmarshal(data, &tagged); err != nil {
+		return err
+	}
+	if err := checkTypeTag(tagged.Type, "tool-call"); err != nil {
+		return err
+	}
+	*c = RawToolCall(tagged.plain)
+	return nil
 }
 
 // ToolCallRepairContext is the argument handed to a RepairToolCallFunc — the

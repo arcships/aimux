@@ -9,21 +9,24 @@
 use aimux_core::content::{ContentPart, FilePartData};
 use aimux_core::decision_model::DecisionImage;
 use aimux_core::error::ApiCallError;
+use aimux_core::generate::GenerateTextResult;
 use aimux_core::image_model::ImageOutputs;
 use aimux_core::language_model_message::{
     convert_file_part_data, convert_to_language_model_prompt,
 };
 use aimux_core::message::{MessageContent, ModelMessage, Role};
 use aimux_core::result::{
-    GenerateContent, GeneratedFile, GeneratedFileOutput, LanguageModelFile, TextContent,
-    ToolApprovalRequestOutput,
+    GenerateContent, GeneratedFile, GeneratedFileOutput, LanguageModelFile,
+    StreamTextResultAggregated, TextContent, ToolApprovalRequestOutput,
 };
 use aimux_core::shared::{FileBytes, FileData, GeneratedFileData, RequestInfo, ResponseInfo};
 use aimux_core::speech_model::AudioData;
 use aimux_core::stream_part::{StreamPart, TextStreamPart};
 use aimux_core::timestamp::Timestamp;
 use aimux_core::tool::ToolCall;
-use aimux_core::types::{ProviderMetadata, ResponseMetadata};
+use aimux_core::types::{
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
+};
 use aimux_core::video_model::VideoData;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -511,6 +514,124 @@ fn text_stream_deltas_are_text() {
         serde_json::from_value::<TextStreamPart>(
             json!({ "type": "text-delta", "id": "t1", "delta": "Hello" })
         )
+        .is_err()
+    );
+}
+
+// ── Standalone type tags (#229 NP2-7) ───────────────────────────────────────
+
+/// Outside `content`, a tool call is the AI SDK's `TypedToolCall`, tagged
+/// `{type: 'tool-call', ...}` (`generate-text/tool-call.ts:8-14`), and a
+/// source is its `Source`, a `LanguageModelV4Source` tagged
+/// `{type: 'source', sourceType, ...}` (`types/language-model.ts:92`;
+/// provider `language-model-v4-source.ts:8`, `:36`). These are the text
+/// results' `toolCalls` and `sources` (`generate-text-result.ts:73`, `:78`;
+/// `stream-text-result.ts:173`, `:180`) and an approval request's `toolCall`
+/// (`tool-approval-request-output.ts:20`).
+#[test]
+fn standalone_tool_calls_and_sources_are_tagged() {
+    let call = json!({
+        "type": "tool-call",
+        "toolCallId": "call-1",
+        "toolName": "weather",
+        "input": { "city": "SG" },
+        "providerMetadata": { "openai": { "itemId": "fc_1" } },
+    });
+    let url = json!({
+        "type": "source",
+        "sourceType": "url",
+        "id": "s1",
+        "url": "https://example.com",
+        "title": "Example",
+    });
+    let document = json!({
+        "type": "source",
+        "sourceType": "document",
+        "id": "s2",
+        "mediaType": "application/pdf",
+        "title": "Doc",
+    });
+    let finish = serde_json::to_value(FinishReason {
+        unified: FinishReasonUnified::ToolCalls,
+        raw: None,
+    })
+    .unwrap();
+    let usage = serde_json::to_value(Usage::default()).unwrap();
+
+    let generated: GenerateTextResult = serde_json::from_value(json!({
+        "text": "",
+        "toolCalls": [call],
+        "finishReason": finish,
+        "usage": usage,
+        "warnings": [],
+        "raw": { "content": [], "finishReason": finish, "usage": usage, "warnings": [] },
+        "sources": [url, document],
+    }))
+    .unwrap();
+    let written = serde_json::to_value(&generated).unwrap();
+    assert_eq!(written["toolCalls"], json!([call]));
+    assert_eq!(written["sources"], json!([url, document]));
+    // The tag comes first, as in the AI SDK's objects.
+    let text = serde_json::to_string(&generated).unwrap();
+    assert!(
+        text.contains(r#""toolCalls":[{"type":"tool-call","toolCallId":"call-1""#),
+        "{text}"
+    );
+    assert!(
+        text.contains(r#""sources":[{"type":"source","sourceType":"url","id":"s1""#),
+        "{text}"
+    );
+
+    let streamed: StreamTextResultAggregated = serde_json::from_value(json!({
+        "text": "",
+        "finishReason": finish,
+        "toolCalls": [call],
+        "sources": [document],
+    }))
+    .unwrap();
+    let written = serde_json::to_value(&streamed).unwrap();
+    assert_eq!(written["toolCalls"], json!([call]));
+    assert_eq!(written["sources"], json!([document]));
+
+    // An approval request's call is tagged, standalone and in `content`.
+    assert_json_back::<ToolApprovalRequestOutput>(json!({ "approvalId": "a1", "toolCall": call }));
+    assert_json_back::<TextContent>(json!({
+        "type": "tool-approval-request",
+        "approvalId": "a1",
+        "toolCall": call,
+    }));
+    // In `content` the union writes a tool call's tag, once.
+    let part = assert_json_back::<TextContent>(call.clone());
+    assert_eq!(
+        serde_json::to_string(&part)
+            .unwrap()
+            .matches(r#""type""#)
+            .count(),
+        1
+    );
+
+    // JSON written before the tag still reads, and gains it; another tag is
+    // rejected.
+    let untagged = json!({ "toolCallId": "call-1", "toolName": "weather", "input": {} });
+    let read: ToolApprovalRequestOutput =
+        serde_json::from_value(json!({ "approvalId": "a1", "toolCall": untagged })).unwrap();
+    assert_eq!(
+        serde_json::to_value(&read).unwrap()["toolCall"]["type"],
+        "tool-call"
+    );
+    let mistagged = json!({ "type": "source", "toolCallId": "c", "toolName": "t", "input": {} });
+    assert!(
+        serde_json::from_value::<ToolApprovalRequestOutput>(
+            json!({ "approvalId": "a1", "toolCall": mistagged })
+        )
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<StreamTextResultAggregated>(json!({
+            "text": "",
+            "finishReason": finish,
+            "sources": [{ "type": "tool-call", "sourceType": "url", "id": "s", "url": "u" }],
+        }))
         .is_err()
     );
 }

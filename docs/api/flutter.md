@@ -374,6 +374,12 @@ re-encodes verbatim.
 lookup, input parse, or schema validation fails, even after repair) and `error`
 (the `AiMuxError` object for that failure).
 
+A standalone `ToolCall` or `RawToolCall` (a result's `toolCalls`, an approval
+request's `toolCall`, a repair context's `toolCall`) writes
+`"type": "tool-call"`, and a `Source` writes `"type": "source"` next to its
+`sourceType`, as the AI SDK's `TypedToolCall` and `Source` do. Reading accepts
+JSON without the tag and rejects a different one.
+
 ## Coverage
 
 Text generation and streaming are supported. Multimodal features (embedding,

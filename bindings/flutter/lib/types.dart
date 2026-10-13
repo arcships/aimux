@@ -202,7 +202,7 @@ class ToolCall {
   });
 
   factory ToolCall.fromJson(Json j) => ToolCall(
-        toolCallId: j['toolCallId'] as String,
+        toolCallId: _checkTypeTag(j, 'tool-call')['toolCallId'] as String,
         toolName: j['toolName'] as String,
         input: j['input'],
         providerExecuted: j['providerExecuted'] as bool?,
@@ -212,7 +212,11 @@ class ToolCall {
         error: _opt(j['error']),
       );
 
+  /// Writes the call with its `"type": "tool-call"` tag: a call outside
+  /// `content` is the AI SDK's tagged `TypedToolCall`
+  /// (ai generate-text/tool-call.ts).
   Json toJson() => {
+        'type': 'tool-call',
         'toolCallId': toolCallId,
         'toolName': toolName,
         'input': input,
@@ -222,6 +226,16 @@ class ToolCall {
         if (invalid != null) 'invalid': invalid,
         if (error != null) 'error': error,
       };
+}
+
+/// Checks the `type` tag of a value that always carries one (a standalone
+/// tool call or source): JSON written before the tag has none.
+Json _checkTypeTag(Json j, String expected) {
+  final tag = j['type'];
+  if (tag != null && tag != expected) {
+    throw FormatException('expected type "$expected", got "$tag"');
+  }
+  return j;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -263,7 +277,7 @@ class RawToolCall {
   });
 
   factory RawToolCall.fromJson(Json j) => RawToolCall(
-        toolCallId: j['toolCallId'] as String,
+        toolCallId: _checkTypeTag(j, 'tool-call')['toolCallId'] as String,
         toolName: j['toolName'] as String,
         input: j['input'] as String,
         providerExecuted: j['providerExecuted'] as bool?,
@@ -283,7 +297,10 @@ class RawToolCall {
         providerMetadata: providerMetadata,
       );
 
+  /// Writes the call with its `"type": "tool-call"` tag, as the AI SDK's
+  /// `LanguageModelV4ToolCall`.
   Json toJson() => {
+        'type': 'tool-call',
         'toolCallId': toolCallId,
         'toolName': toolName,
         'input': input,
@@ -751,11 +768,14 @@ class GeneratedFile {
 }
 
 /// A source / citation. Mirrors `Source.ts`, tagged by `sourceType`
-/// (`"url"` / `"document"`).
+/// (`"url"` / `"document"`). Its JSON also carries `"type": "source"`, as the
+/// AI SDK's `Source` (provider language-model-v4-source.ts) does in a
+/// result's `sources`.
 sealed class Source {
   const Source();
 
-  factory Source.fromJson(Json j) => switch (j['sourceType']) {
+  factory Source.fromJson(Json j) =>
+      switch (_checkTypeTag(j, 'source')['sourceType']) {
         'url' => UrlSource(
             id: j['id'] as String,
             url: j['url'] as String,
@@ -784,6 +804,7 @@ final class UrlSource extends Source {
 
   @override
   Json toJson() => {
+        'type': 'source',
         'sourceType': 'url',
         'id': id,
         'url': url,
@@ -808,6 +829,7 @@ final class DocumentSource extends Source {
 
   @override
   Json toJson() => {
+        'type': 'source',
         'sourceType': 'document',
         'id': id,
         'mediaType': mediaType,

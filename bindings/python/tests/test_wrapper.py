@@ -396,6 +396,50 @@ class TestGeneratedFiles:
         assert adapter.dump_python(adapter.validate_python(raw), by_alias=True) == raw
 
 
+# ── Standalone type tags (#229 NP2-7) ───────────────────────────────────────
+
+class TestStandaloneTypeTags:
+
+    def test_standalone_tool_calls_and_sources_are_tagged(self):
+        """A result's toolCalls and sources are the AI SDK's TypedToolCall and
+        Source, tagged {type: 'tool-call'} (ai generate-text/tool-call.ts:8-14)
+        and {type: 'source', sourceType} (provider language-model-v4-source.ts:8,
+        :36); generate-text-result.ts:73, :78. A repair function's call is a
+        tagged LanguageModelV4ToolCall (language-model-v4-tool-call.ts:7)."""
+        from aimux import apply_tool_call_repair, tool_call_repair_context
+        from aimux.wrapper import RawToolCall, StreamTextResultAggregated, ToolCall
+
+        call = {"type": "tool-call", "toolCallId": "call-1", "toolName": "weather", "input": {"city": "SG"}}
+        url = {"type": "source", "sourceType": "url", "id": "s1", "url": "https://example.com"}
+        result = StreamTextResultAggregated.model_validate(
+            {"text": "", "finishReason": {"unified": "stop"}, "toolCalls": [call], "sources": [url]}
+        )
+        dumped = result.model_dump(by_alias=True)
+        assert dumped["toolCalls"] == [call]
+        assert dumped["sources"] == [url]
+        assert RawToolCall(tool_call_id="c", tool_name="t", input="{}").model_dump(by_alias=True) == {
+            "type": "tool-call", "toolCallId": "c", "toolName": "t", "input": "{}",
+        }
+
+        # JSON written before the tag still reads; another tag is rejected.
+        assert ToolCall.model_validate({"toolCallId": "c", "toolName": "t", "input": {}}).type == "tool-call"
+        with pytest.raises(ValueError):
+            ToolCall.model_validate({"type": "source", "toolCallId": "c", "toolName": "t", "input": {}})
+
+        # The native repair functions write the standalone call tagged.
+        invalid = json.dumps({
+            "toolCallId": "call-1", "toolName": "weather", "input": {"town": "SG"},
+            "dynamic": True, "invalid": True,
+            "error": {"name": "AI_InvalidToolInputError", "toolName": "weather",
+                      "toolInput": '{"town":"SG"}', "cause": "missing city"},
+        })
+        opts = '{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}'
+        out = json.loads(apply_tool_call_repair(invalid, opts, '{"type":"unchanged"}'))
+        assert out["type"] == "tool-call" and list(out)[0] == "type"
+        context = json.loads(tool_call_repair_context(invalid, '{"prompt":"weather?"}', opts))
+        assert context["toolCall"]["type"] == "tool-call"
+
+
 # ── Provider namespace order (#229 NP2-1) ────────────────────────────────────
 
 class TestNamespaceOrder:

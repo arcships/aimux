@@ -1129,6 +1129,12 @@ fn tool_call_repair_exports_round_trip() {
             && context.contains(r#""instructions":"be terse""#),
         "messages and instructions come from prompt_json / opts_json: {context}"
     );
+    // The repair function's `toolCall` is a tagged `LanguageModelV4ToolCall`
+    // (provider language-model-v4-tool-call.ts:7).
+    assert!(
+        context.contains(r#""toolCall":{"type":"tool-call","toolCallId":"call-1""#),
+        "{context}"
+    );
 
     let e = aimux_apply_tool_call_repair(
         c(REPAIR_INVALID).as_ptr(),
@@ -1142,6 +1148,11 @@ fn tool_call_repair_exports_round_trip() {
         repaired.contains(r#""input":{"city":"SG"}"#) && !repaired.contains("invalid"),
         "repaired call should be valid: {repaired}"
     );
+    // A standalone call is a tagged `TypedToolCall` (ai generate-text/tool-call.ts:8-14).
+    assert!(
+        repaired.starts_with(r#"{"type":"tool-call","toolCallId":"call-1""#),
+        "{repaired}"
+    );
 
     let result = format!(r#"{{"toolCalls":[{REPAIR_INVALID}],"responseMessages":[]}}"#);
     let e = aimux_apply_tool_call_repair_to_result(
@@ -1154,6 +1165,10 @@ fn tool_call_repair_exports_round_trip() {
     ok(e, "apply_tool_call_repair_to_result");
     let patched = read_and_free_json(out, "apply_tool_call_repair_to_result");
     assert!(patched.contains(r#""invalid":true"#), "{patched}");
+    assert!(
+        patched.contains(r#""toolCalls":[{"type":"tool-call","toolCallId":"call-1""#),
+        "{patched}"
+    );
 
     // A reply naming a tool call the document does not have is an AiMuxError.
     let e = aimux_apply_tool_call_repair_to_result(

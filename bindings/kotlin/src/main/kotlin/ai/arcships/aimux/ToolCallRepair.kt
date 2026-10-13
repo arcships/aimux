@@ -12,6 +12,8 @@
 
 package ai.arcships.aimux
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -35,8 +37,10 @@ import java.util.concurrent.FutureTask
  *
  * Mirrors core `RawToolCall`. Unlike [ToolCall], `input` is the **raw argument
  * text** (the string the provider sent), not a parsed object — that is what a
- * repair function reads and what it returns a replacement for.
+ * repair function reads and what it returns a replacement for. Its JSON
+ * carries `"type": "tool-call"`, as the AI SDK's `LanguageModelV4ToolCall`.
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class RawToolCall(
     val toolCallId: String,
@@ -45,7 +49,15 @@ data class RawToolCall(
     val providerExecuted: Boolean? = null,
     val dynamic: Boolean? = null,
     val providerMetadata: ProviderMetadata? = null,
-)
+) {
+    /** Always `"tool-call"`. */
+    @EncodeDefault
+    val type: String = "tool-call"
+
+    init {
+        requireTypeTag("tool-call", type)
+    }
+}
 
 /**
  * Everything a repair function is given about one invalid tool call.

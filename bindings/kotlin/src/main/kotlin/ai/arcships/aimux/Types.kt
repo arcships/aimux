@@ -15,6 +15,7 @@
 
 package ai.arcships.aimux
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
@@ -188,7 +189,11 @@ data class RequestInfo(
  * by Core when the call stays invalid after optional repair; `error` is the
  * `name`-tagged `AiMuxError` JSON of the lookup, parse, schema, or repair
  * failure (`{"name":"AI_NoSuchToolError",...}`).
+ *
+ * Its JSON carries `"type": "tool-call"`: a call outside `content` is the AI
+ * SDK's tagged `TypedToolCall` (ai generate-text/tool-call.ts).
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class ToolCall(
     val toolCallId: String,
@@ -199,7 +204,25 @@ data class ToolCall(
     val providerMetadata: ProviderMetadata? = null,
     val invalid: Boolean? = null,
     val error: JsonElement? = null,
-)
+) {
+    /** Always `"tool-call"`. */
+    @EncodeDefault
+    val type: String = "tool-call"
+
+    init {
+        requireTypeTag("tool-call", type)
+    }
+}
+
+/**
+ * Check the `type` tag of a value that always carries one (a standalone tool
+ * call or source); JSON written before the tag has none, and reads the default.
+ */
+internal fun requireTypeTag(expected: String, actual: String) {
+    if (actual != expected) {
+        throw SerializationException("expected type \"$expected\", got \"$actual\"")
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tools (input side of GenerateTextOptions).
@@ -929,13 +952,21 @@ data class GenerateTextOptions(
 // Results.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** A URL or document used as a source for the response. Mirrors `Source.ts` (tagged on `sourceType`). */
+/**
+ * A URL or document used as a source for the response. Mirrors `Source.ts`
+ * (tagged on `sourceType`). Its JSON also carries `"type": "source"`, as the
+ * AI SDK's `Source` (provider language-model-v4-source.ts) does in a result's
+ * `sources`.
+ */
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
 @JsonClassDiscriminator("sourceType")
 sealed interface Source {
     val id: String
     val providerMetadata: ProviderMetadata?
+
+    /** Always `"source"`. */
+    val type: String
 
     @Serializable
     @SerialName("url")
@@ -944,7 +975,14 @@ sealed interface Source {
         val url: String,
         val title: String? = null,
         override val providerMetadata: ProviderMetadata? = null,
-    ) : Source
+    ) : Source {
+        @EncodeDefault
+        override val type: String = "source"
+
+        init {
+            requireTypeTag("source", type)
+        }
+    }
 
     @Serializable
     @SerialName("document")
@@ -954,7 +992,14 @@ sealed interface Source {
         val title: String,
         val filename: String? = null,
         override val providerMetadata: ProviderMetadata? = null,
-    ) : Source
+    ) : Source {
+        @EncodeDefault
+        override val type: String = "source"
+
+        init {
+            requireTypeTag("source", type)
+        }
+    }
 }
 
 /** A provider warning, tagged on `type`. Mirrors `Warning.ts`. */

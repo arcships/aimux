@@ -35,6 +35,8 @@ import type {
   Tool,
   ToolChoice,
   ToolCall,
+  TypedToolCall,
+  TypedSource,
   ToolResult,
   Usage,
   InputTokenUsage,
@@ -157,6 +159,8 @@ export type {
   Tool,
   ToolChoice,
   ToolCall,
+  TypedToolCall,
+  TypedSource,
   ToolResult,
   Usage,
   InputTokenUsage,
@@ -250,7 +254,8 @@ export type {
 
 /** The argument passed to a {@link RepairToolCall} function. */
 export type ToolCallRepairContext = {
-  toolCall: RawToolCall
+  /** The failed call, tagged as the AI SDK's `LanguageModelV4ToolCall`. */
+  toolCall: { type: 'tool-call' } & RawToolCall
   /** The lookup / parse / validation failure that made the call invalid. */
   error: AiMuxError
   /** JSON Schema of the called tool; the empty-object schema when unknown. */
@@ -433,10 +438,8 @@ export async function* streamText(
     if (repair && part.type === 'tool-call' && part.invalid === true) {
       const reply = await repairReplyFor(part, promptJson, optsJson, repair)
       if (reply !== null) {
-        yield {
-          type: 'tool-call',
-          ...(JSON.parse(applyToolCallRepair(JSON.stringify(part), optsJson, reply)) as ToolCall),
-        }
+        // The native function writes the call with its `type` tag.
+        yield JSON.parse(applyToolCallRepair(JSON.stringify(part), optsJson, reply)) as TypedToolCall
         continue
       }
     }

@@ -300,8 +300,8 @@ export declare function anthropicAws(apiKey: string, region: string, modelId: st
  * `optsJson` is the same string the call was generated with; the tool set
  * comes from it. `replyJson` is `{"type":"repaired","toolCall":{…}}`,
  * `{"type":"unchanged"}`, or `{"type":"failed","message":"…"}`. Returns the
- * resulting `ToolCall` JSON — valid, or invalid carrying a nested
- * `ToolCallRepairError`.
+ * resulting `ToolCall` JSON, tagged `"type": "tool-call"` — valid, or
+ * invalid carrying a nested `ToolCallRepairError`.
  *
  * Options carrying no tools throw `InvalidArgumentError`: such a call is not
  * repairable, and `toolCallRepairContext` already said so by returning

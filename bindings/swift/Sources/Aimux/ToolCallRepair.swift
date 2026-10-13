@@ -42,6 +42,35 @@ public struct RawToolCall: Codable, Equatable {
         self.providerExecuted = providerExecuted; self.dynamic = dynamic
         self.providerMetadata = providerMetadata
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case type, toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata
+    }
+
+    /// Reads a call; a `type` field, when present, must be `"tool-call"`.
+    public init(from decoder: Decoder) throws {
+        try decoder.checkTypeTag("tool-call")
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        toolCallId = try c.decode(String.self, forKey: .toolCallId)
+        toolName = try c.decode(String.self, forKey: .toolName)
+        input = try c.decode(String.self, forKey: .input)
+        providerExecuted = try c.decodeIfPresent(Bool.self, forKey: .providerExecuted)
+        dynamic = try c.decodeIfPresent(Bool.self, forKey: .dynamic)
+        providerMetadata = try c.decodeIfPresent(ProviderMetadata.self, forKey: .providerMetadata)
+    }
+
+    /// Writes the call with its `"type": "tool-call"` tag, as the AI SDK's
+    /// `LanguageModelV4ToolCall`.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode("tool-call", forKey: .type)
+        try c.encode(toolCallId, forKey: .toolCallId)
+        try c.encode(toolName, forKey: .toolName)
+        try c.encode(input, forKey: .input)
+        try c.encodeIfPresent(providerExecuted, forKey: .providerExecuted)
+        try c.encodeIfPresent(dynamic, forKey: .dynamic)
+        try c.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
+    }
 }
 
 /// The argument handed to ``GenerateTextOptions/repairToolCall``. Mirrors the

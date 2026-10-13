@@ -121,6 +121,15 @@ extension Decoder {
     func unknownTag(_ tag: String, in union: String) -> DecodingError {
         aimuxDecodingError(codingPath, "unknown \(union) tag \(tag)")
     }
+
+    /// Check the `type` tag of a value that always carries one (a standalone
+    /// tool call or source). JSON written before the tag has none.
+    func checkTypeTag(_ expected: String) throws {
+        let c = try container(keyedBy: AnyCodingKey.self)
+        if let tag = try c.decodeIfPresent(String.self, forKey: AnyCodingKey("type")), tag != expected {
+            throw aimuxDecodingError(codingPath, "expected type \(expected), got \(tag)")
+        }
+    }
 }
 
 extension Encoder {
@@ -610,18 +619,21 @@ public struct GeneratedFile: Codable, Equatable {
     public func bytes() -> [UInt8]? { Base64Bytes.decode(base64) }
 }
 
-/// A source / citation. Wire: `{"sourceType":"url","id","url","title"?,…}` or
-/// `{"sourceType":"document","id","mediaType","title","filename"?,…}`.
+/// A source / citation. Wire: `{"type":"source","sourceType":"url","id","url","title"?,…}`
+/// or `{"type":"source","sourceType":"document","id","mediaType","title","filename"?,…}`,
+/// the AI SDK's tagged `Source` (provider language-model-v4-source.ts), in a
+/// result's `sources` and in a content or stream part alike.
 public enum Source: Codable, Equatable {
     case url(id: String, url: String, title: String?, providerMetadata: ProviderMetadata?)
     case document(id: String, mediaType: String, title: String, filename: String?,
                   providerMetadata: ProviderMetadata?)
 
     private enum Field: String, CodingKey {
-        case id, sourceType, url, title, filename, mediaType, providerMetadata
+        case type, id, sourceType, url, title, filename, mediaType, providerMetadata
     }
 
     public init(from decoder: Decoder) throws {
+        try decoder.checkTypeTag("source")
         let c = try decoder.container(keyedBy: Field.self)
         let id = try c.decode(String.self, forKey: .id)
         let pm = try c.decodeIfPresent(ProviderMetadata.self, forKey: .providerMetadata)
@@ -640,6 +652,7 @@ public enum Source: Codable, Equatable {
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: Field.self)
+        try c.encode("source", forKey: .type)
         switch self {
         case .url(let id, let url, let title, let pm):
             try c.encode("url", forKey: .sourceType); try c.encode(id, forKey: .id)
@@ -932,7 +945,9 @@ public enum ModelPrompt: Codable, Equatable {
 
 // MARK: - Result types
 
-/// A tool call requested by the model (user-facing).
+/// A tool call requested by the model (user-facing). Its JSON carries
+/// `"type": "tool-call"`: a call outside `content` is the AI SDK's tagged
+/// `TypedToolCall` (ai generate-text/tool-call.ts).
 public struct ToolCall: Codable, Equatable {
     public var toolCallId: String
     public var toolName: String
@@ -957,6 +972,36 @@ public struct ToolCall: Codable, Equatable {
         self.providerExecuted = providerExecuted; self.dynamic = dynamic
         self.providerMetadata = providerMetadata
         self.invalid = invalid; self.error = error
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type, toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata, invalid, error
+    }
+
+    public init(from decoder: Decoder) throws {
+        try decoder.checkTypeTag("tool-call")
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        toolCallId = try c.decode(String.self, forKey: .toolCallId)
+        toolName = try c.decode(String.self, forKey: .toolName)
+        input = try c.decode(JSONValue.self, forKey: .input)
+        providerExecuted = try c.decodeIfPresent(Bool.self, forKey: .providerExecuted)
+        dynamic = try c.decodeIfPresent(Bool.self, forKey: .dynamic)
+        providerMetadata = try c.decodeIfPresent(ProviderMetadata.self, forKey: .providerMetadata)
+        invalid = try c.decodeIfPresent(Bool.self, forKey: .invalid)
+        error = try c.decodeIfPresent(JSONValue.self, forKey: .error)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode("tool-call", forKey: .type)
+        try c.encode(toolCallId, forKey: .toolCallId)
+        try c.encode(toolName, forKey: .toolName)
+        try c.encode(input, forKey: .input)
+        try c.encodeIfPresent(providerExecuted, forKey: .providerExecuted)
+        try c.encodeIfPresent(dynamic, forKey: .dynamic)
+        try c.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
+        try c.encodeIfPresent(invalid, forKey: .invalid)
+        try c.encodeIfPresent(error, forKey: .error)
     }
 }
 

@@ -111,9 +111,14 @@ tools = [{
 result = generate_text(model, "What's the weather in Tokyo?", {"tools": tools})
 if len(result["toolCalls"]) > 0:
     call = result["toolCalls"][0]
+    print(call["type"])          # tool-call (the AI SDK's TypedToolCall)
     print(call["toolName"])      # get_weather
     print(call["input"])          # {"location": "Tokyo"}
 ```
+
+Each `toolCalls` entry carries `"type": "tool-call"` and each `sources` entry
+`"type": "source"`, as in the AI SDK; the typed `ToolCall`, `RawToolCall` and
+source models default the field and reject another value.
 
 ### Repairing Invalid Tool Calls
 

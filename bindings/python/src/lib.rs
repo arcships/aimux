@@ -1162,10 +1162,10 @@ fn tool_call_repair_context(
 /// Resolve one invalid tool call against a host's repair reply.
 ///
 /// `opts_json` is the same string the call was generated with; the tool set
-/// comes from it. `reply_json` is ``{"type":"repaired","tool_call":{…}}``,
+/// comes from it. `reply_json` is ``{"type":"repaired","toolCall":{…}}``,
 /// ``{"type":"unchanged"}``, or ``{"type":"failed","message":"…"}``. Returns
-/// the resulting ``ToolCall`` JSON — valid, or invalid carrying a nested
-/// ``ToolCallRepairError``.
+/// the resulting ``ToolCall`` JSON, tagged ``"type": "tool-call"`` — valid,
+/// or invalid carrying a nested ``ToolCallRepairError``.
 ///
 /// Options carrying no tools raise ``InvalidArgumentError``: such a call is
 /// not repairable, and ``tool_call_repair_context`` already said so by
@@ -1186,7 +1186,7 @@ fn apply_tool_call_repair(
         reply,
     )
     .map_err(|e| to_py_err(&e))?;
-    serialize_result(&repaired)
+    serialize_result(&aimux_core::wire::Tagged(&repaired))
 }
 
 /// Apply a repair reply to a serialized ``GenerateTextResult`` or

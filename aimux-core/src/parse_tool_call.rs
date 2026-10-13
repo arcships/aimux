@@ -332,7 +332,12 @@ fn invalid_tool_call(tool_call: RawToolCall, error: AiMuxError) -> ToolCall {
 pub enum ToolCallRepairReply {
     /// Re-validate this replacement call, exactly as the closure path does
     /// for a returned `Some(call)`.
-    Repaired { tool_call: RawToolCall },
+    /// The call may carry its `type` tag, as the AI SDK repair function's
+    /// `LanguageModelV4ToolCall` does.
+    Repaired {
+        #[serde(deserialize_with = "crate::wire::typed::deserialize")]
+        tool_call: RawToolCall,
+    },
     /// Keep the original failure — the closure path's `None`.
     Unchanged,
     /// The host's repair attempt itself failed. Reported as
@@ -475,7 +480,7 @@ pub fn tool_call_repair_context(
         error,
     };
     Ok(Some(serde_json::json!({
-        "toolCall": context.tool_call,
+        "toolCall": crate::wire::Tagged(&context.tool_call),
         "error": context.error,
         "inputSchema": context.input_schema(&context.tool_call.tool_name),
         "tools": context.tools,
@@ -584,7 +589,7 @@ pub fn apply_tool_call_repair_to_result(
             repaired.tool_call_id
         )));
     }
-    calls[target_index] = serde_json::to_value(&repaired)
+    calls[target_index] = serde_json::to_value(crate::wire::Tagged(&repaired))
         .map_err(|error| AiMuxError::InvalidArgument(format!("tool call: {error}")))?;
 
     // The replayed transcript must agree with `toolCalls`, or the next turn

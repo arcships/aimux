@@ -65,6 +65,16 @@ public final class Types {
     //                                           handles instantiation.
     // ─────────────────────────────────────────────────────────────────────────────
 
+    /**
+     * Check the {@code type} tag of a value that always carries one (a
+     * standalone tool call or source). JSON written before the tag has none.
+     */
+    static void requireTypeTag(String expected, String actual) {
+        if (actual != null && !expected.equals(actual)) {
+            throw new IllegalArgumentException("expected type \"" + expected + "\", got \"" + actual + "\"");
+        }
+    }
+
     /** Shared JSON mapper for the typed layer. */
     public static final class AimuxJson {
         private AimuxJson() {}
@@ -400,8 +410,13 @@ public final class Types {
      *
      * `input` is a {@link JsonNode} because it is usually an arbitrary JSON object
      * (the tool arguments) whose shape is tool-specific.
+     *
+     * <p>Its JSON carries {@code "type": "tool-call"}: a call outside
+     * {@code content} is the AI SDK's tagged {@code TypedToolCall}
+     * (ai generate-text/tool-call.ts).
      */
     public static class ToolCall {
+        @JsonProperty("type") private final String type = "tool-call";
         @JsonProperty("toolCallId") private String toolCallId = "";
         @JsonProperty("toolName") private String toolName = "";
         @JsonProperty("input") private JsonNode input = emptyObject();
@@ -426,6 +441,10 @@ public final class Types {
             this.error = error;
         }
 
+        @JsonProperty("type") private void readType(String value) { requireTypeTag("tool-call", value); }
+
+        /** Always {@code "tool-call"}. */
+        public String getType() { return type; }
         public String getToolCallId() { return toolCallId; }
         public String getToolName() { return toolName; }
         public JsonNode getInput() { return input; }
@@ -1728,9 +1747,11 @@ public final class Types {
     /**
      * A tool call as the provider emitted it: {@code input} is the raw argument
      * TEXT, not the parsed object. This is what a {@link ToolCallRepair}
-     * inspects and what it returns as the replacement.
+     * inspects and what it returns as the replacement. Its JSON carries
+     * {@code "type": "tool-call"}, as the AI SDK's {@code LanguageModelV4ToolCall}.
      */
     public static class RawToolCall {
+        @JsonProperty("type") private final String type = "tool-call";
         @JsonProperty("toolCallId") private String toolCallId = "";
         @JsonProperty("toolName") private String toolName = "";
         @JsonProperty("input") private String input = "";
@@ -1751,6 +1772,10 @@ public final class Types {
             this.providerMetadata = providerMetadata;
         }
 
+        @JsonProperty("type") private void readType(String value) { requireTypeTag("tool-call", value); }
+
+        /** Always {@code "tool-call"}. */
+        public String getType() { return type; }
         public String getToolCallId() { return toolCallId; }
         public String getToolName() { return toolName; }
         /** The provider's raw argument text (e.g. {@code {"city":"Singapore"}}). */
@@ -2579,13 +2604,19 @@ public final class Types {
     // for forward compatibility (mirroring StreamPart).
     // ─────────────────────────────────────────────────────────────────────────────
 
-    /** A URL or document used as a source for the response. */
+    /**
+     * A URL or document used as a source for the response. Its JSON is the AI
+     * SDK's {@code Source}, tagged {@code {"type": "source", "sourceType": ...}}
+     * (provider language-model-v4-source.ts), in a result's sources and in a
+     * stream part alike.
+     */
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "sourceType")
     @JsonSubTypes({
         @JsonSubTypes.Type(value = Source.Url.class, name = "url"),
         @JsonSubTypes.Type(value = Source.Document.class, name = "document")
     })
     public abstract static class Source {
+        @JsonProperty("type") private final String type = "source";
         @JsonProperty("id") private final String id;
         @JsonProperty("providerMetadata") private final JsonNode providerMetadata;
 
@@ -2594,6 +2625,10 @@ public final class Types {
             this.providerMetadata = providerMetadata;
         }
 
+        @JsonProperty("type") private void readType(String value) { requireTypeTag("source", value); }
+
+        /** Always {@code "source"}. */
+        public String getType() { return type; }
         public String getId() { return id; }
         public JsonNode getProviderMetadata() { return providerMetadata; }
 

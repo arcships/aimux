@@ -477,6 +477,11 @@ plus `getInvalid()` (set by Core when tool lookup, input parse, or schema
 validation fails, even after repair) and `getError()` (the serialized
 `AiMuxError` for that failure).
 
+The top-level `ToolCall` and `RawToolCall` serialize `"type": "tool-call"` and
+`Source` serializes `"type": "source"` (`getType()`), as the AI SDK's
+`TypedToolCall` and `Source` in a result's `toolCalls` and `sources`. Reading
+accepts JSON without the tag and rejects a different one.
+
 `MultimodalTypes.java` declares the typed multimodal surface:
 `EmbeddingCallOptions` / `EmbeddingResult`, `SpeechCallOptions` / `SpeechResult`,
 `ImageCallOptions` / `ImageResult`, `TranscriptionCallOptions` /

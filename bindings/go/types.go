@@ -79,6 +79,9 @@ func ToolChoiceTool(name string) ToolChoice {
 // ── Core types ───────────────────────────────────────────────────────────────
 
 // Source is a URL or document source. Exactly one variant is populated.
+// Its JSON is the AI SDK's Source, tagged {"type":"source","sourceType":...}
+// (provider language-model-v4-source.ts) in a result's Sources and in a
+// stream part alike.
 type Source struct {
 	URL      *URLSource
 	Document *DocumentSource
@@ -115,15 +118,17 @@ func (f GeneratedFile) Bytes() ([]byte, error) {
 func (s Source) MarshalJSON() ([]byte, error) {
 	if s.URL != nil && s.Document == nil {
 		return json.Marshal(struct {
+			Type       string `json:"type"`
 			SourceType string `json:"sourceType"`
 			*URLSource
-		}{"url", s.URL})
+		}{"source", "url", s.URL})
 	}
 	if s.Document != nil && s.URL == nil {
 		return json.Marshal(struct {
+			Type       string `json:"type"`
 			SourceType string `json:"sourceType"`
 			*DocumentSource
-		}{"document", s.Document})
+		}{"source", "document", s.Document})
 	}
 	return nil, fmt.Errorf("aimux: Source must have exactly one variant")
 }
@@ -131,6 +136,9 @@ func (s Source) MarshalJSON() ([]byte, error) {
 func (s *Source) UnmarshalJSON(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if err := checkTypeTag(fields["type"], "source"); err != nil {
 		return err
 	}
 	var sourceType string
@@ -196,7 +204,9 @@ type FinishReason struct {
 	Raw     *string             `json:"raw,omitempty"`
 }
 
-// ToolCall represents a tool call requested by the model.
+// ToolCall represents a tool call requested by the model. Its JSON is the AI
+// SDK's TypedToolCall, tagged {"type":"tool-call",...}
+// (ai generate-text/tool-call.ts).
 type ToolCall struct {
 	ToolCallID       string          `json:"toolCallId"`
 	ToolName         string          `json:"toolName"`
@@ -209,6 +219,46 @@ type ToolCall struct {
 	Invalid *bool `json:"invalid,omitempty"`
 	// Error is the typed lookup, parse, schema, or repair failure for an invalid call.
 	Error json.RawMessage `json:"error,omitempty"`
+}
+
+// MarshalJSON writes the call with its "type":"tool-call" tag first.
+func (c ToolCall) MarshalJSON() ([]byte, error) {
+	type plain ToolCall
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{"tool-call", plain(c)})
+}
+
+// UnmarshalJSON reads a call; a "type" field, when present, must be
+// "tool-call".
+func (c *ToolCall) UnmarshalJSON(data []byte) error {
+	type plain ToolCall
+	var tagged struct {
+		Type json.RawMessage `json:"type"`
+		plain
+	}
+	if err := json.Unmarshal(data, &tagged); err != nil {
+		return err
+	}
+	if err := checkTypeTag(tagged.Type, "tool-call"); err != nil {
+		return err
+	}
+	*c = ToolCall(tagged.plain)
+	return nil
+}
+
+// checkTypeTag accepts a missing "type" field (JSON written before aimux
+// wrote the tag) or one equal to want.
+func checkTypeTag(raw json.RawMessage, want string) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	var tag string
+	if err := json.Unmarshal(raw, &tag); err != nil || tag != want {
+		return fmt.Errorf("aimux: expected type %q, got %s", want, raw)
+	}
+	return nil
 }
 
 // ContentPart is a single content part, in a prompt message or a result: an

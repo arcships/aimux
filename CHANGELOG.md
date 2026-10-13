@@ -82,6 +82,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `map[string]string`. Java's `UploadFileResult` defaults to a
   `LinkedHashMap`. Swift's typed dictionaries remain unordered (#229 NP2-1).
 
+- A tool call or source outside `content` carries its AI SDK `type` tag: the
+  text results' `toolCalls[]` and an approval request's `toolCall` are
+  `{"type": "tool-call", ...}` (the AI SDK's `TypedToolCall`), and their
+  `sources[]` are `{"type": "source", "sourceType", ...}`. So are the repair
+  context's `toolCall` and the call `apply_tool_call_repair` returns (a
+  `LanguageModelV4ToolCall`). Reading accepts JSON without the tag and rejects
+  a different one. Rust keeps `ToolCall` and `Source` untagged and writes the
+  tag through `wire::typed` / `wire::typed_vec` / `wire::Tagged`; TypeScript
+  types the fields as the new `TypedToolCall` and `TypedSource`. Every
+  binding's standalone `ToolCall`, `RawToolCall` and `Source` writes the tag
+  (Go through `MarshalJSON`; Java, Kotlin, Swift, Dart and Python as a fixed
+  `type` field) (#229 NP2-7).
+
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
   model and provider ids take precedence over middleware overrides.

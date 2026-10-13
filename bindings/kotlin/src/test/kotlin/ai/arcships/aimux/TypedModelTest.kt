@@ -459,6 +459,37 @@ class TypedModelRoundTripTest {
     }
 
     @Test
+    fun `standalone tool calls and sources are tagged`() {
+        // A result's toolCalls and sources are the AI SDK's TypedToolCall and
+        // Source, tagged {type: 'tool-call'} (ai generate-text/tool-call.ts:8-14)
+        // and {type: 'source', sourceType} (provider language-model-v4-source.ts:8,
+        // :36); generate-text-result.ts:73, :78. A repair function's call is a
+        // tagged LanguageModelV4ToolCall (language-model-v4-tool-call.ts:7).
+        val call = """{"type":"tool-call","toolCallId":"call-1","toolName":"weather","input":{"city":"SG"}}"""
+        val url = """{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"}"""
+        val result = AimuxJson.decodeFromString(
+            GenerateTextResult.serializer(),
+            """{"text":"","toolCalls":[$call],"sources":[$url],"finishReason":{"unified":"stop"},""" +
+                """"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[],""" +
+                """"raw":{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}}""",
+        )
+        val written = AimuxJson.parseToJsonElement(AimuxJson.encodeToString(GenerateTextResult.serializer(), result))
+            .jsonObject
+        assertThat(written["toolCalls"]).isEqualTo(AimuxJson.parseToJsonElement("[$call]"))
+        assertThat(written["sources"]).isEqualTo(AimuxJson.parseToJsonElement("[$url]"))
+        val raw = RawToolCall(toolCallId = "c", toolName = "t", input = "{}")
+        assertThat(AimuxJson.parseToJsonElement(AimuxJson.encodeToString(RawToolCall.serializer(), raw)))
+            .isEqualTo(AimuxJson.parseToJsonElement("""{"type":"tool-call","toolCallId":"c","toolName":"t","input":"{}"}"""))
+
+        // JSON written before the tag still reads; another tag is rejected.
+        val untagged = AimuxJson.decodeFromString(ToolCall.serializer(), """{"toolCallId":"c","toolName":"t"}""")
+        assertThat(untagged.type).isEqualTo("tool-call")
+        assertThatThrownBy {
+            AimuxJson.decodeFromString(ToolCall.serializer(), """{"type":"source","toolCallId":"c","toolName":"t"}""")
+        }.isInstanceOf(SerializationException::class.java)
+    }
+
+    @Test
     fun `namespace maps keep insertion order`() {
         // Provider options, provider metadata and provider references are JS
         // objects upstream (@ai-sdk/provider shared-v4-provider-options.ts:24,

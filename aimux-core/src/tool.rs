@@ -171,6 +171,35 @@ pub struct ToolCall {
     pub error: Option<AiMuxError>,
 }
 
+/// A standalone tool call is the AI SDK's `TypedToolCall`, tagged
+/// `{type: 'tool-call', ...}` (`ai` `generate-text/tool-call.ts:8-14`).
+impl crate::wire::TypeTag for ToolCall {
+    const TYPE: &'static str = "tool-call";
+}
+
+/// The repair argument's tool call is a `LanguageModelV4ToolCall`, tagged
+/// `{type: 'tool-call', ...}` (`provider`
+/// `language-model/v4/language-model-v4-tool-call.ts:7`).
+impl crate::wire::TypeTag for RawToolCall {
+    const TYPE: &'static str = "tool-call";
+}
+
+/// A tool call outside `content` (a text result's `toolCalls`, an approval
+/// request's `toolCall`): a [`ToolCall`] with its `type` tag, the AI SDK's
+/// `TypedToolCall` (`ai` `generate-text/tool-call.ts:8-14`).
+///
+/// Only the TypeScript type is generated from this struct; Rust fields hold a
+/// [`ToolCall`] and serde writes the tag ([`crate::wire::typed`]).
+#[derive(TS)]
+#[ts(export)]
+#[allow(dead_code)]
+pub struct TypedToolCall {
+    #[ts(rename = "type", type = "\"tool-call\"")]
+    tag: (),
+    #[ts(flatten)]
+    call: ToolCall,
+}
+
 /// A tool result produced by a provider-executed tool (e.g. xAI `file_search`,
 /// web search), carried next to the [`RawToolCall`] it answers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

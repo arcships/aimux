@@ -454,3 +454,71 @@ func TestNamespaceMapsKeepInsertionOrder(t *testing.T) {
 		t.Errorf("empty providerReference: %s", empty)
 	}
 }
+
+// ── Standalone type tags (#229 NP2-7) ───────────────────────────────────────
+
+// A result's toolCalls and sources are the AI SDK's TypedToolCall and Source,
+// tagged {"type":"tool-call",...} (ai generate-text/tool-call.ts:8-14) and
+// {"type":"source","sourceType":...} (provider language-model-v4-source.ts:8,
+// :36); generate-text-result.ts:73, :78. A repair function's call is a tagged
+// LanguageModelV4ToolCall (language-model-v4-tool-call.ts:7).
+func TestStandaloneToolCallsAndSourcesAreTagged(t *testing.T) {
+	const wire = `{"text":"","toolCalls":[{"type":"tool-call","toolCallId":"call-1","toolName":"weather","input":{"city":"SG"}}],` +
+		`"sources":[{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"},` +
+		`{"type":"source","sourceType":"document","id":"s2","mediaType":"application/pdf","title":"Doc"}]}`
+	var result GenerateTextResult
+	if err := json.Unmarshal([]byte(wire), &result); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"toolCalls":[{"type":"tool-call","toolCallId":"call-1","toolName":"weather","input":{"city":"SG"}}]`,
+		`"sources":[{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"},` +
+			`{"type":"source","sourceType":"document","id":"s2","mediaType":"application/pdf","title":"Doc"}]`,
+	} {
+		if !strings.Contains(string(encoded), want) {
+			t.Errorf("want %s in %s", want, encoded)
+		}
+	}
+
+	raw, _ := json.Marshal(RawToolCall{ToolCallID: "c", ToolName: "t", Input: "{}"})
+	if string(raw) != `{"type":"tool-call","toolCallId":"c","toolName":"t","input":"{}"}` {
+		t.Errorf("raw tool call: %s", raw)
+	}
+
+	// JSON written before the tag still reads; another tag is an error.
+	var untagged ToolCall
+	if err := json.Unmarshal([]byte(`{"toolCallId":"c","toolName":"t","input":{}}`), &untagged); err != nil {
+		t.Errorf("untagged call: %v", err)
+	}
+	var mistagged ToolCall
+	if err := json.Unmarshal([]byte(`{"type":"source","toolCallId":"c","toolName":"t"}`), &mistagged); err == nil {
+		t.Error("a source-tagged tool call was accepted")
+	}
+	var source Source
+	if err := json.Unmarshal([]byte(`{"type":"tool-call","sourceType":"url","id":"s","url":"u"}`), &source); err == nil {
+		t.Error("a tool-call-tagged source was accepted")
+	}
+
+	// The native repair export writes the standalone call tagged.
+	invalid := `{"toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},"dynamic":true,"invalid":true,` +
+		`"error":{"name":"AI_InvalidToolInputError","toolName":"weather","toolInput":"{\"town\":\"SG\"}","cause":"missing city"}}`
+	opts := `{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}`
+	out, err := applyToolCallRepairJSON(invalid, opts, `{"type":"unchanged"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, `{"type":"tool-call","toolCallId":"call-1"`) {
+		t.Errorf("repaired call: %s", out)
+	}
+	context, err := toolCallRepairContextJSON(invalid, `{"prompt":"weather?"}`, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(context, `"toolCall":{"type":"tool-call","toolCallId":"call-1"`) {
+		t.Errorf("repair context: %s", context)
+	}
+}

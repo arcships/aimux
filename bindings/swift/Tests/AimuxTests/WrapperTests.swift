@@ -202,6 +202,40 @@ final class WrapperTests: XCTestCase {
         XCTAssertThrowsError(try JSONDecoder().decode(TextStreamPart.self, from: Data(#"{"type":"text-delta","id":"t1","delta":"Hello"}"#.utf8)))
     }
 
+    /// A result's toolCalls and sources are the AI SDK's TypedToolCall and
+    /// Source, tagged {type: 'tool-call'} (ai generate-text/tool-call.ts:8-14)
+    /// and {type: 'source', sourceType} (provider language-model-v4-source.ts:8,
+    /// :36); generate-text-result.ts:73, :78. A repair function's call is a
+    /// tagged LanguageModelV4ToolCall (language-model-v4-tool-call.ts:7).
+    func testStandaloneToolCallsAndSourcesAreTagged() throws {
+        func object(_ data: Data) throws -> NSDictionary? {
+            try JSONSerialization.jsonObject(with: data) as? NSDictionary
+        }
+        let call = #"{"type":"tool-call","toolCallId":"call-1","toolName":"weather","input":{"city":"SG"}}"#
+        let decoded = try JSONDecoder().decode(ToolCall.self, from: Data(call.utf8))
+        XCTAssertEqual(try object(JSONEncoder().encode(decoded)), try object(Data(call.utf8)))
+        let raw = RawToolCall(toolCallId: "c", toolName: "t", input: "{}")
+        XCTAssertEqual(try object(JSONEncoder().encode(raw)),
+                       try object(Data(#"{"type":"tool-call","toolCallId":"c","toolName":"t","input":"{}"}"#.utf8)))
+        let url = #"{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"}"#
+        let source = try JSONDecoder().decode(Source.self, from: Data(url.utf8))
+        XCTAssertEqual(try object(JSONEncoder().encode(source)), try object(Data(url.utf8)))
+        // In a stream part the union's tag and the source's agree.
+        let part = try JSONDecoder().decode(TextStreamPart.self, from: Data(url.utf8))
+        XCTAssertEqual(try object(JSONEncoder().encode(part)), try object(Data(url.utf8)))
+
+        // JSON written before the tag still reads; another tag is rejected.
+        XCTAssertNoThrow(try JSONDecoder().decode(ToolCall.self, from: Data(#"{"toolCallId":"c","toolName":"t","input":{}}"#.utf8)))
+        XCTAssertThrowsError(try JSONDecoder().decode(
+            ToolCall.self, from: Data(#"{"type":"source","toolCallId":"c","toolName":"t","input":{}}"#.utf8)))
+
+        // The native repair function writes the standalone call tagged.
+        let invalid = #"{"toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},"dynamic":true,"invalid":true,"error":{"name":"AI_InvalidToolInputError","toolName":"weather","toolInput":"{\"town\":\"SG\"}","cause":"missing city"}}"#
+        let options = #"{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}"#
+        let repaired = try applyToolCallRepair(toolCall: invalid, options: options, reply: #"{"type":"unchanged"}"#)
+        XCTAssertTrue(repaired.hasPrefix(#"{"type":"tool-call","toolCallId":"call-1""#), repaired)
+    }
+
     /// FilePart.data is FileData | DataContent | URL | ProviderReference
     /// (provider-utils types/content-part.ts:75, file-data.ts:44-48);
     /// ReasoningFilePart.data is tagged data or a URL, or a string (:164).

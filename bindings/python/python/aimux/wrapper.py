@@ -211,8 +211,13 @@ class GenerateResponseMetadata(ResponseMetadata):
 
 
 class ToolCall(_Meta):
-    """A tool call requested by the model (Rust ``tool::ToolCall``)."""
+    """A tool call requested by the model (Rust ``tool::ToolCall``).
 
+    Its JSON carries ``"type": "tool-call"``: a call outside ``content`` is the
+    AI SDK's tagged ``TypedToolCall`` (ai ``generate-text/tool-call.ts``).
+    """
+
+    type: Literal["tool-call"] = "tool-call"
     tool_call_id: str
     tool_name: str
     input: Any
@@ -227,9 +232,11 @@ class RawToolCall(_Meta):
 
     Unlike :class:`ToolCall`, ``input`` is the **raw argument text** — the
     string the model produced, parsed by nobody yet. This is both what a
-    repair function is shown and what it returns.
+    repair function is shown and what it returns. Its JSON carries
+    ``"type": "tool-call"``, as the AI SDK's ``LanguageModelV4ToolCall``.
     """
 
+    type: Literal["tool-call"] = "tool-call"
     tool_call_id: str
     tool_name: str
     input: str
@@ -345,6 +352,9 @@ class GeneratedFile(_Meta):
 # ── Content / stream parts ──────────────────────────────────────────────────
 
 class _UrlSource(_Meta):
+    # A source is the AI SDK's tagged ``Source`` (provider
+    # ``language-model-v4-source.ts``) in a result's ``sources`` too.
+    type: Literal["source"] = "source"
     id: str
     source_type: Literal["url"]
     url: str
@@ -352,6 +362,7 @@ class _UrlSource(_Meta):
 
 
 class _DocumentSource(_Meta):
+    type: Literal["source"] = "source"
     id: str
     source_type: Literal["document"]
     media_type: str

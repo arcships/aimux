@@ -29,6 +29,7 @@ void main() {
   group('ToolCall', () {
     test('round-trips and omits absent optionals', () {
       final json = {
+        'type': 'tool-call',
         'toolCallId': 'call_1',
         'toolName': 'get_weather',
         'input': {'city': 'Paris'},
@@ -41,7 +42,7 @@ void main() {
       expect(ToolCall.fromJson(json).toJson(), json);
 
       final minimal = ToolCall(toolCallId: 'c', toolName: 't', input: const {});
-      expect(minimal.toJson().keys, ['toolCallId', 'toolName', 'input']);
+      expect(minimal.toJson().keys, ['type', 'toolCallId', 'toolName', 'input']);
     });
 
     // Provider metadata is a JS object upstream (@ai-sdk/provider
@@ -49,11 +50,38 @@ void main() {
     // (#229 NP2-1); a decoded Dart map keeps them too.
     test('provider namespaces keep insertion order', () {
       const metadata = '{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}}';
-      final text = '{"toolCallId":"call-1","toolName":"weather","input":{},'
-          '"providerMetadata":$metadata}';
+      final text = '{"type":"tool-call","toolCallId":"call-1","toolName":"weather",'
+          '"input":{},"providerMetadata":$metadata}';
       final call = ToolCall.fromJson(jsonDecode(text) as Map<String, dynamic>);
       expect(call.providerMetadata!.keys, ['zeta', 'alpha', 'mid']);
       expect(jsonEncode(call.toJson()), text);
+    });
+
+    // A result's toolCalls and sources are the AI SDK's TypedToolCall and
+    // Source, tagged {type: 'tool-call'} (ai generate-text/tool-call.ts:8-14)
+    // and {type: 'source', sourceType} (provider language-model-v4-source.ts:8,
+    // :36); generate-text-result.ts:73, :78 (#229 NP2-7).
+    test('standalone calls and sources carry their type tag', () {
+      final source = {
+        'type': 'source',
+        'sourceType': 'url',
+        'id': 's1',
+        'url': 'https://example.com',
+      };
+      expect(Source.fromJson(source).toJson(), source);
+      expect(
+          const RawToolCall(toolCallId: 'c', toolName: 't', input: '{}')
+              .toJson(),
+          {'type': 'tool-call', 'toolCallId': 'c', 'toolName': 't', 'input': '{}'});
+      // JSON written before the tag still reads; another tag is rejected.
+      expect(
+          ToolCall.fromJson({'toolCallId': 'c', 'toolName': 't', 'input': {}})
+              .toJson()['type'],
+          'tool-call');
+      expect(
+          () => ToolCall.fromJson(
+              {'type': 'source', 'toolCallId': 'c', 'toolName': 't', 'input': {}}),
+          throwsFormatException);
     });
 
     test('RawToolCall keeps every provider field through copyWith', () {
@@ -66,6 +94,7 @@ void main() {
         'providerMetadata': _meta,
       });
       expect(call.copyWith(input: '{"city":"Tokyo"}').toJson(), {
+        'type': 'tool-call',
         'toolCallId': 'call-1',
         'toolName': 'weather',
         'input': '{"city":"Tokyo"}',
@@ -130,6 +159,7 @@ void main() {
 
   group('StreamPart', () {
     final call = {
+      'type': 'tool-call',
       'toolCallId': 'c1',
       'toolName': 'w',
       'input': {'a': 1},
@@ -260,7 +290,7 @@ void main() {
         ],
         'text': 'hi',
         'toolCalls': [
-          {'toolCallId': 'c', 'toolName': 't', 'input': {}}
+          {'type': 'tool-call', 'toolCallId': 'c', 'toolName': 't', 'input': {}}
         ],
         'finishReason': _finish,
         'usage': _usage,
