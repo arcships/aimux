@@ -6,7 +6,7 @@
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified};
 use serde_json::{Value, json};
@@ -23,13 +23,13 @@ pub struct PreparedTools {
 
 /// Prepare `FunctionTool`s into the Mistral `tools` / `tool_choice` JSON shape.
 ///
-/// Key difference from OpenAI: `ToolChoice::Required` maps to `"any"` (not
-/// `"required"`), and `ToolChoice::Tool` filters the tools array and also uses
+/// Key difference from OpenAI: `LanguageModelV4ToolChoice::Required` maps to `"any"` (not
+/// `"required"`), and `LanguageModelV4ToolChoice::Tool` filters the tools array and also uses
 /// `"any"`.
 #[must_use]
 pub fn prepare_tools(
     tools: &Option<Vec<FunctionTool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
 ) -> PreparedTools {
     let non_empty = tools.as_ref().filter(|t| !t.is_empty());
 
@@ -58,8 +58,10 @@ pub fn prepare_tools(
         }
     };
 
-    // Handle ToolChoice::Tool which needs to filter the tools array.
-    if let (Some(tools), Some(ToolChoice::Tool { tool_name })) = (&tools_opt, tool_choice) {
+    // Handle LanguageModelV4ToolChoice::Tool which needs to filter the tools array.
+    if let (Some(tools), Some(LanguageModelV4ToolChoice::Tool { tool_name })) =
+        (&tools_opt, tool_choice)
+    {
         let filtered: Vec<Value> = tools
             .iter()
             .filter(|t| t["function"]["name"].as_str() == Some(tool_name.as_str()))
@@ -76,10 +78,10 @@ pub fn prepare_tools(
         (None, _) => None,
         (Some(_), None) => None,
         (Some(_), Some(tc)) => match tc {
-            ToolChoice::Auto => Some(json!("auto")),
-            ToolChoice::None => Some(json!("none")),
-            ToolChoice::Required => Some(json!("any")),
-            ToolChoice::Tool { .. } => Some(json!("any")),
+            LanguageModelV4ToolChoice::Auto => Some(json!("auto")),
+            LanguageModelV4ToolChoice::None => Some(json!("none")),
+            LanguageModelV4ToolChoice::Required => Some(json!("any")),
+            LanguageModelV4ToolChoice::Tool { .. } => Some(json!("any")),
         },
     };
 

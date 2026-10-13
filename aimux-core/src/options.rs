@@ -10,7 +10,10 @@ use ts_rs::TS;
 
 use crate::AbortSignal;
 use crate::language_model_message::LanguageModelPrompt;
-pub use crate::tool::{FunctionTool, FunctionToolInputExample, ProviderTool, Tool, ToolChoice};
+pub use crate::tool::{
+    FunctionTool, FunctionToolInputExample, LanguageModelV4ToolChoice, ProviderTool, Tool,
+    ToolChoice, prepare_tool_choice,
+};
 use crate::types::ReasoningEffort;
 
 /// How the model should format its response.
@@ -101,8 +104,9 @@ pub struct CallOptions {
     /// Tools available to the model (function tools and/or provider-defined tools).
     pub tools: Option<Vec<Tool>>,
 
-    /// How the model should choose tools.
-    pub tool_choice: Option<ToolChoice>,
+    /// How the model should choose tools. `generate_text` / `stream_text`
+    /// always set it through [`prepare_tool_choice`], as the AI SDK does.
+    pub tool_choice: Option<LanguageModelV4ToolChoice>,
 
     /// Extra HTTP headers.
     pub headers: Option<HashMap<String, String>>,
@@ -183,7 +187,7 @@ impl CallOptions {
     }
 
     /// Create a `CallOptions` with the given prompt and all other fields set
-    /// to their defaults (`None` / `ToolChoice::Auto`).
+    /// to `None`.
     ///
     /// This is the recommended construction baseline in tests — combined with
     /// struct-update syntax (`CallOptions { tools: Some(..), ..CallOptions::new(prompt) }`)

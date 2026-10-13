@@ -31,6 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for the `repair_tool_call` closure and for a host's `repaired` reply in every
   binding.
 
+- `CallOptions.tool_choice` is the V4 object union
+  `LanguageModelV4ToolChoice` (`{"type":"auto"}`, `{"type":"none"}`,
+  `{"type":"required"}`, `{"type":"tool","toolName":..}`); the user-level
+  `ToolChoice` (`"auto"` | `"none"` | `"required"` | `{type:"tool",toolName}`)
+  stays on `GenerateTextOptions`. `prepare_tool_choice` converts one into the
+  other as the AI SDK's `prepareToolChoice` does, and `generate_text` /
+  `stream_text` now send `{"type":"auto"}` when no choice is given, with or
+  without tools (providers still drop it when there are no tools, except
+  open-responses, which sends it as upstream does). Provider authors match
+  on `LanguageModelV4ToolChoice`. Recordings store the object form, so an
+  `ExactMatcher` no longer matches recordings made before this change.
+
 - Removed the generated `ProviderName` type in every binding (Rust enum, TS
   const object, Go/Java/Kotlin consts, Swift enum, Dart consts, Python
   `Literal`) and `scripts/gen_provider_names.py`. Provider names are plain

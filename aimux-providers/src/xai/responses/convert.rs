@@ -10,7 +10,7 @@ use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort, Warning};
 
@@ -96,7 +96,7 @@ pub struct PreparedResponsesTools {
 #[must_use]
 pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
 ) -> PreparedResponsesTools {
     let non_empty = tools.as_ref().filter(|t| !t.is_empty());
     let mut tool_warnings: Vec<Warning> = Vec::new();
@@ -144,10 +144,10 @@ pub fn prepare_responses_tools(
             // Build a map of tool name -> is_provider_tool from the original tools.
             let non_empty_tools = non_empty.unwrap();
             match tc {
-                ToolChoice::Auto => Some(json!("auto")),
-                ToolChoice::None => Some(json!("none")),
-                ToolChoice::Required => Some(json!("required")),
-                ToolChoice::Tool { tool_name } => {
+                LanguageModelV4ToolChoice::Auto => Some(json!("auto")),
+                LanguageModelV4ToolChoice::None => Some(json!("none")),
+                LanguageModelV4ToolChoice::Required => Some(json!("required")),
+                LanguageModelV4ToolChoice::Tool { tool_name } => {
                     let selected = non_empty_tools.iter().find(|t| match t {
                         Tool::Function(ft) => ft.name == *tool_name,
                         Tool::Provider(pt) => pt.name == *tool_name,

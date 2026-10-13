@@ -20,7 +20,7 @@ use aimux_core::error::ApiCallError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice};
 use aimux_core::provider::Provider;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
@@ -930,10 +930,10 @@ fn build_request_body(
 
     let converted_tool_choice: Option<Value> = match &options.tool_choice {
         None => None,
-        Some(ToolChoice::Auto) => Some(json!("auto")),
-        Some(ToolChoice::None) => Some(json!("none")),
-        Some(ToolChoice::Required) => Some(json!("required")),
-        Some(ToolChoice::Tool { tool_name }) => Some(json!({
+        Some(LanguageModelV4ToolChoice::Auto) => Some(json!("auto")),
+        Some(LanguageModelV4ToolChoice::None) => Some(json!("none")),
+        Some(LanguageModelV4ToolChoice::Required) => Some(json!("required")),
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => Some(json!({
             "type": "function",
             "name": tool_name,
         })),

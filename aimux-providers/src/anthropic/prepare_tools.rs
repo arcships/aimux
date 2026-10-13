@@ -11,7 +11,7 @@
 use std::collections::BTreeSet;
 
 use aimux_core::tool::FunctionTool;
-use aimux_core::tool::ToolChoice;
+use aimux_core::tool::LanguageModelV4ToolChoice;
 use aimux_core::types::Warning;
 use serde_json::{Map, Value, json};
 
@@ -40,7 +40,7 @@ const BETA_ADVANCED_TOOL_USE: &str = "advanced-tool-use-2025-11-20";
 #[must_use]
 pub fn prepare_tools(
     tools: Option<&[FunctionTool]>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
     disable_parallel_tool_use: bool,
     supports_structured_output: bool,
     supports_strict_tools: bool,
@@ -85,7 +85,7 @@ pub fn prepare_tools(
     };
 
     // Anthropic does not support 'none' tool choice, so the tools are removed.
-    if matches!(tool_choice, Some(ToolChoice::None)) {
+    if matches!(tool_choice, Some(LanguageModelV4ToolChoice::None)) {
         return PreparedTools {
             tools: None,
             tool_choice: None,
@@ -137,7 +137,7 @@ fn arg(args: &Map<String, Value>, key: &str) -> Value {
 #[must_use]
 pub fn prepare_tools_with_provider(
     tools: Option<&[AnthropicTool]>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
     disable_parallel_tool_use: bool,
     supports_structured_output: bool,
     supports_strict_tools: bool,
@@ -194,7 +194,7 @@ pub fn prepare_tools_with_provider(
     };
 
     // Anthropic does not support 'none' tool choice, so the tools are removed.
-    if matches!(tool_choice, Some(ToolChoice::None)) {
+    if matches!(tool_choice, Some(LanguageModelV4ToolChoice::None)) {
         return PreparedTools {
             tools: None,
             tool_choice: None,
@@ -213,8 +213,11 @@ pub fn prepare_tools_with_provider(
     }
 }
 
-/// Build the Anthropic `tool_choice` value from the unified `ToolChoice`.
-fn build_tool_choice(tool_choice: Option<&ToolChoice>, disable_parallel: bool) -> Option<Value> {
+/// Build the Anthropic `tool_choice` value from the V4 `LanguageModelV4ToolChoice`.
+fn build_tool_choice(
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
+    disable_parallel: bool,
+) -> Option<Value> {
     let with_disable = |v: Value| -> Value {
         let mut v = v;
         if disable_parallel {
@@ -230,13 +233,13 @@ fn build_tool_choice(tool_choice: Option<&ToolChoice>, disable_parallel: bool) -
                 None
             }
         }
-        Some(ToolChoice::Auto) => Some(with_disable(json!({ "type": "auto" }))),
-        Some(ToolChoice::Required) => Some(with_disable(json!({ "type": "any" }))),
+        Some(LanguageModelV4ToolChoice::Auto) => Some(with_disable(json!({ "type": "auto" }))),
+        Some(LanguageModelV4ToolChoice::Required) => Some(with_disable(json!({ "type": "any" }))),
         // Anthropic does not support 'none' tool choice, so the tools are removed.
         // (The caller is responsible for dropping `tools` when this is returned;
         // here we only signal the choice is absent.)
-        Some(ToolChoice::None) => None,
-        Some(ToolChoice::Tool { tool_name }) => {
+        Some(LanguageModelV4ToolChoice::None) => None,
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
             Some(with_disable(json!({ "type": "tool", "name": tool_name })))
         }
     }

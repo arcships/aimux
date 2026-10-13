@@ -6,7 +6,7 @@
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
 use serde_json::{Value, json};
@@ -27,12 +27,15 @@ pub struct PreparedTools {
 /// supported by Cohere and emit an `Unsupported` warning (the tool is dropped).
 ///
 /// Key differences from OpenAI:
-/// - `ToolChoice::Auto` → omit `tool_choice` (Cohere default)
-/// - `ToolChoice::None` → `"NONE"`
-/// - `ToolChoice::Required` → `"REQUIRED"`
-/// - `ToolChoice::Tool` → filter tools and use `"REQUIRED"`
+/// - `LanguageModelV4ToolChoice::Auto` → omit `tool_choice` (Cohere default)
+/// - `LanguageModelV4ToolChoice::None` → `"NONE"`
+/// - `LanguageModelV4ToolChoice::Required` → `"REQUIRED"`
+/// - `LanguageModelV4ToolChoice::Tool` → filter tools and use `"REQUIRED"`
 #[must_use]
-pub fn prepare_tools(tools: &Option<Vec<Tool>>, tool_choice: Option<&ToolChoice>) -> PreparedTools {
+pub fn prepare_tools(
+    tools: &Option<Vec<Tool>>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
+) -> PreparedTools {
     let non_empty = tools.as_ref().filter(|t| !t.is_empty());
 
     let mut tool_warnings: Vec<Warning> = Vec::new();
@@ -70,8 +73,10 @@ pub fn prepare_tools(tools: &Option<Vec<Tool>>, tool_choice: Option<&ToolChoice>
         }
     };
 
-    // Handle ToolChoice::Tool which filters tools.
-    if let (Some(tools), Some(ToolChoice::Tool { tool_name })) = (&tools_opt, tool_choice) {
+    // Handle LanguageModelV4ToolChoice::Tool which filters tools.
+    if let (Some(tools), Some(LanguageModelV4ToolChoice::Tool { tool_name })) =
+        (&tools_opt, tool_choice)
+    {
         let filtered: Vec<Value> = tools
             .iter()
             .filter(|t| t["function"]["name"].as_str() == Some(tool_name.as_str()))
@@ -88,10 +93,10 @@ pub fn prepare_tools(tools: &Option<Vec<Tool>>, tool_choice: Option<&ToolChoice>
         (None, _) => None,
         (Some(_), None) => None,
         (Some(_), Some(tc)) => match tc {
-            ToolChoice::Auto => None,
-            ToolChoice::None => Some(json!("NONE")),
-            ToolChoice::Required => Some(json!("REQUIRED")),
-            ToolChoice::Tool { .. } => Some(json!("REQUIRED")),
+            LanguageModelV4ToolChoice::Auto => None,
+            LanguageModelV4ToolChoice::None => Some(json!("NONE")),
+            LanguageModelV4ToolChoice::Required => Some(json!("REQUIRED")),
+            LanguageModelV4ToolChoice::Tool { .. } => Some(json!("REQUIRED")),
         },
     };
 
