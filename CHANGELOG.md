@@ -324,8 +324,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   table in `preset.rs`, held in a `OnceLock` without leaking memory:
   `PresetDescriptor`, `ParamSpec` and `DeriveSpec` own their data (`String`,
   `Vec`) instead of `&'static` slices, and lose `Copy`; there is no `family`
-  field, generated presets source or per-name Rust function. Create presets or vendor packages by name via
-  `create_provider(name, PresetSettings)`.
+  field, generated presets source or per-name Rust function. Create presets
+  or vendor packages by name via `create_provider(name, PresetSettings)`.
   Rows carry `auth: api_key | none` (`none` sends no
   `Authorization` unless the row's optional key variable, such as
   `VLLM_API_KEY`, is set; `PLACEHOLDER_API_KEY` is gone), `base_url_env` and
