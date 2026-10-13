@@ -248,10 +248,10 @@ pub fn convert_to_responses_input(
                             if let Some(rid) = reasoning_id {
                                 if store {
                                     // One item reference, at the first part.
-                                    if !reasoning_items.contains_key(&rid) {
+                                    reasoning_items.entry(rid).or_insert_with_key(|rid| {
                                         input.push(json!({ "type": "item_reference", "id": rid }));
-                                        reasoning_items.insert(rid, None);
-                                    }
+                                        None
+                                    });
                                 } else if let Some(&Some(index)) = reasoning_items.get(&rid) {
                                     // Later parts of the same item append their
                                     // summary; the last encrypted content wins.

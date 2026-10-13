@@ -229,7 +229,8 @@ mod tests {
             Some(urls("application/pdf", "^https://docs/")),
             AtomicUsize::new(0),
         ));
-        let wrapped = wrap_language_model(Arc::new(Model), &[overriding.clone()], None, None);
+        let middleware: Arc<dyn LanguageModelMiddleware> = overriding.clone();
+        let wrapped = wrap_language_model(Arc::new(Model), &[middleware], None, None);
         assert_eq!(keys(&wrapped.supported_urls().await), ["application/pdf"]);
         assert_eq!(overriding.1.load(Ordering::SeqCst), 1);
 
