@@ -36,9 +36,7 @@ include_domains: Array<string> | null,
 exclude_domains: Array<string> | null,
 /**
  * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
- * retrying. `None` uses 2, the AI SDK default, unless the model's
- * `retry_config()` sets another count (model-level retry settings are
- * removed in the target design, docs/aisdk-architecture-alignment.md D14).
+ * retrying. `None` uses 2, the AI SDK default.
  */
 max_retries: number | null,
 /**

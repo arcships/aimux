@@ -1120,7 +1120,7 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 上游对齐 | OpenAI 默认 `language_model` | `language_model` 和 `call` 返回 Responses（`openai.responses`），与上游 `openai(id)` 一致；`chat(id)` 显式选择 Chat Completions。xAI、Hugging Face、Azure 的默认也为 Responses |
 | 产品选择 | Bedrock 上的 Anthropic InvokeModel | aimux 没有 `bedrock.anthropic.messages` 对应的 provider（`anthropic_aws` 是 Claude Platform on AWS，不是 Bedrock InvokeModel）；属新增能力，不在本期 |
 | 产品选择 | Azure 未移植的模型 | deepseek、completion、MAI speech 端点和 Foundry item type 未移植 |
-| 产品选择 | 视频轮询节奏 | provider 没有 poll 设置；`VideoModel::poll_config()` 保留在 core，作为包内常量的来源，调用级 `VideoCallOptions.poll` 逐字段覆盖 |
+| 上游对齐 | 视频轮询节奏 | provider 和 `VideoModel` 都没有 poll 设置（`VideoModel::poll_config()` 已删除，见 §8.1）；调用级 `VideoCallOptions.poll` 逐字段覆盖 AI SDK 默认值 5000 ms / 600000 ms（ai 7.0.127 `generate-video/generate-video.ts:543-544`） |
 | 产品选择 | 录制重建原生协议 provider | `rebuild_provider` 只走 registry 与 overlay；原生协议包返回 `NoSuchProvider`，回放时改用 `replay_with_model` 传入模型 |
 
 本地没有安装源码的厂商包，不能仅凭命名推测宣称“已对齐 AI SDK”。descriptor 记录 `verified_sdk_source` 或 `aimux_extension`；发布前按实际支持承诺完成协议 fixture 验证。

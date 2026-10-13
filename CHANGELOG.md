@@ -280,9 +280,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `generateVideo` `poll` option (`aimux-core`, `aimux-providers`).
   `VideoModel::poll_config()` and `VideoPollConfig` are removed; unset
   `VideoCallOptions::poll` fields use the AI SDK defaults (5000 ms interval,
-  600000 ms timeout). `RunwaymlConfig` loses `poll_interval`, `timeout`,
-  `with_poll_interval` and `with_timeout` (RunwayML used 2 s / 300 s); pass
-  `poll` per call instead. Each status check, its retries included, now races
+  600000 ms timeout). RunwayML no longer paces its own polling (it used
+  2 s / 300 s, first as settings, then as package constants); pass `poll` per
+  call instead. Each status check, its retries included, now races
   the time left in the poll budget and a hanging check fails with `Timeout`
   "Video generation timed out after {timeoutMs}ms." as upstream.
 
@@ -636,8 +636,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removed (headers / constants); `google_pse` `cx` resolves settings, then
   providerOptions, then `GOOGLE_CSE_ID` per request; DataForSEO without
   credentials fails with `LoadApiKey`; searxng accepts an optional bearer
-  token; the user-agent suffix is gone. `VideoModel::poll_config()` stays as
-  the package-constant source.
+  token; the user-agent suffix is gone.
 - Removed from `aimux-providers`: `body_merge`, `openai_legacy`, `AzureAuth`,
   `TokenProvider`, `VertexAuth`, `BedrockAuth`, `StaticBearerConfig` and the
   `hmac` dependency (`sha2` / `hex` are dev-dependencies).

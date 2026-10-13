@@ -81,12 +81,6 @@ provider_options: { [key in string]: { [key in string]: JsonValue } } | null,
  */
 reasoning: ReasoningEffort | null,
 /**
- * Per-call request body overrides. Deep-merged into the provider-built
- * request body (after any built-in vendor override) before sending.
- * `null` values delete the corresponding key. See RFC-0017.
- */
-body_overrides: JsonValue | null,
-/**
  * Emit raw provider stream chunks as `StreamPart::Raw` (the AI SDK's
  * `includeRawChunks`). When `Some(true)`, a streaming model yields one
  * `Raw` part per SSE event, carrying the event's parsed JSON, before the
