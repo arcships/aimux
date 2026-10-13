@@ -93,7 +93,12 @@ impl EmbeddingModel {
     /// `opts_json` is optional JSON-serialized EmbeddingCallOptions.
     /// Returns JSON-serialized EmbeddingResult.
     #[pyo3(signature = (values_json, opts_json=None))]
-    pub fn embed(&self, values_json: &str, opts_json: Option<&str>) -> PyResult<String> {
+    pub fn embed(
+        &self,
+        py: Python<'_>,
+        values_json: &str,
+        opts_json: Option<&str>,
+    ) -> PyResult<String> {
         let mut opts: EmbeddingCallOptions = match opts_json {
             Some(s) if !s.trim().is_empty() && s.trim() != "null" => wire_json("opts_json", s)?,
             _ => EmbeddingCallOptions::new(""),
@@ -102,8 +107,10 @@ impl EmbeddingModel {
         let values: Vec<String> = wire_json("values_json", values_json)?;
         opts.values = values;
 
-        let result = crate::runtime().block_on(async move {
-            aimux_core::embedding_model::embed(self.inner.as_ref(), opts).await
+        let result = py.allow_threads(|| {
+            crate::runtime().block_on(async move {
+                aimux_core::embedding_model::embed(self.inner.as_ref(), opts).await
+            })
         });
 
         match result {
@@ -126,11 +133,13 @@ pub struct SpeechModel {
 impl SpeechModel {
     /// Generate speech audio. `opts_json` is JSON-serialized SpeechCallOptions.
     /// Returns JSON-serialized SpeechResult (audio as base64 in JSON).
-    pub fn generate(&self, opts_json: &str) -> PyResult<String> {
+    pub fn generate(&self, py: Python<'_>, opts_json: &str) -> PyResult<String> {
         let opts: SpeechCallOptions = wire_json("opts_json", opts_json)?;
 
-        let result = crate::runtime().block_on(async move {
-            aimux_core::speech_model::generate_speech(self.inner.as_ref(), opts).await
+        let result = py.allow_threads(|| {
+            crate::runtime().block_on(async move {
+                aimux_core::speech_model::generate_speech(self.inner.as_ref(), opts).await
+            })
         });
 
         match result {
@@ -153,11 +162,13 @@ pub struct ImageModel {
 impl ImageModel {
     /// Generate images. `opts_json` is JSON-serialized ImageCallOptions.
     /// Returns JSON-serialized ImageResult (images as base64 in JSON).
-    pub fn generate(&self, opts_json: &str) -> PyResult<String> {
+    pub fn generate(&self, py: Python<'_>, opts_json: &str) -> PyResult<String> {
         let opts: ImageCallOptions = wire_json("opts_json", opts_json)?;
 
-        let result = crate::runtime().block_on(async move {
-            aimux_core::image_model::generate_image(self.inner.as_ref(), opts).await
+        let result = py.allow_threads(|| {
+            crate::runtime().block_on(async move {
+                aimux_core::image_model::generate_image(self.inner.as_ref(), opts).await
+            })
         });
 
         match result {
@@ -184,6 +195,7 @@ impl TranscriptionModel {
     #[pyo3(signature = (audio_base64, media_type, opts_json=None))]
     pub fn generate(
         &self,
+        py: Python<'_>,
         audio_base64: &str,
         media_type: &str,
         opts_json: Option<&str>,
@@ -210,8 +222,10 @@ impl TranscriptionModel {
             }
         }
 
-        let result = crate::runtime().block_on(async move {
-            aimux_core::transcription_model::transcribe(self.inner.as_ref(), opts).await
+        let result = py.allow_threads(|| {
+            crate::runtime().block_on(async move {
+                aimux_core::transcription_model::transcribe(self.inner.as_ref(), opts).await
+            })
         });
 
         match result {
@@ -238,6 +252,7 @@ impl RerankingModel {
     #[pyo3(signature = (query, docs_json, opts_json=None))]
     pub fn rerank(
         &self,
+        py: Python<'_>,
         query: &str,
         docs_json: &str,
         opts_json: Option<&str>,
@@ -264,8 +279,10 @@ impl RerankingModel {
             }
         }
 
-        let result = crate::runtime().block_on(async move {
-            aimux_core::reranking_model::rerank(self.inner.as_ref(), opts).await
+        let result = py.allow_threads(|| {
+            crate::runtime().block_on(async move {
+                aimux_core::reranking_model::rerank(self.inner.as_ref(), opts).await
+            })
         });
 
         match result {
@@ -288,11 +305,13 @@ pub struct VideoModel {
 impl VideoModel {
     /// Generate video. `opts_json` is JSON-serialized VideoCallOptions.
     /// Returns JSON-serialized VideoResult (typically contains a URL).
-    pub fn generate(&self, opts_json: &str) -> PyResult<String> {
+    pub fn generate(&self, py: Python<'_>, opts_json: &str) -> PyResult<String> {
         let opts: VideoCallOptions = wire_json("opts_json", opts_json)?;
 
-        let result = crate::runtime().block_on(async move {
-            aimux_core::video_model::generate_video(self.inner.as_ref(), opts).await
+        let result = py.allow_threads(|| {
+            crate::runtime().block_on(async move {
+                aimux_core::video_model::generate_video(self.inner.as_ref(), opts).await
+            })
         });
 
         match result {
@@ -316,7 +335,7 @@ impl SearchModel {
     /// Search. `query` is the search query, `opts_json` is optional JSON options.
     /// Returns JSON-serialized SearchResult.
     #[pyo3(signature = (query, opts_json=None))]
-    pub fn search(&self, query: &str, opts_json: Option<&str>) -> PyResult<String> {
+    pub fn search(&self, py: Python<'_>, query: &str, opts_json: Option<&str>) -> PyResult<String> {
         let mut opts = SearchCallOptions::new(query.to_string());
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
@@ -332,8 +351,10 @@ impl SearchModel {
             }
         }
 
-        let result = crate::runtime().block_on(async move {
-            aimux_core::search_model::search(self.inner.as_ref(), opts).await
+        let result = py.allow_threads(|| {
+            crate::runtime().block_on(async move {
+                aimux_core::search_model::search(self.inner.as_ref(), opts).await
+            })
         });
 
         match result {
@@ -361,6 +382,7 @@ impl Files {
     #[pyo3(signature = (data_base64, media_type, opts_json=None))]
     pub fn upload_file(
         &self,
+        py: Python<'_>,
         data_base64: &str,
         media_type: &str,
         opts_json: Option<&str>,
@@ -380,7 +402,9 @@ impl Files {
             }
         }
 
-        let result = crate::runtime().block_on(async move { self.inner.upload_file(&opts).await });
+        let result = py.allow_threads(|| {
+            crate::runtime().block_on(async move { self.inner.upload_file(&opts).await })
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
