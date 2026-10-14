@@ -2,4 +2,10 @@
 import type { ChatCompletionMessage } from "./ChatCompletionMessage";
 import type { JsonValue } from "./serde_json/JsonValue";
 
-export type ChatCompletionChoice = { index: number, message: ChatCompletionMessage, finish_reason: string | null, logprobs: JsonValue | null, };
+export type ChatCompletionChoice = { index: number, message: ChatCompletionMessage, finish_reason: string | null, 
+/**
+ * The Chat Completions logprobs object, `{ "content": [...], "refusal":
+ * null }`, each entry `{ token, logprob, bytes, top_logprobs }`, when
+ * the calling provider returned logprobs.
+ */
+logprobs: JsonValue | null, };

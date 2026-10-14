@@ -17,6 +17,7 @@ futures = { workspace = true }
 async-stream = { workspace = true }
 tracing = { workspace = true }
 ts-rs = { workspace = true }
+indexmap = { workspace = true }
 # Core also resolves generated file URLs before exposing file outputs.
 tokio = { version = "1", features = ["time", "macros", "rt", "sync", "net"] }
 reqwest = { workspace = true }
@@ -25,9 +26,10 @@ tokio-util = "0.7"
 httpdate = { workspace = true }
 rand = { workspace = true }
 base64 = "0.22"
+# `Timestamp`: RFC 3339 parsing and `toISOString` formatting.
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 jsonschema = { workspace = true }
 regex = "1"
-indexmap = { version = "2", features = ["serde"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }

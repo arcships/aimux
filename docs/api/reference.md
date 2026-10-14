@@ -16,10 +16,14 @@
 | `ReasoningEffort` | [types.rs](../../aimux-core/src/types.rs) | [ReasoningEffort.ts](../../bindings/node/src/types/ReasoningEffort.ts) | 7 levels, passed through verbatim |
 | `AbortSignal` | [abort_signal.rs](../../aimux-core/src/abort_signal.rs) | — (runtime handle) | Rust: options field; Node: `AbortBridge` + JS `AbortSignal` |
 | `aimux_providers::provider::ProviderOptions` (binding compatibility) | [provider.rs](../../aimux-providers/src/provider.rs) | `ProviderConfig` (per binding) | `base_url` / `headers` / `organization` / `project` / `params` (a `max_retries` or `body_overrides` key is rejected as `InvalidArgument`) |
-| `GenerateTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | [GenerateTextResult.ts](../../bindings/node/src/types/GenerateTextResult.ts) | `text`, `tool_calls`, `usage`, `warnings`, `raw`, `request`, `response` |
-| `StreamTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | — | use `TextStreamPart` while iterating |
-| `StreamPart` / `TextStreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | [TextStreamPart.ts](../../bindings/node/src/types/TextStreamPart.ts) | Provider / call layer; only the provider layer emits ResponseMetadata |
-| `Usage` / `TokenUsage` | [types.rs](../../aimux-core/src/types.rs) | [Usage.ts](../../bindings/node/src/types/Usage.ts) | input/output/reasoning tokens |
+| `Output` | [output.rs](../../aimux-core/src/output.rs) | [Output.ts](../../bindings/node/src/types/Output.ts) | the `output` option: Text / Object / Array / Choice / Json |
+| `GenerateTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | [GenerateTextResult.ts](../../bindings/node/src/types/GenerateTextResult.ts) | `steps`, `text`, `content`, `tool_calls`, `usage`, `finish_reason`, `output`, … |
+| `StepResult` | [step_result.rs](../../aimux-core/src/step_result.rs) | [StepResult.ts](../../bindings/node/src/types/StepResult.ts) | one model call: content, usage, performance, request, response |
+| `StreamTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | — | use `TextStreamPart` while iterating; `consume()` gives a `GenerateTextResult` |
+| `TextStreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | [TextStreamPart.ts](../../bindings/node/src/types/TextStreamPart.ts) | Start / StartStep / TextDelta / ToolCall / FinishStep / Finish / … |
+| `StreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | [StreamPart.ts](../../bindings/node/src/types/StreamPart.ts) | the provider-level stream (`LanguageModel::do_stream`) |
+| `LanguageModelUsage` | [types.rs](../../aimux-core/src/types.rs) | [LanguageModelUsage.ts](../../bindings/node/src/types/LanguageModelUsage.ts) | call-level usage: flat input/output/total tokens plus details |
+| `Usage` / `TokenUsage` | [types.rs](../../aimux-core/src/types.rs) | [Usage.ts](../../bindings/node/src/types/Usage.ts) | provider-level usage |
 | `FinishReason` / `FinishReasonUnified` | [types.rs](../../aimux-core/src/types.rs) | [FinishReason.ts](../../bindings/node/src/types/FinishReason.ts) | |
 | `Warning` | [types.rs](../../aimux-core/src/types.rs) | [Warning.ts](../../bindings/node/src/types/Warning.ts) | non-fatal provider notices |
 | `AiMuxError` | [error.rs](../../aimux-core/src/error.rs) | [AiMuxError.ts](../../bindings/node/src/types/AiMuxError.ts) | typed error with `error_type` + `status_code` |

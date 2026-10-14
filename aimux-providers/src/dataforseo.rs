@@ -56,7 +56,7 @@ fn dataforseo_failed_response_handler() -> aimux_provider_utils::ResponseHandler
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-const DEFAULT_BASE_URL: &str = "https://api.dataforseo.com";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.dataforseo.com";
 const LOGIN_ENV_VAR: &str = "DATAFORSEO_LOGIN";
 const PASSWORD_ENV_VAR: &str = "DATAFORSEO_PASSWORD";
 const DEFAULT_NAME: &str = "dataforseo";

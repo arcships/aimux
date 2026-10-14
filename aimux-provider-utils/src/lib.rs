@@ -9,10 +9,10 @@
 //! of `@ai-sdk/provider-utils`. Operation retry and timeout live in
 //! `aimux-core`.
 
+mod aisdk_pins;
 pub mod api_key;
-#[doc(hidden)]
-pub use aimux_core::download_guard;
-pub mod evaluation_language_model;
+pub mod decision_language_model;
+pub mod download_blob;
 pub mod extract_response_headers;
 pub mod fetch;
 pub mod generate_id;
@@ -28,8 +28,8 @@ pub mod read_response_with_size_limit;
 pub mod resolvable;
 pub mod response_handler;
 pub mod sigv4_fetch;
-pub mod streaming_tool_call_argument_state;
-pub mod streaming_tool_call_tracker;
+mod streaming_tool_call_argument_state;
+mod streaming_tool_call_tracker;
 pub mod transform_stream;
 pub mod url;
 /// WebSocket client for realtime provider APIs (RFC-0028). Empty unless the
@@ -37,19 +37,20 @@ pub mod url;
 #[cfg(feature = "ws")]
 pub mod ws;
 
+pub use aimux_core::download_guard::same_origin;
 pub use api_key::{load_api_key, load_optional_setting, load_setting};
-pub use download_guard::same_origin;
-pub use evaluation_language_model::EvaluationLanguageModel;
+pub use decision_language_model::DecisionLanguageModel;
+pub use download_blob::download_blob;
 pub use fetch::{
-    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, RequestCredentials,
-    ReqwestFetch, default_fetch,
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, ProxyConfig,
+    RequestCredentials, ReqwestFetch, default_fetch, set_default_transport,
 };
 pub use generate_id::generate_id;
 pub use get_from_api::get_from_api;
 pub use headers::{
     HeaderMapOpt, HeadersFn, combine_headers, normalize_headers, with_user_agent_suffix,
 };
-pub use http::{ExchangeContext, HttpBody, HttpRequest, ProxyConfig, init_proxy, sleep_or_abort};
+pub use http::{ExchangeContext, HttpBody, HttpRequest, sleep_or_abort};
 pub use logging::{init_logging, redact_error_context};
 pub use media_type::{
     MAX_ID3_TAG_BYTES, MediaTypeData, detect_media_type, get_top_level_media_type,
@@ -62,13 +63,11 @@ pub use response_handler::{
     ProviderErrorParts, ResponseHandler, ResponseHandlerInput, ResponseHandlerOutput,
     create_binary_response_handler, create_event_source_response_handler,
     create_json_error_response_handler, create_json_response_handler,
-    create_standard_json_error_response_handler, create_status_code_error_response_handler,
-    invalid_response_api_call, stream_error_api_call,
+    create_status_code_error_response_handler, invalid_response_api_call, stream_error_api_call,
 };
-pub use sigv4_fetch::{AwsCredentials, SigV4Fetch};
-pub use streaming_tool_call_argument_state::{
-    StreamingToolCallArgumentState, starts_with_structured_value,
-};
+pub use sigv4_fetch::{AwsCredentials, SigV4Fetch, SigV4Signing};
+// As `@ai-sdk/provider-utils` (`index.ts:115-119`): the tracker is exported
+// from the crate root, its argument state stays internal.
 pub use streaming_tool_call_tracker::{
     StreamingToolCallDelta, StreamingToolCallTracker, TrackerError, TypeValidation,
 };

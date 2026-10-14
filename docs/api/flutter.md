@@ -219,7 +219,7 @@ final result = model.generateText('What is Rust?');
 model.close();
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -229,7 +229,7 @@ model.close();
 final model = Model.openai('sk-...', 'gpt-4o');
 final stream = model.streamText('Write a haiku');
 await for (final part in stream) {
-  if (part['type'] == 'text-delta') print(part['delta']);
+  if (part['type'] == 'text-delta') print(part['text']);
 }
 model.close();
 ```
@@ -247,7 +247,7 @@ print(result.text);  // typed GenerateTextResult
 
 final stream = model.streamText('Write a haiku');
 await for (final part in stream) {
-  if (part is StreamPartTextDelta) print(part.delta);  // typed StreamPart variants
+  if (part is StreamPartTextDelta) print(part.text);  // typed StreamPart variants
 }
 model.close();
 ```
@@ -313,11 +313,25 @@ and writes exactly the shapes of the generated TypeScript types
   `maxOutputTokens`, ...); `config_json` / router / moa settings follow suit
   (`baseUrl`, `providerName`, ...);
 - unions carry a `type` tag with kebab-case values (`text-delta`, `tool-call`,
-  `file-base64`, ...); sources use `sourceType`; errors use `name`
+  `reasoning-file`, ...); sources use `sourceType`; errors use `name`
   (`{"name": "AI_APICallError", ...}`);
-- optional fields are absent, never `null`;
-- `FileBytes`, audio and image outputs are untagged (a byte array or a base64
-  string);
+- a file part is the AI SDK `FilePart`: `ContentPartFile(data: FilePartData,
+  ...)` where `data` is `FilePartDataTagged(FileData)`, `FilePartDataBare`
+  (a base64 or URL string) or `FilePartDataReference` (`{provider: id}`);
+  `ContentPartFile.bytes(...)` writes inline bytes as tagged data. There is no
+  `file-base64` / `file-url` / `file-reference` part;
+- a generated file is a `GeneratedFile` (`{base64, mediaType}`, `bytes`
+  decodes it); `StreamPartFile` / `StreamPartReasoningFile` carry it as
+  `{type: 'file', file: {...}}`, while the provider-level `GenerateResult.content` keeps
+  a `LanguageModelFile` (`mediaType` and tagged `data`);
+- optional fields are absent, never `null`, except an `unknown` value
+  (`body`, `inputSchemaInput`): a JSON `null` there is kept, and `hasBody` /
+  `hasInputSchemaInput` tell it apart from a missing field;
+- a response `timestamp` is a JavaScript `Date` in the AI SDK's JSON: a
+  `toISOString()` string, UTC with milliseconds (`"2025-03-06T13:50:19.000Z"`),
+  which `DateTime.parse` reads;
+- bytes (`FileBytes`, image and file parts, audio and image outputs) are
+  base64 strings, as the AI SDK's JSON carries a `Uint8Array`;
 - image `size` is a `"WxH"` string and `aspectRatio` a `"W:H"` string.
 
 A tool result in a message is a `ContentPartToolResult(toolCallId, toolName,
@@ -348,7 +362,7 @@ so is `registerProviders`. Use `Model.provider` / `createProvider` with a
 `FinishReason`, `ToolCall`, `FunctionTool`, `Tool`, `ToolChoice`,
 `RequestInfo` / `ResponseInfo` / `ResponseMetadata`, `GeneratedFile`,
 `Source`, `ToolResult`, `GenerateContent` (sealed), `GenerateResult`,
-`GenerateTextResult`, `GenerateObjectResult`, `StreamTextResultAggregated`,
+`LanguageModelUsage`, `GenerateTextResult`, `GenerateObjectResult`,
 `GenerateTextOptions`, `ModelMessage`, `StreamPart` (sealed; the
 `TextStreamPart` shapes the stream emits), `FileBytes`, `FileData`,
 `ContentPart` (sealed), `ToolResultOutput`, and `RawToolCall` /
@@ -359,6 +373,12 @@ re-encodes verbatim.
 `ToolCall` carries `providerMetadata` plus `invalid` (set by Core when tool
 lookup, input parse, or schema validation fails, even after repair) and `error`
 (the `AiMuxError` object for that failure).
+
+A standalone `ToolCall` or `RawToolCall` (a result's `toolCalls`, an approval
+request's `toolCall`, a repair context's `toolCall`) writes
+`"type": "tool-call"`, and a `Source` writes `"type": "source"` next to its
+`sourceType`, as the AI SDK's `TypedToolCall` and `Source` do. Reading accepts
+JSON without the tag and rejects a different one.
 
 ## Coverage
 

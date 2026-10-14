@@ -19,7 +19,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified};
@@ -896,7 +896,7 @@ fn supports_native_structured_output(model_id: &str) -> bool {
 #[must_use]
 pub fn prepare_tools(
     tools: &Option<Vec<FunctionTool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
     model_id: &str,
 ) -> Value {
     let non_empty = tools.as_ref().filter(|t| !t.is_empty());
@@ -905,13 +905,13 @@ pub fn prepare_tools(
     };
 
     // `toolChoice: none` clears tools entirely (matches TS).
-    if matches!(tool_choice, Some(ToolChoice::None)) {
+    if matches!(tool_choice, Some(LanguageModelV4ToolChoice::None)) {
         return json!({});
     }
 
     // `toolChoice: tool` filters function tools to the named one.
     let filtered: Vec<&FunctionTool> = match tool_choice {
-        Some(ToolChoice::Tool { tool_name }) => {
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
             tools.iter().filter(|t| &t.name == tool_name).collect()
         }
         _ => tools.iter().collect(),
@@ -944,10 +944,12 @@ pub fn prepare_tools(
     }
 
     let tool_choice_val = match tool_choice {
-        Some(ToolChoice::Auto) => json!({ "auto": {} }),
-        Some(ToolChoice::Required) => json!({ "any": {} }),
-        Some(ToolChoice::Tool { tool_name }) => json!({ "tool": { "name": tool_name } }),
-        Some(ToolChoice::None) => unreachable!(),
+        Some(LanguageModelV4ToolChoice::Auto) => json!({ "auto": {} }),
+        Some(LanguageModelV4ToolChoice::Required) => json!({ "any": {} }),
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
+            json!({ "tool": { "name": tool_name } })
+        }
+        Some(LanguageModelV4ToolChoice::None) => unreachable!(),
         None => return json!({ "tools": tool_specs }),
     };
 
@@ -1353,7 +1355,7 @@ pub fn build_request_body_checked(
         ));
     }
     let tool_choice = if uses_json_tool {
-        Some(ToolChoice::Required)
+        Some(LanguageModelV4ToolChoice::Required)
     } else {
         call.tool_choice.clone()
     };
@@ -1383,12 +1385,13 @@ pub fn build_request_body_checked(
             })
             .collect(),
     );
-    let function_choice =
-        if provider_tools.using_anthropic_tools && matches!(tool_choice, Some(ToolChoice::None)) {
-            Some(ToolChoice::Auto)
-        } else {
-            tool_choice.clone()
-        };
+    let function_choice = if provider_tools.using_anthropic_tools
+        && matches!(tool_choice, Some(LanguageModelV4ToolChoice::None))
+    {
+        Some(LanguageModelV4ToolChoice::Auto)
+    } else {
+        tool_choice.clone()
+    };
     let mut tool_config = prepare_tools(&tools, function_choice.as_ref(), model_id);
     if !provider_tools.tools.is_empty() {
         let mut combined = provider_tools.tools;
@@ -1415,18 +1418,18 @@ pub fn build_request_body_checked(
     }
     if !provider_tools.using_anthropic_tools
         && rejects_forced
-        && matches!(tool_choice, Some(ToolChoice::Required | ToolChoice::Tool { .. }))
+        && matches!(tool_choice, Some(LanguageModelV4ToolChoice::Required | LanguageModelV4ToolChoice::Tool { .. }))
         && all_tools.iter().any(|tool| !matches!(tool, Tool::Provider(provider) if matches!(provider.id.as_str(), "anthropic.web_search_20250305" | "anthropic.web_search_20260318" | "anthropic.web_fetch_20260318")))
     {
         if tool_config.get("tools").is_some() { tool_config["toolChoice"] = json!({"auto":{}}); }
         let details = match &tool_choice {
-            Some(ToolChoice::Tool {tool_name}) => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
+            Some(LanguageModelV4ToolChoice::Tool {tool_name}) => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
             _ => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".into(),
         };
         warn("toolChoice", Some(&details));
     }
     if let Some(tools) = &tools {
-        for tool in tools.iter().filter(|tool| !matches!(&function_choice, Some(ToolChoice::Tool { tool_name }) if tool_name != &tool.name)) {
+        for tool in tools.iter().filter(|tool| !matches!(&function_choice, Some(LanguageModelV4ToolChoice::Tool { tool_name }) if tool_name != &tool.name)) {
             if let Some(strict) = tool.strict
                 && !supports_strict_tools(model_id)
             {
@@ -1458,10 +1461,10 @@ pub fn build_request_body_checked(
             json!({"type":"auto","disable_parallel_tool_use":true})
         } else {
             match &tool_choice {
-                Some(ToolChoice::Required) => {
+                Some(LanguageModelV4ToolChoice::Required) => {
                     json!({"type":"any","disable_parallel_tool_use":true})
                 }
-                Some(ToolChoice::Tool { tool_name }) => {
+                Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
                     json!({"type":"tool","name":tool_name,"disable_parallel_tool_use":true})
                 }
                 _ => json!({"type":"auto","disable_parallel_tool_use":true}),

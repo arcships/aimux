@@ -10,26 +10,33 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
-// Bytes is binary data on the wire: a base64 string or an array of byte
-// values. It decodes either form; it encodes as a base64 string.
+// Bytes is binary data on the wire. The AI SDK's JSON carries a Uint8Array as
+// a base64 string (@ai-sdk/provider-utils uint8-utils.ts:12-23), so Bytes
+// encodes as a standard base64 string and decodes a base64 string as
+// convertBase64ToUint8Array does: "-" and "_" read as "+" and "/", padding
+// optional, ASCII whitespace ignored.
 type Bytes []byte
 
 func (b *Bytes) UnmarshalJSON(data []byte) error {
-	if len(data) > 0 && data[0] == '[' {
-		var values []uint8
-		if err := json.Unmarshal(data, &values); err != nil {
-			return err
-		}
-		*b = values
-		return nil
-	}
 	var text string
 	if err := json.Unmarshal(data, &text); err != nil {
-		return fmt.Errorf("aimux: bytes must be a base64 string or an array of numbers: %w", err)
+		return fmt.Errorf("aimux: bytes must be a base64 string: %w", err)
 	}
-	decoded, err := base64.StdEncoding.DecodeString(text)
+	normalized := strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\t', '\n', '\f', '\r', '=':
+			return -1
+		case '-':
+			return '+'
+		case '_':
+			return '/'
+		}
+		return r
+	}, text)
+	decoded, err := base64.RawStdEncoding.DecodeString(normalized)
 	if err != nil {
 		return fmt.Errorf("aimux: invalid base64: %w", err)
 	}
@@ -52,7 +59,7 @@ type EmbeddingUsage struct {
 // EmbeddingResponse is provider response metadata for embeddings.
 type EmbeddingResponse struct {
 	Headers map[string]string `json:"headers,omitempty"`
-	Body    any               `json:"body,omitempty"`
+	Body    json.RawMessage   `json:"body,omitempty"`
 }
 
 // EmbeddingResult is the result of an embedding call.
@@ -75,8 +82,7 @@ type EmbeddingCallOptions struct {
 
 // ── Speech (TTS) ──────────────────────────────────────────────────────────────
 
-// AudioData is generated audio: a base64 string or an array of bytes on the
-// wire, decoded to bytes.
+// AudioData is generated audio: a base64 string on the wire, decoded to bytes.
 type AudioData = Bytes
 
 // SpeechRequest is request metadata for speech generation.
@@ -91,7 +97,7 @@ type SpeechResponse struct {
 	Timestamp *string           `json:"timestamp,omitempty"`
 	ModelID   *string           `json:"modelId,omitempty"`
 	Headers   map[string]string `json:"headers,omitempty"`
-	Body      any               `json:"body,omitempty"`
+	Body      json.RawMessage   `json:"body,omitempty"`
 }
 
 // SpeechResult is the result of a speech generation call.
@@ -119,8 +125,8 @@ type SpeechCallOptions struct {
 
 // ── Image ─────────────────────────────────────────────────────────────────────
 
-// ImageOutputs is the generated images: base64 strings or byte arrays on the
-// wire, decoded to bytes.
+// ImageOutputs is the generated images: base64 strings on the wire, decoded
+// to bytes.
 type ImageOutputs = []Bytes
 
 // ImageUsage is token usage for image generation (if reported).
@@ -184,7 +190,7 @@ type TranscriptionResponse struct {
 	Timestamp *string           `json:"timestamp,omitempty"`
 	ModelID   *string           `json:"modelId,omitempty"`
 	Headers   map[string]string `json:"headers,omitempty"`
-	Body      any               `json:"body,omitempty"`
+	Body      json.RawMessage   `json:"body,omitempty"`
 }
 
 // TranscriptionResult is the result of a transcription call.
@@ -223,7 +229,7 @@ type RerankingResponse struct {
 	Timestamp *string           `json:"timestamp,omitempty"`
 	ModelID   *string           `json:"modelId,omitempty"`
 	Headers   map[string]string `json:"headers,omitempty"`
-	Body      any               `json:"body,omitempty"`
+	Body      json.RawMessage   `json:"body,omitempty"`
 }
 
 // RerankingResult is the result of a reranking call.
@@ -311,7 +317,7 @@ type SearchResultItem struct {
 // SearchResponse is provider response metadata for search.
 type SearchResponse struct {
 	Headers map[string]string `json:"headers,omitempty"`
-	Body    any               `json:"body,omitempty"`
+	Body    json.RawMessage   `json:"body,omitempty"`
 }
 
 // SearchResult is the result of a search call.
@@ -341,16 +347,47 @@ type SearchCallOptions struct {
 
 // UploadFileResult is the result of a file upload.
 type UploadFileResult struct {
-	ProviderReference map[string]string `json:"providerReference"`
+	ProviderReference ProviderReference `json:"providerReference"`
 	MediaType         *string           `json:"mediaType,omitempty"`
 	Filename          *string           `json:"filename,omitempty"`
 	ProviderMetadata  json.RawMessage   `json:"providerMetadata,omitempty"`
 	Warnings          []Warning         `json:"warnings,omitempty"`
 }
 
+// ProviderReference is the AI SDK's SharedV4ProviderReference, a JSON object
+// mapping provider names to the provider's file id, e.g.
+// {"openai":"file-abc123"}. It is kept as raw JSON so that its keys keep the
+// order the provider wrote them in; a Go map would sort them. Get reads one
+// provider's id.
+type ProviderReference json.RawMessage
+
+// Get returns the file id recorded for provider, if any.
+func (r ProviderReference) Get(provider string) (string, bool) {
+	var ids map[string]string
+	if len(r) == 0 || json.Unmarshal(r, &ids) != nil {
+		return "", false
+	}
+	id, ok := ids[provider]
+	return id, ok
+}
+
+// MarshalJSON writes the reference as it was read; an empty one is {}.
+func (r ProviderReference) MarshalJSON() ([]byte, error) {
+	if len(r) == 0 {
+		return []byte("{}"), nil
+	}
+	return []byte(r), nil
+}
+
+// UnmarshalJSON keeps a copy of the JSON object.
+func (r *ProviderReference) UnmarshalJSON(data []byte) error {
+	*r = ProviderReference(append([]byte(nil), data...))
+	return nil
+}
+
 // UploadFileCallOptions is the options for a file upload.
 type UploadFileCallOptions struct {
-	// Data is {"type":"data","data":<base64 or bytes>} or {"type":"text","text":...}.
+	// Data is {"type":"data","data":"<base64>"} or {"type":"text","text":...}.
 	Data            json.RawMessage `json:"data"`
 	MediaType       string          `json:"mediaType"`
 	Filename        *string         `json:"filename,omitempty"`
@@ -358,8 +395,9 @@ type UploadFileCallOptions struct {
 }
 
 // jsonObj is a json.RawMessage that serializes as {} when nil (instead of null).
-// This is needed because Rust's SharedProviderOptions (HashMap) requires a map,
-// not null, in the JSON wire format.
+// This is needed because Rust's SharedProviderOptions requires a JSON object,
+// not null, in the JSON wire format. Being raw JSON, it keeps the order of the
+// provider namespaces.
 type jsonObj json.RawMessage
 
 func (o jsonObj) MarshalJSON() ([]byte, error) {

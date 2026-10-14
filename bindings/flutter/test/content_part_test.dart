@@ -4,10 +4,14 @@ import 'package:aimux/types.dart';
 import 'package:test/test.dart';
 
 void main() {
-  group('FileBytes (untagged: number[] | string)', () {
-    test('binary is a bare array', () {
-      expect(FileBytesBinary(data: [104, 105]).toJson(), [104, 105]);
-      expect(FileBytes.fromJson([104, 105]), isA<FileBytesBinary>());
+  group('FileBytes (a base64 string)', () {
+    // SharedV4FileDataData.data is Uint8Array | string upstream
+    // (shared-v4-file-data.ts:7-10): one base64 string in the JSON
+    // (uint8-utils.ts:12-23), never an array of ints.
+    test('binary is written as base64', () {
+      expect(FileBytesBinary(data: [0, 1, 2, 250, 255]).toJson(), 'AAEC+v8=');
+      expect(() => FileBytes.fromJson([104, 105]), throwsFormatException);
+      expect(decodeBase64Bytes('AAEC-v8'), [0, 1, 2, 250, 255]);
     });
 
     test('base64 is a bare string', () {
@@ -38,27 +42,44 @@ void main() {
     // One wire document per variant; optional fields are absent, not null.
     final cases = <String, Map<String, dynamic>>{
       'text': {'type': 'text', 'text': 'hello'},
-      'image': {'type': 'image', 'image': [1, 2, 3], 'mediaType': 'image/png'},
+      // ImagePart.image / FilePart.data are DataContent (provider-utils
+      // types/content-part.ts:42, :75): base64 strings.
+      'image': {'type': 'image', 'image': 'AQID', 'mediaType': 'image/png'},
+      // FilePart.data is FileData | DataContent | URL | ProviderReference
+      // (content-part.ts:75, file-data.ts:44-48).
       'file': {
         'type': 'file',
-        'data': [104, 105],
+        'data': 'aGk=',
         'mediaType': 'application/pdf',
         'filename': 'doc.pdf',
       },
-      'file-base64': {
-        'type': 'file-base64',
+      'file tagged data': {
+        'type': 'file',
+        'data': {'type': 'data', 'data': 'aGk='},
+        'mediaType': 'image/png',
+      },
+      'file tagged url': {
+        'type': 'file',
+        'data': {'type': 'url', 'url': 'https://example.com/f.png'},
+        'mediaType': 'image/png',
+      },
+      'file tagged reference': {
+        'type': 'file',
+        'data': {
+          'type': 'reference',
+          'reference': {'openai': 'file-abc'},
+        },
+        'mediaType': 'application/pdf',
+      },
+      'file bare reference': {
+        'type': 'file',
+        'data': {'openai': 'file-abc'},
+        'mediaType': 'application/pdf',
+      },
+      'reasoning-file bare': {
+        'type': 'reasoning-file',
         'data': 'aGk=',
         'mediaType': 'image/png',
-      },
-      'file-url': {
-        'type': 'file-url',
-        'url': 'https://example.com/f.png',
-        'mediaType': 'image/png',
-      },
-      'file-reference': {
-        'type': 'file-reference',
-        'mediaType': 'application/pdf',
-        'reference': {'openai': 'file-abc'},
       },
       'reasoning': {'type': 'reasoning', 'text': 'thinking...', 'signature': 'sig'},
       'reasoning-file': {
@@ -103,6 +124,31 @@ void main() {
       });
     }
 
+    test('file-base64 / file-url / file-reference are not AI SDK parts', () {
+      for (final tag in ['file-base64', 'file-url', 'file-reference']) {
+        expect(
+            ContentPart.fromJson({
+              'type': tag,
+              'data': 'aGk=',
+              'url': 'https://example.com/f.png',
+              'mediaType': 'image/png',
+            }),
+            isA<ContentPartUnknown>());
+      }
+      final bare = ContentPart.fromJson({
+        'type': 'file',
+        'data': {'openai': 'file-abc'},
+        'mediaType': 'application/pdf',
+      }) as ContentPartFile;
+      expect(bare.data, isA<FilePartDataReference>());
+      expect(
+          ContentPartFile.bytes([104, 105], mediaType: 'text/plain').toJson(), {
+        'type': 'file',
+        'data': {'type': 'data', 'data': 'aGk='},
+        'mediaType': 'text/plain',
+      });
+    });
+
     test('tool-result carries a typed output, not result/isError', () {
       final part = ContentPartToolResult(
         toolCallId: 'call_1',
@@ -138,6 +184,36 @@ void main() {
       final json = {'type': 'future-variant', 'data': 'something'};
       final part = ContentPart.fromJson(json);
       expect(part, isA<ContentPartUnknown>());
+      expect(part.toJson(), json);
+    });
+  });
+
+  group('null is kept apart from a missing value', () {
+    // `body?: unknown` (language-model-v4-generate-result.ts:41, :56) and
+    // `inputSchemaInput?: unknown` (tool-approval-request.ts:41): the AI SDK's
+    // JSON omits undefined and keeps null.
+    test('response and request body', () {
+      for (final json in <Map<String, dynamic>>[
+        {},
+        {'body': null},
+        {'body': {'a': null}},
+      ]) {
+        expect(ResponseInfo.fromJson(json).toJson(), json);
+        expect(RequestInfo.fromJson(json).toJson(), json);
+      }
+      expect(const RequestInfo(hasBody: true).toJson(), {'body': null});
+      expect(const RequestInfo().toJson(), <String, dynamic>{});
+    });
+
+    test('tool approval request inputSchemaInput', () {
+      final json = {
+        'type': 'tool-approval-request',
+        'approvalId': 'a1',
+        'toolCallId': 'c1',
+        'inputSchemaInput': null,
+      };
+      final part = ContentPart.fromJson(json) as ContentPartToolApprovalRequest;
+      expect(part.hasInputSchemaInput, isTrue);
       expect(part.toJson(), json);
     });
   });

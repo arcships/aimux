@@ -168,7 +168,7 @@ impl LanguageModel for MistralModel {
         &self.config.provider
     }
 
-    fn supported_urls(&self) -> aimux_core::language_model::SupportedUrls {
+    async fn supported_urls(&self) -> aimux_core::language_model::SupportedUrls {
         self.config.supported_urls(&self.model_id)
     }
 
@@ -268,8 +268,7 @@ impl LanguageModel for MistralModel {
                 id: data.id,
                 timestamp: data
                     .created
-                    .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-                    .map(|dt| dt.to_rfc3339()),
+                    .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
                 model_id: data.model,
                 headers: Some(response_headers),
                 body: resp.raw_value,
@@ -386,8 +385,7 @@ impl MistralChatStream {
                 id: chunk.id.clone(),
                 timestamp: chunk
                     .created
-                    .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-                    .map(|dt| dt.to_rfc3339()),
+                    .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
                 model_id: chunk.model.clone(),
             }));
         }

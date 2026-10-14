@@ -50,8 +50,8 @@ fn klingai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<Ai
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://api.klingai.com";
-const API_KEY_ENV_VAR: &str = "KLINGAI_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.klingai.com";
+pub(crate) const API_KEY_ENV_VAR: &str = "KLINGAI_API_KEY";
 const DEFAULT_NAME: &str = "klingai";
 
 /// Settings of [`create_klingai`].
@@ -371,7 +371,7 @@ impl VideoModel for KlingAIVideoModel {
             warnings: Vec::new(),
             provider_metadata: None,
             response: VideoResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },
@@ -451,7 +451,7 @@ impl VideoModel for KlingAIVideoModel {
                     warnings: Vec::new(),
                     provider_metadata: None,
                     response: VideoResponse {
-                        timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                        timestamp: Some(aimux_core::Timestamp::now()),
                         model_id: Some(self.model_id.clone()),
                         headers: Some(response_headers),
                     },

@@ -46,8 +46,8 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_bas
 
 use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
-const DEFAULT_BASE_URL: &str = "https://api.groq.com/openai/v1";
-const API_KEY_ENV_VAR: &str = "GROQ_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.groq.com/openai/v1";
+pub(crate) const API_KEY_ENV_VAR: &str = "GROQ_API_KEY";
 const DEFAULT_NAME: &str = "groq";
 
 /// Settings of [`create_groq`] (the AI SDK's `GroqProviderSettings`).
@@ -104,8 +104,14 @@ pub fn create_groq(settings: GroqProviderSettings) -> Result<GroqProvider, AiMux
             Vec::new(),
             settings.headers,
         )
-        .with_user_agent("groq", "4.0.52"),
-        fetch: settings.fetch,
+        .with_user_agent(
+            crate::shared::aisdk_pins::GROQ.name,
+            crate::shared::aisdk_pins::GROQ.version,
+        ),
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::GROQ,
+        )),
     })
 }
 

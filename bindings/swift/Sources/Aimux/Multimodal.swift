@@ -519,8 +519,8 @@ public struct EmbeddingResult: Codable, Equatable {
 
 // MARK: - Speech (TTS)
 
-/// Generated audio: a base64-encoded string or raw bytes. Wire: untagged
-/// (`"…"` | `[…]`), the same shape as ``FileBytes``.
+/// Generated audio: a base64-encoded string or raw bytes. Wire: a base64
+/// string (`speech-model-v4-result.ts:16`), the same shape as ``FileBytes``.
 public typealias AudioData = FileBytes
 
 public struct SpeechRequest: Codable, Equatable {
@@ -547,23 +547,25 @@ public struct SpeechResult: Codable, Equatable {
 // MARK: - Image
 
 /// Generated images: all base64 strings or all binary byte arrays. Wire:
-/// untagged (`["…"]` | `[[…]]`).
+/// base64 strings `["…"]` (`image-model-v4-result.ts:23`); `.binary` is
+/// written as base64 and parsing yields `.base64`.
 public enum ImageOutputs: Codable, Equatable {
     case base64([String])
     case binary([[UInt8]])
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
-        if let strings = try? c.decode([String].self) { self = .base64(strings); return }
-        if let batches = try? c.decode([[UInt8]].self) { self = .binary(batches); return }
-        throw aimuxDecodingError(c.codingPath, "expected base64 strings or byte arrays")
+        guard let strings = try? c.decode([String].self) else {
+            throw aimuxDecodingError(c.codingPath, "expected base64 strings")
+        }
+        self = .base64(strings)
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.singleValueContainer()
         switch self {
         case .base64(let strings): try c.encode(strings)
-        case .binary(let batches): try c.encode(batches)
+        case .binary(let batches): try c.encode(batches.map(Base64Bytes.encode))
         }
     }
 }
@@ -627,7 +629,7 @@ public struct TranscriptionResult: Codable, Equatable {
 
 /// Generated video. Wire: `{"type":"url","url","mediaType"}`,
 /// `{"type":"base64","data":"…","mediaType"}` or
-/// `{"type":"binary","data":[…],"mediaType"}`.
+/// `{"type":"binary","data":"<base64>","mediaType"}` (`video-model-v4-result.ts:28-29`).
 public enum VideoData: Codable, Equatable {
     case url(url: String, mediaType: String)
     case base64(data: String, mediaType: String)
@@ -641,7 +643,7 @@ public enum VideoData: Codable, Equatable {
         switch try c.decode(String.self, forKey: .type) {
         case "url": self = .url(url: try c.decode(String.self, forKey: .url), mediaType: mediaType)
         case "base64": self = .base64(data: try c.decode(String.self, forKey: .data), mediaType: mediaType)
-        case "binary": self = .binary(data: try c.decode([UInt8].self, forKey: .data), mediaType: mediaType)
+        case "binary": self = .binary(data: try Base64Bytes.decode(c, forKey: .data), mediaType: mediaType)
         case let t: throw decoder.unknownTag(t, in: "video data")
         }
     }
@@ -656,7 +658,7 @@ public enum VideoData: Codable, Equatable {
             try c.encode("base64", forKey: .type); try c.encode(data, forKey: .data)
             try c.encode(mediaType, forKey: .mediaType)
         case .binary(let data, let mediaType):
-            try c.encode("binary", forKey: .type); try c.encode(data, forKey: .data)
+            try c.encode("binary", forKey: .type); try c.encode(Base64Bytes.encode(data), forKey: .data)
             try c.encode(mediaType, forKey: .mediaType)
         }
     }

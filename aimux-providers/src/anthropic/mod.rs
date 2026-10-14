@@ -43,9 +43,7 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, Resolvable, load_optional_setting, validate_base_url,
-};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{AuthScheme, Credential};
 
@@ -67,8 +65,8 @@ pub(crate) fn anthropic_failed_response_handler()
 }
 
 const API_ORIGIN: &str = "https://api.anthropic.com";
-const DEFAULT_BASE_URL: &str = "https://api.anthropic.com/v1";
-const API_KEY_ENV_VAR: &str = "ANTHROPIC_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.anthropic.com/v1";
+pub(crate) const API_KEY_ENV_VAR: &str = "ANTHROPIC_API_KEY";
 const API_VERSION: &str = "2023-06-01";
 const DEFAULT_NAME: &str = "anthropic.messages";
 
@@ -108,9 +106,12 @@ fn supported_urls() -> SupportedUrls {
 /// credentials and `headers` are evaluated on every request.
 #[derive(Clone, Default)]
 pub struct AnthropicProviderSettings {
-    /// Base URL for the API calls, version segment included. Default
-    /// `ANTHROPIC_BASE_URL` or `https://api.anthropic.com/v1`; a trailing slash is removed. The bare
-    /// `https://api.anthropic.com` means the default.
+    /// Base URL for the API calls, version segment included. `None` reads
+    /// `ANTHROPIC_BASE_URL` when the provider is created, else
+    /// `https://api.anthropic.com/v1`; a trailing slash is removed. The bare
+    /// `https://api.anthropic.com` means the default. An invalid explicit
+    /// value fails [`create_anthropic`]; an invalid `ANTHROPIC_BASE_URL`
+    /// fails every request instead.
     pub base_url: Option<String>,
     /// The API key, sent as `x-api-key`. `None` (with no `auth_token`) loads
     /// `ANTHROPIC_API_KEY` when a request is made and fails that request with
@@ -158,16 +159,19 @@ impl std::fmt::Debug for AnthropicProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when the configured base URL is not an
-/// `http(s)` URL with a host, or when both credentials are nonempty. Those
-/// are the only ways this fails: credentials are loaded per request, not here.
+/// Returns `AiMuxError::InvalidArgument` when the explicit `base_url` is not
+/// an `http(s)` URL with a host, or when both credentials are nonempty. Those
+/// are the only ways this fails: credentials are loaded per request, and an
+/// invalid `ANTHROPIC_BASE_URL` is reported by each request, not here.
 pub fn create_anthropic(
     settings: AnthropicProviderSettings,
 ) -> Result<AnthropicProvider, AiMuxError> {
-    let base_url = match load_optional_setting(settings.base_url.as_deref(), "ANTHROPIC_BASE_URL") {
-        Some(url) => normalize_base_url(&url)?,
-        None => DEFAULT_BASE_URL.to_string(),
-    };
+    let base_url = crate::shared::base_url_setting(
+        settings.base_url.as_deref(),
+        "ANTHROPIC_BASE_URL",
+        DEFAULT_BASE_URL,
+        normalize_base_url,
+    )?;
     let is_truthy = |value: &String| !value.is_empty();
     if settings.api_key.as_ref().is_some_and(is_truthy)
         && settings.auth_token.as_ref().is_some_and(is_truthy)
@@ -201,22 +205,27 @@ pub fn create_anthropic(
             vec![("anthropic-version".to_string(), API_VERSION.to_string())],
             settings.headers,
         )
-        .with_user_agent(options::CANONICAL, "4.0.68"),
-        fetch: settings.fetch,
+        .with_user_agent(
+            crate::shared::aisdk_pins::ANTHROPIC.name,
+            crate::shared::aisdk_pins::ANTHROPIC.version,
+        ),
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::ANTHROPIC,
+        )),
         supported_urls: supported_urls(),
         generate_id: settings.generate_id,
     })
 }
 
 /// The default provider: `create_anthropic` with default settings, created on
-/// first use. Creation reads `ANTHROPIC_BASE_URL`; a missing key surfaces
-/// from the first request instead.
+/// first use. `ANTHROPIC_BASE_URL` is read at creation (an invalid value fails
+/// each request, not the creation); the key is loaded per request.
 pub fn anthropic() -> &'static AnthropicProvider {
     static DEFAULT: OnceLock<AnthropicProvider> = OnceLock::new();
     DEFAULT.get_or_init(|| {
-        // An invalid base URL environment setting fails at creation.
         create_anthropic(AnthropicProviderSettings::default())
-            .expect("Anthropic base URL must be valid")
+            .expect("default settings have no explicit base URL or credentials to reject")
     })
 }
 
@@ -224,7 +233,9 @@ pub fn anthropic() -> &'static AnthropicProvider {
 /// the models out of; it holds no HTTP client.
 pub struct AnthropicProvider {
     name: String,
-    base_url: String,
+    /// The normalized base URL, or the error of an invalid
+    /// `ANTHROPIC_BASE_URL`, which every request reports.
+    base_url: Result<String, AiMuxError>,
     headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
     supported_urls: SupportedUrls,
@@ -234,16 +245,22 @@ pub struct AnthropicProvider {
 impl AnthropicProvider {
     /// The model configuration reporting `provider` as its identity.
     fn model_config(&self, provider: String) -> AnthropicModelConfig {
+        let base_url = self.base_url.clone().unwrap_or_default();
         AnthropicModelConfig {
             provider,
-            headers: self.headers.clone(),
+            headers: self.headers.clone().into(),
             fetch: self.fetch.clone(),
             supported_urls: self.supported_urls.clone(),
             transform_request_body: None,
-            base_url: self.base_url.clone(),
+            base_url,
             provider_options_name: options::options_name_of(&self.name),
             hooks: AnthropicModelHooks::default(),
-            endpoint: AnthropicEndpoint::Fixed,
+            // Every request resolves its configuration first; an invalid
+            // `ANTHROPIC_BASE_URL` fails it there.
+            endpoint: match &self.base_url {
+                Ok(_) => AnthropicEndpoint::Fixed,
+                Err(error) => AnthropicEndpoint::Invalid(error.clone()),
+            },
         }
     }
 

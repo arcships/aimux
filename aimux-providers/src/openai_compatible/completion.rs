@@ -327,8 +327,7 @@ fn metadata(response: &CompletionResponse) -> ResponseMetadata {
         id: response.id.clone(),
         timestamp: response
             .created
-            .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
-            .map(|dt| dt.to_rfc3339()),
+            .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
         model_id: response.model.clone(),
     }
 }
@@ -387,7 +386,7 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
     fn model_id(&self) -> &str {
         &self.model_id
     }
-    fn supported_urls(&self) -> SupportedUrls {
+    async fn supported_urls(&self) -> SupportedUrls {
         match &self.config {
             CompletionConfig::Compatible(_) => SupportedUrls::default(),
             CompletionConfig::Native(_) => SupportedUrls::default(),
@@ -511,12 +510,17 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
                 }
             }
         }
+        let compat_name = match &self.config {
+            CompletionConfig::Compatible(config) => Some(config.provider_options_name().to_owned()),
+            CompletionConfig::Native(_) => None,
+        };
         let stream = pipe_through(
             futures::stream::iter(buffered).chain(events),
             OpenAICompatibleCompletionStream {
                 warnings,
                 emit_raw_chunks: raw_chunks,
                 native,
+                compat_name,
                 error_url,
                 stream_error_body: body.clone(),
                 stream_response_headers: response_headers,
@@ -545,6 +549,9 @@ struct OpenAICompatibleCompletionStream {
     warnings: Vec<Warning>,
     emit_raw_chunks: bool,
     native: bool,
+    /// The provider options name of a compatible provider; `None` for the
+    /// native OpenAI completion model.
+    compat_name: Option<String>,
     error_url: String,
     stream_error_body: Value,
     stream_response_headers: HashMap<String, String>,
@@ -593,12 +600,25 @@ impl Transformer for OpenAICompatibleCompletionStream {
             });
         }
         if let Some(error) = event.get("error") {
-            let error = crate::openai::openai_stream_error(
-                error,
-                &self.error_url,
-                self.stream_error_body.clone(),
-                self.stream_response_headers.clone(),
-            );
+            // @ai-sdk/openai maps the frame to a status
+            // (openai-completion-language-model.ts:305-313);
+            // @ai-sdk/openai-compatible passes it on as it is
+            // (openai-compatible-completion-language-model.ts:320-325).
+            let error = match &self.compat_name {
+                None => crate::openai::openai_stream_error(
+                    error,
+                    &self.error_url,
+                    self.stream_error_body.clone(),
+                    self.stream_response_headers.clone(),
+                ),
+                Some(name) => super::chat::stream_error(
+                    name,
+                    error,
+                    &self.error_url,
+                    self.stream_error_body.clone(),
+                    self.stream_response_headers.clone(),
+                ),
+            };
             return self.report_error(error, controller);
         }
         let parsed: CompletionResponse = match parse_response(event, self.native, true) {

@@ -10,20 +10,31 @@ import 'package:test/test.dart';
 const _meta = {
   'openai': {'itemId': 'item_1'}
 };
+// The provider's LanguageModelV4File (`language-model-v4-file.ts`).
 const _file = {
   'data': {'type': 'data', 'data': 'aGk='},
   'mediaType': 'image/png',
 };
-const _usage = {
-  'inputTokens': {'total': 5, 'noCache': 5},
-  'outputTokens': {'total': 2},
+// The AI SDK's GeneratedFile is {base64, mediaType, providerMetadata?}
+// (`generate-text/generated-file.ts:10-32`); a stream file part is
+// {type, file, providerMetadata?} (`stream-language-model-call.ts:569-590`).
+const _generatedFile = {'base64': 'aGk=', 'mediaType': 'image/png'};
+// The call-level LanguageModelUsage of a result and of the stream's
+// finish-step / finish parts: the AI SDK's (`types/usage.ts:10-67`),
+// camelCase, an unknown count absent.
+const _lmUsage = {
+  'inputTokens': 3,
+  'inputTokenDetails': {'cacheReadTokens': 1},
+  'outputTokens': 2,
+  'outputTokenDetails': {},
+  'totalTokens': 5,
 };
-const _finish = {'unified': 'stop', 'raw': 'stop'};
 
 void main() {
   group('ToolCall', () {
     test('round-trips and omits absent optionals', () {
       final json = {
+        'type': 'tool-call',
         'toolCallId': 'call_1',
         'toolName': 'get_weather',
         'input': {'city': 'Paris'},
@@ -36,7 +47,46 @@ void main() {
       expect(ToolCall.fromJson(json).toJson(), json);
 
       final minimal = ToolCall(toolCallId: 'c', toolName: 't', input: const {});
-      expect(minimal.toJson().keys, ['toolCallId', 'toolName', 'input']);
+      expect(minimal.toJson().keys, ['type', 'toolCallId', 'toolName', 'input']);
+    });
+
+    // Provider metadata is a JS object upstream (@ai-sdk/provider
+    // shared-v4-provider-metadata.ts:24), so its keys keep insertion order
+    // (#229 NP2-1); a decoded Dart map keeps them too.
+    test('provider namespaces keep insertion order', () {
+      const metadata = '{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}}';
+      final text = '{"type":"tool-call","toolCallId":"call-1","toolName":"weather",'
+          '"input":{},"providerMetadata":$metadata}';
+      final call = ToolCall.fromJson(jsonDecode(text) as Map<String, dynamic>);
+      expect(call.providerMetadata!.keys, ['zeta', 'alpha', 'mid']);
+      expect(jsonEncode(call.toJson()), text);
+    });
+
+    // A result's toolCalls and sources are the AI SDK's TypedToolCall and
+    // Source, tagged {type: 'tool-call'} (ai generate-text/tool-call.ts:8-14)
+    // and {type: 'source', sourceType} (provider language-model-v4-source.ts:8,
+    // :36); generate-text-result.ts:73, :78 (#229 NP2-7).
+    test('standalone calls and sources carry their type tag', () {
+      final source = {
+        'type': 'source',
+        'sourceType': 'url',
+        'id': 's1',
+        'url': 'https://example.com',
+      };
+      expect(Source.fromJson(source).toJson(), source);
+      expect(
+          const RawToolCall(toolCallId: 'c', toolName: 't', input: '{}')
+              .toJson(),
+          {'type': 'tool-call', 'toolCallId': 'c', 'toolName': 't', 'input': '{}'});
+      // JSON written before the tag still reads; another tag is rejected.
+      expect(
+          ToolCall.fromJson({'toolCallId': 'c', 'toolName': 't', 'input': {}})
+              .toJson()['type'],
+          'tool-call');
+      expect(
+          () => ToolCall.fromJson(
+              {'type': 'source', 'toolCallId': 'c', 'toolName': 't', 'input': {}}),
+          throwsFormatException);
     });
 
     test('RawToolCall keeps every provider field through copyWith', () {
@@ -49,6 +99,7 @@ void main() {
         'providerMetadata': _meta,
       });
       expect(call.copyWith(input: '{"city":"Tokyo"}').toJson(), {
+        'type': 'tool-call',
         'toolCallId': 'call-1',
         'toolName': 'weather',
         'input': '{"city":"Tokyo"}',
@@ -113,6 +164,7 @@ void main() {
 
   group('StreamPart', () {
     final call = {
+      'type': 'tool-call',
       'toolCallId': 'c1',
       'toolName': 'w',
       'input': {'a': 1},
@@ -120,21 +172,26 @@ void main() {
     };
     final cases = <Map<String, dynamic>>[
       {'type': 'text-start', 'id': 't'},
-      {'type': 'text-delta', 'id': 't', 'delta': 'hel', 'providerMetadata': _meta},
+      {'type': 'text-delta', 'id': 't', 'text': 'hel', 'providerMetadata': _meta},
       {'type': 'text-end', 'id': 't'},
+      {'type': 'start'},
       {
-        'type': 'stream-start',
+        'type': 'start-step',
+        'request': {},
         'warnings': [
           {'type': 'other', 'message': 'm'}
         ]
       },
-      {'type': 'finish', 'finishReason': _finish, 'usage': _usage},
       {
         'type': 'finish-step',
-        'finishReason': _finish,
-        'usage': _usage,
         'response': {'id': 'r', 'modelId': 'gpt-4o'},
+        'usage': _lmUsage,
+        'performance': {'stepTimeMs': 1.0},
+        'finishReason': 'tool-calls',
+        'rawFinishReason': 'tool_calls',
       },
+      {'type': 'finish', 'finishReason': 'stop', 'totalUsage': _lmUsage},
+      {'type': 'abort', 'reason': 'stop'},
       {
         'type': 'error',
         'error': {'name': 'AI_APICallError', 'message': 'boom', 'isRetryable': false},
@@ -154,10 +211,23 @@ void main() {
         'type': 'tool-result',
         'toolCallId': 'c1',
         'toolName': 'w',
-        'result': {'count': 3},
+        'input': {'q': 'rust'},
+        'output': {'count': 3},
+        'providerExecuted': true,
       },
-      {'type': 'file', ..._file},
-      {'type': 'reasoning-file', 'file': _file},
+      // A deferred result has no input.
+      {'type': 'tool-result', 'toolCallId': 'srv-0', 'toolName': 'code_execution', 'output': 'done'},
+      {
+        'type': 'tool-error',
+        'toolCallId': 'srv-2',
+        'toolName': 'code_execution',
+        'input': {'code': '1/0'},
+        'error': {'error_code': 'unavailable'},
+        'providerExecuted': true,
+      },
+      {'type': 'tool-output-denied', 'toolCallId': 'c', 'toolName': 't'},
+      {'type': 'file', 'file': _generatedFile, 'providerMetadata': _meta},
+      {'type': 'reasoning-file', 'file': _generatedFile},
       {'type': 'custom', 'kind': 'k'},
       {
         'type': 'tool-approval-request',
@@ -165,8 +235,14 @@ void main() {
         'toolCall': call,
         'reason': 'r',
       },
+      {
+        'type': 'tool-approval-response',
+        'approvalId': 'a',
+        'toolCall': call,
+        'approved': false,
+      },
       {'type': 'reasoning-start', 'id': 'r1'},
-      {'type': 'reasoning-delta', 'id': 'r1', 'delta': 'thi'},
+      {'type': 'reasoning-delta', 'id': 'r1', 'text': 'thi'},
       {'type': 'reasoning-end', 'id': 'r1'},
       {'type': 'source', 'sourceType': 'url', 'id': 's', 'url': 'https://x'},
       {'type': 'raw', 'rawValue': {'raw': 'chunk'}},
@@ -187,6 +263,14 @@ void main() {
       expect(p.type, 'future-part');
       expect(p.toJson(), json);
     });
+  });
+
+  test('GeneratedFile is base64 and mediaType', () {
+    final file = GeneratedFile.fromJson(_generatedFile);
+    expect(file.bytes, [104, 105]);
+    expect(file.toJson(), _generatedFile);
+    final part = StreamPart.fromJson({'type': 'file', 'file': _generatedFile});
+    expect((part as StreamPartFile).file.base64, 'aGk=');
   });
 
   group('options and results', () {
@@ -234,36 +318,58 @@ void main() {
           {'type': 'text', 'text': 'hi'}
         ],
         'text': 'hi',
-        'toolCalls': [
-          {'toolCallId': 'c', 'toolName': 't', 'input': {}}
-        ],
-        'finishReason': _finish,
-        'usage': _usage,
-        'warnings': [],
-        'raw': {
-          'content': [
-            {'type': 'text', 'text': 'hi'}
-          ],
-          'finishReason': _finish,
-          'usage': _usage,
-          'warnings': [],
-        },
         'reasoning': [],
-        'reasoningText': '',
-        'sources': [],
         'files': [],
+        'sources': [],
+        'toolCalls': [
+          {'type': 'tool-call', 'toolCallId': 'c', 'toolName': 't', 'input': {}}
+        ],
+        'toolResults': [],
+        'finishReason': 'tool-calls',
+        'rawFinishReason': 'tool_calls',
+        'usage': _lmUsage,
+        'totalUsage': _lmUsage,
+        'warnings': [],
+        'request': {},
+        'response': {'id': 'r'},
         'responseMessages': [
           {'role': 'assistant', 'content': 'hi'}
         ],
-        'rawFinishReason': 'stop',
-        'request': {},
-        'response': {'id': 'r'},
-        'totalUsage': _usage,
+        'steps': [
+          {'callId': 'c1', 'stepNumber': 0}
+        ],
       })) as Map<String, dynamic>;
       final result = GenerateTextResult.fromJson(json);
-      expect(result.finishReason.unified, 'stop');
-      expect(result.totalUsage.inputTokens.total, 5);
-      expect(result.raw.content.single, isA<GenerateContentText>());
+      expect(result.finishReason, 'tool-calls');
+      expect(result.usage.totalTokens, 5);
+      expect(result.totalUsage.inputTokenDetails.cacheReadTokens, 1);
+      expect(result.reasoningText, isNull);
+      expect(result.output, isNull);
+      expect(result.hasOutput, isFalse);
+      expect(result.steps, hasLength(1));
+      expect(jsonDecode(jsonEncode(result)), json);
+
+      // A parsed JSON null output is written back as null, apart from no
+      // output (the public JSON keeps null apart from undefined).
+      final parsedNull = Map<String, dynamic>.of(json)..['output'] = null;
+      final withNull = GenerateTextResult.fromJson(parsedNull);
+      expect(withNull.output, isNull);
+      expect(withNull.hasOutput, isTrue);
+      expect(jsonDecode(jsonEncode(withNull)), parsedNull);
+    });
+
+    test('GenerateObjectResult round-trips', () {
+      final json = jsonDecode(jsonEncode({
+        'object': {'answer': 42},
+        'finishReason': 'stop',
+        'usage': _lmUsage,
+        'warnings': [],
+        'request': {},
+        'response': {'id': 'r', 'timestamp': '2026-01-01T00:00:00.000Z', 'modelId': 'gpt-4o'},
+      })) as Map<String, dynamic>;
+      final result = GenerateObjectResult.fromJson(json);
+      expect((result.object as Map<String, dynamic>)['answer'], 42);
+      expect(result.response.modelId, 'gpt-4o');
       expect(jsonDecode(jsonEncode(result)), json);
     });
   });

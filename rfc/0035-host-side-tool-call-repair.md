@@ -56,23 +56,26 @@ AI SDK 的规则是"没给工具集的调用从不修复",宿主看到 `null` �
 对齐 AI SDK `repairToolCall` 的入参:
 
 ```json
-{ "tool_call": { "tool_call_id": "call-1", "tool_name": "weather",
-                 "input": "{\"town\":\"Singapore\"}", "dynamic": true },
-  "error": { "InvalidToolInput": { "tool_name": "weather", "tool_input": "…", "cause": "…" } },
-  "input_schema": { "type": "object", "required": ["city"], "…": "…" },
+{ "toolCall": { "type": "tool-call", "toolCallId": "call-1", "toolName": "weather",
+                "input": "{\"town\":\"Singapore\"}", "dynamic": true },
+  "error": { "name": "AI_InvalidToolInputError", "toolName": "weather",
+             "toolInput": "…", "cause": "…" },
+  "inputSchema": { "type": "object", "required": ["city"], "…": "…" },
   "tools": [ … ], "messages": [ … ], "instructions": null }
 ```
 
-`tool_call.input` 是 provider 的**原始参数文本**(模型吐出来的那串),不是解析后的对象——这正是修复函数要看的东西。原文保存在调用携带的 `InvalidToolInput.tool_input` / `NoSuchTool.tool_input` 中;不能从解析后的 JSON 值反推,因为解析会丢失字符串引号、重复 key、数字表示与空白。
+`toolCall` 是上游修复函数收到的 `LanguageModelV4ToolCall`,带 `type: "tool-call"`(provider 4.0.21 `language-model/v4/language-model-v4-tool-call.ts:7`)。`toolCall.input` 是 provider 的**原始参数文本**(模型吐出来的那串),不是解析后的对象——这正是修复函数要看的东西。原文保存在调用携带的 error 的 `toolInput` 中(`AI_InvalidToolInputError` / `AI_NoSuchToolError`);不能从解析后的 JSON 值反推,因为解析会丢失字符串引号、重复 key、数字表示与空白。
 
 `error` 直接取自调用自身的 `error` 字段,不重新推导。**这是宿主必须持有非法 `ToolCall` 原件的原因**,也是唯一的信息损失点:非法调用的 `dynamic` 一律被置为 `Some(true)`,原值不可恢复。对本流程无影响(原始 error 是读出来的,不是重算的)。
 
+`inputSchema` 是预先求值的值。上游 `inputSchema` 是按 toolName 求值的函数(ai 7.0.127 `generate-text/tool-call-repair-function.ts:31`),aimux 只传当前调用那个工具的 schema,属有意差异。
+
 ### 3.2 宿主答复(`ToolCallRepairReply`)
 
-内部 tag、snake_case、`deny_unknown_fields`:
+内部 tag `type`(kebab-case)、字段 camelCase、`deny_unknown_fields`:
 
 ```json
-{"type": "repaired", "tool_call": { "…": "RawToolCall" }}
+{"type": "repaired", "toolCall": { "…": "LanguageModelV4ToolCall" }}
 {"type": "unchanged"}
 {"type": "failed", "message": "repair model unavailable"}
 ```
@@ -81,17 +84,19 @@ AI SDK 的规则是"没给工具集的调用从不修复",宿主看到 `null` �
 
 | reply | 闭包等价物 | 结果 |
 |---|---|---|
-| `repaired` | `Ok(Some(call))` | 重新解析+校验;通过则有效调用,不通过则 `ToolCallRepair { original_error, cause }` |
+| `repaired` | `Ok(Some(call))` | 重新解析+校验;通过则有效调用,不通过则为非法调用:error 是这次解析的 `AI_InvalidToolInputError` / `AI_NoSuchToolError`(不包装),id、name、input 取原始调用 |
 | `unchanged` | `Ok(None)` | 保留原始 error 的非法调用 |
-| `failed` | `Err(e)` | `ToolCallRepair { original_error, cause: Other(message) }` |
+| `failed` | `Err(e)` | `{"name": "AI_ToolCallRepairError", "originalError": …, "cause": {"name": "AI_Error", "message": …}}` |
 
-`failed` 的 `cause` 只能是 `Other`:宿主语言的异常在这一侧没有类型对应物。 `message` 是宿主语言对该异常的常规文本表示:Node 复刻 AI SDK 的 `getErrorMessage`(字符串原样,`Error` 取 `toString()`,其余 JSON 序列化),其他语言用各自惯用的 message 访问器,Dart 没有通用访问器则用 `toString()`。控制流与 AI SDK `parseToolCall` 逐条一致:无工具集不进修复;抛错包成 `ToolCallRepair`;返回空保留原错误;修复结果重新校验,再失败也包成 `ToolCallRepair`。
+`repaired` 的 `toolCall` 可以带也可以不带 `type`;带的话必须是 `"tool-call"`,其他值拒收。
+
+`failed` 的 `cause` 只能是 `AI_Error`(Rust 的 `Other`):宿主语言的异常在这一侧没有类型对应物。 `message` 是宿主语言对该异常的常规文本表示:Node 复刻 AI SDK 的 `getErrorMessage`(字符串原样,`Error` 取 `toString()`,其余 JSON 序列化),其他语言用各自惯用的 message 访问器,Dart 没有通用访问器则用 `toString()`。控制流与 AI SDK `parseToolCall` 逐条一致:无工具集不进修复;抛错包成 `ToolCallRepair`;返回空保留原错误;修复结果重新校验,再失败时不包装,按上面 `repaired` 一行返回非法调用(ai 7.0.127 `generate-text/parse-tool-call.ts:90-96` 只包装修复函数抛出的错,`:103-110` 的再解析失败由 `:112-133` 按原始调用返回)。
 
 ### 3.3 结果补丁(`apply_tool_call_repair_to_result`)
 
-输入整份 `GenerateTextResult`、`StreamTextResultAggregated`(两者顶层字段同形)或 `GenerateObjectResult`(自动识别其 `raw` 嵌套),同时改写 `tool_calls[]` 与 `response_messages` 中对应的 tool-call part——后者沿用 builder 的 `response_tool_call_input` 规则(仍然非法且输入是原始标量时不回放),并且连 `tool_call_id` 一起改:修复可以换掉调用 id,transcript 必须继续指向 `tool_calls` 里的同一条。**两处必须一起改**,否则下一轮对话会把未修复的参数发回模型。
+输入整份 `GenerateTextResult`、`StreamTextResultAggregated`(两者顶层字段同形)或 `GenerateObjectResult`(自动识别其 `raw` 嵌套),同时改写 `toolCalls[]` 与 `responseMessages` 中对应的 tool-call part——后者沿用 builder 的 `response_tool_call_input` 规则(仍然非法且输入是原始标量时不回放),并且连 `toolCallId` 一起改:修复可以换掉调用 id,transcript 必须继续指向 `toolCalls` 里的同一条。写回 `toolCalls[]` 的调用带 `type: "tool-call"`,与结果里其他调用一致。**两处必须一起改**,否则下一轮对话会把未修复的参数发回模型。
 
-`tool_call_id` 对不上、在结果中重复、目标调用本来就是合法的,或修复后的 id 与另一条调用冲突,都返回 `InvalidArgument` 而不是静默 no-op:补丁和 transcript 都按 id 对应,只有唯一 id 才能无歧义更新;静默选择任意一条只会破坏下一轮消息。
+参数 `tool_call_id` 对不上、在结果中重复、目标调用本来就是合法的,或修复后的 id 与另一条调用冲突,都返回 `InvalidArgument` 而不是静默 no-op:补丁和 transcript 都按 id 对应,只有唯一 id 才能无歧义更新;静默选择任意一条只会破坏下一轮消息。
 
 ## 4. OpenAI 流式输出的决定:不反映修复
 
@@ -117,12 +122,26 @@ AI SDK 的规则是"没给工具集的调用从不修复",宿主看到 `null` �
 
 ## 6. 契约
 
-`contract-tests/fixtures/tool-call-repair.json` 固定每个分支的输入/期望输出,P2 的七家绑定对同一份文件断言。Rust 侧 `contract_fixture_matches_the_implementation` 回放同一份文件,防止其漂移。
+没有共享的契约 fixture:仓库里没有 `contract-tests/fixtures/tool-call-repair.json`,也没有回放它的 `contract_fixture_matches_the_implementation`。原计划的“七家绑定对同一份文件断言”(P2)尚未实现。各分支目前由下列测试固定:
+
+- **core**:`aimux-core/tests/tool_input_test.rs` 覆盖控制流的每个分支:修复只运行一次且结果重新校验;已修复过的调用不再修复;修复结果校验失败时不包装;无工具集不进修复;返回空时保留原错误;抛错时保留两个类型化错误。`aimux-core/src/parse_tool_call.rs` 的单元测试覆盖 `apply_tool_call_repair_to_result`:改写 content 中的调用、改名后的审批请求,以及 tool-error。
+- **C ABI**:`aimux-ffi/tests/exports_smoke_test.rs` 中的四个测试:
+  - `tool_call_repair_exports_round_trip`
+  - `a_repaired_result_converts_to_a_chat_completion`
+  - `tool_call_repair_without_a_tool_set_yields_null_then_rejects`
+  - `tool_call_repair_exports_reject_bad_arguments`
+- **绑定**:各自调用原生导出,并断言独立 `toolCall` 带 `"type":"tool-call"`:
+  - Go:`roundtrip_test.go`
+  - Java / Kotlin:`TypedModelTest`
+  - Node:`roundtrip-fields.test.ts`
+  - Python:`test_wrapper.py`
+  - Swift:`WrapperTests.swift`
+  - Dart:`tool_call_repair_typed_test.dart`,经 `TypedModel` 端到端运行钩子。
 
 ## 7. 宿主循环的边界行为
 
 - **钩子抛错不是流错误**:它是 `failed` 答复,core 把调用标成 `ToolCallRepair` 错误,照常作为数据投递。
 - **边界失败**(解不开 context、FFI 拒绝答复这类绑定或 core 自身的 bug)在流中各绑定行为不同,均为既定行为:Java / Kotlin 先调 `onError` 再投递未修复的原 part;Swift 调 `onError` 后流继续,但不投递这个 part;Python / Go / Node / Dart 终止流。没有任何绑定会静默丢弃这个调用。
-- **流等待钩子,不设超时**(与 AI SDK 一致):钩子挂起,流就挂起。Swift 在钩子运行期间 abort 不生效,钩子返回后才生效。
+- **流等待钩子,不设超时**(与 AI SDK 一致):钩子挂起,流就挂起。Swift 在钩子运行期间 abort 不生效,钩子返回后才生效。这是与上游的差异:上游让修复函数与 abortSignal 竞争,abort 立即生效(ai 7.0.127 `generate-text/parse-tool-call.ts:73-89`、`:137-173`)。
 - **JVM**:钩子运行在借用了流读锁的工作线程上(daemon),可以回调同一个 Model;但在钩子里对正在流式输出的同一个 Model 调 `close()` 会死锁,与在流回调里调 `close()` 相同。
 - **Swift / JVM 的线程跳转**必须是真正的新线程:GCD 的 `sync` 在可能时就地执行 block,会把钩子留在受重入保护的回调线程上(`AIMUX_E_FFI_REENTRANT_CALL`)。

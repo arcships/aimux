@@ -8,5 +8,8 @@
  * union. Providers should return data without unnecessary conversion: if the
  * upstream API returns base64, return [`ImageOutputs::Base64`]; if binary,
  * return [`ImageOutputs::Binary`].
+ *
+ * The JSON is an array of base64 strings either way, as in the AI SDK's
+ * JSON; parsing yields `Base64`.
  */
-export type ImageOutputs = Array<string> | Array<Array<number>>;
+export type ImageOutputs = Array<string>;

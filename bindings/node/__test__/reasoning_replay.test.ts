@@ -9,7 +9,7 @@
 //
 // Issue 2: thinking models require prior assistant `reasoning_content` to be
 //   replayed on later turns. The OpenAI message converter now lifts
-//   `reasoning` content parts to a top-level `reasoning_content` string.
+//   assistant reasoning parts to a top-level `reasoning_content` string.
 //
 // These tests use a mock HTTP server (no real API) and assert the outbound
 // request body shape that the Rust engine produces.
@@ -202,6 +202,8 @@ test('issue 2: assistant without reasoning omits reasoning_content', async (t) =
   try {
     const model = await deepseek('test-key', 'deepseek-v4-flash', url)
 
+    // The tool call has its result: a prompt that leaves a tool call without
+    // one is a MissingToolResultsError (AI SDK `convertToLanguageModelPrompt`).
     const messages = [
       { role: 'user', content: 'hi' },
       {
@@ -211,6 +213,15 @@ test('issue 2: assistant without reasoning omits reasoning_content', async (t) =
           toolCallId: 'call_1',
           toolName: 'write_file',
           input: { path: '/tmp/x' },
+        }],
+      },
+      {
+        role: 'tool',
+        content: [{
+          type: 'tool-result',
+          toolCallId: 'call_1',
+          toolName: 'write_file',
+          output: { type: 'text', value: 'Successfully wrote to /tmp/x' },
         }],
       },
     ]

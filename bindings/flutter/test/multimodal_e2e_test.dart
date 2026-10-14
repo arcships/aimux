@@ -246,7 +246,8 @@ const String filesResponse = r'''
 ''';
 
 /// Raw binary body returned by the speech mock (base64 of "Hello world"); the
-/// Rust core wraps a non-JSON audio response as AudioData::Binary.
+/// Rust core wraps a non-JSON audio response as AudioData::Binary, written as
+/// base64.
 const String speechAudioBody = 'SGVsbG8gd29ybGQ=';
 
 /// Parsed-only fixture for the video result wire format.
@@ -302,9 +303,9 @@ void main() {
 
     final decoded = jsonDecode(result) as Map<String, dynamic>;
     expect(decoded, contains('audio'));
-    // AudioData is untagged: a base64 string or a byte array.
-    final binary = decoded['audio'] as List;
-    expect(binary, isNotEmpty);
+    // SpeechModelV4Result.audio is a Uint8Array upstream
+    // (speech-model-v4-result.ts:16): a base64 string in the JSON.
+    expect(decoded['audio'], base64.encode(utf8.encode(speechAudioBody)));
 
     expect(server.recorded, hasLength(1));
     expect(server.recorded.first.method, 'POST');
@@ -327,7 +328,7 @@ void main() {
 
     final decoded = jsonDecode(result) as Map<String, dynamic>;
     expect(decoded, contains('images'));
-    // ImageOutputs is untagged: an array of base64 strings or of byte arrays.
+    // ImageOutputs is an array of base64 strings (image-model-v4-result.ts:23).
     final base64List = decoded['images'] as List;
     expect(base64List, hasLength(1));
     expect(base64List[0], 'aW1hZ2Ux');

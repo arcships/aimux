@@ -4,8 +4,6 @@
 //! Aligned with Vercel AI SDK `AnthropicFiles`
 //! (`reference/ai/packages/anthropic/src/anthropic-files.ts`).
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;
@@ -138,7 +136,7 @@ impl Files for AnthropicFiles {
             metadata.insert("downloadable".to_string(), json!(downloadable));
         }
 
-        let mut provider_ref = HashMap::new();
+        let mut provider_ref = aimux_core::shared::SharedProviderReference::new();
         provider_ref.insert(CANONICAL.to_string(), data.id);
 
         let result_media_type = data

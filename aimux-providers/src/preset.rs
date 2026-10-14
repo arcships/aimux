@@ -51,43 +51,48 @@ pub enum AuthMode {
 
 /// A template parameter whose value is derived from another parameter: looked
 /// up in `map`, else `otherwise` with `{from}` replaced.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct DeriveSpec {
-    pub from: &'static str,
-    pub map: &'static [(&'static str, &'static str)],
-    pub otherwise: &'static str,
+    pub from: String,
+    pub map: Vec<(String, String)>,
+    pub otherwise: String,
 }
 
 /// A parameter of a templated base URL (`{name}` in the template).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ParamSpec {
-    pub name: &'static str,
+    pub name: String,
     /// Environment variables tried in order when the parameter is not given.
-    pub env: &'static [&'static str],
-    pub default: Option<&'static str>,
+    pub env: Vec<String>,
+    pub default: Option<String>,
     /// Set for a derived parameter, which the caller cannot give.
     pub derive: Option<DeriveSpec>,
 }
 
 /// One row of the embedded provider registry.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct PresetDescriptor {
-    pub name: &'static str,
-    pub display: &'static str,
+    pub name: String,
+    pub display: String,
     /// Default base URL; a template when `params` is not empty.
-    pub base_url: &'static str,
+    pub base_url: String,
     /// Environment variable of the API key. Optional for [`AuthMode::None`],
     /// where an unset or empty variable sends no credential.
-    pub env_var: &'static str,
+    pub env_var: String,
     pub auth: AuthMode,
     /// Environment variable holding the base URL (local servers).
-    pub base_url_env: Option<&'static str>,
+    pub base_url_env: Option<String>,
     /// The only max-token key the vendor accepts (`"max_tokens"` or
     /// `"max_completion_tokens"`); `None` sends `max_tokens`.
-    pub max_tokens_key: Option<&'static str>,
+    pub max_tokens_key: Option<String>,
     /// How chat usage is read (`profile.convert_usage`).
     pub(crate) convert_usage: UsageDialect,
-    pub params: &'static [ParamSpec],
+    pub params: Vec<ParamSpec>,
+    /// `(package, version)` of the `ai-sdk-{package}/{version}` user-agent
+    /// (`profile.user_agent`). `openai-compatible` by default;
+    /// `amazon-bedrock` (Bedrock Mantle) also appends it a second time in
+    /// the transport, like `@ai-sdk/amazon-bedrock`'s mantle provider.
+    pub user_agent: (&'static str, &'static str),
 }
 
 /// Settings of a preset factory. Every field is optional.
@@ -142,29 +147,29 @@ pub struct PresetEntry {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RegistryRow {
-    name: &'static str,
-    display: &'static str,
-    base_url: &'static str,
+    name: String,
+    display: String,
+    base_url: String,
     #[serde(default, deserialize_with = "registry_optional")]
-    env_var: Option<&'static str>,
+    env_var: Option<String>,
     #[serde(default, deserialize_with = "registry_optional")]
-    auth: Option<&'static str>,
+    auth: Option<String>,
     #[serde(default, deserialize_with = "registry_optional")]
-    base_url_env: Option<&'static str>,
+    base_url_env: Option<String>,
     #[serde(default)]
     params: Vec<RegistryParam>,
     #[serde(default)]
-    profile: HashMap<&'static str, &'static str>,
+    profile: HashMap<String, String>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RegistryParam {
-    name: &'static str,
+    name: String,
     #[serde(default, deserialize_with = "registry_optional")]
-    env: Option<Vec<&'static str>>,
+    env: Option<Vec<String>>,
     #[serde(default, deserialize_with = "registry_optional")]
-    default: Option<&'static str>,
+    default: Option<String>,
     #[serde(default, deserialize_with = "registry_optional")]
     derive: Option<RegistryDerive>,
 }
@@ -172,9 +177,9 @@ struct RegistryParam {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RegistryDerive {
-    from: &'static str,
-    map: HashMap<&'static str, &'static str>,
-    otherwise: &'static str,
+    from: String,
+    map: HashMap<String, String>,
+    otherwise: String,
 }
 
 // Missing optional fields are allowed; explicit null is not a valid value.
@@ -184,11 +189,9 @@ fn registry_optional<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
     T::deserialize(d).map(Some)
 }
 
-fn load_registry() -> Vec<PresetEntry> {
-    // Leak the parsed JSON once so descriptors can borrow even escaped strings.
+fn load_registry() -> Vec<PresetDescriptor> {
     let json: Vec<serde_json::Value> = serde_json::from_str(include_str!("provider_registry.json"))
         .expect("invalid provider_registry.json: expected an array of rows");
-    let json = json.leak();
     let mut rows: Vec<RegistryRow> = json
         .iter()
         .map(|row| {
@@ -196,17 +199,17 @@ fn load_registry() -> Vec<PresetEntry> {
                 .unwrap_or_else(|error| panic!("registry row {}: {error}", row["name"]))
         })
         .collect();
-    rows.sort_by_key(|row| row.name);
+    rows.sort_by(|a, b| a.name.cmp(&b.name));
     let identifier = regex::Regex::new(r"^[a-z][a-z0-9_]*$").unwrap();
     let env_name = regex::Regex::new(r"^[A-Z][A-Z0-9_]*$").unwrap();
     let placeholder = regex::Regex::new(r"\{([^{}]*)\}").unwrap();
     let mut seen = HashSet::new();
-    let mut entries = Vec::with_capacity(rows.len());
+    let mut descriptors = Vec::with_capacity(rows.len());
     for row in rows {
-        let check =
-            |valid: bool, message: &str| assert!(valid, "registry row '{}': {message}", row.name);
-        check(identifier.is_match(row.name), "invalid name");
-        check(seen.insert(row.name), "duplicate registry name");
+        let name = row.name.clone();
+        let check = |valid: bool, message: &str| assert!(valid, "registry row '{name}': {message}");
+        check(identifier.is_match(&row.name), "invalid name");
+        check(seen.insert(row.name.clone()), "duplicate registry name");
         check(!row.display.is_empty(), "missing display");
         check(
             row.base_url.starts_with("http://") || row.base_url.starts_with("https://"),
@@ -217,45 +220,60 @@ fn load_registry() -> Vec<PresetEntry> {
             !row.base_url.contains(['<', '>', '$']),
             "base_url contains <, > or $",
         );
-        let auth = match row.auth.unwrap_or("api_key") {
+        let auth = match row.auth.as_deref().unwrap_or("api_key") {
             "api_key" => AuthMode::ApiKey,
             "none" => AuthMode::None,
-            value => panic!("registry row '{}': unknown auth {value:?}", row.name),
+            value => panic!("registry row '{name}': unknown auth {value:?}"),
         };
         check(
             match auth {
-                AuthMode::ApiKey => row.env_var.is_some_and(|var| !var.is_empty()),
-                AuthMode::None => row.env_var.is_none_or(|var| env_name.is_match(var)),
+                AuthMode::ApiKey => row.env_var.as_ref().is_some_and(|var| !var.is_empty()),
+                AuthMode::None => row
+                    .env_var
+                    .as_ref()
+                    .is_none_or(|var| env_name.is_match(var)),
             },
             "env_var must be nonempty for api_key and a valid name if present for none",
         );
         check(
-            row.base_url_env.is_none_or(|var| env_name.is_match(var)),
+            row.base_url_env
+                .as_ref()
+                .is_none_or(|var| env_name.is_match(var)),
             "invalid base_url_env name",
         );
         check(
-            row.profile
-                .keys()
-                .all(|key| matches!(*key, "max_tokens_key" | "convert_usage")),
+            row.profile.keys().all(|key| {
+                matches!(
+                    key.as_str(),
+                    "max_tokens_key" | "convert_usage" | "user_agent"
+                )
+            }),
             "unknown profile key",
         );
-        let max_tokens_key = row.profile.get("max_tokens_key").copied();
+        // bedrock-mantle-provider.ts:236-240 (getHeaders) names the
+        // amazon-bedrock package, not openai-compatible.
+        let package = match row.profile.get("user_agent").map(String::as_str) {
+            None => crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
+            Some("amazon-bedrock") => crate::shared::aisdk_pins::AMAZON_BEDROCK,
+            Some(value) => panic!("registry row '{name}': unknown user_agent {value:?}"),
+        };
+        let user_agent = (package.name, package.version);
+        let max_tokens_key = row.profile.get("max_tokens_key").cloned();
         check(
-            max_tokens_key.is_none_or(|key| matches!(key, "max_tokens" | "max_completion_tokens")),
+            max_tokens_key
+                .as_deref()
+                .is_none_or(|key| matches!(key, "max_tokens" | "max_completion_tokens")),
             "invalid max_tokens_key",
         );
-        let convert_usage = match row.profile.get("convert_usage").copied() {
+        let convert_usage = match row.profile.get("convert_usage").map(String::as_str) {
             None => UsageDialect::OpenAICompatible,
             Some("alibaba") => UsageDialect::Alibaba,
             Some("moonshotai") => UsageDialect::MoonshotAI,
-            Some(value) => panic!(
-                "registry row '{}': unknown convert_usage {value:?}",
-                row.name
-            ),
+            Some(value) => panic!("registry row '{name}': unknown convert_usage {value:?}"),
         };
         let mut params = Vec::with_capacity(row.params.len());
         for param in row.params {
-            check(identifier.is_match(param.name), "bad param name");
+            check(identifier.is_match(&param.name), "bad param name");
             let derive = param.derive.map(|derive| {
                 check(
                     param.env.is_none() && param.default.is_none(),
@@ -263,21 +281,21 @@ fn load_registry() -> Vec<PresetEntry> {
                 );
                 DeriveSpec {
                     from: derive.from,
-                    map: derive.map.into_iter().collect::<Vec<_>>().leak(),
+                    map: derive.map.into_iter().collect(),
                     otherwise: derive.otherwise,
                 }
             });
             params.push(ParamSpec {
                 name: param.name,
-                env: param.env.unwrap_or_default().leak(),
+                env: param.env.unwrap_or_default(),
                 default: param.default,
                 derive,
             });
         }
-        let names: HashSet<_> = params.iter().map(|param| param.name).collect();
+        let names: HashSet<&str> = params.iter().map(|param| param.name.as_str()).collect();
         check(names.len() == params.len(), "duplicate param names");
         for param in &params {
-            if let Some(derive) = param.derive {
+            if let Some(derive) = &param.derive {
                 check(
                     params
                         .iter()
@@ -286,26 +304,25 @@ fn load_registry() -> Vec<PresetEntry> {
                 );
             }
         }
-        let placeholders: HashSet<_> = placeholder
-            .captures_iter(row.base_url)
+        let placeholders: HashSet<&str> = placeholder
+            .captures_iter(&row.base_url)
             .map(|c| c.get(1).unwrap().as_str())
             .collect();
         check(placeholders == names, "URL placeholders differ from params");
-        entries.push(PresetEntry {
-            descriptor: Box::leak(Box::new(PresetDescriptor {
-                name: row.name,
-                display: row.display,
-                base_url: row.base_url,
-                env_var: row.env_var.unwrap_or_default(),
-                auth,
-                base_url_env: row.base_url_env,
-                max_tokens_key,
-                convert_usage,
-                params: params.leak(),
-            })),
+        descriptors.push(PresetDescriptor {
+            name: row.name,
+            display: row.display,
+            base_url: row.base_url,
+            env_var: row.env_var.unwrap_or_default(),
+            auth,
+            base_url_env: row.base_url_env,
+            max_tokens_key,
+            convert_usage,
+            params,
+            user_agent,
         });
     }
-    entries
+    descriptors
 }
 
 /// Create the provider of the registry row `name`: the row's base URL, key
@@ -334,14 +351,26 @@ pub fn create(
 }
 
 /// Every preset, in name order. Invalid registry data panics on first use.
+///
+/// The registry is parsed once into a process-wide table; the entries borrow
+/// from it.
 pub fn entries() -> impl Iterator<Item = &'static PresetEntry> {
+    static DESCRIPTORS: OnceLock<Vec<PresetDescriptor>> = OnceLock::new();
     static TABLE: OnceLock<Vec<PresetEntry>> = OnceLock::new();
-    TABLE.get_or_init(load_registry).iter()
+    TABLE
+        .get_or_init(|| {
+            DESCRIPTORS
+                .get_or_init(load_registry)
+                .iter()
+                .map(|descriptor| PresetEntry { descriptor })
+                .collect()
+        })
+        .iter()
 }
 
 /// The names of every preset, in order.
 pub fn names() -> impl Iterator<Item = &'static str> {
-    entries().map(|entry| entry.descriptor.name)
+    entries().map(|entry| entry.descriptor.name.as_str())
 }
 
 /// The preset called `name`, or `None`; unknown names never fall back.
@@ -358,7 +387,7 @@ fn assemble(
         let declared = descriptor
             .params
             .iter()
-            .find(|spec| spec.name == name && spec.derive.is_none());
+            .find(|spec| &spec.name == name && spec.derive.is_none());
         if declared.is_none() {
             return Err(AiMuxError::InvalidArgument(format!(
                 "preset '{}' has no template parameter `{name}`; declared parameters: [{}]",
@@ -372,7 +401,7 @@ fn assemble(
     let base_url = match settings.base_url.as_deref() {
         Some(url) => BaseUrl::Fixed(validate_base_url(url)?),
         None if descriptor.params.is_empty() && descriptor.base_url_env.is_none() => {
-            BaseUrl::Fixed(validate_base_url(descriptor.base_url)?)
+            BaseUrl::Fixed(validate_base_url(&descriptor.base_url)?)
         }
         None => BaseUrl::Preset {
             descriptor,
@@ -383,43 +412,60 @@ fn assemble(
     let credential = match (descriptor.auth, settings.api_key) {
         (_, Some(key)) => Credential::Explicit(key),
         (AuthMode::ApiKey, None) => Credential::Env {
-            var: descriptor.env_var.to_string(),
-            description: descriptor.display.to_string(),
+            var: descriptor.env_var.clone(),
+            description: descriptor.display.clone(),
         },
         (AuthMode::None, None) if descriptor.env_var.is_empty() => Credential::None,
-        (AuthMode::None, None) => Credential::OptionalEnv(descriptor.env_var.to_string()),
+        (AuthMode::None, None) => Credential::OptionalEnv(descriptor.env_var.clone()),
     };
 
     let chat = ChatSettings {
         include_usage: true,
         supports_structured_outputs: true,
         supports_top_k: true,
-        max_tokens_key: descriptor.max_tokens_key,
+        max_tokens_key: descriptor.max_tokens_key.as_deref(),
         usage_dialect: descriptor.convert_usage,
         ..ChatSettings::default()
     };
 
+    // The Bedrock Mantle transport appends the package part a second time,
+    // after `ai-sdk-provider-utils/<v>` (amazon-bedrock-sigv4-fetch.ts:126-130,
+    // the API-key fetch of bedrock-mantle-provider.ts). The assembly names
+    // the package's provider-utils in that part.
+    let (package, fetch) = match descriptor.user_agent.0 {
+        "amazon-bedrock" => {
+            let package = crate::shared::aisdk_pins::AMAZON_BEDROCK;
+            let fetch: FetchFunction = Arc::new(crate::shared::UserAgentFetch {
+                inner: settings.fetch,
+                provider_utils: None,
+                suffix: Some(format!("ai-sdk-{}/{}", package.name, package.version)),
+            });
+            (package, Some(fetch))
+        }
+        _ => (crate::shared::aisdk_pins::OPENAI_COMPATIBLE, settings.fetch),
+    };
     OpenAICompatibleProvider::assemble(Assembly {
-        name: descriptor.name.to_string(),
+        name: descriptor.name.clone(),
         base_url,
         credential,
         fixed_headers: Vec::new(),
         headers: settings.headers,
         query_params: None,
-        fetch: settings.fetch,
+        fetch,
         transform_request_body: settings.transform_request_body,
         chat,
+        package,
     })
 }
 
 // ── Base URL resolution ──────────────────────────────────────────────────────
 
-fn settable_params(descriptor: &PresetDescriptor) -> Vec<&'static str> {
+fn settable_params(descriptor: &PresetDescriptor) -> Vec<&str> {
     descriptor
         .params
         .iter()
         .filter(|spec| spec.derive.is_none())
-        .map(|spec| spec.name)
+        .map(|spec| spec.name.as_str())
         .collect()
 }
 
@@ -448,9 +494,9 @@ fn check_param_value(
     }
 }
 
-fn env_value(names: &[&str]) -> Option<String> {
+fn env_value(names: &[impl AsRef<str>]) -> Option<String> {
     names.iter().find_map(|name| {
-        std::env::var(name)
+        std::env::var(name.as_ref())
             .ok()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
@@ -463,7 +509,7 @@ pub(crate) fn resolve_base_url(
     descriptor: &PresetDescriptor,
     explicit: &HashMap<String, String>,
 ) -> Result<String, AiMuxError> {
-    if let Some(var) = descriptor.base_url_env
+    if let Some(var) = descriptor.base_url_env.as_deref()
         && let Some(url) = env_value(&[var])
     {
         return validate_base_url(&url)
@@ -477,10 +523,10 @@ pub(crate) fn resolve_base_url(
         .filter(|spec| spec.derive.is_none())
     {
         let value = explicit
-            .get(spec.name)
+            .get(&spec.name)
             .cloned()
-            .or_else(|| env_value(spec.env))
-            .or_else(|| spec.default.map(str::to_string))
+            .or_else(|| env_value(&spec.env))
+            .or_else(|| spec.default.clone())
             .ok_or_else(|| {
                 let source = if spec.env.is_empty() {
                     String::new()
@@ -493,12 +539,12 @@ pub(crate) fn resolve_base_url(
                     descriptor.name, spec.name
                 ))
             })?;
-        check_param_value(descriptor, spec.name, &value)?;
-        values.insert(spec.name, value);
+        check_param_value(descriptor, &spec.name, &value)?;
+        values.insert(&spec.name, value);
     }
     for spec in descriptor.params.iter() {
-        let Some(derive) = spec.derive else { continue };
-        let from = values.get(derive.from).cloned().ok_or_else(|| {
+        let Some(derive) = &spec.derive else { continue };
+        let from = values.get(derive.from.as_str()).cloned().ok_or_else(|| {
             AiMuxError::InvalidArgument(format!(
                 "preset '{}': derived parameter `{}` depends on undeclared `{}`",
                 descriptor.name, spec.name, derive.from
@@ -508,16 +554,16 @@ pub(crate) fn resolve_base_url(
             .map
             .iter()
             .find(|(key, _)| *key == from)
-            .map(|(_, host)| (*host).to_string())
+            .map(|(_, host)| host.clone())
             .unwrap_or_else(|| {
                 derive
                     .otherwise
                     .replace(&format!("{{{}}}", derive.from), &from)
             });
-        values.insert(spec.name, derived);
+        values.insert(&spec.name, derived);
     }
 
-    let mut url = descriptor.base_url.to_string();
+    let mut url = descriptor.base_url.clone();
     for (name, value) in &values {
         url = url.replace(&format!("{{{name}}}"), value);
     }
@@ -529,4 +575,24 @@ pub(crate) fn resolve_base_url(
         )));
     }
     validate_base_url(&url)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The registry is parsed once: every lookup hands out the same
+    /// descriptor, owned by the process-wide table (nothing is leaked per
+    /// call).
+    #[test]
+    fn the_table_is_parsed_once_and_shared() {
+        let first = lookup("abacus").expect("abacus is a registry row");
+        let again = lookup("abacus").expect("abacus is a registry row");
+        assert!(std::ptr::eq(first.descriptor, again.descriptor));
+        let from_entries = entries()
+            .find(|entry| entry.descriptor.name == "abacus")
+            .expect("abacus is listed");
+        assert!(std::ptr::eq(first.descriptor, from_entries.descriptor));
+        assert_eq!(names().count(), entries().count());
+    }
 }

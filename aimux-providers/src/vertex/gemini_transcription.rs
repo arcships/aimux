@@ -101,7 +101,7 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
             )));
         }
         self.project_location.resolve().await?;
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
         let config = crate::google::transcription::TranscriptionOptions::parse(
             Namespace::Vertex.read(options.provider_options.as_ref()),
         )?
@@ -111,6 +111,7 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
             AudioInput::Binary(value) => {
                 base64::Engine::encode(&base64::engine::general_purpose::STANDARD, value)
             }
+            AudioInput::Url(_) => return Err(AudioInput::url_error()),
         };
         let mut body = json!({"contents": [{"role": "user", "parts": [{"inlineData": {"mimeType": options.media_type, "data": audio}}]}]});
         if config.as_object().is_some_and(|config| !config.is_empty()) {
@@ -189,27 +190,29 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
         })
     }
 
-    async fn do_stream(
+    fn do_stream(
         &self,
         options: TranscriptionStreamOptions,
-    ) -> Result<TranscriptionStreamResult, AiMuxError> {
-        if !self.model_id.contains("-live") {
-            return Err(AiMuxError::InvalidArgument(format!(
-                "Model '{}' does not support streaming transcription. Use a live model.",
-                self.model_id
-            )));
-        }
-        #[cfg(feature = "realtime")]
-        {
-            self.stream_live(options).await
-        }
-        #[cfg(not(feature = "realtime"))]
-        {
-            let _ = options;
-            Err(AiMuxError::UnsupportedFunctionality(
-                "Enable realtime for Vertex Live transcription".into(),
-            ))
-        }
+    ) -> Option<futures::future::BoxFuture<'_, Result<TranscriptionStreamResult, AiMuxError>>> {
+        Some(Box::pin(async move {
+            if !self.model_id.contains("-live") {
+                return Err(AiMuxError::InvalidArgument(format!(
+                    "Model '{}' does not support streaming transcription. Use a live model.",
+                    self.model_id
+                )));
+            }
+            #[cfg(feature = "realtime")]
+            {
+                self.stream_live(options).await
+            }
+            #[cfg(not(feature = "realtime"))]
+            {
+                let _ = options;
+                Err(AiMuxError::UnsupportedFunctionality(
+                    "Enable realtime for Vertex Live transcription".into(),
+                ))
+            }
+        }))
     }
 }
 
@@ -249,7 +252,7 @@ impl VertexGeminiTranscriptionModel {
             body: Some(setup["setup"].to_string()),
         });
         let response = Some(TranscriptionResponse {
-            timestamp: Some(chrono::Utc::now().to_rfc3339()),
+            timestamp: Some(aimux_core::Timestamp::now()),
             model_id: Some(self.model_id.clone()),
             ..Default::default()
         });

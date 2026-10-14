@@ -38,6 +38,9 @@ pub(crate) enum OpenAIUrl {
         rules: UrlRules,
         speech_base_url: Option<String>,
     },
+    /// An invalid base URL setting (`OPENAI_BASE_URL`): every endpoint fails
+    /// with this error, so every request reports it.
+    Invalid(AiMuxError),
 }
 
 impl OpenAIUrl {
@@ -55,6 +58,7 @@ impl OpenAIUrl {
                 rules,
                 speech_base_url,
             } => rules.speech_url(speech_base_url.as_deref()),
+            Self::Invalid(error) => Err(error.clone()),
         }
     }
 }

@@ -1,5 +1,10 @@
 //! Explicit pre-encoded, single-token candidate scoring. The caller owns the
 //! tokenizer and prompt encoding; every upstream exchange is recorded normally.
+//!
+//! The options are aimux's own, so they are camelCase as the public JSON is
+//! (`modelRevision`, `tokenizerRevision`, `promptFormatVersion`,
+//! `encoded.<id>.{promptTokenIds, labelTokenIds}`); the vendor request keeps
+//! the vendor's field names.
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use aimux_core::AiMuxError;
@@ -7,18 +12,18 @@ use aimux_core::decision_model::*;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::decision_support::{invalid, post};
+use crate::decision_support::{DecisionImage, candidate_count, invalid, post};
 use crate::runtime_decision::{RuntimeDecisionModel, result_from_distributions};
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct EncodedQuestion {
     prompt_token_ids: Vec<u32>,
     label_token_ids: Vec<u32>,
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Options {
     encoded: BTreeMap<String, EncodedQuestion>,
     /// Provenance supplied by the encoder; no claim that aimux verified deployment.
@@ -32,10 +37,11 @@ pub(crate) async fn score(
     model: &RuntimeDecisionModel,
     request: &DecisionCallOptions,
     options: Map<String, Value>,
+    images: &[DecisionImage],
 ) -> Result<DecisionResult, AiMuxError> {
     let options: Options = serde_json::from_value(Value::Object(options))
         .map_err(|e| AiMuxError::InvalidArgument(format!("candidate scoring options: {e}")))?;
-    if !request.images.is_empty() {
+    if !images.is_empty() {
         return Err(AiMuxError::UnsupportedFunctionality("pre-encoded scoring accepts text token IDs only; use the runtime's native decision endpoint for images".into()));
     }
     if [
@@ -46,7 +52,7 @@ pub(crate) async fn score(
     .iter()
     .any(|s| s.trim().is_empty())
     {
-        return Err(AiMuxError::InvalidArgument("candidate scoring requires model_revision, tokenizer_revision and prompt_format_version provenance".into()));
+        return Err(AiMuxError::InvalidArgument("candidate scoring requires modelRevision, tokenizerRevision and promptFormatVersion provenance".into()));
     }
     let temperature = options.temperature.unwrap_or(1.0);
     if !temperature.is_finite()
@@ -63,15 +69,12 @@ pub(crate) async fn score(
         ));
     }
     let mut encoded = Vec::new();
-    for q in &request.questions {
-        let entry = options.encoded.get(q.id()).ok_or_else(|| {
-            AiMuxError::InvalidArgument(format!("missing encoding for {}", q.id()))
-        })?;
-        let count = match q {
-            DecisionQuestion::Boolean { .. } => 2,
-            DecisionQuestion::Choice { options, .. } => options.len(),
-            DecisionQuestion::Score { levels, .. } => levels.len(),
-        };
+    for (id, question) in &request.questions {
+        let entry = options
+            .encoded
+            .get(id)
+            .ok_or_else(|| AiMuxError::InvalidArgument(format!("missing encoding for {id}")))?;
+        let count = candidate_count(question);
         if entry.prompt_token_ids.is_empty()
             || entry.label_token_ids.len() != count
             || entry.label_token_ids.iter().collect::<HashSet<_>>().len() != count
@@ -95,10 +98,11 @@ pub(crate) async fn score(
             |raw, headers| {
                 let scores: Vec<Vec<f64>> = serde_json::from_value(raw["scores"].clone())
                     .map_err(|e| invalid(format!("SGLang score matrix: {e}")))?;
+                let response_model = raw["model"].as_str().unwrap_or_default().to_owned();
                 result_from_distributions(
                     request,
                     scores,
-                    raw["model"].as_str().unwrap_or_default().into(),
+                    &response_model,
                     model.provider(),
                     raw,
                     headers,
@@ -162,7 +166,7 @@ pub(crate) async fn score(
     result_from_distributions(
         request,
         distributions,
-        response_model.unwrap_or_default(),
+        response_model.as_deref().unwrap_or_default(),
         model.provider(),
         raw,
         HashMap::new(),

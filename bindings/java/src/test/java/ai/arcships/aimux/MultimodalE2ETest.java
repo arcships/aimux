@@ -81,8 +81,10 @@ class MultimodalE2ETest {
 
             JSONObject result = new JSONObject(model.generate(opts.toString()));
 
-            // Wire format: {"audio":[<bytes>], ...} (untagged: int array = binary)
-            assertThat(result.getJSONArray("audio").length()).isGreaterThan(0);
+            // SpeechModelV4Result.audio is a Uint8Array upstream
+            // (speech-model-v4-result.ts:16): a base64 string in the JSON.
+            assertThat(result.getString("audio")).isEqualTo(java.util.Base64.getEncoder()
+                .encodeToString("SGVsbG8gd29ybGQ=".getBytes(java.nio.charset.StandardCharsets.US_ASCII)));
         }
     }
 

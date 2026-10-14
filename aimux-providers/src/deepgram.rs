@@ -69,8 +69,8 @@ fn deepgram_failed_response_handler() -> aimux_provider_utils::ResponseHandler<A
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://api.deepgram.com";
-const API_KEY_ENV_VAR: &str = "DEEPGRAM_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.deepgram.com";
+pub(crate) const API_KEY_ENV_VAR: &str = "DEEPGRAM_API_KEY";
 const DEFAULT_NAME: &str = "deepgram";
 
 /// Settings of [`create_deepgram`].
@@ -283,6 +283,7 @@ fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
             base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
                 .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))
         }
+        AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
 
@@ -412,7 +413,7 @@ impl TranscriptionModel for DeepgramTranscriptionModel {
 
         let duration_in_seconds = parsed.metadata.as_ref().and_then(|m| m.duration);
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(TranscriptionResult {
             text,

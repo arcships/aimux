@@ -251,3 +251,109 @@ async fn overloaded_error_response() {
     assert_eq!(error.provider_code.as_deref(), Some("overloaded_error"));
     assert_eq!(error.status_code, Some(529));
 }
+
+/// Upstream: @ai-sdk/anthropic 4.0.71 src/anthropic-language-model.ts:75-121
+/// (`createAnthropicStreamError` / `getAnthropicStreamErrorMetadata`): an
+/// in-stream error's documented type maps to its status and retry flag, a
+/// status or retry flag in the frame itself wins, and an unknown type
+/// carries neither.
+#[tokio::test]
+async fn stream_error_status_follows_the_upstream_type_map() {
+    let cases = [
+        (
+            json!({"type": "invalid_request_error", "message": "bad"}),
+            Some(400),
+            false,
+        ),
+        (
+            json!({"type": "authentication_error", "message": "who"}),
+            Some(401),
+            false,
+        ),
+        (
+            json!({"type": "request_too_large", "message": "big"}),
+            Some(413),
+            false,
+        ),
+        (
+            json!({"type": "overloaded_error", "message": "busy"}),
+            Some(529),
+            true,
+        ),
+        (
+            json!({"type": "api_error", "message": "own", "statusCode": 502, "isRetryable": false}),
+            Some(502),
+            false,
+        ),
+        (
+            json!({"type": "something_new", "message": "new"}),
+            None,
+            false,
+        ),
+    ];
+    let fetch = MockFetch::new(
+        cases
+            .iter()
+            .map(|(error, ..)| Canned {
+                status: 200,
+                headers: vec![("content-type".into(), "text/event-stream".into())],
+                body: format!("data: {}\n\n", json!({"type": "error", "error": error}))
+                    .into_bytes(),
+            })
+            .collect(),
+    );
+    let model = provider(&fetch).messages("test-model");
+    for (frame, status, retryable) in cases {
+        let Err(AiMuxError::ApiCall(error)) = model.do_stream(&options()).await.map(|_| ()) else {
+            panic!("expected an API error for {frame}");
+        };
+        assert_eq!(error.message, frame["message"], "{frame}");
+        assert_eq!(error.status_code, status, "{frame}");
+        assert_eq!(error.is_retryable, retryable, "{frame}");
+    }
+}
+
+/// Upstream: @ai-sdk/anthropic 4.0.71 src/anthropic-language-model.ts:91
+/// (`data: 'data' in error ? error.data : error`) over the error-chunk schema
+/// of src/anthropic-api.ts:1450-1459. The frame's own `data` is the error's
+/// data, even `null`. Without one, the data is the error as the schema parses
+/// it: its known fields only.
+#[tokio::test]
+async fn stream_error_data_is_the_frame_data_or_the_error() {
+    let cases = [
+        (
+            json!({"type": "overloaded_error", "message": "busy"}),
+            Some(json!({"type": "overloaded_error", "message": "busy"})),
+        ),
+        (
+            json!({"type": "api_error", "message": "m", "data": {"request_id": "req_1"}}),
+            Some(json!({"request_id": "req_1"})),
+        ),
+        (
+            json!({"type": "api_error", "message": "m", "code": 7, "statusCode": 502, "unknown": "dropped"}),
+            Some(json!({"type": "api_error", "message": "m", "code": 7, "statusCode": 502})),
+        ),
+        (
+            json!({"type": "api_error", "message": "m", "data": null}),
+            None,
+        ),
+    ];
+    let fetch = MockFetch::new(
+        cases
+            .iter()
+            .map(|(error, _)| Canned {
+                status: 200,
+                headers: vec![("content-type".into(), "text/event-stream".into())],
+                body: format!("data: {}\n\n", json!({"type": "error", "error": error}))
+                    .into_bytes(),
+            })
+            .collect(),
+    );
+    let model = provider(&fetch).messages("test-model");
+    for (frame, data) in cases {
+        let Err(AiMuxError::ApiCall(error)) = model.do_stream(&options()).await.map(|_| ()) else {
+            panic!("expected an API error for {frame}");
+        };
+        assert_eq!(error.data, data, "{frame}");
+    }
+}

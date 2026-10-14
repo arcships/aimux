@@ -9,8 +9,8 @@ import type { Verdict } from "./Verdict";
  */
 export type TraceRecord = { provider: string, model: string, requestId?: string, 
 /**
- * From `CallOptions.session_id` (RFC-0024) — explicit first, inference
- * fallback; may also be the layer's default session.
+ * The explicit session id of the operation (RFC-0024), else the
+ * layer's default session.
  */
 sessionId?: string, 
 /**

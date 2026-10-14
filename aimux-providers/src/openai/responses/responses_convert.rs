@@ -350,8 +350,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
     let timestamp = data
         .get("created_at")
         .and_then(serde_json::Value::as_u64)
-        .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-        .map(|dt| dt.to_rfc3339());
+        .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64));
 
     Ok(GenerateResult {
         content,
@@ -768,8 +767,9 @@ impl Transformer for OpenAIResponsesStream {
                             let timestamp = resp_obj
                                 .get("created_at")
                                 .and_then(serde_json::Value::as_u64)
-                                .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-                                .map(|dt| dt.to_rfc3339());
+                                .and_then(|secs| {
+                                    aimux_core::Timestamp::from_unix_seconds(secs as f64)
+                                });
                             controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
                                 id: response_id.clone(),
                                 timestamp,

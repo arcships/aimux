@@ -129,6 +129,71 @@ async fn round_trip_text_only() {
     assert_eq!(completion.usage.total_tokens, 18);
 }
 
+/// The Chat Completions wire format's `choices[].logprobs` is an object,
+/// `{ "content": [{ token, logprob, bytes, top_logprobs }], "refusal": null }`.
+/// The OpenAI chat model keeps only the `content` list as provider metadata
+/// (@ai-sdk/openai 4.0.83 src/chat/openai-chat-language-model.ts:459-461),
+/// so the converter puts it back in that object. The list is the parsed one,
+/// whose schema has no `bytes` (openai-chat-api.ts:71-87), so every token
+/// comes back with `"bytes": null`.
+#[tokio::test]
+async fn round_trip_with_logprobs() {
+    let logprobs = json!({
+        "content": [
+            {
+                "token": "Hello",
+                "logprob": -0.31725305,
+                "bytes": [72, 101, 108, 108, 111],
+                "top_logprobs": [
+                    {"token": "Hello", "logprob": -0.31725305, "bytes": [72, 101, 108, 108, 111]},
+                    {"token": "Hi", "logprob": -1.3190403, "bytes": [72, 105]}
+                ]
+            },
+            {
+                "token": "!",
+                "logprob": -0.02380986,
+                "bytes": [33],
+                "top_logprobs": [
+                    {"token": "!", "logprob": -0.02380986, "bytes": [33]},
+                    {"token": " there", "logprob": -3.787621, "bytes": [32, 116, 104, 101, 114, 101]}
+                ]
+            }
+        ],
+        "refusal": null
+    });
+    let original = json!({
+        "id": "chatcmpl-logprobs",
+        "object": "chat.completion",
+        "created": 1711115037,
+        "model": "gpt-4o",
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": "Hello!"},
+            "finish_reason": "stop",
+            "logprobs": logprobs
+        }],
+        "usage": {"prompt_tokens": 9, "completion_tokens": 2, "total_tokens": 11}
+    });
+
+    let server = MockServer::start().await;
+    mock_openai_completion(&server, original.clone()).await;
+    let model = openai_provider(&server.uri());
+    let result = generate_text(&model, "Say hello", GenerateTextOptions::default())
+        .await
+        .expect("generate_text should succeed");
+
+    let completion = generate_text_result_to_chat_completion(&result, "gpt-4o");
+    let wire = serde_json::to_value(&completion).unwrap();
+    let mut expected = original["choices"][0]["logprobs"].clone();
+    for token in expected["content"].as_array_mut().unwrap() {
+        token["bytes"] = Value::Null;
+        for top in token["top_logprobs"].as_array_mut().unwrap() {
+            top["bytes"] = Value::Null;
+        }
+    }
+    assert_eq!(wire["choices"][0]["logprobs"], expected);
+}
+
 #[tokio::test]
 async fn round_trip_with_tool_calls() {
     let original = json!({

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use aimux_core::Provider;
-use aimux_core::decision_model::{DecisionCallOptions, DecisionModel as DecisionModelTrait};
+use aimux_core::decision_model::{DecideOptions, DecisionModel as DecisionModelTrait};
 use napi_derive::napi;
 
 use crate::error::{AiMuxBindingError, AimuxResult, parse_wire_json, serialize_result};
@@ -13,11 +13,16 @@ pub struct DecisionModel {
 
 #[napi]
 impl DecisionModel {
+    /// The DecisionModelV4 properties as JSON: `specificationVersion`,
+    /// `provider`, `modelId`, `supportedQuestionTypes`.
     #[napi]
-    pub fn capabilities(&self) -> AimuxResult<String> {
-        AimuxResult(serialize_result(&self.inner.capabilities()))
+    pub fn describe(&self) -> AimuxResult<String> {
+        AimuxResult(serialize_result(&aimux_core::decision_model::decision_model_properties(
+            self.inner.as_ref(),
+        )))
     }
 
+    /// `opts_json` is `DecideOptions` JSON; resolves to `DecideResult` JSON.
     #[napi(ts_return_type = "Promise<string>")]
     pub async fn decide(
         &self,
@@ -26,7 +31,7 @@ impl DecisionModel {
     ) -> AimuxResult<String> {
         AimuxResult(
             async {
-                let mut options: DecisionCallOptions = parse_wire_json("opts_json", &opts_json)?;
+                let mut options: DecideOptions = parse_wire_json("opts_json", &opts_json)?;
                 options.abort_signal = bridge.map(|bridge| bridge.core_signal());
                 let result = aimux_core::decision_model::decide(self.inner.as_ref(), options)
                     .await
@@ -59,10 +64,14 @@ pub async fn jev_decision(
             }
             let model = aimux_providers::JevProvider::new(config)
                 .decision_model(&model_id)
+                .unwrap_or_else(|| {
+                    Err(aimux_core::AiMuxError::no_such_model(
+                        &model_id,
+                        "decisionModel",
+                    ))
+                })
                 .map_err(|error| AiMuxBindingError::from(&error))?;
-            Ok(DecisionModel {
-                inner: Arc::from(model),
-            })
+            Ok(DecisionModel { inner: model })
         }
         .await,
     )

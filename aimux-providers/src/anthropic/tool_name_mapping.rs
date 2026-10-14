@@ -87,9 +87,9 @@ impl ToolNameMapping {
                         | "anthropic.web_search_20260318"
                         | "anthropic.web_fetch_20260318"
                 );
-                has_code_execution |= pt.id.starts_with("anthropic.code_execution_");
+                has_code_execution |= pt.id.as_str().starts_with("anthropic.code_execution_");
 
-                if let Some(provider_name) = provider_tool_name(&pt.id) {
+                if let Some(provider_name) = provider_tool_name(pt.id.as_str()) {
                     mapping
                         .custom_to_provider
                         .insert(pt.name.clone(), provider_name.to_string());
@@ -127,5 +127,27 @@ impl ToolNameMapping {
     #[must_use]
     pub fn mark_code_execution_dynamic(&self) -> bool {
         self.mark_code_execution_dynamic
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aimux_core::tool::FunctionTool;
+    use serde_json::json;
+
+    #[test]
+    fn unmapped_names_pass_through() {
+        let mapping = ToolNameMapping::new(None);
+        assert_eq!(mapping.to_custom_tool_name("web_search"), "web_search");
+        assert_eq!(mapping.to_provider_tool_name("get_weather"), "get_weather");
+    }
+
+    #[test]
+    fn function_tools_are_ignored() {
+        let tools = vec![Tool::Function(FunctionTool::new("web_search", json!({})))];
+        let mapping = ToolNameMapping::new(Some(&tools));
+        // A function tool named `web_search` must not hijack the provider name.
+        assert_eq!(mapping.to_custom_tool_name("web_search"), "web_search");
     }
 }

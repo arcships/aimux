@@ -48,9 +48,7 @@ fn response_metadata(
 ) -> ResponseMetadata {
     ResponseMetadata {
         id,
-        timestamp: created
-            .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-            .map(|dt| dt.to_rfc3339()),
+        timestamp: created.and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
         model_id,
     }
 }
@@ -272,7 +270,7 @@ impl LanguageModel for GroqChatLanguageModel {
         &self.model_id
     }
 
-    fn supported_urls(&self) -> SupportedUrls {
+    async fn supported_urls(&self) -> SupportedUrls {
         let http = regex::Regex::new(r"^https?://.*$").expect("static pattern");
         SupportedUrls(std::iter::once(("image/*".to_string(), vec![http])).collect())
     }

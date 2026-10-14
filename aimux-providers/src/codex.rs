@@ -41,7 +41,7 @@ use serde_json::{Value, json};
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
-use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::options::CallOptions;
 use aimux_core::provider::{Provider, ProviderDiscovery};
@@ -241,13 +241,17 @@ pub struct CodexProvider {
 
 impl CodexProvider {
     fn model_config(&self, method: &str) -> OpenAIModelConfig {
-        OpenAIModelConfig::fixed(
+        let mut config = OpenAIModelConfig::fixed(
             format!("{}.{method}", self.name),
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
             self.transform_request_body.clone(),
-        )
+        );
+        // Codex speaks the Responses API, so its models take the URLs the
+        // OpenAI Responses model takes.
+        config.supported_urls = crate::openai::config::supported_urls(method);
+        config
     }
 
     /// A Codex model over the Responses API (e.g. `"gpt-5.2-codex"`);
@@ -496,6 +500,12 @@ impl LanguageModel for CodexModel {
         &self.model_id
     }
 
+    /// HTTP(S) image and PDF URLs, as the OpenAI Responses model declares;
+    /// both channels send them as they are.
+    async fn supported_urls(&self) -> SupportedUrls {
+        self.config.supported_urls.clone()
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         match self.channel {
             Channel::ApiKey => self.inner().do_generate(options).await,
@@ -512,7 +522,10 @@ impl LanguageModel for CodexModel {
 }
 
 /// Tokens returned by the Codex OAuth token endpoint (RFC-0018 §2 V3).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Debug` is hand-written so both tokens are redacted from logs and error
+/// output.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CodexTokens {
     /// Access token to pass as the `ChatGptAccount` token of [`CodexProviderSettings`].
     pub access_token: String,
@@ -521,6 +534,19 @@ pub struct CodexTokens {
     pub refresh_token: Option<String>,
     /// Access-token lifetime in seconds, if the endpoint reports it.
     pub expires_in_secs: Option<u64>,
+}
+
+impl std::fmt::Debug for CodexTokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CodexTokens")
+            .field("access_token", &"[REDACTED]")
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("expires_in_secs", &self.expires_in_secs)
+            .finish()
+    }
 }
 
 /// Stateless OAuth token-refresh helper for the Codex subscription channel
@@ -594,4 +620,22 @@ pub async fn codex_refresh_at(
             .map(str::to_string),
         expires_in_secs: data.get("expires_in").and_then(serde_json::Value::as_u64),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CodexTokens;
+
+    #[test]
+    fn tokens_debug_redacts_secrets() {
+        let tokens = CodexTokens {
+            access_token: "at-secret-value".to_string(),
+            refresh_token: Some("rt-secret-value".to_string()),
+            expires_in_secs: Some(3600),
+        };
+        let printed = format!("{tokens:?}");
+        assert!(!printed.contains("at-secret-value"));
+        assert!(!printed.contains("rt-secret-value"));
+        assert!(printed.contains("3600"));
+    }
 }

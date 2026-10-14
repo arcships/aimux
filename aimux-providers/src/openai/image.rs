@@ -8,8 +8,6 @@
 //!
 //! Both endpoints return the same JSON response shape (`openaiImageResponseSchema`).
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -107,7 +105,7 @@ impl ImageModel for OpenAIImageModel {
             });
         }
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
         let headers = self
             .config
             .request_headers(options.headers.as_ref())
@@ -322,7 +320,8 @@ fn build_generation_body(
     body
 }
 
-/// Convert inline data or download a URL without forwarding provider credentials.
+/// Convert inline data, or download a URL as `downloadBlob` does: guarded, with
+/// no provider headers.
 async fn image_file_to_bytes(
     file: &ImageFile,
     options: &ImageCallOptions,
@@ -343,16 +342,11 @@ async fn image_file_to_bytes(
             Ok((bytes, media_type.clone()))
         }
         ImageFile::Url { url, .. } => {
-            let response = aimux_provider_utils::get_from_api(
-                aimux_provider_utils::HttpRequest {
-                    url: url.clone(),
-                    abort_signal: options.abort_signal.clone(),
-                    ..Default::default()
-                },
-                aimux_provider_utils::create_binary_response_handler(),
-                super::openai_failed_response_handler(),
-            )
-            .await?;
+            // openai-image-model.ts:166, :357: `downloadBlob(file.url,
+            // {abortSignal})`, guarded and with no headers.
+            let response =
+                aimux_provider_utils::download_blob(url.clone(), options.abort_signal.clone())
+                    .await?;
             let media_type = response
                 .response_headers
                 .get("content-type")
@@ -577,7 +571,7 @@ fn distribute_token_details(details: Option<&Value>, index: usize, total: usize)
 /// `outputFormat`, and distributed token details. Fields with null/absent
 /// values are omitted (matching JSON serialization of TS `undefined`).
 fn extract_provider_metadata(response: &Value) -> SharedProviderMetadata {
-    let mut metadata = HashMap::new();
+    let mut metadata = aimux_core::shared::NamespaceMap::new();
 
     let data = response.get("data").and_then(|d| d.as_array());
     let created = response.get("created").and_then(serde_json::Value::as_u64);

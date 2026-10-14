@@ -553,9 +553,9 @@ public class Model implements Closeable {
      * Generate a structured JSON object (M12, RFC-0016).
      *
      * <p>Same signature as {@link #generateText}; returns a JSON-serialized
-     * {@code GenerateObjectResult}. Pass {@code response_format: { "Json": { ... } }}
-     * via {@code optsJson} for schema control; aimux-core applies JSON repair
-     * before parsing.
+     * {@code GenerateObjectResult}. Pass {@code "output": {"type": "object", "schema": ...}}
+     * via {@code optsJson} to describe the object; the model's text must parse
+     * as JSON and match the schema.
      *
      * @param promptJson JSON prompt string (bare value or {@code {"prompt": ...}}).
      * @param optsJson   Optional JSON-serialized options, or {@code null} for defaults.
@@ -588,11 +588,11 @@ public class Model implements Closeable {
      * (M11, RFC-0016). Synchronous (blocks until the stream finishes).
      *
      * <p>Same signature as {@link #generateText}; returns a JSON-serialized
-     * {@code StreamTextResultAggregated}.
+     * {@code GenerateTextResult}.
      *
      * @param promptJson JSON prompt string (bare value or {@code {"prompt": ...}}).
      * @param optsJson   Optional JSON-serialized options, or {@code null} for defaults.
-     * @return JSON-serialized StreamTextResultAggregated.
+     * @return JSON-serialized GenerateTextResult.
      * @throws AimuxException on Aimux / transport failure.
      */
     public String consumeStreamText(String promptJson, String optsJson) {

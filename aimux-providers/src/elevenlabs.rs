@@ -76,8 +76,8 @@ fn elevenlabs_failed_response_handler() -> aimux_provider_utils::ResponseHandler
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
-const DEFAULT_BASE_URL: &str = "https://api.elevenlabs.io";
-const API_KEY_ENV_VAR: &str = "ELEVENLABS_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.elevenlabs.io";
+pub(crate) const API_KEY_ENV_VAR: &str = "ELEVENLABS_API_KEY";
 const DEFAULT_NAME: &str = "elevenlabs";
 
 /// Settings of [`create_elevenlabs`] (the AI SDK's `ElevenLabsProviderSettings`).
@@ -309,11 +309,12 @@ impl SpeechModel for ElevenLabsSpeechModel {
         let response_headers = resp.response_headers;
         let audio_bytes = resp.value.to_vec();
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(SpeechResult {
             audio: AudioData::Binary(audio_bytes),
             warnings,
+            usage: None,
             request: Some(SpeechRequest {
                 body: Some(Value::Object(body)),
             }),
@@ -691,6 +692,7 @@ fn audio_input_to_bytes_stt(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
             base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
                 .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))
         }
+        AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
 
@@ -796,7 +798,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
             .and_then(|w| w.last())
             .and_then(|w| w.end);
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(TranscriptionResult {
             text: parsed.text,
@@ -814,6 +816,23 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
             provider_metadata: None,
         })
     }
+
+    /// The model has a streaming method; the session itself is
+    /// `ElevenLabsTranscriptionModel::stream_transcription`.
+    fn do_stream(
+        &self,
+        options: aimux_core::transcription_model::TranscriptionStreamOptions,
+    ) -> Option<
+        futures::future::BoxFuture<
+            '_,
+            Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError>,
+        >,
+    > {
+        Some(Box::pin(self.stream_transcription(options)))
+    }
+}
+
+impl ElevenLabsTranscriptionModel {
     /// Streaming transcription over the ElevenLabs realtime WebSocket
     /// (RFC-0034 §3, wire shape per the public API reference 2026-09).
     ///
@@ -829,7 +848,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
     /// shape is pinned field-by-field against the documented reference by
     /// the local mock-server tests — same posture as RFC-0028 D4.
     #[cfg(feature = "realtime")]
-    async fn do_stream(
+    async fn stream_transcription(
         &self,
         options: aimux_core::transcription_model::TranscriptionStreamOptions,
     ) -> Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError> {
@@ -1173,7 +1192,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
             stream: Box::pin(stream),
             request: Some(TranscriptionRequest { body: Some(ws_url) }),
             response: Some(TranscriptionResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(model_id),
                 headers: None,
                 body: None,
@@ -1183,7 +1202,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
 
     /// Without the `realtime` feature the WebSocket path is compiled out.
     #[cfg(not(feature = "realtime"))]
-    async fn do_stream(
+    async fn stream_transcription(
         &self,
         _options: aimux_core::transcription_model::TranscriptionStreamOptions,
     ) -> Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError> {

@@ -67,10 +67,12 @@ pub(crate) enum EndpointHeaders {
         user: Option<HeaderMapOpt>,
     },
     /// The provider headers, then the user's headers as the caller gave them
-    /// (a value or a producer called per request).
+    /// (a value or a producer called per request), then the user-agent
+    /// suffix when one is set (the AI SDK's `withUserAgentSuffix`).
     WithUserHeaders {
         provider: ProviderHeaders,
-        user: HeadersFn,
+        user: Option<HeadersFn>,
+        user_agent_suffix: Option<std::sync::Arc<str>>,
     },
 }
 
@@ -103,9 +105,25 @@ impl EndpointHeaders {
                     None => layer,
                 })
             }
-            Self::WithUserHeaders { provider, user } => {
+            Self::WithUserHeaders {
+                provider,
+                user,
+                user_agent_suffix,
+            } => {
                 let layer = provider.resolve().await?;
-                Ok(combine_headers(&[&layer, &user.resolve().await?]))
+                let combined = match user {
+                    Some(user) => combine_headers(&[&layer, &user.resolve().await?]),
+                    None => layer,
+                };
+                let Some(suffix) = user_agent_suffix else {
+                    return Ok(combined);
+                };
+                let mut headers = normalize_headers(combined).into_iter().collect();
+                aimux_provider_utils::with_user_agent_suffix(&mut headers, suffix);
+                Ok(headers
+                    .into_iter()
+                    .map(|(name, value)| (name, Some(value)))
+                    .collect())
             }
         }
     }

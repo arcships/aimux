@@ -17,7 +17,7 @@ use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::shared::{FileBytes, FileData, JsonObject, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Usage, Warning};
@@ -31,13 +31,6 @@ use super::types::ResponsesUsage;
 // `crate::openai::convert_common` and are shared with the Chat Completions
 // converter (issue M10).
 use crate::openai::convert_common::{ModelCapabilities, SystemMessageMode, get_model_capabilities};
-
-/// Compatibility alias: the Responses-specific enum name was merged into the
-/// shared [`SystemMessageMode`] during M10. Keeping the alias lets existing
-/// import paths (`openai::responses::convert::ResponsesSystemMessageMode`)
-/// keep compiling while the module signature uses the shared type.
-#[doc(hidden)]
-pub use crate::openai::convert_common::SystemMessageMode as ResponsesSystemMessageMode;
 
 // -- Provider options helper -------------------------------------------------
 
@@ -216,6 +209,11 @@ fn convert_responses_input_with_conversation(
                 input.push(json!({ "role": "user", "content": content }));
             }
             LanguageModelMessage::Assistant { content, .. } => {
+                // Reasoning item id → its index in `input`: the parts of one
+                // reasoning item become one input item (per assistant
+                // message, as `reasoningMessages` upstream).
+                let mut reasoning_items: std::collections::HashMap<String, Option<usize>> =
+                    std::collections::HashMap::new();
                 for part in content {
                     match part {
                         AssistantPart::Text(TextPart {
@@ -330,58 +328,76 @@ fn convert_responses_input_with_conversation(
                             provider_options,
                             ..
                         }) => {
-                            let reasoning_id = openai_sub_option(ns, provider_options, "itemId");
+                            // convert-to-openai-responses-input.ts:1151-1250 (openai@4.0.83).
+                            let reasoning_id = openai_sub_option(ns, provider_options, "itemId")
+                                .and_then(|id| id.as_str().map(str::to_owned));
+                            let encrypted = openai_sub_option(
+                                ns,
+                                provider_options,
+                                "reasoningEncryptedContent",
+                            )
+                            .filter(|value| !value.is_null());
                             if (has_previous_response_id || has_conversation)
                                 && reasoning_id.is_some()
                             {
                                 continue;
                             }
-                            if let Some(ref rid) = reasoning_id {
+                            let summary_part = (!text.is_empty())
+                                .then(|| json!({ "type": "summary_text", "text": text }));
+                            if let Some(rid) = reasoning_id {
                                 if store {
-                                    input.push(json!({ "type": "item_reference", "id": rid }));
-                                } else {
-                                    let encrypted = openai_sub_option(
-                                        ns,
-                                        provider_options,
-                                        "reasoningEncryptedContent",
-                                    );
-                                    let mut summary: Vec<Value> = Vec::new();
-                                    if !text.is_empty() {
-                                        summary
-                                            .push(json!({ "type": "summary_text", "text": text }));
+                                    // One item reference, at the first part.
+                                    reasoning_items.entry(rid).or_insert_with_key(|rid| {
+                                        input.push(json!({ "type": "item_reference", "id": rid }));
+                                        None
+                                    });
+                                } else if let Some(&Some(index)) = reasoning_items.get(&rid) {
+                                    // Later parts of the same item append their
+                                    // summary; the last encrypted content wins.
+                                    let item = &mut input[index];
+                                    match summary_part {
+                                        Some(summary_part) => {
+                                            if let Some(summary) =
+                                                item["summary"].as_array_mut()
+                                            {
+                                                summary.push(summary_part);
+                                            }
+                                        }
+                                        None => warnings.push(Warning::Other {
+                                            message: format!(
+                                                "Cannot append empty reasoning part to existing reasoning sequence. Skipping reasoning part: {}.",
+                                                serde_json::to_string(part).unwrap_or_default()
+                                            ),
+                                        }),
                                     }
+                                    if let Some(enc) = encrypted {
+                                        item["encrypted_content"] = enc;
+                                    }
+                                } else {
                                     let mut item = json!({
                                         "type": "reasoning",
                                         "id": rid,
-                                        "summary": summary,
+                                        "summary": summary_part.into_iter().collect::<Vec<_>>(),
                                     });
                                     if let Some(enc) = encrypted {
-                                        item["encrypted_content"] = json!(enc);
+                                        item["encrypted_content"] = enc;
                                     }
+                                    reasoning_items.insert(rid, Some(input.len()));
                                     input.push(item);
                                 }
+                            } else if let Some(enc) = encrypted {
+                                input.push(json!({
+                                    "type": "reasoning",
+                                    "encrypted_content": enc,
+                                    "summary": summary_part.into_iter().collect::<Vec<_>>(),
+                                }));
                             } else {
-                                let encrypted = openai_sub_option(
-                                    ns,
-                                    provider_options,
-                                    "reasoningEncryptedContent",
-                                );
-                                if let Some(enc) = encrypted {
-                                    let mut summary: Vec<Value> = Vec::new();
-                                    if !text.is_empty() {
-                                        summary
-                                            .push(json!({ "type": "summary_text", "text": text }));
-                                    }
-                                    input.push(json!({
-                                        "type": "reasoning",
-                                        "encrypted_content": enc,
-                                        "summary": summary,
-                                    }));
-                                } else {
-                                    warnings.push(Warning::Other {
-                                        message: "Non-OpenAI reasoning parts are not supported. Skipping reasoning part.".to_string(),
-                                    });
-                                }
+                                warnings.push(Warning::Other {
+                                    message: format!(
+                                        "Non-OpenAI reasoning parts are not supported. Skipping reasoning part: {}.",
+                                        serde_json::to_string(part).unwrap_or_default()
+                                    ),
+                                });
                             }
                         }
                         AssistantPart::ToolResult(part) => {
@@ -534,7 +550,7 @@ fn convert_responses_input_with_conversation(
 
 fn provider_tool_kind<'a>(tools: Option<&'a [Tool]>, name: &str) -> Option<&'a str> {
     tools?.iter().find_map(|tool| match tool {
-        Tool::Provider(tool) if tool.name == name => tool.id.strip_prefix("openai."),
+        Tool::Provider(tool) if tool.name == name => tool.id.as_str().strip_prefix("openai."),
         _ => None,
     })
 }
@@ -937,14 +953,14 @@ pub struct PreparedResponsesTools {
 /// Returns an error for invalid provider tool arguments or conflicting namespaces.
 pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
 ) -> Result<PreparedResponsesTools, AiMuxError> {
     prepare_responses_tools_for(tools, tool_choice, None, true)
 }
 
 fn prepare_responses_tools_for(
     tools: &Option<Vec<Tool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
     allowed_tools: Option<&Value>,
     supports_async: bool,
 ) -> Result<PreparedResponsesTools, AiMuxError> {
@@ -1039,10 +1055,10 @@ fn prepare_responses_tools_for(
         }
     }
     let mut tool_choice = tool_choice.map(|choice| match choice {
-        ToolChoice::Auto => json!("auto"),
-        ToolChoice::None => json!("none"),
-        ToolChoice::Required => json!("required"),
-        ToolChoice::Tool { tool_name } => {
+        LanguageModelV4ToolChoice::Auto => json!("auto"),
+        LanguageModelV4ToolChoice::None => json!("none"),
+        LanguageModelV4ToolChoice::Required => json!("required"),
+        LanguageModelV4ToolChoice::Tool { tool_name } => {
             let tool = tools.iter().find_map(|tool| match tool {
                 Tool::Provider(tool) if tool.name == *tool_name => Some(tool),
                 _ => None,
@@ -1123,7 +1139,7 @@ fn prepare_allowed_tools(
             Tool::Function(tool) => tool.name == name,
             Tool::Provider(tool) => tool.name == name,
         });
-        let aliases: Vec<_> = tools.iter().filter(|tool| matches!(tool, Tool::Provider(tool) if tool.id.strip_prefix("openai.") == Some(name) && tool.name != name)).collect();
+        let aliases: Vec<_> = tools.iter().filter(|tool| matches!(tool, Tool::Provider(tool) if tool.id.as_str().strip_prefix("openai.") == Some(name) && tool.name != name)).collect();
         let tool = if let Some(tool) = direct {
             if !aliases.is_empty() {
                 warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("this name is both a tool name and the provider tool name of another tool in this request; the tool with this name is allowed".into()) });
@@ -1200,7 +1216,7 @@ fn map_tool_fields(value: &Value, fields: &[(&str, &str)]) -> Value {
 fn provider_tool_to_json(
     tool: &aimux_core::tool::ProviderTool,
 ) -> Result<Option<Value>, AiMuxError> {
-    let kind = tool.id.strip_prefix("openai.").unwrap_or("");
+    let kind = tool.id.as_str().strip_prefix("openai.").unwrap_or("");
     if ![
         "file_search",
         "local_shell",
@@ -2270,5 +2286,126 @@ pub fn map_responses_finish_reason(
     FinishReason {
         unified,
         raw: finish_reason.map(std::string::ToString::to_string),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reasoning(text: &str, options: Value) -> AssistantPart {
+        AssistantPart::Reasoning(ReasoningPart {
+            text: text.to_string(),
+            provider_options: Some(serde_json::from_value(json!({ "openai": options })).unwrap()),
+        })
+    }
+
+    fn convert(store: bool, content: Vec<AssistantPart>) -> ResponsesInputResult {
+        let prompt = vec![LanguageModelMessage::Assistant {
+            content,
+            provider_options: None,
+        }];
+        convert_to_responses_input(
+            ResponsesNamespace::OPENAI,
+            &prompt,
+            SystemMessageMode::System,
+            store,
+            false,
+        )
+        .unwrap()
+    }
+
+    /// Parts of one reasoning item become one input item: the summaries are
+    /// appended and the last encrypted content wins (openai@4.0.83
+    /// `convert-to-openai-responses-input.ts:1167-1220`).
+    #[test]
+    fn reasoning_parts_with_one_item_id_are_merged_without_store() {
+        let result = convert(
+            false,
+            vec![
+                reasoning(
+                    "first",
+                    json!({ "itemId": "rs_1", "reasoningEncryptedContent": "enc-1" }),
+                ),
+                reasoning(
+                    "second",
+                    json!({ "itemId": "rs_1", "reasoningEncryptedContent": "enc-2" }),
+                ),
+                reasoning(
+                    "other",
+                    json!({ "itemId": "rs_2", "reasoningEncryptedContent": "enc-3" }),
+                ),
+            ],
+        );
+        assert_eq!(
+            result.input,
+            vec![
+                json!({
+                    "type": "reasoning",
+                    "id": "rs_1",
+                    "encrypted_content": "enc-2",
+                    "summary": [
+                        { "type": "summary_text", "text": "first" },
+                        { "type": "summary_text", "text": "second" },
+                    ],
+                }),
+                json!({
+                    "type": "reasoning",
+                    "id": "rs_2",
+                    "encrypted_content": "enc-3",
+                    "summary": [{ "type": "summary_text", "text": "other" }],
+                }),
+            ]
+        );
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    }
+
+    /// An empty part cannot extend an item that already has parts.
+    #[test]
+    fn an_empty_reasoning_part_is_not_appended_to_an_item() {
+        let result = convert(
+            false,
+            vec![
+                reasoning(
+                    "first",
+                    json!({ "itemId": "rs_1", "reasoningEncryptedContent": "enc-1" }),
+                ),
+                reasoning("", json!({ "itemId": "rs_1" })),
+            ],
+        );
+        assert_eq!(
+            result.input,
+            vec![json!({
+                "type": "reasoning",
+                "id": "rs_1",
+                "encrypted_content": "enc-1",
+                "summary": [{ "type": "summary_text", "text": "first" }],
+            })]
+        );
+        assert!(matches!(
+            result.warnings.as_slice(),
+            [Warning::Other { message }]
+                if message.starts_with("Cannot append empty reasoning part to existing reasoning sequence. Skipping reasoning part: ")
+        ));
+    }
+
+    /// With `store`, one item reference stands for every part of the item.
+    #[test]
+    fn reasoning_parts_with_one_item_id_are_one_reference_with_store() {
+        let result = convert(
+            true,
+            vec![
+                reasoning("first", json!({ "itemId": "rs_1" })),
+                reasoning("second", json!({ "itemId": "rs_1" })),
+                reasoning("other", json!({ "itemId": "rs_2" })),
+            ],
+        );
+        assert_eq!(
+            result.input,
+            vec![
+                json!({ "type": "item_reference", "id": "rs_1" }),
+                json!({ "type": "item_reference", "id": "rs_2" }),
+            ]
+        );
     }
 }

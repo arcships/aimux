@@ -47,8 +47,8 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable};
 
 use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
-const DEFAULT_BASE_URL: &str = "https://api.x.ai/v1";
-const API_KEY_ENV_VAR: &str = "XAI_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.x.ai/v1";
+pub(crate) const API_KEY_ENV_VAR: &str = "XAI_API_KEY";
 
 pub(crate) fn xai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -332,8 +332,14 @@ pub fn create_xai(settings: XAIProviderSettings) -> Result<XAIProvider, AiMuxErr
             Vec::new(),
             settings.headers,
         )
-        .with_user_agent(options::NAMESPACE, "5.0.12"),
-        fetch: settings.fetch,
+        .with_user_agent(
+            crate::shared::aisdk_pins::XAI.name,
+            crate::shared::aisdk_pins::XAI.version,
+        ),
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::XAI,
+        )),
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
     })

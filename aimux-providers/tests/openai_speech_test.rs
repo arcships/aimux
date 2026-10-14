@@ -315,7 +315,7 @@ async fn should_handle_different_audio_formats() {
         let model = provider.speech_model("tts-1").unwrap().unwrap();
 
         let mut options = speech_options("Hello from the AI SDK!");
-        options.provider_options = Some(HashMap::from([(
+        options.provider_options = Some(aimux_core::shared::NamespaceMap::from([(
             "openai".into(),
             serde_json::Map::from_iter([(
                 "response_format".into(),

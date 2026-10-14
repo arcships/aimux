@@ -719,7 +719,7 @@ impl VideoModel for XaiVideoModel {
             warnings,
             provider_metadata: None,
             response: VideoResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(resp.response_headers),
             },
@@ -847,7 +847,7 @@ impl VideoModel for XaiVideoModel {
             warnings: Vec::new(),
             provider_metadata: Some(xai_metadata(Value::Object(metadata))),
             response: VideoResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(headers),
             },

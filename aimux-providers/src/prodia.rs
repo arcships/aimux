@@ -11,7 +11,6 @@
 //! there: it is loaded for every request, from the setting or from `PRODIA_API_KEY`.
 //! [`prodia()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use async_trait::async_trait;
@@ -57,8 +56,8 @@ fn prodia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiM
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://prodia.com/api";
-const API_KEY_ENV_VAR: &str = "PRODIA_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://prodia.com/api";
+pub(crate) const API_KEY_ENV_VAR: &str = "PRODIA_API_KEY";
 const DEFAULT_NAME: &str = "prodia";
 
 /// Settings of [`create_prodia`].
@@ -396,7 +395,7 @@ impl ImageModel for ProdiaImageModel {
         let job_result = job_result.unwrap_or(Value::Null);
 
         // Build provider metadata
-        let mut metadata = HashMap::new();
+        let mut metadata = aimux_core::shared::NamespaceMap::new();
         let mut prodia_meta = Map::new();
         prodia_meta.insert("images".into(), json!([job_result]));
         metadata.insert(options::NAMESPACE.into(), prodia_meta);
@@ -406,7 +405,7 @@ impl ImageModel for ProdiaImageModel {
             warnings,
             provider_metadata: Some(metadata),
             response: ImageResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(rh),
             },
@@ -495,7 +494,7 @@ impl VideoModel for ProdiaVideoModel {
             warnings,
             provider_metadata: None,
             response: VideoResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },
@@ -571,7 +570,7 @@ impl VideoModel for ProdiaVideoModel {
             warnings: Vec::new(),
             provider_metadata: None,
             response: VideoResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },

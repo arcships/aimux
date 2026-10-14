@@ -51,8 +51,8 @@ pub(crate) fn cohere_failed_response_handler() -> aimux_provider_utils::Response
     })
 }
 
-const DEFAULT_BASE_URL: &str = "https://api.cohere.com/v2";
-const API_KEY_ENV_VAR: &str = "COHERE_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.cohere.com/v2";
+pub(crate) const API_KEY_ENV_VAR: &str = "COHERE_API_KEY";
 const DEFAULT_NAME: &str = "cohere";
 
 /// Settings of [`create_cohere`] (the AI SDK's `CohereProviderSettings`).
@@ -118,12 +118,18 @@ pub fn create_cohere(settings: CohereProviderSettings) -> Result<CohereProvider,
         Vec::new(),
         settings.headers,
     );
-    let headers = headers.with_user_agent(options::NAMESPACE, "4.0.52");
+    let headers = headers.with_user_agent(
+        crate::shared::aisdk_pins::COHERE.name,
+        crate::shared::aisdk_pins::COHERE.version,
+    );
     Ok(CohereProvider {
         generate_id: settings.generate_id,
         base_url,
         headers,
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::COHERE,
+        )),
     })
 }
 
