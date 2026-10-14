@@ -26,6 +26,18 @@ import Foundation
 /// On this toolchain `Bool` and `Double` decode are mutually exclusive (a JSON
 /// bool fails `Double` decode and a JSON number fails `Bool` decode), so the
 /// scalar ordering below is unambiguous.
+extension KeyedDecodingContainer {
+    /// An optional JSON value (an optional `unknown` upstream, such as a
+    /// response `body` or `inputSchemaInput`): a missing key is `nil` and an
+    /// explicit JSON `null` is `.null`, as the AI SDK's JSON keeps `null` apart
+    /// from `undefined` (Rust `wire::present`). Synthesized `Codable`
+    /// conformances in this module pick this overload over the generic one.
+    public func decodeIfPresent(_ type: JSONValue.Type, forKey key: Key) throws -> JSONValue? {
+        guard contains(key) else { return nil }
+        return try decode(JSONValue.self, forKey: key)
+    }
+}
+
 public enum JSONValue: Codable, Equatable, Sendable {
     case null
     case bool(Bool)
@@ -109,6 +121,15 @@ extension Decoder {
     func unknownTag(_ tag: String, in union: String) -> DecodingError {
         aimuxDecodingError(codingPath, "unknown \(union) tag \(tag)")
     }
+
+    /// Check the `type` tag of a value that always carries one (a standalone
+    /// tool call or source). JSON written before the tag has none.
+    func checkTypeTag(_ expected: String) throws {
+        let c = try container(keyedBy: AnyCodingKey.self)
+        if let tag = try c.decodeIfPresent(String.self, forKey: AnyCodingKey("type")), tag != expected {
+            throw aimuxDecodingError(codingPath, "expected type \(expected), got \(tag)")
+        }
+    }
 }
 
 extension Encoder {
@@ -175,6 +196,66 @@ public struct Usage: Codable, Equatable {
     public var outputTokens: OutputTokenUsage
     /// Opaque, provider-specific raw usage.
     public var raw: [String: JSONValue]?
+}
+
+/// Input-token breakdown of a `LanguageModelUsage`.
+public struct InputTokenDetails: Codable, Equatable {
+    public var noCacheTokens: UInt32?
+    public var cacheReadTokens: UInt32?
+    public var cacheWriteTokens: UInt32?
+    enum CodingKeys: String, CodingKey {
+        case noCacheTokens
+        case cacheReadTokens
+        case cacheWriteTokens
+    }
+    public init(noCacheTokens: UInt32? = nil, cacheReadTokens: UInt32? = nil,
+                cacheWriteTokens: UInt32? = nil) {
+        self.noCacheTokens = noCacheTokens; self.cacheReadTokens = cacheReadTokens
+        self.cacheWriteTokens = cacheWriteTokens
+    }
+}
+
+/// Output-token breakdown of a `LanguageModelUsage`.
+public struct OutputTokenDetails: Codable, Equatable {
+    public var textTokens: UInt32?
+    public var reasoningTokens: UInt32?
+    enum CodingKeys: String, CodingKey {
+        case textTokens
+        case reasoningTokens
+    }
+    public init(textTokens: UInt32? = nil, reasoningTokens: UInt32? = nil) {
+        self.textTokens = textTokens; self.reasoningTokens = reasoningTokens
+    }
+}
+
+/// Call-level token usage, the AI SDK's `LanguageModelUsage`: flat camelCase
+/// counts, an unknown count `nil` here and absent in the JSON. Provider
+/// results keep `Usage`.
+public struct LanguageModelUsage: Codable, Equatable {
+    public var inputTokens: UInt32?
+    public var inputTokenDetails: InputTokenDetails
+    public var outputTokens: UInt32?
+    public var outputTokenDetails: OutputTokenDetails
+    public var totalTokens: UInt32?
+    /// Opaque, provider-specific raw usage.
+    public var raw: [String: JSONValue]?
+
+    enum CodingKeys: String, CodingKey {
+        case inputTokens
+        case inputTokenDetails
+        case outputTokens
+        case outputTokenDetails
+        case totalTokens
+        case raw
+    }
+
+    public init(inputTokens: UInt32? = nil, inputTokenDetails: InputTokenDetails = InputTokenDetails(),
+                outputTokens: UInt32? = nil, outputTokenDetails: OutputTokenDetails = OutputTokenDetails(),
+                totalTokens: UInt32? = nil, raw: [String: JSONValue]? = nil) {
+        self.inputTokens = inputTokens; self.inputTokenDetails = inputTokenDetails
+        self.outputTokens = outputTokens; self.outputTokenDetails = outputTokenDetails
+        self.totalTokens = totalTokens; self.raw = raw
+    }
 }
 
 /// Metadata about the API response (the payload of a `response-metadata` part).
@@ -374,23 +455,65 @@ public enum ResponseFormat: Codable, Equatable {
 
 // MARK: - File data
 
-/// Either raw bytes or a base64-encoded string. Wire: untagged
-/// (`[…]` | `"…"`).
+/// Bytes in the AI SDK's JSON: a `Uint8Array` is a base64 string there
+/// (`@ai-sdk/provider-utils` `uint8-utils.ts:12-23`), never an array of numbers.
+public enum Base64Bytes {
+    /// Standard, padded base64, as `btoa`.
+    public static func encode(_ bytes: [UInt8]) -> String {
+        Data(bytes).base64EncodedString()
+    }
+
+    /// Decodes as `convertBase64ToUint8Array` (`uint8-utils.ts:6-10`): `-` and
+    /// `_` read as `+` and `/`, padding optional, ASCII whitespace ignored.
+    public static func decode(_ text: String) -> [UInt8]? {
+        var normalized = String(text.unicodeScalars.compactMap { scalar -> Character? in
+            switch scalar {
+            case " ", "\t", "\n", "\u{0C}", "\r", "=": return nil
+            case "-": return "+"
+            case "_": return "/"
+            default: return Character(scalar)
+            }
+        })
+        if normalized.count % 4 == 1 { return nil }
+        normalized += String(repeating: "=", count: (4 - normalized.count % 4) % 4)
+        return Data(base64Encoded: normalized).map { [UInt8]($0) }
+    }
+
+    static func decode(_ c: SingleValueDecodingContainer) throws -> [UInt8] {
+        guard let text = try? c.decode(String.self), let bytes = decode(text) else {
+            throw aimuxDecodingError(c.codingPath, "expected a base64 string")
+        }
+        return bytes
+    }
+
+    static func decode<K: CodingKey>(_ c: KeyedDecodingContainer<K>, forKey key: K) throws -> [UInt8] {
+        let text = try c.decode(String.self, forKey: key)
+        guard let bytes = decode(text) else {
+            throw DecodingError.dataCorruptedError(forKey: key, in: c, debugDescription: "invalid base64 data")
+        }
+        return bytes
+    }
+}
+
+/// Either raw bytes or a base64-encoded string. Wire: one base64 string, the
+/// AI SDK's `Uint8Array | string` in JSON (`shared-v4-file-data.ts:7-10`).
+/// `.binary` is written as base64; parsing yields `.base64`.
 public enum FileBytes: Codable, Equatable {
     case binary([UInt8])
     case base64(String)
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
-        if let bytes = try? c.decode([UInt8].self) { self = .binary(bytes); return }
-        if let s = try? c.decode(String.self) { self = .base64(s); return }
-        throw aimuxDecodingError(c.codingPath, "expected a byte array or a base64 string")
+        guard let s = try? c.decode(String.self) else {
+            throw aimuxDecodingError(c.codingPath, "expected a base64 string")
+        }
+        self = .base64(s)
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.singleValueContainer()
         switch self {
-        case .binary(let bytes): try c.encode(bytes)
+        case .binary(let bytes): try c.encode(Base64Bytes.encode(bytes))
         case .base64(let s): try c.encode(s)
         }
     }
@@ -461,7 +584,75 @@ public enum GeneratedFileData: Codable, Equatable {
     }
 }
 
-public struct GeneratedFile: Codable, Equatable {
+private enum FileDataTagField: String, CodingKey { case type }
+
+/// The `type` tag of a tagged file data object, when it is one of `tags`.
+private func fileDataTag(_ decoder: Decoder, in tags: Set<String>) -> Bool {
+    guard let c = try? decoder.container(keyedBy: FileDataTagField.self),
+          let tag = try? c.decode(String.self, forKey: .type) else { return false }
+    return tags.contains(tag)
+}
+
+/// `FilePart.data` (Rust `FilePartData`, provider-utils
+/// `types/content-part.ts:75`): `FileData | DataContent | URL |
+/// ProviderReference`. Wire: a tagged `FileData`, a string (base64 or a URL) or
+/// a bare `{provider: id}` reference.
+public enum FilePartData: Codable, Equatable {
+    case tagged(FileData)
+    /// A bare string: base64 data or a URL.
+    case bare(String)
+    /// A bare provider reference.
+    case reference([String: String])
+
+    public init(from decoder: Decoder) throws {
+        let single = try decoder.singleValueContainer()
+        if let text = try? single.decode(String.self) {
+            self = .bare(text)
+        } else if fileDataTag(decoder, in: ["data", "url", "reference", "text"]) {
+            self = .tagged(try FileData(from: decoder))
+        } else {
+            self = .reference(try single.decode([String: String].self))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .tagged(let data): try data.encode(to: encoder)
+        case .bare(let text): var c = encoder.singleValueContainer(); try c.encode(text)
+        case .reference(let reference): var c = encoder.singleValueContainer(); try c.encode(reference)
+        }
+    }
+}
+
+/// `ReasoningFilePart.data` (Rust `ReasoningFilePartData`,
+/// `types/content-part.ts:164`): tagged data or a URL, or a bare string
+/// (base64 or a URL).
+public enum ReasoningFilePartData: Codable, Equatable {
+    case tagged(GeneratedFileData)
+    /// A bare string: base64 data or a URL.
+    case bare(String)
+
+    public init(from decoder: Decoder) throws {
+        let single = try decoder.singleValueContainer()
+        if let text = try? single.decode(String.self) {
+            self = .bare(text)
+        } else {
+            self = .tagged(try GeneratedFileData(from: decoder))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .tagged(let data): try data.encode(to: encoder)
+        case .bare(let text): var c = encoder.singleValueContainer(); try c.encode(text)
+        }
+    }
+}
+
+/// A file in a provider's output (Rust `LanguageModelFile`,
+/// `LanguageModelV4File`): tagged base64 data or a URL. The payload of the
+/// raw `GenerateContent` file parts.
+public struct LanguageModelFile: Codable, Equatable {
     public var data: GeneratedFileData
     public var mediaType: String
     public var providerMetadata: ProviderMetadata?
@@ -471,18 +662,38 @@ public struct GeneratedFile: Codable, Equatable {
     }
 }
 
-/// A source / citation. Wire: `{"sourceType":"url","id","url","title"?,…}` or
-/// `{"sourceType":"document","id","mediaType","title","filename"?,…}`.
+/// A generated file (Rust `GeneratedFile`, the AI SDK's `GeneratedFile`,
+/// `generate-text/generated-file.ts:10-32`). Wire:
+/// `{"base64":…,"mediaType":…,"providerMetadata"?}`.
+public struct GeneratedFile: Codable, Equatable {
+    /// The file as a base64 string.
+    public var base64: String
+    public var mediaType: String
+    public var providerMetadata: ProviderMetadata?
+
+    public init(base64: String, mediaType: String, providerMetadata: ProviderMetadata? = nil) {
+        self.base64 = base64; self.mediaType = mediaType; self.providerMetadata = providerMetadata
+    }
+
+    /// The file's bytes, or nil when `base64` is not base64.
+    public func bytes() -> [UInt8]? { Base64Bytes.decode(base64) }
+}
+
+/// A source / citation. Wire: `{"type":"source","sourceType":"url","id","url","title"?,…}`
+/// or `{"type":"source","sourceType":"document","id","mediaType","title","filename"?,…}`,
+/// the AI SDK's tagged `Source` (provider language-model-v4-source.ts), in a
+/// result's `sources` and in a content or stream part alike.
 public enum Source: Codable, Equatable {
     case url(id: String, url: String, title: String?, providerMetadata: ProviderMetadata?)
     case document(id: String, mediaType: String, title: String, filename: String?,
                   providerMetadata: ProviderMetadata?)
 
     private enum Field: String, CodingKey {
-        case id, sourceType, url, title, filename, mediaType, providerMetadata
+        case type, id, sourceType, url, title, filename, mediaType, providerMetadata
     }
 
     public init(from decoder: Decoder) throws {
+        try decoder.checkTypeTag("source")
         let c = try decoder.container(keyedBy: Field.self)
         let id = try c.decode(String.self, forKey: .id)
         let pm = try c.decodeIfPresent(ProviderMetadata.self, forKey: .providerMetadata)
@@ -501,6 +712,7 @@ public enum Source: Codable, Equatable {
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: Field.self)
+        try c.encode("source", forKey: .type)
         switch self {
         case .url(let id, let url, let title, let pm):
             try c.encode("url", forKey: .sourceType); try c.encode(id, forKey: .id)
@@ -634,24 +846,22 @@ public enum ToolResultOutput: Codable, Equatable {
 public enum ContentPart: Codable, Equatable {
     case text(text: String, providerOptions: ProviderOptions? = nil)
     case image(image: [UInt8], mediaType: String, providerOptions: ProviderOptions? = nil)
-    case file(data: [UInt8], mediaType: String, filename: String? = nil, providerOptions: ProviderOptions? = nil)
-    case fileBase64(data: String, mediaType: String, filename: String? = nil, providerOptions: ProviderOptions? = nil)
-    case fileUrl(url: String, mediaType: String, providerOptions: ProviderOptions? = nil)
-    case fileReference(mediaType: String, reference: JSONValue, filename: String? = nil,
-                       providerOptions: ProviderOptions? = nil)
+    /// The AI SDK `FilePart` (`types/content-part.ts:62-102`); inline bytes are
+    /// `.tagged(.data(data: .binary(bytes)))`.
+    case file(data: FilePartData, mediaType: String, filename: String? = nil, providerOptions: ProviderOptions? = nil)
     case reasoning(text: String, signature: String? = nil, providerOptions: ProviderOptions? = nil)
     case toolCall(toolCallId: String, toolName: String, input: JSONValue,
                   providerExecuted: Bool? = nil, providerOptions: ProviderOptions? = nil)
     case toolResult(toolCallId: String, toolName: String, output: ToolResultOutput,
                     providerOptions: ProviderOptions? = nil)
     case custom(kind: String, providerOptions: ProviderOptions? = nil)
-    case reasoningFile(data: GeneratedFileData, mediaType: String, providerOptions: ProviderOptions? = nil)
+    case reasoningFile(data: ReasoningFilePartData, mediaType: String, providerOptions: ProviderOptions? = nil)
     case toolApprovalRequest(approvalId: String, toolCallId: String, reason: String? = nil,
                              isAutomatic: Bool? = nil, signature: String? = nil,
                              inputSchemaInput: JSONValue? = nil)
 
     private enum Field: String, CodingKey {
-        case type, text, image, data, mediaType, filename, url, reference, signature
+        case type, text, image, data, mediaType, filename, signature
         case toolCallId, toolName, input, output, providerExecuted, providerOptions
         case kind, approvalId, reason, isAutomatic, inputSchemaInput
     }
@@ -663,23 +873,12 @@ public enum ContentPart: Codable, Equatable {
         case "text":
             self = .text(text: try c.decode(String.self, forKey: .text), providerOptions: po)
         case "image":
-            self = .image(image: try c.decode([UInt8].self, forKey: .image),
+            self = .image(image: try Base64Bytes.decode(c, forKey: .image),
                           mediaType: try c.decode(String.self, forKey: .mediaType), providerOptions: po)
         case "file":
-            self = .file(data: try c.decode([UInt8].self, forKey: .data),
+            self = .file(data: try c.decode(FilePartData.self, forKey: .data),
                          mediaType: try c.decode(String.self, forKey: .mediaType),
                          filename: try c.decodeIfPresent(String.self, forKey: .filename), providerOptions: po)
-        case "file-base64":
-            self = .fileBase64(data: try c.decode(String.self, forKey: .data),
-                               mediaType: try c.decode(String.self, forKey: .mediaType),
-                               filename: try c.decodeIfPresent(String.self, forKey: .filename), providerOptions: po)
-        case "file-url":
-            self = .fileUrl(url: try c.decode(String.self, forKey: .url),
-                            mediaType: try c.decode(String.self, forKey: .mediaType), providerOptions: po)
-        case "file-reference":
-            self = .fileReference(mediaType: try c.decode(String.self, forKey: .mediaType),
-                                  reference: try c.decode(JSONValue.self, forKey: .reference),
-                                  filename: try c.decodeIfPresent(String.self, forKey: .filename), providerOptions: po)
         case "reasoning":
             self = .reasoning(text: try c.decode(String.self, forKey: .text),
                               signature: try c.decodeIfPresent(String.self, forKey: .signature), providerOptions: po)
@@ -696,7 +895,7 @@ public enum ContentPart: Codable, Equatable {
         case "custom":
             self = .custom(kind: try c.decode(String.self, forKey: .kind), providerOptions: po)
         case "reasoning-file":
-            self = .reasoningFile(data: try c.decode(GeneratedFileData.self, forKey: .data),
+            self = .reasoningFile(data: try c.decode(ReasoningFilePartData.self, forKey: .data),
                                   mediaType: try c.decode(String.self, forKey: .mediaType), providerOptions: po)
         case "tool-approval-request":
             self = .toolApprovalRequest(approvalId: try c.decode(String.self, forKey: .approvalId),
@@ -718,18 +917,12 @@ public enum ContentPart: Codable, Equatable {
         case .text(let text, let po):
             try tag("text", po); try c.encode(text, forKey: .text)
         case .image(let image, let mediaType, let po):
-            try tag("image", po); try c.encode(image, forKey: .image); try c.encode(mediaType, forKey: .mediaType)
+            try tag("image", po); try c.encode(Base64Bytes.encode(image), forKey: .image)
+            try c.encode(mediaType, forKey: .mediaType)
         case .file(let data, let mediaType, let filename, let po):
-            try tag("file", po); try c.encode(data, forKey: .data); try c.encode(mediaType, forKey: .mediaType)
+            try tag("file", po); try c.encode(data, forKey: .data)
+            try c.encode(mediaType, forKey: .mediaType)
             try c.encodeIfPresent(filename, forKey: .filename)
-        case .fileBase64(let data, let mediaType, let filename, let po):
-            try tag("file-base64", po); try c.encode(data, forKey: .data); try c.encode(mediaType, forKey: .mediaType)
-            try c.encodeIfPresent(filename, forKey: .filename)
-        case .fileUrl(let url, let mediaType, let po):
-            try tag("file-url", po); try c.encode(url, forKey: .url); try c.encode(mediaType, forKey: .mediaType)
-        case .fileReference(let mediaType, let reference, let filename, let po):
-            try tag("file-reference", po); try c.encode(mediaType, forKey: .mediaType)
-            try c.encode(reference, forKey: .reference); try c.encodeIfPresent(filename, forKey: .filename)
         case .reasoning(let text, let signature, let po):
             try tag("reasoning", po); try c.encode(text, forKey: .text)
             try c.encodeIfPresent(signature, forKey: .signature)
@@ -812,7 +1005,9 @@ public enum ModelPrompt: Codable, Equatable {
 
 // MARK: - Result types
 
-/// A tool call requested by the model (user-facing).
+/// A tool call requested by the model (user-facing). Its JSON carries
+/// `"type": "tool-call"`: a call outside `content` is the AI SDK's tagged
+/// `TypedToolCall` (ai generate-text/tool-call.ts).
 public struct ToolCall: Codable, Equatable {
     public var toolCallId: String
     public var toolName: String
@@ -838,6 +1033,36 @@ public struct ToolCall: Codable, Equatable {
         self.providerMetadata = providerMetadata
         self.invalid = invalid; self.error = error
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case type, toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata, invalid, error
+    }
+
+    public init(from decoder: Decoder) throws {
+        try decoder.checkTypeTag("tool-call")
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        toolCallId = try c.decode(String.self, forKey: .toolCallId)
+        toolName = try c.decode(String.self, forKey: .toolName)
+        input = try c.decode(JSONValue.self, forKey: .input)
+        providerExecuted = try c.decodeIfPresent(Bool.self, forKey: .providerExecuted)
+        dynamic = try c.decodeIfPresent(Bool.self, forKey: .dynamic)
+        providerMetadata = try c.decodeIfPresent(ProviderMetadata.self, forKey: .providerMetadata)
+        invalid = try c.decodeIfPresent(Bool.self, forKey: .invalid)
+        error = try c.decodeIfPresent(JSONValue.self, forKey: .error)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode("tool-call", forKey: .type)
+        try c.encode(toolCallId, forKey: .toolCallId)
+        try c.encode(toolName, forKey: .toolName)
+        try c.encode(input, forKey: .input)
+        try c.encodeIfPresent(providerExecuted, forKey: .providerExecuted)
+        try c.encodeIfPresent(dynamic, forKey: .dynamic)
+        try c.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
+        try c.encodeIfPresent(invalid, forKey: .invalid)
+        try c.encodeIfPresent(error, forKey: .error)
+    }
 }
 
 /// A tool result produced by a provider-executed tool, next to the call it answers.
@@ -858,21 +1083,30 @@ public struct ReasoningOutput: Codable, Equatable {
     public var providerMetadata: ProviderMetadata?
 }
 
-/// A file generated as part of reasoning (call-layer shape).
-public struct ReasoningFileOutput: Codable, Equatable {
+/// A file part of text generation (call-layer shape):
+/// `{"file": GeneratedFile, "providerMetadata"?}` under the `file` or
+/// `reasoning-file` tag (`convert-language-model-content.ts:55-70`).
+public struct GeneratedFileOutput: Codable, Equatable {
     public var file: GeneratedFile
     public var providerMetadata: ProviderMetadata?
+
+    public init(file: GeneratedFile, providerMetadata: ProviderMetadata? = nil) {
+        self.file = file; self.providerMetadata = providerMetadata
+    }
 }
+
+/// The former name of `GeneratedFileOutput`.
+public typealias ReasoningFileOutput = GeneratedFileOutput
 
 /// Reasoning text or a generated file produced during reasoning.
 public enum ReasoningPart: Codable, Equatable {
     case reasoning(ReasoningOutput)
-    case reasoningFile(ReasoningFileOutput)
+    case reasoningFile(GeneratedFileOutput)
 
     public init(from decoder: Decoder) throws {
         switch try decoder.tag() {
         case "reasoning": self = .reasoning(try ReasoningOutput(from: decoder))
-        case "reasoning-file": self = .reasoningFile(try ReasoningFileOutput(from: decoder))
+        case "reasoning-file": self = .reasoningFile(try GeneratedFileOutput(from: decoder))
         case let t: throw decoder.unknownTag(t, in: "reasoning part")
         }
     }
@@ -912,7 +1146,9 @@ public enum GenerateContent<
     case toolCall(C)
     case source(Source)
     case reasoning(ReasoningOutput)
-    case file(GeneratedFile)
+    /// A file: the provider's `LanguageModelFile` in raw content, a
+    /// `GeneratedFileOutput` in text content.
+    case file(R)
     case reasoningFile(R)
     case custom(kind: String, providerMetadata: ProviderMetadata?)
     case toolApprovalRequest(A)
@@ -932,7 +1168,7 @@ public enum GenerateContent<
         case "tool-call": self = .toolCall(try C(from: decoder))
         case "source": self = .source(try Source(from: decoder))
         case "reasoning": self = .reasoning(try ReasoningOutput(from: decoder))
-        case "file": self = .file(try GeneratedFile(from: decoder))
+        case "file": self = .file(try R(from: decoder))
         case "reasoning-file": self = .reasoningFile(try R(from: decoder))
         case "tool-approval-request": self = .toolApprovalRequest(try A(from: decoder))
         case "tool-result": self = .toolResult(try ToolResult(from: decoder))
@@ -962,11 +1198,12 @@ public enum GenerateContent<
 }
 
 /// Provider-facing content (`GenerateResult.content`): raw tool calls.
-public typealias RawGenerateContent = GenerateContent<RawToolCall, RawToolApprovalRequest, GeneratedFile>
+public typealias RawGenerateContent = GenerateContent<RawToolCall, RawToolApprovalRequest, LanguageModelFile>
 /// Call-layer content (`GenerateTextResult.content`): parsed tool calls.
-public typealias TextContent = GenerateContent<ToolCall, ToolApprovalRequestOutput, ReasoningFileOutput>
+public typealias TextContent = GenerateContent<ToolCall, ToolApprovalRequestOutput, GeneratedFileOutput>
 
-/// Raw provider result (the `raw` field of `GenerateTextResult`).
+/// Raw provider result (`LanguageModel::do_generate`, the provider-level
+/// result of one model call).
 public struct GenerateResult: Codable, Equatable {
     public var content: [RawGenerateContent]
     public var finishReason: FinishReason
@@ -977,71 +1214,150 @@ public struct GenerateResult: Codable, Equatable {
     public var response: ResponseInfo?
 }
 
-/// Result of `generateText` (user-facing).
-public struct GenerateTextResult: Codable, Equatable {
-    /// Ordered generated content with parsed tool calls.
-    public var content: [TextContent]?
-    /// The generated text (concatenated from all text content parts).
-    public var text: String
-    /// Tool calls requested by the model.
-    public var toolCalls: [ToolCall]
-    public var finishReason: FinishReason
-    public var usage: Usage
-    public var warnings: [Warning]
-    /// Raw provider result (for advanced use).
-    public var raw: GenerateResult
-    public var reasoning: [ReasoningPart]
-    /// Concatenated reasoning text.
-    public var reasoningText: String
-    public var sources: [Source]
-    public var files: [GeneratedFile]
-    /// Assistant messages ready to append for the next turn.
-    public var responseMessages: [ModelMessage]
-    /// Raw provider-specific finish reason string (e.g. "stop", "end_turn").
-    public var rawFinishReason: String?
+/// A provider-executed tool's result (Rust `TypedToolResult`), with the input
+/// of the call it answers (`nil` for a deferred result).
+public struct TypedToolResult: Codable, Equatable {
+    public var toolCallId: String
+    public var toolName: String
+    public var input: JSONValue?
+    public var output: JSONValue
+    public var providerExecuted: Bool?
     public var providerMetadata: ProviderMetadata?
-    public var request: RequestInfo
-    public var response: ResponseInfo
-    /// Total token usage across all steps (single step: equals `usage`).
-    public var totalUsage: Usage
+    public var dynamic: Bool?
+    public var preliminary: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case toolCallId
+        case toolName
+        case input, output
+        case providerExecuted
+        case providerMetadata
+        case dynamic, preliminary
+    }
 }
 
-/// Result of `generateObject`: the parsed JSON object plus convenience fields
-/// from the underlying `generateText` call.
+/// A provider-executed tool's error result, or the error that follows an
+/// invalid tool call (Rust `TypedToolError`).
+public struct TypedToolError: Codable, Equatable {
+    public var toolCallId: String
+    public var toolName: String
+    public var input: JSONValue?
+    /// An `AiMuxError` object tagged by `name`, or the provider's error value.
+    public var error: JSONValue
+    public var providerExecuted: Bool?
+    public var providerMetadata: ProviderMetadata?
+    public var dynamic: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case toolCallId
+        case toolName
+        case input, error
+        case providerExecuted
+        case providerMetadata
+        case dynamic
+    }
+}
+
+/// A tool whose execution was denied (Rust `ToolOutputDenied`).
+public struct ToolOutputDenied: Codable, Equatable {
+    public var toolCallId: String
+    public var toolName: String
+    public var providerExecuted: Bool?
+    public var dynamic: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case toolCallId
+        case toolName
+        case providerExecuted
+        case dynamic
+    }
+}
+
+/// The answer to a tool approval request (Rust `ToolApprovalResponseOutput`).
+public struct ToolApprovalResponseOutput: Codable, Equatable {
+    public var approvalId: String
+    public var toolCall: ToolCall
+    public var approved: Bool
+    public var reason: String?
+    public var providerExecuted: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case approvalId
+        case toolCall
+        case approved, reason
+        case providerExecuted
+    }
+}
+
+/// Result of `generateText` and of a consumed stream (user-facing), the AI
+/// SDK's `GenerateTextResult`. `steps` holds every step (weak type); the other
+/// fields are derived from them: the last step's text, finish reason,
+/// reasoning, request, response and provider metadata, every step's content,
+/// files, sources, tool calls, tool results and warnings, and the usage summed
+/// over the steps.
+public struct GenerateTextResult: Codable, Equatable {
+    /// The content of every step. Weak type.
+    public var content: [JSONValue]
+    /// The text of the last step.
+    public var text: String
+    /// The last step's reasoning (deprecated upstream).
+    public var reasoning: [ReasoningPart]
+    /// The last step's reasoning text, `nil` when there is none (deprecated upstream).
+    public var reasoningText: String?
+    /// Files generated by the model.
+    public var files: [GeneratedFile]
+    /// Sources / citations.
+    public var sources: [Source]
+    /// Tool calls requested by the model.
+    public var toolCalls: [ToolCall]
+    /// Tool results (provider-executed tools).
+    public var toolResults: [TypedToolResult]
+    /// Why the last step stopped.
+    public var finishReason: FinishReasonUnified
+    /// Raw provider-specific finish reason string (e.g. "end_turn").
+    public var rawFinishReason: String?
+    /// Token usage summed over the steps.
+    public var usage: LanguageModelUsage
+    /// Equal to `usage` (deprecated upstream).
+    public var totalUsage: LanguageModelUsage
+    /// Warnings of every step.
+    public var warnings: [Warning]
+    /// The last step's request (deprecated upstream).
+    public var request: RequestInfo
+    /// The last step's response id, timestamp and model id (deprecated upstream).
+    public var response: ResponseMetadata
+    /// Assistant messages ready to append for the next turn.
+    public var responseMessages: [ModelMessage]
+    /// The last step's provider metadata (deprecated upstream).
+    public var providerMetadata: ProviderMetadata?
+    /// Every step of the call. Weak type.
+    public var steps: [JSONValue]
+    /// The value parsed by the `output` option: `nil` when it was not parsed
+    /// (absent from the JSON), `.null` when the parsed value is JSON `null`.
+    public var output: JSONValue?
+}
+
+/// Result of `generateObject` (user-facing), the AI SDK's
+/// `GenerateObjectResult`: the parsed JSON object and the call's reasoning,
+/// finish reason, usage, warnings, request, response and provider metadata.
+/// The AI SDK deprecates `generateObject` for `generateText` with an `output`.
 public struct GenerateObjectResult: Codable, Equatable {
     /// The parsed JSON object returned by the model.
     public var object: JSONValue
-    public var finishReason: FinishReason
-    public var rawFinishReason: String?
-    public var usage: Usage
-    public var warnings: [Warning]
     /// Concatenated reasoning text (if the model produced reasoning/thinking).
     public var reasoning: String?
-    public var providerMetadata: ProviderMetadata?
-    public var response: ResponseMetadata
-    /// The full `generateText` result (for advanced use).
-    public var raw: GenerateTextResult
-}
-
-/// Aggregated result of `consumeStreamText`; `GenerateTextResult`'s fields
-/// without `raw`.
-public struct StreamTextResultAggregated: Codable, Equatable {
-    public var content: [TextContent]?
-    public var text: String
-    public var reasoning: [ReasoningPart]
-    public var reasoningText: String
-    public var toolCalls: [ToolCall]
-    public var sources: [Source]
-    public var files: [GeneratedFile]
-    public var finishReason: FinishReason
-    public var rawFinishReason: String?
-    public var usage: Usage
-    public var totalUsage: Usage
+    /// Why generation stopped.
+    public var finishReason: FinishReasonUnified
+    /// Token usage.
+    public var usage: LanguageModelUsage
+    /// Warnings from the provider.
     public var warnings: [Warning]
-    public var providerMetadata: ProviderMetadata?
+    /// The request.
     public var request: RequestInfo
-    public var response: ResponseInfo
-    public var responseMessages: [ModelMessage]
+    /// Response metadata (id, timestamp, modelId).
+    public var response: ResponseMetadata
+    /// Provider-specific metadata (e.g. Anthropic cache info).
+    public var providerMetadata: ProviderMetadata?
 }
 
 // MARK: - TimeoutConfiguration
@@ -1076,7 +1392,12 @@ public struct GenerateTextOptions: Codable, Equatable {
     public var topK: Double?
     public var presencePenalty: Double?
     public var frequencyPenalty: Double?
-    public var responseFormat: ResponseFormat?
+    /// Structured output, the AI SDK's `output`, tagged by `type`: for example
+    /// `{"type": "object", "schema": {...}}`,
+    /// `{"type": "array", "element": {...}, "minItems": 1}`,
+    /// `{"type": "choice", "options": [...]}` or `{"type": "json"}`. The parsed
+    /// value is `GenerateTextResult.output`.
+    public var output: JSONValue?
     public var seed: UInt64?
     public var tools: [Tool]?
     public var toolChoice: ToolChoice?
@@ -1094,8 +1415,9 @@ public struct GenerateTextOptions: Codable, Equatable {
     ///
     /// Runs after generation, on every tool call the engine marked invalid, in
     /// document order and at most once per call. Return a corrected
-    /// ``RawToolCall`` (it is re-validated: still invalid means the call keeps
-    /// an `invalid` flag carrying a `ToolCallRepair` error), `nil` to leave the
+    /// ``RawToolCall`` (it is re-validated: still invalid means the original
+    /// call stays invalid, carrying the new parse or validation error, not a
+    /// `ToolCallRepair` error), `nil` to leave the
     /// call untouched with its original error, or throw to fail the repair
     /// with the thrown error's message as cause. A call made without a tool set
     /// is never repaired and the function is not invoked for it.
@@ -1124,7 +1446,7 @@ public struct GenerateTextOptions: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case maxOutputTokens, temperature, stopSequences, topP, topK, presencePenalty
-        case frequencyPenalty, responseFormat, seed, tools, toolChoice, headers
+        case frequencyPenalty, output, seed, tools, toolChoice, headers
         case providerOptions, reasoning, instructions, maxRetries, timeout
         case includeRawChunks, sessionId
     }
@@ -1132,7 +1454,7 @@ public struct GenerateTextOptions: Codable, Equatable {
     public init(maxOutputTokens: UInt32? = nil, temperature: Double? = nil,
                 stopSequences: [String]? = nil, topP: Double? = nil, topK: Double? = nil,
                 presencePenalty: Double? = nil, frequencyPenalty: Double? = nil,
-                responseFormat: ResponseFormat? = nil, seed: UInt64? = nil,
+                output: JSONValue? = nil, seed: UInt64? = nil,
                 tools: [Tool]? = nil, toolChoice: ToolChoice? = nil,
                 headers: [String: String]? = nil, providerOptions: ProviderOptions? = nil,
                 reasoning: ReasoningEffort? = nil, instructions: String? = nil,
@@ -1144,7 +1466,7 @@ public struct GenerateTextOptions: Codable, Equatable {
         self.maxOutputTokens = maxOutputTokens; self.temperature = temperature
         self.stopSequences = stopSequences; self.topP = topP; self.topK = topK
         self.presencePenalty = presencePenalty; self.frequencyPenalty = frequencyPenalty
-        self.responseFormat = responseFormat; self.seed = seed; self.tools = tools
+        self.output = output; self.seed = seed; self.tools = tools
         self.toolChoice = toolChoice; self.headers = headers; self.providerOptions = providerOptions
         self.reasoning = reasoning; self.instructions = instructions
         self.maxRetries = maxRetries; self.timeout = timeout
@@ -1157,18 +1479,29 @@ public struct GenerateTextOptions: Codable, Equatable {
 // MARK: - TextStreamPart
 
 /// A single chunk in the stream returned by `streamText` (the call-layer
-/// `TextStreamPart`: parsed tool calls).
+/// `TextStreamPart`: parsed tool calls), the AI SDK's full stream: `start`,
+/// then per step `start-step` … `finish-step`, then `finish` (or `abort`).
 ///
-/// Wire: internally tagged by `type` — `{"type":"text-delta","id":"…","delta":"…"}`, …
+/// Wire: internally tagged by `type` — `{"type":"text-delta","id":"…","text":"…"}`, …
+/// Text and reasoning deltas carry `text`, as the AI SDK's `TextStreamPart`
+/// does; a tool-input delta keeps `delta`.
 public enum TextStreamPart: Codable, Equatable {
     case textStart(id: String, providerMetadata: ProviderMetadata?)
-    case textDelta(id: String, delta: String, providerMetadata: ProviderMetadata?)
+    case textDelta(id: String, text: String, providerMetadata: ProviderMetadata?)
     case textEnd(id: String, providerMetadata: ProviderMetadata?)
-    case streamStart(warnings: [Warning])
-    case finish(finishReason: FinishReason, usage: Usage, providerMetadata: ProviderMetadata?)
-    /// A completed model call (step), with the response metadata of that call.
-    case finishStep(finishReason: FinishReason, usage: Usage, providerMetadata: ProviderMetadata?,
-                    response: ResponseInfo)
+    /// Opens the stream.
+    case start
+    /// Opens a step: the step's request and the provider's call warnings.
+    case startStep(request: RequestInfo, warnings: [Warning])
+    /// Closes a step: its response metadata, usage, performance (weak type)
+    /// and finish reason.
+    case finishStep(response: ResponseMetadata, usage: LanguageModelUsage, performance: JSONValue?,
+                    finishReason: FinishReasonUnified, rawFinishReason: String?,
+                    providerMetadata: ProviderMetadata?)
+    /// Closes the stream: the last step's finish reason and the usage summed over the steps.
+    case finish(finishReason: FinishReasonUnified, rawFinishReason: String?, totalUsage: LanguageModelUsage)
+    /// Ends a stream whose call was aborted.
+    case abort(reason: String?)
     /// `error` is an `AiMuxError` object tagged by `name`.
     case error(error: JSONValue)
     case toolInputStart(id: String, toolName: String, providerExecuted: Bool?, dynamic: Bool?,
@@ -1176,19 +1509,23 @@ public enum TextStreamPart: Codable, Equatable {
     case toolInputDelta(id: String, delta: String, providerMetadata: ProviderMetadata?)
     case toolInputEnd(id: String, providerMetadata: ProviderMetadata?)
     case toolCall(ToolCall)
-    case toolResult(ToolResult)
-    case file(GeneratedFile)
-    case reasoningFile(ReasoningFileOutput)
+    case toolResult(TypedToolResult)
+    case toolError(TypedToolError)
+    case toolOutputDenied(ToolOutputDenied)
+    case file(GeneratedFileOutput)
+    case reasoningFile(GeneratedFileOutput)
     case custom(kind: String, providerMetadata: ProviderMetadata?)
     case toolApprovalRequest(ToolApprovalRequestOutput)
+    case toolApprovalResponse(ToolApprovalResponseOutput)
     case reasoningStart(id: String, providerMetadata: ProviderMetadata?)
-    case reasoningDelta(id: String, delta: String, providerMetadata: ProviderMetadata?)
+    case reasoningDelta(id: String, text: String, providerMetadata: ProviderMetadata?)
     case reasoningEnd(id: String, providerMetadata: ProviderMetadata?)
     case source(Source)
     case raw(rawValue: JSONValue)
 
     private enum Field: String, CodingKey {
-        case type, id, delta, warnings, finishReason, usage, providerMetadata, response, error
+        case type, id, delta, text, warnings, finishReason, rawFinishReason, usage, totalUsage
+        case providerMetadata, request, response, performance, reason, error
         case toolName, providerExecuted, dynamic, title, kind, rawValue
     }
 
@@ -1198,18 +1535,26 @@ public enum TextStreamPart: Codable, Equatable {
         func pm() throws -> ProviderMetadata? { try c.decodeIfPresent(ProviderMetadata.self, forKey: .providerMetadata) }
         func id() throws -> String { try c.decode(String.self, forKey: .id) }
         func delta() throws -> String { try c.decode(String.self, forKey: .delta) }
+        func text() throws -> String { try c.decode(String.self, forKey: .text) }
+        func fr() throws -> FinishReasonUnified { try c.decode(FinishReasonUnified.self, forKey: .finishReason) }
+        func rawFr() throws -> String? { try c.decodeIfPresent(String.self, forKey: .rawFinishReason) }
         switch t {
         case "text-start": self = .textStart(id: try id(), providerMetadata: try pm())
-        case "text-delta": self = .textDelta(id: try id(), delta: try delta(), providerMetadata: try pm())
+        case "text-delta": self = .textDelta(id: try id(), text: try text(), providerMetadata: try pm())
         case "text-end": self = .textEnd(id: try id(), providerMetadata: try pm())
-        case "stream-start": self = .streamStart(warnings: try c.decode([Warning].self, forKey: .warnings))
-        case "finish":
-            self = .finish(finishReason: try c.decode(FinishReason.self, forKey: .finishReason),
-                           usage: try c.decode(Usage.self, forKey: .usage), providerMetadata: try pm())
+        case "start": self = .start
+        case "start-step":
+            self = .startStep(request: try c.decode(RequestInfo.self, forKey: .request),
+                              warnings: try c.decode([Warning].self, forKey: .warnings))
         case "finish-step":
-            self = .finishStep(finishReason: try c.decode(FinishReason.self, forKey: .finishReason),
-                               usage: try c.decode(Usage.self, forKey: .usage), providerMetadata: try pm(),
-                               response: try c.decode(ResponseInfo.self, forKey: .response))
+            self = .finishStep(response: try c.decode(ResponseMetadata.self, forKey: .response),
+                               usage: try c.decode(LanguageModelUsage.self, forKey: .usage),
+                               performance: try c.decodeIfPresent(JSONValue.self, forKey: .performance),
+                               finishReason: try fr(), rawFinishReason: try rawFr(), providerMetadata: try pm())
+        case "finish":
+            self = .finish(finishReason: try fr(), rawFinishReason: try rawFr(),
+                           totalUsage: try c.decode(LanguageModelUsage.self, forKey: .totalUsage))
+        case "abort": self = .abort(reason: try c.decodeIfPresent(String.self, forKey: .reason))
         case "error": self = .error(error: try c.decode(JSONValue.self, forKey: .error))
         case "tool-input-start":
             self = .toolInputStart(id: try id(), toolName: try c.decode(String.self, forKey: .toolName),
@@ -1219,13 +1564,16 @@ public enum TextStreamPart: Codable, Equatable {
         case "tool-input-delta": self = .toolInputDelta(id: try id(), delta: try delta(), providerMetadata: try pm())
         case "tool-input-end": self = .toolInputEnd(id: try id(), providerMetadata: try pm())
         case "tool-call": self = .toolCall(try ToolCall(from: decoder))
-        case "tool-result": self = .toolResult(try ToolResult(from: decoder))
-        case "file": self = .file(try GeneratedFile(from: decoder))
-        case "reasoning-file": self = .reasoningFile(try ReasoningFileOutput(from: decoder))
+        case "tool-result": self = .toolResult(try TypedToolResult(from: decoder))
+        case "tool-error": self = .toolError(try TypedToolError(from: decoder))
+        case "tool-output-denied": self = .toolOutputDenied(try ToolOutputDenied(from: decoder))
+        case "file": self = .file(try GeneratedFileOutput(from: decoder))
+        case "reasoning-file": self = .reasoningFile(try GeneratedFileOutput(from: decoder))
         case "custom": self = .custom(kind: try c.decode(String.self, forKey: .kind), providerMetadata: try pm())
         case "tool-approval-request": self = .toolApprovalRequest(try ToolApprovalRequestOutput(from: decoder))
+        case "tool-approval-response": self = .toolApprovalResponse(try ToolApprovalResponseOutput(from: decoder))
         case "reasoning-start": self = .reasoningStart(id: try id(), providerMetadata: try pm())
-        case "reasoning-delta": self = .reasoningDelta(id: try id(), delta: try delta(), providerMetadata: try pm())
+        case "reasoning-delta": self = .reasoningDelta(id: try id(), text: try text(), providerMetadata: try pm())
         case "reasoning-end": self = .reasoningEnd(id: try id(), providerMetadata: try pm())
         case "source": self = .source(try Source(from: decoder))
         case "raw": self = .raw(rawValue: try c.decode(JSONValue.self, forKey: .rawValue))
@@ -1235,21 +1583,28 @@ public enum TextStreamPart: Codable, Equatable {
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: Field.self)
-        func head(_ t: String, id: String? = nil, delta: String? = nil, _ pm: ProviderMetadata? = nil) throws {
+        func head(_ t: String, id: String? = nil, delta: String? = nil, text: String? = nil,
+                  _ pm: ProviderMetadata? = nil) throws {
             try c.encode(t, forKey: .type)
             try c.encodeIfPresent(id, forKey: .id); try c.encodeIfPresent(delta, forKey: .delta)
+            try c.encodeIfPresent(text, forKey: .text)
             try c.encodeIfPresent(pm, forKey: .providerMetadata)
         }
         switch self {
         case .textStart(let i, let pm): try head("text-start", id: i, pm)
-        case .textDelta(let i, let d, let pm): try head("text-delta", id: i, delta: d, pm)
+        case .textDelta(let i, let d, let pm): try head("text-delta", id: i, text: d, pm)
         case .textEnd(let i, let pm): try head("text-end", id: i, pm)
-        case .streamStart(let w): try head("stream-start"); try c.encode(w, forKey: .warnings)
-        case .finish(let fr, let u, let pm):
-            try head("finish", pm); try c.encode(fr, forKey: .finishReason); try c.encode(u, forKey: .usage)
-        case .finishStep(let fr, let u, let pm, let r):
-            try head("finish-step", pm); try c.encode(fr, forKey: .finishReason); try c.encode(u, forKey: .usage)
-            try c.encode(r, forKey: .response)
+        case .start: try head("start")
+        case .startStep(let r, let w):
+            try head("start-step"); try c.encode(r, forKey: .request); try c.encode(w, forKey: .warnings)
+        case .finishStep(let r, let u, let perf, let fr, let rawFr, let pm):
+            try head("finish-step", pm); try c.encode(r, forKey: .response); try c.encode(u, forKey: .usage)
+            try c.encodeIfPresent(perf, forKey: .performance)
+            try c.encode(fr, forKey: .finishReason); try c.encodeIfPresent(rawFr, forKey: .rawFinishReason)
+        case .finish(let fr, let rawFr, let u):
+            try head("finish"); try c.encode(fr, forKey: .finishReason)
+            try c.encodeIfPresent(rawFr, forKey: .rawFinishReason); try c.encode(u, forKey: .totalUsage)
+        case .abort(let reason): try head("abort"); try c.encodeIfPresent(reason, forKey: .reason)
         case .error(let e): try head("error"); try c.encode(e, forKey: .error)
         case .toolInputStart(let i, let n, let pe, let dyn, let title, let pm):
             try head("tool-input-start", id: i, pm); try c.encode(n, forKey: .toolName)
@@ -1259,12 +1614,15 @@ public enum TextStreamPart: Codable, Equatable {
         case .toolInputEnd(let i, let pm): try head("tool-input-end", id: i, pm)
         case .toolCall(let v): try v.encode(to: encoder); try encoder.putTag("tool-call")
         case .toolResult(let v): try v.encode(to: encoder); try encoder.putTag("tool-result")
+        case .toolError(let v): try v.encode(to: encoder); try encoder.putTag("tool-error")
+        case .toolOutputDenied(let v): try v.encode(to: encoder); try encoder.putTag("tool-output-denied")
         case .file(let v): try v.encode(to: encoder); try encoder.putTag("file")
         case .reasoningFile(let v): try v.encode(to: encoder); try encoder.putTag("reasoning-file")
         case .custom(let k, let pm): try head("custom", pm); try c.encode(k, forKey: .kind)
         case .toolApprovalRequest(let v): try v.encode(to: encoder); try encoder.putTag("tool-approval-request")
+        case .toolApprovalResponse(let v): try v.encode(to: encoder); try encoder.putTag("tool-approval-response")
         case .reasoningStart(let i, let pm): try head("reasoning-start", id: i, pm)
-        case .reasoningDelta(let i, let d, let pm): try head("reasoning-delta", id: i, delta: d, pm)
+        case .reasoningDelta(let i, let d, let pm): try head("reasoning-delta", id: i, text: d, pm)
         case .reasoningEnd(let i, let pm): try head("reasoning-end", id: i, pm)
         case .source(let v): try v.encode(to: encoder); try encoder.putTag("source")
         case .raw(let v): try head("raw"); try c.encode(v, forKey: .rawValue)
@@ -1540,9 +1898,9 @@ public extension Model {
     /// Generate a structured JSON object with typed inputs/outputs (M12, RFC-0016).
     ///
     /// Same signature as the typed `generateText`; returns a decoded
-    /// `GenerateObjectResult`. Pass `responseFormat: .json(schema: …)`
-    /// via `options` for schema control; the engine applies JSON repair
-    /// before parsing.
+    /// `GenerateObjectResult`. Pass `output: {"type": "object", "schema": ...}` via
+    /// `options` to describe the object; the model's text must parse as JSON
+    /// and match the schema.
     ///
     /// - Parameters:
     ///   - prompt: A `ModelPrompt` — a plain string (`.text`) or a message list
@@ -1569,18 +1927,18 @@ public extension Model {
     ///   - prompt: A `ModelPrompt` — a plain string (`.text`) or a message list
     ///     (`.messages`), serialized to the JSON shape the FFI expects.
     ///   - options: Optional `GenerateTextOptions`.
-    /// - Returns: A decoded `StreamTextResultAggregated`.
+    /// - Returns: A decoded `GenerateTextResult`.
     func consumeStreamText(
         prompt: ModelPrompt,
         options: GenerateTextOptions? = nil
-    ) throws -> StreamTextResultAggregated {
+    ) throws -> GenerateTextResult {
         let promptJson = try AimuxCodable.jsonString(for: prompt)
         let optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
         let resultJson = try repairedResultJson(
             consumeStreamText(prompt: promptJson, options: optsJson),
             promptJson: promptJson, optsJson: optsJson, options: options
         )
-        return try JSONDecoder().decode(StreamTextResultAggregated.self, from: Data(resultJson.utf8))
+        return try JSONDecoder().decode(GenerateTextResult.self, from: Data(resultJson.utf8))
     }
 
     /// Stream text with typed `TextStreamPart`s.

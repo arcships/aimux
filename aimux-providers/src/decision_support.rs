@@ -1,12 +1,79 @@
-//! Shared transport and inline image handling for native decision adapters.
+//! Shared transport, provider options and metadata of the native decision
+//! adapters (aimux extensions; the AI SDK's own decision models wrap a
+//! language model, see `aimux_provider_utils::DecisionLanguageModel`).
 use std::collections::HashMap;
 
 use aimux_core::AiMuxError;
-use aimux_core::decision_model::{DecisionCallOptions, DecisionImage};
-use aimux_core::shared::{FileBytes, SharedProviderMetadata};
+use aimux_core::decision_model::{DecisionCallOptions, DecisionQuestion};
+use aimux_core::shared::{ResponseInfo, SharedProviderMetadata};
 use aimux_provider_utils::HttpRequest;
-use base64::Engine;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value, json};
+
+/// How a native decision provider produced its probabilities. This is
+/// provenance, not a calibration guarantee (RFC-0037). Reported as
+/// `providerMetadata.<provider>.probabilitySource`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecisionProbabilitySource {
+    Native,
+    LogitScoring,
+    ModelEstimate,
+}
+
+impl DecisionProbabilitySource {
+    /// The wire name (`"native"`, `"logit_scoring"`, `"model_estimate"`).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Native => "native",
+            Self::LogitScoring => "logit_scoring",
+            Self::ModelEstimate => "model_estimate",
+        }
+    }
+}
+
+impl std::str::FromStr for DecisionProbabilitySource {
+    type Err = AiMuxError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "native" => Ok(Self::Native),
+            "logit_scoring" => Ok(Self::LogitScoring),
+            "model_estimate" => Ok(Self::ModelEstimate),
+            _ => Err(AiMuxError::InvalidArgument(format!(
+                "unknown decision probability source: {value:?}"
+            ))),
+        }
+    }
+}
+
+/// An inline image shared by all questions, placed before the textual
+/// state: an entry of `providerOptions.<provider>.images`,
+/// `{data, mediaType, detail?}` as the AI SDK's image parts name the media
+/// type.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct DecisionImage {
+    /// Base64 image bytes.
+    pub data: String,
+    pub media_type: String,
+    /// Provider image detail, for example OpenAI's `low`, `high`, `auto`,
+    /// `original`.
+    #[serde(default)]
+    pub detail: Option<String>,
+}
+
+/// Take `images` out of a provider's options.
+pub(crate) fn take_images(
+    options: &mut Map<String, Value>,
+) -> Result<Vec<DecisionImage>, AiMuxError> {
+    match options.remove("images") {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(images) => serde_json::from_value(images)
+            .map_err(|e| AiMuxError::InvalidArgument(format!("decision images: {e}"))),
+    }
+}
 
 use crate::openai::config::OpenAIModelConfig;
 use crate::openai_compatible::config::CompatModelConfig;
@@ -56,7 +123,11 @@ impl DecisionConfig {
             Self::Compatible(config) => {
                 let headers = config.request_headers(options.headers.as_ref()).await?;
                 let origin = config.base_url.resolve()?;
-                config.with_transport(HttpRequest::new(url, headers, options), origin)
+                config.with_transport(
+                    HttpRequest::new(url, headers.list, options),
+                    origin,
+                    headers.fetch_user_agent,
+                )
             }
         })
     }
@@ -74,16 +145,12 @@ pub(crate) fn inline_image(image: &DecisionImage) -> Result<InlineImage, AiMuxEr
             "decision image requires an image MIME type".into(),
         ));
     }
-    let engine = base64::engine::general_purpose::STANDARD;
-    let (base64, decoded_len) = match &image.data {
-        FileBytes::Binary(bytes) => (engine.encode(bytes), bytes.len()),
-        FileBytes::Base64(data) => {
-            let bytes = engine
-                .decode(data)
-                .map_err(|e| AiMuxError::InvalidArgument(format!("decision image base64: {e}")))?;
-            (data.clone(), bytes.len())
-        }
-    };
+    // The image's bytes are a base64 string, read as the AI SDK reads
+    // base64 (`convertBase64ToUint8Array`) and sent on verbatim.
+    let decoded_len = aimux_core::wire::decode_base64(&image.data)
+        .map_err(|e| AiMuxError::InvalidArgument(format!("decision image base64: {e}")))?
+        .len();
+    let base64 = image.data.clone();
     if decoded_len == 0 {
         return Err(AiMuxError::InvalidArgument(
             "decision image is empty".into(),
@@ -153,15 +220,48 @@ pub(crate) fn invalid(message: impl Into<String>) -> AiMuxError {
     AiMuxError::InvalidResponseData(message.into())
 }
 
-/// Provider metadata keeps the whole response object under the provider key.
-pub(crate) fn response_metadata(
+/// What a native provider reports beyond the V4 result, under its provider
+/// key: the probability source, and per answer what the wire adds (such as
+/// `confidence`). The raw response stays in `response.body`.
+pub(crate) fn provider_metadata(
     provider: &str,
-    raw: &Value,
-) -> Result<SharedProviderMetadata, AiMuxError> {
-    let object = raw.as_object().cloned().ok_or_else(|| {
-        AiMuxError::InvalidResponseData(format!("{provider} response must be an object"))
-    })?;
-    Ok(HashMap::from([(provider.into(), object)]))
+    probability_source: DecisionProbabilitySource,
+    answers: Map<String, Value>,
+) -> SharedProviderMetadata {
+    let mut metadata = Map::new();
+    metadata.insert(
+        "probabilitySource".into(),
+        json!(probability_source.as_str()),
+    );
+    if !answers.is_empty() {
+        metadata.insert("answers".into(), Value::Object(answers));
+    }
+    SharedProviderMetadata::from([(provider.into(), metadata)])
+}
+
+/// The V4 response information of a native exchange: the model the server
+/// reports, its headers and its body.
+pub(crate) fn response_info(
+    model: Option<&str>,
+    headers: HashMap<String, String>,
+    raw: Value,
+) -> ResponseInfo {
+    ResponseInfo {
+        model_id: model.filter(|m| !m.trim().is_empty()).map(str::to_owned),
+        headers: Some(headers),
+        body: Some(raw),
+        ..Default::default()
+    }
+}
+
+/// The number of candidates a question offers: its options, its levels, or
+/// the two Boolean outcomes.
+pub(crate) fn candidate_count(question: &DecisionQuestion) -> usize {
+    match question {
+        DecisionQuestion::Choice { criteria, .. } => criteria.len(),
+        DecisionQuestion::Score { criteria, .. } => criteria.len(),
+        DecisionQuestion::Boolean { .. } => 2,
+    }
 }
 
 pub(crate) fn options(
@@ -203,5 +303,25 @@ mod tests {
             DecisionConfig::OpenAI(config).url("/decisions").unwrap(),
             "https://example.com/decisions?version=1"
         );
+    }
+
+    /// Decision image bytes are a base64 string, read as `atob` reads it
+    /// (`provider-utils` `uint8-utils.ts:6-23`) and sent on verbatim.
+    #[test]
+    fn inline_image_reads_base64_as_the_ai_sdk_does() {
+        let image = |data: &str| DecisionImage {
+            data: data.into(),
+            media_type: "image/png".into(),
+            detail: None,
+        };
+        let padded = inline_image(&image("AAEC+v8=")).unwrap();
+        assert_eq!(padded.base64, "AAEC+v8=");
+        assert_eq!(padded.data_url, "data:image/png;base64,AAEC+v8=");
+        let unpadded = inline_image(&image("AAEC+v8")).unwrap();
+        assert_eq!(
+            (unpadded.base64.as_str(), unpadded.decoded_len),
+            ("AAEC+v8", 5)
+        );
+        assert!(inline_image(&image("not base64!")).is_err());
     }
 }

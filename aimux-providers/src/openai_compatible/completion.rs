@@ -325,8 +325,7 @@ fn metadata(response: &CompletionResponse) -> ResponseMetadata {
         id: response.id.clone(),
         timestamp: response
             .created
-            .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
-            .map(|dt| dt.to_rfc3339()),
+            .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
         model_id: response.model.clone(),
     }
 }
@@ -385,7 +384,7 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
     fn model_id(&self) -> &str {
         &self.model_id
     }
-    fn supported_urls(&self) -> SupportedUrls {
+    async fn supported_urls(&self) -> SupportedUrls {
         match &self.config {
             CompletionConfig::Compatible(_) => SupportedUrls::default(),
             CompletionConfig::Native(_) => SupportedUrls::default(),
@@ -510,6 +509,10 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
             }
         }
         let stream_body = body.clone();
+        let compat_name = match &self.config {
+            CompletionConfig::Compatible(config) => Some(config.provider_options_name().to_owned()),
+            CompletionConfig::Native(_) => None,
+        };
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings });
             let mut events = futures::stream::iter(buffered).chain(events);
@@ -525,7 +528,15 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
                 if raw_chunks { yield Ok(StreamPart::Raw { raw_value: event.clone() }); }
                 if let Some(error) = event.get("error") {
                     finish_reason = FinishReason { unified: FinishReasonUnified::Error, raw: None };
-                    yield Ok(StreamPart::Error { error: crate::openai::openai_stream_error(error, &error_url, stream_body.clone(), response_headers.clone()) });
+                    // @ai-sdk/openai maps the frame to a status
+                    // (openai-completion-language-model.ts:305-313);
+                    // @ai-sdk/openai-compatible passes it on as it is
+                    // (openai-compatible-completion-language-model.ts:320-325).
+                    let error = match &compat_name {
+                        None => crate::openai::openai_stream_error(error, &error_url, stream_body.clone(), response_headers.clone()),
+                        Some(name) => super::chat::stream_error(name, error, &error_url, stream_body.clone(), response_headers.clone()),
+                    };
+                    yield Ok(StreamPart::Error { error });
                     continue;
                 }
                 let parsed: CompletionResponse = match parse_response(event, native, true) {

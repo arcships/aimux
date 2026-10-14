@@ -139,8 +139,8 @@ async fn stream_text_and_usage() {
             );
             assert_eq!(metadata.model_id.as_deref(), Some("mistral-small-latest"));
             assert_eq!(
-                metadata.timestamp.as_deref(),
-                Some("2026-01-22T13:32:00+00:00")
+                metadata.timestamp.map(|t| t.to_string()).as_deref(),
+                Some("2026-01-22T13:32:00.000Z")
             );
         }
         part => panic!("unexpected metadata: {part:?}"),

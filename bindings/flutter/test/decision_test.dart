@@ -10,9 +10,10 @@ Future<Map<String, dynamic>> runDecision(
     String endpoint, Map<String, dynamic> options) => Isolate.run(() {
   final model = DecisionModel.jev('test-key', 'jev-latest', endpoint: endpoint);
   try {
-    final caps = model.capabilities();
-    if (caps['max_choices'] != 255 || caps['rounding']['score_decimals'] != 2) {
-      throw StateError('incorrect capabilities');
+    final description = model.describe();
+    if (description['provider'] != 'jev' ||
+        (description['supportedQuestionTypes'] as List).length != 3) {
+      throw StateError('incorrect description');
     }
     return model.decide(options);
   } finally { model.close(); }
@@ -42,8 +43,9 @@ void main() {
     final options = (fixture['options'] as Map).cast<String, dynamic>();
     final result = await runOpenAIDecision('http://127.0.0.1:${server.port}/v1', options);
     expect(captures, [fixture['request']]);
-    expect(result['answers']['choice']['value'], isTrue);
-    expect(result['answers']['score']['levels'], options['questions'][1]['levels']);
+    expect(result['answers']['choice']['choice'], 'boolean_true');
+    expect(result['providerMetadata']['openai']['answers']['choice']['value'], isTrue);
+    expect(result['answers']['score']['score'], 0.75);
   });
 
   test('provider decision model owns its handle', () {
@@ -52,11 +54,13 @@ void main() {
     addTearDown(provider.close);
     addTearDown(model.close);
     provider.close();
-    expect(model.capabilities()['min_choices'], 2);
+    expect(model.describe()['specificationVersion'], 'v4');
+    expect(model.describe()['provider'], 'openai');
+    expect(model.describe()['modelId'], 'gpt-6-luna');
     expect(() => provider.decisionModel('gpt-6-luna'), throwsStateError);
   });
 
-  test('official structured contract and capabilities cross the C ABI', () async {
+  test('official structured contract and description cross the C ABI', () async {
     final fixture = jsonDecode(File('../../contract-tests/fixtures/decision-native.json').readAsStringSync()) as Map;
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final captures = <Map<String, dynamic>>[];
@@ -74,14 +78,16 @@ void main() {
     // The Rust call blocks; the HTTP server remains on this isolate.
     final result = await runDecision(endpoint, options);
     expect(captures.length, 1);
-    expect(result['answers']['urgent']['probability_true'], 0.9);
-    expect(result['answers']['severity']['levels'], options['questions'][2]['levels']);
-    expect(captures.single['questions']['urgent']['criteria'], options['questions'][0]['criteria']);
+    expect(result['answers']['urgent']['probability'], 0.9);
+    expect(result['rounding']['scoreDecimals'], 2);
+    expect(result['usage'], {'inputTokens': 50, 'outputTokens': 10, 'totalTokens': 60});
+    expect(captures.single['questions']['severity']['criteria'], options['questions']['severity']['criteria']);
+    expect(captures.single['questions']['urgent']['criteria'], options['questions']['urgent']['criteria']);
     final model = DecisionModel.jev('test-key', 'jev-latest');
     expect(() => model.decideJson('{'), throwsFormatException);
     model.close();
     model.close();
-    expect(model.capabilities, throwsStateError);
+    expect(model.describe, throwsStateError);
     expect(() => DecisionModel.jev('test', 'jev-latest', probabilitySource: 'unknown'), throwsA(isA<AimuxException>()));
   });
 }

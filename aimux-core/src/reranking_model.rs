@@ -51,7 +51,8 @@ pub struct RerankingCallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
-    /// Per-call retry override. `None` uses the model default.
+    /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
+    /// retrying. `None` uses 2, the AI SDK default.
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
@@ -136,10 +137,10 @@ pub struct RerankingResponse {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    /// Timestamp for the start of the generated response (ISO 8601 string).
+    /// Timestamp for the start of the generated response (`toISOString()` in the JSON).
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<String>,
+    pub timestamp: Option<crate::timestamp::Timestamp>,
     /// The ID of the model that was used to generate the response.
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -150,7 +151,11 @@ pub struct RerankingResponse {
     pub headers: Option<SharedHeaders>,
     /// Response body (opaque JSON).
     #[ts(optional)]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::wire::present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub body: Option<serde_json::Value>,
 }
 
@@ -159,6 +164,11 @@ pub struct RerankingResponse {
 /// Aligned with V4 `RerankingModelV4`.
 #[async_trait]
 pub trait RerankingModel: Send + Sync {
+    /// Specification version (always `"v4"`).
+    fn specification_version(&self) -> &'static str {
+        "v4"
+    }
+
     /// Provider name, e.g. `"cohere"`.
     fn provider(&self) -> &str;
 

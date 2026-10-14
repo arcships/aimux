@@ -21,19 +21,22 @@ use aimux_core::recording::ProviderRecord;
 
 /// Rebuild a decision model using the caller's registered provider configuration.
 /// # Errors
-/// Rejects missing identities, missing providers and a different model provider.
+/// Rejects missing identities, missing providers, a provider without
+/// decision models (`NoSuchModel`) and a different model provider.
 pub fn rebuild_decision_provider(
     p: &ProviderRecord,
     registry: &ProviderRegistry,
-) -> Result<Box<dyn aimux_core::DecisionModel>, AiMuxError> {
-    if p.provider_id.is_empty() || p.model_id.is_empty() {
+) -> Result<Arc<dyn aimux_core::DecisionModel>, AiMuxError> {
+    let provider_id = p.registry_id()?;
+    if p.model_id.is_empty() {
         return Err(AiMuxError::InvalidArgument(
             "decision replay: empty provider/model identity".into(),
         ));
     }
     let model = registry
-        .provider(&p.provider_id)?
-        .decision_model(&p.model_id)?;
+        .provider(provider_id)?
+        .decision_model(&p.model_id)
+        .unwrap_or_else(|| Err(AiMuxError::no_such_model(&p.model_id, "decisionModel")))?;
     if model.provider() != p.provider {
         return Err(AiMuxError::InvalidArgument(
             "decision replay: registered model provider differs from recording".into(),
@@ -48,18 +51,15 @@ pub fn rebuild_decision_provider(
 ///
 /// # Errors
 ///
-/// `InvalidArgument` for an empty `provider_id` or `model_id`, or when the
+/// `InvalidArgument` for an empty `provider_id` (a recording written by aimux
+/// 0.5 or earlier, see [`ProviderRecord::registry_id`]) or `model_id`, or when the
 /// provider's default language model is not the one the recording was made
 /// with; [`AiMuxError::NoSuchProvider`] when `provider_id` is not registered.
 pub fn rebuild_provider(
     p: &ProviderRecord,
     registry: &ProviderRegistry,
 ) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
-    if p.provider_id.is_empty() {
-        return Err(AiMuxError::InvalidArgument(
-            "mock replay: provider record has empty provider_id".into(),
-        ));
-    }
+    p.registry_id()?;
     if p.model_id.is_empty() {
         return Err(AiMuxError::InvalidArgument(
             "mock replay: provider record has empty model_id".into(),
@@ -92,5 +92,29 @@ mod tests {
             .err()
             .unwrap();
         assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
+    }
+
+    /// A recording written by master (aimux 0.5, schema 2) has no
+    /// `provider_id`: both rebuilds refuse it at replay time, naming why.
+    #[test]
+    fn a_recording_written_by_aimux_0_5_is_refused_at_rebuild() {
+        let line = include_str!("../../aimux-core/tests/fixtures/master_language_recordings.jsonl")
+            .lines()
+            .next()
+            .unwrap();
+        let recording: aimux_core::recording::Recording = serde_json::from_str(line).unwrap();
+        let registry =
+            aimux_core::create_provider_registry(crate::default_providers(), Default::default());
+
+        let err = rebuild_provider(&recording.provider, &registry)
+            .err()
+            .unwrap();
+        assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
+        assert!(err.to_string().contains("no provider_id"), "{err}");
+        assert!(err.to_string().contains("aimux 0.5"), "{err}");
+        let err = rebuild_decision_provider(&recording.provider, &registry)
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("no provider_id"), "{err}");
     }
 }

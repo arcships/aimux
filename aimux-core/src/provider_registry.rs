@@ -8,9 +8,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::decision_model::DecisionModel;
 use crate::embedding_model::EmbeddingModel;
 use crate::error::AiMuxError;
-use crate::evaluation_model::EvaluationModel;
 use crate::files_model::Files;
 use crate::image_model::ImageModel;
 use crate::image_model_middleware::{ImageModelMiddleware, wrap_image_model};
@@ -184,15 +184,17 @@ impl ProviderRegistry {
         offered(provider.reranking_model(model_id), id, "rerankingModel")
     }
 
-    /// The experimental evaluation model for a combined id. A provider that
-    /// offers none is [`AiMuxError::NoSuchModel`].
+    /// The experimental decision model for a combined id
+    /// (`ai@7.0.128 src/registry/provider-registry.ts:447-461`). A provider
+    /// that offers none is [`AiMuxError::NoSuchModel`] with model type
+    /// `"decisionModel"`.
     ///
     /// # Errors
     ///
     /// See [`Self::language_model`].
-    pub fn evaluation_model(&self, id: &str) -> Result<Arc<dyn EvaluationModel>, AiMuxError> {
-        let (provider, model_id) = self.resolve(id, "evaluationModel")?;
-        offered(provider.evaluation_model(model_id), id, "evaluationModel")
+    pub fn decision_model(&self, id: &str) -> Result<Arc<dyn DecisionModel>, AiMuxError> {
+        let (provider, model_id) = self.resolve(id, "decisionModel")?;
+        offered(provider.decision_model(model_id), id, "decisionModel")
     }
 
     /// The video model for a combined id. A provider that offers none is

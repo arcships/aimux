@@ -14,9 +14,9 @@ use serde_json::{Map, Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultPart, UserPart,
+    ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
@@ -58,12 +58,12 @@ pub(crate) fn function_tool_value(tool: &aimux_core::tool::FunctionTool) -> Valu
 }
 
 /// The wire form of the tool choice.
-pub(crate) fn tool_choice_value(choice: &ToolChoice) -> Value {
+pub(crate) fn tool_choice_value(choice: &LanguageModelV4ToolChoice) -> Value {
     match choice {
-        ToolChoice::Auto => json!("auto"),
-        ToolChoice::None => json!("none"),
-        ToolChoice::Required => json!("required"),
-        ToolChoice::Tool { tool_name } => {
+        LanguageModelV4ToolChoice::Auto => json!("auto"),
+        LanguageModelV4ToolChoice::None => json!("none"),
+        LanguageModelV4ToolChoice::Required => json!("required"),
+        LanguageModelV4ToolChoice::Tool { tool_name } => {
             json!({ "type": "function", "function": { "name": tool_name } })
         }
     }
@@ -115,6 +115,7 @@ pub(crate) struct ChatBodySpec<'a> {
     pub provider_options_name: &'a str,
     pub include_usage: bool,
     pub supports_structured_outputs: bool,
+    pub supports_multi_part_tool_content: bool,
     pub dialect: &'a ChatDialect,
 }
 
@@ -337,6 +338,7 @@ pub(crate) fn build_request_body(
         &options.prompt,
         &MessageSpec {
             metadata_key: &metadata_key,
+            supports_multi_part_tool_content: spec.supports_multi_part_tool_content,
         },
     )?;
     body.insert("messages".into(), Value::Array(messages));
@@ -379,6 +381,8 @@ pub(crate) fn build_request_body(
 
 pub(crate) struct MessageSpec<'a> {
     pub metadata_key: &'a str,
+    /// Send a `content` tool output as content parts, not a JSON string.
+    pub supports_multi_part_tool_content: bool,
 }
 
 /// The generic `openaiCompatible` metadata of a message or part
@@ -441,28 +445,57 @@ fn convert_message(
             spec,
             wire_metadata(provider_options.as_ref()),
         )]),
-        LanguageModelMessage::Tool { content, .. } => Ok(content
+        LanguageModelMessage::Tool { content, .. } => content
             .iter()
-            .filter_map(|part| {
-                let ToolPart::ToolResult(ToolResultPart {
+            .filter_map(|part| match part {
+                ToolPart::ToolResult(ToolResultPart {
                     tool_call_id,
                     output,
                     provider_options,
                     ..
-                }) = part
-                else {
-                    return None;
+                }) => Some((tool_call_id, output, provider_options)),
+                _ => None,
+            })
+            .map(|(tool_call_id, output, provider_options)| {
+                // convert-to-openai-compatible-chat-messages.ts:284-321: a
+                // `content` output is an array of content parts only when
+                // the provider supports multi-part tool content.
+                let content = match output {
+                    ToolResultOutput::Content { value }
+                        if spec.supports_multi_part_tool_content =>
+                    {
+                        Value::Array(
+                            value
+                                .iter()
+                                .map(convert_tool_content_part)
+                                .collect::<Result<_, _>>()?,
+                        )
+                    }
+                    output => crate::openai::convert::tool_result_to_content(output),
                 };
-                Some(with_metadata(
+                Ok(with_metadata(
                     json!({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
-                        "content": crate::openai::convert::tool_result_to_content(output),
+                        "content": content,
                     }),
                     wire_metadata(provider_options.as_ref()),
                 ))
             })
-            .collect()),
+            .collect(),
+    }
+}
+
+/// One part of a multi-part tool result (`convertToolContentPart`,
+/// convert-to-openai-compatible-chat-messages.ts:162-176): a text or file part
+/// is converted like a user content part; a custom part has no wire form.
+fn convert_tool_content_part(part: &ToolResultContent) -> Result<Value, AiMuxError> {
+    match part {
+        ToolResultContent::Text(text) => Ok(convert_text_part(text)),
+        ToolResultContent::File(file) => convert_file_part(file),
+        ToolResultContent::Custom { .. } => Err(AiMuxError::UnsupportedFunctionality(
+            "custom tool content parts".to_string(),
+        )),
     }
 }
 
@@ -494,40 +527,47 @@ fn convert_user_message(
 }
 
 fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
-    let (wire, provider_options) = match part {
-        UserPart::Text(TextPart {
-            text,
-            provider_options,
-        }) => (json!({ "type": "text", "text": text }), provider_options),
-        UserPart::File(file) => {
-            let wire = match &file.data {
-                FileData::Data {
-                    data: FileBytes::Binary(data),
-                } => file_part(
-                    file,
-                    FileSource::Base64(&base64::engine::general_purpose::STANDARD.encode(data)),
-                )?,
-                FileData::Data {
-                    data: FileBytes::Base64(data),
-                } => file_part(file, FileSource::Base64(data))?,
-                FileData::Url { url, .. } => file_part(file, FileSource::Url(url))?,
-                FileData::Reference { .. } => {
-                    return Err(AiMuxError::UnsupportedFunctionality(
-                        "file parts with provider references".to_string(),
-                    ));
-                }
-                FileData::Text { .. } => {
-                    return Err(AiMuxError::UnsupportedFunctionality(
-                        "text file parts".to_string(),
-                    ));
-                }
-            };
-            (wire, &file.provider_options)
+    match part {
+        UserPart::Text(text) => Ok(convert_text_part(text)),
+        UserPart::File(file) => convert_file_part(file),
+    }
+}
+
+/// A text content part (`convertToOpenAICompatibleContentPart`).
+fn convert_text_part(part: &TextPart) -> Value {
+    with_metadata(
+        json!({ "type": "text", "text": part.text }),
+        wire_metadata(part.provider_options.as_ref()),
+    )
+}
+
+/// A file content part (`convertToOpenAICompatibleContentPart`).
+fn convert_file_part(file: &FilePart) -> Result<Value, AiMuxError> {
+    let wire = match &file.data {
+        FileData::Data {
+            data: FileBytes::Binary(data),
+        } => file_part(
+            file,
+            FileSource::Base64(&base64::engine::general_purpose::STANDARD.encode(data)),
+        )?,
+        FileData::Data {
+            data: FileBytes::Base64(data),
+        } => file_part(file, FileSource::Base64(data))?,
+        FileData::Url { url, .. } => file_part(file, FileSource::Url(url))?,
+        FileData::Reference { .. } => {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "file parts with provider references".to_string(),
+            ));
+        }
+        FileData::Text { .. } => {
+            return Err(AiMuxError::UnsupportedFunctionality(
+                "text file parts".to_string(),
+            ));
         }
     };
     Ok(with_metadata(
         wire,
-        wire_metadata(provider_options.as_ref()),
+        wire_metadata(file.provider_options.as_ref()),
     ))
 }
 

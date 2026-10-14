@@ -249,8 +249,8 @@ func TestE2E_FilesViaMock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.ProviderReference["openai"] != "file-abc" {
-		t.Errorf("got %s", r.ProviderReference["openai"])
+	if id, _ := r.ProviderReference.Get("openai"); id != "file-abc" {
+		t.Errorf("got %s", r.ProviderReference)
 	}
 }
 

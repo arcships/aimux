@@ -63,12 +63,14 @@ generateAudio?: boolean,
  */
 providerOptions: { [key in string]: { [key in string]: JsonValue } }, 
 /**
- * Per-call retry override. `None` uses the model default.
+ * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
+ * retrying. `None` uses 2, the AI SDK default.
  */
 maxRetries?: number, 
 /**
- * Per-call poll pacing override for the start/status flow. Unset fields
- * fall back to the model's [`VideoModel::poll_config`].
+ * Poll pacing for the start/status flow, the AI SDK's `generateVideo`
+ * `poll` option. Unset fields use the AI SDK defaults (5000 ms between
+ * status checks, 600000 ms in total).
  */
 poll?: VideoPollOptions, 
 /**

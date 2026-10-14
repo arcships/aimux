@@ -108,7 +108,8 @@ test('default streams carry no raw parts (RFC-0016 M2 contract)', async (t) => {
   }
 
   t.truthy(parts.length >= 1)
-  t.is(JSON.parse(parts[0]).type, 'stream-start', `part[0] must be stream-start: ${parts[0]}`)
+  t.is(JSON.parse(parts[0]).type, 'start', `part[0] must be start: ${parts[0]}`)
+  t.is(JSON.parse(parts[1]).type, 'start-step', `part[1] must be start-step: ${parts[1]}`)
   t.true(
     parts.every((p) => JSON.parse(p).type !== 'raw'),
     'no raw parts by default',
@@ -122,5 +123,5 @@ test('non-traced model still generates normally', async (t) => {
   const model = await deepseek('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
   const result: GenerateTextResult = await generateText(model, 'hello')
   t.truthy(result.text)
-  t.is(result.usage.inputTokens.total, 200)
+  t.is(result.usage.inputTokens, 200)
 })

@@ -8,22 +8,27 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::shared::{SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning};
+use crate::shared::{
+    JsonObject, SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning,
+};
 use crate::{AbortSignal, retry, timeout};
 
 /// Generated audio: a base64-encoded string or raw binary bytes.
 ///
 /// The TS result type is `string | Uint8Array`. Providers should return data
 /// without unnecessary conversion.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(untagged)]
-#[ts(export)]
+///
+/// The JSON is a base64 string either way, as in the AI SDK's JSON.
+#[derive(Debug, Clone, TS)]
+#[ts(export, type = "string")]
 pub enum AudioData {
     /// Audio as a base64-encoded string.
     Base64(String),
     /// Audio as raw binary bytes.
     Binary(Vec<u8>),
 }
+
+crate::wire::base64_wire_enum!(AudioData);
 
 /// Options passed to [`SpeechModel::do_generate`].
 ///
@@ -73,7 +78,8 @@ pub struct SpeechCallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
-    /// Per-call retry override. `None` uses the model default.
+    /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
+    /// retrying. `None` uses 2, the AI SDK default.
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
@@ -121,6 +127,11 @@ pub struct SpeechResult {
     /// Warnings for the call, e.g. unsupported settings.
     pub warnings: Vec<Warning>,
 
+    /// Usage information reported by the provider, in the provider's native
+    /// JSON shape (`SpeechModelV4Result.usage?: JSONObject`,
+    /// `@ai-sdk/provider@4.0.22 src/speech-model/v4/speech-model-v4-result.ts:23-27`).
+    pub usage: Option<JsonObject>,
+
     /// Optional request information for telemetry and debugging.
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -142,7 +153,11 @@ pub struct SpeechResult {
 pub struct SpeechRequest {
     /// Response body (HTTP providers only).
     #[ts(optional)]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::wire::present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub body: Option<serde_json::Value>,
 }
 
@@ -151,10 +166,10 @@ pub struct SpeechRequest {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SpeechResponse {
-    /// Timestamp for the start of the generated response (ISO 8601 string).
+    /// Timestamp for the start of the generated response (`toISOString()` in the JSON).
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<String>,
+    pub timestamp: Option<crate::timestamp::Timestamp>,
     /// The ID of the model that was used to generate the response.
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -165,7 +180,11 @@ pub struct SpeechResponse {
     pub headers: Option<SharedHeaders>,
     /// Response body (opaque JSON).
     #[ts(optional)]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::wire::present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub body: Option<serde_json::Value>,
 }
 
@@ -174,6 +193,11 @@ pub struct SpeechResponse {
 /// Aligned with V4 `SpeechModelV4`.
 #[async_trait]
 pub trait SpeechModel: Send + Sync {
+    /// Specification version (always `"v4"`).
+    fn specification_version(&self) -> &'static str {
+        "v4"
+    }
+
     /// Provider name, e.g. `"openai"`.
     fn provider(&self) -> &str;
 

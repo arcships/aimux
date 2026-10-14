@@ -101,6 +101,7 @@ fn audio_input_to_base64(audio: &AudioInput) -> Result<String, AiMuxError> {
             &base64::engine::general_purpose::STANDARD,
             bytes,
         )),
+        AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
 
@@ -281,7 +282,7 @@ impl TranscriptionModel for VertexTranscriptionModel {
                 .and_then(|m| m.total_billed_duration.clone()),
         );
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(TranscriptionResult {
             text,

@@ -132,7 +132,7 @@ impl LanguageModel for BedrockModel {
         &self.model_id
     }
 
-    fn supported_urls(&self) -> SupportedUrls {
+    async fn supported_urls(&self) -> SupportedUrls {
         let s3 = regex::Regex::new(r"^s3://").expect("static pattern");
         SupportedUrls(
             [
@@ -240,7 +240,9 @@ impl LanguageModel for BedrockModel {
             provider_metadata,
             response: Some(aimux_core::shared::ResponseInfo {
                 id: request_id,
-                timestamp: response_headers.get("date").cloned(),
+                timestamp: response_headers
+                    .get("date")
+                    .and_then(|date| aimux_core::Timestamp::from_http_date(date)),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
                 body: None,
@@ -276,7 +278,9 @@ impl LanguageModel for BedrockModel {
             .or_else(|| response_headers.get("x-amzn-request-id").cloned());
         // Same source as the non-stream path: the response `Date` header
         // (RFC1123). Keeps stream/non-stream timestamps consistent.
-        let response_timestamp = response_headers.get("date").cloned();
+        let response_timestamp = response_headers
+            .get("date")
+            .and_then(|date| aimux_core::Timestamp::from_http_date(date));
 
         let model_id = self.model_id.clone();
 

@@ -7,7 +7,11 @@ import java.io.Closeable;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** Native decisions. Requests, results and capabilities use the core JSON contract. */
+/**
+ * A DecisionModelV4 model. Requests (DecideOptions) and results (DecideResult) use the core JSON
+ * contract, camelCase as the AI SDK's ({@code maxRetries}, {@code providerOptions}, usage
+ * {@code inputTokens} / {@code outputTokens} / {@code totalTokens}, {@code providerMetadata}).
+ */
 public final class DecisionModel implements Closeable {
     private final AtomicLong handle;
 
@@ -37,11 +41,14 @@ public final class DecisionModel implements Closeable {
             AimuxFFI.INSTANCE.aimux_decide_with_abort(requireHandle(), optsJson, abortHandle, out), out, "decide");
     }
 
-    /** Query capabilities and rounding precision without HTTP. */
-    public String capabilities() {
+    /**
+     * The model's DecisionModelV4 properties as JSON
+     * ({specificationVersion, provider, modelId, supportedQuestionTypes}), without HTTP.
+     */
+    public String describe() {
         PointerByReference out = new PointerByReference();
         return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_decision_capabilities(requireHandle(), out), out, "decision capabilities");
+            AimuxFFI.INSTANCE.aimux_decision_capabilities(requireHandle(), out), out, "decision model description");
     }
 
     private long requireHandle() {

@@ -26,7 +26,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat, Tool};
 use aimux_core::result::{GenerateContent, ReasoningOutput};
 use aimux_core::shared::{FileBytes, FileData, provider_namespace};
 use aimux_core::stream_part::StreamPart;
@@ -749,7 +749,7 @@ mod prepare_tools {
         let model = make_provider(&server);
 
         let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "some.unsupported_tool".to_string(),
+            id: "some.unsupported_tool".parse().unwrap(),
             name: "unsupported_tool".to_string(),
             args: serde_json::Map::new(),
         });
@@ -851,7 +851,7 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: Some(ToolChoice::Auto),
+            tool_choice: Some(LanguageModelV4ToolChoice::Auto),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -872,7 +872,7 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: Some(ToolChoice::Required),
+            tool_choice: Some(LanguageModelV4ToolChoice::Required),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -892,7 +892,7 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: Some(ToolChoice::None),
+            tool_choice: Some(LanguageModelV4ToolChoice::None),
             ..default_options(test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -912,7 +912,7 @@ mod prepare_tools {
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: Some(ToolChoice::Tool {
+            tool_choice: Some(LanguageModelV4ToolChoice::Tool {
                 tool_name: "testFunction".to_string(),
             }),
             ..default_options(test_prompt())
@@ -933,7 +933,7 @@ mod prepare_tools {
         let model = model_at(&server, browser_search_model_ids()[1]);
 
         let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "groq.browser_search".to_string(),
+            id: "groq.browser_search".parse().unwrap(),
             name: "browser_search".to_string(),
             args: serde_json::Map::new(),
         });
@@ -956,7 +956,7 @@ mod prepare_tools {
         let model = make_provider(&server);
 
         let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "groq.browser_search".to_string(),
+            id: "groq.browser_search".parse().unwrap(),
             name: "browser_search".to_string(),
             args: serde_json::Map::new(),
         });
@@ -988,7 +988,7 @@ mod prepare_tools {
         let func_tool = FunctionTool::new("test-tool", json!({"type":"object","properties":{}}))
             .with_description("A test tool");
         let browser_tool = Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "groq.browser_search".to_string(),
+            id: "groq.browser_search".parse().unwrap(),
             name: "browser_search".to_string(),
             args: serde_json::Map::new(),
         });
@@ -1016,7 +1016,7 @@ mod prepare_tools {
             let model = model_at(&server, model_id);
 
             let tool = Tool::Provider(aimux_core::tool::ProviderTool {
-                id: "groq.browser_search".to_string(),
+                id: "groq.browser_search".parse().unwrap(),
                 name: "browser_search".to_string(),
                 args: serde_json::Map::new(),
             });
@@ -1038,6 +1038,54 @@ mod prepare_tools {
 
 mod do_generate {
     use super::*;
+
+    async fn failed_call(status: u16, body: Value) -> aimux_core::error::ApiCallError {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(status).set_body_json(body))
+            .mount(&server)
+            .await;
+        match make_provider(&server)
+            .do_generate(&default_options(test_prompt()))
+            .await
+        {
+            Err(aimux_core::AiMuxError::ApiCall(error)) => *error,
+            other => panic!("expected an API call error, got {other:?}"),
+        }
+    }
+
+    /// `groqFailedResponseHandler` (groq@4.0.52 `groq-error.ts:4-16`): the
+    /// message is `error.message`, and `error.type` is the provider code.
+    #[tokio::test]
+    async fn a_failed_response_reads_groqs_error_schema() {
+        let error = failed_call(
+            400,
+            json!({ "error": {
+                "message": "The model `x` does not exist",
+                "type": "invalid_request_error",
+                "code": "model_not_found"
+            } }),
+        )
+        .await;
+        assert_eq!(error.message, "The model `x` does not exist");
+        assert_eq!(
+            error.provider_code.as_deref(),
+            Some("invalid_request_error")
+        );
+        assert_eq!(error.status_code, Some(400));
+        assert!(!error.is_retryable);
+    }
+
+    /// A body outside the schema falls back to the status text, as
+    /// `createJsonErrorResponseHandler` does when the schema does not parse.
+    #[tokio::test]
+    async fn a_failed_response_outside_the_schema_uses_the_status_text() {
+        let error = failed_call(503, json!({ "message": "top-level only" })).await;
+        assert_eq!(error.message, "Service Unavailable");
+        assert_eq!(error.provider_code, None);
+        assert!(error.is_retryable);
+    }
 
     /// upstream: "should reject a response without choices"
     #[tokio::test]
@@ -1499,7 +1547,7 @@ mod do_generate {
         );
         let options = CallOptions {
             tools: Some(vec![Tool::from(tool)]),
-            tool_choice: Some(ToolChoice::Tool {
+            tool_choice: Some(LanguageModelV4ToolChoice::Tool {
                 tool_name: "test-tool".to_string(),
             }),
             ..default_options(test_prompt())

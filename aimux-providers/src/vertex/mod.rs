@@ -33,6 +33,7 @@ mod embedding;
 mod gemini_transcription;
 pub mod image;
 mod model;
+mod partner_provider;
 mod transcription;
 mod video;
 
@@ -46,12 +47,17 @@ pub use embedding::VertexEmbeddingModel;
 pub use gemini_transcription::VertexGeminiTranscriptionModel;
 pub use image::VertexImageModel;
 pub use model::VertexModel;
+pub use partner_provider::{
+    VertexMaasProviderSettings, VertexPartnerProviderSettings, VertexXaiProvider,
+    VertexXaiProviderSettings, create_google_vertex_maas, create_google_vertex_xai,
+    google_vertex_maas, google_vertex_xai,
+};
 pub use transcription::VertexTranscriptionModel;
 pub use video::VertexVideoModel;
 
 /// The Express-mode base URL.
 const EXPRESS_MODE_BASE_URL: &str = "https://aiplatform.googleapis.com/v1/publishers/google";
-const API_KEY_ENV_VAR: &str = "GOOGLE_VERTEX_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "GOOGLE_VERTEX_API_KEY";
 const ACCESS_TOKEN_ENV_VAR: &str = "GOOGLE_VERTEX_ACCESS_TOKEN";
 const PROJECT_ENV_VAR: &str = "GOOGLE_VERTEX_PROJECT";
 const LOCATION_ENV_VAR: &str = "GOOGLE_VERTEX_LOCATION";
@@ -254,13 +260,21 @@ impl Resolver {
         };
         let base_url = self.base_url(express_key.is_some(), publisher)?;
         let headers = self.headers(express_key.as_deref()).await?;
-        let headers = aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            Resolvable::Value(headers),
-            "google-vertex",
-            "5.0.98",
-        )
-        .resolve()
-        .await?;
+        let headers = match publisher {
+            // google-vertex-provider-base.ts:270-276 appends the package part.
+            Publisher::Google => {
+                aimux_provider_utils::headers::with_user_agent_suffix_fn(
+                    Resolvable::Value(headers),
+                    crate::shared::aisdk_pins::GOOGLE_VERTEX.name,
+                    crate::shared::aisdk_pins::GOOGLE_VERTEX.version,
+                )
+                .resolve()
+                .await?
+            }
+            // The Anthropic sub-provider passes the caller's headers as they
+            // are (google-vertex-anthropic-provider.ts:206-210).
+            Publisher::Anthropic => headers,
+        };
         Ok(Endpoint { base_url, headers })
     }
 }
@@ -300,7 +314,10 @@ pub fn create_google_vertex(
             use_access_token_env: true,
             auth: auth::GoogleAuth::new(google_auth_options, settings.fetch.clone()),
         }),
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::GOOGLE_VERTEX,
+        )),
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
         transform_request_body: settings.transform_request_body,

@@ -25,11 +25,11 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
-use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
@@ -147,6 +147,14 @@ impl LanguageModel for HuggingFaceResponsesModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    /// HTTP(S) image URLs go to the API as they are
+    /// (huggingface-responses-language-model.ts:67-69); other URLs are
+    /// downloaded by the operation.
+    async fn supported_urls(&self) -> SupportedUrls {
+        let http = regex::Regex::new(r"^https?://.*$").expect("static pattern");
+        SupportedUrls(std::iter::once(("image/*".to_string(), vec![http])).collect())
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
@@ -841,7 +849,7 @@ fn resolve_full_media_type_base64(media_type: &str, data: &str) -> Result<String
 #[must_use]
 pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
 ) -> (Option<Vec<Value>>, Option<Value>, Vec<Warning>) {
     let tools = match tools {
         Some(t) if !t.is_empty() => t,
@@ -873,10 +881,10 @@ pub fn prepare_responses_tools(
     }
 
     let mapped_tool_choice = match tool_choice {
-        Some(ToolChoice::Auto) => Some(json!("auto")),
-        Some(ToolChoice::Required) => Some(json!("required")),
-        None | Some(ToolChoice::None) => None, // not supported, ignore
-        Some(ToolChoice::Tool { tool_name }) => Some(json!({
+        Some(LanguageModelV4ToolChoice::Auto) => Some(json!("auto")),
+        Some(LanguageModelV4ToolChoice::Required) => Some(json!("required")),
+        None | Some(LanguageModelV4ToolChoice::None) => None, // not supported, ignore
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => Some(json!({
             "type": "function",
             "function": { "name": tool_name }
         })),
@@ -1113,11 +1121,7 @@ fn convert_usage(usage: Option<&Value>) -> Usage {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Format a Unix timestamp (seconds) as an ISO-8601 string with millisecond
-/// precision and a `Z` suffix, matching the TS `new Date(ts * 1000)` snapshot
-/// format (e.g. `"2025-03-06T13:50:19.000Z"`).
-fn format_timestamp(secs: u64) -> Option<String> {
-    use chrono::{DateTime, Utc};
-    let dt = DateTime::<Utc>::from_timestamp(secs as i64, 0)?;
-    Some(dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
+/// `new Date(secs * 1000)` for a Unix timestamp in seconds.
+fn format_timestamp(secs: u64) -> Option<aimux_core::Timestamp> {
+    aimux_core::Timestamp::from_unix_seconds(secs as f64)
 }

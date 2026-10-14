@@ -14,7 +14,7 @@ Public documentation for aimux — a unified LLM access layer written in Rust.
 | [error-model.md](error-model.md) | **错误模型** — 错误来源、跨语言映射、所有权与兼容性约定 |
 | [PROJECT-OVERVIEW.md](PROJECT-OVERVIEW.md) | Project overview, design decisions, and benchmark summary |
 | [research/decision-api/](research/decision-api/) | Decision model/API 调研：OpenAI、TypeSafe/Jev、vLLM、SGLang 接口材料与 aimux 设计建议 |
-| [api/decision.md](api/decision.md) | 稳定的 Decision API：typed questions、概率与 TypeSafe 官方 Jev adapter |
+| [api/decision.md](api/decision.md) | Decision API（AI SDK `DecisionModelV4` 与 `decide`）：typed questions、概率与各 provider adapter |
 | [PERF-RESULTS.md](PERF-RESULTS.md) | Performance benchmark results (aimux vs OpenAI SDK / Vercel AI SDK) |
 | [aimux-vs-aisdk-node.md](aimux-vs-aisdk-node.md) | Node.js developer-experience comparison vs Vercel AI SDK |
 | [ai-sdk-request-pipeline.md](ai-sdk-request-pipeline.md) | AI SDK-aligned request pipeline — operation retry, response handlers, timeout/abort design |

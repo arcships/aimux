@@ -254,14 +254,18 @@ fn variant_instance<'py>(py: Python<'py>, e: &AiMuxError) -> PyResult<Bound<'py,
         AiMuxError::Retry(_) => py.get_type_bound::<RetryError>(),
         AiMuxError::JsonParse(_) => py.get_type_bound::<JSONParseError>(),
         AiMuxError::NoOutputGenerated(_) => py.get_type_bound::<NoOutputGeneratedError>(),
-        AiMuxError::InvalidResponseData(_) | AiMuxError::ToolCallNotFoundForApproval { .. } => {
-            py.get_type_bound::<InvalidResponseDataError>()
-        }
+        // No class of their own yet for the AI SDK's ToolChoiceViolationError
+        // and MissingToolResultsError (binding migration).
+        AiMuxError::InvalidResponseData(_)
+        | AiMuxError::ToolCallNotFoundForApproval { .. }
+        | AiMuxError::ToolChoiceViolation(_) => py.get_type_bound::<InvalidResponseDataError>(),
         AiMuxError::NoSuchTool { .. } => py.get_type_bound::<NoSuchToolError>(),
         AiMuxError::InvalidToolInput { .. } => py.get_type_bound::<InvalidToolInputError>(),
         AiMuxError::ToolCallRepair { .. } => py.get_type_bound::<ToolCallRepairError>(),
         AiMuxError::InvalidArgument(_) => py.get_type_bound::<InvalidArgumentError>(),
-        AiMuxError::InvalidPrompt(_) => py.get_type_bound::<InvalidPromptError>(),
+        AiMuxError::InvalidPrompt(_) | AiMuxError::MissingToolResults { .. } => {
+            py.get_type_bound::<InvalidPromptError>()
+        }
         AiMuxError::LoadApiKey { .. } => py.get_type_bound::<LoadAPIKeyError>(),
         AiMuxError::LoadSetting { .. } => py.get_type_bound::<LoadSettingError>(),
         AiMuxError::TokenExpired(_) => py.get_type_bound::<TokenExpiredError>(),

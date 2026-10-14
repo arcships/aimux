@@ -155,6 +155,7 @@ impl TranscriptionModel for XaiTranscriptionModel {
             form.text("keyterm", keyterm)?;
         }
         let audio = match &options.audio {
+            AudioInput::Url(_) => return Err(AudioInput::url_error()),
             AudioInput::Binary(bytes) => bytes.clone(),
             AudioInput::Base64(data) => base64::engine::general_purpose::STANDARD
                 .decode(data)
@@ -196,7 +197,7 @@ impl TranscriptionModel for XaiTranscriptionModel {
             warnings: Vec::new(),
             request: None,
             response: TranscriptionResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(String::new()),
                 headers: Some(resp.response_headers),
                 body: resp.raw_value,
@@ -206,11 +207,16 @@ impl TranscriptionModel for XaiTranscriptionModel {
     }
 
     #[cfg(feature = "realtime")]
-    async fn do_stream(
+    fn do_stream(
         &self,
         options: aimux_core::transcription_model::TranscriptionStreamOptions,
-    ) -> Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError> {
-        stream::do_stream(self, options).await
+    ) -> Option<
+        futures::future::BoxFuture<
+            '_,
+            Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError>,
+        >,
+    > {
+        Some(Box::pin(stream::do_stream(self, options)))
     }
 }
 
@@ -484,7 +490,7 @@ mod stream {
             stream: Box::pin(stream),
             request: Some(TranscriptionRequest { body: Some(ws_url) }),
             response: Some(TranscriptionResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(String::new()),
                 headers: None,
                 body: None,

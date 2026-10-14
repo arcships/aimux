@@ -11,7 +11,7 @@
 
 import test from 'ava'
 import { createServer, type Server } from 'node:http'
-import { anthropic, google } from '../src/native.ts'
+import { anthropic, applyToolCallRepair, google, toolCallRepairContext } from '../src/native.ts'
 
 function startMockServer(handler: (req: any, res: any) => void): Promise<{ server: Server; url: string }> {
   return new Promise((resolve) => {
@@ -139,4 +139,48 @@ test('roundtrip: google toolName reaches functionResponse.name', async (t) => {
   } finally {
     await closeServer(server)
   }
+})
+
+// Provider options, provider metadata and provider references are JS objects
+// upstream (@ai-sdk/provider shared-v4-provider-options.ts:24,
+// shared-v4-provider-metadata.ts:24, shared-v4-provider-reference.ts:20), so
+// their keys keep insertion order, through Rust and back (#229 NP2-1).
+test('roundtrip: provider namespaces keep insertion order through the native layer', (t) => {
+  const providerMetadata = { zeta: { z: 1, a: 2 }, alpha: {}, mid: {} }
+  const invalid = {
+    toolCallId: 'call-1',
+    toolName: 'weather',
+    input: { town: 'SG' },
+    dynamic: true,
+    invalid: true,
+    providerMetadata,
+    error: { name: 'AI_InvalidToolInputError', toolName: 'weather', toolInput: '{"town":"SG"}', cause: 'missing city' },
+  }
+  const opts = { tools: [{ type: 'function', name: 'weather', inputSchema: { type: 'object' } }] }
+  const out = applyToolCallRepair(JSON.stringify(invalid), JSON.stringify(opts), '{"type":"unchanged"}')
+  const call = JSON.parse(out)
+  t.deepEqual(Object.keys(call.providerMetadata), ['zeta', 'alpha', 'mid'])
+  t.is(JSON.stringify(call.providerMetadata), JSON.stringify(providerMetadata))
+})
+
+// A standalone tool call is the AI SDK's tagged TypedToolCall
+// (ai generate-text/tool-call.ts:8-14), and a repair function's call a tagged
+// LanguageModelV4ToolCall (provider language-model-v4-tool-call.ts:7) (#229 NP2-7).
+test('roundtrip: repair functions write standalone tool calls tagged', (t) => {
+  const invalid = {
+    toolCallId: 'call-1',
+    toolName: 'weather',
+    input: { town: 'SG' },
+    dynamic: true,
+    invalid: true,
+    error: { name: 'AI_InvalidToolInputError', toolName: 'weather', toolInput: '{"town":"SG"}', cause: 'missing city' },
+  }
+  const opts = JSON.stringify({ tools: [{ type: 'function', name: 'weather', inputSchema: { type: 'object' } }] })
+  const context = JSON.parse(toolCallRepairContext(JSON.stringify(invalid), '{"prompt":"weather?"}', opts))
+  t.is(context.toolCall.type, 'tool-call')
+  const reply = JSON.stringify({ type: 'repaired', toolCall: { ...context.toolCall, input: '{"city":"SG"}' } })
+  const repaired = JSON.parse(applyToolCallRepair(JSON.stringify(invalid), opts, reply))
+  t.deepEqual(Object.keys(repaired).slice(0, 2), ['type', 'toolCallId'])
+  t.is(repaired.type, 'tool-call')
+  t.deepEqual(repaired.input, { city: 'SG' })
 })

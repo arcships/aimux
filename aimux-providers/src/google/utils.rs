@@ -541,3 +541,22 @@ fn parent_must_be(seg: &Segment) -> AiMuxError {
         "partial args path type conflict at {seg:?}: accumulated value does not match the path"
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn smoke() {
+        let mut acc = GoogleJsonAccumulator::new();
+        let r = acc
+            .process_partial_args(&[PartialArg {
+                json_path: "$.location".to_string(),
+                string_value: Some("Boston".to_string()),
+                ..Default::default()
+            }])
+            .unwrap();
+        assert_eq!(r.text_delta, "{\"location\":\"Boston\"");
+        assert_eq!(r.current_json["location"], "Boston");
+    }
+}

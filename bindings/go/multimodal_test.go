@@ -153,10 +153,19 @@ func TestE2E_SpeechResultParsing(t *testing.T) {
 	if string(result.Audio) != "hello" {
 		t.Errorf("audio mismatch: %q", result.Audio)
 	}
-	// The byte-array form decodes to the same bytes.
-	result, err = ParseSpeechResult(`{"audio": [104,105], "warnings": [], "response": {}}`)
-	if err != nil || string(result.Audio) != "hi" {
-		t.Errorf("binary audio: %q, %v", result.Audio, err)
+	// SpeechModelV4Result.audio is a Uint8Array upstream
+	// (speech-model-v4-result.ts:16): a base64 string in the JSON, read as
+	// atob reads it (URL-safe characters, no padding), never a number array.
+	result, err = ParseSpeechResult(`{"audio": "AAEC-v8", "warnings": [], "response": {}}`)
+	if err != nil || string(result.Audio) != "\x00\x01\x02\xfa\xff" {
+		t.Errorf("unpadded url-safe audio: %q, %v", result.Audio, err)
+	}
+	if _, err = ParseSpeechResult(`{"audio": [104,105], "warnings": [], "response": {}}`); err == nil {
+		t.Error("a number array is not the AI SDK's JSON for bytes")
+	}
+	encoded, _ := json.Marshal(SpeechResult{Audio: Bytes{0, 1, 2, 250, 255}})
+	if !strings.Contains(string(encoded), `"audio":"AAEC+v8="`) {
+		t.Errorf("audio must encode as base64: %s", encoded)
 	}
 }
 
@@ -312,7 +321,7 @@ func TestE2E_UploadFileResultParsing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
-	if result.ProviderReference["openai"] != "file-abc123" {
+	if id, _ := result.ProviderReference.Get("openai"); id != "file-abc123" {
 		t.Error("provider reference mismatch")
 	}
 	if result.MediaType == nil || *result.MediaType != "application/pdf" {
@@ -595,4 +604,25 @@ func TestTranscriptionSessionCloseUnblocksNextPart(t *testing.T) {
 	}
 	// Idempotence remains part of the public session contract.
 	session.Close()
+}
+
+// Response bodies are the AI SDK's body?: unknown
+// (language-model-v4-generate-result.ts:41, :56): an explicit null is kept
+// apart from a missing body when decoded and encoded again.
+func TestResponseBodyKeepsNullApartFromMissing(t *testing.T) {
+	for _, body := range []string{`,"body":null`, ``, `,"body":{"a":null}`} {
+		wire := `{"audio":"aGk=","warnings":[],"response":{"modelId":"tts-1"` + body + `}}`
+		result, err := ParseSpeechResult(wire)
+		if err != nil {
+			t.Fatalf("parse %s: %v", wire, err)
+		}
+		encoded, _ := json.Marshal(result.Response)
+		if want := `{"modelId":"tts-1"` + body + `}`; string(encoded) != want {
+			t.Errorf("body %q: got %s, want %s", body, encoded, want)
+		}
+	}
+	var info ResponseInfo
+	if err := json.Unmarshal([]byte(`{"body":null}`), &info); err != nil || string(info.Body) != "null" {
+		t.Errorf("ResponseInfo body null: %q, %v", info.Body, err)
+	}
 }

@@ -14,7 +14,7 @@ import (
 	"unsafe"
 )
 
-// DecisionModel calls a native decision API. Close releases its handle.
+// DecisionModel is a DecisionModelV4 model. Close releases its handle.
 // Like other model handles, it must not be copied after first use.
 type DecisionModel struct{ h multimodalHandle }
 
@@ -51,7 +51,8 @@ func NewJevDecisionWithEndpoint(apiKey, modelID, endpoint, probabilitySource str
 	return model, nil
 }
 
-// DecisionModel builds a native decision handle with the provider's existing configuration.
+// DecisionModel builds the provider's decision model with its existing
+// configuration. A provider without decision models returns a NoSuchModel error.
 func (p *ProviderHandle) DecisionModel(modelID string) (*DecisionModel, error) {
 	if err := checkUTF8("model_id", modelID); err != nil {
 		return nil, err
@@ -75,15 +76,21 @@ func (p *ProviderHandle) DecisionModel(modelID string) (*DecisionModel, error) {
 
 func (m *DecisionModel) Close() error { closeMultimodal(m, &m.h); return nil }
 
-// Capabilities returns DecisionCapabilities JSON, without a network request.
-func (m *DecisionModel) Capabilities() (string, error) {
+// Describe returns the model's DecisionModelV4 properties as JSON
+// ({specificationVersion, provider, modelId, supportedQuestionTypes}),
+// without a network request.
+func (m *DecisionModel) Describe() (string, error) {
 	return callFFIString(m, &m.h, func(handle C.uint64_t, out **C.char) *C.aimux_error_t {
 		return C.aimux_decision_capabilities(handle, out)
 	})
 }
 
-// Decide accepts a value serializable as DecisionCallOptions, preserving native
-// structured instructions/criteria. It returns canonical DecisionResult JSON.
+// Decide accepts a value serializable as DecideOptions (state, a question map
+// keyed by ID, and optional maxRetries, timeout, headers and
+// providerOptions: the AI SDK's camelCase keys), preserving structured
+// instructions and criteria. It returns DecideResult JSON (usage with
+// inputTokens, outputTokens and totalTokens, an unknown count absent;
+// providerMetadata).
 func (m *DecisionModel) Decide(options any) (string, error) {
 	return m.DecideContext(context.Background(), options)
 }

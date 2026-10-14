@@ -1,6 +1,7 @@
 ﻿# RFC-0018: Codex 订阅通道 provider 集成评估
 
 > **Status**: IMPLEMENTED (2026-08-03 核验→定案→实现完成:Path A + Path B + codex_refresh + C ABI,测试全绿)
+> **修订**: 无状态刷新边界保留,见 [aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md) §4.1 的 Codex 行与 §9.3「状态操作」行:`codex_refresh` 仍是一次 `/oauth/token` 调用的纯函数,401 映射 `TokenExpired`,库内不自动重试旋转 refresh token;刷新后由宿主持久化新 token,并用它重建 provider 再重试。
 > **Date**: 2026-08-02
 > **Scope**: 评估并设计 Codex(OpenAI 编程模型/订阅通道)在 aimux 的集成路径。
 > 本 RFC 基于 104 项目参考审计的发现,先给出动机与现状,再列出**必须核验的协议事实**,

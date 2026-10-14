@@ -391,7 +391,7 @@ final class AimuxTests: XCTestCase {
     }
 
     /// Tool-call parsing: mock returns tool_calls; verify convenience field
-    /// `toolCalls` and the structured `raw.content` `tool-call` item.
+    /// `toolCalls` and the structured `content` `tool-call` item.
     func testE2EOpenAIToolCallParsing() throws {
         let server = MockHTTPServer(response: .json(openaiToolCallResponse))
         try server.start()
@@ -422,11 +422,10 @@ final class AimuxTests: XCTestCase {
         let input = toolCalls[0]["input"] as? [String: Any]
         XCTAssertEqual(input?["location"] as? String, "Tokyo")
 
-        // Structured content: raw.content contains a tool-call item
-        let raw = r["raw"] as? [String: Any]
-        let content = (raw?["content"] as? [[String: Any]]) ?? []
+        // Structured content: content contains a tool-call item
+        let content = (r["content"] as? [[String: Any]]) ?? []
         let tc = content.first(where: { $0["type"] as? String == "tool-call" })
-        XCTAssertNotNil(tc, "raw.content should contain a tool-call item")
+        XCTAssertNotNil(tc, "content should contain a tool-call item")
         XCTAssertEqual(tc?["toolName"] as? String, "get_weather")
         XCTAssertEqual(tc?["toolCallId"] as? String, "call_abc")
     }
@@ -501,7 +500,7 @@ final class AimuxTests: XCTestCase {
 
         let parsed = parts.map { parseJSON($0) }
         let text = parsed
-            .compactMap { $0["type"] as? String == "text-delta" ? $0["delta"] as? String : nil }
+            .compactMap { $0["type"] as? String == "text-delta" ? $0["text"] as? String : nil }
             .joined()
         XCTAssertEqual(text, "Hello world")
     }

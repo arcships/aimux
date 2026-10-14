@@ -45,7 +45,15 @@ fn provider_decision_factory_keeps_model_alive_after_provider_drop() {
     let json: serde_json::Value = unsafe {
         serde_json::from_str(std::ffi::CStr::from_ptr(capabilities).to_str().unwrap()).unwrap()
     };
-    assert_eq!(json["min_choices"], 2);
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "specificationVersion": "v4",
+            "provider": "openai",
+            "modelId": "gpt-6-luna",
+            "supportedQuestionTypes": ["choice", "score", "boolean"]
+        })
+    );
     // SAFETY: capabilities was allocated by aimux_decision_capabilities above.
     unsafe { aimux_free_string(capabilities) };
     let mut invalid = 0;
@@ -59,11 +67,13 @@ fn provider_decision_factory_keeps_model_alive_after_provider_drop() {
     assert_eq!(invalid, 0);
     aimux_drop_handle(model);
     let other = deepseek();
+    // A provider without decision models offers none (`NoSuchModel`, as the
+    // registry reports, ai@7.0.128 src/registry/provider-registry.ts:457-459).
     let error = expect_aimux_error(
         aimux_provider_decision_model(other, c("x").as_ptr(), &mut invalid),
-        "unsupported provider",
+        "provider without decision models",
     );
-    assert_eq!(error.0, aimux_ffi::AIMUX_E_UNSUPPORTED_FUNCTIONALITY);
+    assert_eq!(error.0, aimux_ffi::AIMUX_E_NO_SUCH_MODEL);
     aimux_drop_handle(other);
 }
 

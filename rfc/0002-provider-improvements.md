@@ -1,6 +1,7 @@
 # Provider Adapter Layer Improvements
 
 > **Status**: IMPLEMENTED (2026-07-28 — OpenAICompatProfile 差异描述 + 145 个 thin wrapper 集成,见下方 Implementation Progress;"配置即数据"的后续演进为 [RFC-0017](0017-provider-config-dx.md) 的 provider registry;cassette 测试独立为 [RFC-0003](0003-test-cassette.md))
+> **修订**: 目标设计已由 [aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md)(D12、D20、§3.3)改写:`OpenAICompatProfile` 与 thin wrapper 由 preset 描述数据加 openai-compatible 包的 `create_*` 工厂取代。对应的 V4 分层 PR 合入主线之前,本文仍描述主线现有代码。
 
 ## Current Problems
 
