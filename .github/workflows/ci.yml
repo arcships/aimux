@@ -16,9 +16,14 @@ env:
   # Test-only jobs do not ship binaries: skip single-threaded fat LTO and -Oz
   # size optimization. ffi-build uploads release artifacts and restores
   # Cargo.toml's release profile in its job env.
+  # opt-level 1, not 0: aimux_stream_text drives the whole stream future on
+  # the caller's thread, and at opt-level 0 that needs more than the 512 KB
+  # stack of a Swift cooperative thread (SIGBUS in the async Swift tests).
+  # Measured for one stream through the C ABI: ~530 KB at 0, ~110 KB at 1,
+  # ~160 KB with the shipping profile.
   CARGO_PROFILE_RELEASE_LTO: "false"
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
-  CARGO_PROFILE_RELEASE_OPT_LEVEL: "0"
+  CARGO_PROFILE_RELEASE_OPT_LEVEL: "1"
   CARGO_PROFILE_RELEASE_DEBUG: "0"
   CARGO_PROFILE_IOS_RELEASE_OPT_LEVEL: "z"
   CARGO_PROFILE_IOS_RELEASE_CODEGEN_UNITS: "1"
@@ -93,6 +98,9 @@ jobs:
           targets: ${{ matrix.settings.target }}
       - uses: Swatinem/rust-cache@v2
         with:
+          # The binding is its own Cargo workspace and builds into its own
+          # target directory, not the repository's.
+          workspaces: bindings/node -> target
           key: ${{ matrix.settings.target }}
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: Install Rosetta
@@ -182,6 +190,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
+          workspaces: bindings/python -> target
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - uses: actions/setup-python@v5
         with:
@@ -240,9 +249,10 @@ jobs:
           path: |
             target/${{ matrix.target }}/release/${{ matrix.artifact }}
             aimux-ffi/aimux-ffi.h
-      # The Go binding links the static archive this build also produces.
-      # macOS is covered because the cgo LDFLAGS are platform-specific (ld64
-      # rejects GNU -Bstatic/-Bdynamic; see bindings/go/aimux.go).
+      # The Go binding links against the library this build produced. On
+      # Linux the cgo LDFLAGS force the static archive; on macOS ld64 picks
+      # the .dylib next to it (see bindings/go/aimux.go). macOS is covered
+      # because those LDFLAGS are platform-specific.
       - uses: actions/setup-go@v5
         if: runner.os != 'Windows'
         with:
@@ -335,10 +345,27 @@ jobs:
         with:
           shared-key: "ffi-test"
           save-if: ${{ github.ref == 'refs/heads/master' }}
+      # The Flutter SDK cache is 1.5-2.2 GB per OS and a pull request can only
+      # restore caches saved on its own branch or on master, so the action's
+      # own cache (which restores and saves together) stays off: restore it on
+      # every run, save it from master only, at the end of the job so the
+      # engine artifacts the build downloads are in it.
       - uses: subosito/flutter-action@v2
+        id: flutter-key
         with:
           channel: stable
-          cache: true
+          cache: false
+          dry-run: true
+      - uses: actions/cache/restore@v4
+        id: flutter-cache
+        with:
+          path: ${{ steps.flutter-key.outputs.CACHE-PATH }}
+          key: ${{ steps.flutter-key.outputs.CACHE-KEY }}
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ steps.flutter-key.outputs.CHANNEL }}
+          flutter-version: ${{ steps.flutter-key.outputs.VERSION }}
+          cache: false
       - name: Build host FFI library
         run: cargo rustc -p aimux-ffi --release --crate-type cdylib
       - name: Get dependencies
@@ -352,6 +379,11 @@ jobs:
       - name: Analyze
         working-directory: bindings/flutter
         run: flutter analyze
+      - uses: actions/cache/save@v4
+        if: always() && github.ref == 'refs/heads/master' && steps.flutter-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ steps.flutter-key.outputs.CACHE-PATH }}
+          key: ${{ steps.flutter-key.outputs.CACHE-KEY }}
 
   # ── Flutter example: real iOS/Android builds validate plugin integration ──
   # iOS build uses the default SwiftPM integration (Flutter 3.44+) and checks
@@ -378,10 +410,27 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
+      # The Flutter SDK cache is 1.5-2.2 GB per OS and a pull request can only
+      # restore caches saved on its own branch or on master, so the action's
+      # own cache (which restores and saves together) stays off: restore it on
+      # every run, save it from master only, at the end of the job so the
+      # engine artifacts the build downloads are in it.
       - uses: subosito/flutter-action@v2
+        id: flutter-key
         with:
           channel: stable
-          cache: true
+          cache: false
+          dry-run: true
+      - uses: actions/cache/restore@v4
+        id: flutter-cache
+        with:
+          path: ${{ steps.flutter-key.outputs.CACHE-PATH }}
+          key: ${{ steps.flutter-key.outputs.CACHE-KEY }}
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ steps.flutter-key.outputs.CHANNEL }}
+          flutter-version: ${{ steps.flutter-key.outputs.VERSION }}
+          cache: false
       - name: Install cargo-ndk
         if: matrix.platform == 'android'
         uses: taiki-e/install-action@v2
@@ -434,6 +483,11 @@ jobs:
       - name: Example tests
         working-directory: bindings/flutter/example
         run: flutter test
+      - uses: actions/cache/save@v4
+        if: always() && github.ref == 'refs/heads/master' && steps.flutter-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ steps.flutter-key.outputs.CACHE-PATH }}
+          key: ${{ steps.flutter-key.outputs.CACHE-KEY }}
 
   # Generated files must match their generators.
   contract-tests:
