@@ -23,8 +23,10 @@ cd "$ROOT"
 # pub.dev's package limit since 0.5.0). The ios-release profile turns LTO
 # off for this build only; the size gate below fails loudly if that regresses.
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-cargo build -p aimux-ffi --profile ios-release --target aarch64-apple-ios
-cargo build -p aimux-ffi --profile ios-release --target aarch64-apple-ios-sim
+# One cargo invocation builds both slices in parallel (each crate is one
+# codegen unit, so two sequential builds leave most cores idle).
+cargo build -p aimux-ffi --profile ios-release \
+  --target aarch64-apple-ios --target aarch64-apple-ios-sim
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
