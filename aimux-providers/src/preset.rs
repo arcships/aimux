@@ -30,12 +30,17 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 
 use serde::Deserialize;
+use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
+use aimux_core::types::Usage;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::openai_compatible::config::{BaseUrl, ChatSettings, UsageDialect};
-use crate::openai_compatible::{Assembly, OpenAICompatibleProvider, TransformRequestBody};
+use crate::openai_compatible::chat::usage_from_raw;
+use crate::openai_compatible::config::{BaseUrl, ChatSettings};
+use crate::openai_compatible::{
+    Assembly, ConvertUsage, OpenAICompatibleProvider, TransformRequestBody,
+};
 use crate::shared::Credential;
 
 /// How a preset authenticates.
@@ -85,8 +90,9 @@ pub struct PresetDescriptor {
     /// The only max-token key the vendor accepts (`"max_tokens"` or
     /// `"max_completion_tokens"`); `None` sends `max_tokens`.
     pub max_tokens_key: Option<String>,
-    /// How chat usage is read (`profile.convert_usage`).
-    pub(crate) convert_usage: UsageDialect,
+    /// How chat usage is read (`profile.convert_usage`); `None`: the generic
+    /// OpenAI-shaped usage.
+    pub(crate) convert_usage: Option<fn(Option<&Value>) -> Usage>,
     pub params: Vec<ParamSpec>,
     /// `(package, version)` of the `ai-sdk-{package}/{version}` user-agent
     /// (`profile.user_agent`). `openai-compatible` by default;
@@ -265,12 +271,13 @@ fn load_registry() -> Vec<PresetDescriptor> {
                 .is_none_or(|key| matches!(key, "max_tokens" | "max_completion_tokens")),
             "invalid max_tokens_key",
         );
-        let convert_usage = match row.profile.get("convert_usage").map(String::as_str) {
-            None => UsageDialect::OpenAICompatible,
-            Some("alibaba") => UsageDialect::Alibaba,
-            Some("moonshotai") => UsageDialect::MoonshotAI,
-            Some(value) => panic!("registry row '{name}': unknown convert_usage {value:?}"),
-        };
+        let convert_usage: Option<fn(Option<&Value>) -> Usage> =
+            match row.profile.get("convert_usage").map(String::as_str) {
+                None => None,
+                Some("alibaba") => Some(alibaba_usage),
+                Some("moonshotai") => Some(moonshotai_usage),
+                Some(value) => panic!("registry row '{name}': unknown convert_usage {value:?}"),
+            };
         let mut params = Vec::with_capacity(row.params.len());
         for param in row.params {
             check(identifier.is_match(&param.name), "bad param name");
@@ -424,7 +431,9 @@ fn assemble(
         supports_structured_outputs: true,
         supports_top_k: true,
         max_tokens_key: descriptor.max_tokens_key.as_deref(),
-        usage_dialect: descriptor.convert_usage,
+        convert_usage: descriptor
+            .convert_usage
+            .map(|convert| Arc::new(convert) as ConvertUsage),
         ..ChatSettings::default()
     };
 
@@ -575,6 +584,44 @@ pub(crate) fn resolve_base_url(
         )));
     }
     validate_base_url(&url)
+}
+
+/// Alibaba's `convertUsage`: cache writes from
+/// `prompt_tokens_details.cache_creation_input_tokens` (or
+/// `cache_write_tokens`), taken out of the uncached input.
+fn alibaba_usage(raw: Option<&Value>) -> Usage {
+    let mut usage = usage_from_raw(raw);
+    if let Some(raw) = raw.filter(|raw| !raw.is_null()) {
+        let details = &raw["prompt_tokens_details"];
+        let cache_write = tokens(&details["cache_creation_input_tokens"])
+            .or_else(|| tokens(&details["cache_write_tokens"]))
+            .unwrap_or(0);
+        usage.input_tokens.cache_write = Some(cache_write);
+        usage.input_tokens.no_cache = usage
+            .input_tokens
+            .no_cache
+            .map(|tokens| tokens.saturating_sub(cache_write));
+    }
+    usage
+}
+
+/// Moonshot AI's `convertUsage`: cache reads from the top-level
+/// `cached_tokens`.
+fn moonshotai_usage(raw: Option<&Value>) -> Usage {
+    let mut usage = usage_from_raw(raw);
+    if let Some(cached) = raw.and_then(|raw| tokens(&raw["cached_tokens"])) {
+        usage.input_tokens.cache_read = Some(cached);
+        usage.input_tokens.no_cache = usage
+            .input_tokens
+            .total
+            .map(|tokens| tokens.saturating_sub(cached));
+    }
+    usage
+}
+
+/// A token count of a raw usage object.
+fn tokens(value: &Value) -> Option<u32> {
+    value.as_u64().and_then(|value| u32::try_from(value).ok())
 }
 
 #[cfg(test)]

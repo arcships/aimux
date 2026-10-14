@@ -39,7 +39,7 @@ use aimux_provider_utils::{
     default_fetch, load_optional_setting, load_setting, validate_base_url,
 };
 
-use crate::shared::{Endpoint, EndpointConfig, EndpointSource};
+use crate::shared::{Endpoint, EndpointConfig, ResolveEndpoint};
 
 /// AWS service name used for SigV4 signing.
 const SERVICE_NAME: &str = "polly";
@@ -239,15 +239,16 @@ impl Auth {
 /// host, and only the caller's headers, after checking that signing has its
 /// credentials (the signature itself is made by the transport).
 #[derive(Clone)]
-pub(crate) struct PollyEndpoint {
+struct PollyEndpoint {
     auth: Auth,
     base_url: Option<String>,
     user: Option<HeaderMapOpt>,
 }
 
-impl PollyEndpoint {
+#[async_trait::async_trait]
+impl ResolveEndpoint for PollyEndpoint {
     /// The base URL and provider headers of one request.
-    pub(crate) async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
+    async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
         let base_url = self
             .base_url
             .clone()
@@ -328,7 +329,7 @@ impl AwsPollyProvider {
     fn model_config(&self, method: &str) -> EndpointConfig {
         EndpointConfig::new(
             format!("{}.{method}", self.name),
-            EndpointSource::AwsPolly(self.endpoint.clone()),
+            self.endpoint.clone(),
             Some(self.fetch.clone()),
         )
     }

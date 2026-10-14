@@ -24,7 +24,7 @@ use std::sync::OnceLock;
 
 use crate::google::GoogleSpeechModel;
 use crate::shared::{
-    Endpoint, EndpointConfig, EndpointSource, SupportedUrlsSource, TransformRequestBody,
+    Endpoint, EndpointConfig, ResolveEndpoint, SupportedUrlsSource, TransformRequestBody,
 };
 
 mod anthropic_model;
@@ -50,7 +50,6 @@ pub use embedding::VertexEmbeddingModel;
 pub use gemini_transcription::VertexGeminiTranscriptionModel;
 pub use image::VertexImageModel;
 pub use model::VertexModel;
-pub(crate) use partner_provider::{PartnerBaseUrl, PartnerHeaders};
 pub use partner_provider::{
     VertexMaasProviderSettings, VertexPartnerProviderSettings, VertexXaiProvider,
     VertexXaiProviderSettings, create_google_vertex_maas, create_google_vertex_xai,
@@ -187,14 +186,15 @@ impl ProjectLocationSource {
 /// in Express mode (tuned models are served from a deployed endpoint, which
 /// an API key cannot reach) and the URL is the project/location root.
 #[derive(Clone)]
-pub(crate) struct GeminiEndpoint {
+struct GeminiEndpoint {
     resolver: Arc<Resolver>,
     tuned: bool,
 }
 
-impl GeminiEndpoint {
+#[async_trait::async_trait]
+impl ResolveEndpoint for GeminiEndpoint {
     /// The base URL and provider headers of one request.
-    pub(crate) async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
+    async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
         if self.tuned && self.resolver.express_key().await?.is_some() {
             return Err(AiMuxError::InvalidArgument(
                 "Google Vertex tuned models do not support Express Mode API keys. \
@@ -426,10 +426,10 @@ impl VertexProvider {
     fn model_config(&self, provider: &str, tuned: bool) -> EndpointConfig {
         EndpointConfig::new(
             provider.to_string(),
-            EndpointSource::Vertex(GeminiEndpoint {
+            GeminiEndpoint {
                 resolver: self.resolver.clone(),
                 tuned,
-            }),
+            },
             self.fetch.clone(),
         )
         .with_supported_urls(SupportedUrlsSource::Fixed(supported_urls()))

@@ -12,7 +12,8 @@ mod poll;
 
 pub(crate) use discovery::list_data_models;
 pub(crate) use exchange::{
-    BaseUrl, Endpoint, EndpointConfig, EndpointHeaders, EndpointSource, SupportedUrlsSource,
+    BaseUrl, Endpoint, EndpointConfig, EndpointHeaders, HttpEndpoint, ResolveEndpoint,
+    SupportedUrlsSource,
 };
 pub(crate) use poll::{
     POLL_INTERVAL_MILLIS_KEY, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key,
