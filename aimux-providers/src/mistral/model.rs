@@ -5,12 +5,11 @@
 //! - `content` in responses can be a string or an array of typed parts
 //!   (text, thinking, image_url). Thinking parts are extracted as reasoning
 //!   in streaming mode.
-//! - Streamed tool calls are assembled by the shared `StreamingToolCallTracker`.
+//! - Streamed tool calls are assembled by the shared `ChatToolCalls`.
 //! - Usage supports `num_cached_tokens` / `prompt_tokens_details.cached_tokens`.
 //! - Finish reasons include `model_length`.
 
 use aimux_core::tool::RawToolCall;
-use std::collections::HashMap;
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -21,14 +20,12 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
+use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallTracker, TransformStreamController, Transformer,
-    pipe_through,
-};
+use aimux_provider_utils::{TransformStreamController, Transformer, pipe_through};
 
 use crate::shared::EndpointConfig;
+use crate::stream::{ChatToolCalls, StreamContext, ToolCallDelta};
 
 use super::convert::{build_request_body, parse_finish_reason, request_warnings};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
@@ -293,25 +290,16 @@ impl LanguageModel for MistralModel {
 
         let stream = pipe_through(
             resp.value,
-            MistralChatStream {
-                warnings: request_warnings(options, &self.model_id),
-                include_raw_chunks: options.include_raw_chunks.unwrap_or(false),
-                stream_error_url: endpoint,
-                stream_error_body: body.clone(),
-                stream_response_headers: response_headers.clone(),
-                generate_id: self.generate_id.clone(),
-                text_started: false,
-                reasoning_started: false,
-                tool_calls: {
-                    let generate_id = self.generate_id.clone();
-                    StreamingToolCallTracker::new().with_generate_id(move || generate_id())
-                },
-                tool_parts: Vec::new(),
-                reasoning_id: None,
-                final_usage: Usage::default(),
-                final_finish_reason: None,
-                response_metadata_emitted: false,
-            },
+            MistralChatStream::new(
+                StreamContext::new(
+                    options,
+                    request_warnings(options, &self.model_id),
+                    endpoint,
+                    &body,
+                    &response_headers,
+                ),
+                self.generate_id.clone(),
+            ),
         );
 
         Ok(StreamResult {
@@ -329,42 +317,56 @@ const TEXT_ID: &str = "0";
 
 /// The `TransformStream` of the Mistral chat model's `doStream`.
 struct MistralChatStream {
-    warnings: Vec<Warning>,
-    include_raw_chunks: bool,
-    stream_error_url: String,
-    stream_error_body: Value,
-    stream_response_headers: HashMap<String, String>,
+    ctx: StreamContext,
+    /// Names reasoning blocks and id-less tool calls.
     generate_id: Arc<dyn Fn() -> String + Send + Sync>,
+    tool_calls: ChatToolCalls,
     text_started: bool,
-    reasoning_started: bool,
-    tool_calls: StreamingToolCallTracker,
-    tool_parts: Vec<StreamPart>,
+    /// The open reasoning block.
     reasoning_id: Option<String>,
     final_usage: Usage,
     final_finish_reason: Option<FinishReason>,
     response_metadata_emitted: bool,
 }
 
+/// A chat stream with an empty request context and tool-call ids from
+/// `generate_id`, for tests that drive it chunk by chunk.
+#[cfg(test)]
+pub(crate) fn chat_test_stream(
+    generate_id: Arc<dyn Fn() -> String + Send + Sync>,
+) -> impl Transformer<Input = Result<Value, AiMuxError>, Output = StreamPart> {
+    MistralChatStream::new(StreamContext::default(), generate_id)
+}
+
 impl MistralChatStream {
+    fn new(ctx: StreamContext, generate_id: Arc<dyn Fn() -> String + Send + Sync>) -> Self {
+        Self {
+            ctx,
+            tool_calls: ChatToolCalls::new(generate_id.clone()),
+            generate_id,
+            text_started: false,
+            reasoning_id: None,
+            final_usage: Usage::default(),
+            final_finish_reason: None,
+            response_metadata_emitted: false,
+        }
+    }
+
     /// Handle one parsed SSE `data:` payload.
     fn transform_chunk(
         &mut self,
         parsed: Value,
         controller: &mut TransformStreamController<StreamPart>,
     ) {
-        if self.include_raw_chunks {
-            controller.enqueue(StreamPart::Raw {
-                raw_value: parsed.clone(),
-            });
-        }
+        self.ctx.raw(&parsed, controller);
 
         if let Some(err_obj) = parsed.get("error") {
             controller.enqueue(StreamPart::Error {
                 error: super::mistral_stream_error(
                     err_obj,
-                    &self.stream_error_url,
-                    self.stream_error_body.clone(),
-                    self.stream_response_headers.clone(),
+                    &self.ctx.url,
+                    self.ctx.request_body.clone(),
+                    self.ctx.response_headers.clone(),
                 ),
             });
             return;
@@ -410,7 +412,7 @@ impl MistralChatStream {
             .flatten()
             .filter_map(extract_reasoning_part)
         {
-            if !self.reasoning_started {
+            if self.reasoning_id.is_none() {
                 // End any active text before starting reasoning.
                 if self.text_started {
                     controller.enqueue(StreamPart::TextEnd {
@@ -421,7 +423,6 @@ impl MistralChatStream {
                 }
                 let rid = (self.generate_id)();
                 self.reasoning_id = Some(rid.clone());
-                self.reasoning_started = true;
                 controller.enqueue(StreamPart::ReasoningStart {
                     id: rid,
                     provider_metadata: None,
@@ -442,15 +443,11 @@ impl MistralChatStream {
         {
             if !self.text_started {
                 // End reasoning before starting text.
-                if self.reasoning_started {
-                    if let Some(ref rid) = self.reasoning_id {
-                        controller.enqueue(StreamPart::ReasoningEnd {
-                            id: rid.clone(),
-                            provider_metadata: None,
-                        });
-                    }
-                    self.reasoning_started = false;
-                    self.reasoning_id = None;
+                if let Some(rid) = self.reasoning_id.take() {
+                    controller.enqueue(StreamPart::ReasoningEnd {
+                        id: rid,
+                        provider_metadata: None,
+                    });
                 }
                 controller.enqueue(StreamPart::TextStart {
                     id: TEXT_ID.to_string(),
@@ -468,21 +465,17 @@ impl MistralChatStream {
         // Tool calls: assembled by the shared tracker.
         if let Some(tool_call_deltas) = choice.delta.tool_calls {
             for dtc in &tool_call_deltas {
-                let delta = StreamingToolCallDelta {
+                let delta = ToolCallDelta {
                     index: dtc.index,
                     id: dtc.id.as_deref(),
                     name: dtc.function.name.as_deref(),
                     arguments: dtc.function.arguments.as_deref(),
-                    ..Default::default()
+                    ..ToolCallDelta::default()
                 };
                 // A new call without a function name is invalid response
                 // data, as in the AI SDK; the stream ends.
-                if let Err(error) = self.tool_calls.process(delta, &mut self.tool_parts) {
-                    controller.error(error.into());
+                if !self.tool_calls.delta(delta, controller) {
                     return;
-                }
-                for part in self.tool_parts.drain(..) {
-                    controller.enqueue(part);
                 }
             }
         }
@@ -499,9 +492,7 @@ impl Transformer for MistralChatStream {
     type Output = StreamPart;
 
     fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        controller.enqueue(StreamPart::StreamStart {
-            warnings: std::mem::take(&mut self.warnings),
-        });
+        self.ctx.start(controller);
     }
 
     fn transform(
@@ -512,11 +503,7 @@ impl Transformer for MistralChatStream {
         match event {
             Ok(parsed) => self.transform_chunk(parsed, controller),
             Err(error) => {
-                if self.include_raw_chunks {
-                    controller.enqueue(StreamPart::Raw {
-                        raw_value: Value::Null,
-                    });
-                }
+                self.ctx.raw(&Value::Null, controller);
                 controller.enqueue(StreamPart::Error { error });
             }
         }
@@ -530,19 +517,14 @@ impl Transformer for MistralChatStream {
                 provider_metadata: None,
             });
         }
-        if self.reasoning_started
-            && let Some(rid) = self.reasoning_id.take()
-        {
+        if let Some(rid) = self.reasoning_id.take() {
             controller.enqueue(StreamPart::ReasoningEnd {
                 id: rid,
                 provider_metadata: None,
             });
         }
 
-        self.tool_calls.finish(&mut self.tool_parts);
-        for part in self.tool_parts.drain(..) {
-            controller.enqueue(part);
-        }
+        self.tool_calls.finish(controller);
 
         controller.enqueue(StreamPart::Finish {
             finish_reason: self.final_finish_reason.unwrap_or(FinishReason {

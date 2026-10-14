@@ -2,7 +2,7 @@
 //!
 //! Mirrors `groq-chat-language-model.ts`: Groq's own implementation of the
 //! chat completions endpoint. Streamed tool calls go through the shared
-//! [`StreamingToolCallTracker`].
+//! [`ChatToolCalls`].
 
 use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
@@ -19,12 +19,10 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning,
 };
-use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallTracker, TransformStreamController, Transformer,
-    TypeValidation, generate_id, pipe_through,
-};
+use aimux_provider_utils::{TransformStreamController, Transformer, generate_id, pipe_through};
 
 use crate::shared::EndpointConfig;
+use crate::stream::{ChatToolCalls, StreamContext, ToolCallDelta};
 
 use super::convert::convert_to_groq_chat_messages;
 use super::error::{GroqErrorData, groq_failed_response_handler};
@@ -365,23 +363,8 @@ impl LanguageModel for GroqChatLanguageModel {
         let stream = pipe_through(
             resp.value,
             GroqChatStream {
-                warnings,
-                emit_raw_chunks: options.include_raw_chunks == Some(true),
-                stream_error_url: endpoint,
-                stream_error_body: body.clone(),
-                stream_response_headers: response_headers.clone(),
-                tool_calls: StreamingToolCallTracker::new()
-                    .with_generate_id(generate_id)
-                    .with_type_validation(TypeValidation::Required),
-                tool_parts: Vec::new(),
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Other,
-                    raw: None,
-                },
-                usage: None,
-                is_first_chunk: true,
-                is_active_text: false,
-                is_active_reasoning: false,
+                ctx: StreamContext::new(options, warnings, endpoint, &body, &response_headers),
+                ..GroqChatStream::default()
             },
         );
 
@@ -396,19 +379,28 @@ impl LanguageModel for GroqChatLanguageModel {
 }
 
 /// The `TransformStream` of `GroqChatLanguageModel.doStream`.
+#[derive(Default)]
 struct GroqChatStream {
-    warnings: Vec<Warning>,
-    emit_raw_chunks: bool,
-    stream_error_url: String,
-    stream_error_body: Value,
-    stream_response_headers: HashMap<String, String>,
-    tool_calls: StreamingToolCallTracker,
-    tool_parts: Vec<StreamPart>,
-    finish_reason: FinishReason,
+    ctx: StreamContext,
+    tool_calls: ChatToolCalls,
+    /// `other` until a chunk says otherwise.
+    finish_reason: Option<FinishReason>,
     usage: Option<GroqUsage>,
-    is_first_chunk: bool,
+    metadata_emitted: bool,
     is_active_text: bool,
     is_active_reasoning: bool,
+}
+
+/// A chat stream with an empty request context and tool-call ids from
+/// `generate_id`, for tests that drive it chunk by chunk.
+#[cfg(test)]
+pub(crate) fn chat_test_stream(
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
+) -> impl Transformer<Input = Result<Value, AiMuxError>, Output = StreamPart> {
+    GroqChatStream {
+        tool_calls: ChatToolCalls::new(generate_id),
+        ..GroqChatStream::default()
+    }
 }
 
 impl GroqChatStream {
@@ -428,9 +420,7 @@ impl Transformer for GroqChatStream {
     type Output = StreamPart;
 
     fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        controller.enqueue(StreamPart::StreamStart {
-            warnings: std::mem::take(&mut self.warnings),
-        });
+        self.ctx.start(controller);
     }
 
     fn transform(
@@ -447,39 +437,31 @@ impl Transformer for GroqChatStream {
                     controller.error(error);
                     return;
                 }
-                if self.emit_raw_chunks {
-                    controller.enqueue(StreamPart::Raw {
-                        raw_value: Value::Null,
-                    });
-                }
-                self.finish_reason = FinishReason {
+                self.ctx.raw(&Value::Null, controller);
+                self.finish_reason = Some(FinishReason {
                     unified: FinishReasonUnified::Error,
                     raw: None,
-                };
+                });
                 controller.enqueue(StreamPart::Error { error });
                 return;
             }
         };
 
         // Emit the raw chunk if requested (before anything else).
-        if self.emit_raw_chunks {
-            controller.enqueue(StreamPart::Raw {
-                raw_value: parsed.clone(),
-            });
-        }
+        self.ctx.raw(&parsed, controller);
 
         // handle error chunks:
         if parsed.get("error").is_some() {
-            self.finish_reason = FinishReason {
+            self.finish_reason = Some(FinishReason {
                 unified: FinishReasonUnified::Error,
                 raw: None,
-            };
+            });
             controller.enqueue(StreamPart::Error {
                 error: create_groq_stream_error(
                     &parsed,
-                    &self.stream_error_url,
-                    self.stream_error_body.clone(),
-                    self.stream_response_headers.clone(),
+                    &self.ctx.url,
+                    self.ctx.request_body.clone(),
+                    self.ctx.response_headers.clone(),
                 ),
             });
             return;
@@ -489,10 +471,10 @@ impl Transformer for GroqChatStream {
         let value: GroqChatChunk = match serde_json::from_value(parsed) {
             Ok(value) => value,
             Err(error) => {
-                self.finish_reason = FinishReason {
+                self.finish_reason = Some(FinishReason {
                     unified: FinishReasonUnified::Error,
                     raw: None,
-                };
+                });
                 controller.enqueue(StreamPart::Error {
                     error: error.into(),
                 });
@@ -500,8 +482,8 @@ impl Transformer for GroqChatStream {
             }
         };
 
-        if self.is_first_chunk {
-            self.is_first_chunk = false;
+        if !self.metadata_emitted {
+            self.metadata_emitted = true;
             let metadata = response_metadata(value.id, value.created, value.model);
             controller.enqueue(StreamPart::ResponseMetadata(metadata));
         }
@@ -515,10 +497,10 @@ impl Transformer for GroqChatStream {
         };
 
         if let Some(reason) = choice.finish_reason {
-            self.finish_reason = FinishReason {
+            self.finish_reason = Some(FinishReason {
                 unified: map_groq_finish_reason(Some(&reason)),
                 raw: Some(reason),
-            };
+            });
         }
 
         let Some(delta) = choice.delta else {
@@ -561,20 +543,17 @@ impl Transformer for GroqChatStream {
             // end the active reasoning block before tool calls start
             self.end_active_reasoning(controller);
             for tool_call in &deltas {
-                let delta = StreamingToolCallDelta {
+                let delta = ToolCallDelta {
                     index: Some(tool_call.index),
                     id: tool_call.id.as_deref(),
-                    r#type: tool_call.r#type.as_deref(),
                     name: tool_call.function.name.as_deref(),
                     arguments: tool_call.function.arguments.as_deref(),
+                    // A call must start with `type: 'function'`.
+                    invalid_type: tool_call.r#type.as_deref() != Some("function"),
                     provider_metadata: None,
                 };
-                if let Err(error) = self.tool_calls.process(delta, &mut self.tool_parts) {
-                    controller.error(error.into());
+                if !self.tool_calls.delta(delta, controller) {
                     return;
-                }
-                for part in self.tool_parts.drain(..) {
-                    controller.enqueue(part);
                 }
             }
         }
@@ -588,13 +567,13 @@ impl Transformer for GroqChatStream {
                 provider_metadata: None,
             });
         }
-        self.tool_calls.finish(&mut self.tool_parts);
-        for part in self.tool_parts.drain(..) {
-            controller.enqueue(part);
-        }
+        self.tool_calls.finish(controller);
 
         controller.enqueue(StreamPart::Finish {
-            finish_reason: self.finish_reason,
+            finish_reason: self.finish_reason.unwrap_or(FinishReason {
+                unified: FinishReasonUnified::Other,
+                raw: None,
+            }),
             usage: convert_groq_usage(self.usage.as_ref()),
             provider_metadata: None,
         });

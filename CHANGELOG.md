@@ -669,6 +669,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `start` immediately and the transformer's other methods as it is polled;
   `TransformStreamController::new`, `drain` and `is_closed` let a test drive
   a transformer without a stream.
+- `StreamingToolCallTracker`, `StreamingToolCallDelta`, `TypeValidation` and
+  `TrackerError` are removed. The tool-call matching they ported from
+  `@ai-sdk/provider-utils` 5.0.55 is now part of the OpenAI-style chat
+  streams in `aimux-providers` (OpenAI, OpenAI-compatible, DeepSeek, Groq,
+  Mistral), which emit the same parts as before.
 
 **Rust (aimux-providers)**
 

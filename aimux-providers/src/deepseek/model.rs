@@ -15,10 +15,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning,
 };
-use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallTracker, TransformStreamController, Transformer,
-    generate_id, pipe_through,
-};
+use aimux_provider_utils::{TransformStreamController, Transformer, generate_id, pipe_through};
 
 use super::convert::convert_to_deepseek_chat_messages;
 use super::finish_reason::map_deepseek_finish_reason;
@@ -28,6 +25,7 @@ use super::prepare_tools::prepare_tools;
 use super::types::{ChatChunk, ChatResponse};
 use super::usage::convert_deepseek_usage;
 use crate::shared::EndpointConfig;
+use crate::stream::{ChatToolCalls, StreamContext, ToolCallDelta};
 
 /// What a DeepSeek chat model needs to talk to the API (`DeepSeekChatConfig`).
 pub(crate) struct DeepSeekChatConfig {
@@ -502,29 +500,9 @@ impl LanguageModel for DeepSeekChatLanguageModel {
         let stream = pipe_through(
             resp.value,
             DeepSeekChatStream {
-                warnings,
-                emit_raw_chunks: options.include_raw_chunks == Some(true),
-                endpoint,
-                stream_error_body: body.clone(),
-                stream_response_headers: response_headers.clone(),
+                ctx: StreamContext::new(options, warnings, endpoint, &body, &response_headers),
                 provider_options_name: self.provider_options_name().to_string(),
-                tool_calls: StreamingToolCallTracker::new().with_generate_id(generate_id),
-                tool_parts: Vec::new(),
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Other,
-                    raw: None,
-                },
-                usage: None,
-                system_fingerprint: None,
-                is_first_chunk: true,
-                is_active_reasoning: false,
-                is_active_text: false,
-                response_object: None,
-                choice_index: None,
-                message_role: None,
-                tool_call_types: BTreeMap::new(),
-                content_logprobs: Vec::new(),
-                reasoning_logprobs: Vec::new(),
+                ..DeepSeekChatStream::default()
             },
         );
 
@@ -539,19 +517,16 @@ impl LanguageModel for DeepSeekChatLanguageModel {
 }
 
 /// The `TransformStream` of `DeepSeekChatLanguageModel.doStream`.
+#[derive(Default)]
 struct DeepSeekChatStream {
-    warnings: Vec<Warning>,
-    emit_raw_chunks: bool,
-    endpoint: String,
-    stream_error_body: Value,
-    stream_response_headers: HashMap<String, String>,
+    ctx: StreamContext,
     provider_options_name: String,
-    tool_calls: StreamingToolCallTracker,
-    tool_parts: Vec<StreamPart>,
-    finish_reason: FinishReason,
+    tool_calls: ChatToolCalls,
+    /// `other` until a chunk says otherwise.
+    finish_reason: Option<FinishReason>,
     usage: Option<Value>,
     system_fingerprint: Option<String>,
-    is_first_chunk: bool,
+    metadata_emitted: bool,
     is_active_reasoning: bool,
     is_active_text: bool,
     response_object: Option<String>,
@@ -579,9 +554,7 @@ impl Transformer for DeepSeekChatStream {
     type Output = StreamPart;
 
     fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        controller.enqueue(StreamPart::StreamStart {
-            warnings: std::mem::take(&mut self.warnings),
-        });
+        self.ctx.start(controller);
     }
 
     fn transform(
@@ -602,24 +575,20 @@ impl Transformer for DeepSeekChatStream {
         };
 
         // Emit the raw chunk if requested (before anything else).
-        if self.emit_raw_chunks {
-            controller.enqueue(StreamPart::Raw {
-                raw_value: parsed.clone(),
-            });
-        }
+        self.ctx.raw(&parsed, controller);
 
         // handle error chunks:
         if parsed.get("error").is_some() {
-            self.finish_reason = FinishReason {
+            self.finish_reason = Some(FinishReason {
                 unified: FinishReasonUnified::Error,
                 raw: None,
-            };
+            });
             controller.enqueue(StreamPart::Error {
                 error: deepseek_stream_error(
                     &parsed,
-                    &self.endpoint,
-                    self.stream_error_body.clone(),
-                    self.stream_response_headers.clone(),
+                    &self.ctx.url,
+                    self.ctx.request_body.clone(),
+                    self.ctx.response_headers.clone(),
                 ),
             });
             return;
@@ -629,10 +598,10 @@ impl Transformer for DeepSeekChatStream {
         let chunk: ChatChunk = match serde_json::from_value(parsed) {
             Ok(chunk) => chunk,
             Err(error) => {
-                self.finish_reason = FinishReason {
+                self.finish_reason = Some(FinishReason {
                     unified: FinishReasonUnified::Error,
                     raw: None,
-                };
+                });
                 controller.enqueue(StreamPart::Error {
                     error: error.into(),
                 });
@@ -640,8 +609,8 @@ impl Transformer for DeepSeekChatStream {
             }
         };
 
-        if self.is_first_chunk {
-            self.is_first_chunk = false;
+        if !self.metadata_emitted {
+            self.metadata_emitted = true;
             controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
                 id: chunk.id.clone(),
                 timestamp: timestamp(chunk.created),
@@ -672,10 +641,10 @@ impl Transformer for DeepSeekChatStream {
         }
 
         if let Some(reason) = choice.finish_reason {
-            self.finish_reason = FinishReason {
+            self.finish_reason = Some(FinishReason {
                 unified: map_deepseek_finish_reason(Some(&reason)),
                 raw: Some(reason),
-            };
+            });
         }
 
         if let Some(logprobs) = &choice.logprobs {
@@ -743,20 +712,15 @@ impl Transformer for DeepSeekChatStream {
                 if let Some(kind) = &tool_call.r#type {
                     self.tool_call_types.insert(tool_call.index, kind.clone());
                 }
-                let delta = StreamingToolCallDelta {
+                let delta = ToolCallDelta {
                     index: Some(tool_call.index),
                     id: tool_call.id.as_deref(),
-                    r#type: tool_call.r#type.as_deref(),
                     name: tool_call.function.name.as_deref(),
                     arguments: tool_call.function.arguments.as_deref(),
-                    provider_metadata: None,
+                    ..ToolCallDelta::default()
                 };
-                if let Err(error) = self.tool_calls.process(delta, &mut self.tool_parts) {
-                    controller.error(error.into());
+                if !self.tool_calls.delta(delta, controller) {
                     return;
-                }
-                for part in self.tool_parts.drain(..) {
-                    controller.enqueue(part);
                 }
             }
         }
@@ -770,10 +734,7 @@ impl Transformer for DeepSeekChatStream {
                 provider_metadata: None,
             });
         }
-        self.tool_calls.finish(&mut self.tool_parts);
-        for part in self.tool_parts.drain(..) {
-            controller.enqueue(part);
-        }
+        self.tool_calls.finish(controller);
 
         let mut metadata = Map::new();
         for (key, name) in [
@@ -821,7 +782,10 @@ impl Transformer for DeepSeekChatStream {
             metadata.insert("systemFingerprint".into(), json!(system_fingerprint));
         }
         controller.enqueue(StreamPart::Finish {
-            finish_reason: self.finish_reason,
+            finish_reason: self.finish_reason.unwrap_or(FinishReason {
+                unified: FinishReasonUnified::Other,
+                raw: None,
+            }),
             usage: convert_deepseek_usage(self.usage.as_ref()),
             provider_metadata: Some(
                 provider_namespace(&self.provider_options_name, Value::Object(metadata))

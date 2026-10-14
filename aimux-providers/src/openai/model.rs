@@ -8,7 +8,6 @@
 //! the conversion + streaming logic while supplying their own URL and auth.
 
 use aimux_core::tool::RawToolCall;
-use std::collections::HashMap;
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -18,14 +17,13 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
-use aimux_core::shared::{Warning, provider_namespace};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::{
-    HttpRequest, StreamingToolCallDelta, StreamingToolCallTracker, TransformStreamController,
-    Transformer, TypeValidation, generate_id, pipe_through,
-};
+use aimux_provider_utils::{HttpRequest, TransformStreamController, Transformer, pipe_through};
+
+use crate::stream::{ChatToolCalls, StreamContext, ToolCallDelta};
 
 use super::config::{OpenAIModelConfig, TransformRequestBody};
 use super::convert::{
@@ -427,25 +425,8 @@ pub(crate) async fn execute_stream(
     }
 
     let transformer = OpenAIChatStream {
-        warnings,
-        // M2 (RFC-0016): whether raw chunks should be emitted.
-        include_raw_chunks: options.include_raw_chunks == Some(true),
-        url: endpoint,
-        request_body: body.clone(),
-        response_headers: response_headers.clone(),
-        text_started: false,
-        reasoning_started: false,
-        final_usage: Usage::default(),
-        final_usage_raw: None,
-        final_finish_reason: None,
-        response_metadata_emitted: false,
-        final_logprobs: None,
-        // Same options as `@ai-sdk/openai`'s chat model.
-        tool_calls: StreamingToolCallTracker::new()
-            .with_generate_id(generate_id)
-            .with_type_validation(TypeValidation::IfPresent),
-        tool_parts: Vec::new(),
-        stream_errored: false,
+        ctx: StreamContext::new(options, warnings, endpoint, &body, &response_headers),
+        ..OpenAIChatStream::default()
     };
     // Process the first event (already peeked) then the rest.
     let events = futures::stream::iter(first_event).chain(sse_stream);
@@ -465,14 +446,11 @@ const REASONING_ID: &str = "reasoning-0";
 
 /// The `TransformStream` of the Chat Completions stream ([`execute_stream`]):
 /// turns the parsed SSE events into stream parts.
+#[derive(Default)]
 struct OpenAIChatStream {
-    warnings: Vec<Warning>,
-    include_raw_chunks: bool,
-    /// Request context for in-stream `error` payloads.
-    url: String,
-    request_body: Value,
-    response_headers: HashMap<String, String>,
-
+    ctx: StreamContext,
+    /// Finalized on flush.
+    tool_calls: ChatToolCalls,
     text_started: bool,
     reasoning_started: bool,
     final_usage: Usage,
@@ -480,11 +458,19 @@ struct OpenAIChatStream {
     final_finish_reason: Option<FinishReason>,
     response_metadata_emitted: bool,
     final_logprobs: Option<Value>,
-    /// Streamed tool calls, correlated by wire id, index and function name
-    /// (the AI SDK's StreamingToolCallTracker) and finalized on flush.
-    tool_calls: StreamingToolCallTracker,
-    tool_parts: Vec<StreamPart>,
     stream_errored: bool,
+}
+
+/// A chat stream with an empty request context and tool-call ids from
+/// `generate_id`, for tests that drive it chunk by chunk.
+#[cfg(test)]
+pub(crate) fn chat_test_stream(
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
+) -> impl Transformer<Input = Result<Value, AiMuxError>, Output = StreamPart> {
+    OpenAIChatStream {
+        tool_calls: ChatToolCalls::new(generate_id),
+        ..OpenAIChatStream::default()
+    }
 }
 
 impl OpenAIChatStream {
@@ -504,9 +490,7 @@ impl Transformer for OpenAIChatStream {
     type Output = StreamPart;
 
     fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        controller.enqueue(StreamPart::StreamStart {
-            warnings: std::mem::take(&mut self.warnings),
-        });
+        self.ctx.start(controller);
     }
 
     fn transform(
@@ -529,20 +513,16 @@ impl Transformer for OpenAIChatStream {
 
         // M2 (RFC-0016): emit the raw provider chunk for debugging before it
         // is consumed below.
-        if self.include_raw_chunks {
-            controller.enqueue(StreamPart::Raw {
-                raw_value: parsed.clone(),
-            });
-        }
+        self.ctx.raw(&parsed, controller);
 
         // Check for mid-stream error.
         if let Some(err_obj) = parsed.get("error") {
             controller.enqueue(StreamPart::Error {
                 error: super::openai_stream_error(
                     err_obj,
-                    &self.url,
-                    self.request_body.clone(),
-                    self.response_headers.clone(),
+                    &self.ctx.url,
+                    self.ctx.request_body.clone(),
+                    self.ctx.response_headers.clone(),
                 ),
             });
             self.stream_errored = true;
@@ -640,23 +620,20 @@ impl Transformer for OpenAIChatStream {
                 self.end_reasoning(controller);
                 for dtc in &tool_call_deltas {
                     let function = dtc.function.as_ref();
-                    let delta = StreamingToolCallDelta {
+                    let delta = ToolCallDelta {
                         index: Some(dtc.index),
                         id: dtc.id.as_deref(),
-                        r#type: dtc.r#type.as_deref(),
                         name: function.and_then(|f| f.name.as_deref()),
                         arguments: function.and_then(|f| f.arguments.as_deref()),
+                        // `type` is optional, but must be 'function' when present.
+                        invalid_type: dtc.r#type.as_deref().is_some_and(|t| t != "function"),
                         provider_metadata: None,
                     };
                     // A malformed delta (new call without a function name, or
                     // a non-`function` type) is invalid response data, as in
                     // the AI SDK; the stream ends.
-                    if let Err(error) = self.tool_calls.process(delta, &mut self.tool_parts) {
-                        controller.error(error.into());
+                    if !self.tool_calls.delta(delta, controller) {
                         return;
-                    }
-                    for part in self.tool_parts.drain(..) {
-                        controller.enqueue(part);
                     }
                 }
             }
@@ -703,12 +680,7 @@ impl Transformer for OpenAIChatStream {
             });
         }
 
-        // A parsable argument buffer can still be a prefix of a longer input:
-        // like the AI SDK's tracker, finalize only when the stream flushes.
-        self.tool_calls.finish(&mut self.tool_parts);
-        for part in self.tool_parts.drain(..) {
-            controller.enqueue(part);
-        }
+        self.tool_calls.finish(controller);
 
         // Provider metadata for the Finish part: logprobs + prediction tokens.
         let mut pm_openai = serde_json::json!({});
