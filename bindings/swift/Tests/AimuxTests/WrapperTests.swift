@@ -14,7 +14,7 @@ final class WrapperTests: XCTestCase {
     // MARK: - generateText: plain text result
 
     /// A plain string prompt returns a `GenerateTextResult` with `.text`,
-    /// `.content` (a `Text` content item), a unified `.stop` finish reason,
+    /// `.content` (a `text` content part), a unified `.stop` finish reason,
     /// and token usage decoded from the mock.
     func testTypedGenerateTextPlainText() throws {
         let server = MockHTTPServer(response: .json(openaiPlainResponse))
@@ -30,9 +30,9 @@ final class WrapperTests: XCTestCase {
         XCTAssertEqual(result.usage.outputTokens, 8)
         XCTAssertEqual(result.steps.count, 1)
 
-        // content carries a `Text` content item.
+        // content carries a `text` content part.
         let textContent = result.content.compactMap { part -> String? in
-            part["Text"]?["text"]?.stringValue
+            part["type"]?.stringValue == "text" ? part["text"]?.stringValue : nil
         }
         XCTAssertEqual(textContent, ["Rust is a systems programming language."])
 
