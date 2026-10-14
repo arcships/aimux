@@ -15,7 +15,6 @@
 //! [`runwayml()`] is the default instance; it reads nothing and cannot fail.
 
 use std::sync::OnceLock;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -24,19 +23,13 @@ use serde_json::{Map, Value, json};
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoFrameType, VideoModel,
-    VideoOperationStart, VideoOperationStatus, VideoPollConfig, VideoResponse, VideoResult,
+    VideoOperationStart, VideoOperationStatus, VideoResponse, VideoResult,
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
 
 use crate::shared::{Credential, EndpointConfig, provider_headers};
 
 const PROVIDER_NAME: &str = "runwayml";
-/// Milliseconds between two status checks of a task. The Core poll loop reads
-/// it from [`VideoModel::poll_config`]; a call overrides it with
-/// `VideoCallOptions::poll`.
-const POLL_INTERVAL_MS: u64 = 2_000;
-/// Milliseconds the Core poll loop waits for a task to finish.
-const POLL_TIMEOUT_MS: u64 = 300_000;
 const RUNWAY_VERSION: &str = "2024-11-06";
 
 /// RunwayML returns errors as a flat `{"error": "<message>"}` object.
@@ -55,8 +48,8 @@ fn runwayml_failed_response_handler() -> aimux_provider_utils::ResponseHandler<A
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-const DEFAULT_BASE_URL: &str = "https://api.dev.runwayml.com";
-const API_KEY_ENV_VAR: &str = "RUNWAYML_API_SECRET";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.dev.runwayml.com";
+pub(crate) const API_KEY_ENV_VAR: &str = "RUNWAYML_API_SECRET";
 const DEFAULT_NAME: &str = "runwayml";
 
 /// Settings of [`create_runwayml`].
@@ -225,13 +218,6 @@ impl VideoModel for RunwaymlVideoModel {
         Some(1)
     }
 
-    fn poll_config(&self) -> VideoPollConfig {
-        VideoPollConfig {
-            interval: Duration::from_millis(POLL_INTERVAL_MS),
-            timeout: Duration::from_millis(POLL_TIMEOUT_MS),
-        }
-    }
-
     async fn do_start(
         &self,
         options: &VideoCallOptions,
@@ -296,7 +282,7 @@ impl VideoModel for RunwaymlVideoModel {
             warnings: Vec::new(),
             provider_metadata: None,
             response: VideoResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },
@@ -357,7 +343,7 @@ impl VideoModel for RunwaymlVideoModel {
                     warnings: Vec::new(),
                     provider_metadata: None,
                     response: VideoResponse {
-                        timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                        timestamp: Some(aimux_core::Timestamp::now()),
                         model_id: Some(self.model_id.clone()),
                         headers: Some(response_headers),
                     },

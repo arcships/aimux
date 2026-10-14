@@ -5,5 +5,7 @@
  *
  * The TS result type is `string | Uint8Array`. Providers should return data
  * without unnecessary conversion.
+ *
+ * The JSON is a base64 string either way, as in the AI SDK's JSON.
  */
-export type AudioData = string | Array<number>;
+export type AudioData = string;

@@ -213,18 +213,19 @@ fn defaults_to_anthropic_messages_when_not_specified() {
 }
 
 /// TS: "should support image/* URLs".
-#[test]
-fn supports_image_urls() {
+#[tokio::test]
+async fn supports_image_urls() {
     let model = make_model_with_config(AnthropicProviderSettings::default());
-    assert!(model.supported_urls().0["image/*"][0].is_match("https://example.com/image.png"));
+    assert!(model.supported_urls().await.0["image/*"][0].is_match("https://example.com/image.png"));
 }
 
 /// TS: "should support application/pdf URLs".
-#[test]
-fn supports_pdf_urls() {
+#[tokio::test]
+async fn supports_pdf_urls() {
     let model = make_model_with_config(AnthropicProviderSettings::default());
     assert!(
-        model.supported_urls().0["application/pdf"][0].is_match("https://arxiv.org/pdf/2401.00001")
+        model.supported_urls().await.0["application/pdf"][0]
+            .is_match("https://arxiv.org/pdf/2401.00001")
     );
 }
 

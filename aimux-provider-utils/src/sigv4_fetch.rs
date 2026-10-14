@@ -26,13 +26,31 @@ use crate::fetch::{
 use crate::resolvable::Resolvable;
 
 /// A set of AWS credentials for SigV4 signing.
-#[derive(Debug, Clone)]
+///
+/// `Debug` is hand-written so the secret key and session token never reach
+/// logs or error output; the access key id and region stay visible because
+/// they identify the credentials without granting access.
+#[derive(Clone)]
 pub struct AwsCredentials {
     pub access_key_id: String,
     pub secret_access_key: String,
     /// Optional temporary session token (STS).
     pub session_token: Option<String>,
     pub region: String,
+}
+
+impl fmt::Debug for AwsCredentials {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AwsCredentials")
+            .field("access_key_id", &self.access_key_id)
+            .field("secret_access_key", &"[REDACTED]")
+            .field(
+                "session_token",
+                &self.session_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("region", &self.region)
+            .finish()
+    }
 }
 
 /// The result of signing a request.
@@ -44,6 +62,21 @@ struct SignedRequest {
 }
 
 type HmacSha256 = Hmac<Sha256>;
+
+/// The headers that are sent but never signed under
+/// [`SigV4Signing::Aws4Fetch`]: aws4fetch 1.0.20's `UNSIGNABLE_HEADERS`
+/// (lowercase names). `authorization` is never signed under either rule.
+const UNSIGNABLE_HEADERS: &[&str] = &[
+    "authorization",
+    "content-type",
+    "content-length",
+    "user-agent",
+    "presigned-expires",
+    "expect",
+    "x-amzn-trace-id",
+    "range",
+    "connection",
+];
 
 /// Sign an HTTP request using AWS SigV4, stamped with the current time.
 ///
@@ -76,7 +109,9 @@ fn sign_request(
     )
 }
 
-/// Sign an HTTP request with an explicit signing time and a byte body.
+/// Sign an HTTP request with an explicit signing time and a byte body, under
+/// [`SigV4Signing::AllHeaders`].
+#[cfg(test)]
 #[must_use]
 fn sign_request_at(
     credentials: &AwsCredentials,
@@ -86,6 +121,33 @@ fn sign_request_at(
     body: &[u8],
     extra_headers: &[(String, String)],
     now: DateTime<Utc>,
+) -> SignedRequest {
+    sign_request_with(
+        credentials,
+        service,
+        method,
+        url,
+        body,
+        extra_headers,
+        now,
+        SigV4Signing::AllHeaders,
+    )
+}
+
+/// [`sign_request_at`] under `signing`: [`SigV4Signing::Aws4Fetch`] neither
+/// sends nor signs `x-amz-content-sha256`, as aws4fetch does for every
+/// service but s3.
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+fn sign_request_with(
+    credentials: &AwsCredentials,
+    service: &str,
+    method: &str,
+    url: &str,
+    body: &[u8],
+    extra_headers: &[(String, String)],
+    now: DateTime<Utc>,
+    signing: SigV4Signing,
 ) -> SignedRequest {
     let parsed =
         url::Url::parse(url).unwrap_or_else(|_| url::Url::parse("http://localhost").unwrap());
@@ -110,12 +172,15 @@ fn sign_request_at(
     let body_hash = hex::encode(Sha256::digest(body));
 
     // Build canonical headers (sorted, lowercased, trimmed).
-    // Always include host, x-amz-date, and x-amz-content-sha256.
+    // Always include host and x-amz-date; x-amz-content-sha256 only under
+    // `AllHeaders` (aws4fetch adds it for s3 alone).
     let mut canonical_headers: Vec<(String, String)> = vec![
         ("host".to_string(), host.to_string()),
-        ("x-amz-content-sha256".to_string(), body_hash.clone()),
         ("x-amz-date".to_string(), amz_date.clone()),
     ];
+    if signing == SigV4Signing::AllHeaders {
+        canonical_headers.push(("x-amz-content-sha256".to_string(), body_hash.clone()));
+    }
 
     if let Some(ref token) = credentials.session_token {
         canonical_headers.push(("x-amz-security-token".to_string(), token.clone()));
@@ -287,31 +352,52 @@ type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 ///
 /// Credentials are resolved on each request, so a `Resolvable::AsyncFn` can
 /// hand out rotating STS credentials. The signature covers the request's
-/// final body bytes and every header present on the request (except
-/// `Authorization`, which it replaces); `host`, `x-amz-date`,
-/// `x-amz-content-sha256` and, for temporary credentials,
-/// `x-amz-security-token` are set from the signed values.
+/// final body bytes and the headers [`SigV4Signing`] names; `host`,
+/// `x-amz-date`, `x-amz-content-sha256` (under [`SigV4Signing::AllHeaders`])
+/// and, for temporary credentials, `x-amz-security-token` are set from the
+/// signed values, and `Authorization` is replaced.
 pub struct SigV4Fetch {
     inner: FetchFunction,
     credentials: Resolvable<AwsCredentials>,
     service: String,
     clock: Clock,
+    signing: SigV4Signing,
+}
+
+/// Which headers a [`SigV4Fetch`] signs: the one per-caller choice. There is
+/// no default: every caller names its rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SigV4Signing {
+    /// Every request header except `authorization`, plus a sent and signed
+    /// `x-amz-content-sha256` (botocore's `SigV4Auth`). For callers with no
+    /// AI SDK counterpart (Amazon Polly).
+    AllHeaders,
+    /// aws4fetch 1.0.20, the signer of the AI SDK's AWS providers
+    /// (`AwsV4Signer`): the headers in its `UNSIGNABLE_HEADERS`
+    /// (user-agent, content-type, ...) are sent but not signed, and
+    /// `x-amz-content-sha256` is neither sent nor signed. (aws4fetch adds it
+    /// only for service `s3`, as `UNSIGNED-PAYLOAD`; no aimux caller signs
+    /// for s3, and this rule does not implement that case.)
+    Aws4Fetch,
 }
 
 impl SigV4Fetch {
     /// Sign requests for `service` (e.g. `"bedrock"`) with `credentials`
-    /// (whose `region` scopes the signature) and forward them to `inner`.
+    /// (whose `region` scopes the signature) under `signing`, and forward
+    /// them to `inner`.
     #[must_use]
     pub fn new(
         inner: FetchFunction,
         credentials: Resolvable<AwsCredentials>,
         service: impl Into<String>,
+        signing: SigV4Signing,
     ) -> Self {
         Self {
             inner,
             credentials,
             service: service.into(),
             clock: Arc::new(Utc::now),
+            signing,
         }
     }
 
@@ -344,7 +430,11 @@ impl Fetch for SigV4Fetch {
         })?;
         let mut extra_headers = Vec::with_capacity(request.headers.len());
         for (name, value) in &request.headers {
-            if name == http::header::AUTHORIZATION {
+            let unsigned = match self.signing {
+                SigV4Signing::AllHeaders => name == http::header::AUTHORIZATION,
+                SigV4Signing::Aws4Fetch => UNSIGNABLE_HEADERS.contains(&name.as_str()),
+            };
+            if unsigned {
                 continue;
             }
             let value = value.to_str().map_err(|_| {
@@ -352,7 +442,7 @@ impl Fetch for SigV4Fetch {
             })?;
             extra_headers.push((name.as_str().to_string(), value.to_string()));
         }
-        let signed = sign_request_at(
+        let signed = sign_request_with(
             &credentials,
             &self.service,
             request.method.as_str(),
@@ -360,6 +450,7 @@ impl Fetch for SigV4Fetch {
             &request.body,
             &extra_headers,
             (self.clock)(),
+            self.signing,
         );
         for (name, value) in signed.headers {
             let name = http::HeaderName::try_from(name.as_str()).map_err(|error| {
@@ -391,6 +482,18 @@ mod tests {
             session_token: None,
             region: "us-east-1".to_string(),
         }
+    }
+
+    #[test]
+    fn debug_redacts_secret_key_and_session_token() {
+        let mut credentials = creds();
+        credentials.session_token = Some("FwoGZXIvYXdzEXAMPLETOKEN".to_string());
+        let printed = format!("{credentials:?}");
+        assert!(!printed.contains("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"));
+        assert!(!printed.contains("FwoGZXIvYXdzEXAMPLETOKEN"));
+        assert!(printed.contains("[REDACTED]"));
+        assert!(printed.contains("AKIAIOSFODNN7EXAMPLE"));
+        assert!(printed.contains("us-east-1"));
     }
 
     fn fixed_time() -> DateTime<Utc> {
@@ -426,8 +529,13 @@ mod tests {
 
     fn decorated(credentials: AwsCredentials) -> (SigV4Fetch, Arc<Capture>) {
         let capture = Arc::new(Capture::default());
-        let fetch = SigV4Fetch::new(capture.clone(), Resolvable::from(credentials), "bedrock")
-            .with_clock(fixed_time);
+        let fetch = SigV4Fetch::new(
+            capture.clone(),
+            Resolvable::from(credentials),
+            "bedrock",
+            SigV4Signing::AllHeaders,
+        )
+        .with_clock(fixed_time);
         (fetch, capture)
     }
 
@@ -578,6 +686,105 @@ mod tests {
         );
     }
 
+    /// `SigV4Signing::Aws4Fetch` signs like aws4fetch 1.0.20's
+    /// `AwsV4Signer` (dist/aws4fetch.esm.mjs): the `UNSIGNABLE_HEADERS`
+    /// (user-agent, content-type, ...) are sent but left out of
+    /// `SignedHeaders`, and no `x-amz-content-sha256` is added for a non-s3
+    /// service. With only unsignable headers on the request, the signature
+    /// is the AWS SigV4 test suite's `get-vanilla` / `post-vanilla` one.
+    #[tokio::test]
+    async fn aws4fetch_signing_matches_the_aws_test_suite_vanilla_vectors() {
+        let credentials = AwsCredentials {
+            access_key_id: "AKIDEXAMPLE".to_string(),
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".to_string(),
+            session_token: None,
+            region: "us-east-1".to_string(),
+        };
+        for (method, signature) in [
+            (
+                Method::GET,
+                "5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31",
+            ),
+            (
+                Method::POST,
+                "5da7c1a2acd57cee7505fc6676e4e544621c30862966e37dddb68e92efbe5d6b",
+            ),
+        ] {
+            let capture = Arc::new(Capture::default());
+            let fetch = SigV4Fetch::new(
+                capture.clone(),
+                Resolvable::from(credentials.clone()),
+                "service",
+                SigV4Signing::Aws4Fetch,
+            )
+            .with_clock(|| Utc.with_ymd_and_hms(2015, 8, 30, 12, 36, 0).unwrap());
+            let mut request = FetchRequest::new(
+                method.clone(),
+                "https://example.amazonaws.com/".parse().unwrap(),
+            );
+            for (name, value) in [
+                ("user-agent", "app/1 ai-sdk-provider-utils/5.0.53"),
+                ("content-type", "application/json"),
+                ("content-length", "0"),
+            ] {
+                request.headers.insert(name, value.parse().unwrap());
+            }
+            fetch.fetch(request).await.unwrap();
+            let sent = capture.0.lock().unwrap().take().unwrap();
+            assert_eq!(
+                sent.headers["authorization"].to_str().unwrap(),
+                format!(
+                    "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, \
+                     SignedHeaders=host;x-amz-date, Signature={signature}"
+                ),
+                "{method}"
+            );
+            assert_eq!(sent.headers["x-amz-date"], "20150830T123600Z");
+            assert!(!sent.headers.contains_key("x-amz-content-sha256"));
+            assert_eq!(
+                sent.headers["user-agent"],
+                "app/1 ai-sdk-provider-utils/5.0.53"
+            );
+        }
+    }
+
+    /// Under `Aws4Fetch` a signable request header is signed, and a session
+    /// token is sent and signed as `x-amz-security-token`, as aws4fetch does.
+    #[tokio::test]
+    async fn aws4fetch_signing_signs_other_headers_and_the_session_token() {
+        let capture = Arc::new(Capture::default());
+        let fetch = SigV4Fetch::new(
+            capture.clone(),
+            Resolvable::from(AwsCredentials {
+                session_token: Some("SESSION".to_string()),
+                ..creds()
+            }),
+            "aws-external-anthropic",
+            SigV4Signing::Aws4Fetch,
+        )
+        .with_clock(fixed_time);
+        let mut request = FetchRequest::new(Method::POST, URL.parse().unwrap());
+        request
+            .headers
+            .insert("anthropic-version", "2023-06-01".parse().unwrap());
+        request.headers.insert(
+            "user-agent",
+            "ai-sdk-provider-utils/5.0.53".parse().unwrap(),
+        );
+        request.body = Bytes::from(BODY);
+        fetch.fetch(request).await.unwrap();
+        let sent = capture.0.lock().unwrap().take().unwrap();
+        let authorization = sent.headers["authorization"].to_str().unwrap();
+        assert!(
+            authorization.contains(
+                " SignedHeaders=anthropic-version;host;x-amz-date;x-amz-security-token, "
+            ),
+            "{authorization}"
+        );
+        assert_eq!(sent.headers["x-amz-security-token"], "SESSION");
+        assert!(!sent.headers.contains_key("x-amz-content-sha256"));
+    }
+
     #[tokio::test]
     async fn decorator_authorization_is_byte_identical_to_sign_request() {
         let (fetch, capture) = decorated(creds());
@@ -679,7 +886,7 @@ mod tests {
             }
         });
         let capture = Arc::new(Capture::default());
-        let fetch = SigV4Fetch::new(capture, credentials, "bedrock");
+        let fetch = SigV4Fetch::new(capture, credentials, "bedrock", SigV4Signing::AllHeaders);
         for _ in 0..2 {
             fetch
                 .fetch(FetchRequest::new(Method::GET, URL.parse().unwrap()))
@@ -701,6 +908,7 @@ mod tests {
                 })
             }),
             "bedrock",
+            SigV4Signing::AllHeaders,
         );
         let error = fetch
             .fetch(FetchRequest::new(Method::GET, URL.parse().unwrap()))

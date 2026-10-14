@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -266,6 +267,31 @@ func TestE2E_GenerateTextParsesText(t *testing.T) {
 	}
 }
 
+// The AI SDK parses tool input with JSON.parse (ai
+// generate-text/parse-tool-call.ts:256; provider-utils secure-json-parse.ts:31),
+// so JSON.stringify writes an integral 1e2 or 3.0 as 100 or 3.
+func TestE2E_IntegralToolInputNumbersAreIntegers(t *testing.T) {
+	srv := newMockServer()
+	defer srv.Close()
+	srv.SetResponse(strings.Replace(toolCallOpenAIResponse, `{\"location\":\"Tokyo\"}`,
+		`{\"location\":\"Tokyo\",\"days\":3.0,\"n\":1e2,\"t\":1.5}`, 1))
+
+	m := chatModel(t, srv.URL)
+	defer m.Close()
+
+	result, err := m.GenerateText(`"What is the weather in Tokyo?"`, weatherToolsOpts(""))
+	if err != nil {
+		t.Fatalf("generate_text failed: %v", err)
+	}
+	parsed, err := ParseGenerateTextResult(result)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if got := string(parsed.ToolCalls[0].Input); got != `{"location":"Tokyo","days":3,"n":100,"t":1.5}` {
+		t.Errorf("tool input: %s", got)
+	}
+}
+
 func TestE2E_GenerateTextParsesToolCalls(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()
@@ -301,23 +327,21 @@ func TestE2E_GenerateTextParsesToolCalls(t *testing.T) {
 		t.Errorf("expected location Tokyo, got %v", input["location"])
 	}
 
-	// raw.content should contain a "tool-call" part.
-	var rawWrap struct {
-		Raw struct {
-			Content []struct {
-				Type string `json:"type"`
-			} `json:"content"`
-		} `json:"raw"`
+	// content should contain a "tool-call" part.
+	var contentWrap struct {
+		Content []struct {
+			Type string `json:"type"`
+		} `json:"content"`
 	}
-	json.Unmarshal([]byte(result), &rawWrap)
+	json.Unmarshal([]byte(result), &contentWrap)
 	hasToolCallPart := false
-	for _, part := range rawWrap.Raw.Content {
+	for _, part := range contentWrap.Content {
 		if part.Type == "tool-call" {
 			hasToolCallPart = true
 		}
 	}
 	if !hasToolCallPart {
-		t.Error("expected raw.content to contain a tool-call part")
+		t.Error("expected content to contain a tool-call part")
 	}
 }
 
@@ -416,6 +440,7 @@ func TestE2E_StreamTextParsesToolCallStreamParts(t *testing.T) {
 		t.Fatal("expected at least one stream part")
 	}
 
+	// The stream opens with Start and StartStep parts.
 	var gotToolCall, gotFinish bool
 	for _, p := range parts {
 		sp, err := ParseStreamPart(p)
@@ -476,7 +501,7 @@ func TestE2E_StreamTextYieldsTextDeltas(t *testing.T) {
 		case "text-delta":
 			var td TextDeltaPayload
 			json.Unmarshal(sp.Raw, &td)
-			textBuilder.WriteString(td.Delta)
+			textBuilder.WriteString(td.Text)
 		case "finish":
 			gotFinish = true
 		}
@@ -726,5 +751,122 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 	var output map[string]any
 	if err := json.Unmarshal([]byte(content), &output); err != nil || output["temperature"] != "20C" {
 		t.Errorf("tool output did not round-trip: %q (%v)", content, err)
+	}
+}
+
+func TestE2E_FilePartsAreTheAiSdkFilePart(t *testing.T) {
+	// FilePart.data is FileData | DataContent | URL | ProviderReference upstream
+	// (provider-utils types/content-part.ts:75): a data: URL's media type wins
+	// (ai prompt/file-part-data.ts:31-41) and a bare reference is a reference
+	// (:133-138). There is no file-base64 / file-url / file-reference part.
+	srv := newMockServer()
+	defer srv.Close()
+	srv.SetResponse(plainOpenAIResponse)
+	m := chatModel(t, srv.URL)
+	defer m.Close()
+
+	prompt := `[{"role":"user","content":[
+		{"type":"file","data":{"type":"url","url":"https://example.com/a.png"},"mediaType":"image/png"},
+		{"type":"file","data":"data:image/png;base64,iVBORw==","mediaType":"image"},
+		{"type":"file","data":{"deepseek":"file-abc"},"mediaType":"image/png"}]}]`
+	if _, err := m.GenerateText(prompt, ""); err != nil {
+		t.Fatalf("generate_text failed: %v", err)
+	}
+	var request struct {
+		Messages []struct {
+			Content []map[string]any `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(srv.LastRequestBody()), &request); err != nil {
+		t.Fatalf("request body: %v", err)
+	}
+	content := request.Messages[0].Content
+	if got := content[0]["image_url"].(map[string]any)["url"]; got != "https://example.com/a.png" {
+		t.Errorf("url file part: %v", content[0])
+	}
+	if got := content[1]["image_url"].(map[string]any)["url"]; got != "data:image/png;base64,iVBORw==" {
+		t.Errorf("data URL file part: %v", content[1])
+	}
+	if content[2]["type"] != "file" || content[2]["file_id"] != "file-abc" {
+		t.Errorf("bare reference file part: %v", content[2])
+	}
+
+	for _, removed := range []string{"file-base64", "file-url", "file-reference"} {
+		part := `{"type":"` + removed + `","data":"aGk=","url":"https://example.com/a.png","mediaType":"image/png"}`
+		if _, err := m.GenerateText(`[{"role":"user","content":[`+part+`]}]`, ""); err == nil {
+			t.Errorf("%s was accepted", removed)
+		}
+	}
+}
+
+func TestE2E_GeneratedFilesAreBase64AndMediaType(t *testing.T) {
+	// A generated file is GeneratedFile upstream, whose JSON is
+	// {base64, mediaType} (ai generate-text/generated-file.ts:10-32); the
+	// content part wraps it as {type: "file", file}
+	// (generate-text/convert-language-model-content.ts:55-70).
+	srv := newMockServer()
+	defer srv.Close()
+	srv.SetResponse(`{"candidates":[{"content":{"role":"model","parts":[
+		{"text":"Here:"},{"inlineData":{"mimeType":"image/png","data":"iVBORw=="}}]},
+		"finishReason":"STOP"}],
+		"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5}}`)
+	m, err := NewVertexWithBase("token", "project", "us-central1", "gemini-2.0-flash", srv.URL)
+	if err != nil {
+		t.Fatalf("NewVertexWithBase: %v", err)
+	}
+	defer m.Close()
+
+	out, err := m.GenerateText(`"draw"`, "")
+	if err != nil {
+		t.Fatalf("generate_text failed: %v", err)
+	}
+	var wire struct {
+		Files   []map[string]any `json:"files"`
+		Content []map[string]any `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(out), &wire); err != nil {
+		t.Fatalf("result: %v", err)
+	}
+	want := map[string]any{"base64": "iVBORw==", "mediaType": "image/png"}
+	if len(wire.Files) != 1 || !reflect.DeepEqual(wire.Files[0], want) {
+		t.Fatalf("files: %v", wire.Files)
+	}
+	if !reflect.DeepEqual(wire.Content[1], map[string]any{"type": "file", "file": want}) {
+		t.Errorf("file content part: %v", wire.Content[1])
+	}
+
+	var typed GenerateTextResult
+	if err := json.Unmarshal([]byte(out), &typed); err != nil {
+		t.Fatalf("typed result: %v", err)
+	}
+	if bytes, err := typed.Files[0].Bytes(); err != nil || typed.Files[0].MediaType != "image/png" ||
+		!reflect.DeepEqual(bytes, []byte{0x89, 'P', 'N', 'G'}) {
+		t.Errorf("typed file: %+v %v %v", typed.Files[0], bytes, err)
+	}
+}
+
+func TestE2E_ResponseTimestampIsToISOString(t *testing.T) {
+	// The response timestamp is a Date (provider
+	// language-model-v4-response-metadata.ts:10), built as
+	// new Date(created * 1000); its JSON is toISOString().
+	srv := newMockServer()
+	defer srv.Close()
+	srv.SetResponse(strings.Replace(plainOpenAIResponse, `"id": "chatcmpl-test",`, `"id": "chatcmpl-test", "created": 1741269019,`, 1))
+	m := chatModel(t, srv.URL)
+	defer m.Close()
+
+	out, err := m.GenerateText(`"What is Rust?"`, "")
+	if err != nil {
+		t.Fatalf("generate_text failed: %v", err)
+	}
+	parsed, err := ParseGenerateTextResult(out)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if parsed.Response.Timestamp != "2025-03-06T13:50:19.000Z" {
+		t.Fatalf("timestamp: %v", parsed.Response.Timestamp)
+	}
+	if _, err := time.Parse(time.RFC3339, parsed.Response.Timestamp); err != nil {
+		t.Errorf("not RFC 3339: %v", err)
 	}
 }

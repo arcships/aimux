@@ -11,7 +11,6 @@
 //! there: it is loaded for every request, from the setting or from `FAL_KEY`.
 //! [`fal()`] is the default instance; it reads nothing and cannot fail.
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -84,8 +83,8 @@ const DOWNLOAD_RETRY_INTERVAL_MS: u64 = 1_000;
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://queue.fal.run";
-const API_KEY_ENV_VAR: &str = "FAL_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://queue.fal.run";
+pub(crate) const API_KEY_ENV_VAR: &str = "FAL_KEY";
 const DEFAULT_NAME: &str = "fal";
 
 /// Settings of [`create_fal`].
@@ -274,6 +273,7 @@ fn audio_input_to_base64(audio: &AudioInput) -> Result<String, AiMuxError> {
             &base64::engine::general_purpose::STANDARD,
             bytes,
         )),
+        AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
 
@@ -430,7 +430,7 @@ impl TranscriptionModel for FalTranscriptionModel {
             .and_then(|c| c.timestamp.as_ref())
             .and_then(|t| t.get(1).copied());
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(TranscriptionResult {
             text: parsed.text,
@@ -646,7 +646,7 @@ impl ImageModel for FalImageModel {
             }
         }
 
-        let mut metadata = HashMap::new();
+        let mut metadata = aimux_core::shared::NamespaceMap::new();
         let mut fm = Map::new();
         let im: Vec<Value> = target_images
             .iter()
@@ -695,7 +695,7 @@ impl ImageModel for FalImageModel {
             warnings,
             provider_metadata: Some(metadata),
             response: ImageResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(rh),
             },
@@ -820,7 +820,7 @@ impl VideoModel for FalVideoModel {
             warnings,
             provider_metadata: None,
             response: VideoResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },
@@ -889,7 +889,7 @@ impl VideoModel for FalVideoModel {
             warnings: Vec::new(),
             provider_metadata: None,
             response: VideoResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },

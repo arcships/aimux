@@ -17,7 +17,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::Warning;
+use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{AudioData, SpeechCallOptions, SpeechModel, SpeechResult};
 use aimux_providers::{XAIProviderSettings, XaiSpeechModel, create_xai};
 
@@ -79,7 +79,7 @@ fn options(text: &str) -> SpeechCallOptions {
 
 /// `providerOptions: { xai: {...} }`.
 fn with_xai(mut options: SpeechCallOptions, xai: Value) -> SpeechCallOptions {
-    options.provider_options = Some(HashMap::from([(
+    options.provider_options = Some(SharedProviderOptions::from([(
         "xai".to_string(),
         xai.as_object().expect("an object").clone(),
     )]));
@@ -418,15 +418,15 @@ async fn should_handle_api_errors() {
 #[tokio::test]
 async fn should_use_the_real_date_when_no_custom_date_provider_is_specified() {
     let server = server_with(audio_response("audio/mpeg", &[])).await;
-    let before = chrono::Utc::now();
+    let before = chrono::Utc::now().timestamp_millis();
     let result = speech_model(&server, None)
         .do_generate(&options("Hello from the AI SDK!"))
         .await
         .unwrap();
-    let after = chrono::Utc::now();
+    let after = chrono::Utc::now().timestamp_millis();
 
-    let timestamp = chrono::DateTime::parse_from_rfc3339(&result.response.timestamp.unwrap())
-        .expect("an RFC 3339 timestamp");
+    // A `Date`: millisecond precision.
+    let timestamp = result.response.timestamp.unwrap().unix_millis();
     assert!(before <= timestamp && timestamp <= after);
     assert_eq!(result.response.model_id.as_deref(), Some(""));
 }

@@ -2,12 +2,12 @@
 import type { CustomPart } from "./CustomPart";
 import type { FilePart } from "./FilePart";
 import type { LanguageModelReasoningPart } from "./LanguageModelReasoningPart";
+import type { LanguageModelToolResultPart } from "./LanguageModelToolResultPart";
 import type { ReasoningFilePart } from "./ReasoningFilePart";
 import type { TextPart } from "./TextPart";
 import type { ToolCallPart } from "./ToolCallPart";
-import type { ToolResultPart } from "./ToolResultPart";
 
 /**
  * Parts allowed in an assistant message.
  */
-export type AssistantPart = { "type": "text" } & TextPart | { "type": "file" } & FilePart | { "type": "reasoning" } & LanguageModelReasoningPart | { "type": "reasoning-file" } & ReasoningFilePart | { "type": "custom" } & CustomPart | { "type": "tool-call" } & ToolCallPart | { "type": "tool-result" } & ToolResultPart;
+export type AssistantPart = { "type": "text" } & TextPart | { "type": "file" } & FilePart | { "type": "reasoning" } & LanguageModelReasoningPart | { "type": "reasoning-file" } & ReasoningFilePart | { "type": "custom" } & CustomPart | { "type": "tool-call" } & ToolCallPart | { "type": "tool-result" } & LanguageModelToolResultPart;

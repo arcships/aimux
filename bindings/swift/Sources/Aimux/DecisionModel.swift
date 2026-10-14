@@ -1,7 +1,7 @@
 import CAimuxFFI
 import Foundation
 
-/// Native decisions using the core JSON request/result contract.
+/// A DecisionModelV4 model using the core JSON contract: DecideOptions in, DecideResult out.
 public final class DecisionModel: @unchecked Sendable {
     private let lock = NSLock()
     private var handle: UInt64
@@ -25,8 +25,9 @@ public final class DecisionModel: @unchecked Sendable {
         return try ffiStringCall { aimux_decide_with_abort(handle, options, abortHandle, $0) }
     }
 
-    /// Query capabilities and rounding precision without HTTP.
-    public func capabilities() throws -> String {
+    /// The model's DecisionModelV4 properties as JSON
+    /// (`{specificationVersion, provider, modelId, supportedQuestionTypes}`), without HTTP.
+    public func describe() throws -> String {
         let handle = try snapshot()
         return try ffiStringCall { aimux_decision_capabilities(handle, $0) }
     }

@@ -8,12 +8,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-use aimux_core::content::ContentPart;
+use aimux_core::content::{
+    AssistantContentPart, ToolContentPart, ToolResultOutput, ToolResultPart, UserContentPart,
+};
 use aimux_core::error::AiMuxError;
 use aimux_core::generate::GenerateTextOptions;
-use aimux_core::language_model_message::ToolResultOutput;
-use aimux_core::message::{MessageContent, ModelMessage, ModelPrompt, Role};
+use aimux_core::message::{ModelMessage, ModelPrompt};
 use aimux_core::options::ResponseFormat;
+use aimux_core::output::Output;
 use aimux_core::tool::{FunctionTool, Tool};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -192,10 +194,24 @@ pub struct WireMeta {
 // Conversions
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Wire content part → `ContentPart`.
-fn to_content_part(p: &WireContentPart) -> ContentPart {
+/// Wire tool result → user-facing tool result part.
+fn to_tool_result(
+    tool_call_id: &str,
+    tool_name: &str,
+    output: &ToolResultOutput,
+) -> ToolResultPart {
+    ToolResultPart {
+        tool_call_id: tool_call_id.to_owned(),
+        tool_name: Some(tool_name.to_owned()),
+        output: output.clone(),
+        provider_options: None,
+    }
+}
+
+/// Wire content part → assistant content part.
+fn to_assistant_part(p: &WireContentPart) -> AssistantContentPart {
     match p {
-        WireContentPart::Text { text } => ContentPart::Text {
+        WireContentPart::Text { text } => AssistantContentPart::Text {
             text: text.clone(),
             provider_options: None,
         },
@@ -204,7 +220,7 @@ fn to_content_part(p: &WireContentPart) -> ContentPart {
             tool_name,
             input,
             provider_executed,
-        } => ContentPart::ToolCall {
+        } => AssistantContentPart::ToolCall {
             tool_call_id: tool_call_id.clone(),
             tool_name: tool_name.clone(),
             input: input.clone(),
@@ -215,12 +231,7 @@ fn to_content_part(p: &WireContentPart) -> ContentPart {
             tool_call_id,
             tool_name,
             output,
-        } => ContentPart::ToolResult {
-            tool_call_id: tool_call_id.clone(),
-            tool_name: tool_name.clone(),
-            output: output.clone(),
-            provider_options: None,
-        },
+        } => AssistantContentPart::ToolResult(to_tool_result(tool_call_id, tool_name, output)),
     }
 }
 
@@ -228,28 +239,53 @@ fn to_content_part(p: &WireContentPart) -> ContentPart {
 pub fn to_model_prompt(messages: &[WireMessage]) -> Result<ModelPrompt, AiMuxError> {
     let mut out = Vec::with_capacity(messages.len());
     for m in messages {
-        let role = match m.role.as_str() {
-            "system" => Role::System,
-            "user" => Role::User,
-            "assistant" => Role::Assistant,
-            "tool" => Role::Tool,
+        let invalid = |what: &str| AiMuxError::InvalidPrompt(format!("{} message: {what}", m.role));
+        let message = match m.role.as_str() {
+            "system" => {
+                let [WireContentPart::Text { text }] = m.content.as_slice() else {
+                    return Err(invalid("content must be plain text"));
+                };
+                ModelMessage::system(text.clone())
+            }
+            "user" => ModelMessage::user_parts(
+                m.content
+                    .iter()
+                    .map(|part| match part {
+                        WireContentPart::Text { text } => Ok(UserContentPart::Text {
+                            text: text.clone(),
+                            provider_options: None,
+                        }),
+                        _ => Err(invalid("only text parts are allowed")),
+                    })
+                    .collect::<Result<_, _>>()?,
+            ),
+            "assistant" => {
+                ModelMessage::assistant_parts(m.content.iter().map(to_assistant_part).collect())
+            }
+            "tool" => ModelMessage::tool(
+                m.content
+                    .iter()
+                    .map(|part| match part {
+                        WireContentPart::ToolResult {
+                            tool_call_id,
+                            tool_name,
+                            output,
+                        } => Ok(ToolContentPart::ToolResult(to_tool_result(
+                            tool_call_id,
+                            tool_name,
+                            output,
+                        ))),
+                        _ => Err(invalid("only tool-result parts are allowed")),
+                    })
+                    .collect::<Result<_, _>>()?,
+            ),
             other => {
                 return Err(AiMuxError::InvalidArgument(format!(
                     "unknown message role '{other}' (expected system/user/assistant/tool)"
                 )));
             }
         };
-        let content = if role == Role::System {
-            let [WireContentPart::Text { text }] = m.content.as_slice() else {
-                return Err(AiMuxError::InvalidPrompt(
-                    "system content must be plain text".into(),
-                ));
-            };
-            MessageContent::Text(text.clone())
-        } else {
-            MessageContent::Parts(m.content.iter().map(to_content_part).collect())
-        };
-        out.push(ModelMessage { role, content });
+        out.push(message);
     }
     Ok(ModelPrompt::Messages(out))
 }
@@ -271,12 +307,27 @@ pub fn to_generate_options(
     o: &WireOptions,
     session_id: Option<&str>,
 ) -> Result<GenerateTextOptions, AiMuxError> {
-    // `{"type":"text"}` is the default format, so it maps to "unset".
-    let response_format = match &o.response_format {
+    // The console's `responseFormat` selects the core output: `{"type":"text"}`
+    // (the default format) is unset, a JSON format with a schema is an object
+    // output, one without is the JSON output.
+    let output = match &o.response_format {
         None => None,
         Some(v) => match serde_json::from_value::<ResponseFormat>(v.clone()) {
             Ok(ResponseFormat::Text) => None,
-            Ok(json) => Some(json),
+            Ok(ResponseFormat::Json {
+                schema: Some(schema),
+                name,
+                description,
+            }) => Some(Output::Object {
+                schema,
+                name,
+                description,
+            }),
+            Ok(ResponseFormat::Json {
+                schema: None,
+                name,
+                description,
+            }) => Some(Output::Json { name, description }),
             Err(e) => {
                 return Err(AiMuxError::InvalidArgument(format!(
                     "invalid responseFormat: {e}"
@@ -294,7 +345,7 @@ pub fn to_generate_options(
             .tools
             .as_ref()
             .map(|ts| ts.iter().map(to_function_tool).collect()),
-        response_format,
+        output,
         headers: o.headers.clone(),
         max_retries: o.max_retries,
         session_id: session_id.map(str::to_string),
@@ -307,20 +358,55 @@ pub fn to_generate_options(
 ///
 /// Priority:
 /// 1. **explicit request spec** — `Some("env:VAR")` reads the environment
-///    variable; a plaintext literal is accepted only when the console is
-///    loopback-bound (`allow_plaintext`, one-shot Playground use);
+///    variable, which must be the provider's registered key variable
+///    ([`registered_key_env`]); a plaintext literal is accepted only when the
+///    console is loopback-bound (`allow_plaintext`, one-shot Playground use);
 /// 2. **Settings key store** — a key saved for this provider in the console
 ///    Settings page (`store.get(provider)`);
 /// 3. `None` — the provider reads its registered env var.
 ///
 /// Plaintext literals stay rejected on non-loopback bindings (any LAN client
 /// could otherwise ship keys through the request body).
+///
+/// `custom_base_url` ([`crate::model_builder::is_custom_base_url`]): the call
+/// goes to a base URL the caller chose. Then only a key carried in the request
+/// itself is used: no Settings key, no environment variable (`env:` is
+/// refused), and with no key the call is sent without one (`Some("")`), so
+/// the provider does not fall back to its env var either. Providers that read
+/// other credentials from the environment
+/// ([`crate::model_builder::reads_ambient_credentials`]) are refused.
 pub fn resolve_api_key(
     spec: Option<&str>,
     provider: &str,
     store: &crate::settings::KeyStore,
     allow_plaintext: bool,
+    custom_base_url: bool,
 ) -> Result<Option<String>, AiMuxError> {
+    if custom_base_url && crate::model_builder::reads_ambient_credentials(provider) {
+        return Err(AiMuxError::InvalidArgument(format!(
+            "provider '{provider}' reads credentials from the server environment, so the \
+             console does not call it at a custom base_url — leave base_url empty"
+        )));
+    }
+    let blank = spec.is_none_or(|s| s.trim().is_empty());
+    if custom_base_url && blank {
+        return Ok(Some(String::new()));
+    }
+    if custom_base_url && spec.is_some_and(|s| s.starts_with("env:")) {
+        return Err(AiMuxError::InvalidArgument(
+            "env: key references are not sent to a custom base_url — pass that endpoint's \
+             own key in the request (loopback binds only) or leave api_key empty"
+                .into(),
+        ));
+    }
+    if custom_base_url && !allow_plaintext {
+        return Err(AiMuxError::InvalidArgument(
+            "a custom base_url only takes a key carried in the request, and plaintext keys \
+             are accepted only while the console is bound to a loopback address — leave \
+             api_key empty to call that endpoint without a key"
+                .into(),
+        ));
+    }
     match spec {
         None => Ok(store.get(provider)),
         // An empty/whitespace-only field is "unset", not an empty key — fall
@@ -332,6 +418,24 @@ pub fn resolve_api_key(
                 return Err(AiMuxError::InvalidArgument(
                     "empty env: reference (use env:VAR_NAME)".into(),
                 ));
+            }
+            // Only the provider's own key variable: any other name would let a
+            // caller read an arbitrary server environment variable (and send
+            // it wherever the request points).
+            match registered_key_env(provider) {
+                Some(allowed) if allowed == var => {}
+                Some(allowed) => {
+                    return Err(AiMuxError::InvalidArgument(format!(
+                        "env:{var} is not allowed for provider '{provider}' — only its \
+                         registered key variable can be referenced (env:{allowed})"
+                    )));
+                }
+                None => {
+                    return Err(AiMuxError::InvalidArgument(format!(
+                        "provider '{provider}' has no registered key variable, so env: \
+                         references are not accepted for it"
+                    )));
+                }
             }
             match std::env::var(var) {
                 Ok(v) => Ok(Some(v)),
@@ -350,10 +454,50 @@ pub fn resolve_api_key(
     }
 }
 
+/// The environment variable a provider's key is registered under: the
+/// vendor package's key variable or the registry row's `env_var`
+/// ([`aimux_providers::provider_api_key_env`]). The only name an `env:`
+/// reference may use for that provider.
+pub fn registered_key_env(provider: &str) -> Option<&'static str> {
+    aimux_providers::provider_api_key_env(provider)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::settings::KeyStore;
+
+    /// Sets (or, with `None`, removes) a registry provider's key variable for
+    /// one test and restores the previous value on drop. Each test uses its
+    /// own provider, so the variables never overlap.
+    struct KeyVar(&'static str, Option<std::ffi::OsString>);
+
+    impl KeyVar {
+        fn set(provider: &str, value: Option<&str>) -> Self {
+            let name = registered_key_env(provider).expect("a registry row with a key variable");
+            let previous = std::env::var_os(name);
+            // SAFETY: no other test reads or writes this provider's variable.
+            unsafe {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+            Self(name, previous)
+        }
+    }
+
+    impl Drop for KeyVar {
+        fn drop(&mut self) {
+            // SAFETY: as in `set`.
+            unsafe {
+                match &self.1 {
+                    Some(value) => std::env::set_var(self.0, value),
+                    None => std::env::remove_var(self.0),
+                }
+            }
+        }
+    }
 
     #[test]
     fn empty_spec_resolves_as_unset() {
@@ -362,11 +506,11 @@ mod tests {
         let store = KeyStore::from_path(None);
         store.set("openai", "sk-from-store", false).unwrap();
         assert_eq!(
-            resolve_api_key(Some(""), "openai", &store, true).unwrap(),
+            resolve_api_key(Some(""), "openai", &store, true, false).unwrap(),
             Some("sk-from-store".to_string())
         );
         assert_eq!(
-            resolve_api_key(Some("   "), "unknown-provider", &store, true).unwrap(),
+            resolve_api_key(Some("   "), "unknown-provider", &store, true, false).unwrap(),
             None
         );
     }
@@ -374,15 +518,19 @@ mod tests {
     #[test]
     fn resolve_key_priority_explicit_env_over_store() {
         let store = KeyStore::from_path(None);
-        store.set("openai", "sk-from-store", false).unwrap();
-        // SAFETY: This test owns a unique process-wide env key and removes it below.
-        unsafe { std::env::set_var("AIMUX_WEB_TEST_KEY", "k-123") };
+        store.set("xpersona", "sk-from-store", false).unwrap();
+        let _var = KeyVar::set("xpersona", Some("k-123"));
         assert_eq!(
-            resolve_api_key(Some("env:AIMUX_WEB_TEST_KEY"), "openai", &store, true).unwrap(),
+            resolve_api_key(
+                Some("env:XPERSONA_API_KEY"),
+                "xpersona",
+                &store,
+                true,
+                false
+            )
+            .unwrap(),
             Some("k-123".to_string())
         );
-        // SAFETY: Cleanup of the unique test key set above.
-        unsafe { std::env::remove_var("AIMUX_WEB_TEST_KEY") };
     }
 
     #[test]
@@ -390,18 +538,18 @@ mod tests {
         let store = KeyStore::from_path(None);
         // Tier 3: empty store → provider's registered env var.
         assert_eq!(
-            resolve_api_key(None, "openai", &store, false).unwrap(),
+            resolve_api_key(None, "openai", &store, false, false).unwrap(),
             None
         );
         // Tier 2: stored key used when no explicit spec.
         store.set("openai", "sk-from-store", false).unwrap();
         assert_eq!(
-            resolve_api_key(None, "openai", &store, false).unwrap(),
+            resolve_api_key(None, "openai", &store, false, false).unwrap(),
             Some("sk-from-store".to_string())
         );
         // Store lookup is per-provider.
         assert_eq!(
-            resolve_api_key(None, "anthropic", &store, false).unwrap(),
+            resolve_api_key(None, "anthropic", &store, false, false).unwrap(),
             None
         );
     }
@@ -413,31 +561,100 @@ mod tests {
 
         // Loopback: explicit plaintext wins (one-shot use, not saved).
         assert_eq!(
-            resolve_api_key(Some("sk-literal"), "openai", &store, true).unwrap(),
+            resolve_api_key(Some("sk-literal"), "openai", &store, true, false).unwrap(),
             Some("sk-literal".to_string())
         );
         // Non-loopback: plaintext rejected, even over a stored key.
-        let err = resolve_api_key(Some("sk-literal"), "openai", &store, false).unwrap_err();
+        let err = resolve_api_key(Some("sk-literal"), "openai", &store, false, false).unwrap_err();
         assert!(err.to_string().contains("loopback"), "err: {err}");
         // env: references still work on non-loopback.
-        // SAFETY: This test owns a unique process-wide env key and removes it below.
-        unsafe { std::env::set_var("AIMUX_WEB_TEST_KEY_LAN", "k-lan") };
+        let _var = KeyVar::set("the_grid_ai", Some("k-lan"));
         assert_eq!(
-            resolve_api_key(Some("env:AIMUX_WEB_TEST_KEY_LAN"), "openai", &store, false,).unwrap(),
+            resolve_api_key(
+                Some("env:THEGRIDAI_API_KEY"),
+                "the_grid_ai",
+                &store,
+                false,
+                false
+            )
+            .unwrap(),
             Some("k-lan".to_string())
         );
-        // SAFETY: Cleanup of the unique test key set above.
-        unsafe { std::env::remove_var("AIMUX_WEB_TEST_KEY_LAN") };
+    }
+
+    #[test]
+    fn env_reference_is_limited_to_the_providers_key_variable() {
+        let store = KeyStore::from_path(None);
+        // Any other server variable is refused before it is read.
+        for spec in ["env:HOME", "env:PATH", "env:ANTHROPIC_API_KEY"] {
+            let err = resolve_api_key(Some(spec), "openai", &store, true, false).unwrap_err();
+            assert!(err.to_string().contains("not allowed"), "{spec}: {err}");
+            assert!(err.to_string().contains("env:OPENAI_API_KEY"), "{err}");
+        }
+        assert!(resolve_api_key(Some("env:HOME"), "groq", &store, false, false).is_err());
+        // A provider without a registered variable accepts no env: reference.
+        let err =
+            resolve_api_key(Some("env:HOME"), "no-such-provider", &store, true, false).unwrap_err();
+        assert!(
+            err.to_string().contains("no registered key variable"),
+            "{err}"
+        );
+
+        assert_eq!(registered_key_env("groq"), Some("GROQ_API_KEY"));
+        assert_eq!(
+            registered_key_env("google"),
+            Some("GOOGLE_GENERATIVE_AI_API_KEY")
+        );
+        assert_eq!(registered_key_env("openrouter"), Some("OPENROUTER_API_KEY"));
+    }
+
+    #[test]
+    fn custom_base_url_only_takes_a_key_from_the_request() {
+        let store = KeyStore::from_path(None);
+        store.set("openai", "sk-from-store", false).unwrap();
+        // No key in the request: no stored key, and Some("") so the provider
+        // does not read its env var either.
+        for spec in [None, Some(""), Some("  ")] {
+            assert_eq!(
+                resolve_api_key(spec, "openai", &store, true, true).unwrap(),
+                Some(String::new())
+            );
+        }
+        // env: references stay on the server.
+        let err =
+            resolve_api_key(Some("env:OPENAI_API_KEY"), "openai", &store, true, true).unwrap_err();
+        assert!(err.to_string().contains("custom base_url"), "{err}");
+        // A key in the request: on loopback only, as everywhere else.
+        assert_eq!(
+            resolve_api_key(Some("sk-literal"), "openai", &store, true, true).unwrap(),
+            Some("sk-literal".to_string())
+        );
+        assert!(resolve_api_key(Some("sk-literal"), "openai", &store, false, true).is_err());
+        // A provider that also reads other credentials from the environment
+        // is not called at a custom base_url at all.
+        for provider in ["amazon_bedrock", "google_vertex", "codex"] {
+            let err = resolve_api_key(Some("k"), provider, &store, true, true).unwrap_err();
+            assert!(err.to_string().contains("server environment"), "{err}");
+            assert!(resolve_api_key(None, provider, &store, true, false).is_ok());
+        }
     }
 
     #[test]
     fn resolve_key_rejects_plaintext_and_missing_env() {
         let store = KeyStore::from_path(None);
-        assert!(resolve_api_key(Some("sk-literal"), "openai", &store, false).is_err());
-        assert!(
-            resolve_api_key(Some("env:AIMUX_WEB_MISSING_VAR"), "openai", &store, true).is_err()
-        );
-        assert!(resolve_api_key(Some("env:"), "openai", &store, true).is_err());
+        assert!(resolve_api_key(Some("sk-literal"), "openai", &store, false, false).is_err());
+        // The provider's own variable, unset.
+        let _var = KeyVar::set("siliconflow", None);
+        let err = resolve_api_key(
+            Some("env:SILICONFLOW_API_KEY"),
+            "siliconflow",
+            &store,
+            true,
+            false,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("is not set"), "{err}");
+        assert!(resolve_api_key(Some("env:"), "openai", &store, true, false).is_err());
     }
 
     #[test]
@@ -476,8 +693,8 @@ mod tests {
             panic!("expected messages");
         };
         assert_eq!(list.len(), 3);
-        assert_eq!(list[1].role, Role::Assistant);
-        assert_eq!(list[2].role, Role::Tool);
+        assert_eq!(list[1].role(), "assistant");
+        assert_eq!(list[2].role(), "tool");
     }
 
     #[test]

@@ -10,9 +10,9 @@ use std::sync::Arc;
 
 use futures::future::BoxFuture;
 
+use crate::decision_model::DecisionModel;
 use crate::embedding_model::EmbeddingModel;
 use crate::error::AiMuxError;
-use crate::evaluation_model::EvaluationModel;
 use crate::files_model::Files;
 use crate::image_model::ImageModel;
 use crate::language_model::LanguageModel;
@@ -38,25 +38,23 @@ use crate::video_model::VideoModel;
 ///   `NoSuchModel`.
 /// - [`transcription_model`](Self::transcription_model),
 ///   [`speech_model`](Self::speech_model),
-///   [`reranking_model`](Self::reranking_model),
-///   [`evaluation_model`](Self::evaluation_model) and [`files`](Self::files)
+///   [`reranking_model`](Self::reranking_model) and [`files`](Self::files)
 ///   are optional: `None` means the vendor does not offer that modality.
-/// - [`video_model`](Self::video_model),
-///   [`search_model`](Self::search_model) and
-///   [`decision_model`](Self::decision_model) are aimux extensions; they are
-///   not members of `ProviderV4`.
+/// - [`decision_model`](Self::decision_model) is optional too. It is not a
+///   member of `ProviderV4` but the AI SDK's structural `DecisionProvider`
+///   extension, which the registry looks up
+///   (`ai@7.0.128 src/decide/decision-provider.ts:7-11`).
+/// - [`video_model`](Self::video_model) and
+///   [`search_model`](Self::search_model) are aimux extensions; they are not
+///   members of `ProviderV4`.
 ///
 /// A provider has no `name()`: the name it was registered under belongs to
 /// whoever holds the registry, and each model reports its own
 /// [`LanguageModel::provider`] string.
 pub trait Provider: Send + Sync {
-    /// Create a typed decision model (aimux extension).
-    /// # Errors
-    /// Returns `UnsupportedFunctionality` when decisions are not offered.
-    fn decision_model(&self, _id: &str) -> Result<Box<dyn crate::DecisionModel>, AiMuxError> {
-        Err(AiMuxError::UnsupportedFunctionality(
-            "provider does not provide decision models".into(),
-        ))
+    /// Specification version (always `"v4"`).
+    fn specification_version(&self) -> &'static str {
+        "v4"
     }
 
     /// Create a language model by its id (e.g. `"gpt-4o"`).
@@ -105,8 +103,9 @@ pub trait Provider: Send + Sync {
         None
     }
 
-    /// Create an experimental evaluation model; `None` when not offered.
-    fn evaluation_model(&self, id: &str) -> Option<Result<Arc<dyn EvaluationModel>, AiMuxError>> {
+    /// Create an experimental decision model
+    /// (`DecisionProvider.decisionModel`); `None` when not offered.
+    fn decision_model(&self, id: &str) -> Option<Result<Arc<dyn DecisionModel>, AiMuxError>> {
         let _ = id;
         None
     }
@@ -164,8 +163,8 @@ pub trait ProviderDiscovery: Send + Sync {
 /// A reference to a provider is a provider, so a `&'static` default instance
 /// (`openai()`, `anthropic()`, ...) can be registered as it is.
 impl<P: Provider + ?Sized> Provider for &P {
-    fn decision_model(&self, id: &str) -> Result<Box<dyn crate::DecisionModel>, AiMuxError> {
-        (**self).decision_model(id)
+    fn specification_version(&self) -> &'static str {
+        (**self).specification_version()
     }
 
     fn language_model(&self, id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
@@ -189,8 +188,8 @@ impl<P: Provider + ?Sized> Provider for &P {
     fn reranking_model(&self, id: &str) -> Option<Result<Arc<dyn RerankingModel>, AiMuxError>> {
         (**self).reranking_model(id)
     }
-    fn evaluation_model(&self, id: &str) -> Option<Result<Arc<dyn EvaluationModel>, AiMuxError>> {
-        (**self).evaluation_model(id)
+    fn decision_model(&self, id: &str) -> Option<Result<Arc<dyn DecisionModel>, AiMuxError>> {
+        (**self).decision_model(id)
     }
     fn files(&self) -> Option<Arc<dyn Files>> {
         (**self).files()

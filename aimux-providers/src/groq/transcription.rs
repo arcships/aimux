@@ -92,6 +92,7 @@ impl TranscriptionModel for GroqTranscriptionModel {
         // `getArgs`.
         let groq_options = parse_groq_transcription_options(options.provider_options.as_ref())?;
         let audio = match &options.audio {
+            AudioInput::Url(_) => return Err(AudioInput::url_error()),
             AudioInput::Binary(bytes) => bytes.clone(),
             AudioInput::Base64(data) => {
                 base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data).map_err(
@@ -199,7 +200,7 @@ impl TranscriptionModel for GroqTranscriptionModel {
             warnings: Vec::new(),
             request: Some(TranscriptionRequest { body: None }),
             response: TranscriptionResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(headers),
                 body: Some(raw_body),

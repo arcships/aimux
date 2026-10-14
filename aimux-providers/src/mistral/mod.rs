@@ -98,8 +98,8 @@ pub(crate) fn mistral_stream_error(
     )
 }
 
-const DEFAULT_BASE_URL: &str = "https://api.mistral.ai/v1";
-const API_KEY_ENV_VAR: &str = "MISTRAL_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.mistral.ai/v1";
+pub(crate) const API_KEY_ENV_VAR: &str = "MISTRAL_API_KEY";
 
 /// The URL patterns the chat model fetches itself (`supportedUrls` of the AI
 /// SDK's `MistralChatLanguageModel`): `https` PDFs.
@@ -171,13 +171,16 @@ pub fn create_mistral(settings: MistralProviderSettings) -> Result<MistralProvid
             Vec::new(),
             settings.headers,
         ),
-        options::NAMESPACE,
-        "4.0.54",
+        crate::shared::aisdk_pins::MISTRAL.name,
+        crate::shared::aisdk_pins::MISTRAL.version,
     );
     Ok(MistralProvider {
         base_url,
         headers,
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::MISTRAL,
+        )),
         generate_id: settings.generate_id,
     })
 }

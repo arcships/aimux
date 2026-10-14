@@ -42,6 +42,35 @@ public struct RawToolCall: Codable, Equatable {
         self.providerExecuted = providerExecuted; self.dynamic = dynamic
         self.providerMetadata = providerMetadata
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case type, toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata
+    }
+
+    /// Reads a call; a `type` field, when present, must be `"tool-call"`.
+    public init(from decoder: Decoder) throws {
+        try decoder.checkTypeTag("tool-call")
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        toolCallId = try c.decode(String.self, forKey: .toolCallId)
+        toolName = try c.decode(String.self, forKey: .toolName)
+        input = try c.decode(String.self, forKey: .input)
+        providerExecuted = try c.decodeIfPresent(Bool.self, forKey: .providerExecuted)
+        dynamic = try c.decodeIfPresent(Bool.self, forKey: .dynamic)
+        providerMetadata = try c.decodeIfPresent(ProviderMetadata.self, forKey: .providerMetadata)
+    }
+
+    /// Writes the call with its `"type": "tool-call"` tag, as the AI SDK's
+    /// `LanguageModelV4ToolCall`.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode("tool-call", forKey: .type)
+        try c.encode(toolCallId, forKey: .toolCallId)
+        try c.encode(toolName, forKey: .toolName)
+        try c.encode(input, forKey: .input)
+        try c.encodeIfPresent(providerExecuted, forKey: .providerExecuted)
+        try c.encodeIfPresent(dynamic, forKey: .dynamic)
+        try c.encodeIfPresent(providerMetadata, forKey: .providerMetadata)
+    }
 }
 
 /// The argument handed to ``GenerateTextOptions/repairToolCall``. Mirrors the
@@ -121,11 +150,10 @@ public func applyToolCallRepair(
     return try ffiStringCall { aimux_apply_tool_call_repair(toolCall, options, reply, $0) }
 }
 
-/// Apply a repair reply to a serialized `GenerateTextResult` or
-/// `GenerateObjectResult`. Both `toolCalls` and the matching
-/// `responseMessages` tool-call part are rewritten — the transcript must keep
-/// pointing at the same entry, or the next turn replays the unrepaired
-/// arguments.
+/// Apply a repair reply to a serialized `GenerateTextResult`. Both `toolCalls`
+/// and the matching `responseMessages` tool-call part are rewritten — the
+/// transcript must keep pointing at the same entry, or the next turn replays
+/// the unrepaired arguments.
 public func applyToolCallRepairToResult(
     result: String, options: String?, toolCallId: String, reply: String
 ) throws -> String {
@@ -144,9 +172,9 @@ public func applyToolCallRepairToResult(
 /// Repair every invalid tool call in a serialized result document and return
 /// the patched JSON (the input unchanged when no repair function is set).
 ///
-/// Handles `GenerateTextResult` and `StreamTextResultAggregated` (top-level
-/// `toolCalls`) as well as `GenerateObjectResult` (`raw.toolCalls`). Calls
-/// are visited in document order and each gets at most one repair attempt, as
+/// Handles a `GenerateTextResult`, generated or consumed from a stream
+/// (top-level `toolCalls`); a `GenerateObjectResult` has none. Calls are
+/// visited in document order and each gets at most one repair attempt, as
 /// in the AI SDK.
 func repairedResultJson(
     _ resultJson: String, promptJson: String, optsJson: String?,
@@ -155,9 +183,7 @@ func repairedResultJson(
     guard let repair = options?.repairToolCall else { return resultJson }
     guard let document = (try? JSONSerialization.jsonObject(with: Data(resultJson.utf8)))
         as? [String: Any] else { return resultJson }
-    // A GenerateObjectResult keeps the whole text result under `raw`.
-    let target = document["toolCalls"] != nil ? document : document["raw"] as? [String: Any]
-    guard let calls = target?["toolCalls"] as? [[String: Any]] else { return resultJson }
+    guard let calls = document["toolCalls"] as? [[String: Any]] else { return resultJson }
 
     var patched = resultJson
     for call in calls where call["invalid"] as? Bool == true {

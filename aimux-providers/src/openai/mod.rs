@@ -42,9 +42,9 @@ use std::sync::{Arc, OnceLock};
 use futures::future::BoxFuture;
 use serde_json::Value;
 
+use aimux_core::decision_model::DecisionModel;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
-use aimux_core::evaluation_model::EvaluationModel;
 use aimux_core::files_model::Files;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
@@ -53,8 +53,7 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{
-    EvaluationLanguageModel, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable,
-    load_optional_setting, validate_base_url,
+    DecisionLanguageModel, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url,
 };
 
 use crate::shared::{Credential, provider_headers};
@@ -83,13 +82,19 @@ pub(crate) fn openai_failed_response_handler() -> aimux_provider_utils::Response
     })
 }
 
+/// The `ApiCallError` of an OpenAI stream error frame, as upstream's
+/// `createOpenAIProviderStreamError` builds it (@ai-sdk/openai 4.0.83
+/// src/openai-stream-error.ts:18-37): an HTTP status in `code` is the status,
+/// otherwise one is inferred from `code`/`type` (`getStatusCode`, :235-267);
+/// `insufficient_quota` is never retryable (:303-315).
 pub(crate) fn openai_stream_error(
     error: &Value,
     url: &str,
     request_body_values: Value,
     response_headers: std::collections::HashMap<String, String>,
 ) -> AiMuxError {
-    let payload = if error.get("type").and_then(Value::as_str) == Some("response.failed") {
+    let response_failed = error.get("type").and_then(Value::as_str) == Some("response.failed");
+    let payload = if response_failed {
         error
             .get("response")
             .and_then(|response| response.get("error"))
@@ -107,10 +112,16 @@ pub(crate) fn openai_stream_error(
         Value::Number(value) => Some(value.to_string()),
         _ => None,
     });
-    let error_type = payload
-        .get("type")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+    // Upstream types a `response.failed` frame as `response.failed`, not by
+    // its inner error (`parseStreamError`, openai-stream-error.ts:207-217).
+    let error_type = if response_failed {
+        "response.failed"
+    } else {
+        payload
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+    };
     let discriminator = format!(
         "{} {error_type}",
         provider_code.as_deref().unwrap_or_default()
@@ -174,8 +185,8 @@ pub(crate) fn openai_stream_error(
     result
 }
 
-const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
-const API_KEY_ENV_VAR: &str = "OPENAI_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+pub(crate) const API_KEY_ENV_VAR: &str = "OPENAI_API_KEY";
 
 /// Settings of [`create_openai`] (the AI SDK's `OpenAIProviderSettings`).
 ///
@@ -184,8 +195,10 @@ const API_KEY_ENV_VAR: &str = "OPENAI_API_KEY";
 /// on every request.
 #[derive(Clone, Default)]
 pub struct OpenAIProviderSettings {
-    /// Base URL for API calls. Reads `OPENAI_BASE_URL` when absent, then
-    /// defaults to `https://api.openai.com/v1`. A trailing slash is removed.
+    /// Base URL for the API calls. `None` reads `OPENAI_BASE_URL` when the
+    /// provider is created, else `https://api.openai.com/v1`; a trailing
+    /// slash is removed. An invalid explicit value fails [`create_openai`];
+    /// an invalid `OPENAI_BASE_URL` fails every request instead.
     pub base_url: Option<String>,
     /// The API key. `None` loads `OPENAI_API_KEY` when a request is made and
     /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
@@ -232,15 +245,17 @@ impl std::fmt::Debug for OpenAIProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
+/// Returns `AiMuxError::InvalidArgument` when the explicit `base_url` is not
+/// an `http(s)` URL with a host. That is the only way this fails: the key is
+/// loaded per request, and an invalid `OPENAI_BASE_URL` is reported by each
 /// request, not here.
 pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider, AiMuxError> {
-    let configured_url = load_optional_setting(settings.base_url.as_deref(), "OPENAI_BASE_URL");
-    let base_url = match configured_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
-        None => DEFAULT_BASE_URL.to_string(),
-    };
+    let base_url = crate::shared::base_url_setting(
+        settings.base_url.as_deref(),
+        "OPENAI_BASE_URL",
+        DEFAULT_BASE_URL,
+        validate_base_url,
+    )?;
     let name = settings.name.unwrap_or_else(|| "openai".to_string());
     Ok(OpenAIProvider {
         name,
@@ -261,22 +276,27 @@ pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider,
                 .collect(),
                 settings.headers,
             ),
-            "openai",
-            "4.0.80",
+            crate::shared::aisdk_pins::OPENAI.name,
+            crate::shared::aisdk_pins::OPENAI.version,
         ),
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::OPENAI,
+        )),
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
+        tools: tools::OpenAITools,
     })
 }
 
-/// The default provider, created on first use. The base URL is read then;
-/// a missing API key surfaces from the first request.
+/// The default provider: `create_openai` with default settings, created on
+/// first use. `OPENAI_BASE_URL` is read at creation (an invalid value fails
+/// each request, not the creation); the key is loaded per request.
 pub fn openai() -> &'static OpenAIProvider {
     static DEFAULT: OnceLock<OpenAIProvider> = OnceLock::new();
     DEFAULT.get_or_init(|| {
         create_openai(OpenAIProviderSettings::default())
-            .expect("default OpenAI base URL must be valid")
+            .expect("default settings have no explicit base URL to reject")
     })
 }
 
@@ -284,18 +304,22 @@ pub fn openai() -> &'static OpenAIProvider {
 /// models out of; it holds no HTTP client.
 pub struct OpenAIProvider {
     name: String,
-    base_url: String,
+    /// The validated base URL, or the error of an invalid `OPENAI_BASE_URL`,
+    /// which every request reports.
+    base_url: Result<String, AiMuxError>,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
     #[cfg(feature = "realtime")]
     web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
+    /// The provider tools (`openai.tools` in the AI SDK).
+    pub tools: tools::OpenAITools,
 }
 
 impl OpenAIProvider {
     fn model_config(&self, method: &str) -> OpenAIModelConfig {
         let mut config = OpenAIModelConfig::fixed(
             format!("{}.{method}", self.name),
-            self.base_url.clone(),
+            self.base_url.clone().unwrap_or_default(),
             self.headers.clone(),
             self.fetch.clone(),
             None,
@@ -303,6 +327,10 @@ impl OpenAIProvider {
         config.supported_urls = config::supported_urls(method);
         if method == "responses" {
             config.responses.file_id_prefixes = vec!["file-"];
+        }
+        if let Err(error) = &self.base_url {
+            let error = error.clone();
+            config.url = Arc::new(move |_| Err(error.clone()));
         }
         config
     }
@@ -336,14 +364,26 @@ impl OpenAIProvider {
         OpenAIEmbeddingModel::from_config(model_id.to_string(), self.model_config("embedding"))
     }
 
-    /// A native Decisions model (an aimux extension; the AI SDK has no
-    /// decision model). Its `provider()` is `"openai"`.
+    /// A native Decisions model (an aimux extension: the AI SDK's OpenAI
+    /// provider has no native decision endpoint). Its `provider()` is
+    /// `"openai"`. It is the provider's [`decision_model`](Provider::decision_model).
     ///
     /// # Errors
     ///
     /// `InvalidArgument` for an empty model id.
     pub fn decision(&self, model_id: &str) -> Result<OpenAIDecisionModel, AiMuxError> {
         OpenAIDecisionModel::from_config(model_id, self.model_config("decision"))
+    }
+
+    /// Decisions from structured Responses output; `provider()` is
+    /// `"{name}.evaluation"` (`@ai-sdk/openai@4.0.83
+    /// src/openai-provider.ts:355-358`, `evaluationModel`).
+    #[must_use]
+    pub fn evaluation(&self, model_id: &str) -> DecisionLanguageModel {
+        DecisionLanguageModel::new(
+            Arc::new(self.responses(model_id)),
+            Some(format!("{}.evaluation", self.name)),
+        )
     }
 
     /// An image model; `provider()` is `"{name}.image"`.
@@ -403,11 +443,14 @@ impl Provider for OpenAIProvider {
         Ok(Arc::new(self.image(model_id)))
     }
 
-    fn decision_model(
-        &self,
-        model_id: &str,
-    ) -> Result<Box<dyn aimux_core::DecisionModel>, AiMuxError> {
-        Ok(Box::new(self.decision(model_id)?))
+    /// The native Decisions model; the registry takes it before the
+    /// evaluation model (`ai@7.0.128 src/registry/provider-registry.ts:447-461`),
+    /// which stays reachable as [`OpenAIProvider::evaluation`].
+    fn decision_model(&self, model_id: &str) -> Option<Result<Arc<dyn DecisionModel>, AiMuxError>> {
+        Some(
+            self.decision(model_id)
+                .map(|model| Arc::new(model) as Arc<dyn DecisionModel>),
+        )
     }
 
     fn transcription_model(
@@ -419,16 +462,6 @@ impl Provider for OpenAIProvider {
 
     fn speech_model(&self, model_id: &str) -> Option<Result<Arc<dyn SpeechModel>, AiMuxError>> {
         Some(Ok(Arc::new(self.speech(model_id))))
-    }
-
-    fn evaluation_model(
-        &self,
-        model_id: &str,
-    ) -> Option<Result<Arc<dyn EvaluationModel>, AiMuxError>> {
-        Some(Ok(Arc::new(EvaluationLanguageModel::new(
-            Arc::new(self.responses(model_id)),
-            Some(format!("{}.evaluation", self.name)),
-        ))))
     }
 
     fn files(&self) -> Option<Arc<dyn Files>> {

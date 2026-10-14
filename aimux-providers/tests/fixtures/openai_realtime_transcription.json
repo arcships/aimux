@@ -1,0 +1,10 @@
+{
+  "description": "Server events for one gpt-realtime-whisper transcription session (OpenAI realtime API wire shape, RFC-0028 §3.2), replayed after the client commits its audio buffer.",
+  "events": [
+    {"type": "session.created", "session": {"id": "sess_1", "type": "transcription"}},
+    {"type": "input_audio_buffer.committed", "item_id": "item_1"},
+    {"type": "conversation.item.input_audio_transcription.delta", "item_id": "item_1", "delta": "Hello"},
+    {"type": "conversation.item.input_audio_transcription.delta", "item_id": "item_1", "delta": " world"},
+    {"type": "conversation.item.input_audio_transcription.completed", "item_id": "item_1", "transcript": "Hello world"}
+  ]
+}

@@ -481,6 +481,7 @@ fn build_external(
         fetch: None,
         transform_request_body: None,
         profile: entry.profile.chat_profile()?,
+        package: crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
     })
 }
 

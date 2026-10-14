@@ -3,7 +3,7 @@
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::options::ToolChoice;
+use aimux_core::options::LanguageModelV4ToolChoice;
 use aimux_core::tool::Tool;
 use aimux_core::types::Warning;
 
@@ -24,7 +24,7 @@ pub(crate) struct PreparedTools {
 /// the beta one, or when strict and non-strict function tools are mixed.
 pub(crate) fn prepare_tools(
     tools: Option<&Vec<Tool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
     supports_strict_tool_calls: bool,
 ) -> Result<PreparedTools, AiMuxError> {
     let mut tool_warnings = Vec::new();
@@ -81,10 +81,10 @@ pub(crate) fn prepare_tools(
     }
 
     let tool_choice = tool_choice.map(|choice| match choice {
-        ToolChoice::Auto => json!("auto"),
-        ToolChoice::None => json!("none"),
-        ToolChoice::Required => json!("required"),
-        ToolChoice::Tool { tool_name } => {
+        LanguageModelV4ToolChoice::Auto => json!("auto"),
+        LanguageModelV4ToolChoice::None => json!("none"),
+        LanguageModelV4ToolChoice::Required => json!("required"),
+        LanguageModelV4ToolChoice::Tool { tool_name } => {
             json!({ "type": "function", "function": { "name": tool_name } })
         }
     });

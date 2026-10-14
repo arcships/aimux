@@ -163,7 +163,7 @@ Model.openai("sk-...", "gpt-4o").use { model ->
 }
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -298,24 +298,31 @@ session (idempotent).
 typed model surface. The wire JSON is the AI SDK's and equals the generated
 TypeScript types in `bindings/node/src/types`: camelCase field names (Kotlin
 properties carry the same names), unions tagged on `type` (`Source` on
-`sourceType`), optional fields absent rather than null. Decoding is lenient
+`sourceType`), optional fields absent rather than null. An `unknown` value
+(`body`, `inputSchemaInput`) keeps a JSON `null` as `JsonNull`, written back as
+`null`; a missing field is Kotlin `null` and omitted. A response `timestamp`
+is a JavaScript `Date` in the AI SDK's JSON: a `toISOString()` string, UTC with
+milliseconds (`"2025-03-06T13:50:19.000Z"`), which `Instant.parse` reads.
+Decoding is lenient
 (unknown keys ignored).
 
 | Kotlin | Wire |
 |--------|------|
 | `Usage(inputTokens: InputTokenUsage(total, noCache, cacheRead, cacheWrite), outputTokens: OutputTokenUsage(total, text, reasoning), raw)` | `inputTokens` / `noCache` / `cacheRead` / `cacheWrite` |
 | `FinishReason(unified, raw)`, `ResponseMetadata` / `ResponseInfo(id, timestamp, modelId, headers, body)` | `modelId` |
-| `ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata, invalid, error)` | `error` is the `name`-tagged `AiMuxError` JSON |
+| `ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata, invalid, error)` | `error` is the `name`-tagged `AiMuxError` JSON; encodes `"type": "tool-call"` (the AI SDK's `TypedToolCall`), as `RawToolCall` does, and `Source` encodes `"type": "source"` |
 | `Tool` (`Function` / `Provider`), `ToolChoice` | `{"type":"function"}`, `inputSchema`, `toolChoice` |
-| `ContentPart` (sealed) | `type`: `text`, `custom`, `reasoning`, `reasoning-file`, `image`, `file`, `file-base64`, `file-url`, `file-reference`, `tool-call`, `tool-result`, `tool-approval-request` |
+| `ContentPart` (sealed) | `type`: `text`, `custom`, `reasoning`, `reasoning-file`, `image`, `file`, `tool-call`, `tool-result`, `tool-approval-request` |
+| `FilePartData` | `File.data`: a tagged `FileData`, a bare string (base64 or a URL) or a bare `{provider: id}` reference (`Tagged` / `Bare` / `Reference`); `ReasoningFilePartData` is `Tagged(GeneratedFileData)` / `Bare` |
 | `ContentPart.ToolResult(toolCallId, toolName, output, providerOptions)` | `output` is a `ToolResultOutput`: `text`, `json` (`ToolResultOutput.JsonValue`), `execution-denied`, `error-text`, `error-json`, `content` |
-| `FileBytes` | untagged: JSON array = binary, JSON string = base64 (also audio / image / video file data) |
+| `FileBytes` | a base64 string; `Binary` is written as base64 (also audio / image / video file data, image and file part bytes) |
 | `FileData` / `GeneratedFileData` | `type`: `data`, `url`, `reference`, `text` |
-| `GenerateContent` (provider-level `raw.content`) | `type`: `text`, `tool-call` (`input` is the raw argument text), `source`, `reasoning`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `tool-result` |
-| `StreamPart` (sealed) | `type`: `text-start/delta/end`, `stream-start`, `finish`, `finish-step`, `error`, `tool-input-start/delta/end`, `tool-call`, `tool-result`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `reasoning-start/delta/end`, `source`, `raw` |
+| `GeneratedFile(base64, mediaType, providerMetadata)` | a generated file: `{"base64", "mediaType"}`; `StreamPart.File` / `ReasoningFile(file, providerMetadata)` are `{"type": "file", "file": {...}}` (the provider-level `GenerateResult.content` keeps `mediaType` and tagged `data`) |
+| `GenerateContent` (provider-level `GenerateResult.content`) | `type`: `text`, `tool-call` (`input` is the raw argument text), `source`, `reasoning`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `tool-result` |
+| `StreamPart` (sealed) | `type`: `text-start/delta/end`, `start`, `start-step`, `finish-step`, `finish`, `abort`, `error`, `tool-input-start/delta/end`, `tool-call`, `tool-result`, `tool-error`, `tool-output-denied`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `tool-approval-response`, `reasoning-start/delta/end`, `source`, `raw` |
 | `Warning` (sealed) | `type`: `unsupported`, `compatibility`, `deprecated`, `other` |
-| `GenerateTextResult`, `GenerateObjectResult`, `StreamTextResultAggregated` | `toolCalls`, `finishReason`, `totalUsage`, `responseMessages`, `reasoningText`, `request`, `response` |
-| `GenerateTextOptions` | `maxOutputTokens`, `stopSequences`, `topP`, `providerOptions`, `responseFormat` (`ResponseFormat.Text` / `.Json(schema, name, description)`), `maxRetries`, `includeRawChunks`, `sessionId`, ... |
+| `GenerateTextResult`, `GenerateObjectResult` | `toolCalls`, `finishReason` (`FinishReasonUnified`), `usage` / `totalUsage` (`LanguageModelUsage`), `responseMessages`, `reasoningText`, `request`, `response`, `steps`, `output` |
+| `GenerateTextOptions` | `maxOutputTokens`, `stopSequences`, `topP`, `providerOptions`, `output` (the AI SDK's `output` as JSON, e.g. `{"type":"object","schema":{...}}`, tagged by `type`), `maxRetries`, `includeRawChunks`, `sessionId`, ... |
 
 Provider options / metadata are `Map<String, Map<String, JsonElement>>`
 (`ProviderOptions` / `ProviderMetadata`).

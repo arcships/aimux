@@ -151,7 +151,15 @@ signal.abort(); // cancels connect, body reads, and streaming
 let result = task.await.unwrap()?;
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+File URLs in the prompt — user `FileUrl` parts and `file` items of tool
+outputs — are downloaded before the model call unless the model's
+`supported_urls()` covers them, as the AI SDK's `generateText` does. Set
+`download` (a `aimux_core::download::DownloadFunction`, the AI SDK's
+`experimental_download`) to choose per URL; it receives every URL with
+`is_url_supported_by_model` and returns the downloaded file or `None` to
+send the URL. The default downloads with the guarded download.
+
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -167,8 +175,8 @@ let result = stream_text(&model, "Write a haiku.", GenerateTextOptions::default(
 let mut stream = result.stream;
 while let Some(part) = stream.next().await {
     match part? {
-        TextStreamPart::TextDelta { delta, .. } => print!("{}", delta),
-        TextStreamPart::Finish { .. } => println!("\n[done]"),
+        TextStreamPart::TextDelta { text, .. } => print!("{}", text),
+        TextStreamPart::Finish { finish_reason, .. } => println!("\n[done: {finish_reason:?}]"),
         _ => {}
     }
 }
@@ -214,18 +222,16 @@ Set `tool_choice` on `GenerateTextOptions` (`ToolChoice::Auto` / `None` /
 // Rust — tool round-trip
 let messages = vec![
     ModelMessage::user("What's the weather in Tokyo?"),
-    ModelMessage {
-        role: Role::Assistant,
-        content: MessageContent::Parts(vec![ContentPart::tool_call(
-            "call_abc", "get_weather", json!({"location": "Tokyo"}),
-        )]),
-    },
-    ModelMessage {
-        role: Role::Tool,
-        content: MessageContent::Parts(vec![ContentPart::tool_result(
-            "call_abc", json!({"temperature": 22, "condition": "sunny"}),
-        )]),
-    },
+    ModelMessage::assistant_parts(vec![AssistantContentPart::tool_call(
+        "call_abc", "get_weather", json!({"location": "Tokyo"}),
+    )]),
+    ModelMessage::tool(vec![ToolContentPart::tool_result(
+        "call_abc", "get_weather",
+        ToolResultOutput::Json {
+            value: json!({"temperature": 22, "condition": "sunny"}),
+            provider_options: None,
+        },
+    )]),
 ];
 let result = generate_text(&model, messages, opts).await?;
 ```
@@ -272,6 +278,12 @@ let result = transcribe(&model, opts).await?;
 // result.text, result.segments, result.language
 ```
 
+`AudioInput::Url(url)` is downloaded by `transcribe` before the model call,
+as the AI SDK's `transcribe` does. `opts.download` replaces the transport
+(an `aimux_core::download::Download`); the default is
+`create_download(None)`, the guarded download (public HTTP(S) URLs only,
+2 GiB limit).
+
 ## Image Generation
 
 ```rust
@@ -285,7 +297,9 @@ let result = generate_image(&model, opts).await?;
 
 ## Video Generation
 
-Video generation typically returns a URL (not binary).
+Most video models return a URL. `generate_video` downloads it, as the AI
+SDK's `generateVideo` does, with `opts.download` (default: the guarded
+download), so the result holds the video's bytes.
 
 ```rust
 use aimux_core::video_model::{VideoCallOptions, generate_video};
@@ -293,7 +307,7 @@ use aimux_core::video_model::{VideoCallOptions, generate_video};
 let model = provider.video("veo-3.0");
 let opts = VideoCallOptions { prompt: Some("A cat".into()), n: 1, .. };
 let result = generate_video(&model, opts).await?;
-// result.videos[0] is VideoData::Url { url, media_type }
+// result.videos[0] is VideoData::Binary { data, media_type } for a URL video
 ```
 
 ## Reranking
@@ -372,16 +386,21 @@ Rust types are the canonical definitions — one module per feature in
 
 | Module | Key types |
 |------|------|
-| `generate` | `generate_text` / `stream_text` functions, `GenerateResult` |
-| `language_model` | `LanguageModel`, `GenerateTextResult` |
-| `stream_part` | `StreamPart` (provider layer), `TextStreamPart` (call layer) |
+| `generate` | `generate_text` / `stream_text` functions, `GenerateTextResult`, `StreamTextResult` |
+| `step_result` | `StepResult`, `StepResponse`, `StepResultPerformance` |
+| `output` | `Output` (the `output` option: Text / Object / Array / Choice / Json) |
+| `language_model` | `LanguageModel` |
+| `result` | `GenerateResult` (provider result), `ContentPart` (the core content part), `TypedToolResult`, `TypedToolError`, `Source`, `GeneratedFile` |
+| `stream_part` | `StreamPart` (provider stream), `TextStreamPart` (the AI SDK's full stream) |
+| `types` | `LanguageModelUsage`, `Usage`, `FinishReasonUnified`, `Warning` |
 | `options` | `GenerateTextOptions`, `CallOptions`, `ResponseFormat`, `ToolChoice`, `ReasoningEffort` |
-| `message` / `language_model_message` | `ModelMessage`, `ModelPrompt`, `MessageContent`, `Role` |
-| `content` | `ContentPart` (Text / Image / File / Reasoning / ToolCall / ToolResult) |
+| `message` / `language_model_message` | `ModelMessage` (by role: `System` / `User` / `Assistant` / `Tool`), `UserContent`, `AssistantContent`, `ToolContent`, `ModelPrompt` |
+| `content` | `UserContentPart`, `AssistantContentPart`, `ToolContentPart`, `ToolResultPart`, `ToolResultOutput` |
 | `tool` | `Tool`, `FunctionTool`, `ProviderTool`, `ToolCall`, `ToolResult` |
 | `types` | `Usage`, `TokenUsage`, `FinishReason`, `ResponseMetadata`, `Warning` |
 | `shared` | `FileBytes`, `FileData`, `Size`, `AspectRatio`, `ResponseInfo` |
 | `abort_signal` | `AbortSignal` |
+| `download` | `Download`, `DownloadFunction`, `create_download`, `create_default_download_function` |
 | `embedding_model` | `EmbeddingModel`, `EmbeddingCallOptions`, `EmbeddingResult` |
 | `speech_model` | `SpeechModel`, `SpeechCallOptions`, `SpeechResult` |
 | `transcription_model` | `TranscriptionModel`, `TranscriptionCallOptions`, `TranscriptionResult`, `AudioInput` |

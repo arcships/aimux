@@ -24,7 +24,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::result::{GenerateContent, Source};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::tool::{FunctionTool, Tool};
@@ -561,7 +561,7 @@ pub struct PreparedTools {
 #[must_use]
 pub fn prepare_tools(
     tools: &Option<Vec<FunctionTool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
 ) -> PreparedTools {
     // Coerce empty arrays to None (matches TS `tools?.length ? tools : undefined`).
     let non_empty = tools.as_ref().filter(|&t| !t.is_empty());
@@ -587,16 +587,20 @@ pub fn prepare_tools(
 
     let tool_config = match tool_choice {
         None => has_strict.then(|| json!({ "functionCallingConfig": { "mode": "VALIDATED" } })),
-        Some(ToolChoice::Auto) => {
+        Some(LanguageModelV4ToolChoice::Auto) => {
             if has_strict {
                 Some(json!({ "functionCallingConfig": { "mode": "VALIDATED" } }))
             } else {
                 Some(json!({ "functionCallingConfig": { "mode": "AUTO" } }))
             }
         }
-        Some(ToolChoice::None) => Some(json!({ "functionCallingConfig": { "mode": "NONE" } })),
-        Some(ToolChoice::Required) => Some(json!({ "functionCallingConfig": { "mode": "ANY" } })),
-        Some(ToolChoice::Tool { tool_name }) => Some(json!({
+        Some(LanguageModelV4ToolChoice::None) => {
+            Some(json!({ "functionCallingConfig": { "mode": "NONE" } }))
+        }
+        Some(LanguageModelV4ToolChoice::Required) => {
+            Some(json!({ "functionCallingConfig": { "mode": "ANY" } }))
+        }
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => Some(json!({
             "functionCallingConfig": { "mode": "ANY", "allowedFunctionNames": [tool_name] }
         })),
     };
@@ -725,7 +729,7 @@ pub struct PreparedToolsWithWarnings {
 #[must_use]
 pub fn prepare_all_tools(
     tools: &Option<Vec<Tool>>,
-    tool_choice: Option<&ToolChoice>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
     model_id: &str,
 ) -> PreparedToolsWithWarnings {
     let caps = get_google_model_capabilities(model_id);
@@ -769,23 +773,23 @@ pub fn prepare_all_tools(
 
             let mut combined_config = Map::new();
             let fc = match tool_choice {
-                Some(ToolChoice::None) => {
+                Some(LanguageModelV4ToolChoice::None) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("NONE"));
                     m
                 }
-                Some(ToolChoice::Required) => {
+                Some(LanguageModelV4ToolChoice::Required) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("ANY"));
                     m
                 }
-                Some(ToolChoice::Tool { tool_name }) => {
+                Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("ANY"));
                     m.insert("allowedFunctionNames".to_string(), json!([tool_name]));
                     m
                 }
-                None | Some(ToolChoice::Auto) => {
+                None | Some(LanguageModelV4ToolChoice::Auto) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("VALIDATED"));
                     m

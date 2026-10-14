@@ -159,7 +159,8 @@ final class MultimodalTests: XCTestCase {
     /// `Content-Type: audio/mpeg`. Unlike a URLProtocol mock, this POSIX-socket
     /// MockHTTPServer supports arbitrary content-types via direct `MockResponse`
     /// construction, so we exercise the full round trip (Swift → FFI → reqwest →
-    /// mock). The FFI returns the bytes as `audio` (a byte array).
+    /// mock). The FFI returns the bytes as `audio`, a base64 string
+    /// (`SpeechModelV4Result.audio`, speech-model-v4-result.ts:16).
     func testE2E_SpeechViaMock() throws {
         // A non-empty binary payload (the literal bytes of a base64-looking
         // string, matching bindings/go/multimodal_withbase_test.go).
@@ -180,10 +181,11 @@ final class MultimodalTests: XCTestCase {
         ])
         let r = try decode(SpeechResult.self, try model.generate(options: opts))
 
-        guard case .binary(let bytes) = r.audio else {
-            return XCTFail("expected binary audio, got \(r.audio)")
-        }
-        XCTAssertFalse(bytes.isEmpty, "speech audio should contain binary bytes")
+        XCTAssertEqual(r.audio, .base64(audioBody.base64EncodedString()))
+        XCTAssertEqual(try JSONEncoder().encode(FileBytes.binary([0, 1, 2, 250, 255])),
+                       Data(#""AAEC+v8=""#.utf8))
+        XCTAssertEqual(Base64Bytes.decode("AAEC-v8"), [0, 1, 2, 250, 255])
+        XCTAssertThrowsError(try JSONDecoder().decode(FileBytes.self, from: Data("[1,2]".utf8)))
     }
 
     // MARK: - Video (construction + result parsing only)

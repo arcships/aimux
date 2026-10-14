@@ -6,6 +6,10 @@
 //! cross-language contract: a field rename, a variant rename or a shape change
 //! breaks every binding, so it must break this test first.
 
+use aimux_core::error::ToolChoiceViolationError;
+use aimux_core::result::GenerateContent;
+use aimux_core::tool::LanguageModelV4ToolChoice;
+use aimux_core::types::FinishReasonUnified;
 use aimux_core::{AiMuxError, ApiCallError, RetryError, RetryErrorReason};
 
 fn api_error(message: &str) -> ApiCallError {
@@ -106,6 +110,13 @@ fn error_value_snapshots_plain_variants() {
             AiMuxError::InvalidResponseData("eof".into()),
             r#"{"name":"AI_InvalidResponseDataError","message":"eof"}"#,
         ),
+        (
+            AiMuxError::ToolCallNotFoundForApproval {
+                tool_call_id: "call-1".into(),
+                approval_id: "approval-1".into(),
+            },
+            r#"{"name":"AI_ToolCallNotFoundForApprovalError","toolCallId":"call-1","approvalId":"approval-1"}"#,
+        ),
         // NoSuchTool is pinned in both shapes: `skip_serializing_if` makes
         // the wire payload vary with `available_tools`.
         (
@@ -150,6 +161,27 @@ fn error_value_snapshots_plain_variants() {
         (
             AiMuxError::InvalidPrompt("bad prompt".into()),
             r#"{"name":"AI_InvalidPromptError","message":"bad prompt"}"#,
+        ),
+        (
+            AiMuxError::MissingToolResults {
+                tool_call_ids: vec!["call-1".into()],
+            },
+            r#"{"name":"AI_MissingToolResultsError","toolCallIds":["call-1"]}"#,
+        ),
+        (
+            AiMuxError::ToolChoiceViolation(Box::new(ToolChoiceViolationError {
+                tool_choice: LanguageModelV4ToolChoice::Tool {
+                    tool_name: "weather".into(),
+                },
+                finish_reason: FinishReasonUnified::Stop,
+                provider: "openai.chat".into(),
+                model_id: "gpt-4o".into(),
+                content: vec![GenerateContent::Text {
+                    text: "sunny".into(),
+                    provider_metadata: None,
+                }],
+            })),
+            r#"{"name":"AI_ToolChoiceViolationError","toolChoice":{"type":"tool","toolName":"weather"},"finishReason":"stop","provider":"openai.chat","modelId":"gpt-4o","content":[{"type":"text","text":"sunny"}]}"#,
         ),
         (
             AiMuxError::TokenExpired("expired".into()),
@@ -204,6 +236,206 @@ fn error_value_snapshots_plain_variants() {
     ] {
         golden(&err, expected);
     }
+}
+
+/// The AI SDK's `ToolCallNotFoundForApprovalError` message, verbatim
+/// (ai 7.0.127 `src/error/tool-call-not-found-for-approval-error.ts:22`).
+#[test]
+fn tool_call_not_found_for_approval_message_matches_upstream() {
+    let err = AiMuxError::ToolCallNotFoundForApproval {
+        tool_call_id: "call-1".into(),
+        approval_id: "approval-1".into(),
+    };
+    assert_eq!(
+        err.to_string(),
+        r#"Tool call "call-1" not found for approval request "approval-1"."#
+    );
+}
+
+/// The AI SDK's `MissingToolResultsError` message, verbatim
+/// (ai 7.0.127 `src/error/missing-tool-result-error.ts:15-20`).
+#[test]
+fn missing_tool_results_message_matches_upstream() {
+    let error = |ids: &[&str]| AiMuxError::MissingToolResults {
+        tool_call_ids: ids.iter().map(|id| (*id).to_owned()).collect(),
+    };
+    assert_eq!(
+        error(&["call-1"]).to_string(),
+        "Tool result is missing for tool call call-1."
+    );
+    assert_eq!(
+        error(&["call-1", "call-2"]).to_string(),
+        "Tool results are missing for tool calls call-1, call-2."
+    );
+}
+
+/// The AI SDK's `ToolChoiceViolationError` messages, verbatim
+/// (ai 7.0.127 `src/error/tool-choice-violation-error.ts:56-58`).
+#[test]
+fn tool_choice_violation_message_matches_upstream() {
+    let error = |tool_choice| {
+        AiMuxError::ToolChoiceViolation(Box::new(ToolChoiceViolationError {
+            tool_choice,
+            finish_reason: FinishReasonUnified::Stop,
+            provider: "p".into(),
+            model_id: "m".into(),
+            content: vec![],
+        }))
+    };
+    assert_eq!(
+        error(LanguageModelV4ToolChoice::Required).to_string(),
+        "Model response did not contain a tool call even though tool choice was required."
+    );
+    assert_eq!(
+        error(LanguageModelV4ToolChoice::Tool {
+            tool_name: "weather".into()
+        })
+        .to_string(),
+        "Model response did not contain a call to the required tool 'weather'."
+    );
+}
+
+/// The variant set is a cross-language contract of its own: bindings switch on
+/// the wire tag, and the FFI / Node / Python error mappings match on every
+/// variant. Adding or removing one is a breaking change.
+/// Compile-time pin: adding an `AiMuxError` variant breaks this match, so
+/// the wire-tag list below and every binding's switch must be updated in the
+/// same change (the runtime assertion alone cannot see additions).
+#[allow(dead_code)]
+fn variant_addition_breaks_this_match(error: &AiMuxError) {
+    match error {
+        AiMuxError::ApiCall(_)
+        | AiMuxError::Retry(_)
+        | AiMuxError::JsonParse(_)
+        | AiMuxError::InvalidResponseData(_)
+        | AiMuxError::ToolCallNotFoundForApproval { .. }
+        | AiMuxError::NoSuchTool { .. }
+        | AiMuxError::InvalidToolInput { .. }
+        | AiMuxError::ToolCallRepair { .. }
+        | AiMuxError::InvalidArgument(_)
+        | AiMuxError::InvalidPrompt(_)
+        | AiMuxError::LoadApiKey { .. }
+        | AiMuxError::LoadSetting { .. }
+        | AiMuxError::MissingToolResults { .. }
+        | AiMuxError::ToolChoiceViolation(_)
+        | AiMuxError::NoOutputGenerated(_)
+        | AiMuxError::TokenExpired(_)
+        | AiMuxError::UnsupportedFunctionality(_)
+        | AiMuxError::NoSuchModel { .. }
+        | AiMuxError::NoSuchProvider { .. }
+        | AiMuxError::Timeout(_)
+        | AiMuxError::Aborted(_)
+        | AiMuxError::Other(_) => {}
+    }
+}
+
+#[test]
+fn variant_set_is_exactly_the_wire_tag_list() {
+    let all = [
+        AiMuxError::ApiCall(Box::new(api_error("x"))),
+        AiMuxError::Retry(RetryError {
+            reason: RetryErrorReason::MaxRetriesExceeded,
+            errors: vec![AiMuxError::ApiCall(Box::new(api_error("x")))],
+        }),
+        AiMuxError::JsonParse("x".into()),
+        AiMuxError::InvalidResponseData("x".into()),
+        AiMuxError::ToolCallNotFoundForApproval {
+            tool_call_id: "x".into(),
+            approval_id: "x".into(),
+        },
+        AiMuxError::NoSuchTool {
+            tool_name: "x".into(),
+            available_tools: None,
+            tool_input: None,
+        },
+        AiMuxError::InvalidToolInput {
+            tool_name: "x".into(),
+            tool_input: "{}".into(),
+            cause: "x".into(),
+        },
+        AiMuxError::ToolCallRepair {
+            original_error: Box::new(AiMuxError::NoSuchTool {
+                tool_name: "x".into(),
+                available_tools: None,
+                tool_input: None,
+            }),
+            cause: Box::new(AiMuxError::Other("x".into())),
+        },
+        AiMuxError::InvalidArgument("x".into()),
+        AiMuxError::InvalidPrompt("x".into()),
+        AiMuxError::LoadApiKey {
+            env_var: "X".into(),
+            description: "x".into(),
+        },
+        AiMuxError::LoadSetting {
+            env_var: "X".into(),
+            name: "x".into(),
+        },
+        AiMuxError::MissingToolResults {
+            tool_call_ids: vec!["x".into()],
+        },
+        AiMuxError::ToolChoiceViolation(Box::new(ToolChoiceViolationError {
+            tool_choice: LanguageModelV4ToolChoice::Required,
+            finish_reason: FinishReasonUnified::Stop,
+            provider: "x".into(),
+            model_id: "x".into(),
+            content: vec![],
+        })),
+        AiMuxError::NoOutputGenerated("x".into()),
+        AiMuxError::TokenExpired("x".into()),
+        AiMuxError::UnsupportedFunctionality("x".into()),
+        AiMuxError::NoSuchModel {
+            model_id: "x".into(),
+            model_type: String::new(),
+        },
+        AiMuxError::NoSuchProvider {
+            provider_id: "x".into(),
+            model_id: "x".into(),
+            model_type: String::new(),
+            available_providers: vec![],
+        },
+        AiMuxError::Timeout("x".into()),
+        AiMuxError::Aborted("request aborted".into()),
+        AiMuxError::Other("x".into()),
+    ];
+    // The wire tag is the AI SDK's error name, under `name`.
+    let mut names: Vec<String> = all
+        .iter()
+        .map(|e| match serde_json::to_value(e).unwrap() {
+            serde_json::Value::Object(m) => m["name"].as_str().unwrap().to_owned(),
+            v => panic!("unexpected error_value shape: {v}"),
+        })
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    assert_eq!(
+        names,
+        [
+            "AI_APICallError",
+            "AI_Error",
+            "AI_InvalidArgumentError",
+            "AI_InvalidPromptError",
+            "AI_InvalidResponseDataError",
+            "AI_InvalidToolInputError",
+            "AI_JSONParseError",
+            "AI_LoadAPIKeyError",
+            "AI_LoadSettingError",
+            "AI_MissingToolResultsError",
+            "AI_NoOutputGeneratedError",
+            "AI_NoSuchModelError",
+            "AI_NoSuchProviderError",
+            "AI_NoSuchToolError",
+            "AI_RetryError",
+            "AI_TokenExpiredError",
+            "AI_ToolCallNotFoundForApprovalError",
+            "AI_ToolCallRepairError",
+            "AI_ToolChoiceViolationError",
+            "AI_UnsupportedFunctionalityError",
+            "AbortError",
+            "TimeoutError",
+        ],
+        "variant set changed"
+    );
 }
 
 /// Request context is required: a payload without `url` / `requestBodyValues`

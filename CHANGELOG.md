@@ -13,12 +13,145 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   camelCase (`toolCallId`, `providerOptions`, `inputTokens`); unions carry the
   AI SDK's tag and strings (`{"type":"text-delta"}`, `"tool-call"`,
   `"reasoning-file"`, Source `sourceType`, Warning/FileData/ResponseFormat/
-  stream parts no longer externally tagged); byte payloads are untagged
-  (array of numbers or base64 string); optional fields are omitted instead of
-  `null` and generate as `field?: T`; `AiMuxError` is tagged by `name`
+  stream parts no longer externally tagged); bytes are base64 strings;
+  optional fields are omitted instead of `null` and generate as `field?: T`;
+  `AiMuxError` is tagged by `name`
   (`AI_APICallError`, `AI_RetryError`, ...). Vendor request and response types
   and the OpenAI chat-completion output keep their vendor wire formats.
-  Persisted recordings and trace records change with the same rule.
+  Persisted recordings and trace records change with the same rule;
+  recordings stay schema 2 and still read the snake_case envelope keys
+  aimux 0.5 writes (`call_id`, `recorded_at`, `model_id`, ...).
+
+- Bytes are base64 strings in the public JSON, as the AI SDK writes a
+  `Uint8Array`: image part `image`, file part `data`, `FileBytes`, speech
+  `audio`, image outputs, video `binary` data and audio/image/video inputs. An
+  array of numbers is no longer read. Bindings keep their byte-valued APIs
+  (`Binary` variants, Python `bytes`) and encode them at the JSON boundary
+  (#232 C33). Decision images (`images[].data` in a provider's options)
+  follow the same rule; Python `decide` encodes `bytes` image data there
+  (C33a).
+
+- JSON `null` is kept apart from a missing value where the AI SDK's type is
+  `unknown`: response and request `body` (language, speech, transcription,
+  embedding, reranking and search results), `APICallError.data` and the tool
+  approval request's `inputSchemaInput` read `"body": null` as a present null
+  and write it back, and omit the field only when it was missing. Python
+  serializes without `exclude_none` and keeps a set `None` of an `Any` field;
+  Go reads these bodies as `json.RawMessage`, and `Error.Data` changes from
+  `any` to `json.RawMessage` (`nil` when missing, `null` when null); Dart
+  gains `hasBody` / `hasInputSchemaInput` (#232 C34).
+
+- File content parts are the AI SDK's `FilePart`: one `file` tag whose `data`
+  is a tagged `FileData` (`{type:"data"|"url"|"reference"|"text"}`), a string
+  (base64 or a URL) or a bare `{provider: id}` reference. The `file-base64`,
+  `file-url` and `file-reference` parts are removed; write
+  `{type:"file", data:{type:"url", url}}` and so on. A `reasoning-file`
+  part's `data` also takes a bare string. A `data:` URL's media type wins over
+  the part's `mediaType`, and response messages carry files as bare base64
+  strings. Bindings replace the three part classes with a typed `FilePartData`
+  (#232 C35).
+
+- Generated files are the AI SDK's `GeneratedFile`: `files[]` holds
+  `{base64, mediaType, providerMetadata?}` instead of
+  `{type:"data"|"url", ...}`, and the text results' and stream's `file` /
+  `reasoning-file` parts are `{type, file: GeneratedFile, providerMetadata?}`.
+  `ReasoningFileOutput` is replaced by `GeneratedFileOutput`; the
+  provider-level `raw.content` keeps the V4 file
+  (`LanguageModelFile`: `{mediaType, data}`). Bindings gain a `GeneratedFile`
+  type with a bytes accessor (#232 C46).
+
+- Response timestamps are written as JavaScript's `Date.toISOString()`
+  (`"2025-03-06T13:50:19.000Z"`: UTC, milliseconds) instead of each
+  provider's own form (`+00:00` offsets, nanoseconds, Bedrock's HTTP date,
+  Open Responses' Unix seconds). Reading one requires an RFC 3339 date-time;
+  other text is an error, so stored results or recordings with another form
+  no longer parse. In Rust the fields are `Option<Timestamp>`
+  (`aimux_core::Timestamp`) instead of `Option<String>`. Binding types stay
+  strings (#232 C48).
+
+- The text stream's `text-delta` and `reasoning-delta` parts carry their
+  text under `text`, as the AI SDK's `TextStreamPart` does, instead of
+  `delta`. `tool-input-delta` keeps `delta`, and so does the provider-level
+  `StreamPart`. Rust matches `TextStreamPart::TextDelta { text, .. }`; the
+  bindings' typed parts rename `delta` to `text` (Go `TextDeltaPayload.Text`,
+  Java `getText()`, Kotlin/Swift/Dart `text`) (#229 B9).
+
+- Provider options, provider metadata and provider references keep their
+  keys in insertion order end to end, as the AI SDK's JS objects do: Rust
+  holds them as `IndexMap` (see the provider options entry below) and the
+  bindings no longer sort them. Go: `Tool.ProviderOptions` and
+  `TranscriptionSessionOpts.ProviderOptions` are `json.RawMessage` instead of
+  `map[string]json.RawMessage`, and `UploadFileResult.ProviderReference` is a
+  `ProviderReference` (raw JSON, read with `Get(provider)`) instead of
+  `map[string]string`. Java's `UploadFileResult` defaults to a
+  `LinkedHashMap`. Swift's typed dictionaries remain unordered (#229 NP2-1).
+
+- A tool call or source outside `content` carries its AI SDK `type` tag: the
+  text results' `toolCalls[]` and an approval request's `toolCall` are
+  `{"type": "tool-call", ...}` (the AI SDK's `TypedToolCall`), and their
+  `sources[]` are `{"type": "source", "sourceType", ...}`. So are the repair
+  context's `toolCall` and the call `apply_tool_call_repair` returns (a
+  `LanguageModelV4ToolCall`). Reading accepts JSON without the tag and rejects
+  a different one. Rust keeps `ToolCall` and `Source` untagged and writes the
+  tag through `wire::typed` / `wire::typed_vec` / `wire::Tagged`; TypeScript
+  types the fields as the new `TypedToolCall` and `TypedSource`. Every
+  binding's standalone `ToolCall`, `RawToolCall` and `Source` writes the tag
+  (Go through `MarshalJSON`; Java, Kotlin, Swift, Dart and Python as a fixed
+  `type` field) (#229 NP2-7).
+
+- Tool-call input parsed from the model's argument text writes an integral
+  number as JavaScript does: `1e2` and `100.0` become `100`, `-0.0` becomes
+  `0`, as `JSON.stringify(JSON.parse(text))` writes them, instead of
+  serde_json's `100.0`. Other numbers are unchanged. Bindings that tell
+  integers from floats (Python `int`, Go raw JSON, Jackson `IntNode`) now see
+  integers (#229).
+
+- The text results' usage, steps and typed tool outputs follow the same JSON
+  rules. `LanguageModelUsage` (`usage`, `totalUsage`, each step's and the
+  `finish` / `finish-step` parts' usage) is camelCase: `inputTokens`,
+  `inputTokenDetails {noCacheTokens, cacheReadTokens, cacheWriteTokens}`,
+  `outputTokens`, `outputTokenDetails {textTokens, reasoningTokens}`,
+  `totalTokens`, `raw?`; an unknown count is omitted instead of `null`, the
+  two detail objects are always written. `steps[]` are camelCase (`callId`,
+  `stepNumber`, `model {provider, modelId}`, `rawFinishReason?`,
+  `performance {stepTimeMs, responseTimeMs, timeToFirstOutputMs?, ...}`,
+  `response {id, timestamp, modelId, headers?, body?, messages}`). Tool
+  results, tool errors, `tool-output-denied` and `tool-approval-response`
+  parts write `toolCallId`, `toolName`, `providerExecuted`, `approvalId`; an
+  approval response's `toolCall` carries `type: "tool-call"`, and the
+  results' `toolResults[]` are `{"type": "tool-result", ...}` (the AI SDK's
+  `TypedToolResult`; TypeScript `TaggedToolResult`). Recordings write the
+  outcome's usage the same way. Go, Java, Kotlin, Swift and Dart read and
+  write the camelCase keys with unchanged field names; Python dicts and Node
+  objects carry the new keys. Kotlin, Swift and Dart keep a parsed JSON
+  `null` output apart from no output (Kotlin `JsonNull`, Swift `.null`, Dart
+  `hasOutput`).
+
+- `Output` (the `output` option of `generateText` / `streamText` and
+  `generate_object`) is tagged by `type`, as the AI SDK names its output
+  modes: `{"type": "text"}`, `{"type": "object", "schema", "name?",
+  "description?"}`, `{"type": "array", "element", "minItems?", "maxItems?",
+  ...}`, `{"type": "choice", "options"}`, `{"type": "json"}`. The externally
+  tagged `{"Object": {...}}` form is no longer read.
+
+- Decisions follow the same JSON rules. `DecideOptions` and
+  `DecisionCallOptions` write `maxRetries` and `providerOptions`;
+  `DecisionResult` and `DecideResult` write `rounding {probabilityDecimals,
+  scoreDecimals}`, `providerMetadata` and `usage {inputTokens, outputTokens,
+  totalTokens}`, an unknown count omitted instead of `null`
+  (`decision-result.ts:27-31`). The model description of
+  `aimux_decision_capabilities` and every binding's `describe` is
+  `{specificationVersion, provider, modelId, supportedQuestionTypes}`. The
+  options and metadata aimux defines in a provider's namespace are camelCase
+  too: `images[].mediaType`, OpenAI `choiceValues` and `safetyIdentifier`,
+  candidate scoring's `modelRevision`, `tokenizerRevision`,
+  `promptFormatVersion` and `encoded.<id>.{promptTokenIds, labelTokenIds}`,
+  and the metadata's `probabilitySource` and `latencyMs`; options a runtime
+  receives as given keep the runtime's names (`keep_alive`,
+  `chat_template_kwargs`, ...). Python's `decide` takes the JSON keys as
+  keyword arguments (`maxRetries=0`). Decision recordings write the options
+  and result this way, and replay refuses recorded options with snake_case
+  keys instead of ignoring them.
 
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
@@ -37,13 +170,119 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Mistral has no `transform_request_body` setting; the deprecated
   `text_embedding` and `text_embedding_model` provider methods are removed.
 
+- `SigV4Fetch::new` takes a required `SigV4Signing`. `Aws4Fetch` signs like
+  aws4fetch 1.0.20, the signer of the AI SDK's AWS packages: `user-agent`,
+  `content-type` and its other `UNSIGNABLE_HEADERS` are sent but not signed,
+  and no `x-amz-content-sha256` is sent. `AllHeaders` is the previous rule.
+  Bedrock and Anthropic-AWS sign with `Aws4Fetch`, Polly with `AllHeaders`.
+  Bedrock, Bedrock Mantle and Anthropic-AWS send the user-agents of
+  `@ai-sdk/amazon-bedrock` 5.0.100 and `@ai-sdk/anthropic-aws` 2.0.63 (the
+  package part is appended again by the transport).
+
+- The `ai-sdk-provider-utils/<v>` part of a pinned package's user-agent names
+  the provider-utils that the package's upstream `package.json` depends on, as
+  the AI SDK sends it. That is 5.0.51 for Azure, Bedrock, Cohere, DeepSeek,
+  Groq, Mistral, xAI and Google Vertex, and 5.0.53 for OpenAI,
+  OpenAI-compatible, Open Responses, Anthropic, Anthropic-AWS and Google. A
+  per-call `user-agent` keeps the package's part. The Vertex MaaS and xAI
+  sub-providers send `ai-sdk-openai-compatible/3.0.59`, the version
+  google-vertex depends on. Hugging Face sends `ai-sdk-provider-utils/5.0.53`
+  and no package part, as `@ai-sdk/huggingface` 2.0.62 does (now pinned in
+  `VERSIONS.json`). Other packages send `ai-sdk-provider-utils/5.0.53`.
+
+- `to_chat_completion` reads `choices[].logprobs` from the calling
+  provider's metadata namespace (Azure's `azure`, DeepSeek's `deepseek`)
+  and returns it in the Chat Completions wire shape, `{ "content": [...],
+  "refusal": null }`. It used to return the provider's raw token list. A
+  Responses result's per-part lists become one list, and a token without
+  `bytes` gets `"bytes": null`.
+
+- Security: OpenAI image edits download URL files (`files` and `mask`) with
+  `download_blob`, as `@ai-sdk/openai` does with `downloadBlob`. The download
+  goes through the download guard, so a private-network, loopback or
+  link-local URL is refused before any request, and it sends no headers. A
+  failed download is a status-code error rather than a parsed OpenAI error.
+
+- OpenAI chat `providerMetadata.openai.logprobs` holds the entries as the AI
+  SDK's chat schema parses them, `{token, logprob, top_logprobs: [{token,
+  logprob}]}`: `bytes` is dropped, so `to_chat_completion` returns it as
+  `null`. A `null` `content` sets no `logprobs`.
+
+- Anthropic-AWS follows `@ai-sdk/anthropic-aws` 2.0.63 settings: the region
+  comes from the setting or `AWS_REGION` with no `us-east-1` default; the
+  workspace id is required, from the setting or `ANTHROPIC_AWS_WORKSPACE_ID`;
+  with no `auth`, a request uses `ANTHROPIC_AWS_API_KEY` when it is set and
+  otherwise SigV4 with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
+  `AWS_SESSION_TOKEN`. All of them are read when a request is made.
+
 - Public surface (`aimux-core`, `aimux-provider-utils`): removed
   `recording::init_recording_from_env`; made private the retry preparation
   helpers and default constants, `composite::{add_usage,
   build_aggregator_prompt, extract_text}`, `recording::new_call_id`,
   `util::rfc3339_now`, two session helpers, `fetch_error_to_ai_mux_error`,
   `extract_response_header_pairs`, the SigV4 signing internals, the logging
-  internals, `DEFAULT_MAX_JSON_RESPONSE_SIZE` and `TungsteniteConnector`.
+  internals and `DEFAULT_MAX_JSON_RESPONSE_SIZE`.
+
+- Proxy settings belong to a transport instance, not to the process
+  (`aimux-provider-utils`). `init_proxy` and its set-once global are
+  removed; `ProxyConfig` moves to `fetch`. `ReqwestFetch::new(proxy)` is a
+  transport with its own proxy and connection pool, given to a provider as
+  its `fetch` setting, as the AI SDK leaves routing to `fetch`; the
+  WebSocket counterpart is `ws::TungsteniteConnector::new(proxy)`, given as
+  `web_socket`. `set_default_transport` replaces the default that providers
+  without `fetch`, built-in WebSocket connects and download hops read per
+  request. `PinnedFetch::new` takes the hop's `ProxyConfig`.
+  `aimux_init_proxy` (C ABI unchanged) and the Node and Python `initProxy` /
+  `init_proxy` now replace the default transport for later requests, every
+  time they are called, instead of taking effect only before the first
+  request.
+
+- Removed items the AI SDK has no counterpart for: `aimux_core::ModelId`
+  (and `model_id`, the Node `ModelId` type), the hidden
+  `aimux_provider_utils::download_guard` re-export (use
+  `aimux_core::download_guard`; `same_origin` stays re-exported), the
+  deprecated panicking converters `convert_prompt_to_anthropic`,
+  `convert_prompt_to_anthropic_full`, `convert_prompt_to_openai_messages`
+  and `convert_prompt_to_openai_messages_with_mode` (use the `_fallible`
+  forms), and the `ResponsesSystemMessageMode` alias (use
+  `SystemMessageMode`).
+
+- `aimux_provider_utils::create_standard_json_error_response_handler` is
+  removed. Failed-response handlers live in the provider modules, as the AI
+  SDK keeps `groqFailedResponseHandler` and DeepSeek's error schema in their
+  packages; build one with `create_json_error_response_handler`. The Groq
+  handler now reads only `error.type` as the provider code, and DeepSeek's
+  prefers `error.code` (a string or a number) over `error.type`.
+
+- `LanguageModel::supported_urls` and
+  `LanguageModelMiddleware::override_supported_urls` are async, as the AI
+  SDK's `supportedUrls` and `overrideSupportedUrls` may be a `PromiseLike`.
+  A wrapped model reads the override, else the inner model, when asked
+  instead of once at wrap time. The OpenAI-compatible `SupportedUrlsFn`
+  setting returns a `BoxFuture<'static, SupportedUrls>`.
+
+- The user operations download as the AI SDK's do, through a transport the
+  caller can replace (`aimux-core`, new public `download` module).
+  `generate_text` and `stream_text` read the model's `supported_urls()`
+  before the call and download each prompt file URL it does not cover (user
+  `FileUrl` parts and `file` items of tool outputs; not `data:` URLs), which
+  then reaches the provider as inline data; they used to pass every URL
+  through. The Cohere chat, Open Responses and xAI Responses models declare
+  the URLs their packages declare (HTTP(S) images; for xAI also PDF and
+  text), so those still reach the API as URLs. Codex models declare the
+  OpenAI Responses model's URLs (HTTP(S) images and PDFs) on both channels,
+  and the Hugging Face Responses model declares HTTP(S) images, as
+  `@ai-sdk/huggingface` does.
+  `GenerateTextOptions::download` takes a `DownloadFunction` (the AI SDK's
+  `experimental_download`) instead. `AudioInput::Url` is new:
+  `transcribe` downloads it with `TranscriptionCallOptions::download`, and a
+  transcription model given one returns `AudioInput::url_error()`.
+  `generate_video` downloads every video returned as a URL with
+  `VideoCallOptions::download` and returns it as `VideoData::Binary` (it
+  returned the URL before). Without a download each operation uses
+  `create_download(None)`, the guarded download (public HTTP(S) URLs only,
+  pinned hops, no provider credentials, 2 GiB limit), so a Vertex `gs://`
+  video result needs an injected download.
 
 - Provider results carry request and response information as the AI SDK does
   (`aimux-core`). `GenerateResult` has `request: Option<RequestInfo>` and
@@ -64,22 +303,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   part, `FilePart { data: FileData, media_type, filename }`; the five
   user-facing file variants are folded into it by
   `convert_to_language_model_prompt`, which now returns `Result` and rejects a
-  part its role does not allow. `LanguageModelPromptMessage` is removed. The
-  user-facing `ModelMessage` and `ContentPart` are unchanged. Recordings store
-  the new prompt JSON: a system message's `content` is a string and every file
-  input is a `file` part.
+  part its role does not allow. `LanguageModelPromptMessage` is removed.
+  Recordings store the new prompt JSON: a system message's `content` is a
+  string and every file input is a `file` part. In TypeScript the provider
+  `ToolResultPart` / `ToolResultOutput` are `LanguageModelToolResultPart` /
+  `LanguageModelToolResultOutput`; the plain names are the user-facing types.
+
+- The user-facing `ModelMessage` is a union by role, as the AI SDK's
+  (`aimux-core`): `System { content: String }`, `User { content: UserContent }`,
+  `Assistant { content: AssistantContent }`, `Tool { content: ToolContent }`,
+  each with message-level `provider_options`, which now reach the provider
+  prompt (they were dropped). Each role has its own part union:
+  `UserContentPart` (text, image and the file variants),
+  `AssistantContentPart` (text, custom, the file variants, reasoning,
+  reasoning file, tool call, tool result, tool approval request) and
+  `ToolContentPart` (tool result, tool approval response). `ContentPart`,
+  `MessageContent` and `Role` are removed; `ModelMessage::role()` returns the
+  role name. A tool result is `ToolResultPart { tool_call_id, tool_name,
+  output: ToolResultOutput, provider_options }`, the AI SDK's typed output
+  (`text`, `json`, `execution-denied`, `error-text`, `error-json`, `content`);
+  `preliminary` and `dynamic` are gone from it. A tool message can carry a
+  `tool_approval_response { approval_id, approved, reason, provider_executed }`,
+  which reaches the provider only for a provider-executed tool, as upstream;
+  a tool message left empty is dropped. Wire format: the role and part tags
+  are unchanged; a tool result still reads the earlier `result` (or untyped
+  `output`) value with `is_error` and writes `text` / `json` / error outputs
+  that way, while `output` holding an AI SDK output object is read as typed;
+  a part its role does not allow (an `image` in an assistant message, a
+  non-text system message, a string or text part in a tool message) is now
+  rejected when the prompt is parsed instead of when it is converted.
 
 - Provider options and provider metadata have one typed shape, the AI SDK's
   `Record<string, JSONObject>`: `SharedProviderOptions` and
-  `SharedProviderMetadata` (`ProviderMetadata` is an alias) are
-  `HashMap<String, JsonObject>`, namespace to JSON object. They replace
-  `serde_json::Value`, `HashMap<String, Value>` and the per-part
-  `Option<Value>`. Every `provider_options` / `provider_metadata` field of
+  `SharedProviderMetadata` (`ProviderMetadata` is an alias) are one type,
+  `NamespaceMap` = `IndexMap<String, JsonObject>`, namespace to JSON object.
+  Like the AI SDK's JS objects they keep insertion order: a value serializes
+  with its keys in the order it was built or parsed.
+  `SharedProviderReference` is `IndexMap<String, String>` for the same
+  reason. They replace `serde_json::Value`, `HashMap<String, Value>` and the
+  per-part `Option<Value>`. Every `provider_options` / `provider_metadata` field of
   content parts, messages, call options, tools, results and stream parts uses
   them. `{"namespace": {"key": value}}` serializes as before; a value that is
   not namespace -> object (a number, string or array under a namespace, or a
   non-object at the top) is rejected when deserialized. Build one with
   `provider_namespace(ns, json!({..}))`.
+
+- `ContentPart::Reasoning` has no `signature` field any more, as the AI SDK's
+  `ReasoningPart` (`text` and `provider_options` only). A reasoning signature
+  travels in its provider's namespace (`provider_options.anthropic.signature`,
+  `provider_options.bedrock.signature`), which is where the providers already
+  read it; response messages no longer copy it to a top-level field. A
+  `signature` key in input JSON is ignored.
+
+- `convert_to_language_model_prompt` takes the called provider's id as a third
+  argument (`aimux-core`), the part of `LanguageModel::provider()` before the
+  first `.`, as the AI SDK passes it. A `content` tool output accepts the AI
+  SDK's deprecated items `file-data`, `file-url`, `file-id`,
+  `file-reference`, `image-data`, `image-url`, `image-file-id` and
+  `image-file-reference` (`ToolResultContentPart`; a `file_id` is a string or
+  a provider-to-id map, `ToolResultFileId`), and the conversion turns each
+  into a `file` part as upstream does: a `file-url` without a media type gets
+  one from the URL's extension, a URL keeps its given spelling as
+  `original_url` when normalizing changes it, and a string `file_id` becomes
+  a reference for the called provider (an error when there is none). These
+  items and a user `image` part log upstream's deprecation warning through
+  `tracing`.
+
+- `generate_text` and `stream_text` check the prompt and the response as the
+  AI SDK does (`aimux-core`). An empty message list is an `InvalidPrompt`
+  error (`messages must not be empty`). The prompt conversion combines
+  consecutive tool messages into one, merging the earlier message's
+  `provider_options` into its last part, and fails with the new
+  `AiMuxError::MissingToolResults { tool_call_ids }` when a tool call the
+  provider did not execute has no tool result or approval response before
+  the next user or system message or by the end of the prompt. A response
+  that breaks a `required` or `tool` tool choice fails `generate_text` with
+  the new `AiMuxError::ToolChoiceViolation(ToolChoiceViolationError {
+  tool_choice, finish_reason, provider, model_id, content })`; `stream_text`
+  ends with that error as an `Error` part followed by a `Finish` part whose
+  unified finish reason is `error`. Error codes: the C ABI reports
+  `MissingToolResults` as `AIMUX_E_INVALID_PROMPT` and `ToolChoiceViolation`
+  as `AIMUX_E_INVALID_RESPONSE_DATA`; Node and Python raise them as
+  `InvalidPromptError` and `InvalidResponseDataError`.
+
+- Text results carry the AI SDK's core `ContentPart` (`aimux-core`), eleven
+  kinds, instead of the provider's `GenerateContent`: `StepResult.content`
+  (and so `GenerateTextResult.content`) is `Vec<ContentPart>`
+  (`TextContent` is removed; Node exports `ContentPart`, Python keeps the
+  `TextContent` model name). New kinds: `ToolError(TypedToolError)` and
+  `ToolApprovalResponse(ToolApprovalResponseOutput)`. A provider tool result
+  is `ToolResult(TypedToolResult { tool_call_id, tool_name, input, output,
+  provider_executed, provider_metadata, dynamic, preliminary })`, with the
+  input of the call it answers, or `ToolError(TypedToolError { .., error,
+  .. })` when the provider marks it as an error. A tool call that could not
+  be parsed is followed by a `ToolError` holding its error message, which
+  the response messages replay in a tool message as error text. Wire
+  format: `{"File": {"file": GeneratedFile, "provider_metadata": ..}}` (was
+  the bare `GeneratedFile`), `{"ToolResult": {.., "input", "output",
+  "provider_executed"}}` (was `result` / `is_error`), and the new
+  `ToolError` / `ToolApprovalResponse` tags. `GenerateContent` is no longer
+  generic.
+
+- The custom content `kind` is a `types::NamespacedKind` at every layer
+  (`AssistantContentPart::Custom`, the provider `CustomPart`,
+  `GenerateContent::Custom`, `ContentPart::Custom`, `StreamPart::Custom`),
+  the AI SDK's `${string}.${string}`: a kind without a `.` (for example
+  `"compaction"` instead of `"openai.compaction"`) no longer deserializes.
+  The JSON is still a plain string; the TypeScript type is `NamespacedKind`.
 
 - Tool-call and tool-result types are unified, one per protocol layer
   (`aimux-core`). A provider emits `tool::RawToolCall` (`input` is the raw
@@ -108,6 +438,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signature is no longer dropped), and a source's `url` / `title` serialize as
   `null` when absent instead of being omitted.
 
+- A repaired tool call that still fails to parse or validate is reported as
+  the AI SDK reports it: the original call stays invalid and carries the
+  replacement's own `InvalidToolInput` / `NoSuchTool` error, no longer wrapped
+  in `ToolCallRepair` (only a failing repair function is wrapped). This holds
+  for the `repair_tool_call` closure and for a host's `repaired` reply in every
+  binding.
+
+- `CallOptions.tool_choice` is the V4 object union
+  `LanguageModelV4ToolChoice` (`{"type":"auto"}`, `{"type":"none"}`,
+  `{"type":"required"}`, `{"type":"tool","toolName":..}`); the user-level
+  `ToolChoice` (`"auto"` | `"none"` | `"required"` | `{type:"tool",toolName}`)
+  stays on `GenerateTextOptions`. `prepare_tool_choice` converts one into the
+  other as the AI SDK's `prepareToolChoice` does, and `generate_text` /
+  `stream_text` now send `{"type":"auto"}` when no choice is given, with or
+  without tools (providers still drop it when there are no tools, except
+  open-responses, which sends it as upstream does). Provider authors match
+  on `LanguageModelV4ToolChoice`. Recordings store the object form, so an
+  `ExactMatcher` no longer matches recordings made before this change.
+
+- `CallOptions.call_id` and `CallOptions::for_step` are removed
+  (`aimux-core`); the V4 call options have no call id. The recording
+  correlation id is `recording_context.call_id`, and `HttpRequest::new` takes
+  it from there. Provider code that built `HttpRequest { call_id:
+  options.call_id.clone(), .. }` uses `HttpRequest::new(url, headers,
+  options)`. The JSON is unchanged (both were internal and never serialized).
+
+- `CallOptions.max_retries`, `CallOptions.timeout` and
+  `CallOptions.session_id` are removed (`aimux-core`), as in the V4 call
+  options. They are settings of the `generate_text` / `stream_text`
+  operation: `GenerateTextOptions` keeps all three, and the JSON bindings
+  are unchanged. The operation runs its model calls inside
+  `operation::OperationSettings::scope`. The router and MoA take the child
+  retry count from `OperationSettings::current()`, and `TraceLayer` takes
+  the session id from it. Code that calls `do_generate` / `do_stream` on a
+  router, MoA or trace layer directly wraps the call in
+  `OperationSettings { .. }.scope(..)`. Recordings keep the three keys in
+  `input.options`, and replay restores them.
+
+- `ProviderTool.id` is a `types::NamespacedKind`, the V4
+  `${string}.${string}` identifier: an id without a `.` (for example
+  `"web_search"` instead of `"openai.web_search"`) no longer deserializes,
+  and `NamespacedKind::new` / `parse` check it when built in Rust. The JSON
+  is still a plain string.
+
+- A provider-executed `tool::ToolResult` whose `result` is `null` no longer
+  deserializes: the V4 `result` is `NonNullable<JSONValue>`.
+
 - Removed the generated `ProviderName` type in every binding (Rust enum, TS
   const object, Go/Java/Kotlin consts, Swift enum, Dart consts, Python
   `Literal`) and `scripts/gen_provider_names.py`. Provider names are plain
@@ -115,6 +492,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `provider("groq", ...)`, including overlay-registered names. The provider list lives in
   [docs/api/providers.md](docs/api/providers.md); Rust also gains
   `provider_names()`.
+
+- `RetryError`'s text names the last attempt's message as the AI SDK's
+  `getErrorMessage` does: `Failed after 3 attempts. Last error: Too Many
+  Requests`, not `... Last error: API call error: HTTP 429: Too Many
+  Requests`. The HTTP status stays a field of the attempt error.
+
+- Video poll settings belong to the operation, as the AI SDK's
+  `generateVideo` `poll` option (`aimux-core`, `aimux-providers`).
+  `VideoModel::poll_config()` and `VideoPollConfig` are removed; unset
+  `VideoCallOptions::poll` fields use the AI SDK defaults (5000 ms interval,
+  600000 ms timeout). RunwayML no longer paces its own polling (it used
+  2 s / 300 s, first as settings, then as package constants); pass `poll` per
+  call instead. Each status check, its retries included, now races
+  the time left in the poll budget and a hanging check fails with `Timeout`
+  "Video generation timed out after {timeoutMs}ms." as upstream.
+
+- Call-level usage and finish reasons follow the AI SDK (`aimux-core`). The
+  results of `generate_text` / `stream_text` / `generate_object` and the
+  `TextStreamPart` finish parts report usage as `LanguageModelUsage`
+  (`input_tokens`, `input_token_details { no_cache_tokens,
+  cache_read_tokens, cache_write_tokens }`, `output_tokens`,
+  `output_token_details { text_tokens, reasoning_tokens }`, `total_tokens`,
+  `raw`) and the finish reason as the unified string (`"stop"`,
+  `"tool-calls"`, ...) with `raw_finish_reason` beside it. Usage is summed
+  over steps with `add_language_model_usage`. Provider results
+  (`GenerateResult`, `StreamPart`) keep `Usage` and `FinishReason`.
+  Recordings store the call-level usage for both the generate and the
+  stream path.
+
+- `GenerateTextResult` is built from steps, as the AI SDK's
+  (`aimux-core`). It holds `steps: Vec<StepResult>`, the summed usage and the
+  parsed output; everything else is an accessor: `final_step()`, `content()`,
+  `text()`, `files()`, `sources()`, `tool_calls()`, `static_tool_calls()`,
+  `dynamic_tool_calls()`, `tool_results()` (and the static/dynamic
+  variants), `finish_reason()`, `raw_finish_reason()`, `usage()`,
+  `warnings()`, `response_messages()`, `output()`, and the deprecated
+  `reasoning()`, `reasoning_text()`, `total_usage()`, `request()`,
+  `response()`, `provider_metadata()` that the AI SDK also deprecates.
+  `StepResult` carries the step's call id, model, content, finish reason,
+  usage, performance, warnings, request, response (with its messages) and
+  provider metadata. The `raw` provider result is removed, and
+  `reasoning_text` is `None` when there is no reasoning. The JSON form is a
+  snapshot: it writes the derived values next to `steps`, `total_usage` and
+  `output`, and only those three are read back.
+
+- Structured output is the `output` option, as the AI SDK's `Output`
+  (`aimux-core`). `GenerateTextOptions::response_format` is replaced by
+  `output: Option<Output>` (`Text`, `Object`, `Array`, `Choice`, `Json`); the
+  parsed and schema-checked value is `GenerateTextResult::output()`.
+  `generate_object` is deprecated, as upstream, and is a wrapper over
+  `generate_text` with `Output::Object`; its `GenerateObjectResult` has
+  `object`, `reasoning`, `finish_reason`, `usage`, `warnings`, `request`,
+  `response` (`GenerateObjectResponse`: id, timestamp, model id, headers,
+  body) and `provider_metadata`, and no `raw`. It no longer repairs
+  malformed JSON before parsing.
+
+- `TextStreamPart` is the AI SDK's call-level stream part, its own enum and
+  no longer `StreamPart<ToolCall>` (`aimux-core`). The stream opens with
+  `Start` and `StartStep { request, warnings }` and closes with
+  `FinishStep { response, usage, performance, finish_reason,
+  raw_finish_reason, provider_metadata }` and
+  `Finish { finish_reason, raw_finish_reason, total_usage }`; the provider's
+  `StreamStart` and `ResponseMetadata` parts are not forwarded. `TextDelta`
+  and `ReasoningDelta` carry `text` (was `delta`). Aborting the call ends the
+  stream with `Abort { reason }`. `StreamTextResult::consume()` returns a
+  `GenerateTextResult`; `StreamTextResultAggregated` is removed.
+
+- `stream_text` drops an empty `TextDelta` that carries no provider
+  metadata, as the AI SDK does (`aimux-core`); providers emit one, e.g. the
+  opening `"content": ""` chunk of OpenAI chat.
+
+- `TextStreamPart` carries the AI SDK's tool parts (`aimux-core`,
+  stream-language-model-call.ts:760-792). `ToolResult` is a
+  `TypedToolResult` (`tool_call_id`, `tool_name`, `input?` from the call it
+  answers, `output`, `provider_executed`, `provider_metadata?`, `dynamic?`,
+  `preliminary?`) instead of the provider's `ToolResult`; a provider result
+  marked `is_error` arrives as `ToolError` (`TypedToolError`, with
+  `error`), and an invalid client tool call is followed by a `ToolError`
+  holding its error message and `dynamic: true`
+  (stream-language-model-call.ts:709-725). `ToolOutputDenied` and
+  `ToolApprovalResponse` are added to complete the AI SDK's set; aimux's
+  stream does not produce them yet. Unlike upstream, the provider's `preliminary` flag is kept, so
+  a preliminary result stays out of the step content, as on the generated
+  path. A consumed stream's step content records the tool results, tool
+  errors and approval responses as they arrive (stream-text.ts:1529-1538,
+  :1648-1650), so an invalid call's tool error is inline after its call
+  there, where `generate_text` puts it after the content, as upstream does.
+
+- `generate_text` fails with `Tool call {id} not found.` when the model
+  returns a provider tool result whose call is not in the response and no
+  provider tool of that name was passed (`aimux-core`,
+  convert-language-model-content.ts:87-104). A result for a passed provider
+  tool is kept as a deferred result. The stream passes such results through,
+  without `input`, as upstream does.
+
+- The response messages write a tool approval request's
+  `input_schema_input` only when it differs from the call's input under the
+  AI SDK's `isDeepEqualData` (`aimux-core`, to-response-messages.ts:133-146).
 
 - Partial-JSON parsing returns one enum (`aimux-core`):
   `aimux_core::json_repair::parse_partial_json`, `ParsePartialJsonResult` and
@@ -159,9 +634,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Rust (aimux-provider-utils)**
 
 - Gains `StreamingToolCallTracker` (plus `StreamingToolCallDelta`,
-  `TypeValidation`, `TrackerError`, `StreamingToolCallArgumentState` and
-  `starts_with_structured_value`), a port of the current
-  `@ai-sdk/provider-utils` tracker. The previous `aimux-stream` version was
+  `TypeValidation` and `TrackerError`), a port of the current
+  `@ai-sdk/provider-utils` tracker, exported from the crate root only: the
+  `streaming_tool_call_tracker` and `streaming_tool_call_argument_state`
+  modules are private, and the argument state is internal, as upstream
+  exports only the tracker from its index. The previous `aimux-stream` version was
   a port of an older, index-only tracker. Deltas are correlated by wire
   `id`, `index` and function name (ambiguous deltas are dropped), ids are
   de-duplicated with `-N` suffixes, blank function names are ignored, and
@@ -176,6 +653,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `StreamingToolCallDelta::provider_metadata`, read from the delta that
   starts a call. `TrackerError` converts into
   `AiMuxError::InvalidResponseData`.
+- The tracker follows `@ai-sdk/provider-utils` 5.0.55 (pinned in
+  `fixtures/aisdk/VERSIONS.json`): a named delta with an unseen id and empty
+  arguments continues an incomplete matching call, but starts a new call
+  once that call's structured arguments are complete; a continuation without
+  labels goes to the only matching call whose structured arguments are not
+  complete. Parallel same-name calls whose ids are missing or reused are no
+  longer merged into the first call.
 
 **Rust (aimux-providers)**
 
@@ -200,8 +684,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The native Decision/Jev extension from master is retained. Its typed
   `JevConfig` / `JevProvider::new` entry point and `Provider::decision_model`
   remain available. Decision replay now takes the caller's registry;
-  recordings contain provider identity only and keep decision capabilities
-  separately under input. Decision retries use the core call-level policy.
+  recordings contain provider identity only and no capability snapshot
+  (see the DecisionModelV4 entry). Decision retries use the core call-level
+  policy.
 
 - `OpenAIProvider::language_model(id)` (and so `create_provider("openai", ..)`
   and the registry id `openai:<model>`) returns the **Responses** model, as
@@ -240,8 +725,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `NoSuchModel { model_id, model_type }` when a vendor has no such modality;
   `transcription_model`, `speech_model`, `reranking_model` and `files` are
   optional (`None` = not offered); video and search stay aimux extensions.
+  `Provider` gains `specification_version()`, returning `"v4"` like
+  `ProviderV4` and the model traits.
   AI SDK model constructors return an `Arc<dyn …>`. Removed: `Provider::name()`,
-  `specification_version()` (from `Provider` and the nine model traits),
   `LanguageModel::config_snapshot()` and `list_models` on `Provider`.
   Discovery is the separate `ProviderDiscovery` trait, accessed through
   `Provider::discovery()`; `supported_urls()` is added to `LanguageModel`.
@@ -285,11 +771,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the C ABI `config_json` and the Node `ProviderConfig` that carry `max_retries` or
   `body_overrides` now fail with `InvalidArgument` instead of ignoring them
   (`reject_removed_provider_options` for other shapes).
-- Recording: `RECORDING_SCHEMA = 3`. `ProviderRecord` holds identity only
-  (`provider_id`, `provider`, `model_id`); base URL, key source, profile,
-  options and retry settings are no longer recorded and schema-2 files are
-  rejected on read. `rebuild_provider(record, registry)` resolves
-  `provider_id` through the caller-supplied registry, retaining its settings.
+- Recording: `RECORDING_SCHEMA` stays 2, and recordings written by aimux 0.5
+  and earlier (schemas 1 and 2) still load; schema 3 and above are refused.
+  `ProviderRecord` holds identity only (`provider_id`, `provider`,
+  `model_id`); base URL, key source, profile, options and retry settings are
+  no longer recorded, and when read from an older recording they are
+  ignored. What this version cannot replay from an older recording fails at
+  replay time with an error that names it: its empty `provider_id`
+  (`ProviderRecord::registry_id`) for a rebuild from a registry, a prompt in
+  the older format (`InputRecord::unreadable_prompt`, loaded as empty),
+  older call options (snake_case keys the camelCase options would ignore are
+  refused), or the pre-V4 decision options and results.
+  `rebuild_provider(record, registry)` resolves `provider_id` through the
+  caller-supplied registry, retaining its settings.
   If the default model method differs from the recorded one, pass the model
   to `replay_with_model`. Recorded provider strings change with the next item.
 - `model.provider()` follows the package's fixed identity or, where offered,
@@ -310,9 +804,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `blackForestLabs.image`, `cartesia.transcription`, … . Consumers that
   compared `provider` to `"openai"` must match the prefix (the CLI and web
   probes filter by `model.provider()`).
-- providerOptions namespaces are canonical only: `googleVertex` and
-  `amazonBedrock` (the legacy `vertex` / `bedrock` keys are neither read nor
-  written; Bedrock still reads `anthropic` for its Anthropic models). The
+- providerOptions namespaces: `googleVertex` and `amazonBedrock` are the
+  canonical keys; the legacy `vertex` / `bedrock` keys are still read, and
+  provider metadata is written under both, as the upstream packages do
+  (Bedrock also reads `anthropic` for its Anthropic models). The
   Anthropic package reads `anthropic` merged with the first segment of a
   custom `name` (custom wins) and writes metadata under the custom key;
   compat providers no longer read the `openai` key; `providerOptions.deepseek`
@@ -320,9 +815,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Presets: `provider_registry.json` has 282 rows; Groq and DeepSeek are
   vendor packages instead of preset rows. Former thin wrapper types are
   deleted. The JSON is embedded and parsed once into a runtime descriptor
-  table in `preset.rs`; there is no `family` field, generated presets source
-  or per-name Rust function. Create presets or vendor packages by name via
-  `create_provider(name, PresetSettings)`.
+  table in `preset.rs`, held in a `OnceLock` without leaking memory:
+  `PresetDescriptor`, `ParamSpec` and `DeriveSpec` own their data (`String`,
+  `Vec`) instead of `&'static` slices, and lose `Copy`; there is no `family`
+  field, generated presets source or per-name Rust function. Create presets
+  or vendor packages by name via `create_provider(name, PresetSettings)`.
   Rows carry `auth: api_key | none` (`none` sends no
   `Authorization` unless the row's optional key variable, such as
   `VLLM_API_KEY`, is set; `PLACEHOLDER_API_KEY` is gone), `base_url_env` and
@@ -388,8 +885,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removed (headers / constants); `google_pse` `cx` resolves settings, then
   providerOptions, then `GOOGLE_CSE_ID` per request; DataForSEO without
   credentials fails with `LoadApiKey`; searxng accepts an optional bearer
-  token; the user-agent suffix is gone. `VideoModel::poll_config()` stays as
-  the package-constant source.
+  token; the user-agent suffix is gone.
 - Removed from `aimux-providers`: `body_merge`, `openai_legacy`, `AzureAuth`,
   `TokenProvider`, `VertexAuth`, `BedrockAuth`, `StaticBearerConfig` and the
   `hmac` dependency (`sha2` / `hex` are dev-dependencies).
@@ -397,6 +893,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `InvalidArgument` before a request is sent.
 - `ExternalProviderEntry` debug output reports only whether `api_key` is
   present, keeping literal keys out of debug logs.
+- `TranscriptionModel::do_stream` is optional, as the AI SDK's `doStream?`:
+  it returns `Option<BoxFuture<…>>` and is `None` by default, instead of a
+  default method that fails with `UnsupportedFunctionality`. Implementors
+  return `Some(Box::pin(…))`. `stream_transcribe` reports a model without the
+  method as `UnsupportedFunctionality` before any I/O
+  (`The {provider} model "{id}" does not support streaming transcription.`).
+- `SpeechResult` has `usage: Option<JsonObject>`, the provider's usage in its
+  native shape, as the AI SDK's `SpeechModelV4Result.usage`. Google speech
+  passes its `usageMetadata` through; other vendors report `None`. Speech
+  model implementors set the field.
+- Decision recordings no longer store a capability snapshot:
+  `InputRecord::decision_capabilities` is removed, and
+  `InputRecord::from_decision_options` and `Recorder::record_decision_input`
+  no longer take capabilities. `MockDecisionReplayModel` does not read the
+  field; replay rebuilds the model from the host registry. The recording
+  schema stays 2, and older recordings with the field still load.
+- Decisions follow the AI SDK's `DecisionModelV4` (`@ai-sdk/provider@4.0.22`)
+  and `decide` (`ai@7.0.128`). Questions are a map keyed by id; Choice and
+  Score questions take `criteria` (option names to descriptions, ordered
+  levels). Answers are `{choice, probabilities?}`, `{score, probabilities?}`
+  (keyed `"0"`, `"1"`, …) and `{probability}`. `decide` takes `DecideOptions`
+  (the call options plus `max_retries`, default 2, and `timeout`) and returns
+  `DecideResult` (answers, usage with `totalTokens`, warnings, rounding,
+  provider metadata, response). It validates the input, rejects unsupported
+  question types before any I/O and validates the answers once after the
+  retries, with the upstream messages. The model call runs inside
+  `operation::OperationSettings::scope` with the decision's `max_retries` and
+  `timeout`, as `generate_text`'s does.
+- `DecisionModel` has `specification_version`, `provider`, `model_id`,
+  `supported_question_types` and `do_decide(&DecisionCallOptions)`;
+  `capabilities()` and `DecisionCapabilities` are removed, and provider limits
+  are checked in `do_decide` before HTTP. Images and OpenAI typed choice
+  values move to `providerOptions.<provider>`; the probability source,
+  confidence, OpenAI typed values, Laya abstentions and `latencyMs` move to
+  `providerMetadata.<provider>`. An OpenAI refusal or a vLLM skipped question
+  fails the decision instead of returning a partial answer. Decision
+  recordings hold the `DecideOptions` and the `DecideResult`; recordings made
+  before this change load but do not replay.
+- `Provider::decision_model` returns `Option<Result<Arc<dyn DecisionModel>, _>>`,
+  `None` by default; the registry and `custom_provider` report `None` as
+  `NoSuchModel` with `model_type = "decisionModel"`. `Provider::evaluation_model`
+  and the `evaluation_model` module are removed: Google's `decision_model` is
+  the language-model adapter (`google.evaluation`), OpenAI's stays the native
+  Decisions API and `OpenAIProvider::evaluation` builds the Responses adapter.
+  `EvaluationLanguageModel` is renamed `DecisionLanguageModel`; its default
+  provider is `"{language provider}.decision"`.
 
 **C ABI**
 
@@ -406,6 +948,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the key's description (`"OpenAI"`) or the setting name (`"region"`); no new
   symbol. `aimux_error_model_type` carries `NoSuchModel.model_type`. These two
   failures used to surface as `AIMUX_E_INVALID_ARGUMENT`.
+- `aimux_decide` takes `DecideOptions` JSON and returns `DecideResult` JSON.
+  `aimux_decision_capabilities` keeps its name and signature but returns
+  `{specificationVersion, provider, modelId, supportedQuestionTypes}`.
+  `aimux_provider_decision_model` on a provider without decision models
+  returns `AIMUX_E_NO_SUCH_MODEL` (was `AIMUX_E_UNSUPPORTED_FUNCTIONALITY`).
 - `aimux_provider_new`, `aimux_provider_handle_new` and `config_json` resolve
   names through the binding compatibility module (overlays, vendor packages
   and presets); `config_json` accepts
@@ -432,6 +979,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `InvalidArgumentError`.
 - Recorded and traced provider strings follow `"{name}.{method}"`
   (`openai.chat`, not `openai`).
+- Decisions use the `DecideOptions` / `DecideResult` JSON. Node
+  `decisionCapabilities(model)` is replaced by `describeDecisionModel(model)`
+  and Python `decision_capabilities` by `describe_decision_model`; the native
+  `capabilities()` method is `describe()`. Python
+  `decide(model, state, questions, **options)` takes the questions as a dict
+  keyed by id.
 
 **Go / Java / Kotlin / Swift / Dart**
 
@@ -443,6 +996,153 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   have been silently ignored). The provider `config_json` helpers
   (`ProviderConfig` in Go and Dart) drop `max_retries` / `body_overrides` and
   gain `params`; call-level `max_retries` is unchanged.
+- Decisions use the `DecideOptions` / `DecideResult` JSON; the decision model's
+  `Capabilities()` / `capabilities()` is `Describe()` / `describe()` and
+  returns the model's V4 properties.
+
+**All bindings**
+
+- The typed results and stream parts follow the core's AI SDK shapes
+  (Go, Java, Kotlin, Swift, Flutter, Node, Python). `GenerateTextResult`
+  gains `steps`, `tool_results` and `output` and loses `raw`; its `content`
+  holds the final step's parsed parts; `usage` / `total_usage` are
+  `LanguageModelUsage` and `finish_reason` the unified string.
+  `GenerateObjectResult` loses `raw` and `raw_finish_reason`.
+  `consume_stream_text` returns a `GenerateTextResult`
+  (`StreamTextResultAggregated` is removed). The options' `response_format`
+  is replaced by `output`. Stream parts: `TextDelta` / `ReasoningDelta` carry
+  `text`; `StreamStart` and `ResponseMetadata` give way to `Start`,
+  `StartStep`, `FinishStep`, `Finish { finish_reason, raw_finish_reason,
+  total_usage }` and `Abort`; `ToolResult` carries `output` and the call's
+  `input` (was `result`, `is_error`), and `ToolError`, `ToolOutputDenied` and
+  `ToolApprovalResponse` are decoded. Tool-call
+  repair reads the top-level `tool_calls` only.
+
+### Added
+
+- Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's
+  `/maas` and `/xai` paths: `create_google_vertex_maas` / `google_vertex_maas`
+  (an OpenAI-compatible provider named `vertex.maas`) and
+  `create_google_vertex_xai` / `google_vertex_xai` (Grok chat models named
+  `googleVertex.xai`), over the project/location `endpoints/openapi` URL with
+  a Google OAuth token. As in the Node wrappers, the provider headers and the
+  token go over the per-call headers, and a provider `user-agent` header is
+  sent as the whole user-agent.
+- Open Responses requests carry `ai-sdk-open-responses/2.0.58`, the package
+  part of `@ai-sdk/open-responses` (now pinned in `VERSIONS.json`).
+  `OpenResponsesProviderSettings::user_agent_suffix` replaces it, as the AI
+  SDK's `userAgentSuffix` does.
+- `aimux_provider_utils::download_blob`, the AI SDK's `downloadBlob`: a GET
+  of an untrusted URL through the download guard with no headers, so no
+  `user-agent`. OpenAI-compatible image edits download URL files with it, as
+  upstream does, and no longer send `ai-sdk-provider-utils/5.0.53` there.
+- `HttpRequest::omit_provider_utils_user_agent` (`aimux-provider-utils`):
+  sends the `user-agent` as given, without the `ai-sdk-provider-utils/<v>`
+  part, for an exchange the AI SDK makes with a plain `fetch`. A struct
+  literal of `HttpRequest` must now set it or use `..Default::default()`.
+  The Google Files upload uses it: the init request sends the provider
+  headers (`ai-sdk-google/4.0.87`) and the byte upload sends no
+  `user-agent`, as `@ai-sdk/google`'s `fetch` calls do.
+- `OpenAIProvider::tools` and `AzureOpenAIProvider::tools`: the provider tools
+  on the provider instance, as the AI SDK's `openai.tools` and `azure.tools`
+  (`openai().tools.web_search(…)`). Azure's holds its upstream subset.
+- `custom_provider` forwards model discovery as it forwards files and
+  skills: `CustomProviderOptions::discovery`, else the fallback provider's
+  `discovery()`.
+- `aimux_core::wrap_provider`, the AI SDK's `wrapProvider`: wraps every
+  language model of a provider with language-model middleware and, when
+  given, every image model with image-model middleware; all other members
+  are the provider's own.
+- C ABI: `void aimux_drop_handle_ptr(void *handle)`, `aimux_drop_handle` with
+  the handle passed as a pointer-sized value (NULL is a no-op), for a
+  finalizer that can only register a `void (*)(void *)` callback.
+- `aimux_providers::provider_api_key_env(name)`: the environment variable a
+  built-in provider reads its key from when `create_provider` gets none, and
+  `provider_default_base_url(name)`, the endpoint it calls when given no base
+  URL (`None` when that is built from settings).
+
+### Fixed
+
+- `default_providers()`, `openai()` and `anthropic()` no longer panic on an
+  invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
+  read when the provider is created, as the AI SDK does; an invalid value now
+  fails each call of that provider with `InvalidArgument` naming the
+  variable. An invalid explicit `base_url` still fails the factory.
+- Anthropic Messages streams honor `include_raw_chunks`: each SSE chunk is
+  sent as `StreamPart::Raw` before the parts made from it, a chunk that is
+  not JSON as `Raw` with `null`, as the AI SDK does.
+- OpenAI Responses: reasoning parts of one assistant message that share an
+  `itemId` become one input item, as the AI SDK does: one `item_reference`
+  with `store`, otherwise one `reasoning` item whose summary collects the
+  parts and whose `encrypted_content` is the last one given. Each part used
+  to become its own item, which the API rejects as a duplicate id.
+- Recordings and logs redact Prodia's `X-Prodia-Key` and any header ending in
+  `subscription-key` (Azure's `Ocp-Apim-Subscription-Key`), with or without
+  separators; both were stored in clear text.
+- Flutter: the `NativeFinalizer` that releases a garbage-collected `Model` or
+  `ProviderHandle` calls `aimux_drop_handle_ptr`. It called
+  `aimux_drop_handle(uint64_t)` through a `void (*)(void *)` pointer, which on
+  32-bit ARM (armeabi-v7a) passes a garbage high word and leaks the handle.
+- Python: every blocking native call (`generate_text`, `generate_object`,
+  `consume_stream_text`, `generate_text_as_openai`,
+  `ProviderHandle.list_models`, `get_model_specs`, the multimodal calls and
+  the recording flushes) releases the GIL while it waits, so other Python
+  threads keep running.
+- aimux-web: an `env:VAR` key reference is accepted only for the variable the
+  provider's key is registered under (for example `env:OPENAI_API_KEY` for
+  `openai`); any other name is refused before it is read, on the calls,
+  cache-probe and replay paths. It read any variable of the console process.
+- aimux-web: a call or cache probe whose `base_url` is not the provider's
+  default endpoint gets only a key carried in the request (plaintext, loopback
+  binds only): the Settings key and the environment are not read, `env:` is
+  refused, and with no key the call goes out without one. Providers that read
+  other credentials from the environment (Bedrock, Vertex, Codex, Polly,
+  DataForSEO, Anthropic on AWS) refuse a custom `base_url`. A client could
+  point `base_url` at its own host and receive the console's key.
+- Recordings: a call that lost a recording event (the JSONL recorder's queue
+  was full or its writer gone) or was marked inconsistent (a duplicate
+  attempt, an exchange update that matches no exchange) is written with
+  `complete: false`, by the JSONL and the ring recorder, whether its last
+  event or a flush writes it. Such calls used to be marked complete.
+- `aimux-replay` replays a decision recording live for any provider with a
+  decision model (OpenAI, the runtime presets, Jev), rebuilt from the same
+  registry as language recordings: the built-in providers, the recorded one
+  with `--api-key` when given. It accepted only Jev.
+- aimux-web: a call at a custom `base_url` gets its own cache-probe trace
+  scope, named after the provider and that endpoint, so two endpoints of one
+  provider and model no longer match each other's prefix history. The trace
+  scope isolates by provider name and model id; `TraceLayer::with_scope_name`
+  names a scope for a host that calls one provider at several endpoints.
+
+### RFCs
+
+- `docs/aisdk-architecture-alignment.md`: the V4 migration now lands on
+  master layer by layer, each layer CI-green with all its consumers updated,
+  instead of one atomic cutover through an integration branch (§0.4 Q3, D31,
+  §9.1). The new C ABI, codegen, the full recording schema 3 and the binding
+  migration come last; until then the existing C constructors keep their
+  signatures and call the new factories, and ts-rs stays as the interim
+  generator. No release is cut from master until every layer is merged;
+  fixes for released versions ship from a maintenance branch. `ROADMAP.md`
+  defers the ops protocol schema and L0 passthrough and no longer fixes C1
+  at nine exports.
+- `docs/aisdk-architecture-alignment.md` and RFC-0031
+  (`docs/ai-sdk-request-pipeline.md`), against ai 7.0.127: object generation
+  is the deprecated wrapper over `output` (no separate object spans), async
+  jobs follow `generateVideo`'s start/status retries and poll budget, the
+  result convenience fields are marked deprecated as upstream marks them,
+  the response-message rules gain the empty-reasoning, invalid-input,
+  `inputSchemaInput`, tool-message order and tool-error encoding rows, and
+  the remaining differences are listed: stream retries, the first-chunk
+  timeout's start, `additionalRetryableError` and per-batch idempotency
+  keys.
+
+- RFC-0035 shows the repair context, reply and result patch in the final
+  JSON (`toolCall` tagged `tool-call`, errors tagged by `name`, camelCase
+  keys). It says that a repaired call failing re-validation is returned as an
+  invalid call, not wrapped in `AI_ToolCallRepairError`, as upstream does, and
+  registers the pre-evaluated `inputSchema` and Swift's delayed abort as
+  differences from upstream.
 
 ## [0.5.0] - 2026-09-27
 

@@ -280,15 +280,14 @@ async fn should_use_real_date_when_no_custom_date_provider_is_specified() {
     opts.n = 1;
     opts.size = Some(Size::new(1024, 1024));
 
-    let before = chrono::Utc::now();
+    let before = chrono::Utc::now().timestamp_millis();
     let result = model.do_generate(&opts).await.unwrap();
-    let after = chrono::Utc::now();
+    let after = chrono::Utc::now().timestamp_millis();
 
-    let ts = result.response.timestamp.as_ref().unwrap();
-    let parsed = chrono::DateTime::parse_from_rfc3339(ts).unwrap();
-    let parsed_utc = parsed.with_timezone(&chrono::Utc);
-    assert!(parsed_utc >= before);
-    assert!(parsed_utc <= after);
+    // A `Date`: millisecond precision.
+    let ts = result.response.timestamp.unwrap().unix_millis();
+    assert!(ts >= before);
+    assert!(ts <= after);
     assert_eq!(result.response.model_id.as_deref(), Some("dall-e-3"));
 }
 

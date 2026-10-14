@@ -8,7 +8,7 @@
 
 import test from 'ava'
 import { createServer, type Server } from 'node:http'
-import { deepseek, anthropic } from '../src/native.ts'
+import { deepseek, anthropic, google } from '../src/native.ts'
 
 // ── Mock server helpers ─────────────────────────────────────────────────────
 
@@ -88,6 +88,25 @@ test('e2e: OpenAI generateText via mock server', async (t) => {
   }
 })
 
+test('e2e: response timestamp is toISOString', async (t) => {
+  // The response timestamp is a Date (provider
+  // language-model-v4-response-metadata.ts:10), built as
+  // new Date(created * 1000); its JSON is toISOString().
+  const { server, url } = await startMockServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ ...JSON.parse(OPENAI_CHAT_RESPONSE), created: 1741269019 }))
+  })
+
+  try {
+    const model = await deepseek('test-key', 'gpt-4o', url)
+    const r = JSON.parse(await model.generateText(JSON.stringify('What is Rust?')))
+    t.is(r.response.timestamp, new Date(1741269019 * 1000).toISOString())
+    t.is(r.response.timestamp, '2025-03-06T13:50:19.000Z')
+  } finally {
+    await closeServer(server)
+  }
+})
+
 test('e2e: OpenAI streamText via mock server', async (t) => {
   const { server, url } = await startMockServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/event-stream' })
@@ -106,7 +125,7 @@ test('e2e: OpenAI streamText via mock server', async (t) => {
 
     const text = parts
       .filter((p) => p.type === 'text-delta')
-      .map((p) => p.delta)
+      .map((p) => p.text)
       .join('')
 
     t.is(text, 'Hello world')
@@ -150,7 +169,7 @@ test('e2e: Anthropic streamText via mock server', async (t) => {
 
     const text = parts
       .filter((p) => p.type === 'text-delta')
-      .map((p) => p.delta)
+      .map((p) => p.text)
       .join('')
 
     t.is(text, 'Hello from Claude')
@@ -179,6 +198,113 @@ test('e2e: OpenAI generateText with options (maxOutputTokens, temperature)', asy
     // Verify the options were passed through to the HTTP request
     t.is(receivedBody.max_tokens, 100)
     t.is(receivedBody.temperature, 0.5)
+  } finally {
+    await closeServer(server)
+  }
+})
+
+test('e2e: image bytes are a base64 string in the prompt JSON', async (t) => {
+  // ImagePart.image is DataContent upstream (provider-utils
+  // types/content-part.ts:42): a base64 string in the JSON, never an array.
+  let receivedBody: any = null
+  const { server, url } = await startMockServer((req, res) => {
+    let body = ''
+    req.on('data', (chunk: Buffer) => (body += chunk))
+    req.on('end', () => {
+      receivedBody = JSON.parse(body)
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(ANTHROPIC_MESSAGE_RESPONSE)
+    })
+  })
+
+  try {
+    const model = await anthropic('test-key', 'claude-3-5-sonnet-20241022', url)
+    const image = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64')
+    const prompt = [{ role: 'user', content: [{ type: 'image', image, mediaType: 'image/png' }] }]
+    await model.generateText(JSON.stringify(prompt))
+
+    t.deepEqual(receivedBody.messages[0].content[0].source, {
+      type: 'base64',
+      media_type: 'image/png',
+      data: 'iVBORw==',
+    })
+    const err = await t.throwsAsync(
+      model.generateText(
+        JSON.stringify([{ role: 'user', content: [{ type: 'image', image: [1, 2], mediaType: 'image/png' }] }]),
+      ),
+    )
+    t.truthy(err)
+  } finally {
+    await closeServer(server)
+  }
+})
+
+test('e2e: file parts take the AI SDK file part data', async (t) => {
+  // FilePart.data is FileData | DataContent | URL | ProviderReference upstream
+  // (provider-utils types/content-part.ts:75); a data: URL's media type wins
+  // (ai prompt/file-part-data.ts:31-41) and a bare reference is a reference
+  // (:133-138). There is no file-base64 / file-url / file-reference part.
+  let receivedBody: any = null
+  const { server, url } = await startMockServer((req, res) => {
+    let body = ''
+    req.on('data', (chunk: Buffer) => (body += chunk))
+    req.on('end', () => {
+      receivedBody = JSON.parse(body)
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(ANTHROPIC_MESSAGE_RESPONSE)
+    })
+  })
+
+  try {
+    const model = await anthropic('test-key', 'claude-3-5-sonnet-20241022', url)
+    const prompt = [{
+      role: 'user',
+      content: [
+        { type: 'file', data: 'data:image/png;base64,iVBORw==', mediaType: 'image' },
+        { type: 'file', data: { type: 'reference', reference: { anthropic: 'file-abc' } }, mediaType: 'application/pdf' },
+        { type: 'file', data: { anthropic: 'file-def' }, mediaType: 'application/pdf' },
+      ],
+    }]
+    await model.generateText(JSON.stringify(prompt))
+
+    const content = receivedBody.messages[0].content
+    t.deepEqual(content[0].source, { type: 'base64', media_type: 'image/png', data: 'iVBORw==' })
+    t.deepEqual(content[1], { type: 'document', source: { type: 'file', file_id: 'file-abc' } })
+    t.deepEqual(content[2], { type: 'document', source: { type: 'file', file_id: 'file-def' } })
+
+    for (const removed of ['file-base64', 'file-url', 'file-reference']) {
+      const part = { type: removed, data: 'aGk=', url: 'https://example.com/a.pdf', mediaType: 'application/pdf' }
+      await t.throwsAsync(model.generateText(JSON.stringify([{ role: 'user', content: [part] }])))
+    }
+  } finally {
+    await closeServer(server)
+  }
+})
+
+test('e2e: generated files are base64 and mediaType', async (t) => {
+  // A generated file is GeneratedFile upstream, whose JSON is
+  // { base64, mediaType } (ai generate-text/generated-file.ts:10-32); the
+  // content part wraps it as { type: 'file', file }
+  // (generate-text/convert-language-model-content.ts:55-70).
+  const { server, url } = await startMockServer((req, res) => {
+    req.resume()
+    req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({
+        candidates: [{
+          content: { role: 'model', parts: [{ text: 'Here:' }, { inlineData: { mimeType: 'image/png', data: 'iVBORw==' } }] },
+          finishReason: 'STOP',
+        }],
+        usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5 },
+      }))
+    })
+  })
+
+  try {
+    const model = await google('test-key', 'gemini-2.0-flash', url)
+    const r = JSON.parse(await model.generateText(JSON.stringify('draw')))
+    t.deepEqual(r.files, [{ base64: 'iVBORw==', mediaType: 'image/png' }])
+    t.deepEqual(r.content[1], { type: 'file', file: { base64: 'iVBORw==', mediaType: 'image/png' } })
   } finally {
     await closeServer(server)
   }
@@ -226,22 +352,22 @@ test('e2e: OpenAI generateText parses toolCalls (structured content)', async (t)
     })
     const r = JSON.parse(await model.generateText(JSON.stringify("What's the weather in Tokyo?"), opts))
 
-    // Convenience field: toolCalls extracted
+    // Convenience field: toolCalls extracted. Each is the AI SDK's tagged
+    // TypedToolCall (ai generate-text/tool-call.ts:8-14; #229 NP2-7).
     t.is(r.toolCalls.length, 1)
+    t.is(r.toolCalls[0].type, 'tool-call')
+    t.is(Object.keys(r.toolCalls[0])[0], 'type')
     t.is(r.toolCalls[0].toolName, 'get_weather')
     t.is(r.toolCalls[0].toolCallId, 'call_abc')
     t.deepEqual(r.toolCalls[0].input, { location: 'Tokyo' })
 
-    // Structured content: raw.content contains the tool-call variant
-    t.truthy(r.raw)
-    t.true(Array.isArray(r.raw.content))
-    const tc = r.raw.content.find((c: any) => c.type === 'tool-call')
-    t.truthy(tc, 'raw.content contains a tool-call variant')
+    // Structured content: the final step's content holds the parsed tool call
+    t.true(Array.isArray(r.content))
+    const tc = r.content.find((c: any) => c.type === 'tool-call')
+    t.truthy(tc, 'content contains a tool-call part')
     t.is(tc.toolName, 'get_weather')
     t.is(tc.toolCallId, 'call_abc')
-    // raw content keeps the provider's argument text; the parsed object
-    // lives on the top-level toolCalls.
-    t.is(tc.input, '{"location":"Tokyo"}')
+    t.deepEqual(tc.input, { location: 'Tokyo' })
   } finally {
     await closeServer(server)
   }

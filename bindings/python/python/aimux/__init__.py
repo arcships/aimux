@@ -4,6 +4,7 @@ This wrapper layer parses JSON strings from the native layer into Python dicts,
 providing a Pythonic API surface.
 """
 
+import base64
 import json
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
@@ -168,7 +169,7 @@ __all__ = [
     "tavily_search",
     "DecisionModel",
     "jev_decision",
-    "decision_capabilities",
+    "describe_decision_model",
     "decide",
     "RepairToolCall",
     "generate_text",
@@ -180,16 +181,45 @@ __all__ = [
 ]
 
 
-def decision_capabilities(model: DecisionModel) -> Dict[str, Any]:
-    """Query question support, limits and rounding precision without HTTP."""
-    return json.loads(model.capabilities())
+def describe_decision_model(model: DecisionModel) -> Dict[str, Any]:
+    """The model's DecisionModelV4 properties (specificationVersion, provider,
+    modelId, supportedQuestionTypes), without HTTP."""
+    return json.loads(model.describe())
 
 
-def decide(model: DecisionModel, state: Any, questions: List[Dict[str, Any]],
+def decide(model: DecisionModel, state: Any, questions: Dict[str, Dict[str, Any]],
            **options: Any) -> Dict[str, Any]:
-    """Answer typed questions over shared state; Boolean returns P(true)."""
+    """Answer typed questions, keyed by ID, over one shared state.
+
+    The keyword options are the ``DecideOptions`` JSON keys, camelCase as
+    the AI SDK's: ``maxRetries``, ``timeout`` (``{"totalMs": ...}``),
+    ``headers``, ``providerOptions``. The result is the ``DecideResult`` dict
+    (``answers``, ``usage`` with ``inputTokens`` / ``outputTokens`` /
+    ``totalTokens``, an unknown count absent, ``warnings``, ``rounding``,
+    ``providerMetadata``, ``response``). Boolean answers are P(true). A
+    provider's ``images[].data`` is a base64 string, the AI SDK's JSON for
+    bytes; ``bytes`` are encoded here.
+    """
+    provider_options = options.get('providerOptions')
+    if isinstance(provider_options, dict):
+        options['providerOptions'] = {
+            name: _base64_images(value) for name, value in provider_options.items()
+        }
     payload = dict(options, state=state, questions=questions)
     return json.loads(model.decide(json.dumps(payload)))
+
+
+def _base64_images(options: Any) -> Any:
+    if not isinstance(options, dict) or not isinstance(options.get('images'), list):
+        return options
+    return dict(options, images=[_base64_image(image) for image in options['images']])
+
+
+def _base64_image(image: Any) -> Any:
+    data = image.get('data') if isinstance(image, dict) else None
+    if isinstance(data, (bytes, bytearray, memoryview)):
+        return dict(image, data=base64.b64encode(bytes(data)).decode('ascii'))
+    return image
 
 
 def session_calls(session_id: str) -> List[Dict[str, Any]]:
@@ -319,7 +349,9 @@ def generate_text(
         options: Optional generation options.
 
     Returns:
-        Dict with keys: text, toolCalls, finishReason, usage, warnings, raw.
+        The ``GenerateTextResult`` dict: text, content, toolCalls,
+        finishReason, usage, warnings, steps, responseMessages, … and
+        ``output`` when ``options["output"]`` was parsed.
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
@@ -337,18 +369,19 @@ def generate_object(
 ) -> Dict[str, Any]:
     """Generate a structured JSON object from the model (M12, RFC-0016).
 
-    Same signature as ``generate_text``. Pass
-    ``responseFormat: {"type": "json", ...}`` via options for schema control; the
-    function applies JSON repair before parsing.
+    Same signature as ``generate_text``; core's deprecated
+    ``generate_object`` wrapper. Pass ``output: {"type": "object", "schema": ...}``
+    via options to describe the value; the model's text must parse and match
+    the schema.
 
     Args:
         model: A model instance from openai(), anthropic(), etc.
         prompt: A string or a list of message dicts.
-        options: Optional generation options (incl. responseFormat).
+        options: Optional generation options (incl. output).
 
     Returns:
-        Dict with keys: object, finishReason, rawFinishReason, usage,
-        warnings, reasoning, providerMetadata, response, raw.
+        Dict with keys: object, reasoning, finishReason, usage, warnings,
+        request, response, providerMetadata.
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
@@ -367,8 +400,8 @@ def consume_stream_text(
     """Consume a stream to completion and return the aggregated result
     (M11, RFC-0016).
 
-    Drives ``stream_text`` to completion and returns the aggregated
-    ``StreamTextResultAggregated`` dict (the fully-consumed stream summary).
+    Drives ``stream_text`` to completion and returns the
+    ``GenerateTextResult`` dict, the same result ``generate_text`` returns.
 
     Args:
         model: A model instance from openai(), anthropic(), etc.
@@ -376,7 +409,7 @@ def consume_stream_text(
         options: Optional generation options.
 
     Returns:
-        Dict with the aggregated stream result.
+        The ``GenerateTextResult`` dict of the consumed stream.
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
@@ -392,12 +425,14 @@ def stream_text(
     prompt: Union[str, List[Dict[str, Any]]],
     options: Optional[Dict[str, Any]] = None,
 ):
-    """Stream text from a model. Yields StreamPart dicts (tagged by ``type``).
+    """Stream text from a model. Yields TextStreamPart dicts (tagged by
+    ``type``): ``start``, then per step ``start-step`` … ``finish-step``,
+    then ``finish``.
 
     Usage:
         for part in stream_text(model, "Write a haiku about Rust."):
             if part["type"] == "text-delta":
-                print(part["delta"], end="")
+                print(part["text"], end="")
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)

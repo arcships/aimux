@@ -176,6 +176,24 @@ class ModelTest {
         }
     }
 
+    @Test
+    fun `response timestamp is toISOString`() {
+        // The response timestamp is a Date (provider
+        // language-model-v4-response-metadata.ts:10), built as
+        // new Date(created * 1000); its JSON is toISOString().
+        val server = MockProviderServer()
+        server.responseBody = JSONObject(plainOpenAiResponse()).put("created", 1741269019).toString()
+        try {
+            chatCompletionsModel(server.baseUrl).use { model ->
+                val result = JSONObject(model.generateText("\"Hello\""))
+                assertThat(result.getJSONObject("response").getString("timestamp"))
+                    .isEqualTo("2025-03-06T13:50:19.000Z")
+            }
+        } finally {
+            server.stop()
+        }
+    }
+
     // ── recording (RFC-0023) ────────────────────────────────────────────────
 
     @Test

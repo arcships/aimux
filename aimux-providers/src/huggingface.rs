@@ -13,6 +13,11 @@
 //! Completions model in this package; the router's OpenAI-compatible endpoint
 //! is reachable through `create_openai_compatible` with
 //! `https://router.huggingface.co/v1`.
+//!
+//! Requests carry the user-agent of the pinned `@ai-sdk/huggingface@2.0.62`:
+//! `ai-sdk-provider-utils/5.0.53`, the provider-utils that version depends
+//! on, and no package part, since `createHuggingFace` does not call
+//! `withUserAgentSuffix` (huggingface-provider.ts:68-75).
 
 pub(crate) mod options;
 pub mod responses;
@@ -35,8 +40,8 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, v
 use crate::openai::config::OpenAIModelConfig;
 use crate::shared::{Credential, EndpointConfig, provider_headers};
 
-const DEFAULT_BASE_URL: &str = "https://router.huggingface.co/v1";
-const API_KEY_ENV_VAR: &str = "HUGGINGFACE_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://router.huggingface.co/v1";
+pub(crate) const API_KEY_ENV_VAR: &str = "HUGGINGFACE_API_KEY";
 const DEFAULT_NAME: &str = "huggingface";
 
 /// Settings of [`create_huggingface`] (the AI SDK's
@@ -113,7 +118,10 @@ pub fn create_huggingface(
             Vec::new(),
             settings.headers,
         ),
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::HUGGINGFACE,
+        )),
         transform_request_body: settings.transform_request_body,
     })
 }
