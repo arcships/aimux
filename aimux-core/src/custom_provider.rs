@@ -6,17 +6,23 @@
 //! provider; with neither, it is [`AiMuxError::NoSuchModel`]. There are no
 //! string aliases that resolve through a global default provider: Rust has
 //! none.
+//!
+//! The aimux discovery extension ([`Provider::discovery`]) is forwarded the
+//! way upstream forwards files and skills
+//! (`ai@7.0.127 src/registry/custom-provider.ts:268-283`: the configured
+//! interface, else the fallback provider's): the configured
+//! [`CustomProviderOptions::discovery`], else the fallback provider's.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::decision_model::DecisionModel;
 use crate::embedding_model::EmbeddingModel;
 use crate::error::AiMuxError;
-use crate::evaluation_model::EvaluationModel;
 use crate::files_model::Files;
 use crate::image_model::ImageModel;
 use crate::language_model::LanguageModel;
-use crate::provider::Provider;
+use crate::provider::{Provider, ProviderDiscovery};
 use crate::reranking_model::RerankingModel;
 use crate::search_model::SearchModel;
 use crate::skills_model::Skills;
@@ -35,11 +41,14 @@ pub struct CustomProviderOptions {
     pub reranking_models: HashMap<String, Arc<dyn RerankingModel>>,
     pub video_models: HashMap<String, Arc<dyn VideoModel>>,
     pub search_models: HashMap<String, Arc<dyn SearchModel>>,
-    pub evaluation_models: HashMap<String, Arc<dyn EvaluationModel>>,
+    pub decision_models: HashMap<String, Arc<dyn DecisionModel>>,
     /// A files interface for uploading files.
     pub files: Option<Arc<dyn Files>>,
     /// A skills interface for uploading skills.
     pub skills: Option<Arc<dyn Skills>>,
+    /// aimux extension: a model-discovery interface. Without one, the
+    /// fallback provider's discovery is used.
+    pub discovery: Option<Arc<dyn ProviderDiscovery>>,
     /// Consulted when a requested model is not in the alias tables.
     pub fallback_provider: Option<Arc<dyn Provider>>,
 }
@@ -135,10 +144,12 @@ impl Provider for CustomProvider {
         }))
     }
 
-    fn evaluation_model(&self, id: &str) -> Option<Result<Arc<dyn EvaluationModel>, AiMuxError>> {
+    /// `ai@7.0.128 src/registry/custom-provider.ts:241-258`: the alias, else
+    /// the fallback provider's decision model, else `NoSuchModel`.
+    fn decision_model(&self, id: &str) -> Option<Result<Arc<dyn DecisionModel>, AiMuxError>> {
         let o = &self.options;
-        Some(resolve(&o.evaluation_models, id, "evaluationModel", || {
-            o.fallback_provider.as_ref()?.evaluation_model(id)
+        Some(resolve(&o.decision_models, id, "decisionModel", || {
+            o.fallback_provider.as_ref()?.decision_model(id)
         }))
     }
 
@@ -154,5 +165,12 @@ impl Provider for CustomProvider {
         o.skills
             .clone()
             .or_else(|| o.fallback_provider.as_ref()?.skills())
+    }
+
+    fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
+        let o = &self.options;
+        o.discovery
+            .as_deref()
+            .or_else(|| o.fallback_provider.as_ref()?.discovery())
     }
 }

@@ -138,7 +138,12 @@ fn thought_signature(extra_content: Option<&Value>) -> Option<String> {
         .map(str::to_string)
 }
 
-fn stream_error(
+/// The error of an `{"error": ...}` chunk. Upstream passes the chunk's
+/// `error` value on as the error part as it is
+/// (openai-compatible-chat-language-model.ts:588-595,
+/// openai-compatible-completion-language-model.ts:320-325): no status is
+/// read from its `code`, numeric or not, so nothing makes it retryable.
+pub(super) fn stream_error(
     name: &str,
     error: &Value,
     url: &str,
@@ -156,16 +161,10 @@ fn stream_error(
         Value::Number(value) => Some(value.to_string()),
         _ => None,
     });
-    // Only a numeric HTTP status in the payload is a status; a string code
-    // must not be laundered into a retryable 500.
-    let status_code = code
-        .and_then(Value::as_u64)
-        .filter(|status| (400..=599).contains(status))
-        .map(|status| status as u16);
     aimux_provider_utils::stream_error_api_call(
         message,
         provider_code,
-        status_code,
+        None,
         error,
         url,
         request_body_values,
@@ -186,8 +185,8 @@ impl LanguageModel for OpenAICompatibleChatModel {
         &self.model_id
     }
 
-    fn supported_urls(&self) -> SupportedUrls {
-        self.config.chat.supported_urls()
+    async fn supported_urls(&self) -> SupportedUrls {
+        self.config.chat.supported_urls().await
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
@@ -280,7 +279,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
         let chat = &self.config.chat;
         let usage = chat.convert_usage(raw.get("usage"));
 
-        let mut metadata = HashMap::new();
+        let mut metadata = aimux_core::shared::SharedProviderMetadata::new();
         metadata.insert(metadata_key.clone(), Map::new());
         if let Some(extractor) = &chat.metadata_extractor
             && let Some(extra) = extractor.extract_metadata(&raw)
@@ -306,8 +305,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                 timestamp: data
                     .created
                     .filter(|created| *created != 0)
-                    .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-                    .map(|dt| dt.to_rfc3339()),
+                    .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
                 model_id: data.model,
                 headers: Some(response_headers),
                 body: Some(raw),
@@ -425,8 +423,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                                 timestamp: chunk
                                     .created
                                     .filter(|created| *created != 0)
-                                    .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-                                    .map(|dt| dt.to_rfc3339()),
+                                    .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
                                 model_id: chunk.model.clone(),
                             }));
                         }
@@ -608,7 +605,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                 yield Ok(part);
             }
 
-            let mut metadata = HashMap::new();
+            let mut metadata = aimux_core::shared::SharedProviderMetadata::new();
             metadata.insert(metadata_key.clone(), Map::new());
             if let Some(extractor) = &metadata_extractor
                 && let Some(extra) = extractor.build_metadata()
@@ -727,10 +724,11 @@ pub(crate) async fn list_models_once(
         config.with_transport(
             aimux_provider_utils::HttpRequest {
                 url,
-                headers,
+                headers: headers.list,
                 ..Default::default()
             },
             origin,
+            headers.fetch_user_agent,
         ),
         aimux_provider_utils::create_json_response_handler::<ModelsList>(),
         config.failed_response_handler(),
@@ -746,4 +744,134 @@ pub(crate) async fn list_models_once(
             created: m.created,
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use serde_json::{Value, json};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use aimux_core::error::AiMuxError;
+    use aimux_core::language_model::LanguageModel;
+    use aimux_core::language_model_message::LanguageModelMessage;
+    use aimux_core::options::CallOptions;
+    use aimux_provider_utils::ProviderErrorParts;
+
+    use crate::openai_compatible::config::{BaseUrl, ChatSettings};
+    use crate::openai_compatible::{Assembly, OpenAICompatibleProvider};
+    use crate::shared::Credential;
+
+    fn hello() -> CallOptions {
+        CallOptions::new(vec![LanguageModelMessage::user_text("hi")])
+    }
+
+    fn provider(base_url: BaseUrl, chat: ChatSettings) -> OpenAICompatibleProvider {
+        OpenAICompatibleProvider::assemble(Assembly {
+            name: "acme".to_string(),
+            base_url,
+            credential: Credential::None,
+            fixed_headers: Vec::new(),
+            headers: None,
+            query_params: None,
+            fetch: None,
+            transform_request_body: None,
+            chat,
+            package: crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
+        })
+        .unwrap()
+    }
+
+    async fn serve(server: &MockServer, response: ResponseTemplate) {
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(response)
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn an_error_structure_decides_the_message_and_code() {
+        let server = MockServer::start().await;
+        serve(
+            &server,
+            ResponseTemplate::new(400).set_body_json(json!({"detail": "bad prompt", "kind": 42})),
+        )
+        .await;
+        let chat = ChatSettings {
+            error_structure: |data: &Value| ProviderErrorParts {
+                message: data["detail"].as_str().unwrap_or_default().to_string(),
+                provider_code: data["kind"].as_u64().map(|k| k.to_string()),
+            },
+            ..ChatSettings::default()
+        };
+        let error = provider(BaseUrl::Fixed(server.uri()), chat)
+            .chat("m")
+            .do_generate(&hello())
+            .await
+            .unwrap_err();
+        match error {
+            AiMuxError::ApiCall(detail) => {
+                assert_eq!(detail.message, "bad prompt");
+                assert_eq!(detail.provider_code.as_deref(), Some("42"));
+            }
+            other => panic!("expected ApiCall, got {other:?}"),
+        }
+    }
+
+    /// A preset base URL is data the request resolves: creating the provider
+    /// and the model reads nothing, a request that cannot resolve it fails,
+    /// and the next request resolves it again.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_lazy_base_url_is_evaluated_per_request_and_its_error_fails_the_request() {
+        use crate::openai_compatible::config::UsageDialect;
+        use crate::preset::{AuthMode, ParamSpec, PresetDescriptor};
+
+        const VAR: &str = "AIMUX_TEST_COMPAT_LAZY_BASE_URL";
+        let server = MockServer::start().await;
+        serve(
+            &server,
+            ResponseTemplate::new(200).set_body_json(json!({
+                "id": "c", "model": "m",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}]
+            })),
+        )
+        .await;
+        // SAFETY: the test is `#[serial]` and no other test reads `VAR`.
+        unsafe { std::env::remove_var(VAR) };
+        let descriptor: &'static PresetDescriptor = Box::leak(Box::new(PresetDescriptor {
+            name: "acme".to_string(),
+            display: "Acme".to_string(),
+            base_url: "http://{host}/v1".to_string(),
+            env_var: String::new(),
+            auth: AuthMode::None,
+            base_url_env: Some(VAR.to_string()),
+            max_tokens_key: None,
+            convert_usage: UsageDialect::default(),
+            params: vec![ParamSpec {
+                name: "host".to_string(),
+                env: Vec::new(),
+                default: None,
+                derive: None,
+            }],
+            user_agent: ("openai-compatible", "3.0.62"),
+        }));
+        let lazy = BaseUrl::Preset {
+            descriptor,
+            params: Arc::new(std::collections::HashMap::new()),
+        };
+        let provider = provider(lazy, ChatSettings::default());
+        let model = provider.chat("m");
+        let error = model.do_generate(&hello()).await.unwrap_err();
+        assert!(matches!(error, AiMuxError::InvalidArgument(_)), "{error:?}");
+        // SAFETY: as above.
+        unsafe { std::env::set_var(VAR, server.uri()) };
+        let result = model.do_generate(&hello()).await;
+        // SAFETY: as above.
+        unsafe { std::env::remove_var(VAR) };
+        result.expect("resolved on the next request");
+    }
 }

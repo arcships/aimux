@@ -436,12 +436,12 @@ async fn generate_provider_defined_tool_with_input_schema() {
     let mut call = options();
     call.tools = Some(vec![aimux_core::tool::Tool::Provider(
         aimux_core::tool::ProviderTool {
-            id: "anthropic.bash_20241022".into(),
+            id: "anthropic.bash_20241022".parse().unwrap(),
             name: "bash".into(),
             args: serde_json::Map::new(),
         },
     )]);
-    call.tool_choice = Some(aimux_core::options::ToolChoice::Auto);
+    call.tool_choice = Some(aimux_core::options::LanguageModelV4ToolChoice::Auto);
     let result = provider(&fetch)
         .chat("anthropic.model")
         .do_generate(&call)

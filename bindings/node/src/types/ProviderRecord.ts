@@ -9,6 +9,8 @@
 export type ProviderRecord = { 
 /**
  * provider 名(registry 名),回放重建的查找键,如 "openai"、"deepseek"。
+ * Empty in a recording written by aimux 0.5 or earlier, which has none
+ * ([`Self::registry_id`]).
  */
 providerId: string, 
 /**

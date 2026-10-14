@@ -24,16 +24,16 @@ func TestProviderDecisionModelOwnsHandle(t *testing.T) {
 	}
 	defer model.Close()
 	provider.Close()
-	caps, err := model.Capabilities()
+	description, err := model.Describe()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var decoded map[string]any
-	if err := json.Unmarshal([]byte(caps), &decoded); err != nil {
+	if err := json.Unmarshal([]byte(description), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded["min_choices"] != float64(2) {
-		t.Fatal(caps)
+	if decoded["specificationVersion"] != "v4" || decoded["provider"] != "openai" || decoded["modelId"] != "gpt-6-luna" {
+		t.Fatal(description)
 	}
 	if _, err := provider.DecisionModel("gpt-6-luna"); !errors.Is(err, ErrClosed) {
 		t.Fatalf("closed provider: %v", err)
@@ -68,17 +68,17 @@ func TestDecisionNativeContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer model.Close()
-	capabilities, err := model.Capabilities()
+	description, err := model.Describe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var caps map[string]any
-	json.Unmarshal([]byte(capabilities), &caps)
-	if caps["max_choices"] != float64(255) || caps["rounding"].(map[string]any)["probability_decimals"] != float64(2) {
-		t.Fatalf("unexpected capabilities: %s", capabilities)
+	var properties map[string]any
+	json.Unmarshal([]byte(description), &properties)
+	if !reflect.DeepEqual(properties["supportedQuestionTypes"], []any{"choice", "score", "boolean"}) || properties["provider"] != "jev" {
+		t.Fatalf("unexpected description: %s", description)
 	}
 	if len(requests) != 0 {
-		t.Fatal("capability query made an HTTP request")
+		t.Fatal("describe made an HTTP request")
 	}
 	result, err := model.DecideJSONContext(context.Background(), string(fixture["request"]))
 	if err != nil {
@@ -87,21 +87,29 @@ func TestDecisionNativeContract(t *testing.T) {
 	var decoded map[string]any
 	json.Unmarshal([]byte(result), &decoded)
 	answers := decoded["answers"].(map[string]any)
-	if answers["urgent"].(map[string]any)["probability_true"] != 0.9 {
+	if answers["urgent"].(map[string]any)["probability"] != 0.9 {
+		t.Fatal(result)
+	}
+	if decoded["rounding"].(map[string]any)["probabilityDecimals"] != float64(2) {
+		t.Fatal(result)
+	}
+	// decide's usage is the AI SDK's camelCase DecisionResult usage
+	// (decision-result.ts:27-31).
+	if !reflect.DeepEqual(decoded["usage"], map[string]any{"inputTokens": float64(50), "outputTokens": float64(10), "totalTokens": float64(60)}) {
 		t.Fatal(result)
 	}
 	var original map[string]any
 	json.Unmarshal(fixture["request"], &original)
-	questions := original["questions"].([]any)
+	questions := original["questions"].(map[string]any)
 	wire := (<-requests)["questions"].(map[string]any)
-	if !reflect.DeepEqual(wire["urgent"].(map[string]any)["criteria"], questions[0].(map[string]any)["criteria"]) {
+	if !reflect.DeepEqual(wire["urgent"].(map[string]any)["criteria"], questions["urgent"].(map[string]any)["criteria"]) {
 		t.Fatal("boolean criteria changed")
 	}
-	if !reflect.DeepEqual(answers["severity"].(map[string]any)["levels"], questions[2].(map[string]any)["levels"]) {
+	if !reflect.DeepEqual(wire["severity"].(map[string]any)["criteria"], questions["severity"].(map[string]any)["criteria"]) {
 		t.Fatal("structured score levels changed")
 	}
 	model.Close()
-	if _, err := model.Capabilities(); !errors.Is(err, ErrClosed) {
+	if _, err := model.Describe(); !errors.Is(err, ErrClosed) {
 		t.Fatalf("closed: %v", err)
 	}
 	if _, err := NewJevDecisionWithEndpoint("test-key", "jev-latest", "", "unknown"); err == nil {
@@ -127,8 +135,8 @@ func TestDecisionContextCancelsNativeRequest(t *testing.T) {
 	defer cancel()
 	result := make(chan error, 1)
 	go func() {
-		_, err := model.DecideContext(ctx, map[string]any{"state": "test", "questions": []any{
-			map[string]any{"id": "q", "type": "boolean", "instructions": "Urgent?"}}})
+		_, err := model.DecideContext(ctx, map[string]any{"state": "test", "questions": map[string]any{
+			"q": map[string]any{"type": "boolean", "instructions": "Urgent?"}}})
 		result <- err
 	}()
 	select {
@@ -191,7 +199,11 @@ func TestOpenAIDecisionMediaAndNativeValues(t *testing.T) {
 		t.Fatal("native request changed across Go boundary")
 	}
 	choice := decoded["answers"].(map[string]any)["choice"].(map[string]any)
-	if choice["value"] != true || choice["selected"] != "boolean_true" {
+	if choice["choice"] != "boolean_true" {
+		t.Fatal(result)
+	}
+	metadata := decoded["providerMetadata"].(map[string]any)["openai"].(map[string]any)
+	if metadata["answers"].(map[string]any)["choice"].(map[string]any)["value"] != true {
 		t.Fatal(result)
 	}
 }

@@ -242,7 +242,7 @@ async fn cassette_xai_image_generation() {
         seed: None,
         files: None,
         mask: None,
-        provider_options: std::collections::HashMap::new(),
+        provider_options: aimux_core::shared::SharedProviderOptions::new(),
         abort_signal: None,
         headers: None,
         max_retries: None,

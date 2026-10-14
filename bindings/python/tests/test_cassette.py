@@ -30,7 +30,8 @@ class TestOpenAICassette:
             parts = list(stream_text(model, "Hello"))
             assert len(parts) > 0, "should receive stream parts"
             types = [p["type"] for p in parts]
-            assert "stream-start" in types, "should have stream-start"
+            assert types[0] == "start", "should open with start"
+            assert "start-step" in types, "should have start-step"
             assert "finish" in types, "should have finish"
 
 
@@ -63,19 +64,22 @@ class TestDeepSeekCassette:
             assert "error" not in result, f"unexpected error: {result.get('error')}"
             assert isinstance(result["text"], str)
 
-    def test_generate_usage_raw_carries_vendor_fields(self):
+    def test_generate_step_usage_raw_carries_vendor_fields(self):
         """RFC-0016 M10: DeepSeek's vendor-specific usage fields survive in
-        usage.raw (they are NOT part of the typed Usage model)."""
+        the step's usage.raw (they are NOT part of the typed Usage model).
+        The result's ``usage`` is summed over the steps and, as the AI SDK's
+        addLanguageModelUsage, carries no raw object."""
         with CassetteServer("deepseek") as srv:
             model = deepseek("test-key", "deepseek-chat", srv.url)
             result = generate_text(model, "Hello")
 
-        raw = result.get("usage", {}).get("raw")
-        assert raw, "usage.raw should be populated (RFC-0016 M10)"
+        raw = result["steps"][0]["usage"].get("raw")
+        assert raw, "steps[0].usage.raw should be populated (RFC-0016 M10)"
         assert isinstance(raw.get("prompt_cache_hit_tokens"), int)
         assert isinstance(raw.get("prompt_cache_miss_tokens"), int)
+        assert result["usage"].get("raw") is None
         # Typed totals still work alongside the raw object.
-        assert result["usage"]["inputTokens"]["total"] is not None
+        assert result["usage"]["inputTokens"] is not None
 
 
 class TestGroqCassette:

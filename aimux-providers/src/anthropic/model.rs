@@ -145,7 +145,7 @@ impl LanguageModel for AnthropicMessagesModel {
         &self.model_id
     }
 
-    fn supported_urls(&self) -> SupportedUrls {
+    async fn supported_urls(&self) -> SupportedUrls {
         self.config.supported_urls.clone()
     }
 
@@ -172,7 +172,7 @@ impl LanguageModel for AnthropicMessagesModel {
             call.body,
             call.warnings,
             &self.config,
-            ToolNameMapping::new(options.tools.as_deref()),
+            options,
             self.uses_custom_options(options),
             call.uses_json_response_tool,
             Self::citation_documents(options),

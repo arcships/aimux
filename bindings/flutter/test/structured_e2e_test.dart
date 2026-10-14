@@ -263,9 +263,8 @@ void main() {
     expect(toolCalls[0]['toolCallId'], 'call_abc');
     expect((toolCalls[0]['input'] as Map)['location'], 'Tokyo');
 
-    // The raw provider result contains a ToolCall content variant.
-    final raw = result['raw'] as Map<String, dynamic>;
-    final content = raw['content'] as List;
+    // The content contains a tool-call part.
+    final content = result['content'] as List;
     final hasToolCallVariant =
         content.any((c) => (c as Map)['type'] == 'tool-call');
     expect(hasToolCallVariant, isTrue);

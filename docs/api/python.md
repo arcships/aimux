@@ -69,7 +69,7 @@ print(result["usage"])
 print(result["finishReason"])
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -82,9 +82,9 @@ from aimux import openai, stream_text
 model = openai("sk-...", "gpt-4o")
 for part in stream_text(model, "Write a haiku about Rust."):
     if part["type"] == "text-delta":
-        print(part["delta"], end="")
+        print(part["text"], end="")
     if part["type"] == "finish":
-        print("\n[done]")
+        print(f"\n[done: {part['finishReason']}]")
 ```
 
 > Stream part variants are documented in the [API overview](../API.md#streaming-generation).
@@ -111,9 +111,14 @@ tools = [{
 result = generate_text(model, "What's the weather in Tokyo?", {"tools": tools})
 if len(result["toolCalls"]) > 0:
     call = result["toolCalls"][0]
+    print(call["type"])          # tool-call (the AI SDK's TypedToolCall)
     print(call["toolName"])      # get_weather
     print(call["input"])          # {"location": "Tokyo"}
 ```
+
+Each `toolCalls` entry carries `"type": "tool-call"` and each `sources` entry
+`"type": "source"`, as in the AI SDK; the typed `ToolCall`, `RawToolCall` and
+source models default the field and reject another value.
 
 ### Repairing Invalid Tool Calls
 
@@ -210,9 +215,8 @@ result = json.loads(speaker.generate(json.dumps({
     "outputFormat": "mp3",
 })))
 
-# result["audio"] is a list of byte values, or a base64 string
-audio = result["audio"]
-audio_bytes = bytes(audio) if isinstance(audio, list) else base64.b64decode(audio)
+# result["audio"] is a base64 string (bytes are base64 in the JSON)
+audio_bytes = base64.b64decode(result["audio"])
 if audio_bytes:
     with open("out.mp3", "wb") as f:
         f.write(audio_bytes)
@@ -247,18 +251,19 @@ result = json.loads(imager.generate(json.dumps({
     "providerOptions": {},
 })))
 
-# result["images"] is a list of base64 strings, or a list of byte arrays
-image = result["images"][0]
+# result["images"] is a list of base64 strings (bytes are base64 in the JSON)
 with open("out.png", "wb") as f:
-    f.write(base64.b64decode(image) if isinstance(image, str) else bytes(image))
+    f.write(base64.b64decode(result["images"][0]))
 ```
 
 ## Video Generation
 
-Video generation typically returns a URL (not binary).
+Most video models return a URL; `generate` downloads it, as the AI SDK's
+`generateVideo` does, and returns the video's bytes (`Binary`).
 
 ```python
 from aimux import google_video
+import base64
 import json
 
 videor = google_video("sk-...", "veo-3.0")
@@ -268,9 +273,10 @@ result = json.loads(videor.generate(json.dumps({
     "providerOptions": {},
 })))
 
-# result["videos"] is usually [{"type": "url", "url": "...", "mediaType": "..."}]
-if result["videos"][0]["type"] == "url":
-    print(result["videos"][0]["url"])
+# result["videos"] is usually [{"type": "binary", "data": "<base64>", "mediaType": "..."}]
+if result["videos"][0]["type"] == "binary":
+    with open("video.mp4", "wb") as f:
+        f.write(base64.b64decode(result["videos"][0]["data"]))
 ```
 
 ## Reranking
@@ -375,17 +381,31 @@ The wrapper's types are pydantic models in `bindings/python/python/aimux/wrapper
 from aimux.wrapper import (
     # type aliases
     Role, FinishReasonUnified, ReasoningEffort, MessageContent, ContentPart,
-    Tool, ToolChoice, ResponseFormat, StreamPart, GenerateContent,
-    FileData, FileBytes, Warning, AiMuxErrorValue,
+    Tool, ToolChoice, ResponseFormat, StreamPart, GenerateContent, TextContent,
+    FileData, FilePartData, ReasoningFilePartData, FileBytes, Warning, AiMuxErrorValue,
+    GeneratedFile, LanguageModelFile,
     # pydantic models
-    InputTokenUsage, OutputTokenUsage, Usage, FinishReason, ResponseMetadata, ToolCall,
+    InputTokenUsage, OutputTokenUsage, Usage, FinishReason, ResponseMetadata,
+    LanguageModelUsage, InputTokenDetails, OutputTokenDetails, ToolCall,
     ModelMessage, FunctionTool, ProviderTool, TextContentPart,
-    GenerateTextOptions, GenerateTextResult, GenerateResult,
+    GenerateTextOptions, GenerateTextResult, StepResult, StepResponse,
+    GenerateObjectResult,
     RawToolCall, ToolCallRepairContext, RepairToolCall,
     # functions
     generate_text, stream_text, parse_stream_part,
 )
 ```
+
+A file content part is the AI SDK `FilePart`: `{"type": "file", "data": ...,
+"mediaType": ...}` where `data` (`FilePartData`) is a tagged `FileData`, a
+string (base64 or a URL; `bytes` are encoded as base64) or a bare
+`{provider: id}` reference. There is no `file-base64` / `file-url` /
+`file-reference` part.
+
+A generated file is a `GeneratedFile`, the AI SDK's `{"base64": ...,
+"mediaType": ...}` (`to_bytes()` decodes it); a `file` / `reasoning-file` content or stream part wraps
+it as `{"type": "file", "file": {...}}`. The provider-level `GenerateResult.content`
+keeps a `LanguageModelFile` (`mediaType` and tagged `data`).
 
 `AiMuxError` and recorder failures raise an **exception hierarchy** (explicit types —
 OpenAI/Anthropic SDK style, same idea as Vercel AI SDK on JS):
@@ -471,24 +491,33 @@ The wire format is the AI SDK's: JSON keys are camelCase and unions are tagged
 by `type`. The raw dict API exchanges that JSON as-is (`result["finishReason"]`,
 `{"type": "text-delta", ...}`). The typed wrapper's models keep `snake_case`
 Python attributes and map them to the camelCase keys through a pydantic alias
-generator (both spellings validate; serialization uses camelCase).
+generator (both spellings validate; serialization uses camelCase). A field left
+unset is omitted; an `Any` field (`body`, `input_schema_input`) set to `None`
+is written as JSON `null`, as the AI SDK's JSON keeps `null` apart from a
+missing value. A response `timestamp` is a JavaScript `Date` in the AI SDK's
+JSON: a `toISOString()` string, UTC with milliseconds
+(`"2025-03-06T13:50:19.000Z"`), which `datetime.fromisoformat` reads.
 
 Key shapes (mirroring the shared JSON schema):
 
 ```python
 class GenerateTextResult(BaseModel):
+    content: list[TextContent]          # the final step's parts
     text: str
     tool_calls: list[ToolCall]
-    finish_reason: FinishReason
-    usage: Usage
+    finish_reason: FinishReasonUnified  # "stop", "tool-calls", ...
+    raw_finish_reason: Optional[str]
+    usage: LanguageModelUsage           # summed over the steps
     warnings: list[Warning]
-    raw: GenerateResult
-    request: RequestInfo
-    response: ResponseInfo
+    steps: list[StepResult]
+    response_messages: list[ModelMessage]
+    output: Optional[Any]               # the value parsed by options.output
+    ...
 ```
 
-`stream_text` emits the Rust call-layer `TextStreamPart` JSON: a dict tagged by
-`type`, e.g. `{"type": "text-delta", "id": ..., "delta": ...}`. Iterate dicts with
+`stream_text` emits the Rust call-layer `TextStreamPart` JSON, the AI SDK's
+full stream (`start`, `start-step` … `finish-step`, `finish`): a dict tagged by
+`type`, e.g. `{"type": "text-delta", "id": ..., "text": ...}`. Iterate dicts with
 `if part["type"] == "text-delta":` (as in [Streaming Generation](#streaming-generation))
 or validate them with `parse_stream_part(part)` for attribute access (the
 wrapper's `StreamPart` is a pydantic discriminated union on `type`).

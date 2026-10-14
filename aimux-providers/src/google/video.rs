@@ -195,7 +195,7 @@ impl VideoModel for GoogleVideoModel {
             warnings,
             provider_metadata: None,
             response: VideoResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },
@@ -295,7 +295,7 @@ impl VideoModel for GoogleVideoModel {
                 json!({"videos": video_metadata}),
             )),
             response: VideoResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },

@@ -48,6 +48,39 @@ pub(crate) enum AnthropicEndpoint {
     /// made. The config's own `base_url` and `headers` then only describe the
     /// model's static identity.
     Vertex(Arc<crate::vertex::Resolver>),
+    /// Claude Platform on AWS with no explicit base URL: every request goes
+    /// to `https://aws-external-anthropic.{region}.api.aws/v1` for the region
+    /// resolved then (`getBaseURL`, anthropic-aws-provider.ts:229-231).
+    AwsRegional(Arc<crate::anthropic_aws::Auth>),
+    /// An invalid base URL setting (`ANTHROPIC_BASE_URL`): every request
+    /// fails with this error before it is sent.
+    Invalid(AiMuxError),
+}
+
+/// Where the provider headers of a request come from.
+#[derive(Clone)]
+pub(crate) enum AnthropicHeaders {
+    /// Credential, fixed and user headers (the common case).
+    Provider(ProviderHeaders),
+    /// Claude Platform on AWS: `anthropic-version`, the workspace id, the
+    /// caller's headers and, on the API-key path, `x-api-key` last, all
+    /// resolved on every request.
+    Aws(crate::anthropic_aws::AwsHeaders),
+}
+
+impl From<ProviderHeaders> for AnthropicHeaders {
+    fn from(headers: ProviderHeaders) -> Self {
+        Self::Provider(headers)
+    }
+}
+
+impl AnthropicHeaders {
+    async fn resolve(&self) -> Result<HeaderMapOpt, AiMuxError> {
+        match self {
+            Self::Provider(headers) => headers.resolve().await,
+            Self::Aws(headers) => headers.resolve().await,
+        }
+    }
 }
 
 /// Builds the host's error handler for non-2xx responses.
@@ -93,7 +126,7 @@ pub(crate) struct AnthropicModelConfig {
     pub(crate) provider: String,
     /// Provider headers (credential, `anthropic-version`, user headers),
     /// resolved on every request.
-    pub(crate) headers: ProviderHeaders,
+    pub(crate) headers: AnthropicHeaders,
     /// Transport; `None` uses the process default, resolved per request.
     pub(crate) fetch: Option<FetchFunction>,
     /// URLs the model fetches itself. Empty: the caller downloads them.
@@ -123,13 +156,23 @@ impl AnthropicModelConfig {
     pub(crate) async fn resolved(&self) -> Result<Self, AiMuxError> {
         match &self.endpoint {
             AnthropicEndpoint::Fixed => Ok(self.clone()),
+            AnthropicEndpoint::Invalid(error) => Err(error.clone()),
             AnthropicEndpoint::Vertex(resolver) => {
                 let Endpoint { base_url, headers } = resolver
                     .endpoint(crate::vertex::Publisher::Anthropic)
                     .await?;
                 Ok(Self {
                     base_url,
-                    headers: ProviderHeaders::bearer(Credential::None, Vec::new(), Some(headers)),
+                    headers: ProviderHeaders::bearer(Credential::None, Vec::new(), Some(headers))
+                        .into(),
+                    endpoint: AnthropicEndpoint::Fixed,
+                    ..self.clone()
+                })
+            }
+            AnthropicEndpoint::AwsRegional(auth) => {
+                let region = auth.host_region()?;
+                Ok(Self {
+                    base_url: format!("https://aws-external-anthropic.{region}.api.aws/v1"),
                     endpoint: AnthropicEndpoint::Fixed,
                     ..self.clone()
                 })

@@ -12,6 +12,7 @@
 package aimux
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 )
@@ -78,6 +79,9 @@ func ToolChoiceTool(name string) ToolChoice {
 // ── Core types ───────────────────────────────────────────────────────────────
 
 // Source is a URL or document source. Exactly one variant is populated.
+// Its JSON is the AI SDK's Source, tagged {"type":"source","sourceType":...}
+// (provider language-model-v4-source.ts) in a result's Sources and in a
+// stream part alike.
 type Source struct {
 	URL      *URLSource
 	Document *DocumentSource
@@ -98,18 +102,33 @@ type DocumentSource struct {
 	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`
 }
 
+// GeneratedFile is a file the model generated: the AI SDK's GeneratedFile,
+// whose JSON is {"base64", "mediaType"} (ai generate-text/generated-file.ts).
+type GeneratedFile struct {
+	Base64           string          `json:"base64"`
+	MediaType        string          `json:"mediaType"`
+	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`
+}
+
+// Bytes decodes the file's base64 data.
+func (f GeneratedFile) Bytes() ([]byte, error) {
+	return base64.StdEncoding.DecodeString(f.Base64)
+}
+
 func (s Source) MarshalJSON() ([]byte, error) {
 	if s.URL != nil && s.Document == nil {
 		return json.Marshal(struct {
+			Type       string `json:"type"`
 			SourceType string `json:"sourceType"`
 			*URLSource
-		}{"url", s.URL})
+		}{"source", "url", s.URL})
 	}
 	if s.Document != nil && s.URL == nil {
 		return json.Marshal(struct {
+			Type       string `json:"type"`
 			SourceType string `json:"sourceType"`
 			*DocumentSource
-		}{"document", s.Document})
+		}{"source", "document", s.Document})
 	}
 	return nil, fmt.Errorf("aimux: Source must have exactly one variant")
 }
@@ -117,6 +136,9 @@ func (s Source) MarshalJSON() ([]byte, error) {
 func (s *Source) UnmarshalJSON(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if err := checkTypeTag(fields["type"], "source"); err != nil {
 		return err
 	}
 	var sourceType string
@@ -182,7 +204,9 @@ type FinishReason struct {
 	Raw     *string             `json:"raw,omitempty"`
 }
 
-// ToolCall represents a tool call requested by the model.
+// ToolCall represents a tool call requested by the model. Its JSON is the AI
+// SDK's TypedToolCall, tagged {"type":"tool-call",...}
+// (ai generate-text/tool-call.ts).
 type ToolCall struct {
 	ToolCallID       string          `json:"toolCallId"`
 	ToolName         string          `json:"toolName"`
@@ -197,17 +221,63 @@ type ToolCall struct {
 	Error json.RawMessage `json:"error,omitempty"`
 }
 
+// MarshalJSON writes the call with its "type":"tool-call" tag first.
+func (c ToolCall) MarshalJSON() ([]byte, error) {
+	type plain ToolCall
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{"tool-call", plain(c)})
+}
+
+// UnmarshalJSON reads a call; a "type" field, when present, must be
+// "tool-call".
+func (c *ToolCall) UnmarshalJSON(data []byte) error {
+	type plain ToolCall
+	var tagged struct {
+		Type json.RawMessage `json:"type"`
+		plain
+	}
+	if err := json.Unmarshal(data, &tagged); err != nil {
+		return err
+	}
+	if err := checkTypeTag(tagged.Type, "tool-call"); err != nil {
+		return err
+	}
+	*c = ToolCall(tagged.plain)
+	return nil
+}
+
+// checkTypeTag accepts a missing "type" field (JSON written before aimux
+// wrote the tag) or one equal to want.
+func checkTypeTag(raw json.RawMessage, want string) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	var tag string
+	if err := json.Unmarshal(raw, &tag); err != nil || tag != want {
+		return fmt.Errorf("aimux: expected type %q, got %s", want, raw)
+	}
+	return nil
+}
+
 // ContentPart is a single content part, in a prompt message or a result: an
 // object tagged by "type" ("text", "tool-call", "tool-result", "source", ...).
 // It is kept as raw JSON for forward compatibility. A tool-result part is
 // {"type":"tool-result","toolCallId":...,"toolName":...,"output":{...}} where
 // output is {"type":"text"|"json"|"error-text"|"error-json","value":...},
 // {"type":"execution-denied","reason":...} or {"type":"content","value":[...]}.
+// A file part is the AI SDK FilePart, {"type":"file","data":...,"mediaType":...},
+// where data is a tagged {"type":"data"|"url"|"reference"|"text",...}, a
+// base64 or URL string, or a bare {"<provider>":"<id>"} reference.
 type ContentPart = json.RawMessage
 
 // ResponseMetadata describes the provider response.
 type ResponseMetadata struct {
-	ID        *string `json:"id,omitempty"`
+	ID *string `json:"id,omitempty"`
+	// Timestamp is a JavaScript Date in the AI SDK's JSON: toISOString(),
+	// UTC with milliseconds ("2025-03-06T13:50:19.000Z"), which
+	// time.Parse(time.RFC3339, ...) reads.
 	Timestamp *string `json:"timestamp,omitempty"`
 	ModelID   *string `json:"modelId,omitempty"`
 }
@@ -235,68 +305,125 @@ type GenerateResult struct {
 	Request          *RequestInfo      `json:"request,omitempty"`
 }
 
-// GenerateTextResult is the typed result of a GenerateText call.
+// InputTokenDetails is the input-token breakdown of a LanguageModelUsage.
+type InputTokenDetails struct {
+	NoCacheTokens    *uint32 `json:"noCacheTokens,omitempty"`
+	CacheReadTokens  *uint32 `json:"cacheReadTokens,omitempty"`
+	CacheWriteTokens *uint32 `json:"cacheWriteTokens,omitempty"`
+}
+
+// OutputTokenDetails is the output-token breakdown of a LanguageModelUsage.
+type OutputTokenDetails struct {
+	TextTokens      *uint32 `json:"textTokens,omitempty"`
+	ReasoningTokens *uint32 `json:"reasoningTokens,omitempty"`
+}
+
+// LanguageModelUsage is the call-level token usage, the AI SDK's
+// LanguageModelUsage: flat counts, unknown counts nil. Provider results
+// (GenerateResult) keep the nested Usage.
+type LanguageModelUsage struct {
+	InputTokens        *uint32                    `json:"inputTokens,omitempty"`
+	InputTokenDetails  InputTokenDetails          `json:"inputTokenDetails"`
+	OutputTokens       *uint32                    `json:"outputTokens,omitempty"`
+	OutputTokenDetails OutputTokenDetails         `json:"outputTokenDetails"`
+	TotalTokens        *uint32                    `json:"totalTokens,omitempty"`
+	Raw                map[string]json.RawMessage `json:"raw,omitempty"`
+}
+
+// StepResponse is the response of a generation step: metadata, headers,
+// body and the step's response messages.
+type StepResponse struct {
+	ID        string            `json:"id"`
+	Timestamp string            `json:"timestamp"`
+	ModelID   string            `json:"modelId"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	Body      json.RawMessage   `json:"body,omitempty"`
+	Messages  []ModelMessage    `json:"messages,omitempty"`
+}
+
+// StepModel names the model that ran a step.
+type StepModel struct {
+	Provider string `json:"provider"`
+	ModelID  string `json:"modelId"`
+}
+
+// StepResult is one generation step, the AI SDK's StepResult. aimux runs one
+// step per call. Performance is a weak type (json.RawMessage).
+type StepResult struct {
+	CallID           string              `json:"callId"`
+	StepNumber       uint32              `json:"stepNumber"`
+	Model            StepModel           `json:"model"`
+	Content          []ContentPart       `json:"content,omitempty"`
+	FinishReason     FinishReasonUnified `json:"finishReason"`
+	RawFinishReason  *string             `json:"rawFinishReason,omitempty"`
+	Usage            LanguageModelUsage  `json:"usage"`
+	Performance      json.RawMessage     `json:"performance,omitempty"`
+	Warnings         []json.RawMessage   `json:"warnings,omitempty"`
+	Request          *RequestInfo        `json:"request,omitempty"`
+	Response         StepResponse        `json:"response"`
+	ProviderMetadata json.RawMessage     `json:"providerMetadata,omitempty"`
+}
+
+// GenerateTextResult is the typed result of a GenerateText call and of a
+// consumed stream, the AI SDK's GenerateTextResult. Steps holds every step;
+// the other fields are derived from them (the last step's text, finish
+// reason, response; every step's content, tool calls, warnings).
 type GenerateTextResult struct {
-	Content          []ContentPart     `json:"content,omitempty"`
-	Text             string            `json:"text"`
-	ToolCalls        []ToolCall        `json:"toolCalls,omitempty"`
-	FinishReason     FinishReason      `json:"finishReason,omitempty"`
-	Usage            Usage             `json:"usage,omitempty"`
-	Warnings         []json.RawMessage `json:"warnings,omitempty"`
-	Raw              GenerateResult    `json:"raw"`
-	Reasoning        []json.RawMessage `json:"reasoning,omitempty"`
-	ReasoningText    string            `json:"reasoningText,omitempty"`
-	Sources          []Source          `json:"sources,omitempty"`
-	Files            []json.RawMessage `json:"files,omitempty"`
-	ResponseMessages []ModelMessage    `json:"responseMessages,omitempty"`
-	// RawFinishReason is the raw provider-specific finish reason string.
-	RawFinishReason *string `json:"rawFinishReason,omitempty"`
-	// ProviderMetadata is provider-specific metadata (e.g. Anthropic cache info).
-	// Mirrored from raw.providerMetadata for top-level convenience.
-	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`
-	// Request is the request information (body) from the provider.
-	Request RequestInfo `json:"request"`
-	// Response is the response metadata, headers and body from the provider.
-	Response ResponseInfo `json:"response"`
-	// TotalUsage is total token usage across all steps. In single-step mode
-	// (aimux's default), equals Usage. Provided for AI SDK parity.
-	TotalUsage Usage `json:"totalUsage,omitempty"`
-}
-
-// GenerateObjectResult is the typed result of a GenerateObject call.
-// `object` is an arbitrary JSON value and `raw` is the full GenerateTextResult.
-type GenerateObjectResult struct {
-	Object           json.RawMessage    `json:"object,omitempty"`
-	FinishReason     FinishReason       `json:"finishReason,omitempty"`
-	RawFinishReason  *string            `json:"rawFinishReason,omitempty"`
-	Usage            Usage              `json:"usage,omitempty"`
-	Warnings         []json.RawMessage  `json:"warnings,omitempty"`
-	Reasoning        *string            `json:"reasoning,omitempty"`
-	ProviderMetadata json.RawMessage    `json:"providerMetadata,omitempty"`
-	Response         ResponseMetadata   `json:"response,omitempty"`
-	Raw              GenerateTextResult `json:"raw"`
-}
-
-// StreamTextResultAggregated is the aggregated result of a consumed stream.
-type StreamTextResultAggregated struct {
-	Content          []ContentPart     `json:"content,omitempty"`
-	Text             string            `json:"text"`
-	Reasoning        []json.RawMessage `json:"reasoning,omitempty"`
-	ReasoningText    string            `json:"reasoningText,omitempty"`
-	ToolCalls        []ToolCall        `json:"toolCalls,omitempty"`
-	Sources          []Source          `json:"sources,omitempty"`
-	Files            []json.RawMessage `json:"files,omitempty"`
-	FinishReason     FinishReason      `json:"finishReason,omitempty"`
-	RawFinishReason  *string           `json:"rawFinishReason,omitempty"`
-	Usage            Usage             `json:"usage,omitempty"`
-	TotalUsage       Usage             `json:"totalUsage,omitempty"`
-	Warnings         []json.RawMessage `json:"warnings,omitempty"`
-	ProviderMetadata json.RawMessage   `json:"providerMetadata,omitempty"`
-	// Request is the request information from the provider.
-	Request RequestInfo `json:"request"`
-	// Response is the response metadata and headers from the last step.
-	Response         ResponseInfo   `json:"response"`
+	Content []ContentPart `json:"content,omitempty"`
+	Text    string        `json:"text"`
+	// Reasoning is the last step's reasoning (deprecated upstream).
+	Reasoning []json.RawMessage `json:"reasoning,omitempty"`
+	// ReasoningText is the last step's reasoning text, "" when there is none
+	// (deprecated upstream).
+	ReasoningText string              `json:"reasoningText,omitempty"`
+	Files         []GeneratedFile     `json:"files,omitempty"`
+	Sources       []Source            `json:"sources,omitempty"`
+	ToolCalls     []ToolCall          `json:"toolCalls,omitempty"`
+	ToolResults   []json.RawMessage   `json:"toolResults,omitempty"`
+	FinishReason  FinishReasonUnified `json:"finishReason"`
+	// RawFinishReason is the provider's own finish reason string.
+	RawFinishReason *string            `json:"rawFinishReason,omitempty"`
+	Usage           LanguageModelUsage `json:"usage"`
+	// TotalUsage equals Usage (deprecated upstream).
+	TotalUsage LanguageModelUsage `json:"totalUsage"`
+	Warnings   []json.RawMessage  `json:"warnings,omitempty"`
+	// Request is the last step's request (deprecated upstream).
+	Request *RequestInfo `json:"request,omitempty"`
+	// Response is the last step's response (deprecated upstream).
+	Response         StepResponse   `json:"response"`
 	ResponseMessages []ModelMessage `json:"responseMessages,omitempty"`
+	// ProviderMetadata is the last step's provider metadata (deprecated
+	// upstream). Weak type, as GenerateResult.ProviderMetadata.
+	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`
+	Steps            []StepResult    `json:"steps"`
+	// Output is the value parsed by the `output` option; absent when the
+	// output was not parsed (for example when the step finished with tool
+	// calls).
+	Output json.RawMessage `json:"output,omitempty"`
+}
+
+// GenerateObjectResponse is the response metadata of a GenerateObject call.
+type GenerateObjectResponse struct {
+	ID string `json:"id"`
+	// Timestamp is a JavaScript Date in the AI SDK's JSON: toISOString().
+	Timestamp string            `json:"timestamp"`
+	ModelID   string            `json:"modelId"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	Body      json.RawMessage   `json:"body,omitempty"`
+}
+
+// GenerateObjectResult is the typed result of a GenerateObject call, the AI
+// SDK's GenerateObjectResult. `object` is an arbitrary JSON value (weak type
+// — json.RawMessage).
+type GenerateObjectResult struct {
+	Object           json.RawMessage        `json:"object,omitempty"`
+	Reasoning        *string                `json:"reasoning,omitempty"`
+	FinishReason     FinishReasonUnified    `json:"finishReason"`
+	Usage            LanguageModelUsage     `json:"usage"`
+	Warnings         []json.RawMessage      `json:"warnings,omitempty"`
+	Request          *RequestInfo           `json:"request,omitempty"`
+	Response         GenerateObjectResponse `json:"response"`
+	ProviderMetadata json.RawMessage        `json:"providerMetadata,omitempty"`
 }
 
 // ParseGenerateTextResult parses the JSON string returned by Model.GenerateText
@@ -315,16 +442,6 @@ func ParseGenerateObjectResult(jsonStr string) (*GenerateObjectResult, error) {
 	var r GenerateObjectResult
 	if err := json.Unmarshal([]byte(jsonStr), &r); err != nil {
 		return nil, fmt.Errorf("aimux: failed to parse GenerateObjectResult: %w", err)
-	}
-	return &r, nil
-}
-
-// ParseStreamTextResultAggregated parses the JSON string returned by
-// Model.ConsumeStreamText into a typed StreamTextResultAggregated.
-func ParseStreamTextResultAggregated(jsonStr string) (*StreamTextResultAggregated, error) {
-	var r StreamTextResultAggregated
-	if err := json.Unmarshal([]byte(jsonStr), &r); err != nil {
-		return nil, fmt.Errorf("aimux: failed to parse StreamTextResultAggregated: %w", err)
 	}
 	return &r, nil
 }
@@ -366,14 +483,19 @@ type TimeoutConfiguration struct {
 
 // GenerateTextOptions mirrors the shared wire options. All fields are optional.
 type GenerateTextOptions struct {
-	MaxOutputTokens  *uint32               `json:"maxOutputTokens,omitempty"`
-	Temperature      *float64              `json:"temperature,omitempty"`
-	StopSequences    []string              `json:"stopSequences,omitempty"`
-	TopP             *float64              `json:"topP,omitempty"`
-	TopK             *float64              `json:"topK,omitempty"`
-	PresencePenalty  *float64              `json:"presencePenalty,omitempty"`
-	FrequencyPenalty *float64              `json:"frequencyPenalty,omitempty"`
-	ResponseFormat   json.RawMessage       `json:"responseFormat,omitempty"`
+	MaxOutputTokens  *uint32  `json:"maxOutputTokens,omitempty"`
+	Temperature      *float64 `json:"temperature,omitempty"`
+	StopSequences    []string `json:"stopSequences,omitempty"`
+	TopP             *float64 `json:"topP,omitempty"`
+	TopK             *float64 `json:"topK,omitempty"`
+	PresencePenalty  *float64 `json:"presencePenalty,omitempty"`
+	FrequencyPenalty *float64 `json:"frequencyPenalty,omitempty"`
+	// Output is the structured output, the AI SDK's `output`, tagged by
+	// type: for example {"type":"object","schema":{...}},
+	// {"type":"array","element":{...},"minItems":1},
+	// {"type":"choice","options":[...]} or {"type":"json"}. The parsed value
+	// is GenerateTextResult.Output.
+	Output           json.RawMessage       `json:"output,omitempty"`
 	Seed             *uint64               `json:"seed,omitempty"`
 	Tools            []Tool                `json:"tools,omitempty"`
 	ToolChoice       ToolChoice            `json:"toolChoice,omitempty"`
@@ -403,12 +525,14 @@ type FunctionToolInputExample struct {
 // Tool is a tool definition: a function tool (Type "function": Name,
 // InputSchema, ...) or a provider-defined tool (Type "provider": ID, Name, Args).
 type Tool struct {
-	Type            string                     `json:"type"` // "function" or "provider"
-	Name            string                     `json:"name"`
-	Description     *string                    `json:"description,omitempty"`
-	InputSchema     json.RawMessage            `json:"inputSchema,omitempty"`
-	Strict          *bool                      `json:"strict,omitempty"`
-	ProviderOptions map[string]json.RawMessage `json:"providerOptions,omitempty"`
+	Type        string          `json:"type"` // "function" or "provider"
+	Name        string          `json:"name"`
+	Description *string         `json:"description,omitempty"`
+	InputSchema json.RawMessage `json:"inputSchema,omitempty"`
+	Strict      *bool           `json:"strict,omitempty"`
+	// ProviderOptions is a JSON object of provider namespaces. It is raw JSON
+	// so that its keys keep their order: a Go map would sort them.
+	ProviderOptions json.RawMessage            `json:"providerOptions,omitempty"`
 	InputExamples   []FunctionToolInputExample `json:"inputExamples,omitempty"`
 	// ID and Args are the provider tool's id ("<provider>.<tool>") and arguments.
 	ID   string                     `json:"id,omitempty"`
@@ -430,7 +554,7 @@ func MarshalOptions(opts *GenerateTextOptions) (string, error) {
 // ── StreamPart parsing ─────────────────────────────────────────────────────
 
 // StreamPart is a parsed stream part. The wire format is an object tagged by
-// its "type" key (e.g. {"type":"text-delta","id":"...","delta":"..."}).
+// its "type" key (e.g. {"type":"text-delta","id":"...","text":"..."}).
 type StreamPart struct {
 	// Type is the part's "type" (e.g. "text-delta", "tool-call", "finish").
 	Type string `json:"-"`
@@ -465,10 +589,20 @@ func (p *StreamPart) Source() (*Source, error) {
 	return &source, nil
 }
 
-// TextDeltaPayload is a {"type":"text-delta",...} stream part.
+// TextDeltaPayload is a {"type":"text-delta",...} or
+// {"type":"reasoning-delta",...} stream part. Its delta is under "text", as
+// in the AI SDK's TextStreamPart; a "tool-input-delta" keeps "delta".
 type TextDeltaPayload struct {
-	ID    string `json:"id,omitempty"`
-	Delta string `json:"delta"`
+	ID   string `json:"id,omitempty"`
+	Text string `json:"text"`
+}
+
+// FinishPayload is the payload of the {"type":"finish",...} part that ends
+// a stream: the last step's finish reason and the usage summed over steps.
+type FinishPayload struct {
+	FinishReason    FinishReasonUnified `json:"finishReason"`
+	RawFinishReason *string             `json:"rawFinishReason,omitempty"`
+	TotalUsage      LanguageModelUsage  `json:"totalUsage"`
 }
 
 // ── Cache probing (RFC-0015) wire types ─────────────────────────────────────

@@ -1,22 +1,25 @@
 //! Pluggable HTTP transport: the Rust shape of the AI SDK's `FetchFunction`.
 //!
 //! Every provider exchange ends in one [`Fetch::fetch`] call. A provider (or
-//! its settings) may carry a [`FetchFunction`] — a mock, a signing decorator
-//! such as [`crate::sigv4_fetch::SigV4Fetch`], a proxy-aware client — and
-//! when none is set the exchange uses [`default_fetch`], resolved *per
-//! request* (never frozen when a provider is created), so a process-wide
-//! default can change after a provider exists.
+//! its settings) may carry a [`FetchFunction`], as the AI SDK's `fetch`
+//! setting: a mock, a signing decorator such as
+//! [`crate::sigv4_fetch::SigV4Fetch`], or a [`ReqwestFetch`] with its own
+//! [`ProxyConfig`]. When none is set the exchange uses [`default_fetch`],
+//! resolved *per request* (never frozen when a provider is created), so the
+//! process default can change after a provider exists, as replacing
+//! `globalThis.fetch` does in JavaScript.
 //!
-//! This module owns the real network leaf: [`ReqwestFetch`] (one shared
-//! connection pool per tokio runtime) and [`PinnedFetch`] (a single
-//! non-redirecting hop connected only to pre-validated addresses, used by the
-//! SSRF download guard). Recording, response handlers and retry stay above
-//! this layer, in `http.rs` and `aimux-core`.
+//! This module owns the real network leaf: [`ReqwestFetch`] (its own
+//! connection pool per tokio runtime, its own proxy routing) and
+//! [`PinnedFetch`] (a single non-redirecting hop connected only to
+//! pre-validated addresses, used by the SSRF download guard). Recording,
+//! response handlers and retry stay above this layer, in `http.rs` and
+//! `aimux-core`.
 
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -25,11 +28,22 @@ use futures::StreamExt;
 use futures::stream::BoxStream;
 use http::{HeaderMap, Method, StatusCode};
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use aimux_core::AbortSignal;
 
-use crate::http::{ProxyConfig, global_proxy};
+/// Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
+/// hop, or the WebSocket connector. With every field empty, HTTP follows the
+/// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
+/// reqwest does, and the WebSocket connector connects directly.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProxyConfig {
+    pub http_url: Option<String>,
+    pub https_url: Option<String>,
+    pub all_url: Option<String>,
+    pub no_proxy: Option<String>,
+}
 
 /// One outbound HTTP request, fully materialised: body bytes are final
 /// (multipart already encoded), so a decorator can sign or inspect exactly
@@ -198,28 +212,103 @@ impl fmt::Debug for dyn Fetch {
 /// A shareable transport, as carried by provider settings and requests.
 pub type FetchFunction = Arc<dyn Fetch>;
 
-/// The process-wide default transport, resolved at request time.
-#[must_use]
-pub fn default_fetch() -> FetchFunction {
-    static DEFAULT: OnceLock<FetchFunction> = OnceLock::new();
-    DEFAULT.get_or_init(|| Arc::new(ReqwestFetch)).clone()
+static DEFAULT_TRANSPORT: OnceLock<RwLock<Arc<ReqwestFetch>>> = OnceLock::new();
+
+fn default_transport_slot() -> &'static RwLock<Arc<ReqwestFetch>> {
+    DEFAULT_TRANSPORT.get_or_init(|| RwLock::new(Arc::new(ReqwestFetch::default())))
 }
 
-/// The default transport: reqwest over rustls, with a connection pool shared
-/// by every `ReqwestFetch` in the process (one pool per tokio runtime).
+/// The process default transport, read at request time by every exchange
+/// whose provider has no `fetch`.
+#[must_use]
+pub fn default_fetch() -> FetchFunction {
+    default_transport()
+}
+
+/// The process default transport as its concrete type: the built-in
+/// WebSocket connector and the download hops share its proxy settings.
+pub(crate) fn default_transport() -> Arc<ReqwestFetch> {
+    default_transport_slot()
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+/// Replace the process default transport. Requests started afterwards by
+/// providers without their own `fetch`, built-in WebSocket connects and
+/// validated download hops use it; requests in flight keep theirs. A
+/// provider given `fetch` is unaffected.
+pub fn set_default_transport(transport: ReqwestFetch) {
+    *default_transport_slot()
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Arc::new(transport);
+}
+
+/// The real network leaf: reqwest over rustls, routed by its own
+/// [`ProxyConfig`], with its own connection pool per tokio runtime (clones
+/// share the pool).
 ///
 /// The pool has a connect timeout but no client-wide response timeout: it
 /// also serves streaming exchanges, so the non-streaming response bound lives
 /// per exchange in the helper layer and `aimux-core` owns the operation
-/// deadline. The process-wide [`ProxyConfig`] is snapshotted when a runtime's
-/// client is first built.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ReqwestFetch;
+/// deadline.
+#[derive(Debug, Clone, Default)]
+pub struct ReqwestFetch {
+    proxy: ProxyConfig,
+    clients: Arc<Mutex<HashMap<Option<tokio::runtime::Id>, Client>>>,
+}
+
+impl ReqwestFetch {
+    /// A transport routed by `proxy`.
+    #[must_use]
+    pub fn new(proxy: ProxyConfig) -> Self {
+        Self {
+            proxy,
+            clients: Arc::default(),
+        }
+    }
+
+    /// The proxy routing of this transport.
+    #[must_use]
+    pub fn proxy(&self) -> &ProxyConfig {
+        &self.proxy
+    }
+
+    // One client (and so one connection pool) PER RUNTIME, not per
+    // transport: pooled connections are driven by tasks spawned onto the
+    // runtime that made the request, so when that runtime shuts down its
+    // pooled connections become unusable while staying checked in — and the
+    // OS can recycle their ports to fresh servers, handing later requests a
+    // dead connection. Production processes run a single runtime and still
+    // get exactly one client. Runtimes leave no drop signal, so dead entries
+    // are undetectable; the map is instead bounded by `CLIENTS_PER_TRANSPORT`.
+    fn client(&self) -> Result<Client, FetchError> {
+        let key = tokio::runtime::Handle::try_current().ok().map(|h| h.id());
+        let mut clients = self
+            .clients
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(client) = clients.get(&key) {
+            return Ok(client.clone());
+        }
+        let client = build_client(&self.proxy).map_err(|error| {
+            FetchError::Other(format!("HTTP client initialization failed: {error}"))
+        })?;
+        if clients.len() >= CLIENTS_PER_TRANSPORT {
+            // Which entries are dead is unknowable, so evict them all;
+            // in-flight requests hold their own `Client` clone and are
+            // unaffected.
+            clients.clear();
+        }
+        clients.insert(key, client.clone());
+        Ok(client)
+    }
+}
 
 #[async_trait]
 impl Fetch for ReqwestFetch {
     async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
-        let client = shared_client()?;
+        let client = self.client()?;
         send(&client, request).await
     }
 }
@@ -227,7 +316,7 @@ impl Fetch for ReqwestFetch {
 /// One non-redirecting hop of a validated download. The connection is pinned
 /// to exactly the DNS answers that passed the SSRF guard (resolve overrides),
 /// defeating TTL-0 rebinding; an empty pin list is the hop on the trusted
-/// origin, which connects normally. The proxy configuration is applied so reqwest makes the per-URL
+/// origin, which connects normally. The hop's proxy configuration is applied so reqwest makes the per-URL
 /// routing decision itself: when a proxy carries the request the proxy
 /// resolves the target (a trusted transport, the override is unused), and any
 /// request the proxy rules send DIRECT still connects only through the
@@ -239,20 +328,21 @@ impl Fetch for ReqwestFetch {
 #[derive(Debug, Clone, Default)]
 pub struct PinnedFetch {
     addresses: Vec<IpAddr>,
+    proxy: ProxyConfig,
 }
 
 impl PinnedFetch {
-    /// Pin the connection to these validated addresses.
+    /// Pin the connection to these validated addresses, routed by `proxy`.
     #[must_use]
-    pub fn new(addresses: Vec<IpAddr>) -> Self {
-        Self { addresses }
+    pub fn new(addresses: Vec<IpAddr>, proxy: ProxyConfig) -> Self {
+        Self { addresses, proxy }
     }
 
     fn client(&self, url: &Url) -> Result<Client, FetchError> {
         let builder = reqwest::Client::builder()
             .connect_timeout(Duration::from_millis(10_000))
             .redirect(reqwest::redirect::Policy::none());
-        let builder = apply_proxy(builder, &global_proxy());
+        let builder = apply_proxy(builder, &self.proxy);
         if self.addresses.is_empty() {
             return builder.build().map_err(|error| {
                 FetchError::Other(format!("download client initialization failed: {error}"))
@@ -323,54 +413,21 @@ fn map_reqwest_error(error: reqwest::Error) -> FetchError {
     }
 }
 
-// One client (and so one connection pool) PER RUNTIME, not per process:
-// pooled connections are driven by tasks spawned onto the runtime that
-// made the request, so when that runtime shuts down its pooled
-// connections become unusable while staying checked in — and the OS can
-// recycle their ports to fresh servers, handing later requests a dead
-// connection. Production processes run a single runtime and still get
-// exactly one client. Runtimes leave no drop signal, so dead entries are
-// undetectable; the map is instead bounded by `SHARED_CLIENT_CAP` — see
-// `shared_client`.
-static SHARED: OnceLock<Mutex<HashMap<Option<tokio::runtime::Id>, Client>>> = OnceLock::new();
-
 // Hosts that churn short-lived runtimes (a test binary, an FFI embedder
-// creating a runtime per call) would otherwise grow the map without bound.
-// Eviction is safe: correctness only requires never *reusing* a dead
-// runtime's pool, and an evicted live runtime simply rebuilds a fresh
+// creating a runtime per call) would otherwise grow a transport's client map
+// without bound. Eviction is safe: correctness only requires never *reusing*
+// a dead runtime's pool, and an evicted live runtime simply rebuilds a fresh
 // client on its next request.
-const SHARED_CLIENT_CAP: usize = 8;
+const CLIENTS_PER_TRANSPORT: usize = 8;
 
-/// Return the shared client for the current runtime, building it on first use.
-fn shared_client() -> Result<Client, FetchError> {
-    let key = tokio::runtime::Handle::try_current().ok().map(|h| h.id());
-    let mut clients = SHARED
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .expect("shared HTTP client mutex poisoned");
-    if let Some(client) = clients.get(&key) {
-        return Ok(client.clone());
-    }
-    let client = build_client(global_proxy()).map_err(|error| {
-        FetchError::Other(format!("shared HTTP client initialization failed: {error}"))
-    })?;
-    if clients.len() >= SHARED_CLIENT_CAP {
-        // Which entries are dead is unknowable, so evict them all; in-flight
-        // requests hold their own `Client` clone and are unaffected.
-        clients.clear();
-    }
-    clients.insert(key, client.clone());
-    Ok(client)
-}
-
-fn build_client(proxy: ProxyConfig) -> Result<Client, String> {
+fn build_client(proxy: &ProxyConfig) -> Result<Client, String> {
     let builder = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_millis(10_000))
         .pool_max_idle_per_host(10)
         .pool_idle_timeout(Some(Duration::from_secs(30)))
         .tcp_keepalive(Some(Duration::from_secs(20)));
-    apply_proxy(builder, &proxy)
+    apply_proxy(builder, proxy)
         .build()
         .map_err(|error| error.to_string())
 }
@@ -406,6 +463,86 @@ fn apply_no_proxy(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// A fake HTTP proxy answering every request with `ok`; returns its URL
+    /// and the request lines it saw.
+    async fn fake_proxy() -> (String, Arc<Mutex<Vec<String>>>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let log = seen.clone();
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let log = log.clone();
+                tokio::spawn(async move {
+                    let mut buffer = vec![0u8; 4096];
+                    let read = socket.read(&mut buffer).await.unwrap_or(0);
+                    let text = String::from_utf8_lossy(&buffer[..read]).to_string();
+                    log.lock()
+                        .unwrap()
+                        .push(text.lines().next().unwrap_or_default().to_string());
+                    let _ = socket
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok",
+                        )
+                        .await;
+                });
+            }
+        });
+        (format!("http://{address}"), seen)
+    }
+
+    fn get(url: &str) -> FetchRequest {
+        FetchRequest::new(Method::GET, Url::parse(url).unwrap())
+    }
+
+    /// The proxy belongs to the transport, as the AI SDK leaves routing to
+    /// the `fetch` a provider is given: a `ReqwestFetch` with a proxy sends
+    /// through it, whatever the process default is.
+    #[tokio::test]
+    async fn a_transport_routes_through_its_own_proxy() {
+        let (proxy, seen) = fake_proxy().await;
+        let transport = ReqwestFetch::new(ProxyConfig {
+            http_url: Some(proxy),
+            ..ProxyConfig::default()
+        });
+        let response = transport
+            .fetch(get("http://upstream.invalid/v1/models"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            ["GET http://upstream.invalid/v1/models HTTP/1.1"]
+        );
+    }
+
+    /// `default_fetch` is read per request: replacing the default transport
+    /// reroutes a transport handle taken later, and the WebSocket connector
+    /// and download hops read the same settings.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn the_default_transport_can_be_replaced() {
+        let (proxy, seen) = fake_proxy().await;
+        let previous = default_transport();
+        let config = ProxyConfig {
+            http_url: Some(proxy),
+            no_proxy: Some("localhost".to_string()),
+            ..ProxyConfig::default()
+        };
+        set_default_transport(ReqwestFetch::new(config.clone()));
+        assert_eq!(default_transport().proxy(), &config);
+        let response = default_fetch()
+            .fetch(get("http://upstream.invalid/v1"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(seen.lock().unwrap().len(), 1);
+        set_default_transport((*previous).clone());
+        assert_eq!(default_transport().proxy(), previous.proxy());
+    }
 
     #[tokio::test]
     async fn from_bytes_serves_the_body_once() {

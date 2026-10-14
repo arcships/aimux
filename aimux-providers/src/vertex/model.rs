@@ -14,7 +14,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{
-    GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, StreamResult,
+    GenerateContent, GenerateResult, LanguageModelFile, ReasoningOutput, Source, StreamResult,
 };
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
@@ -80,7 +80,7 @@ impl LanguageModel for VertexModel {
         &self.model_id
     }
 
-    fn supported_urls(&self) -> SupportedUrls {
+    async fn supported_urls(&self) -> SupportedUrls {
         self.config.supported_urls(&self.model_id)
     }
 
@@ -445,7 +445,7 @@ impl LanguageModel for VertexModel {
                                         inline.get("data").and_then(Value::as_str),
                                         inline.get("mimeType").and_then(Value::as_str),
                                     ) {
-                                        let file = GeneratedFile {
+                                        let file = LanguageModelFile {
                                             data: GeneratedFileData::Data { data: FileBytes::Base64(data.to_string()) },
                                             media_type: media_type.to_string(),
                                             provider_metadata: thought_metadata(part),
@@ -917,9 +917,9 @@ fn thought_metadata(part: &Value) -> Option<ProviderMetadata> {
         .map(|signature| vertex_provider_metadata(json!({ "thoughtSignature": signature })))
 }
 
-fn inline_file(part: &Value) -> Option<GeneratedFile> {
+fn inline_file(part: &Value) -> Option<LanguageModelFile> {
     let inline = part.get("inlineData")?;
-    Some(GeneratedFile {
+    Some(LanguageModelFile {
         media_type: inline.get("mimeType")?.as_str()?.to_string(),
         data: GeneratedFileData::Data {
             data: FileBytes::Base64(inline.get("data")?.as_str()?.to_string()),

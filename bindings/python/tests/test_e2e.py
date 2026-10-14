@@ -3,9 +3,9 @@
 Verifies the FULL chain: Python → PyO3 → aimux-core → HTTP mock →
 response parsing → typed result.
 
-The mock server runs in a separate process (multiprocessing) because
-PyO3's block_on blocks the calling thread — a threading-based server
-would deadlock.
+The mock server runs in a separate process (multiprocessing). Native calls
+release the GIL, so a server thread in this process works too
+(test_gil.py relies on it).
 """
 
 import json
@@ -154,9 +154,19 @@ class TestOpenAIE2E:
             parts = list(stream_text(model, "Say hello"))
             assert len(parts) > 0
             text = "".join(
-                p["delta"] for p in parts if p["type"] == "text-delta"
+                p["text"] for p in parts if p["type"] == "text-delta"
             )
             assert text == "Hello world"
+
+    def test_response_timestamp_is_to_iso_string(self):
+        """The response timestamp is a Date (provider
+        language-model-v4-response-metadata.ts:10), built as
+        ``new Date(created * 1000)``; its JSON is ``toISOString()``."""
+        body = json.dumps({**json.loads(OPENAI_CHAT), "created": 1741269019})
+        with MockServer(body) as mock:
+            model = deepseek("test-key", "gpt-4o", mock.url)
+            result = generate_text(model, "What is Rust?")
+            assert result["response"]["timestamp"] == "2025-03-06T13:50:19.000Z"
 
     def test_generate_text_with_options(self):
         with MockServer(OPENAI_CHAT) as mock:
@@ -181,7 +191,7 @@ class TestAnthropicE2E:
             parts = list(stream_text(model, "Hello"))
             assert len(parts) > 0
             text = "".join(
-                p["delta"] for p in parts if p["type"] == "text-delta"
+                p["text"] for p in parts if p["type"] == "text-delta"
             )
             assert text == "Hello from Claude"
 
@@ -342,6 +352,27 @@ OPENAI_TOOL_CALL = json.dumps({
 
 class TestStructuredContent:
 
+    def test_integral_tool_input_numbers_are_integers(self):
+        """The AI SDK parses tool input with JSON.parse (ai
+        generate-text/parse-tool-call.ts:256; provider-utils
+        secure-json-parse.ts:31): `1e2` and `3.0` are the integers 100 and 3,
+        and JSON.stringify writes them so."""
+        response = OPENAI_TOOL_CALL.replace(
+            '{\\"location\\":\\"Tokyo\\"}', '{\\"location\\":\\"Tokyo\\",\\"days\\":3.0,\\"n\\":1e2,\\"t\\":1.5}'
+        )
+        assert '\\"days\\":3.0' in response
+        with RecordingMockServer(response) as mock:
+            model = deepseek("test-key", "gpt-4o", mock.url)
+            result = generate_text(model, "Weather?", {"tools": [{
+                "type": "function",
+                "name": "get_weather",
+                "inputSchema": {"type": "object"},
+            }]})
+        tool_input = result["toolCalls"][0]["input"]
+        assert tool_input == {"location": "Tokyo", "days": 3, "n": 100, "t": 1.5}
+        assert type(tool_input["days"]) is int and type(tool_input["n"]) is int
+        assert type(tool_input["t"]) is float
+
     def test_generate_text_parses_tool_calls(self):
         with RecordingMockServer(OPENAI_TOOL_CALL) as mock:
             model = deepseek("test-key", "gpt-4o", mock.url)
@@ -365,16 +396,14 @@ class TestStructuredContent:
             assert result["toolCalls"][0]["toolCallId"] == "call_abc"
             assert result["toolCalls"][0]["input"] == {"location": "Tokyo"}
 
-            # Structured content: raw.content contains the ToolCall variant
-            assert "raw" in result
-            assert isinstance(result["raw"]["content"], list)
-            tc = next((c for c in result["raw"]["content"] if c["type"] == "tool-call"), None)
-            assert tc is not None, "raw.content must contain a tool-call variant"
+            # Structured content: the final step's content holds the parsed
+            # tool call
+            assert isinstance(result["content"], list)
+            tc = next((c for c in result["content"] if c["type"] == "tool-call"), None)
+            assert tc is not None, "content must contain a tool-call part"
             assert tc["toolName"] == "get_weather"
             assert tc["toolCallId"] == "call_abc"
-            # raw content keeps the provider's argument text; parsing happens
-            # at the Core boundary (top-level toolCalls carry the object).
-            assert tc["input"] == '{"location":"Tokyo"}'
+            assert tc["input"] == {"location": "Tokyo"}
 
     def test_multi_role_messages_reach_provider(self):
         with RecordingMockServer(OPENAI_CHAT) as mock:

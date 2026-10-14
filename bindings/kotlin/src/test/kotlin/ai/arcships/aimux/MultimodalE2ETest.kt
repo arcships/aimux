@@ -73,7 +73,7 @@ class MultimodalE2ETest {
         // mock body below is ASCII-safe (a base64-looking string carried as raw
         // bytes), so it round-trips through the String-based mock unchanged —
         // the same trick the Go test uses (`base64Audio`). The core then wraps
-        // the raw bytes as AudioData::Binary.
+        // the raw bytes as AudioData::Binary, written as base64.
         server.contentType = "audio/mpeg"
         server.responseBody = "SGVsbG8gd29ybGQ="
 
@@ -85,9 +85,11 @@ class MultimodalE2ETest {
 
             val result = AimuxJson.decodeFromString(SpeechResult.serializer(), model.generate(opts))
 
-            // Wire format: {"audio":[<bytes>], ...} (untagged: an array is binary).
-            val audio = result.audio as AudioData.Binary
-            assertThat(audio.value).isNotEmpty()
+            // SpeechModelV4Result.audio is a Uint8Array upstream
+            // (speech-model-v4-result.ts:16): a base64 string in the JSON.
+            assertThat(result.audio).isEqualTo(
+                AudioData.Base64(java.util.Base64.getEncoder().encodeToString("SGVsbG8gd29ybGQ=".toByteArray())),
+            )
         }
     }
 

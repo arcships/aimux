@@ -1,6 +1,7 @@
 # RFC-0020: 外部 Provider 配置
 
 > **Status**: IMPLEMENTED (运行时 overlay 落地于 #97(2026-08-12)— `provider::register_provider` 运行时注册/覆盖条目,查找顺序 overlay → 内置 registry;FFI `aimux_register_providers` 及 Node/Python 透传)
+> **修订**: 全局 overlay 已由 [aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md)(§3.3、§3.4 `providers_from_config`)撤销:外部配置改为纯组装函数,不修改全局 registry。删除 overlay 的那层 PR 合入时,本文状态改为 SUPERSEDED。
 > **Date**: 2026-08-05
 > **Scope**: `aimux-providers` 新增运行时覆盖层,允许外部(配置文件 / 编程式 API)注册、覆盖 OpenAI 兼容 provider 条目;各 binding 薄透传
 > **Related**: [RFC-0017](0017-provider-config-dx.md) 配置 DX(本 RFC 落地其 §363 预留的"用户覆盖内置条目"语义)、[RFC-0019](0019-session-affinity.md) 会话亲和、[调研报告](../docs/external-provider-config-research.md)

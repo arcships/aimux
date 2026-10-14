@@ -215,11 +215,12 @@ impl TranscriptionModel for GoogleTranscriptionModel {
                 self.model_id
             )));
         }
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
         let parsed = TranscriptionOptions::parse(super::options::google_options(
             options.provider_options.as_ref(),
         ))?;
         let audio = match &options.audio {
+            AudioInput::Url(_) => return Err(AudioInput::url_error()),
             AudioInput::Base64(value) => value.clone(),
             AudioInput::Binary(value) => {
                 base64::Engine::encode(&base64::engine::general_purpose::STANDARD, value)
@@ -295,28 +296,30 @@ impl TranscriptionModel for GoogleTranscriptionModel {
         })
     }
 
-    async fn do_stream(
+    fn do_stream(
         &self,
         options: TranscriptionStreamOptions,
-    ) -> Result<TranscriptionStreamResult, AiMuxError> {
-        if !is_live(&self.model_id) {
-            return Err(AiMuxError::InvalidArgument(format!(
-                "Model '{}' does not support streaming transcription. \
+    ) -> Option<futures::future::BoxFuture<'_, Result<TranscriptionStreamResult, AiMuxError>>> {
+        Some(Box::pin(async move {
+            if !is_live(&self.model_id) {
+                return Err(AiMuxError::InvalidArgument(format!(
+                    "Model '{}' does not support streaming transcription. \
                  Use a live model such as 'gemini-3.5-transcribe-live'.",
-                self.model_id
-            )));
-        }
-        #[cfg(feature = "realtime")]
-        {
-            self.stream_live(options).await
-        }
-        #[cfg(not(feature = "realtime"))]
-        {
-            let _ = options;
-            Err(AiMuxError::UnsupportedFunctionality(
-                "Enable realtime for Google Live transcription".into(),
-            ))
-        }
+                    self.model_id
+                )));
+            }
+            #[cfg(feature = "realtime")]
+            {
+                self.stream_live(options).await
+            }
+            #[cfg(not(feature = "realtime"))]
+            {
+                let _ = options;
+                Err(AiMuxError::UnsupportedFunctionality(
+                    "Enable realtime for Google Live transcription".into(),
+                ))
+            }
+        }))
     }
 }
 
@@ -382,7 +385,7 @@ impl GoogleTranscriptionModel {
                 body: Some(setup.to_string()),
             }),
             response: Some(TranscriptionResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 ..Default::default()
             }),

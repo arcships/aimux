@@ -352,10 +352,10 @@ func MockReplay(recordingsJsonl string) (*Model, error) {
 	return wrapHandle(&h, C.aimux_mock_replay_new(cJsonl, &h))
 }
 
-// InitProxy sets the global proxy configuration (M6, RFC-0016). Must be called
-// before the first GenerateText / StreamText call; a no-op if the shared HTTP
-// client is already initialised. configJSON is required (pass "{}" for
-// defaults); shape:
+// InitProxy replaces the default transport with one routed by this proxy
+// configuration (M6, RFC-0016). Requests started afterwards use it; calling it
+// again replaces the previous configuration. configJSON is required (pass "{}"
+// for defaults); shape:
 // { "http_url": "...", "https_url": "...", "all_url": "...", "no_proxy": "..." }
 // (all fields optional).
 func InitProxy(configJSON string) error {
@@ -849,9 +849,9 @@ func (m *Model) GenerateText(promptJson, optsJson string) (string, error) {
 // GenerateObject generates a structured JSON object (M12, RFC-0016).
 //
 // Same signature as GenerateText; returns the JSON-serialized
-// GenerateObjectResult. Pass responseFormat: {"type":"json","schema":{...}}
-// via optsJson for schema control; the function applies JSON repair before
-// parsing.
+// GenerateObjectResult. Pass "output": {"type": "object", "schema": {...}} via
+// optsJson to describe the object; the model's text must parse as JSON and
+// match the schema.
 func (m *Model) GenerateObject(promptJson, optsJson string) (string, error) {
 	if err := checkPromptOpts(promptJson, optsJson); err != nil {
 		return "", err
@@ -881,7 +881,7 @@ func (m *Model) GenerateObject(promptJson, optsJson string) (string, error) {
 // finishes).
 //
 // Same signature as GenerateText; returns the JSON-serialized
-// StreamTextResultAggregated.
+// GenerateTextResult.
 func (m *Model) ConsumeStreamText(promptJson, optsJson string) (string, error) {
 	if err := checkPromptOpts(promptJson, optsJson); err != nil {
 		return "", err
@@ -1219,8 +1219,10 @@ func aimuxErrorFromC(e *C.aimux_error_t) *Error {
 		if s := str(C.aimux_error_response_headers(e)); s != "" {
 			_ = json.Unmarshal([]byte(s), &err.ResponseHeaders)
 		}
+		// Kept as raw JSON so a null payload stays apart from a missing one
+		// (the getter returns NULL only for a missing one).
 		if s := str(C.aimux_error_provider_data(e)); s != "" {
-			_ = json.Unmarshal([]byte(s), &err.Data)
+			err.Data = json.RawMessage(s)
 		}
 	case CodeNoSuchModel:
 		err.ModelID = str(C.aimux_error_model_id(e))

@@ -12,6 +12,8 @@
 
 package ai.arcships.aimux
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -35,8 +37,10 @@ import java.util.concurrent.FutureTask
  *
  * Mirrors core `RawToolCall`. Unlike [ToolCall], `input` is the **raw argument
  * text** (the string the provider sent), not a parsed object — that is what a
- * repair function reads and what it returns a replacement for.
+ * repair function reads and what it returns a replacement for. Its JSON
+ * carries `"type": "tool-call"`, as the AI SDK's `LanguageModelV4ToolCall`.
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class RawToolCall(
     val toolCallId: String,
@@ -45,7 +49,15 @@ data class RawToolCall(
     val providerExecuted: Boolean? = null,
     val dynamic: Boolean? = null,
     val providerMetadata: ProviderMetadata? = null,
-)
+) {
+    /** Always `"tool-call"`. */
+    @EncodeDefault
+    val type: String = "tool-call"
+
+    init {
+        requireTypeTag("tool-call", type)
+    }
+}
 
 /**
  * Everything a repair function is given about one invalid tool call.
@@ -105,7 +117,9 @@ fun toolCallRepairContext(toolCallJson: String, promptJson: String, optsJson: St
 
 /**
  * Resolve one invalid tool call against a repair reply, returning the final
- * `ToolCall` JSON — valid, or invalid carrying a nested `ToolCallRepair` error.
+ * `ToolCall` JSON — valid, or invalid: with its original error (`unchanged`),
+ * the replacement's own parse or validation error (`repaired`), or a nested
+ * `ToolCallRepair` error (`failed`).
  *
  * @param replyJson `{"type":"repaired","toolCall":…}` | `{"type":"unchanged"}`
  *   | `{"type":"failed","message":…}`.
@@ -122,8 +136,8 @@ fun applyToolCallRepair(toolCallJson: String, optsJson: String?, replyJson: Stri
 }
 
 /**
- * Apply a repair reply to a whole serialized result (`GenerateTextResult`,
- * `GenerateObjectResult` via its nested `raw`, or `StreamTextResultAggregated`).
+ * Apply a repair reply to a whole serialized `GenerateTextResult`, generated
+ * or consumed from a stream (a `GenerateObjectResult` has no tool calls).
  *
  * Rewrites both `toolCalls` and the matching `responseMessages` tool-call
  * part — the transcript must agree with the repaired call, or the next turn
@@ -195,9 +209,7 @@ internal fun repairToolCallsInResult(
     repair: RepairToolCall,
 ): String {
     val root = AimuxJson.parseToJsonElement(resultJson) as? JsonObject ?: return resultJson
-    // GenerateObjectResult nests the text result under `raw`.
-    val target = if (root.containsKey("toolCalls")) root else root["raw"] as? JsonObject ?: return resultJson
-    val invalid = (target["toolCalls"] as? JsonArray)
+    val invalid = (root["toolCalls"] as? JsonArray)
         ?.mapNotNull { it as? JsonObject }
         ?.filter(::isInvalid)
         ?: return resultJson

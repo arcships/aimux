@@ -2,16 +2,17 @@
 
 A thread-based server also verifies the native decision call releases the GIL.
 """
+import base64
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
-from aimux import APICallError, InvalidArgumentError, decide, jev_decision, decision_capabilities
+from aimux import APICallError, InvalidArgumentError, decide, jev_decision, describe_decision_model
 
 
-def test_provider_handle_openai_decisions_preserve_partial_refusals():
+def test_provider_handle_openai_decisions_answer_every_question():
     from aimux import create_provider
     contract = json.loads((Path(__file__).resolve().parents[3] /
         'aimux-providers/tests/fixtures/openai_decisions.json').read_text())
@@ -35,11 +36,13 @@ def test_provider_handle_openai_decisions_preserve_partial_refusals():
     try:
         provider = create_provider('openai', 'test-key', base_url=f'http://127.0.0.1:{http.server_port}/v1')
         model = provider.decision_model('gpt-6-luna')
-        assert decision_capabilities(model)['min_choices'] == 2
+        assert describe_decision_model(model) == {
+            'specificationVersion': 'v4', 'provider': 'openai', 'modelId': 'gpt-6-luna',
+            'supportedQuestionTypes': ['choice', 'score', 'boolean']}
         result = decide(model, **contract['options'])
         assert captured == [('/v1/decisions', 'Bearer test-key', contract['request'])]
-        assert result['answers']['restricted'] == {'type': 'refusal'}
-        assert result['answers']['urgent']['probability_true'] == 0.925
+        assert list(result['answers']) == ['urgent', 'team', 'severity']
+        assert result['answers']['urgent'] == {'type': 'boolean', 'probability': 0.925}
     finally:
         http.shutdown()
         worker.join()
@@ -52,7 +55,7 @@ def test_decision_uses_unified_runtime_recording(server, tmp_path):
     init_recording(str(tmp_path))
     try:
         result = decide(jev_decision('test-key', 'jev-latest', base + '/v1/systemone'),
-                        {'message': 'Billed twice'}, QUESTIONS, max_retries=0)
+                        {'message': 'Billed twice'}, QUESTIONS, maxRetries=0)
     finally:
         recording_flush()
         recording_stop()
@@ -67,11 +70,11 @@ def test_decision_uses_unified_runtime_recording(server, tmp_path):
     assert 'test-key' not in json.dumps(record)
 
 FIXTURE = json.loads((Path(__file__).resolve().parents[3] / 'aimux-providers/tests/fixtures/jev_systemone.json').read_text())['response']
-QUESTIONS = [
-    {'id': 'is_urgent', 'type': 'boolean', 'instructions': 'The message conveys urgency or time-sensitivity'},
-    {'id': 'department', 'type': 'choice', 'instructions': 'Which team should handle this', 'options': [{'label': label} for label in ['billing', 'technical', 'sales']]},
-    {'id': 'frustration', 'type': 'score', 'instructions': 'How frustrated the customer appears', 'levels': ['Calm, just stating facts', 'Frustrated but civil', 'Very angry, strong language']},
-]
+QUESTIONS = {
+    'is_urgent': {'type': 'boolean', 'instructions': 'The message conveys urgency or time-sensitivity'},
+    'department': {'type': 'choice', 'instructions': 'Which team should handle this', 'criteria': {label: None for label in ['billing', 'technical', 'sales']}},
+    'frustration': {'type': 'score', 'instructions': 'How frustrated the customer appears', 'criteria': ['Calm, just stating facts', 'Frustrated but civil', 'Very angry, strong language']},
+}
 
 
 @pytest.mark.parametrize('usage', [{}, {'input_tokens': None, 'output_tokens': None},
@@ -80,11 +83,14 @@ def test_optional_usage_counts_preserve_answers(server, monkeypatch, usage):
     monkeypatch.setitem(FIXTURE, 'usage', usage)
     base, _ = server
     result = decide(jev_decision('test-key', 'jev-latest', base + '/v1/systemone'),
-                    {'message': 'Billed twice'}, QUESTIONS, max_retries=0)
+                    {'message': 'Billed twice'}, QUESTIONS, maxRetries=0)
     assert len(result['answers']) == 3
-    assert result['usage']['inputTokens'].get('total') == usage.get('input_tokens')
-    assert result['usage']['outputTokens'].get('total') == usage.get('output_tokens')
-    assert result['usage']['raw'] == usage
+    # An unknown count is absent, as the AI SDK's undefined is in JSON.
+    expected = {key: usage[wire] for key, wire in
+                [('inputTokens', 'input_tokens'), ('outputTokens', 'output_tokens')]
+                if usage.get(wire) is not None}
+    assert result['usage'] == expected
+    assert result['response']['body']['usage'] == usage
 
 
 @pytest.fixture
@@ -119,13 +125,14 @@ def server():
 def test_decide_all_types_and_raw_response(server):
     base, captures = server
     model = jev_decision('test-key', 'jev-latest', base + '/v1/systemone')
-    result = decide(model, {'message': 'Billed twice'}, QUESTIONS, max_retries=0, timeout={'total_ms': 2000})
-    assert result['answers']['is_urgent'] == {'type': 'boolean', 'probability_true': 1.0}
-    assert result['answers']['department']['selected'] == 'technical'
-    assert result['answers']['frustration']['expected_value'] == 1.0
-    assert result['answers']['frustration']['probabilities'] == [0, 1.0, 0]
+    result = decide(model, {'message': 'Billed twice'}, QUESTIONS, maxRetries=0, timeout={'totalMs': 2000})
+    assert result['answers']['is_urgent'] == {'type': 'boolean', 'probability': 1.0}
+    assert result['answers']['department']['choice'] == 'technical'
+    assert result['answers']['frustration']['score'] == 1.0
+    assert result['answers']['frustration']['probabilities'] == {'0': 0, '1': 1.0, '2': 0}
+    assert result['usage'] == {'inputTokens': 392, 'outputTokens': 65, 'totalTokens': 457}
     assert result['response']['body'] == FIXTURE
-    assert result['probability_source'] == 'native'
+    assert result['providerMetadata']['jev']['probabilitySource'] == 'native'
     assert captures[0][0] == '/v1/systemone'
     assert captures[0][1]['authorization'] == 'Bearer test-key'
     assert captures[0][2]['questions']['is_urgent']['type'] == 'noul'
@@ -135,15 +142,15 @@ def test_invalid_answer_uses_python_error_class(server):
     base, _ = server
     model = jev_decision('test-key', 'jev-latest', base + '/invalid')
     with pytest.raises(APICallError):
-        decide(model, 'text', QUESTIONS, max_retries=0, timeout={'total_ms': 2000})
+        decide(model, 'text', QUESTIONS, maxRetries=0, timeout={'totalMs': 2000})
 
 
 @pytest.mark.parametrize('source', ['native', 'logit_scoring', 'model_estimate'])
 def test_self_hosted_probability_source(server, source):
     base, _ = server
     model = jev_decision('test-key', 'jev-latest', base + '/v1/systemone', probability_source=source)
-    result = decide(model, 'text', QUESTIONS, max_retries=0, timeout={'total_ms': 2000})
-    assert result['probability_source'] == source
+    result = decide(model, 'text', QUESTIONS, maxRetries=0, timeout={'totalMs': 2000})
+    assert result['providerMetadata']['jev']['probabilitySource'] == source
 
 
 def test_unknown_probability_source():
@@ -151,7 +158,7 @@ def test_unknown_probability_source():
         jev_decision('test-key', 'jev-latest', probability_source='unknown')
 
 
-def test_official_structured_contract_and_capabilities():
+def test_official_structured_contract_and_description():
     fixture = json.loads((Path(__file__).resolve().parents[3] / 'contract-tests/fixtures/decision-native.json').read_text())
     captures = []
     class Handler(BaseHTTPRequestHandler):
@@ -169,25 +176,34 @@ def test_official_structured_contract_and_capabilities():
     thread.start()
     try:
         model = jev_decision('test-key', 'jev-latest', f'http://127.0.0.1:{http.server_port}/v1/systemone')
-        caps = decision_capabilities(model)
-        assert caps['max_choices'] == 255
-        assert caps['rounding'] == {'probability_decimals': 2, 'score_decimals': 2}
+        assert describe_decision_model(model)['provider'] == 'jev'
         assert not captures
         request = fixture['request']
-        result = decide(model, request['state'], request['questions'], max_retries=0, timeout={'total_ms':2000})
-        assert captures[0]['questions']['urgent']['criteria'] == request['questions'][0]['criteria']
-        assert result['answers']['severity']['levels'] == request['questions'][2]['levels']
-        assert result['rounding'] == caps['rounding']
+        result = decide(model, request['state'], request['questions'], maxRetries=0, timeout={'totalMs':2000})
+        assert captures[0]['questions']['urgent']['criteria'] == request['questions']['urgent']['criteria']
+        assert captures[0]['questions']['severity']['criteria'] == request['questions']['severity']['criteria']
+        assert result['answers']['severity'] == {'type': 'score', 'score': 0.25, 'probabilities': {'0': 0.75, '1': 0.25}}
+        assert result['rounding'] == {'probabilityDecimals': 2, 'scoreDecimals': 2}
     finally:
         http.shutdown()
         http.server_close()
         thread.join(timeout=2)
 
 
-def test_openai_images_native_values_and_score_descriptions():
+@pytest.mark.parametrize('as_bytes', [False, True])
+def test_openai_images_native_values_and_score_descriptions(as_bytes):
     from aimux import create_provider
     contract = json.loads((Path(__file__).resolve().parents[3] /
         'contract-tests/fixtures/decision-openai-full.json').read_text())
+    if as_bytes:
+        # DecisionImage.data is a base64 string on the wire, as the AI SDK
+        # writes bytes (provider-utils uint8-utils.ts:12-23); bytes given to
+        # decide() are encoded to the same string.
+        openai = contract['options']['providerOptions']['openai']
+        openai['images'] = [
+            dict(image, data=base64.b64decode(image['data']))
+            for image in openai['images']
+        ]
     captured = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -208,10 +224,10 @@ def test_openai_images_native_values_and_score_descriptions():
         model = create_provider('openai', 'test-key', base_url=f'http://127.0.0.1:{http.server_port}/v1').decision_model('gpt-6-luna')
         result = decide(model, **contract['options'])
         assert captured == [contract['request']]
-        assert result['answers']['choice']['value'] is True
-        assert result['answers']['choice']['probabilities'] == {'boolean_true': 0.75, 'text_true': 0.25}
-        assert result['answers']['score']['levels'] == contract['options']['questions'][1]['levels']
-        assert decision_capabilities(model)['supports_images'] is True
+        assert result['answers']['choice'] == {'type': 'choice', 'choice': 'boolean_true',
+                                               'probabilities': {'boolean_true': 0.75, 'text_true': 0.25}}
+        assert result['providerMetadata']['openai']['answers']['choice']['value'] is True
+        assert result['answers']['score'] == {'type': 'score', 'score': 0.75, 'probabilities': {'0': 0.25, '1': 0.75}}
     finally:
         http.shutdown()
         worker.join()

@@ -1,15 +1,28 @@
-//! Native OpenAI Decisions API, including inline images and typed choices.
-use std::collections::{BTreeMap, HashMap, HashSet};
+//! Native OpenAI Decisions API (an aimux extension; the AI SDK's OpenAI
+//! package decides through its Responses model instead).
+//!
+//! The V4 call options carry what the API takes beyond them in
+//! `providerOptions.openai`, camelCase as the OpenAI language models' options
+//! are: `images` (inline images before the state), `choiceValues` (native
+//! choice values per question and option label; a label is its own value
+//! otherwise) and `safetyIdentifier` (sent as `safety_identifier`).
+use std::collections::{HashMap, HashSet};
 
 use aimux_core::AiMuxError;
 use aimux_core::decision_model::*;
-use aimux_core::types::{InputTokenUsage, OutputTokenUsage, Usage};
 use async_trait::async_trait;
-use serde::Deserialize;
-use serde_json::{Value, json};
+use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value, json};
 
 use super::config::OpenAIModelConfig;
-use crate::decision_support::DecisionConfig;
+use crate::decision_support::{
+    DecisionConfig, DecisionImage, DecisionProbabilitySource, invalid, provider_metadata,
+    response_info,
+};
+
+/// The OpenAI Decisions API takes at most this many images per request.
+const MAX_IMAGES: usize = 128;
 
 /// Native OpenAI Decisions model; [`OpenAIProvider::decision`](super::OpenAIProvider::decision)
 /// creates it.
@@ -38,71 +51,102 @@ impl OpenAIDecisionModel {
     }
 }
 
-fn text_description(description: &DecisionDescription) -> Result<&str, AiMuxError> {
-    match description {
-        DecisionDescription::Text(text) => Ok(text),
+/// A native choice value: text or a Boolean.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(untagged)]
+enum NativeValue {
+    Text(String),
+    Boolean(bool),
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProviderOptions {
+    safety_identifier: Option<String>,
+    #[serde(default)]
+    images: Vec<DecisionImage>,
+    /// Question id → option label → native value.
+    #[serde(default)]
+    choice_values: HashMap<String, HashMap<String, NativeValue>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScoreLevel {
+    label: String,
+    #[serde(default)]
+    description: Option<String>,
+}
+
+fn text(input: &DecisionInput) -> Result<&str, AiMuxError> {
+    match input {
+        DecisionInput::Text(text) => Ok(text),
         _ => Err(AiMuxError::UnsupportedFunctionality(
             "OpenAI decisions require text instructions and criteria descriptions".into(),
         )),
     }
 }
 
-fn score_level(level: &DecisionDescription) -> Result<DecisionScoreLevel, AiMuxError> {
+fn score_level(level: Option<&DecisionInput>) -> Result<Value, AiMuxError> {
+    let unsupported = || {
+        AiMuxError::UnsupportedFunctionality(
+            "OpenAI score levels require text or {label, description}".into(),
+        )
+    };
     let level = match level {
-        DecisionDescription::Text(label) => DecisionScoreLevel {
+        Some(DecisionInput::Text(label)) => ScoreLevel {
             label: label.clone(),
             description: None,
         },
-        DecisionDescription::Object(object) => {
-            serde_json::from_value(Value::Object(object.clone())).map_err(|_| {
-                AiMuxError::UnsupportedFunctionality(
-                    "OpenAI score levels require text or {label, description}".into(),
-                )
-            })?
+        Some(DecisionInput::Object(object)) => {
+            serde_json::from_value(Value::Object(object.clone())).map_err(|_| unsupported())?
         }
-        _ => {
-            return Err(AiMuxError::UnsupportedFunctionality(
-                "OpenAI score levels require text or {label, description}".into(),
-            ));
-        }
+        _ => return Err(unsupported()),
     };
     if level.label.trim().is_empty() {
         return Err(AiMuxError::InvalidArgument(
             "OpenAI score level label cannot be blank".into(),
         ));
     }
-    Ok(level)
+    let mut wire = json!({"label": level.label});
+    if let Some(description) = level.description {
+        wire["description"] = json!(description);
+    }
+    Ok(wire)
 }
 
-fn native_value(option: &DecisionOption) -> DecisionValue {
-    option
-        .value
-        .clone()
-        .unwrap_or_else(|| DecisionValue::Text(option.label.clone()))
+/// The request body, and each choice question's (label, native value) pairs
+/// for reading the answers back.
+struct Request {
+    body: Value,
+    values: HashMap<String, Vec<(String, NativeValue)>>,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ProviderOptions {
-    safety_identifier: Option<String>,
-}
-
-fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Value, AiMuxError> {
-    options.validate()?;
-    let text = match &options.state {
-        Value::String(text) => text.clone(),
-        Value::Object(_) | Value::Array(_) => options.state.to_string(),
-        _ => {
-            return Err(AiMuxError::InvalidArgument(
-                "OpenAI decision state must be text, an object, or an array".into(),
-            ));
-        }
+fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Request, AiMuxError> {
+    let provider_options: ProviderOptions = match options
+        .provider_options
+        .as_ref()
+        .and_then(|p| p.get("openai"))
+    {
+        None => ProviderOptions::default(),
+        Some(openai) => serde_json::from_value(Value::Object(openai.clone())).map_err(|error| {
+            AiMuxError::InvalidArgument(format!("OpenAI decision options: {error}"))
+        })?,
     };
-    let input = if options.images.is_empty() {
-        json!(text)
+    let state = match &options.state {
+        DecisionInput::Text(text) => text.clone(),
+        other => serde_json::to_string(other)?,
+    };
+    if provider_options.images.len() > MAX_IMAGES {
+        return Err(AiMuxError::InvalidArgument(
+            "too many decision images".into(),
+        ));
+    }
+    let input = if provider_options.images.is_empty() {
+        json!(state)
     } else {
         let mut content = Vec::new();
-        for image in &options.images {
+        for image in &provider_options.images {
             let inline = crate::decision_support::inline_image(image)?;
             let mut part = json!({"type":"input_image", "image_url":inline.data_url});
             if let Some(detail) = &image.detail {
@@ -115,87 +159,106 @@ fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Value, AiM
             }
             content.push(part);
         }
-        content.push(json!({"type":"input_text", "text":text}));
+        content.push(json!({"type":"input_text", "text":state}));
         json!([{"role":"user", "content":content}])
     };
+    for (id, values) in &provider_options.choice_values {
+        let Some(DecisionQuestion::Choice { criteria, .. }) = options.questions.get(id) else {
+            return Err(AiMuxError::InvalidArgument(format!(
+                "OpenAI choiceValues name {id:?}, which is not a choice question"
+            )));
+        };
+        if let Some(label) = values.keys().find(|label| !criteria.contains_key(*label)) {
+            return Err(AiMuxError::InvalidArgument(format!(
+                "OpenAI choiceValues for {id:?} name an unknown option {label:?}"
+            )));
+        }
+    }
     let mut questions = Vec::with_capacity(options.questions.len());
-    for question in &options.questions {
+    let mut values = HashMap::new();
+    for (id, question) in &options.questions {
         let mut wire = match question {
             DecisionQuestion::Boolean {
                 instructions,
                 criteria,
-                ..
             } => {
                 if criteria.is_some() {
                     return Err(AiMuxError::UnsupportedFunctionality(
                         "OpenAI predicates do not accept true/false criteria".into(),
                     ));
                 }
-                json!({"type":"predicate", "instructions":text_description(instructions)?})
+                json!({"type":"predicate", "instructions":text(instructions)?})
             }
             DecisionQuestion::Choice {
                 instructions,
-                options,
-                ..
+                criteria,
             } => {
-                if !(2..=255).contains(&options.len()) {
+                if !(2..=255).contains(&criteria.len()) {
                     return Err(AiMuxError::InvalidArgument(
                         "OpenAI choices require 2–255 options".into(),
                     ));
                 }
-                let choices = options
-                    .iter()
-                    .map(|option| {
-                        let mut choice = json!({"value":native_value(option)});
-                        if let Some(description) = &option.description {
-                            choice["description"] = json!(text_description(description)?);
+                let overrides = provider_options.choice_values.get(id);
+                let native: Vec<(String, NativeValue)> = criteria
+                    .keys()
+                    .map(|label| {
+                        let value = overrides
+                            .and_then(|values| values.get(label))
+                            .cloned()
+                            .unwrap_or_else(|| NativeValue::Text(label.clone()));
+                        (label.clone(), value)
+                    })
+                    .collect();
+                let mut unique = HashSet::new();
+                if !native.iter().all(|(_, value)| unique.insert(value)) {
+                    return Err(AiMuxError::InvalidArgument(format!(
+                        "question {id:?} has duplicate native values"
+                    )));
+                }
+                let choices = criteria
+                    .values()
+                    .zip(&native)
+                    .map(|(description, (_, value))| {
+                        let mut choice = json!({"value": value});
+                        if let Some(description) = description {
+                            choice["description"] = json!(text(description)?);
                         }
                         Ok(choice)
                     })
                     .collect::<Result<Vec<Value>, AiMuxError>>()?;
-                json!({"type":"choice", "instructions":text_description(instructions)?, "choices":choices})
+                values.insert(id.clone(), native);
+                json!({"type":"choice", "instructions":text(instructions)?, "choices":choices})
             }
             DecisionQuestion::Score {
                 instructions,
-                levels,
-                ..
+                criteria,
             } => {
-                let levels = levels
+                let levels = criteria
                     .iter()
-                    .map(score_level)
+                    .map(|level| score_level(level.as_ref()))
                     .collect::<Result<Vec<_>, _>>()?;
                 let mut labels = HashSet::new();
-                if levels.iter().any(|l| !labels.insert(&l.label)) {
+                if levels.iter().any(|level| !labels.insert(&level["label"])) {
                     return Err(AiMuxError::InvalidArgument(
                         "duplicate OpenAI score level label".into(),
                     ));
                 }
-                json!({"type":"score", "instructions":text_description(instructions)?, "levels":levels})
+                json!({"type":"score", "instructions":text(instructions)?, "levels":levels})
             }
         };
-        wire["name"] = json!(question.id());
+        wire["name"] = json!(id);
         questions.push(wire);
     }
     let mut body = json!({"model":model, "input":input, "questions":questions});
-    if let Some(openai) = options
-        .provider_options
-        .as_ref()
-        .and_then(|p| p.get("openai"))
-    {
-        let parsed: ProviderOptions = serde_json::from_value(Value::Object(openai.clone()))
-            .map_err(|error| {
-                AiMuxError::InvalidArgument(format!("OpenAI decision options: {error}"))
-            })?;
-        if let Some(identifier) = parsed.safety_identifier {
-            if identifier.chars().count() > 128 {
-                return Err(AiMuxError::InvalidArgument(
-                    "safety_identifier exceeds 128 characters".into(),
-                ));
-            }
-            body["safety_identifier"] = json!(identifier);
+    if let Some(identifier) = provider_options.safety_identifier {
+        if identifier.chars().count() > 128 {
+            return Err(AiMuxError::InvalidArgument(
+                "safetyIdentifier exceeds 128 characters".into(),
+            ));
         }
+        body["safety_identifier"] = json!(identifier);
     }
-    Ok(body)
+    Ok(Request { body, values })
 }
 
 #[derive(Deserialize)]
@@ -212,7 +275,7 @@ enum WireAnswerKind {
         probability: f64,
     },
     Choice {
-        choice: DecisionValue,
+        choice: NativeValue,
         confidence: f64,
         probabilities: Vec<ChoiceProbability>,
     },
@@ -226,7 +289,7 @@ enum WireAnswerKind {
 
 #[derive(Deserialize)]
 struct ChoiceProbability {
-    value: DecisionValue,
+    value: NativeValue,
     probability: f64,
 }
 
@@ -249,143 +312,145 @@ fn convert_response(
     raw: Value,
     headers: HashMap<String, String>,
     request: &DecisionCallOptions,
+    values: &HashMap<String, Vec<(String, NativeValue)>>,
 ) -> Result<DecisionResult, AiMuxError> {
-    let invalid = || {
-        AiMuxError::InvalidResponseData("OpenAI decision answers do not match the request".into())
-    };
+    let mismatch = || invalid("OpenAI decision answers do not match the request");
     if data.model.trim().is_empty() || data.answers.len() != request.questions.len() {
-        return Err(invalid());
+        return Err(mismatch());
     }
-    let mut answers = BTreeMap::new();
+    let mut by_name = HashMap::new();
+    let mut extras = Map::new();
     for wire in data.answers {
-        let answer = match wire.answer {
-            WireAnswerKind::Predicate { probability } => DecisionAnswer::Boolean {
-                probability_true: probability,
-            },
-            WireAnswerKind::Refusal => DecisionAnswer::Refusal,
-            WireAnswerKind::Choice {
-                choice,
-                confidence,
-                probabilities,
-            } => {
-                let Some(DecisionQuestion::Choice { options, .. }) =
-                    request.questions.iter().find(|q| q.id() == wire.name)
-                else {
-                    return Err(invalid());
-                };
-                let selected = options
-                    .iter()
-                    .find(|o| native_value(o) == choice)
-                    .ok_or_else(invalid)?;
-                let mut distribution = BTreeMap::new();
-                for entry in probabilities {
-                    let option = options
+        let question = request.questions.get(&wire.name).ok_or_else(mismatch)?;
+        let answer = match (question, wire.answer) {
+            (_, WireAnswerKind::Refusal) => {
+                // V4 decisions return every answer or none.
+                return Err(invalid(format!(
+                    "OpenAI declined to answer question {:?}",
+                    wire.name
+                )));
+            }
+            (DecisionQuestion::Boolean { .. }, WireAnswerKind::Predicate { probability }) => {
+                DecisionAnswer::Boolean { probability }
+            }
+            (
+                DecisionQuestion::Choice { .. },
+                WireAnswerKind::Choice {
+                    choice,
+                    confidence,
+                    probabilities,
+                },
+            ) => {
+                let native = &values[&wire.name];
+                let label_of = |value: &NativeValue| {
+                    native
                         .iter()
-                        .find(|o| native_value(o) == entry.value)
-                        .ok_or_else(invalid)?;
+                        .find(|(_, native)| native == value)
+                        .map(|(label, _)| label.clone())
+                        .ok_or_else(mismatch)
+                };
+                let selected = label_of(&choice)?;
+                let mut distribution = IndexMap::new();
+                for entry in probabilities {
                     if distribution
-                        .insert(option.label.clone(), entry.probability)
+                        .insert(label_of(&entry.value)?, entry.probability)
                         .is_some()
                     {
-                        return Err(invalid());
+                        return Err(mismatch());
                     }
                 }
+                let mut extra = json!({"confidence": confidence});
+                if let Some(typed) = request
+                    .provider_options
+                    .as_ref()
+                    .and_then(|p| p.get("openai"))
+                    .and_then(|openai| openai.get("choiceValues"))
+                    .and_then(|values| values.get(&wire.name))
+                    && typed.get(&selected).is_some()
+                {
+                    extra["value"] = json!(choice);
+                }
+                extras.insert(wire.name.clone(), extra);
                 DecisionAnswer::Choice {
-                    selected: selected.label.clone(),
-                    value: selected.value.clone(),
+                    choice: selected,
                     probabilities: Some(distribution),
-                    confidence: Some(confidence),
                 }
             }
-            WireAnswerKind::Score {
-                score,
-                confidence,
-                probabilities,
-            } => {
-                let Some(DecisionQuestion::Score { levels, .. }) =
-                    request.questions.iter().find(|q| q.id() == wire.name)
-                else {
-                    return Err(invalid());
-                };
-                if probabilities.len() != levels.len() {
-                    return Err(invalid());
+            (
+                DecisionQuestion::Score { criteria, .. },
+                WireAnswerKind::Score {
+                    score,
+                    confidence,
+                    probabilities,
+                },
+            ) => {
+                if probabilities.len() != criteria.len() {
+                    return Err(mismatch());
                 }
-                let mut distribution = vec![None; levels.len()];
+                let mut distribution = vec![None; criteria.len()];
                 for entry in probabilities {
-                    let Some(level) = levels.get(entry.value) else {
-                        return Err(invalid());
+                    let Some(level) = criteria.get(entry.value) else {
+                        return Err(mismatch());
                     };
-                    if score_level(level)?.label != entry.label
+                    if score_level(level.as_ref())?["label"] != entry.label
                         || distribution[entry.value]
                             .replace(entry.probability)
                             .is_some()
                     {
-                        return Err(invalid());
+                        return Err(mismatch());
                     }
                 }
+                let distribution = distribution
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, probability)| Some((index.to_string(), probability?)))
+                    .collect::<Option<IndexMap<_, _>>>()
+                    .ok_or_else(mismatch)?;
+                extras.insert(wire.name.clone(), json!({"confidence": confidence}));
                 DecisionAnswer::Score {
-                    expected_value: score,
-                    levels: levels.clone(),
-                    probabilities: Some(
-                        distribution
-                            .into_iter()
-                            .collect::<Option<Vec<_>>>()
-                            .ok_or_else(invalid)?,
-                    ),
-                    confidence: Some(confidence),
+                    score,
+                    probabilities: Some(distribution),
                 }
             }
+            _ => return Err(mismatch()),
         };
-        if answers.insert(wire.name, answer).is_some() {
-            return Err(invalid());
+        if by_name.insert(wire.name, answer).is_some() {
+            return Err(mismatch());
         }
     }
+    let answers = request
+        .questions
+        .keys()
+        .map(|id| Some((id.clone(), by_name.remove(id)?)))
+        .collect::<Option<IndexMap<_, _>>>()
+        .ok_or_else(mismatch)?;
     // Usage is observational metadata. Missing or inconsistent counters must
-    // not discard valid decisions; retain raw values and leave unknowns unset.
-    let usage = data.usage.map(|raw| {
-        let count = |value: &Value| value.as_u64().and_then(|n| u32::try_from(n).ok());
-        let input = count(&raw["input_tokens"]);
-        let output = count(&raw["output_tokens"]);
-        let cached = count(&raw["input_tokens_details"]["cached_tokens"]);
-        let written = count(&raw["input_tokens_details"]["cache_write_tokens"]);
-        let reasoning = count(&raw["output_tokens_details"]["reasoning_tokens"]);
-        Usage {
-            input_tokens: InputTokenUsage {
-                total: input,
-                no_cache: input
-                    .zip(cached)
-                    .zip(written)
-                    .and_then(|((total, read), write)| total.checked_sub(read)?.checked_sub(write)),
-                cache_read: cached,
-                cache_write: written,
-            },
-            output_tokens: OutputTokenUsage {
-                total: output,
-                text: output
-                    .zip(reasoning)
-                    .and_then(|(total, reasoning)| total.checked_sub(reasoning)),
-                reasoning,
-            },
-            raw: raw.as_object().cloned(),
-        }
-    });
-    let result = DecisionResult {
-        rounding: DecisionRounding::default(),
-        answers,
-        provider: "openai".into(),
-        model: data.model,
-        model_version: None,
-        probability_source: DecisionProbabilitySource::Native,
-        usage,
-        latency_ms: None,
-        provider_metadata: Some(crate::decision_support::response_metadata("openai", &raw)?),
-        response: Some(DecisionResponse {
-            headers: Some(headers),
-            body: Some(raw),
-        }),
+    // not discard valid decisions; unknown counts stay unset.
+    let count = |key: &str| {
+        data.usage
+            .as_ref()
+            .and_then(|usage| usage[key].as_u64())
+            .and_then(|n| u32::try_from(n).ok())
     };
-    result.validate(request)?;
-    Ok(result)
+    let usage = data.usage.as_ref().map(|_| DecisionUsage {
+        input_tokens: count("input_tokens"),
+        output_tokens: count("output_tokens"),
+    });
+    // Checked here as well as in `decide`, so a wrong answer keeps the
+    // exchange's HTTP context.
+    validate_decision_answers(&request.questions, &answers, None)?;
+    Ok(DecisionResult {
+        answers,
+        rounding: None,
+        usage,
+        warnings: Vec::new(),
+        provider_metadata: Some(provider_metadata(
+            "openai",
+            DecisionProbabilitySource::Native,
+            extras,
+        )),
+        response: Some(response_info(Some(&data.model), headers, raw)),
+    })
 }
 
 #[async_trait]
@@ -396,30 +461,16 @@ impl DecisionModel for OpenAIDecisionModel {
     fn model_id(&self) -> &str {
         &self.model_id
     }
-    fn capabilities(&self) -> DecisionCapabilities {
-        DecisionCapabilities {
-            supports_images: true,
-            max_images: Some(128),
-            supports_typed_choices: true,
-            rounding: DecisionRounding::default(),
-            probability_source: DecisionProbabilitySource::Native,
-            supports_boolean: true,
-            supports_choice: true,
-            supports_score: true,
-            returns_distributions: true,
-            max_questions: None,
-            min_choices: Some(2),
-            max_choices: Some(255),
-            max_score_levels: None,
-        }
+    fn supported_question_types(&self) -> &[DecisionQuestionType] {
+        DecisionQuestionType::ALL
     }
     async fn do_decide(&self, options: &DecisionCallOptions) -> Result<DecisionResult, AiMuxError> {
-        let body = request_body(&self.model_id, options)?;
+        let Request { body, values } = request_body(&self.model_id, options)?;
         let url = self.config.url("/decisions")?;
         crate::decision_support::post(&self.config, options, &url, body, |raw, headers| {
             let data = serde_json::from_value(raw.clone())
-                .map_err(|e| crate::decision_support::invalid(format!("OpenAI decisions: {e}")))?;
-            convert_response(data, raw, headers, options)
+                .map_err(|e| invalid(format!("OpenAI decisions: {e}")))?;
+            convert_response(data, raw, headers, options, &values)
         })
         .await
     }

@@ -1,76 +1,158 @@
 //! User-facing message types.
 //!
-//! `ModelMessage` is what the user passes to `generate_text` / `stream_text`.
-//! It is converted to `LanguageModelPrompt` (provider-facing) before calling
+//! `ModelMessage` is what the user passes to `generate_text` / `stream_text`:
+//! the AI SDK's `ModelMessage` (`@ai-sdk/provider-utils`
+//! `types/model-message.ts:10`), a union by role in which every message may
+//! carry message-level `provider_options`. It is converted to
+//! `LanguageModelPrompt` (provider-facing) before calling
 //! `LanguageModel::do_generate` / `do_stream`.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::content::ContentPart;
+use crate::content::{AssistantContentPart, ToolContentPart, UserContentPart};
+use crate::shared::SharedProviderOptions;
 
-/// Who sent the message.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, TS)]
-#[serde(rename_all = "lowercase")]
+/// A single user-facing chat message, a union by role.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "role",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export)]
-pub enum Role {
-    System,
-    /// The default role (a bare `Role::default()` yields `User`, matching the
-    /// common case for prompts built in tests).
-    #[default]
-    User,
-    Assistant,
-    Tool,
+pub enum ModelMessage {
+    /// Upstream `SystemModelMessage`.
+    System {
+        content: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// Upstream `UserModelMessage`.
+    User {
+        content: UserContent,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// Upstream `AssistantModelMessage`.
+    Assistant {
+        content: AssistantContent,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
+    /// Upstream `ToolModelMessage`.
+    Tool {
+        content: ToolContent,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_options: Option<SharedProviderOptions>,
+    },
 }
 
-/// Message body: either a simple string or multi-part content.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+/// The content of a user message: a string or parts (upstream `UserContent`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(untagged)]
 #[ts(export)]
-pub enum MessageContent {
+pub enum UserContent {
     Text(String),
-    Parts(Vec<ContentPart>),
+    Parts(Vec<UserContentPart>),
 }
 
-/// A single user-facing chat message.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+/// The content of an assistant message: a string or parts (upstream
+/// `AssistantContent`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(untagged)]
 #[ts(export)]
-pub struct ModelMessage {
-    pub role: Role,
-    pub content: MessageContent,
+pub enum AssistantContent {
+    Text(String),
+    Parts(Vec<AssistantContentPart>),
 }
+
+/// The content of a tool message (upstream `ToolContent`).
+pub type ToolContent = Vec<ToolContentPart>;
 
 impl ModelMessage {
-    /// Convenience constructor for a text message.
-    pub fn text(role: Role, text: impl Into<String>) -> Self {
-        Self {
-            role,
-            content: MessageContent::Text(text.into()),
+    /// System message.
+    pub fn system(text: impl Into<String>) -> Self {
+        Self::System {
+            content: text.into(),
+            provider_options: None,
         }
     }
 
-    /// System message.
-    pub fn system(text: impl Into<String>) -> Self {
-        Self::text(Role::System, text)
-    }
-
-    /// User message.
+    /// User message with text content.
     pub fn user(text: impl Into<String>) -> Self {
-        Self::text(Role::User, text)
+        Self::User {
+            content: UserContent::Text(text.into()),
+            provider_options: None,
+        }
     }
 
-    /// Assistant message.
+    /// Assistant message with text content.
     pub fn assistant(text: impl Into<String>) -> Self {
-        Self::text(Role::Assistant, text)
+        Self::Assistant {
+            content: AssistantContent::Text(text.into()),
+            provider_options: None,
+        }
     }
 
     /// User message with multi-part content.
     #[must_use]
-    pub fn user_parts(parts: Vec<ContentPart>) -> Self {
-        Self {
-            role: Role::User,
-            content: MessageContent::Parts(parts),
+    pub fn user_parts(parts: Vec<UserContentPart>) -> Self {
+        Self::User {
+            content: UserContent::Parts(parts),
+            provider_options: None,
+        }
+    }
+
+    /// Assistant message with multi-part content.
+    #[must_use]
+    pub fn assistant_parts(parts: Vec<AssistantContentPart>) -> Self {
+        Self::Assistant {
+            content: AssistantContent::Parts(parts),
+            provider_options: None,
+        }
+    }
+
+    /// Tool message.
+    #[must_use]
+    pub fn tool(parts: ToolContent) -> Self {
+        Self::Tool {
+            content: parts,
+            provider_options: None,
+        }
+    }
+
+    /// The message's role: `system`, `user`, `assistant` or `tool`.
+    #[must_use]
+    pub fn role(&self) -> &'static str {
+        match self {
+            Self::System { .. } => "system",
+            Self::User { .. } => "user",
+            Self::Assistant { .. } => "assistant",
+            Self::Tool { .. } => "tool",
+        }
+    }
+
+    /// The message-level provider options.
+    #[must_use]
+    pub fn provider_options(&self) -> Option<&SharedProviderOptions> {
+        match self {
+            Self::System {
+                provider_options, ..
+            }
+            | Self::User {
+                provider_options, ..
+            }
+            | Self::Assistant {
+                provider_options, ..
+            }
+            | Self::Tool {
+                provider_options, ..
+            } => provider_options.as_ref(),
         }
     }
 }

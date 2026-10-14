@@ -305,7 +305,11 @@ async fn run(
     model_id: &str,
     options: TranscriptionStreamOptions,
 ) -> Vec<Result<TranscriptionStreamPart, AiMuxError>> {
-    let result = model(base_url, model_id).do_stream(options).await.unwrap();
+    let result = model(base_url, model_id)
+        .do_stream(options)
+        .expect("the model has do_stream")
+        .await
+        .unwrap();
     tokio::time::timeout(std::time::Duration::from_secs(10), result.stream.collect())
         .await
         .expect("stream finished")
@@ -552,6 +556,7 @@ async fn surfaces_server_error_messages() {
 async fn rejects_streaming_on_unary_model_ids() {
     let error = model("http://127.0.0.1:1", "gemini-3.5-transcribe")
         .do_stream(stream_options(one_chunk(), Some(16000), None, false))
+        .expect("the model has do_stream")
         .await
         .unwrap_err();
     assert!(
@@ -566,6 +571,7 @@ async fn rejects_streaming_on_unary_model_ids() {
 async fn rejects_non_16khz_pcm_input_audio() {
     let error = model("http://127.0.0.1:1", "gemini-3.5-transcribe-live")
         .do_stream(stream_options(one_chunk(), Some(24000), None, false))
+        .expect("the model has do_stream")
         .await
         .unwrap_err();
     assert!(
@@ -591,4 +597,20 @@ async fn emits_raw_chunks_when_include_raw_chunks_is_set() {
     )
     .await;
     assert!(described(&parts).iter().any(|part| part == "raw"));
+}
+
+/// Only `transcribe` downloads an audio URL (layer 5's `AudioInput::Url`);
+/// the model itself refuses one before any request, as every transcription
+/// model does.
+#[tokio::test]
+async fn url_audio_is_refused_before_any_request() {
+    let server = MockServer::start().await;
+    let mut options = wav_call(None);
+    options.audio = AudioInput::Url("https://cdn.test/a.wav".into());
+    let error = model(&server.uri(), "gemini-3.5-transcribe")
+        .do_generate(&options)
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), AudioInput::url_error().to_string());
+    assert!(server.received_requests().await.unwrap().is_empty());
 }

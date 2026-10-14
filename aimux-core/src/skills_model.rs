@@ -56,6 +56,10 @@ pub struct UploadSkillResult {
 
 #[async_trait]
 pub trait Skills: Send + Sync {
+    /// Specification version (always `"v4"`).
+    fn specification_version(&self) -> &'static str {
+        "v4"
+    }
     fn provider(&self) -> &str;
     async fn upload_skill(
         &self,

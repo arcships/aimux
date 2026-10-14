@@ -52,10 +52,9 @@ struct RequestBodyResult {
     warnings: Vec<Warning>,
 }
 
-fn timestamp(created: Option<f64>) -> Option<String> {
-    created
-        .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-        .map(|dt| dt.to_rfc3339())
+/// `new Date(created * 1000)`.
+fn timestamp(created: Option<f64>) -> Option<aimux_core::Timestamp> {
+    created.and_then(aimux_core::Timestamp::from_unix_seconds)
 }
 
 /// The HTTP status a stream error code stands for: a number or a three-digit
@@ -358,7 +357,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
         &self.model_id
     }
 
-    fn supported_urls(&self) -> SupportedUrls {
+    async fn supported_urls(&self) -> SupportedUrls {
         self.config.endpoint.supported_urls(&self.model_id)
     }
 
@@ -374,7 +373,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             exchange.request(exchange.url("/chat/completions"), options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler::<ChatResponse>(),
-            aimux_provider_utils::create_standard_json_error_response_handler(),
+            super::types::deepseek_failed_response_handler(),
         )
         .await?;
 
@@ -493,7 +492,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             exchange.request(endpoint.clone(), options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
-            aimux_provider_utils::create_standard_json_error_response_handler(),
+            super::types::deepseek_failed_response_handler(),
         )
         .await?;
         let response_headers = resp.response_headers;

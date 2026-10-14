@@ -143,7 +143,7 @@ fmt.Println(result)
 // streaming (typed: model.Stream(prompt, opts) yields *StreamPart values)
 stream := model.StreamText(`"Write a haiku"`, "")
 for part := range stream.Parts() {
-    fmt.Println(part) // StreamPart JSON, e.g. {"type":"text-delta","id":"0","delta":"..."}
+    fmt.Println(part) // StreamPart JSON, e.g. {"type":"text-delta","id":"0","text":"..."}
 }
 if err := stream.Err(); err != nil { // only after Parts has closed
     log.Fatal(err)
@@ -207,7 +207,7 @@ if err != nil {
 fmt.Println(result)
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -235,7 +235,7 @@ for part := range typed.Parts() {
     if part.Type == "text-delta" {
         var td aimux.TextDeltaPayload
         json.Unmarshal(part.Raw, &td)
-        fmt.Print(td.Delta)
+        fmt.Print(td.Text)
     }
 }
 ```
@@ -343,7 +343,7 @@ result, err := aimux.ParseSpeechResult(resultJSON)
 if err != nil {
     log.Fatal(err)
 }
-// audio bytes: []byte(result.Audio) (base64 string or byte array on the wire)
+// audio bytes: []byte(result.Audio) (a base64 string on the wire)
 ```
 
 ## Speech to Text (STT)
@@ -398,7 +398,8 @@ if err != nil {
 
 ## Video Generation
 
-Video generation typically returns a URL (not binary).
+Most video models return a URL; `Generate` downloads it, as the AI SDK's
+`generateVideo` does, and returns the video's bytes.
 
 ```go
 prompt := "A cat playing piano"
@@ -427,7 +428,7 @@ result, err := aimux.ParseVideoResult(resultJSON)
 if err != nil {
     log.Fatal(err)
 }
-// result.Videos[0].URL — video URL (Type "url"; "base64"/"binary" carry Data)
+// result.Videos[0].Data — the downloaded video (Type "binary": a video returned as a URL is downloaded)
 ```
 
 ## Reranking
@@ -511,7 +512,8 @@ result, err := aimux.ParseUploadFileResult(resultJSON)
 if err != nil {
     log.Fatal(err)
 }
-fmt.Println(result.ProviderReference)  // map["openai":"file-xxx"]
+id, _ := result.ProviderReference.Get("openai")
+fmt.Println(id)  // file-xxx
 ```
 
 ## API Surface
@@ -580,9 +582,10 @@ Typed structs live in `bindings/go/types.go` (text) and
 `bindings/go/multimodal_types.go` (multimodal): `GenerateTextOptions`,
 `GenerateTextResult`, `StreamPart`, `ModelMessage`, `Tool`, `ToolChoice`
 (with helpers `ToolChoiceAuto()` / `ToolChoiceNone()`), `ToolCall`,
-`ToolResult`, `Usage`, `FinishReason`, `Role`, `MessageContent`, `ContentPart`,
-`ResponseFormat`, `ReasoningEffort`, `Warning`, `GenerateResult`,
-`RawToolCall`, `ToolCallRepairContext`, `RepairToolCallFunc`, plus
+`ToolResult`, `LanguageModelUsage`, `StepResult`, `FinishReasonUnified`,
+`Usage`, `FinishReason`, `Role`, `MessageContent`, `ContentPart`,
+`ReasoningEffort`, `Warning`, `GenerateResult`, `GenerateObjectResult`,
+`RawToolCall`, `ToolCallRepairContext`, `RepairToolCallFunc`, `GeneratedFile`, plus
 `EmbeddingCallOptions/Result`, `SpeechCallOptions/Result`,
 `ImageCallOptions/Result`, `TranscriptionCallOptions/Result`,
 `VideoCallOptions/Result`, `RerankingCallOptions/Result`,
@@ -593,7 +596,7 @@ The multimodal methods return JSON strings through the C ABI; the
 pointer fields (`*string`, `*bool`, `*int`) are optional — pass `nil` to omit.
 Image `Size` and video `Resolution` are `"WxH"` strings (`"1024x1024"`);
 `AspectRatio` is `"W:H"` (`"16:9"`). Binary data (`Audio`, `Images`, `VideoData.Data`) is `aimux.Bytes`: a
-base64 string or a byte array on the wire, always `[]byte` in Go.
+base64 string on the wire (the AI SDK's JSON for a `Uint8Array`), always `[]byte` in Go.
 
 ### Wire format
 
@@ -602,7 +605,19 @@ generated TypeScript types in `bindings/node/src/types/`: camelCase field names
 (`toolCallId`, `finishReason`, `inputTokens`, `providerOptions`, ...), unions
 tagged by a `type` key (`"tool-call"`, `"text-delta"`, ...; errors by `name`),
 and optional fields absent rather than `null`. Go field tags follow it, so a
-typed struct marshals to exactly that JSON.
+typed struct marshals to exactly that JSON. An `unknown` value keeps a JSON
+`null` apart from a missing field: response and request `Body` fields are
+`json.RawMessage`, `nil` when the field was missing and `null` when the JSON
+carried `null`; so is `Error.Data`, the API call error's data.
+A response `Timestamp` is a JavaScript `Date` in the AI SDK's JSON: a
+`toISOString()` string, UTC with milliseconds (`"2025-03-06T13:50:19.000Z"`),
+which `time.Parse(time.RFC3339, ...)` reads.
+
+A generated file (`GenerateTextResult.Files`) is a `GeneratedFile`, the AI
+SDK's `{"base64", "mediaType", "providerMetadata"?}`; `Bytes()` decodes it.
+A `file` / `reasoning-file` content or stream part wraps it as
+`{"type": "file", "file": {...}, "providerMetadata"?}`; the provider-level
+`GenerateResult.Content` keeps `{"type": "file", "mediaType", "data": {"type": "data" | "url", ...}}`.
 
 A tool result goes back to the model as a `tool-result` content part in a
 `tool` message; its `output` is a union:
@@ -626,3 +641,9 @@ msg := aimux.ModelMessage{
 `ToolCall` carries `ProviderMetadata` plus `Invalid` (set by Core when tool
 lookup, input parse, or schema validation fails, even after repair) and `Error`
 (the serialized `AiMuxError` for that failure).
+
+`ToolCall` and `RawToolCall` marshal with `"type": "tool-call"` first, and
+`Source` with `"type": "source"` before its `sourceType`, as the AI SDK's
+`TypedToolCall` and `Source` (a result's `ToolCalls` and `Sources`, a repair
+context's `ToolCall`). Unmarshaling accepts JSON without the tag and rejects a
+different one.

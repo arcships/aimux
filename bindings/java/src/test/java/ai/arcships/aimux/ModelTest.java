@@ -80,6 +80,21 @@ class ModelTest {
     }
 
     @Test
+    void responseTimestampIsToIsoString() {
+        // The response timestamp is a Date (provider
+        // language-model-v4-response-metadata.ts:10), built as
+        // new Date(created * 1000); its JSON is toISOString().
+        try (MockProviderServer server = new MockProviderServer();
+             Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o-mini", server.chatConfig())) {
+            server.setResponseBody(new JSONObject(plainOpenAiResponse()).put("created", 1741269019).toString());
+
+            JSONObject result = new JSONObject(model.generateText("\"Hello\""));
+            assertThat(result.getJSONObject("response").getString("timestamp"))
+                .isEqualTo("2025-03-06T13:50:19.000Z");
+        }
+    }
+
+    @Test
     void generateTextRejectsInvalidPrompt() {
         try (Model model = Model.openai("sk-test-fake-key", "gpt-4o-mini")) {
             // Malformed raw JSON is rejected by the binding before the C call.

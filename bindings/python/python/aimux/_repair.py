@@ -66,14 +66,13 @@ def repair_result(
 ) -> str:
     """Repair every invalid tool call of a serialized result, in order.
 
-    Handles ``generate_text`` / ``generate_object`` (``raw.toolCalls``) and the
-    aggregated stream result alike; one repair attempt per call, as in the
+    Handles the ``generate_text`` result and the consumed stream's result
+    alike (``toolCalls``, the final step's calls); a ``generate_object``
+    result carries no tool calls. One repair attempt per call, as in the
     AI SDK. Returns the patched result JSON.
     """
     result = json.loads(result_json)
-    calls = result.get("toolCalls")
-    if calls is None:
-        calls = result.get("raw", {}).get("toolCalls") or []
+    calls = result.get("toolCalls") or []
     for call in calls:
         if not call.get("invalid"):
             continue

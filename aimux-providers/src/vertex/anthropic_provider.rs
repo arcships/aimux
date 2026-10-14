@@ -57,13 +57,13 @@ pub fn create_google_vertex_anthropic(
         location: settings.location,
         base_url: settings.base_url,
         headers: settings.headers,
-        fetch: settings.fetch,
+        fetch: settings.fetch.clone(),
         google_auth_options: Some(auth.clone()),
         ..Default::default()
     })?;
     let resolver = Arc::get_mut(&mut provider.resolver).expect("new provider resolver is unique");
     resolver.use_access_token_env = false;
-    resolver.auth = super::auth::GoogleAuth::new(auth, provider.fetch.clone());
+    resolver.auth = super::auth::GoogleAuth::new(auth, settings.fetch);
     Ok(VertexAnthropicProvider(provider))
 }
 

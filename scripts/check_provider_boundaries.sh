@@ -86,7 +86,6 @@ for pattern in \
     'fn retry_config' \
     'RetryConfig' \
     'Provider::name' \
-    'fn specification_version' \
     'StaticBearerConfig' \
     'api_key_source' \
     'body_merge|apply_body_overrides|deep_merge_json'; do

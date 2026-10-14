@@ -34,9 +34,12 @@ url: string,
 requestBodyValues: JsonValue, 
 /**
  * HTTP status of the response, when it came from one
- * (`APICallError.statusCode`). Always the *observed* status: the HTTP
- * layer fills it for every response-derived error; errors built without
- * an HTTP exchange leave it `None`.
+ * (`APICallError.statusCode`). The HTTP layer fills the observed status
+ * for every response-derived error. An error frame inside a stream
+ * carries the status its provider maps it to, as upstream's provider
+ * stream errors do (OpenAI infers one from the frame's `code`/`type`,
+ * Anthropic from its error type); errors built without an HTTP exchange
+ * leave it `None`.
  */
 statusCode?: number, 
 /**

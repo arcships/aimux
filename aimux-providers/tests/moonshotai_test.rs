@@ -7,8 +7,9 @@
 //! Moonshot AI is a registry preset of the OpenAI-compatible package.
 //! The TS suite has a custom usage converter that recognises a **top-level**
 //! `cached_tokens` field (Moonshot's wire format) and prioritises it over the
-//! nested `prompt_tokens_details.cached_tokens`. The shared OpenAI
-//! `convert_usage` now does the same (preferring the top-level field), so these
+//! nested `prompt_tokens_details.cached_tokens`. aimux does the same in the
+//! Moonshot preset's usage converter (the native OpenAI chat converter reads
+//! only the nested field, as upstream convert-openai-chat-usage.ts:28), so these
 //! usage-conversion tests are translated as HTTP-mocked round-trips through the
 //! provider.
 //!
@@ -302,6 +303,20 @@ async fn converts_basic_usage() {
     assert_eq!(usage.output_tokens.reasoning, Some(0));
 }
 
+/// TS: "should convert usage with top-level cached_tokens (Moonshot format)".
+#[tokio::test]
+async fn converts_top_level_cached_tokens() {
+    let usage = usage_for(json!({
+        "prompt_tokens": 100, "completion_tokens": 50, "cached_tokens": 30
+    }))
+    .await;
+    assert_eq!(usage.input_tokens.total, Some(100));
+    assert_eq!(usage.input_tokens.cache_read, Some(30));
+    assert_eq!(usage.input_tokens.no_cache, Some(70));
+    assert_eq!(usage.output_tokens.total, Some(50));
+    assert_eq!(usage.output_tokens.text, Some(50));
+}
+
 /// TS: "should convert usage with nested cached_tokens (OpenAI format)".
 #[tokio::test]
 async fn converts_nested_cached_tokens() {
@@ -315,6 +330,20 @@ async fn converts_nested_cached_tokens() {
     assert_eq!(usage.input_tokens.no_cache, Some(75));
 }
 
+/// TS: "should prioritize top-level cached_tokens over nested".
+#[tokio::test]
+async fn prioritizes_top_level_cached_tokens() {
+    let usage = usage_for(json!({
+        "prompt_tokens": 100,
+        "completion_tokens": 50,
+        "cached_tokens": 40,
+        "prompt_tokens_details": { "cached_tokens": 25 }
+    }))
+    .await;
+    assert_eq!(usage.input_tokens.cache_read, Some(40));
+    assert_eq!(usage.input_tokens.no_cache, Some(60));
+}
+
 /// TS: "should convert usage with reasoning tokens".
 #[tokio::test]
 async fn converts_reasoning_tokens() {
@@ -325,6 +354,22 @@ async fn converts_reasoning_tokens() {
     }))
     .await;
     assert_eq!(usage.output_tokens.total, Some(80));
+    assert_eq!(usage.output_tokens.reasoning, Some(30));
+    assert_eq!(usage.output_tokens.text, Some(50));
+}
+
+/// TS: "should convert usage with both cached and reasoning tokens".
+#[tokio::test]
+async fn converts_cached_and_reasoning_tokens() {
+    let usage = usage_for(json!({
+        "prompt_tokens": 100,
+        "completion_tokens": 80,
+        "cached_tokens": 35,
+        "completion_tokens_details": { "reasoning_tokens": 30 }
+    }))
+    .await;
+    assert_eq!(usage.input_tokens.cache_read, Some(35));
+    assert_eq!(usage.input_tokens.no_cache, Some(65));
     assert_eq!(usage.output_tokens.reasoning, Some(30));
     assert_eq!(usage.output_tokens.text, Some(50));
 }

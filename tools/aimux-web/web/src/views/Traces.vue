@@ -77,11 +77,17 @@ function recLatency(r: Recording): number {
 }
 
 function recTokens(r: Recording): number | null {
-  const u = r.outcome?.usage as { inputTokens?: { total?: number }; outputTokens?: { total?: number } } | null | undefined
+  // Recordings store the call-level usage (`LanguageModelUsage`: flat token
+  // counts); older recordings stored `{ inputTokens: { total } }` or the
+  // snake_case `{ input_tokens: { total } }`.
+  type Count = number | { total?: number | null } | null | undefined
+  const u = r.outcome?.usage as
+    | { inputTokens?: Count; outputTokens?: Count; input_tokens?: Count; output_tokens?: Count }
+    | null
+    | undefined
   if (!u) return null
-  const input = u.inputTokens?.total ?? 0
-  const output = u.outputTokens?.total ?? 0
-  return input + output
+  const count = (c: Count): number => (typeof c === 'number' ? c : (c?.total ?? 0))
+  return count(u.inputTokens ?? u.input_tokens) + count(u.outputTokens ?? u.output_tokens)
 }
 
 function timeLabel(r: Recording): string {

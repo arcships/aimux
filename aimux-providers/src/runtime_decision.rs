@@ -1,13 +1,16 @@
 //! Official runtime decision endpoints. Connection identity stays with the runtime.
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use aimux_core::AiMuxError;
 use aimux_core::decision_model::*;
-use aimux_core::types::{InputTokenUsage, OutputTokenUsage, Usage};
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 
-use crate::decision_support::{self as support, DecisionConfig, invalid};
+use crate::decision_support::{
+    self as support, DecisionConfig, DecisionImage, DecisionProbabilitySource, candidate_count,
+    invalid, provider_metadata, response_info,
+};
 use crate::openai_compatible::config::CompatModelConfig;
 
 pub(crate) fn supported(provider: &str) -> bool {
@@ -22,6 +25,49 @@ pub(crate) fn supported(provider: &str) -> bool {
             | "cloudflare"
             | "cloudflare_workers_ai"
     )
+}
+
+fn is_cloudflare(provider: &str) -> bool {
+    matches!(provider, "cloudflare" | "cloudflare_workers_ai")
+}
+
+/// What a runtime's decision endpoint accepts, checked before any request.
+struct Limits {
+    images: bool,
+    max_images: Option<usize>,
+    max_questions: Option<usize>,
+    min_choices: usize,
+    max_choices: Option<usize>,
+    max_score_levels: Option<usize>,
+}
+
+fn limits(provider: &str) -> Limits {
+    let cloudflare = is_cloudflare(provider);
+    Limits {
+        images: provider != "laya",
+        max_images: match provider {
+            "localai" => Some(8),
+            _ if cloudflare => Some(4),
+            _ => None,
+        },
+        max_questions: match provider {
+            "ollama" | "localai" | "laya" => Some(64),
+            _ if cloudflare => Some(64),
+            _ => None,
+        },
+        min_choices: if provider == "sglang" { 1 } else { 2 },
+        max_choices: match provider {
+            "laya" => Some(100),
+            _ if cloudflare => Some(255),
+            _ => None,
+        },
+        max_score_levels: match provider {
+            "laya" => Some(32),
+            "llamacpp" => Some(10),
+            _ if cloudflare => Some(10),
+            _ => None,
+        },
+    }
 }
 
 /// Decisions of an official runtime, made from its OpenAI-compatible preset.
@@ -55,23 +101,70 @@ impl RuntimeDecisionModel {
         })
     }
 
+    /// Reject what the runtime cannot take before any request.
+    fn preflight(
+        &self,
+        request: &DecisionCallOptions,
+        images: &[DecisionImage],
+    ) -> Result<(), AiMuxError> {
+        let provider = self.provider();
+        let limits = limits(provider);
+        if !images.is_empty() && !limits.images {
+            return Err(AiMuxError::UnsupportedFunctionality(format!(
+                "{provider} decisions do not accept images"
+            )));
+        }
+        if let Some(max) = limits.max_images.filter(|max| images.len() > *max) {
+            return Err(AiMuxError::InvalidArgument(format!(
+                "{provider} accepts at most {max} decision images"
+            )));
+        }
+        if let Some(max) = limits
+            .max_questions
+            .filter(|max| request.questions.len() > *max)
+        {
+            return Err(AiMuxError::InvalidArgument(format!(
+                "{provider} accepts at most {max} decision questions"
+            )));
+        }
+        for (id, question) in &request.questions {
+            let within = match question {
+                DecisionQuestion::Choice { criteria, .. } => {
+                    criteria.len() >= limits.min_choices
+                        && limits.max_choices.is_none_or(|max| criteria.len() <= max)
+                }
+                DecisionQuestion::Score { criteria, .. } => limits
+                    .max_score_levels
+                    .is_none_or(|max| criteria.len() <= max),
+                DecisionQuestion::Boolean { .. } => true,
+            };
+            if !within {
+                return Err(AiMuxError::InvalidArgument(format!(
+                    "question {id:?} exceeds {provider} criteria limits"
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn systemone_request(
         &self,
         request: &DecisionCallOptions,
         mut options: Map<String, Value>,
+        images: &[DecisionImage],
     ) -> Result<(String, Value), AiMuxError> {
         let provider = self.provider();
-        let mut body = crate::systemone::request_body(&self.model_id, request)?;
+        let mut body = crate::systemone::request_body(&self.model_id, request);
         if matches!(provider, "vllm" | "sglang") {
-            for question in &request.questions {
+            for question in request.questions.values() {
                 let valid = match question {
-                    DecisionQuestion::Choice { options, .. } => {
-                        options.len() <= if provider == "vllm" { 26 } else { 255 }
+                    DecisionQuestion::Choice { criteria, .. } => {
+                        criteria.len() <= if provider == "vllm" { 26 } else { 255 }
                     }
-                    DecisionQuestion::Score { levels, .. } => {
-                        levels.len() <= if provider == "vllm" { 26 } else { 10 }
+                    DecisionQuestion::Score { criteria, .. } => {
+                        criteria.len() <= if provider == "vllm" { 26 } else { 10 }
                     }
-                    _ => true,
+                    DecisionQuestion::Boolean { .. } => true,
                 };
                 if !valid || (provider == "vllm" && request.questions.len() > 64) {
                     return Err(AiMuxError::InvalidArgument(format!(
@@ -81,19 +174,11 @@ impl RuntimeDecisionModel {
             }
         }
         if provider == "laya" {
-            let state_len = request.state.as_str().map_or_else(
-                || request.state.to_string().chars().count(),
-                |s| s.chars().count(),
-            );
-            let count: usize = request
-                .questions
-                .iter()
-                .map(|q| match q {
-                    DecisionQuestion::Boolean { .. } => 2,
-                    DecisionQuestion::Choice { options, .. } => options.len(),
-                    DecisionQuestion::Score { levels, .. } => levels.len(),
-                })
-                .sum();
+            let state_len = match &request.state {
+                DecisionInput::Text(text) => text.chars().count(),
+                state => serde_json::to_string(state)?.chars().count(),
+            };
+            let count: usize = request.questions.values().map(candidate_count).sum();
             if state_len > 50_000 || count > 512 {
                 return Err(AiMuxError::InvalidArgument(
                     "Laya state exceeds 50,000 characters or questions exceed 512 total options"
@@ -150,18 +235,22 @@ impl RuntimeDecisionModel {
                     }
                 }
             }
-            for q in &request.questions {
-                if matches!(q, DecisionQuestion::Score { levels, .. } if levels.iter().any(|l| !matches!(l, DecisionDescription::Text(_))))
-                {
-                    return Err(AiMuxError::UnsupportedFunctionality("vLLM diffusion score levels must be text; its server stringifies structured levels".into()));
-                }
+            let structured_level =
+                |level: &Option<DecisionInput>| !matches!(level, Some(DecisionInput::Text(_)));
+            if request.questions.values().any(|question| {
+                matches!(question, DecisionQuestion::Score { criteria, .. } if criteria.iter().any(structured_level))
+            }) {
+                return Err(AiMuxError::UnsupportedFunctionality(
+                    "vLLM diffusion score levels must be text; its server stringifies structured levels"
+                        .into(),
+                ));
             }
         }
         copy_options(&mut body, options, allowed)?;
-        self.add_images(request, &mut body)?;
+        self.add_images(images, &mut body)?;
         let base = self.config.base_url()?;
         let base = base.as_str();
-        let url = if matches!(provider, "cloudflare" | "cloudflare_workers_ai") {
+        let url = if is_cloudflare(provider) {
             let model = self
                 .model_id
                 .strip_prefix("@cf/cloudflare/")
@@ -171,10 +260,10 @@ impl RuntimeDecisionModel {
                     "Cloudflare native decisions support clef and clef-flash".into(),
                 ));
             }
-            for q in &request.questions {
-                if q.id().len() > 100
-                    || !q
-                        .id()
+            for id in request.questions.keys() {
+                if id.is_empty()
+                    || id.len() > 100
+                    || !id
                         .bytes()
                         .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
                 {
@@ -194,9 +283,9 @@ impl RuntimeDecisionModel {
         };
         let body_limit = match provider {
             "laya" => Some(2 * 1024 * 1024),
-            "localai" if request.images.is_empty() => Some(64 * 1024),
+            "localai" if images.is_empty() => Some(64 * 1024),
             "localai" => Some(16 * 1024 * 1024),
-            "cloudflare" | "cloudflare_workers_ai" => Some(13 * 1024 * 1024),
+            _ if is_cloudflare(provider) => Some(13 * 1024 * 1024),
             _ => None,
         };
         if body_limit.is_some_and(|limit| body.to_string().len() > limit) {
@@ -207,23 +296,20 @@ impl RuntimeDecisionModel {
         Ok((url, body))
     }
 
-    fn add_images(
-        &self,
-        request: &DecisionCallOptions,
-        body: &mut Value,
-    ) -> Result<(), AiMuxError> {
-        if request.images.is_empty() {
+    fn add_images(&self, images: &[DecisionImage], body: &mut Value) -> Result<(), AiMuxError> {
+        if images.is_empty() {
             return Ok(());
         }
         let provider = self.provider();
-        let mut images = Vec::new();
+        let restricted = provider == "localai" || is_cloudflare(provider);
+        let mut wire = Vec::new();
         let mut total = 0;
         let mut encoded_total = 0;
-        for image in &request.images {
+        for image in images {
             let inline = support::inline_image(image)?;
             total += inline.decoded_len;
             encoded_total += inline.data_url.len();
-            if matches!(provider, "localai" | "cloudflare" | "cloudflare_workers_ai") {
+            if restricted {
                 let allowed = matches!(image.media_type.as_str(), "image/png" | "image/jpeg")
                     || (provider != "localai" && image.media_type == "image/webp");
                 if !allowed || (provider != "localai" && inline.decoded_len > 4 * 1024 * 1024) {
@@ -237,7 +323,7 @@ impl RuntimeDecisionModel {
                     "{provider} does not support image detail"
                 )));
             }
-            images.push(match provider {
+            wire.push(match provider {
                 "ollama" => json!(inline.base64),
                 "sglang" => {
                     let mut value = json!({"url":inline.data_url});
@@ -249,9 +335,7 @@ impl RuntimeDecisionModel {
                 _ => json!(inline.data_url),
             });
         }
-        if matches!(provider, "localai" | "cloudflare" | "cloudflare_workers_ai")
-            && total > 8 * 1024 * 1024
-        {
+        if restricted && total > 8 * 1024 * 1024 {
             return Err(AiMuxError::InvalidArgument(format!(
                 "{provider} images exceed 8 MiB decoded"
             )));
@@ -261,7 +345,7 @@ impl RuntimeDecisionModel {
                 "LocalAI image URLs exceed 12 MiB".into(),
             ));
         }
-        body["images"] = json!(images);
+        body["images"] = json!(wire);
         Ok(())
     }
 
@@ -271,7 +355,8 @@ impl RuntimeDecisionModel {
         raw: Value,
         headers: HashMap<String, String>,
     ) -> Result<DecisionResult, AiMuxError> {
-        let mut data = if matches!(self.provider(), "cloudflare" | "cloudflare_workers_ai") {
+        let provider = self.provider();
+        let data = if is_cloudflare(provider) {
             if raw.get("success") != Some(&json!(true)) {
                 return Err(invalid("Cloudflare decision request failed"));
             }
@@ -281,25 +366,24 @@ impl RuntimeDecisionModel {
         } else {
             raw.clone()
         };
-        let mut skipped = Vec::new();
-        if self.provider() == "vllm" {
-            let diagnostics = data.get("diagnostics").cloned().unwrap_or(Value::Null);
-            if let Some(answers) = data.get_mut("answers").and_then(Value::as_object_mut) {
-                for (id, answer) in answers.iter() {
-                    if answer.is_null()
-                        && diagnostics.get("skipped").and_then(|d| d.get(id)).is_some()
-                    {
-                        skipped.push(id.clone());
-                    }
-                }
-                for id in &skipped {
-                    answers.remove(id);
-                }
+        // A decision answers every question: a question vLLM skipped under
+        // `ask_if` fails the call instead of becoming an answer.
+        if provider == "vllm" {
+            let skipped = data["answers"].as_object().and_then(|answers| {
+                answers.iter().find_map(|(id, answer)| {
+                    let why = data["diagnostics"]["skipped"].get(id)?;
+                    answer.is_null().then_some((id, why))
+                })
+            });
+            if let Some((id, why)) = skipped {
+                return Err(invalid(format!(
+                    "vllm skipped question {id:?} ({why}); a decision must answer every question"
+                )));
             }
         }
         // SGLang's generation-model path reports full-vocabulary label mass;
         // its dedicated decision checkpoint readout explicitly omits it.
-        let probability_source = if self.provider() == "sglang"
+        let probability_source = if provider == "sglang"
             && data["answers"].as_object().is_some_and(|answers| {
                 answers
                     .values()
@@ -309,40 +393,49 @@ impl RuntimeDecisionModel {
         } else {
             DecisionProbabilitySource::Native
         };
+        // Laya keeps its prediction when it abstains; the abstention is
+        // provider metadata of that answer.
+        let abstentions: Vec<(String, Value)> = data["answers"]
+            .as_object()
+            .map(|answers| {
+                answers
+                    .iter()
+                    .filter_map(|(id, answer)| {
+                        let abstention = answer.get("abstention").filter(|v| !v.is_null())?;
+                        Some((id.clone(), abstention.clone()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let latency = raw.get("latency_ms").filter(|v| v.is_number()).cloned();
         let mut result = crate::systemone::convert_response(
+            request,
             serde_json::from_value(data)
-                .map_err(|e| invalid(format!("{} SystemOne: {e}", self.provider())))?,
-            raw.clone(),
+                .map_err(|e| invalid(format!("{provider} SystemOne: {e}")))?,
+            raw,
             headers,
             crate::systemone::ResponseProfile {
-                provider: self.provider(),
-                rounding: DecisionRounding::default(),
+                provider,
+                rounding: None,
                 probability_source,
             },
         )?;
-        for id in skipped {
-            result.answers.insert(id, DecisionAnswer::Skipped);
-        }
-        if self.provider() == "laya" {
-            for (id, answer) in &mut result.answers {
-                if raw["answers"][id]["abstention"] == "abstained" {
-                    *answer = DecisionAnswer::Abstention;
-                }
+        let metadata = result
+            .provider_metadata
+            .get_or_insert_with(Default::default)
+            .entry(provider.to_owned())
+            .or_default();
+        if provider == "laya" && !abstentions.is_empty() {
+            let answers = metadata
+                .entry("answers")
+                .or_insert_with(|| Value::Object(Map::new()));
+            for (id, abstention) in abstentions {
+                answers[&id]["abstention"] = abstention;
             }
         }
-        // Cloudflare's usage belongs to the nested result; keep the full envelope as raw.
-        if let Some(usage) = &mut result.usage {
-            usage.raw = if raw.get("result").is_some() {
-                raw["result"]
-                    .get("usage")
-                    .and_then(Value::as_object)
-                    .cloned()
-            } else {
-                raw.get("usage").and_then(Value::as_object).cloned()
-            };
+        if let Some(latency) = latency {
+            metadata.insert("latencyMs".into(), latency);
         }
-        result.latency_ms = raw.get("latency_ms").and_then(Value::as_f64);
-        result.validate(request)?;
         Ok(result)
     }
 
@@ -350,58 +443,58 @@ impl RuntimeDecisionModel {
         &self,
         request: &DecisionCallOptions,
         options: Map<String, Value>,
+        images: &[DecisionImage],
     ) -> Result<Value, AiMuxError> {
         let mut questions = Vec::new();
-        for question in &request.questions {
-            if matches!(question, DecisionQuestion::Score { levels, .. } if levels.len() > 10) {
-                return Err(AiMuxError::InvalidArgument(
-                    "SGLang decisions scores support at most 10 levels".into(),
-                ));
-            }
+        for (id, question) in &request.questions {
             let wire = match question {
                 DecisionQuestion::Boolean {
-                    id,
                     instructions,
                     criteria,
                 } => {
                     let mut wire = json!({"id":id,"type":"yes_no","question":instructions});
                     if let Some(criteria) = criteria {
-                        if let Some(yes) = &criteria.true_description {
+                        if let Some(Some(yes)) = &criteria.true_ {
                             wire["yes"] = json!(yes);
                         }
-                        if let Some(no) = &criteria.false_description {
+                        if let Some(Some(no)) = &criteria.false_ {
                             wire["no"] = json!(no);
                         }
                     }
                     wire
                 }
                 DecisionQuestion::Choice {
-                    id,
                     instructions,
-                    options,
+                    criteria,
                 } => {
-                    if !(2..=26).contains(&options.len()) {
+                    if !(2..=26).contains(&criteria.len()) {
                         return Err(AiMuxError::InvalidArgument(
                             "SGLang decisions choices require 2–26 options".into(),
                         ));
                     }
-                    let options: Vec<_> = options
+                    let options: Vec<_> = criteria
                         .iter()
-                        .map(|o| {
-                            let mut v = json!({"name":o.label});
-                            if let Some(d) = &o.description {
-                                v["description"] = json!(d);
+                        .map(|(label, description)| {
+                            let mut option = json!({"name":label});
+                            if let Some(description) = description {
+                                option["description"] = json!(description);
                             }
-                            v
+                            option
                         })
                         .collect();
                     json!({"id":id,"type":"choice","question":instructions,"options":options})
                 }
                 DecisionQuestion::Score {
-                    id,
                     instructions,
-                    levels,
-                } => json!({"id":id,"type":"score","question":instructions,"levels":levels}),
+                    criteria,
+                } => {
+                    if criteria.len() > 10 {
+                        return Err(AiMuxError::InvalidArgument(
+                            "SGLang decisions scores support at most 10 levels".into(),
+                        ));
+                    }
+                    json!({"id":id,"type":"score","question":instructions,"levels":criteria})
+                }
             };
             questions.push(wire);
         }
@@ -416,7 +509,7 @@ impl RuntimeDecisionModel {
                 "return_prompt_token_ids",
             ],
         )?;
-        self.add_images(request, &mut body)?;
+        self.add_images(images, &mut body)?;
         Ok(body)
     }
 }
@@ -437,10 +530,13 @@ pub(crate) fn copy_options(
     Ok(())
 }
 
+/// V4 answers from one candidate distribution per question, in request
+/// order: P(yes) for Boolean, the most likely option for Choice, the mean
+/// level for Score.
 pub(crate) fn result_from_distributions(
     request: &DecisionCallOptions,
     distributions: Vec<Vec<f64>>,
-    model: String,
+    model: &str,
     provider: &str,
     raw: Value,
     headers: HashMap<String, String>,
@@ -450,8 +546,8 @@ pub(crate) fn result_from_distributions(
             "decision scoring response has wrong model or row count",
         ));
     }
-    let mut answers = BTreeMap::new();
-    for (question, probabilities) in request.questions.iter().zip(distributions) {
+    let mut answers = IndexMap::new();
+    for ((id, question), probabilities) in request.questions.iter().zip(distributions) {
         let answer = match question {
             DecisionQuestion::Boolean { .. } => {
                 if probabilities.len() != 2
@@ -466,11 +562,11 @@ pub(crate) fn result_from_distributions(
                     ));
                 }
                 DecisionAnswer::Boolean {
-                    probability_true: probabilities[0],
+                    probability: probabilities[0],
                 }
             }
-            DecisionQuestion::Choice { options, .. } => {
-                if probabilities.len() != options.len() {
+            DecisionQuestion::Choice { criteria, .. } => {
+                if probabilities.len() != criteria.len() {
                     return Err(invalid("choice scoring row has wrong number of candidates"));
                 }
                 let best = probabilities
@@ -480,68 +576,56 @@ pub(crate) fn result_from_distributions(
                     .ok_or_else(|| invalid("empty distribution"))?
                     .0;
                 DecisionAnswer::Choice {
-                    selected: options[best].label.clone(),
-                    value: None,
-                    confidence: None,
-                    probabilities: Some(
-                        options
-                            .iter()
-                            .map(|o| o.label.clone())
-                            .zip(probabilities)
-                            .collect(),
-                    ),
+                    choice: criteria
+                        .get_index(best)
+                        .map(|(label, _)| label.clone())
+                        .unwrap_or_default(),
+                    probabilities: Some(criteria.keys().cloned().zip(probabilities).collect()),
                 }
             }
-            DecisionQuestion::Score { levels, .. } => DecisionAnswer::Score {
-                expected_value: probabilities
+            DecisionQuestion::Score { .. } => DecisionAnswer::Score {
+                score: probabilities
                     .iter()
                     .enumerate()
                     .map(|(i, p)| i as f64 * p)
                     .sum(),
-                levels: levels.clone(),
-                probabilities: Some(probabilities),
-                confidence: None,
+                probabilities: Some(
+                    probabilities
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, p)| (i.to_string(), p))
+                        .collect(),
+                ),
             },
         };
-        answers.insert(question.id().into(), answer);
+        answers.insert(id.clone(), answer);
     }
+    let tokens = |key: &str| {
+        raw["usage"]
+            .get(key)
+            .and_then(Value::as_u64)
+            .and_then(|n| n.try_into().ok())
+    };
     let usage = raw
         .get("usage")
-        .filter(|v| !v.is_null())
-        .map(|value| Usage {
-            input_tokens: InputTokenUsage {
-                total: value
-                    .get("prompt_tokens")
-                    .and_then(Value::as_u64)
-                    .and_then(|n| n.try_into().ok()),
-                ..Default::default()
-            },
-            output_tokens: OutputTokenUsage {
-                total: value
-                    .get("completion_tokens")
-                    .and_then(Value::as_u64)
-                    .and_then(|n| n.try_into().ok()),
-                ..Default::default()
-            },
-            raw: value.as_object().cloned(),
+        .filter(|usage| !usage.is_null())
+        .map(|_| DecisionUsage {
+            input_tokens: tokens("prompt_tokens"),
+            output_tokens: tokens("completion_tokens"),
         });
-    let result = DecisionResult {
-        rounding: DecisionRounding::default(),
+    validate_decision_answers(&request.questions, &answers, None)?;
+    Ok(DecisionResult {
         answers,
-        provider: provider.into(),
-        model,
-        model_version: None,
-        probability_source: DecisionProbabilitySource::LogitScoring,
+        rounding: None,
         usage,
-        latency_ms: None,
-        provider_metadata: Some(support::response_metadata(provider, &raw)?),
-        response: Some(DecisionResponse {
-            headers: Some(headers),
-            body: Some(raw),
-        }),
-    };
-    result.validate(request)?;
-    Ok(result)
+        warnings: Vec::new(),
+        provider_metadata: Some(provider_metadata(
+            provider,
+            DecisionProbabilitySource::LogitScoring,
+            Map::new(),
+        )),
+        response: Some(response_info(Some(model), headers, raw)),
+    })
 }
 
 fn sglang_response(
@@ -556,20 +640,19 @@ fn sglang_response(
         return Err(invalid("SGLang answer IDs do not match request"));
     }
     let mut distributions = Vec::new();
-    for question in &request.questions {
+    for (id, question) in &request.questions {
         let answer = answers
-            .get(question.id())
+            .get(id)
             .ok_or_else(|| invalid("missing SGLang answer"))?;
-        let (kind, labels) = match question {
-            DecisionQuestion::Boolean { .. } => {
-                ("yes_no", vec!["yes".to_string(), "no".to_string()])
+        let (kind, labels): (&str, Vec<String>) = match question {
+            DecisionQuestion::Boolean { .. } => ("yes_no", vec!["yes".into(), "no".into()]),
+            DecisionQuestion::Choice { criteria, .. } => {
+                ("choice", criteria.keys().cloned().collect())
             }
-            DecisionQuestion::Choice { options, .. } => {
-                ("choice", options.iter().map(|o| o.label.clone()).collect())
-            }
-            DecisionQuestion::Score { levels, .. } => {
-                ("score", (0..levels.len()).map(|i| i.to_string()).collect())
-            }
+            DecisionQuestion::Score { criteria, .. } => (
+                "score",
+                (0..criteria.len()).map(|i| i.to_string()).collect(),
+            ),
         };
         if answer["type"] != kind {
             return Err(invalid("wrong SGLang answer type"));
@@ -591,32 +674,29 @@ fn sglang_response(
                 .collect::<Result<Vec<_>, _>>()?,
         );
     }
-    let mut result = result_from_distributions(
-        request,
-        distributions,
-        raw["model"].as_str().unwrap_or_default().into(),
-        "sglang",
-        raw.clone(),
-        headers,
-    )?;
+    let model = raw["model"].as_str().unwrap_or_default().to_owned();
+    let server = raw["answers"].clone();
+    let mut result =
+        result_from_distributions(request, distributions, &model, "sglang", raw, headers)?;
     for (id, answer) in &mut result.answers {
-        // Keep server selection/expectation, and validate against the same distribution.
+        // Keep the server's selection and mean, checked against the same
+        // distribution.
         match answer {
-            DecisionAnswer::Choice { selected, .. } => {
-                *selected = raw["answers"][id]["choice"]
+            DecisionAnswer::Choice { choice, .. } => {
+                server[id]["choice"]
                     .as_str()
                     .ok_or_else(|| invalid("missing SGLang choice"))?
-                    .into()
+                    .clone_into(choice);
             }
-            DecisionAnswer::Score { expected_value, .. } => {
-                *expected_value = raw["answers"][id]["score"]
+            DecisionAnswer::Score { score, .. } => {
+                *score = server[id]["score"]
                     .as_f64()
-                    .ok_or_else(|| invalid("missing SGLang score"))?
+                    .ok_or_else(|| invalid("missing SGLang score"))?;
             }
-            _ => {}
+            DecisionAnswer::Boolean { .. } => {}
         }
     }
-    result.validate(request)?;
+    validate_decision_answers(&request.questions, &result.answers, None)?;
     Ok(result)
 }
 
@@ -628,49 +708,17 @@ impl DecisionModel for RuntimeDecisionModel {
     fn model_id(&self) -> &str {
         &self.model_id
     }
-    fn capabilities(&self) -> DecisionCapabilities {
-        let provider = self.provider();
-        DecisionCapabilities {
-            supports_images: provider != "laya",
-            max_images: match provider {
-                "localai" => Some(8),
-                "cloudflare" | "cloudflare_workers_ai" => Some(4),
-                _ => None,
-            },
-            supports_typed_choices: false,
-            rounding: DecisionRounding::default(),
-            probability_source: if provider == "sglang" {
-                DecisionProbabilitySource::LogitScoring
-            } else {
-                DecisionProbabilitySource::Native
-            },
-            supports_boolean: true,
-            supports_choice: true,
-            supports_score: true,
-            returns_distributions: true,
-            max_questions: match provider {
-                "ollama" | "localai" | "laya" | "cloudflare" | "cloudflare_workers_ai" => Some(64),
-                _ => None,
-            },
-            min_choices: Some(if provider == "sglang" { 1 } else { 2 }),
-            max_choices: match provider {
-                "laya" => Some(100),
-                "cloudflare" | "cloudflare_workers_ai" => Some(255),
-                _ => None,
-            },
-            max_score_levels: match provider {
-                "laya" => Some(32),
-                "llamacpp" | "cloudflare" | "cloudflare_workers_ai" => Some(10),
-                _ => None,
-            },
-        }
+    fn supported_question_types(&self) -> &[DecisionQuestionType] {
+        DecisionQuestionType::ALL
     }
     async fn do_decide(&self, request: &DecisionCallOptions) -> Result<DecisionResult, AiMuxError> {
         let mut options = support::options(request, self.provider())?;
         let protocol = options.remove("protocol").unwrap_or(json!("systemone"));
+        let images = support::take_images(&mut options)?;
+        self.preflight(request, &images)?;
         match (self.provider(), protocol.as_str()) {
             ("sglang", Some("decisions")) => {
-                let body = self.sglang_request(request, options)?;
+                let body = self.sglang_request(request, options, &images)?;
                 let url = format!("{}/decisions", self.config.base_url()?);
                 support::post(&self.config, request, &url, body, |raw, headers| {
                     sglang_response(request, raw, headers)
@@ -678,10 +726,10 @@ impl DecisionModel for RuntimeDecisionModel {
                 .await
             }
             ("sglang", Some("score")) | ("vllm", Some("generative_scoring")) => {
-                crate::decision_scoring::score(self, request, options).await
+                crate::decision_scoring::score(self, request, options, &images).await
             }
             (_, Some("systemone")) => {
-                let (url, body) = self.systemone_request(request, options)?;
+                let (url, body) = self.systemone_request(request, options, &images)?;
                 support::post(&self.config, request, &url, body, |raw, headers| {
                     self.systemone_response(request, raw, headers)
                 })

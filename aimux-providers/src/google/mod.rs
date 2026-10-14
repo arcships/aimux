@@ -46,9 +46,9 @@ use std::sync::{Arc, OnceLock};
 use futures::future::BoxFuture;
 use serde_json::Value;
 
+use aimux_core::decision_model::DecisionModel;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
-use aimux_core::evaluation_model::EvaluationModel;
 use aimux_core::files_model::Files;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
@@ -58,7 +58,7 @@ use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_core::video_model::VideoModel;
 use aimux_provider_utils::{
-    EvaluationLanguageModel, FetchFunction, HeaderMapOpt, Resolvable, validate_base_url,
+    DecisionLanguageModel, FetchFunction, HeaderMapOpt, Resolvable, validate_base_url,
 };
 
 use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders, SupportedUrlsSource};
@@ -109,8 +109,8 @@ pub(crate) fn google_failed_response_handler() -> aimux_provider_utils::Response
     })
 }
 
-const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
-const API_KEY_ENV_VAR: &str = "GOOGLE_GENERATIVE_AI_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
+pub(crate) const API_KEY_ENV_VAR: &str = "GOOGLE_GENERATIVE_AI_API_KEY";
 const DEFAULT_NAME: &str = "google.generative-ai";
 
 /// The media types the API fetches from an external `https` URL itself
@@ -253,8 +253,14 @@ pub fn create_google(settings: GoogleProviderSettings) -> Result<GoogleProvider,
             Vec::new(),
             settings.headers,
         )
-        .with_user_agent(options::GOOGLE, "4.0.85"),
-        fetch: settings.fetch,
+        .with_user_agent(
+            crate::shared::aisdk_pins::GOOGLE.name,
+            crate::shared::aisdk_pins::GOOGLE.version,
+        ),
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::GOOGLE,
+        )),
         generate_id: settings.generate_id,
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
@@ -421,15 +427,16 @@ impl Provider for GoogleProvider {
         Some(Ok(Arc::new(self.transcription(model_id))))
     }
 
-    fn evaluation_model(
-        &self,
-        model_id: &str,
-    ) -> Option<Result<Arc<dyn EvaluationModel>, AiMuxError>> {
+    /// Decisions from structured Gemini output; `provider()` is
+    /// `"{name}.evaluation"` without a `.generative-ai` suffix
+    /// (`@ai-sdk/google@4.0.87 src/google-provider.ts:438-441`,
+    /// `evaluationModel`, which the registry's decision lookup falls back to).
+    fn decision_model(&self, model_id: &str) -> Option<Result<Arc<dyn DecisionModel>, AiMuxError>> {
         let name = self
             .name
             .strip_suffix(".generative-ai")
             .unwrap_or(&self.name);
-        Some(Ok(Arc::new(EvaluationLanguageModel::new(
+        Some(Ok(Arc::new(DecisionLanguageModel::new(
             Arc::new(self.chat(model_id)),
             Some(format!("{name}.evaluation")),
         ))))

@@ -9,6 +9,7 @@ The MockServer helper is copied from test_e2e.py (test modules are not on the
 import path).
 """
 
+import base64
 import json
 import socket
 import time
@@ -169,9 +170,9 @@ class TestMultimodalE2E:
             speaker = openai_speech("test-key", "tts-1", base_url=mock.url)
             opts = json.dumps({"text": "Hi", "voice": "alloy", "outputFormat": "mp3"})
             result = json.loads(speaker.generate(opts))
-            # Binary audio comes back as AudioData::Binary -> a JSON array of bytes.
-            assert isinstance(result["audio"], list)
-            assert len(result["audio"]) > 0
+            # SpeechModelV4Result.audio is a Uint8Array upstream
+            # (speech-model-v4-result.ts:16): a base64 string in the JSON.
+            assert result["audio"] == base64.b64encode(SPEECH_RESP).decode("ascii")
 
     def test_image(self):
         with MockServer(IMAGE_RESP) as mock:

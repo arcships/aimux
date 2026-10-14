@@ -4,9 +4,8 @@
     "state": {
       "ticket": "Payments blocked"
     },
-    "questions": [
-      {
-        "id": "urgent",
+    "questions": {
+      "urgent": {
         "type": "boolean",
         "instructions": {
           "question": "Is action urgent?",
@@ -26,8 +25,7 @@
           ]
         }
       },
-      {
-        "id": "department",
+      "department": {
         "type": "choice",
         "instructions": [
           "Route the ticket",
@@ -35,28 +33,22 @@
             "priority": "payments"
           }
         ],
-        "options": [
-          {
-            "label": "billing",
-            "description": {
-              "includes": [
-                "payments"
-              ],
-              "examples": [
-                "payout failure"
-              ]
-            }
+        "criteria": {
+          "billing": {
+            "includes": [
+              "payments"
+            ],
+            "examples": [
+              "payout failure"
+            ]
           },
-          {
-            "label": "technical"
-          }
-        ]
+          "technical": null
+        }
       },
-      {
-        "id": "severity",
+      "severity": {
         "type": "score",
         "instructions": "Rate severity",
-        "levels": [
+        "criteria": [
           {
             "label": "low",
             "includes": [
@@ -69,10 +61,10 @@
           ]
         ]
       }
-    ],
-    "max_retries": 0,
+    },
+    "maxRetries": 0,
     "timeout": {
-      "total_ms": 2000
+      "totalMs": 2000
     }
   },
   "response": {

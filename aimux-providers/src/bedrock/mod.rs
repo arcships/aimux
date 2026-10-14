@@ -52,8 +52,8 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::reranking_model::RerankingModel;
 use aimux_provider_utils::{
     AwsCredentials, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
-    Resolvable, SigV4Fetch, combine_headers, default_fetch, load_optional_setting, load_setting,
-    normalize_headers, validate_base_url, with_user_agent_suffix, without_trailing_slash,
+    Resolvable, SigV4Fetch, SigV4Signing, combine_headers, default_fetch, load_optional_setting,
+    load_setting, validate_base_url, without_trailing_slash,
 };
 
 use crate::shared::{
@@ -69,7 +69,7 @@ const PROVIDER: &str = "amazon-bedrock";
 const SIGV4_SERVICE: &str = "bedrock";
 
 const REGION_ENV_VAR: &str = "AWS_REGION";
-const BEARER_TOKEN_ENV_VAR: &str = "AWS_BEARER_TOKEN_BEDROCK";
+pub(crate) const BEARER_TOKEN_ENV_VAR: &str = "AWS_BEARER_TOKEN_BEDROCK";
 const ACCESS_KEY_ID_ENV_VAR: &str = "AWS_ACCESS_KEY_ID";
 const SECRET_ACCESS_KEY_ENV_VAR: &str = "AWS_SECRET_ACCESS_KEY";
 const SESSION_TOKEN_ENV_VAR: &str = "AWS_SESSION_TOKEN";
@@ -370,7 +370,17 @@ struct BedrockAuthFetch {
 
 #[async_trait]
 impl Fetch for BedrockAuthFetch {
-    async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
+    async fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
+        // The transport's `ai-sdk-amazon-bedrock/<v>`, after the helper's
+        // `ai-sdk-provider-utils/<v>` (the 5.0.51 that amazon-bedrock pins)
+        // and before signing, like amazon-bedrock-sigv4-fetch.ts:42-46
+        // (SigV4) and :126-130 (API key).
+        let package = crate::shared::aisdk_pins::AMAZON_BEDROCK;
+        crate::shared::transport_user_agent(
+            &mut request.headers,
+            Some(package.provider_utils),
+            Some(&format!("ai-sdk-{}/{}", package.name, package.version)),
+        );
         if request.headers.contains_key(reqwest::header::AUTHORIZATION) {
             self.inner.fetch(request).await
         } else {
@@ -413,6 +423,9 @@ pub fn create_amazon_bedrock(
                 async move { auth.credentials().await }
             }),
             SIGV4_SERVICE,
+            // aws4fetch (amazon-bedrock-sigv4-fetch.ts:73-83) signs
+            // `host;x-amz-date` (+ `x-amz-security-token`).
+            SigV4Signing::Aws4Fetch,
         ),
         inner,
     });
@@ -450,7 +463,7 @@ pub struct AmazonBedrockProvider {
 
 /// The endpoint of a Bedrock request: the explicit base URL, the service's
 /// endpoint environment variable or the regional host; the caller's headers
-/// with the user-agent suffixes, and an API key as `Authorization: Bearer`
+/// with the package user-agent part, and an API key as `Authorization: Bearer`
 /// when there is one (otherwise the transport signs with SigV4, after
 /// checking here that signing has its inputs).
 #[derive(Clone)]
@@ -480,29 +493,27 @@ impl BedrockEndpoint {
 
     async fn headers(&self) -> Result<HeaderMapOpt, AiMuxError> {
         let mut user = combine_headers(&[&self.user.clone().unwrap_or_default()]);
-        let suffix = concat!("ai-sdk-amazon-bedrock/", env!("CARGO_PKG_VERSION"));
+        // amazon-bedrock-provider.ts:292-295 (getHeaders) appends the pinned
+        // package part. The helper then adds `ai-sdk-provider-utils/<v>` and
+        // the transport (`BedrockAuthFetch`) the second occurrence.
+        let package = crate::shared::aisdk_pins::AMAZON_BEDROCK;
+        let suffix = format!("ai-sdk-{}/{}", package.name, package.version);
         let agent = user
             .get("user-agent")
             .and_then(|value| value.as_deref())
-            .map_or_else(|| suffix.to_string(), |value| format!("{value} {suffix}"));
+            .map_or_else(|| suffix.clone(), |value| format!("{value} {suffix}"));
         user.insert("user-agent".into(), Some(agent));
-        let headers = match self.auth.bearer().await? {
+        match self.auth.bearer().await? {
             Some(key) => {
                 let mut bearer = HeaderMapOpt::new();
                 bearer.insert("Authorization".to_string(), Some(format!("Bearer {key}")));
-                combine_headers(&[&user, &bearer])
+                Ok(combine_headers(&[&user, &bearer]))
             }
             None => {
                 self.auth.preflight()?;
-                user
+                Ok(user)
             }
-        };
-        let mut headers = normalize_headers(headers).into_iter().collect();
-        with_user_agent_suffix(&mut headers, "ai-sdk-amazon-bedrock/5.0.100");
-        Ok(headers
-            .into_iter()
-            .map(|(name, value)| (name, Some(value)))
-            .collect())
+        }
     }
 }
 

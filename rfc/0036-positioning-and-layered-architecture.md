@@ -75,8 +75,8 @@ aimux_call  (0, "configure", {...})                        // 录制、session�
 {"id":1,"op":"model_new","params":{"provider":"anthropic","model":"claude-sonnet-4-5"}}
 {"id":1,"result":{"handle":7}}
 {"id":2,"op":"stream_text","handle":7,"params":{"prompt":[]}}
-{"id":2,"event":{"type":"text-delta","delta":"Hel"}}
-{"id":2,"event":{"type":"finish","finish_reason":"stop"}}
+{"id":2,"event":{"type":"text-delta","id":"0","text":"Hel"}}
+{"id":2,"event":{"type":"finish","finishReason":"stop","totalUsage":{"inputTokens":3,"inputTokenDetails":{},"outputTokens":1,"outputTokenDetails":{},"totalTokens":4}}}
 {"id":3,"op":"cancel","params":{"target":2}}
 ```
 

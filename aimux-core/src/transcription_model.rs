@@ -5,41 +5,86 @@
 //! (`reference/ai/packages/provider/src/transcription-model/v4/`).
 //!
 //! This is the only non-chat model type with an optional streaming method,
-//! [`TranscriptionModel::do_stream`]. The default implementation returns
-//! [`AiMuxError::UnsupportedFunctionality`]; providers override it and users
-//! enter through [`stream_transcribe`].
+//! [`TranscriptionModel::do_stream`]. As the optional `doStream?` of
+//! `TranscriptionModelV4`, a model without it returns `None` (the default);
+//! users enter through [`stream_transcribe`], which reports such a model as
+//! [`AiMuxError::UnsupportedFunctionality`] before any I/O.
 
 use std::pin::Pin;
 
 use async_trait::async_trait;
 use futures::Stream;
+use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::download::{Download, create_download};
 use crate::error::AiMuxError;
 use crate::shared::{SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning};
 use crate::{AbortSignal, retry, timeout};
 
-/// Audio input: raw bytes or a base64-encoded string.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(untagged)]
-#[ts(export)]
+/// Audio input: raw bytes, a base64-encoded string, or a URL.
+///
+/// The JSON is a string, as in the AI SDK's JSON: base64 for bytes, the URL
+/// text for a URL. Reading takes a string that parses as a URL as a URL and
+/// any other string as base64 (base64 has no `:`), as a file part's string
+/// data is read (ai@7.0.127 `prompt/file-part-data.ts:89-141`).
+#[derive(Debug, Clone, TS)]
+#[ts(export, type = "string")]
 pub enum AudioInput {
+    /// Raw binary bytes.
+    Binary(Vec<u8>),
+    /// A base64-encoded string.
+    Base64(String),
+    /// A URL that [`transcribe`] downloads before calling the model, the AI
+    /// SDK's `audio: URL` (ai@7.0.127 `transcribe/transcribe.ts:192-196`).
+    /// A model takes audio data and never receives a URL.
+    Url(String),
+}
+
+impl AudioInput {
+    /// The error a transcription model returns for an [`AudioInput::Url`]:
+    /// only [`transcribe`] downloads a URL.
+    #[must_use]
+    pub fn url_error() -> AiMuxError {
+        AiMuxError::InvalidArgument(
+            "a transcription model takes audio data; `transcribe` downloads an audio URL".into(),
+        )
+    }
+}
+
+/// A chunk of audio in a streaming transcription request.
+///
+/// The JSON is a base64 string either way, as in the AI SDK's JSON.
+#[derive(Debug, Clone, TS)]
+#[ts(export, type = "string")]
+pub enum AudioChunk {
     /// Raw binary bytes.
     Binary(Vec<u8>),
     /// A base64-encoded string.
     Base64(String),
 }
 
-/// A chunk of audio in a streaming transcription request.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(untagged)]
-#[ts(export)]
-pub enum AudioChunk {
-    /// Raw binary bytes.
-    Binary(Vec<u8>),
-    /// A base64-encoded string.
-    Base64(String),
+crate::wire::base64_wire_enum!(AudioChunk);
+
+impl Serialize for AudioInput {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Base64(text) | Self::Url(text) => serializer.serialize_str(text),
+            Self::Binary(bytes) => serializer.serialize_str(&crate::wire::encode_base64(bytes)),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for AudioInput {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Ok(if url::Url::parse(&text).is_ok() {
+            Self::Url(text)
+        } else {
+            Self::Base64(text)
+        })
+    }
 }
 
 /// A transcript segment with timing information.
@@ -62,10 +107,13 @@ pub struct TranscriptionSegment {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct TranscriptionCallOptions {
-    /// Audio data to transcribe (raw bytes or a base64-encoded string).
+    /// Audio to transcribe: raw bytes, a base64-encoded string, or a URL
+    /// that [`transcribe`] downloads.
     pub audio: AudioInput,
 
-    /// The IANA media type of the audio data, e.g. `"audio/mp3"`.
+    /// The IANA media type of the audio data, e.g. `"audio/mp3"`. For a URL,
+    /// the media type the download reports replaces it, as the AI SDK uses
+    /// the downloaded media type (`transcribe.ts:227-233`).
     pub media_type: String,
 
     /// Additional provider-specific options, keyed by provider name.
@@ -78,7 +126,8 @@ pub struct TranscriptionCallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
-    /// Per-call retry override. `None` uses the model default.
+    /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
+    /// retrying. `None` uses 2, the AI SDK default.
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
@@ -92,6 +141,15 @@ pub struct TranscriptionCallOptions {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
+
+    /// The download of an [`AudioInput::Url`], the AI SDK's `transcribe`
+    /// `download` option (`transcribe.ts:56`, `:109-117`). `None` uses the
+    /// guarded download ([`create_download`]`(None)`, 2 GiB limit).
+    ///
+    /// Runtime handle; never crosses the JSON boundary.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub download: Option<Download>,
 }
 
 impl TranscriptionCallOptions {
@@ -105,6 +163,7 @@ impl TranscriptionCallOptions {
             max_retries: None,
             timeout: None,
             headers: None,
+            download: None,
         }
     }
 }
@@ -165,10 +224,10 @@ pub struct TranscriptionRequest {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct TranscriptionResponse {
-    /// Timestamp for the start of the generated response (ISO 8601 string).
+    /// Timestamp for the start of the generated response (`toISOString()` in the JSON).
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<String>,
+    pub timestamp: Option<crate::timestamp::Timestamp>,
     /// The ID of the model that was used to generate the response.
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -179,7 +238,11 @@ pub struct TranscriptionResponse {
     pub headers: Option<SharedHeaders>,
     /// Response body (opaque JSON).
     #[ts(optional)]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::wire::present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub body: Option<serde_json::Value>,
 }
 
@@ -305,7 +368,7 @@ pub enum TranscriptionStreamPart {
     ResponseMetadata {
         #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        timestamp: Option<String>,
+        timestamp: Option<crate::timestamp::Timestamp>,
         #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model_id: Option<String>,
@@ -313,7 +376,11 @@ pub enum TranscriptionStreamPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         headers: Option<SharedHeaders>,
         #[ts(optional)]
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            deserialize_with = "crate::wire::present",
+            skip_serializing_if = "Option::is_none"
+        )]
         body: Option<serde_json::Value>,
     },
     /// Metadata available after the stream finishes.
@@ -363,6 +430,11 @@ impl std::fmt::Debug for TranscriptionStreamResult {
 /// Aligned with V4 `TranscriptionModelV4`.
 #[async_trait]
 pub trait TranscriptionModel: Send + Sync {
+    /// Specification version (always `"v4"`).
+    fn specification_version(&self) -> &'static str {
+        "v4"
+    }
+
     /// Provider name, e.g. `"openai"`.
     fn provider(&self) -> &str;
 
@@ -377,40 +449,55 @@ pub trait TranscriptionModel: Send + Sync {
         options: &TranscriptionCallOptions,
     ) -> Result<TranscriptionResult, AiMuxError>;
 
-    /// Stream a transcript for live audio.
+    /// Stream a transcript for live audio: the optional `doStream?` of
+    /// `TranscriptionModelV4` (`@ai-sdk/provider@4.0.22
+    /// src/transcription-model/v4/transcription-model-v4.ts:44-46`).
     ///
-    /// Default implementation returns [`AiMuxError::UnsupportedFunctionality`]; providers
-    /// override it as needed. This mirrors the optional `doStream?` in the TS
-    /// spec.
-    async fn do_stream(
+    /// `None` (the default) means the model has no streaming method; a model
+    /// that has one returns `Some`, and the future reports its own failures,
+    /// such as a model ID that cannot stream.
+    fn do_stream(
         &self,
-        _options: TranscriptionStreamOptions,
-    ) -> Result<TranscriptionStreamResult, AiMuxError> {
-        Err(AiMuxError::UnsupportedFunctionality(format!(
-            "transcription streaming is not supported by provider `{}`",
-            self.provider()
-        )))
+        options: TranscriptionStreamOptions,
+    ) -> Option<BoxFuture<'_, Result<TranscriptionStreamResult, AiMuxError>>> {
+        let _ = options;
+        None
     }
 }
 
 /// User-facing non-streaming transcription with Core-owned retry and timeout.
 ///
+/// An [`AudioInput::Url`] is downloaded first, once, with
+/// [`TranscriptionCallOptions::download`] (AI SDK `transcribe`,
+/// `transcribe.ts:192-199`); the download counts against the operation
+/// timeout and observes the abort signal.
+///
 /// # Errors
 ///
-/// Returns the provider failure, retry exhaustion, timeout, or caller abort.
+/// Returns the download failure, the provider failure, retry exhaustion,
+/// timeout, or caller abort.
 pub async fn transcribe(
     model: &dyn TranscriptionModel,
-    options: TranscriptionCallOptions,
+    mut options: TranscriptionCallOptions,
 ) -> Result<TranscriptionResult, AiMuxError> {
     let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
     let abort_signal = options.abort_signal.clone();
     let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
-    timeout::run(
-        retries.retry(|| model.do_generate(&options)),
-        abort_signal.as_ref(),
-        timeout,
-    )
-    .await
+    let operation = async {
+        if let AudioInput::Url(url) = &options.audio {
+            let download = options
+                .download
+                .clone()
+                .unwrap_or_else(|| create_download(None));
+            let file = download.download(url, abort_signal.as_ref()).await?;
+            options.audio = AudioInput::Binary(file.data);
+            if let Some(media_type) = file.media_type {
+                options.media_type = media_type;
+            }
+        }
+        retries.retry(|| model.do_generate(&options)).await
+    };
+    timeout::run(operation, abort_signal.as_ref(), timeout).await
 }
 
 /// Start user-facing live transcription.
@@ -421,10 +508,187 @@ pub async fn transcribe(
 ///
 /// # Errors
 ///
-/// Returns the provider's session-establishment error.
+/// Returns [`AiMuxError::UnsupportedFunctionality`] when the model has no
+/// streaming method (as `experimental_streamTranscribe`, `ai@7.0.127
+/// src/transcribe/stream-transcribe.ts:125-138`), else the provider's
+/// session-establishment error.
 pub async fn stream_transcribe(
     model: &dyn TranscriptionModel,
     options: TranscriptionStreamOptions,
 ) -> Result<TranscriptionStreamResult, AiMuxError> {
-    model.do_stream(options).await
+    let Some(stream) = model.do_stream(options) else {
+        return Err(AiMuxError::UnsupportedFunctionality(format!(
+            "The {} model \"{}\" does not support streaming transcription.",
+            model.provider(),
+            model.model_id()
+        )));
+    };
+    stream.await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::sync::{Arc, Mutex};
+
+    /// A batch-only model, like Groq's: it defines no `do_stream`.
+    struct BatchOnly;
+
+    #[async_trait]
+    impl TranscriptionModel for BatchOnly {
+        fn provider(&self) -> &str {
+            "groq.transcription"
+        }
+        fn model_id(&self) -> &str {
+            "whisper-large-v3"
+        }
+        async fn do_generate(
+            &self,
+            _options: &TranscriptionCallOptions,
+        ) -> Result<TranscriptionResult, AiMuxError> {
+            unreachable!("not called")
+        }
+    }
+
+    fn stream_options() -> TranscriptionStreamOptions {
+        TranscriptionStreamOptions {
+            audio: Box::pin(futures::stream::empty()),
+            input_audio_format: InputAudioFormat {
+                format_type: "audio/pcm".into(),
+                rate: Some(24_000),
+            },
+            provider_options: None,
+            abort_signal: None,
+            headers: None,
+            include_raw_chunks: false,
+            timeout: None,
+        }
+    }
+
+    /// `doStream` is optional on `TranscriptionModelV4`
+    /// (`@ai-sdk/provider@4.0.22 src/transcription-model/v4/transcription-model-v4.ts:44-46`),
+    /// and `experimental_streamTranscribe` throws `UnsupportedFunctionalityError`
+    /// with this message when a model has none, before any I/O
+    /// (`ai@7.0.127 src/transcribe/stream-transcribe.ts:125-138`).
+    #[tokio::test]
+    async fn a_model_without_do_stream_cannot_stream() {
+        let model = BatchOnly;
+        assert!(model.do_stream(stream_options()).is_none());
+        let error = stream_transcribe(&model, stream_options())
+            .await
+            .expect_err("no streaming method");
+        match error {
+            AiMuxError::UnsupportedFunctionality(message) => assert_eq!(
+                message,
+                "The groq.transcription model \"whisper-large-v3\" does not support streaming transcription."
+            ),
+            other => panic!("expected UnsupportedFunctionality, got {other:?}"),
+        }
+    }
+
+    use crate::download::{DownloadRequest, DownloadedFile};
+
+    /// Records the audio and media type each call receives.
+    #[derive(Default)]
+    struct RecordingModel {
+        calls: Mutex<Vec<(Vec<u8>, String)>>,
+    }
+
+    #[async_trait]
+    impl TranscriptionModel for RecordingModel {
+        fn provider(&self) -> &str {
+            "test"
+        }
+
+        fn model_id(&self) -> &str {
+            "recording"
+        }
+
+        async fn do_generate(
+            &self,
+            options: &TranscriptionCallOptions,
+        ) -> Result<TranscriptionResult, AiMuxError> {
+            let AudioInput::Binary(audio) = &options.audio else {
+                return Err(AudioInput::url_error());
+            };
+            self.calls
+                .lock()
+                .unwrap()
+                .push((audio.clone(), options.media_type.clone()));
+            Ok(TranscriptionResult {
+                text: "hello".into(),
+                segments: Vec::new(),
+                language: None,
+                duration_in_seconds: None,
+                warnings: Vec::new(),
+                request: None,
+                response: TranscriptionResponse::default(),
+                provider_metadata: None,
+            })
+        }
+    }
+
+    fn url_options(
+        media_type: Option<&'static str>,
+    ) -> (TranscriptionCallOptions, Arc<Mutex<Vec<String>>>) {
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let mut options = TranscriptionCallOptions::new(
+            AudioInput::Url("https://cdn.test/a.mp3".into()),
+            "audio/wav",
+        );
+        let recorded = requests.clone();
+        options.download = Some(Download::new(move |request: DownloadRequest| {
+            recorded.lock().unwrap().push(request.url);
+            async move {
+                Ok(DownloadedFile {
+                    data: vec![1, 2, 3],
+                    media_type: media_type.map(str::to_owned),
+                })
+            }
+        }));
+        (options, requests)
+    }
+
+    #[tokio::test]
+    async fn a_url_is_downloaded_with_the_injected_download_and_sent_as_data() {
+        let model = RecordingModel::default();
+        let (options, requests) = url_options(Some("audio/mpeg"));
+        let result = transcribe(&model, options).await.unwrap();
+        assert_eq!(result.text, "hello");
+        assert_eq!(*requests.lock().unwrap(), ["https://cdn.test/a.mp3"]);
+        assert_eq!(
+            *model.calls.lock().unwrap(),
+            [(vec![1, 2, 3], "audio/mpeg".to_owned())]
+        );
+    }
+
+    #[tokio::test]
+    async fn without_a_downloaded_media_type_the_given_one_stays() {
+        let model = RecordingModel::default();
+        let (options, _) = url_options(None);
+        transcribe(&model, options).await.unwrap();
+        assert_eq!(
+            *model.calls.lock().unwrap(),
+            [(vec![1, 2, 3], "audio/wav".to_owned())]
+        );
+    }
+
+    /// Without an injected download, the guarded download refuses a
+    /// loopback URL before the model is called.
+    #[tokio::test]
+    async fn the_default_download_is_guarded() {
+        let model = RecordingModel::default();
+        let options = TranscriptionCallOptions::new(
+            AudioInput::Url("http://127.0.0.1:9/a.wav".into()),
+            "audio/wav",
+        );
+        let error = transcribe(&model, options).await.unwrap_err();
+        assert!(
+            matches!(&error, AiMuxError::InvalidArgument(message)
+                if message == "download URL targets a non-public address: 127.0.0.1"),
+            "{error:?}"
+        );
+        assert!(model.calls.lock().unwrap().is_empty());
+    }
 }

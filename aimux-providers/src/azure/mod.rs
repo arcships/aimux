@@ -41,7 +41,8 @@ use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt, HttpRequest,
-    Resolvable, default_fetch, load_setting, validate_base_url, without_trailing_slash,
+    RequestCredentials, Resolvable, default_fetch, load_setting, validate_base_url,
+    without_trailing_slash,
 };
 
 use crate::openai::config::{OpenAIModelConfig, OpenAIUrl};
@@ -59,7 +60,7 @@ pub type AzureChatModel = OpenAIModel;
 /// Azure.
 pub type AzureResponsesModel = OpenAIResponsesModel;
 
-const API_KEY_ENV_VAR: &str = "AZURE_API_KEY";
+pub(crate) const API_KEY_ENV_VAR: &str = "AZURE_API_KEY";
 const RESOURCE_NAME_ENV_VAR: &str = "AZURE_RESOURCE_NAME";
 /// The `api-version` of the AI SDK's v1 URL form.
 const DEFAULT_API_VERSION: &str = "v1";
@@ -231,16 +232,30 @@ pub fn create_azure(
         resource_name: settings.resource_name,
         base_url,
         speech_base_url,
-        speech_headers: speech_headers.with_user_agent(options::NAMESPACE, "4.0.84"),
+        speech_headers: speech_headers.with_user_agent(
+            crate::shared::aisdk_pins::AZURE.name,
+            crate::shared::aisdk_pins::AZURE.version,
+        ),
         info,
         api_version: settings.api_version,
         use_deployment_based_urls: settings.use_deployment_based_urls,
-        fetch,
-        headers: headers.with_user_agent(options::NAMESPACE, "4.0.84"),
+        fetch: Some(crate::shared::package_fetch(
+            fetch,
+            crate::shared::aisdk_pins::AZURE,
+        )),
+        headers: headers.with_user_agent(
+            crate::shared::aisdk_pins::AZURE.name,
+            crate::shared::aisdk_pins::AZURE.version,
+        ),
+        tools: crate::openai::tools::AzureOpenAITools,
     })
 }
 
-/// Resolve authentication after per-call headers have been merged.
+/// Resolve authentication after per-call headers have been merged, like the
+/// token-provider fetch of azure-openai-provider.ts:248-262. A request marked
+/// [`RequestCredentials::Omit`] (a redirect hop that left the request's
+/// origin) gets no token: upstream adds it once, before fetch follows the
+/// redirect and drops `authorization` on a cross-origin hop.
 struct BearerTokenFetch {
     token: Resolvable<String>,
     fetch: Option<FetchFunction>,
@@ -249,7 +264,9 @@ struct BearerTokenFetch {
 #[async_trait::async_trait]
 impl Fetch for BearerTokenFetch {
     async fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
-        if !request.headers.contains_key("authorization") {
+        if request.credentials == RequestCredentials::Include
+            && !request.headers.contains_key("authorization")
+        {
             let token = self
                 .token
                 .resolve()
@@ -296,6 +313,8 @@ pub struct AzureOpenAIProvider {
     use_deployment_based_urls: bool,
     headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
+    /// The provider tools (`azure.tools` in the AI SDK).
+    pub tools: crate::openai::tools::AzureOpenAITools,
 }
 
 /// Everything the URL of a request depends on.

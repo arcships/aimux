@@ -14,7 +14,9 @@ use aimux_core::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::CallOptions;
-use aimux_provider_utils::{Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse};
+use aimux_provider_utils::{
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, Resolvable,
+};
 use aimux_providers::preset;
 use aimux_providers::{PresetSettings, create_provider};
 
@@ -142,16 +144,20 @@ fn every_registry_row_loads_and_creates_without_environment() {
     let mut variables = BTreeSet::new();
     for entry in &entries {
         let d = entry.descriptor;
-        variables.extend((!d.env_var.is_empty()).then_some(d.env_var));
-        variables.extend(d.base_url_env);
-        variables.extend(d.params.iter().flat_map(|param| param.env.iter().copied()));
+        variables.extend((!d.env_var.is_empty()).then_some(d.env_var.as_str()));
+        variables.extend(d.base_url_env.as_deref());
+        variables.extend(
+            d.params
+                .iter()
+                .flat_map(|param| param.env.iter().map(String::as_str)),
+        );
     }
     let _guards: Vec<_> = variables
         .into_iter()
         .map(|var| EnvVar::set(var, None))
         .collect();
     for entry in entries {
-        preset::create(entry.descriptor.name, PresetSettings::default())
+        preset::create(&entry.descriptor.name, PresetSettings::default())
             .unwrap_or_else(|error| panic!("{}: {error}", entry.descriptor.name));
     }
 }
@@ -173,6 +179,59 @@ async fn a_keyless_row_sends_no_authorization() {
     assert_eq!(seen.len(), 1);
     assert!(!seen[0].headers.contains_key("authorization"));
     assert_eq!(seen[0].url, "http://127.0.0.1:9/v1/chat/completions");
+}
+
+/// Issue #90 R2 regression guard, restored from master's
+/// `registry_fixed_base_urls_are_correct` (aimux-providers/src/provider.rs):
+/// the corrected default base URLs stay corrected, in the descriptor and on
+/// the wire, with no base-URL override.
+#[tokio::test]
+async fn registry_fixed_base_urls_are_correct() {
+    for (name, base_url, why) in [
+        (
+            "xpersona",
+            "https://www.xpersona.co/v1",
+            "was '/v1' (truncated); must be the full URL",
+        ),
+        (
+            "moonshotai_cn",
+            "https://api.moonshot.cn/anthropic/v1",
+            "had a leaked '（Anthropic' annotation suffix",
+        ),
+        (
+            "zhipuai_coding_plan",
+            "https://open.bigmodel.cn/api/coding/paas/v4",
+            "was a docs page, not the API endpoint",
+        ),
+        (
+            "the_grid_ai",
+            "https://api.thegrid.ai/v1",
+            "was a docs page, not the API endpoint",
+        ),
+    ] {
+        let descriptor = preset::lookup(name).unwrap().descriptor;
+        assert_eq!(descriptor.base_url, base_url, "{name} base_url {why}");
+        assert!(descriptor.base_url_env.is_none(), "{name}");
+        assert!(descriptor.params.is_empty(), "{name}");
+        let mock = MockFetch::new(vec![chat_ok()]);
+        let preset = preset::create(
+            name,
+            PresetSettings {
+                api_key: Some(Resolvable::Value("test-key".into())),
+                fetch: Some(mock.transport()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        preset.chat("m").do_generate(&hello()).await.unwrap();
+        let seen = mock.seen();
+        assert_eq!(seen.len(), 1, "{name}");
+        assert_eq!(
+            seen[0].url,
+            format!("{base_url}/chat/completions"),
+            "{name}"
+        );
+    }
 }
 
 #[test]
