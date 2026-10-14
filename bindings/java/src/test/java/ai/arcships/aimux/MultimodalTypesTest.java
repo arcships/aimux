@@ -1,5 +1,6 @@
 package ai.arcships.aimux;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
@@ -26,8 +27,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>Special attention is paid to the three hand-written
  * {@code JsonSerializer}/{@code JsonDeserializer} pairs —
- * {@link MultimodalTypes.AudioData} (Base64/Binary, untagged),
- * {@link MultimodalTypes.ImageOutputs} (Base64/Binary, untagged) and
+ * {@link MultimodalTypes.AudioData} (Base64/Binary, a base64 string),
+ * {@link MultimodalTypes.ImageOutputs} (Base64/Binary, base64 strings) and
  * {@link MultimodalTypes.VideoData} (Url/Base64/Binary, tagged on {@code type})
  * — which are the most bug-prone part of the file. Dedicated tests below exercise every
  * variant of each union.
@@ -337,20 +338,184 @@ class MultimodalTypesTest {
         assertThat(((MultimodalTypes.AudioData.Base64) base64Back).getValue())
             .isEqualTo("aGVsbG8=");
 
-        // Binary variant (each element a 0–255 byte value).
+        // Binary variant (each element a 0–255 byte value): the AI SDK's
+        // Uint8Array (speech-model-v4-result.ts:16), a base64 string in JSON.
         MultimodalTypes.AudioData binary =
-            new MultimodalTypes.AudioData.Binary(Arrays.asList(72, 101, 108, 108, 111));
+            new MultimodalTypes.AudioData.Binary(Arrays.asList(0, 1, 2, 250, 255));
         String binaryJson = M.writeValueAsString(binary);
-        assertThat(binaryJson).isEqualTo("[72,101,108,108,111]");
+        assertThat(binaryJson).isEqualTo("\"AAEC+v8=\"");
         MultimodalTypes.AudioData binaryBack =
             M.readValue(binaryJson, MultimodalTypes.AudioData.class);
-        assertThat(binaryBack).isInstanceOf(MultimodalTypes.AudioData.Binary.class);
-        assertThat(((MultimodalTypes.AudioData.Binary) binaryBack).getValue())
-            .isEqualTo(Arrays.asList(72, 101, 108, 108, 111));
+        assertThat(binaryBack).isEqualTo(new MultimodalTypes.AudioData.Base64("AAEC+v8="));
+        assertThat(Types.Base64Bytes.decode("AAEC-v8"))
+            .isEqualTo(Arrays.asList(0, 1, 2, 250, 255));
+
+        // A number array is not the AI SDK's JSON for bytes.
+        assertThatThrownBy(() -> M.readValue("[72,101]", MultimodalTypes.AudioData.class))
+            .isInstanceOf(IOException.class);
 
         // Neither a string nor an array → the deserializer rejects it.
         assertThatThrownBy(() -> M.readValue("{\"Quux\":\"x\"}", MultimodalTypes.AudioData.class))
             .isInstanceOf(IOException.class);
+    }
+
+    @Test
+    void promptAndFileBytesAreBase64Strings() throws Exception {
+        // ImagePart.image and FilePart.data are DataContent (provider-utils
+        // types/content-part.ts:42, :75) and SharedV4FileDataData.data is
+        // Uint8Array | string (shared-v4-file-data.ts:7-10): base64 strings in
+        // the JSON (uint8-utils.ts:12-23), never arrays of numbers.
+        ObjectMapper t = Types.AimuxJson.MAPPER;
+        Types.ContentPart image = Types.ContentPart.Image.builder()
+            .image(Arrays.asList(137, 80, 78, 71)).mediaType("image/png").build();
+        String imageJson = t.writeValueAsString(image);
+        assertThat(imageJson)
+            .isEqualTo("{\"type\":\"image\",\"image\":\"iVBORw==\",\"mediaType\":\"image/png\"}");
+        assertThat(t.readValue(imageJson, Types.ContentPart.class)).isEqualTo(image);
+        assertThatThrownBy(() -> t.readValue(
+                "{\"type\":\"image\",\"image\":[1,2],\"mediaType\":\"image/png\"}",
+                Types.ContentPart.class))
+            .hasMessageContaining("bytes must be a base64 string");
+
+        Types.ContentPart file = Types.ContentPart.File.builder()
+            .data(Arrays.asList(0, 1, 2, 250, 255)).mediaType("application/pdf").build();
+        assertThat(t.writeValueAsString(file)).isEqualTo(
+            "{\"type\":\"file\",\"data\":{\"type\":\"data\",\"data\":\"AAEC+v8=\"},\"mediaType\":\"application/pdf\"}");
+
+        assertThat(t.writeValueAsString(new Types.FileBytes.Binary(Arrays.asList(104, 105))))
+            .isEqualTo("\"aGk=\"");
+        assertThat(t.readValue("\"aGk=\"", Types.FileBytes.class))
+            .isEqualTo(new Types.FileBytes.Base64("aGk="));
+        assertThatThrownBy(() -> t.readValue("[104,105]", Types.FileBytes.class))
+            .isInstanceOf(IOException.class);
+    }
+
+    @Test
+    void filePartsAreTheAiSdkFilePart() throws Exception {
+        // FilePart.data is FileData | DataContent | URL | ProviderReference
+        // (provider-utils types/content-part.ts:75, file-data.ts:44-48) and
+        // ReasoningFilePart.data is tagged data or a URL, or a string (:164).
+        // There is no file-base64 / file-url / file-reference part.
+        ObjectMapper t = Types.AimuxJson.MAPPER;
+        String[] wires = {
+            "{\"type\":\"file\",\"data\":{\"type\":\"data\",\"data\":\"aGk=\"},\"mediaType\":\"text/plain\",\"filename\":\"a.txt\"}",
+            "{\"type\":\"file\",\"data\":{\"type\":\"url\",\"url\":\"https://example.com/a.pdf\"},\"mediaType\":\"application/pdf\"}",
+            "{\"type\":\"file\",\"data\":{\"type\":\"reference\",\"reference\":{\"openai\":\"file-abc\"}},\"mediaType\":\"application/pdf\"}",
+            "{\"type\":\"file\",\"data\":{\"type\":\"text\",\"text\":\"hello\"},\"mediaType\":\"text/plain\"}",
+            "{\"type\":\"file\",\"data\":\"aGk=\",\"mediaType\":\"text/plain\"}",
+            "{\"type\":\"file\",\"data\":\"https://example.com/a.pdf\",\"mediaType\":\"application/pdf\"}",
+            "{\"type\":\"file\",\"data\":{\"openai\":\"file-abc\"},\"mediaType\":\"application/pdf\"}",
+            "{\"type\":\"reasoning-file\",\"data\":\"aGk=\",\"mediaType\":\"image/png\"}",
+            "{\"type\":\"reasoning-file\",\"data\":{\"type\":\"url\",\"url\":\"https://example.com/a.png\"},\"mediaType\":\"image/png\"}",
+        };
+        for (String wire : wires) {
+            assertThat(t.writeValueAsString(t.readValue(wire, Types.ContentPart.class))).isEqualTo(wire);
+        }
+        Types.ContentPart.File bare = (Types.ContentPart.File) t.readValue(wires[6], Types.ContentPart.class);
+        assertThat(bare.getData()).isInstanceOf(Types.FilePartData.Reference.class);
+        for (String removed : new String[] {"file-base64", "file-url", "file-reference"}) {
+            assertThatThrownBy(() -> t.readValue(
+                    "{\"type\":\"" + removed + "\",\"data\":\"aGk=\",\"url\":\"https://example.com/a.pdf\","
+                        + "\"mediaType\":\"application/pdf\"}",
+                    Types.ContentPart.class))
+                .hasMessageContaining("Unknown ContentPart type");
+        }
+        Types.ContentPart url = Types.ContentPart.File.builder()
+            .data(Types.FileData.Url.builder().url("https://example.com/a.pdf").build())
+            .mediaType("application/pdf").build();
+        assertThat(t.writeValueAsString(url)).isEqualTo(wires[1]);
+    }
+
+    @Test
+    void generatedFilesAreBase64AndMediaType() throws Exception {
+        // GeneratedFile is {base64, mediaType, providerMetadata?} (ai
+        // generate-text/generated-file.ts:10-32); a stream file part is
+        // {type, file, providerMetadata?} (stream-language-model-call.ts:569-590);
+        // the provider's LanguageModelV4File keeps {type, data, mediaType}.
+        ObjectMapper t = Types.AimuxJson.MAPPER;
+        for (String tag : new String[] {"file", "reasoning-file"}) {
+            String wire = "{\"type\":\"" + tag + "\",\"file\":{\"base64\":\"aGk=\",\"mediaType\":\"text/plain\"},"
+                + "\"providerMetadata\":{\"google\":{\"thoughtSignature\":\"sig\"}}}";
+            Types.StreamPart part = t.readValue(wire, Types.StreamPart.class);
+            assertThat(t.writeValueAsString(part)).isEqualTo(wire);
+        }
+        Types.StreamPart.File file = (Types.StreamPart.File) t.readValue(
+            "{\"type\":\"file\",\"file\":{\"base64\":\"aGk=\",\"mediaType\":\"text/plain\"}}",
+            Types.StreamPart.class);
+        assertThat(file.getFile().getBase64()).isEqualTo("aGk=");
+        assertThat(file.getFile().getBytes()).containsExactly(104, 105);
+
+        String raw = "{\"type\":\"file\",\"data\":{\"type\":\"url\",\"url\":\"https://example.com/a.png\"},"
+            + "\"mediaType\":\"image/png\"}";
+        assertThat(t.writeValueAsString(t.readValue(raw, Types.GenerateContent.class))).isEqualTo(raw);
+    }
+
+    @Test
+    void textStreamDeltasAreText() throws Exception {
+        // The text stream's text-delta and reasoning-delta carry `text` (ai
+        // generate-text/stream-text-result.ts:435-440, :466-471); a
+        // tool-input-delta keeps `delta` (:496-501).
+        ObjectMapper t = Types.AimuxJson.MAPPER;
+        String[] wires = {
+            "{\"type\":\"text-delta\",\"id\":\"t1\",\"text\":\"Hello\"}",
+            "{\"type\":\"reasoning-delta\",\"id\":\"t1\",\"text\":\"Hmm\"}",
+            "{\"type\":\"tool-input-delta\",\"id\":\"t1\",\"delta\":\"{\\\"a\\\"\"}",
+        };
+        for (String wire : wires) {
+            assertThat(t.writeValueAsString(t.readValue(wire, Types.StreamPart.class))).isEqualTo(wire);
+        }
+        Types.StreamPart.TextDelta text = (Types.StreamPart.TextDelta) t.readValue(wires[0], Types.StreamPart.class);
+        assertThat(text.getText()).isEqualTo("Hello");
+        assertThat(t.writeValueAsString(Types.StreamPart.ReasoningDelta.builder().id("t1").text("Hmm").build()))
+            .isEqualTo(wires[1]);
+    }
+
+    @Test
+    void standaloneToolCallsAndSourcesAreTagged() throws Exception {
+        // A result's toolCalls and sources are the AI SDK's TypedToolCall and
+        // Source, tagged {type: 'tool-call'} (ai generate-text/tool-call.ts:8-14)
+        // and {type: 'source', sourceType} (provider language-model-v4-source.ts:8,
+        // :36); generate-text-result.ts:73, :78. A repair function's call is a
+        // tagged LanguageModelV4ToolCall (language-model-v4-tool-call.ts:7).
+        ObjectMapper t = Types.AimuxJson.MAPPER;
+        String call = "{\"type\":\"tool-call\",\"toolCallId\":\"call-1\",\"toolName\":\"weather\","
+            + "\"input\":{\"city\":\"SG\"}}";
+        assertThat(t.writeValueAsString(t.readValue(call, Types.ToolCall.class))).isEqualTo(call);
+        String raw = "{\"type\":\"tool-call\",\"toolCallId\":\"c\",\"toolName\":\"t\",\"input\":\"{}\"}";
+        assertThat(t.writeValueAsString(t.readValue(raw, Types.RawToolCall.class))).isEqualTo(raw);
+        String url = "{\"type\":\"source\",\"sourceType\":\"url\",\"id\":\"s1\",\"url\":\"https://example.com\"}";
+        assertThat(t.readTree(t.writeValueAsString(t.readValue(url, Types.Source.class)))).isEqualTo(t.readTree(url));
+
+        Types.GenerateTextResult result = t.readValue(
+            "{\"text\":\"\",\"toolCalls\":[" + call + "],\"sources\":[" + url + "]}", Types.GenerateTextResult.class);
+        JsonNode written = t.readTree(t.writeValueAsString(result));
+        assertThat(written.get("toolCalls").get(0)).isEqualTo(t.readTree(call));
+        assertThat(written.get("sources").get(0)).isEqualTo(t.readTree(url));
+        // In a stream part the union's tag and the source's agree.
+        String part = "{\"type\":\"source\",\"sourceType\":\"url\",\"id\":\"s1\",\"url\":\"https://example.com\"}";
+        assertThat(t.writeValueAsString(t.readValue(part, Types.StreamPart.class))).isEqualTo(part);
+
+        // JSON written before the tag still reads; another tag is rejected.
+        assertThat(t.readValue("{\"toolCallId\":\"c\",\"toolName\":\"t\",\"input\":{}}", Types.ToolCall.class)
+            .getType()).isEqualTo("tool-call");
+        assertThatThrownBy(() -> t.readValue("{\"type\":\"source\",\"toolCallId\":\"c\",\"toolName\":\"t\"}",
+            Types.ToolCall.class)).isInstanceOf(IOException.class);
+    }
+
+    @Test
+    void unknownFieldsKeepNullApartFromMissing() throws Exception {
+        // body?: unknown (provider language-model-v4-generate-result.ts:41, :56)
+        // and inputSchemaInput?: unknown (provider-utils
+        // types/tool-approval-request.ts:41): the AI SDK's JSON keeps null and
+        // omits undefined, and a parsed value writes back the same JSON.
+        ObjectMapper t = Types.AimuxJson.MAPPER;
+        for (String wire : new String[] {"{}", "{\"body\":null}", "{\"body\":{\"a\":null}}"}) {
+            assertThat(t.writeValueAsString(t.readValue(wire, Types.ResponseInfo.class))).isEqualTo(wire);
+            assertThat(t.writeValueAsString(t.readValue(wire, Types.RequestInfo.class))).isEqualTo(wire);
+        }
+        String approval = "{\"type\":\"tool-approval-request\",\"approvalId\":\"a1\","
+            + "\"toolCallId\":\"c1\",\"inputSchemaInput\":null}";
+        assertThat(t.writeValueAsString(t.readValue(approval, Types.ContentPart.class))).isEqualTo(approval);
     }
 
     @Test
@@ -366,16 +531,18 @@ class MultimodalTypesTest {
         assertThat(((MultimodalTypes.ImageOutputs.Base64) base64Back).getValue())
             .isEqualTo(Arrays.asList("aW1hZ2Ux", "aW1hZ2Uy"));
 
-        // Binary variant (list of byte arrays).
+        // Binary variant (list of byte arrays): Array<Uint8Array> upstream
+        // (image-model-v4-result.ts:23), base64 strings in JSON.
         MultimodalTypes.ImageOutputs binary = new MultimodalTypes.ImageOutputs.Binary(
-            Arrays.asList(Arrays.asList(1, 2, 3), Arrays.asList(4, 5, 6)));
+            Arrays.asList(Arrays.asList(1), Arrays.asList(2, 3)));
         String binaryJson = M.writeValueAsString(binary);
-        assertThat(binaryJson).isEqualTo("[[1,2,3],[4,5,6]]");
+        assertThat(binaryJson).isEqualTo("[\"AQ==\",\"AgM=\"]");
         MultimodalTypes.ImageOutputs binaryBack =
             M.readValue(binaryJson, MultimodalTypes.ImageOutputs.class);
-        assertThat(binaryBack).isInstanceOf(MultimodalTypes.ImageOutputs.Binary.class);
-        assertThat(((MultimodalTypes.ImageOutputs.Binary) binaryBack).getValue())
-            .isEqualTo(Arrays.asList(Arrays.asList(1, 2, 3), Arrays.asList(4, 5, 6)));
+        assertThat(binaryBack).isEqualTo(
+            new MultimodalTypes.ImageOutputs.Base64(Arrays.asList("AQ==", "AgM=")));
+        assertThatThrownBy(() -> M.readValue("[[1,2,3]]", MultimodalTypes.ImageOutputs.class))
+            .isInstanceOf(IOException.class);
 
         assertThatThrownBy(() -> M.readValue("{\"Quux\":[1]}", MultimodalTypes.ImageOutputs.class))
             .isInstanceOf(IOException.class);
@@ -410,8 +577,10 @@ class MultimodalTypesTest {
         MultimodalTypes.VideoData binary = new MultimodalTypes.VideoData.Binary(
             MultimodalTypes.VideoBinaryData.of(Arrays.asList(1, 2, 3), "video/mp4"));
         String binaryJson = M.writeValueAsString(binary);
+        // video-model-v4-result.ts:28-29: { type: 'binary', data: Uint8Array },
+        // a base64 string in JSON.
         assertThat(binaryJson).isEqualTo(
-            "{\"type\":\"binary\",\"data\":[1,2,3],\"mediaType\":\"video/mp4\"}");
+            "{\"type\":\"binary\",\"data\":\"AQID\",\"mediaType\":\"video/mp4\"}");
         MultimodalTypes.VideoData binaryBack =
             M.readValue(binaryJson, MultimodalTypes.VideoData.class);
         assertThat(binaryBack).isInstanceOf(MultimodalTypes.VideoData.Binary.class);

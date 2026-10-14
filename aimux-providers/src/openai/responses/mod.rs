@@ -250,7 +250,7 @@ impl LanguageModel for OpenAIResponsesModel {
         &self.config.provider
     }
 
-    fn supported_urls(&self) -> aimux_core::language_model::SupportedUrls {
+    async fn supported_urls(&self) -> aimux_core::language_model::SupportedUrls {
         self.config.supported_urls.clone()
     }
 
@@ -357,7 +357,7 @@ fn tool_name_mapping(options: &CallOptions) -> HashMap<String, String> {
     let mut names = HashMap::new();
     for tool in options.tools.iter().flatten() {
         if let aimux_core::tool::Tool::Provider(tool) = tool
-            && let Some(name) = tool.id.strip_prefix("openai.")
+            && let Some(name) = tool.id.as_str().strip_prefix("openai.")
         {
             names.insert(name.to_owned(), tool.name.clone());
         }

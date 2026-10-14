@@ -214,7 +214,7 @@ try (Model model = Model.openai("sk-...", "gpt-4o")) {
 try (TypedModel model = TypedModel.openai("sk-...", "gpt-4o")) {
     Types.GenerateTextResult result = model.generateText("What is Rust?");
     System.out.println(result.getText());
-    System.out.println(result.getUsage().getInputTokens().getTotal());
+    System.out.println(result.getUsage().getInputTokens());
 }
 ```
 
@@ -223,7 +223,7 @@ try (TypedModel model = TypedModel.openai("sk-...", "gpt-4o")) {
 `(List<ModelMessage> messages)`,
 `(List<ModelMessage> messages, GenerateTextOptions options)`.
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -430,22 +430,46 @@ Factories: `Files.openai` / `openaiWithBase`.
 custom serializer for the scalar-or-object wire form), `ContentPart` (sealed),
 `MessageContent` (sealed), `ModelMessage`, `GenerateTextOptions`,
 `FileBytes` / `FileData`, `GenerateContent`, `GenerateResult`,
-`GenerateTextResult`, `StreamPart` (sealed), `ToolResultOutput`. Field names
+`LanguageModelUsage`, `GenerateTextResult`, `GenerateObjectResult`,
+`StreamPart` (sealed), `ToolResultOutput`. Field names
 are the AI SDK's camelCase (`toolCallId`, `providerOptions`, `finishReason`, ...)
 and optional fields are absent, never `null`. Sealed hierarchies are tagged on
 `type` with the upstream kebab-case names (e.g. `{"type":"text-delta",...}`,
-`{"type":"tool-call",...}`); `FileBytes` is untagged (an int array or a base64
-string).
+`{"type":"tool-call",...}`); bytes (`FileBytes`, image and file parts) are
+base64 strings, as the AI SDK's JSON carries a `Uint8Array`. An `unknown`
+value (`body`, `inputSchemaInput`) is a `JsonNode`: a JSON `null` reads as
+`NullNode` and is written back as `null`, a missing field stays Java `null`
+and is omitted. A response `timestamp` is a JavaScript `Date` in the AI SDK's
+JSON: a `toISOString()` string, UTC with milliseconds
+(`"2025-03-06T13:50:19.000Z"`), which `Instant.parse` reads.
+
+A `ContentPart.File` is the AI SDK `FilePart`: its `data` is a `FilePartData`
+(`Tagged(FileData)`, `Bare` for a base64 or URL string, or `Reference` for a
+bare `{provider: id}`); the builder also takes a `FileData` or inline bytes
+(written as tagged data). `ContentPart.ReasoningFile.data` is a
+`ReasoningFilePartData`. There is no `file-base64` / `file-url` /
+`file-reference` part.
+
+A generated file is a `Types.GeneratedFile`, the AI SDK's
+`{"base64", "mediaType", "providerMetadata"?}` (`getBytes()` decodes it).
+`StreamPart.File` and `StreamPart.ReasoningFile` (also the result's `content`
+and `reasoning` file parts) carry it as `{"type": "file", "file": {...},
+"providerMetadata"?}`; the provider-level `GenerateResult.content` keeps
+`mediaType` and tagged `data`.
 
 A `ContentPart.ToolResult` (`type: "tool-result"`) carries `toolCallId`,
 `toolName`, `output` and `providerOptions`; `output` is a `ToolResultOutput`
 built with `text` / `json` / `executionDenied` / `errorText` / `errorJson` /
-`content`. The stream-side `StreamPart.ToolResult` and
-`GenerateContent.ToolResult` are the executed-result shape and keep `result`,
-`isError`, `preliminary` and `dynamic`.
+`content`. The provider-level `GenerateContent.ToolResult` keeps `result`,
+`isError`, `preliminary` and `dynamic`; the stream's `StreamPart.ToolResult`
+is a provider-executed tool's result (Rust `TypedToolResult`: `output` and
+the call's `input`), next to `StreamPart.ToolError` and
+`StreamPart.ToolOutputDenied`.
 
-`GenerateTextOptions.responseFormat` is a JSON node: `{"type":"text"}` or
-`{"type":"json","schema":{...},"name":"...","description":"..."}`.
+`GenerateTextOptions.output` is the AI SDK's `output` as a JSON node, for
+example `{"type":"object","schema":{...}}` (tagged by `type`: `text`,
+`object`, `array`, `choice` or `json`); the parsed value is
+`GenerateTextResult.output`, a `NullNode` when the model produced JSON `null`.
 `ImageCallOptions` / `VideoCallOptions` take `size` / `resolution` as `"WxH"`
 strings (e.g. `"1024x1024"`) and `aspectRatio` as `"W:H"` (e.g. `"16:9"`).
 
@@ -458,13 +482,19 @@ plus `getInvalid()` (set by Core when tool lookup, input parse, or schema
 validation fails, even after repair) and `getError()` (the serialized
 `AiMuxError` for that failure).
 
+The top-level `ToolCall` and `RawToolCall` serialize `"type": "tool-call"` and
+`Source` serializes `"type": "source"` (`getType()`), as the AI SDK's
+`TypedToolCall` and `Source` in a result's `toolCalls` and `sources`. Reading
+accepts JSON without the tag and rejects a different one.
+
 `MultimodalTypes.java` declares the typed multimodal surface:
 `EmbeddingCallOptions` / `EmbeddingResult`, `SpeechCallOptions` / `SpeechResult`,
 `ImageCallOptions` / `ImageResult`, `TranscriptionCallOptions` /
 `TranscriptionResult`, `RerankingCallOptions` / `RerankingResult`,
 `VideoCallOptions` / `VideoPollOptions` / `VideoResult`, `SearchCallOptions` / `SearchResult`,
 `UploadFileCallOptions` / `UploadFileResult`. Sealed unions (`AudioData`,
-`ImageOutputs`, `VideoFileData`) are untagged (a base64 string or an int array)
+`ImageOutputs`, `VideoFileData`) are base64 strings on the wire (a `Binary`
+value is written as base64)
 and `VideoData` / `VideoFile` are tagged on `type`, all with custom Jackson
 serializers. Response types (`EmbeddingResponse`, etc.) match
 the `aimux-core` `.ts` wire definitions exactly (`{headers, body, ...}`).

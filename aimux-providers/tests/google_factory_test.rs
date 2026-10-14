@@ -8,8 +8,8 @@
 //! the fixture; the inputs are rebuilt from the fixture's recorded `sdk.input`.
 //!
 //! The recorded `x-goog-api-key` is redacted, so the key the case used is
-//! substituted back. The recorded SDK and runtime user-agent identifiers are
-//! replaced with the pinned provider package's user-agent suffix.
+//! substituted back. The user-agent aimux sends is checked against the
+//! recorded one (package and provider-utils parts).
 
 #[path = "common/mock_fetch.rs"]
 mod mock_fetch;
@@ -28,7 +28,7 @@ use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelProm
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
+use aimux_core::tool::{FunctionTool, LanguageModelV4ToolChoice, Tool};
 use aimux_core::types::FinishReasonUnified;
 use aimux_providers::google::{GoogleProviderSettings, create_google};
 
@@ -109,7 +109,7 @@ impl Fixture {
     }
 
     /// The recorded request must equal what went out: method, URL, headers
-    /// (names case-insensitively, with the pinned user-agent) and body.
+    /// (names case-insensitively; user-agent checked against the recording) and body.
     fn assert_request(&self, seen: &Seen) {
         let recorded = &self.json["request"];
         assert_eq!(
@@ -126,10 +126,34 @@ impl Fixture {
             .iter()
             .map(|(k, v)| (k.to_ascii_lowercase(), v.as_str().unwrap().to_string()))
             .collect();
-        expected.insert(
-            "user-agent".to_string(),
-            "ai-sdk-google/4.0.85 ai-sdk-provider-utils/5.0.51".to_string(),
+        // The user-agent is checked against the recording, not overwritten:
+        // aimux sends `ai-sdk-google/<v> ai-sdk-provider-utils/<v>`; every
+        // recording carries the same provider-utils part, and a provider-layer
+        // recording (not made through `ai`) starts with the same package part.
+        let recorded_ua = expected.remove("user-agent").expect("recorded user-agent");
+        let mut sent_headers = seen.headers.clone();
+        let sent_ua = sent_headers.remove("user-agent").expect("sent user-agent");
+        let (package_ua, utils_ua) = sent_ua
+            .split_once(' ')
+            .expect("package and provider-utils user-agent parts");
+        assert!(
+            package_ua.starts_with("ai-sdk-google/")
+                && utils_ua.starts_with("ai-sdk-provider-utils/"),
+            "{}: sent user-agent {sent_ua:?}",
+            self.name
         );
+        assert!(
+            recorded_ua.contains(&format!(" {utils_ua} ")),
+            "{}: recorded user-agent {recorded_ua:?} lacks {utils_ua:?}",
+            self.name
+        );
+        if recorded_ua.starts_with("ai-sdk-google/") {
+            assert!(
+                recorded_ua.starts_with(&format!("{package_ua} ")),
+                "{}: recorded user-agent {recorded_ua:?} does not start with {package_ua:?}",
+                self.name
+            );
+        }
         assert_eq!(
             expected.get("x-goog-api-key").map(String::as_str),
             Some("<redacted>"),
@@ -137,7 +161,7 @@ impl Fixture {
             self.name
         );
         expected.insert("x-goog-api-key".to_string(), KEY.to_string());
-        assert_eq!(seen.headers, expected, "{}: headers", self.name);
+        assert_eq!(sent_headers, expected, "{}: headers", self.name);
 
         assert_eq!(seen.json_body(), recorded["body"], "{}: body", self.name);
     }
@@ -177,14 +201,14 @@ fn call_options_from(input: &Value) -> CallOptions {
         );
     }
     options.tool_choice = match input.get("toolChoice").and_then(Value::as_str) {
-        Some("required") => Some(ToolChoice::Required),
-        Some("none") => Some(ToolChoice::None),
-        Some("auto") => Some(ToolChoice::Auto),
+        Some("required") => Some(LanguageModelV4ToolChoice::Required),
+        Some("none") => Some(LanguageModelV4ToolChoice::None),
+        Some("auto") => Some(LanguageModelV4ToolChoice::Auto),
         None => options
             .tools
             .as_ref()
             .filter(|tools| !tools.is_empty())
-            .map(|_| ToolChoice::Auto),
+            .map(|_| LanguageModelV4ToolChoice::Auto),
         Some(other) => panic!("unmapped toolChoice {other}"),
     };
     options.provider_options = input
@@ -361,6 +385,13 @@ async fn generate_stream_basic() {
 
     // The recording's user-agent names the provider package; the stream case
     // is checked like the others.
+    assert!(
+        fixture.json["request"]["headers"]["user-agent"]
+            .as_str()
+            .unwrap()
+            .starts_with("ai-sdk-google/"),
+        "the stream case is a provider-layer recording"
+    );
     let seen = mock.seen();
     assert_eq!(seen.len(), 1);
     fixture.assert_request(&seen[0]);

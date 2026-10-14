@@ -2,7 +2,7 @@
 
 > **性质**: [RFC-0036](../rfc/0036-positioning-and-layered-architecture.md)(定位与分层架构)之下的实施设计文档,不是独立 RFC,不占 RFC 编号。随本文件合入生效;§0.4 的四项决定、§0.7 对 ROADMAP 既有承诺的保留 / 调整 / 后置清单,以本文件为准,后续变更直接修改本文件并在 CHANGELOG 记录
 >
-> **Date**: 2026-09-29 · 2026-10-04 修订（撤销切换后的 ABI 共存承诺、xAI/HF chat 扩展登记后撤回、preset 改为运行时 descriptor 表、重定向规则收归 helper、修复附录 §6.4-14 裁定缺失等评审问题）
+> **Date**: 2026-09-29 · 2026-10-04 修订（撤销切换后的 ABI 共存承诺、xAI/HF chat 扩展登记后撤回、preset 改为运行时 descriptor 表、重定向规则收归 helper、修复附录 §6.4-14 裁定缺失等评审问题） · 2026-10-12 修订（§9.1 / Q3 / D31 改为逐层合入主线、全部合完前不发布；新 C ABI、生成链、完整录制 schema 3 与绑定迁移排在最后）· 2026-10-13 修订（删除未实现且不再采用的 aimux 自有设计：LanguageModelRef / ResolvedModel / RegistryModelReference、注册 sidecar 元数据、SessionInferer trait、session affinity middleware；体积与性能门禁、能力矩阵移到 ROADMAP；§9.1 登记已知差距）· 2026-10-13 修订（[4/8] 结果与流：对象生成改为 `output` 的 deprecated 包装（§3.5）；异步 job 跟随上游 start/status 与轮询预算（§4.5、§9.3）；登记视频多批 idempotency-key、流中途重试、首块超时起点（§5）；结果便捷字段 deprecated 与回放规则补充（第二部分））
 >
 > **Reference baseline**: `reference/aisdk-review/node_modules`(本地安装、带 `src/`):`ai` 7.0.122、`@ai-sdk/provider` 4.0.19、`@ai-sdk/provider-utils` 5.0.51、openai 4.0.80、anthropic 4.0.68、google 4.0.85、google-vertex 5.0.98、amazon-bedrock 5.0.100、azure 4.0.84、xai 5.0.12、mistral 4.0.54、cohere 4.0.52、deepseek 3.0.56、groq 4.0.52、openai-compatible 3.0.59、gateway 4.0.100。这是调研与正文 file:line 证据对应的版本;实现用于行为对照的协议 fixture 由随实现提交入库的 `fixtures/aisdk/VERSIONS.json` 单独锁定,可晚于此处,升级时以该文件为准
 >
@@ -12,7 +12,7 @@
 >
 > **Supersedes**: 早期仅对齐 provider 工厂外观的草案(本文件的前身);[RFC-0008](../rfc/0008-multimodal-bindings.md)「Alternative: Unified Provider Object」的 Decision;`docs/internal/handoff/HANDOFF.md` §11
 >
-> **Amends**: [ROADMAP](../ROADMAP.md) 与 [RFC-0036](../rfc/0036-positioning-and-layered-architecture.md) 中与一次性切换、L2 选型相关的承诺(逐项见 §0.7,旧文档中对应段落已加注指向本文);[RFC-0031](ai-sdk-request-pipeline.md)(provider 默认 retry、composite 零重试、helper 录制等有意差异被撤销或改写,见第一部分 §9.4)、[RFC-0017](../rfc/0017-provider-config-dx.md)(通用 body override 路线撤销)、[RFC-0020](../rfc/0020-external-provider-config.md)(全局 overlay 撤销)、[RFC-0023](../rfc/0023-runtime-request-recording.md)(录制 schema 3)、[RFC-0027](../rfc/0027-model-catalogue-and-list-api.md)(one-shot 工厂承诺撤销)
+> **Amends**: [ROADMAP](../ROADMAP.md) 与 [RFC-0036](../rfc/0036-positioning-and-layered-architecture.md) 中与切换方式、L2 选型相关的承诺(逐项见 §0.7,旧文档中对应段落已加注指向本文);[RFC-0031](ai-sdk-request-pipeline.md)(provider 默认 retry、composite 零重试、helper 录制等有意差异被撤销或改写,见第一部分 §9.4)、[RFC-0017](../rfc/0017-provider-config-dx.md)(通用 body override 路线撤销)、[RFC-0020](../rfc/0020-external-provider-config.md)(全局 overlay 撤销)、[RFC-0023](../rfc/0023-runtime-request-recording.md)(录制 schema 3)、[RFC-0027](../rfc/0027-model-catalogue-and-list-api.md)(one-shot 工厂承诺撤销)、[RFC-0016](../rfc/0016-align-with-aisdk.md)(L2 tool-call input 维持 `Value`、L7 不做 metadataExtractor 等结论由第二部分与 D15 取代)
 >
 > **Appendix**: [aisdk-architecture-impact-map.md](aisdk-architecture-impact-map.md) —— 全仓库 12 模块、201 条经对抗核验的发现与跨模块耦合链路
 
@@ -72,10 +72,12 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 - AI SDK 默认回退到 Vercel AI Gateway(`openai/gpt-5` 整串交给 gateway)。
 - **推荐(第一部分 D16 已采用)**:`aimux` 不内建默认 provider、不隐式请求 Gateway;`aimux_providers::default_providers()` 返回本地注册条目,绑定与工具在初始化时组装成 registry(`:` 分隔)。登记为产品差异。
 
-**Q3 一次性原子切换 —— 决定:一次性做完**
+**Q3 切换方式 —— 决定:一次做到目标设计,逐层合入主线(2026-10-12 修订)**
 
-- 第一部分 §9 把实施定为 P0 准备 → **P1 在集成分支上一次性切换完整依赖闭包**(拆 crate、全部 provider、运行时、录制回放、消息协议、FFI、8 个绑定、3 个工具)→ P2 验收后合入主线;不做纵向切片、不留过渡转发层。
-- 这是"不考虑 breaking + workspace 必须全绿"两个约束的直接推论(FFI 与工具在同一 workspace,提前删符号即编译失败)。代价是集成分支存续期长、主线同期冻结相关改动。**推荐**:接受。对 ROADMAP 既有承诺(旧 ABI 共存一个 minor、L2 独立版本化等)的影响见 §0.7。
+- 原决定:第一部分 §9 把实施定为 P0 准备 → **P1 在集成分支上一次性切换完整依赖闭包** → P2 验收后合入主线。
+- 修订原因:完整依赖闭包作为一次合入,规模过大,无法逐项审阅;改为每个 PR 只做一个方向,审一个、合一个。
+- 修订后:P1 按依赖顺序拆成若干层,每层一个 PR 直接合入主线,合入时 workspace 全绿(§9.1)。"不考虑 breaking、不留过渡转发层"的立场不变:每层直接写成目标设计,并在同一 PR 内改完它影响到的全部消费方(FFI、八种接口、三个工具)。新 C ABI、生成链、完整录制 schema 3 与绑定迁移排在最后几层(§9.1)。
+- 代价:全部层合入并通过 P2 之前,主线处于迁移中途,不从主线发布;已发布版本的修复走维护分支。对 ROADMAP 既有承诺(旧 ABI 共存一个 minor、L2 独立版本化等)的影响见 §0.7。
 
 **Q4 宿主回调 —— 决定:全部语言本期不做,后续单独立项**
 
@@ -83,18 +85,18 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 - **推荐**:接受;异步 C ABI(versioned vtable + completion)另立 RFC。
 - **决定**:本文定位为**清理与对齐,不新增 feature**。宿主回调(自定义 fetch / model / token / telemetry 跨语言注入)属于新 feature,与 RFC-0035 否决 #186(函数指针回调)、#191(有状态会话)时的考量相同,整体后置。据此,第一部分 §6.4 中 Node(TSFN)与 Python(GIL 回调)的宿主 fetch / model / telemetry 桥接也一并后置;本期各绑定只使用 Rust 内建能力句柄。
 
-**范围原则**:凡是 aimux 现在不具备、需要新增对外能力的项目(宿主回调、多步引擎、工具执行、审批运行时、Evaluation / Realtime / SpeechTranslation / Batch 等),均不在本文范围;本文只做结构清理、行为对齐与已发现缺陷的修复。
+**范围原则**:凡是 aimux 现在不具备、需要新增对外能力的项目(宿主回调、多步引擎、工具执行、审批运行时、Realtime / SpeechTranslation / Batch 等),均不在本文范围;已有的 Decision API 按上游 `DecisionModelV4` 对齐(§3.1);本文只做结构清理、行为对齐与已发现缺陷的修复。
 
 ### 0.5 两部分之间的衔接约定
 
 - 第二部分提出的"无运行时依赖的 `aimux-protocol` crate"即第一部分的 `aimux-provider`(V4 类型)加 `aimux-provider-utils` 中的用户层 `ModelMessage`,按 AI SDK 的包归属放置,不再另建第三个 crate。
-- 第二部分的 JSON 适配规则(base64 字节、ISO 时间、缺失属性省略、JSON null 保留、结构化错误)采纳;第一部分 §6.5 的 descriptor + manifest 生成链是唯一生成来源,ts-rs 与 `scripts/gen_*` 退役(第二部分"ts-rs 可继续"的建议不采纳)。
+- 第二部分的 JSON 适配规则(base64 字节、ISO 时间、缺失属性省略、JSON null 保留、结构化错误)采纳;第一部分 §6.5 的 descriptor + manifest 生成链是唯一生成来源,ts-rs 与 `scripts/gen_*` 在该生成链落地时退役,落地前保留为过渡生成来源,不另建第二条生成链(第二部分"ts-rs 可继续"的建议不采纳)。
 - 第二部分对 `ProviderOptions`(工厂配置)与 `providerOptions`(消息)同名异义的处理,落在第一部分 §3.3:工厂配置改名为各包 `XxxProviderSettings`。
 - 第二部分 §与 provider→model 重构的衔接 中"遵循显示身份、options namespace、catalogue、重建身份分离"一句,以第一部分 §7 的三类信息(模型身份 / 可寻址引用 / 元数据来源)为准;不存在"重建身份"。
 
 ### 0.6 独立于本文的事项
 
-- **安全**:aimux-web 绑定非 loopback 地址时,请求可用 `env:任意变量` + 自带 `base_url` 把服务进程的密钥发往任意主机(附录 tl:TOOLS-1,已核实)。已单独立任务修复,不等待本文。
+- **安全**:aimux-web 绑定非 loopback 地址时,请求可用 `env:任意变量` + 自带 `base_url` 把服务进程的密钥发往任意主机(附录 tl:TOOLS-1,已核实)。已在 master 修复,不等待本文:`env:` 只接受该 provider 注册的 key 变量;请求自带非默认 `base_url` 时只用请求内直接给的 key,不用 Settings 已存 key,也不读环境变量(`tools/aimux-web/src/wire.rs` `resolve_api_key`)。
 - **真实 bug**:附录 §5 列出 53 条,标注了"重构后自然消除 / 需独立修复"。其中 SSE 1 MiB 单事件上限(as:STREAM-1)、Bedrock converse-stream 非真流式与吞 exception(as:STREAM-2)、Bedrock/Vertex embedding 只嵌入第一个值(ce:BUG-1)、Python 阻塞调用持有 GIL(bd:BIND-4)不依赖重构,建议先行修复。
 
 ### 0.7 与 ROADMAP / RFC-0036 既有承诺的关系
@@ -107,16 +109,17 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 |---|---|---|
 | RFC-0036 §0 六条原则(性能体积门禁、行为统一、治理一等、数据真相下沉、harness 解耦、不做 agent) | 保留 | 本文是原则 2 / 4 在 provider → model → core 链路上的实施设计 |
 | L2 是"版本化投影",选型(AI SDK 形态 / Open Responses / 自有)另立调研 RFC(RFC-0036 §3;ROADMAP 0.7) | 调整 | 选型由本文第二部分定为 **AI SDK V4 形态**,调研 RFC 撤销。"投影不下的进 `provider_metadata` / `Raw`,不得静默丢弃"保留(第二部分 provider namespace 规则)。"不随 1.0 冻结"保留:V4 类型跟随头部锁定的上游基线演进,升级基线即 L2 的版本变更 |
-| 0.6 版本语义"binding wire 与 C ABI 不变";0.8 C1 "旧导出保留共存(#166 要求共存至少一个 minor 版本)";1.0 C4 删除旧导出 | 调整 | 本文的切换(§9.1 P1)是一次 **breaking 发布**:对象模型、wire、C ABI 同时替换,不提供旧导出共存、deprecated 别名或转发层(D31、§5"不采用")。发布为一个 0.x minor,CHANGELOG 给迁移说明。此后 ops 协议(见下一行)引入时的旧符号同样按切换门一次替换,不再承诺"共存一个 minor"(与 #207 §12.2 的 C2 / C4 行一致;切换门由 RFC-0039 定义) |
+| 0.6 版本语义"binding wire 与 C ABI 不变";0.8 C1 "旧导出保留共存(#166 要求共存至少一个 minor 版本)";1.0 C4 删除旧导出 | 调整 | 本文的切换(§9.1 P1,逐层合入主线,全部合完后统一发布)是一次 **breaking 发布**:对象模型、wire、C ABI 同时替换,不提供旧导出共存、deprecated 别名或转发层(D31、§5"不采用")。发布为一个 0.x minor,CHANGELOG 给迁移说明。此后 ops 协议(见下一行)引入时的旧符号同样按切换门一次替换,不再承诺"共存一个 minor"(与 #207 §12.2 的 C2 / C4 行一致;切换门由 RFC-0039 定义) |
 | ops 协议(op 表 / 错误信封 / 二进制帧 / 版本协商)、stdio CLI 入口(RFC-0036 §4;ROADMAP 0.6 schema、0.8 C1) | 保留,后置到本文切换之后 | 本文 §6 替换的是现有 123 个 `extern "C"` 的句柄对象模型与错误传输;`dispatch(op, handle, json)` 应建立在 §6.1 的句柄种类与 §6.5 的 manifest 之上,因此排在 P1 之后。本文不设计 ops 协议 |
 | L0 native passthrough(RFC-0036 §3 原则 4;ROADMAP 0.6) | 保留,后置到本文切换之后 | 落点是 §3.2 的 `Fetch` / `WsConnector` 注入与 leaf 诊断:passthrough 复用同一传输边界即可获得 auth / 重试 / 录制。本文不实现它 |
 | B 轨 protocol registry = L1 协议层(RFC-0032,B1 "protocol 列 + `from_resolved`",B2–B8 "17 个 LanguageModel → ~7 个协议、33 个 wrapper 退役") | 保留方向,形式调整 | "协议"对应本文 §3.3 / §4.1 的模型实现家族(OpenAI chat / Responses、Anthropic Messages、Google、compat 等);registry preset 由内嵌的 registry 在运行时解析成 descriptor 表,按名字创建并复用 compat 实现(D12),不为每一行生成 Rust 源码,wrapper 退役由此完成。RFC-0032 的 registry 列保留为 descriptor 的数据来源;`from_resolved` 式构造由 `create_xxx` 工厂替代;C2 "FFI 构造器转发 shim"不再需要(§6 一次切换) |
 | #174 Auth L1(registry `auth` schema + `apply_auth()`)、#175 Auth L2(Credential 解析序 + CredentialStore + TokenRefresher) | 调整 | 鉴权按 D11 在各厂商包内以 headers 闭包 / fetch 装饰器 / Rust 内建 credential resolver 实现(§3.3、§4.1),registry `auth` 列作为 preset descriptor 数据保留,`apply_auth()` 即生成 headers 闭包。CredentialStore / TokenRefresher 涉及宿主回调与有状态刷新,与 Q4 一并后置;RFC-0018 的无状态刷新边界保留(§4.1 Codex 行) |
 | #167 transport-level replay("mock 挂 HTTP 层跑真协议代码";`ProviderRecord` = registry 行 + protocol)、#179 replay 子命令 | 保留,机制按本文 | 即 D4 / D5 的 `replay_fetch` / `replay_web_socket`(§4.3):录制与回放共用 provider-utils 的 leaf 边界,真实 provider 编码器与解析器参与回放。"`ProviderRecord` = registry 行 + protocol"撤销:录制 schema 3 不保存可重建的 ProviderRecord,live replay 由宿主 registry 与 operation 目标引用驱动(D24、§4.4)。#179 子命令保留在 tools |
-| #185 "删 `StreamingToolCallTracker`(纯删)→ `ToolInput{Raw,Parsed}`" | 调整 | tracker 不删,改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils,由 OpenAI chat 流驱动(#204);`ToolInput` 的 Raw / Parsed 区分由第二部分的四层消息协议承担(V4 tool-call `input` 为原文 String,core 层 `parse_tool_call` 产出解析值) |
-| A2–A5 机械清理、E1 内部清理与文档重组、#170 / #171 registry 维护、#180 / #181 小项、S1 / S2 / S3 / P 门禁 | 保留,不受影响 | 与本文无依赖;A2(#203)独立于本文推进 |
+| #185 "删 `StreamingToolCallTracker`(纯删)→ `ToolInput{Raw,Parsed}`" | 调整 | tracker 不删,改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils,由 OpenAI chat 流驱动(#204);对齐基线是 provider-utils 5.0.55,含该版新增的 `hasEmptyArguments` 修复(同一流里新 id、同名、首片段参数为空的并行调用不再被并入前一个调用;`streaming-tool-call-tracker.ts:140-141, 275-285`);`ToolInput` 的 Raw / Parsed 区分由第二部分的四层消息协议承担(V4 tool-call `input` 为原文 String,core 层 `parse_tool_call` 产出解析值) |
+| A2–A5 机械清理、E1 内部清理与文档重组、#170 / #171 registry 维护、#180 / #181 小项 | 保留,不受影响 | 与本文无依赖;A2(#203)独立于本文推进 |
+| S1 / S2 / S3 体积工作、P 性能门禁、CLI 体积预算、0.9 能力矩阵 | 保留,不属于本文,迁移之后做 | 排期见 [ROADMAP](../ROADMAP.md) §6.1。体积与性能门禁等维护者改写 #208(RFC-0038 体积/性能预算)后再定;在此之前,每个迁移层的 PR 描述列出产物改前改后的体积(2026-10-13 修订) |
 | "瘦身不改变对外 API"(ROADMAP §3 / §6.1) | 保留 | 该约束限定体积工作;本文的 API 替换是独立的设计决定,不以瘦身为由 |
-| 0.9 治理(漂移检测、能力矩阵、`aimux probe / replay / diff`) | 保留 | 依赖本文 §4.3 的录制 schema 3 与 leaf 诊断,不另行设计 |
+| 0.9 治理(漂移检测、`aimux probe / replay / diff`) | 保留 | 依赖本文 §4.3 的录制 schema 3 与 leaf 诊断,不另行设计 |
 
 **迁移与发布影响**:本文切换合入的那个 minor 版本对 Rust、C ABI、8 个绑定、3 个工具都是 breaking;旧录制(schema ≤ 2)不可读;各绑定的 CHANGELOG 迁移说明随切换一起提交(§9.4)。此后 ROADMAP 的 0.8 / 0.9 / 1.0 内容在新对象模型上实施,不再需要 C2 转发 shim 与 C4 旧导出清理。
 
@@ -154,7 +157,7 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 | D10 | 设置求值时间逐包对齐 | 区分工厂、取模型、请求三个阶段，不统一成“所有设置都懒加载” |
 | D11 | 特殊鉴权维持包内组合 | Azure token、Vertex express、Bedrock 签名使用 fetch 装饰器；Vertex ADC 使用异步凭证能力 |
 | D12 | preset 按名字从运行时 descriptor 表创建，复用 compat 内部模型实现 | registry JSON 是唯一数据来源，首次使用时解析并校验一次；不为每一行生成 `create_<name>` 源码（同一份数据不存两遍）。preset 的 key 懒加载是明确的产品扩展；不以原生 OpenAI model 加 profile 模拟所有厂商 |
-| D13 | V4 Provider 与厂商扩展分开 | `chat`、`responses`、`getAvailableModels`、tools 等通过注册条目的扩展能力访问；registry、wrap 不丢失这些能力 |
+| D13 | V4 Provider 与厂商扩展分开 | `chat`、`responses`、`getAvailableModels`、tools 等通过注册条目的扩展能力访问；registry、wrap 不丢失这些能力。上游只有 gateway 提供 `getAvailableModels`（`@ai-sdk/gateway` 4.0.100 `gateway-provider.ts:93`），其他厂商的 discovery 是 aimux 扩展（§5） |
 | D14 | 删除所有 model/provider 默认 retry 配置 | retry 属于操作；router/MoA 为每个 child 配置预算，最终组合失败不得触发整组重跑 |
 | D15 | 删除通用 `body_overrides` | compat 保留 SDK 的 providerOptions 透传与 `transformRequestBody`；原生包不增加统一请求体改写契约 |
 | D16 | `aimux` 不依赖厂商包、不内建 Gateway | `aimux_providers::default_providers()` 返回注册条目集合；上层调用 `create_provider_registry()` 组装 |
@@ -170,9 +173,9 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 | D26 | 下载守卫保留，下载传输单独注入 | 不把 provider 鉴权栈用于不可信 URL；默认实现继续逐跳校验及 DNS pinning |
 | D27 | Telemetry 与 tracing channel 分开 | integration 可按调用替换；recording 不依赖 integration 列表；callback 并发通知，错误不破坏调用 |
 | D28 | middleware 规范放在 `aimux-provider` | generate/stream wrapper 同时取得两个执行方向；`override_supported_urls` 支持异步 |
-| D29 | 注册条目携带厂商扩展和无凭证元数据 | 解决 registry 下 list models、命名方法、catalogue 与 audit 的可达性 |
+| D29 | 注册条目携带厂商扩展 | 解决 registry 下 list models、命名方法的可达性；catalogue 与 audit 元数据由宿主显式提供，不随注册条目或模型传播（2026-10-13 修订，见 §7.2） |
 | D30 | operation 运行时共享 seq 分配器和 dispatcher | composite 子调用使用统一 helper；并发 child 保持独立 scope 和明确父子关系 |
-| D31 | 所有破坏性接口替换按完整依赖闭包一次切换 | 不再承诺“先删核心符号、几期后才改消费方”仍能 workspace 全绿 |
+| D31 | 每个破坏性接口替换连同它的完整消费闭包在同一个 PR 内完成；各层按依赖顺序合入主线（2026-10-12 修订，见 §9.1） | 不接受“先删核心符号、几期后才改消费方”；每层合入时 workspace 全绿 |
 
 ---
 
@@ -211,9 +214,9 @@ AI SDK 确实具有模型序列化机制。`AI:@ai-sdk/provider-utils/src/serial
 | C3：multipart 精确匹配不稳定 | 成立 | `AX:aimux-provider-utils/src/multipart.rs:21` 使用当前纳秒时间构造 boundary。§4.3 按 MIME parts 规范化 |
 | C4：配置缺少 env 引用 | 成立 | `AX:aimux-providers/src/provider.rs:437` 支持 env 引用；SDK compat 工厂固定 key。§3.3 新配置支持结构化 secret 引用 |
 | C5：registry 丢失 list models 可达性 | 成立 | 现有 FFI 可对其 provider 句柄调用 `list_models`。新注册条目必须保留扩展；§3.4、§6 定义访问路径 |
-| C6：catalogue/audit 元数据来源未定义 | 缺口成立 | `AX:aimux-providers/src/catalogue.rs:31` 当前依赖名称映射。§7 改为显式注册元数据；不采用模型身份反查 |
-| C7：关闭 telemetry 破坏 affinity | 成立 | 草稿让 scope 随 dispatcher 消失，又让 affinity 从 scope 读 session。§3.5 解耦 |
-| C8：SessionInferer 依赖倒置 | 成立 | 当前 session 推断由 generate 入口调用；若接口移入 devtools，将违反目标依赖方向。接口放 `aimux`，实现放 devtools |
+| C6：catalogue/audit 元数据来源未定义 | 缺口成立 | `AX:aimux-providers/src/catalogue.rs:31` 当前依赖名称映射。§7 改为由宿主显式提供元数据（2026-10-13 修订：不设注册 sidecar，见 §7.2）；不采用模型身份反查 |
+| C7：关闭 telemetry 破坏 affinity | 成立 | 草稿让 scope 随 dispatcher 消失，又让 affinity 从 scope 读 session。§3.5 解耦。2026-10-13 修订：不设 session affinity middleware，会话头由调用方按请求经 `headers` 传入（RFC-0019），与 telemetry 开关无关（§4.6） |
+| C8：SessionInferer 依赖倒置 | 成立 | 当前 session 推断由 generate 入口调用；若接口移入 devtools，将违反目标依赖方向。2026-10-13 修订：不抽象为 trait，沿用现有的 opt-in 前缀推断实现，与 generate 入口一起留在 `aimux`，不移入 devtools（§3.6） |
 | F1：compat 透传展开顺序错误 | 成立 | `AI:@ai-sdk/openai-compatible/src/chat/openai-compatible-chat-language-model.ts:274–322` 中透传位于采样字段之后、消息与工具之前 |
 | F2：object tracing 描述错误 | 成立 | SDK tracing 类型没有 object；`generate-object.ts:399` 直接 retry `doGenerate`。§3.5 明确增加 aimux object spans |
 | F3：现有句柄表描述错误 | 成立 | `AX:aimux-ffi/src/lib.rs:97–158` 是 `HashMap<u64, HandleEntry>` 加递增 ID，且已有种类校验 |
@@ -222,7 +225,7 @@ AI SDK 确实具有模型序列化机制。`AI:@ai-sdk/provider-utils/src/serial
 | I2：default_registry 依赖方向冲突 | **blocker 成立** | 草稿同时把 registry 定义在 `aimux`、把创建函数放在禁止依赖 `aimux` 的 providers。改为 `default_providers()` |
 | I3：`Arc<Any + Sync>` 无法承载 stream | 成立 | `AX:aimux-core/src/result.rs:234` 的 stream 只要求 `Send`。§3.5 使用可按值取出的 `Box<dyn Any + Send>` |
 | I4：audit 表无注入路径 | 成立 | 当前审计实现使用子串分支；新分层没有隐式访问厂商 descriptor 的通路。§3.6 增加显式 resolver |
-| I5：会话 registry 无法产生 model_ref | 成立 | 草稿只有全局默认 provider 解析字符串。§3.4 加入显式 registry 引用和命名方法 |
+| I5：会话 registry 无法产生 model_ref | 成立 | 草稿只有全局默认 provider 解析字符串。§3.4 的会话调用用显式 registry 解析字符串模型 ID，命名方法经注册条目的扩展取得（2026-10-13 修订：模型引用与上游一致，不另设结构化引用类型） |
 | I6：telemetry 开关影响功能性上下文 | 成立 | 与 C7 同一根因，统一修复 |
 | I7：离线回放遗漏鉴权和下载 | 成立 | `AI:ai/src/util/download/download.ts:39` 没有使用 provider 的 fetch。§3.4、§4.3 提供 operation 下载注入 |
 | I8：FFI 擦除 registry 和厂商方法 | 成立 | `Arc<dyn Provider>` 无法访问 registry 的固有方法。§6 保留 registry 句柄变体和完整注册条目 |
@@ -249,7 +252,7 @@ AI SDK 确实具有模型序列化机制。`AI:@ai-sdk/provider-utils/src/serial
 ```text
 aimux-provider                         V4 规范、模型类型、错误、AbortSignal
        ↑
-aimux-provider-utils ← aimux-stream    helper、传输、设置解析、诊断、注册元数据
+aimux-provider-utils ← aimux-stream    helper、传输、设置解析、诊断、注册条目
        ↑                  独立解析库
 aimux-providers                        厂商工厂、模型实现、preset、catalogue 摄取
 
@@ -291,8 +294,8 @@ FFI / Node / Python / tools
 | URL、key、project、API version、鉴权闭包 | 厂商私有 config |
 | `max_retries`、timeout、并发及批处理策略、session | 用户操作选项或 operation 运行时 |
 | V4 headers、abort、providerOptions | 从操作转换进入 V4 CallOptions |
-| registry key、命名方法、目标引用 | resolution sidecar；不放进 V4 model trait |
-| `package_id`、审计族、catalogue 关联 | descriptor 与注册条目元数据 |
+| registry key、命名方法 | 字符串模型 ID（`key:model`）由 registry 解析，命名方法经注册条目的扩展取得；不设 resolution sidecar，不放进 V4 model trait |
+| `package_id`、审计族、catalogue 关联 | descriptor 与宿主显式配置（§3.6、§7.2） |
 | operation ID、seq、attempt、parent | operation runtime 与 task-local scope |
 | 请求响应字节、帧、时间 | leaf 诊断事件 |
 | 录制、trace、session 历史 | devtools |
@@ -308,8 +311,8 @@ FFI / Node / Python / tools
 ```rust
 #[async_trait]
 pub trait LanguageModel: Send + Sync {
-    fn specification_version(&self) -> SpecificationVersion {
-        SpecificationVersion::V4
+    fn specification_version(&self) -> &'static str {
+        "v4"
     }
 
     fn provider(&self) -> &str;
@@ -344,7 +347,9 @@ pub trait LanguageModel: Send + Sync {
 
 ```rust
 pub trait Provider: Send + Sync {
-    fn specification_version(&self) -> SpecificationVersion;
+    fn specification_version(&self) -> &'static str {
+        "v4"
+    }
 
     fn language_model(&self, id: &str)
         -> Result<Arc<dyn LanguageModel>, AiMuxError>;
@@ -389,7 +394,13 @@ fn do_stream<'a>(
 }
 ```
 
-本地 `AI:@ai-sdk/provider/src/provider/v4/provider-v4.ts:13`（ProviderV4）没有 `evaluationModel`。Evaluation、Realtime、SpeechTranslation、Batch 的具体能力不在本文交付范围；不注册空实现，不宣称已支持。
+没有该方法的模型（如 Groq、Mistral）返回 `None`，`stream_transcribe` 在任何 I/O 之前报 `UnsupportedFunctionality`，文案同上游 `The {provider} model "{modelId}" does not support streaming transcription.`（`ai@7.0.127 src/transcribe/stream-transcribe.ts:125-138`；方法可选见 `@ai-sdk/provider@4.0.22 src/transcription-model/v4/transcription-model-v4.ts:44-46`）。有该方法的模型返回 `Some`，不能流式的模型 ID 等失败由返回的 future 报告，同上游各厂商 `doStream` 内的检查。
+
+语音结果 `SpeechResult.usage: Option<JsonObject>` 同上游 `SpeechModelV4Result.usage?: JSONObject`（`@ai-sdk/provider@4.0.22 src/speech-model/v4/speech-model-v4-result.ts:23-27`），按厂商原样保存用量，不归一化为 token 计数。Google 在响应带 `usageMetadata` 时原样传出（`@ai-sdk/google@4.0.87 src/google-speech-model.ts:356-358`），未报告或为 `null` 时为 `None`；其他厂商不报告用量。speech 结束事件上的 usage（`ai@7.0.127 src/generate-speech/generate-speech.ts:245`）属于 telemetry 接入，尚未完成。
+
+决策模型即上游 `DecisionModelV4`（`@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4.ts:6-16`）：`DecisionModel` 只有 `specification_version`、`provider`、`model_id`、`supported_question_types` 与 `do_decide`，call options、题目、答案与结果的形态同 `decision-model-v4-call-options.ts:7-14`、`decision-model-v4-result.ts:7-56`。`decide` 同 `ai@7.0.128 src/decide/decide.ts:76-185`：校验输入，I/O 前拒绝不支持的题型（`DecisionUnsupportedQuestionTypeError` 的文案），按 `maxRetries`（缺省 2）重试，重试后用 `validate-decision.ts` 的规则校验答案，补全 usage 合计与 response 时间、模型。ProviderV4（`provider-v4.ts:13`）没有决策方法，上游 registry 通过扩展读取 `decisionModel ?? evaluationModel`（`ai@7.0.128 src/registry/provider-registry.ts:447-461`）；aimux 的 `Provider::decision_model` 是可选方法，缺省 `None`，registry 与 custom provider 报 `NoSuchModel`（`decisionModel`）。上游 deprecated 的 `evaluationModel`、`doEvaluate` 等别名不移植（D31）。aimux 已有的扩展不另设结构：图片、typed choice value、运行时协议放在 `providerOptions`，概率来源、confidence、弃答与 latency 放在 `providerMetadata`；模型不带能力结构，录制也不存能力快照。JSON 同公共 JSON 规则：选项、结果与模型描述 camelCase（`maxRetries`、`rounding.probabilityDecimals`、`{specificationVersion, provider, modelId, supportedQuestionTypes}`），`DecideResult.usage` 的未知计数省略（`decision-result.ts:27-31` 为 `undefined`）；provider 命名空间里 aimux 自己解析的参数与元数据也是 camelCase（`images[].mediaType`、`choiceValues`、`safetyIdentifier`、`probabilitySource`、`latencyMs`），原样转发给运行时的参数保持运行时的字段名。OpenAI 原生 Decisions、TypeSafe 与本地运行时是 aimux 扩展；上游 OpenAI、Google 的 `evaluationModel` 用语言模型结构化输出（`@ai-sdk/provider-utils@5.0.55 src/decision-language-model.ts`），aimux 对应 `DecisionLanguageModel`。
+
+Realtime、SpeechTranslation、Batch 的具体能力不在本文交付范围；不注册空实现，不宣称已支持。
 
 ### 3.2 provider-utils：传输、设置与诊断
 
@@ -423,10 +434,10 @@ pub type FetchFunction = Arc<dyn Fetch>;
 关键规则：
 
 - multipart 在 helper 内编码成字节，签名处理最终发送字节。
-- 重定向由 helper 逐跳处理，transport（含注入的 `Fetch`）不跟随重定向、原样返回 `3xx`。普通 API 调用只跟随同源重定向，跨 origin 的 `3xx` 按非 2xx 返回，请求头与 fetch 装饰器注入的凭证都不会到达另一个 origin；每一跳重新经过请求的 `Fetch`，签名装饰器对实际发送的 URL 重新签名。校验下载（D26）沿用逐跳校验、pin 与离开 credentialed origin 后剥离调用方头的规则。
+- 重定向由 helper 逐跳处理，transport（含注入的 `Fetch`）不跟随重定向、原样返回 `3xx`。普通 API 调用跟随所有重定向（同上游 `postToApi` 在 fetch 默认 `redirect: "follow"` 下的行为，provider-utils@5.0.53 `post-to-api.ts:98-107`）；一旦离开请求的 origin，只保留 `User-Agent`，其余请求头全部丢弃，并以 `RequestCredentials::Omit` 通知 transport（同 `fetch-with-validated-redirects.ts:195-206`），请求头与 fetch 装饰器注入的凭证都不会到达另一个 origin；每一跳重新经过请求的 `Fetch`，签名装饰器对实际发送的 URL 重新签名。校验下载（D26）沿用逐跳校验、pin 与离开 credentialed origin 后剥离调用方头的规则。
 - 默认 HTTP client 按 Tokio runtime 分片，保留现有连接池生命周期约束。
 - `settings.fetch == None` 时，每次请求读取当前默认 leaf；不在工厂创建时冻结全局 fetch。
-- WebSocket 使用独立 connector，和默认 HTTP leaf 共用显式 `TransportSettings`。
+- WebSocket 使用独立 connector（`TungsteniteConnector::new(ProxyConfig)`）；未注入 connector 时，连接时读取默认 HTTP leaf 的 `ProxyConfig`。
 - 代理与 TLS 设置属于 transport 实例，不保留初始化时机敏感的 `init_proxy`。
 - 30 秒非流式 whole-response 上限留在 helper，覆盖注入 fetch 后的完整响应处理；streaming 不套用该上限。
 - helper 不执行完整 model operation 的 retry。
@@ -447,7 +458,7 @@ pub enum Resolvable<T> {
 
 `Future` 表示一次 Promise 值；`AsyncFn` 表示每次重新求值。两者不能混为一谈。`Shared` 所需的 Clone/Send 约束落实在类型定义和构造器中。
 
-Headers 采用大小写不敏感的覆盖语义：
+Headers 采用大小写不敏感的覆盖语义（有意差异，见 §5：上游 `combineHeaders` 合并时大小写敏感，`normalizeHeaders` 之后才转小写并丢弃 undefined，见 `@ai-sdk/provider-utils` 5.0.53 `combine-headers.ts:1-11`、`normalize-headers.ts:8-38`；因此上游 `{a: undefined}` 不会删除先前的 `A`）：
 
 1. 名称统一小写；
 2. 后者覆盖前者；
@@ -504,6 +515,7 @@ config 只对该包及明确的 `internal` 复用接口开放。不得提供公�
 | Google | base URL 等工厂设置 | 构造对应模型 | 求值 key |
 | Vertex | 解析 express key 等设置 | 构造所需 project/location/base URL，可能失败 | ADC headers 或 express fetch |
 | Bedrock | 选择 API key/SigV4 组合 | 构造对应模型 | region、凭证、签名及惰性 URL |
+| Anthropic-AWS | 校验显式 base URL；无 base URL 时校验显式 region | 构造 Messages model | region（设置或 `AWS_REGION`，无默认值）与惰性 URL；必填 workspace id（设置或 `ANTHROPIC_AWS_WORKSPACE_ID`）；未给 auth 时 `ANTHROPIC_AWS_API_KEY` 非空走 `x-api-key`，否则用 `AWS_*` 凭证 SigV4（aws4fetch 规则）。上游在工厂阶段读 key、取模型阶段算 base URL，aimux 统一推迟到请求阶段，默认实例不读环境 |
 | Groq/DeepSeek 等 | 包内 base URL 规则 | 独立模型实现 | headers 懒加载 key |
 | openai-compatible | 固定 apiKey、headers、queryParams | 按 name 构造模型 | 使用固定配置 |
 | aimux preset | 固定声明式适配设置 | 构造 compat 内部模型 | 懒加载 key 与必要模板设置 |
@@ -549,7 +561,6 @@ preset 输入新增 `auth`、能力设置和显式模板参数声明。模板统
 pub struct ProviderRegistration {
     pub provider: Arc<dyn Provider>,
     pub extensions: Arc<dyn ProviderExtensions>,
-    pub metadata: Option<Arc<dyn ProviderMetadataResolver>>,
 }
 ```
 
@@ -591,45 +602,18 @@ impl ProviderRegistry {
 }
 ```
 
-registry 默认用 `:` 分隔，在第一个分隔符处分割；model ID 的剩余内容原样传递。命名方法是结构化字段，不靠注册 `openai.chat` 等自动别名反解。
+registry 默认用 `:` 分隔，在第一个分隔符处分割；model ID 的剩余内容原样传递。命名方法不编码进字符串 ID，也不靠注册 `openai.chat` 等自动别名反解。
 
-```rust
-pub enum LanguageModelRef {
-    Id(String),
+模型引用与上游一致：操作接收字符串模型 ID 或模型实例，不另设 `LanguageModelRef`、`ResolvedModel` 或结构化 registry 引用类型（2026-10-13 修订）。因此：
 
-    Registry {
-        registry: Arc<ProviderRegistry>,
-        id: String,
-        method: Option<String>,
-    },
+- 会话调用用显式 registry 把字符串 ID 解析为模型实例，无需修改进程默认 provider；
+- 命名方法（如 `chat`、`responses`）经注册条目的扩展取得模型实例；
+- resolution 只返回模型，不附带来源 sidecar；
+- 任意直接传入的模型不会被猜出引用或 package。
 
-    Model(Arc<dyn LanguageModel>),
-}
-```
+完整注册条目的 wrap 同时包装命名方法返回的模型，并保留 discovery、files 与 tools。仅包装 `Arc<dyn Provider>` 时只承诺标准能力。
 
-内部 resolution 返回：
-
-```rust
-ResolvedModel {
-    model,
-    reference: Option<RegistryModelReference>,
-    metadata: Option<ModelDescriptor>,
-}
-```
-
-`RegistryModelReference` 保存 registry key、model ID、方法及必要的宿主 registry namespace；不保存 settings。
-
-因此：
-
-- 显式会话 registry 无需修改进程默认 provider；
-- `work:gpt-4o + method=chat` 与 `method=responses` 可准确区分；
-- 工具生成的录制有完整引用；
-- 任意直接传入的模型不会被猜出引用或 package；
-- `wrap` 保留已有来源 sidecar；替换模型含义时必须显式重设或清除来源。
-
-完整注册条目的 wrap 同时包装命名方法返回的模型，并保留 discovery、files、tools 与元数据。仅包装 `Arc<dyn Provider>` 时只承诺标准能力。
-
-`custom_provider` 支持标准模态映射、files/skills 和 fallback。自定义命名方法必须显式登记；不能默默穿透到不相关的 fallback 模型。
+`custom_provider` 支持标准模态映射、files/skills 和 fallback。discovery 扩展按上游 files/skills 的方式转发（`ai@7.0.127 src/registry/custom-provider.ts:268-283`）：先用配置的 `discovery`，否则用 fallback provider 的 `discovery()`。自定义命名方法必须显式登记；不能默默穿透到不相关的 fallback 模型。
 
 **下载：**
 
@@ -656,8 +640,6 @@ pub struct DiagnosticScope {
     pub parent: Option<ModelCallAttemptRef>,
     pub step_label: Option<Arc<str>>,
     pub model: Option<ModelInfo>,
-    pub model_ref: Option<RegistryModelReference>,
-    pub model_metadata: Option<Arc<ModelDescriptor>>,
     pub capture_policy: CapturePolicy,
 }
 ```
@@ -692,7 +674,7 @@ LM 的 start/end 是逻辑调用事件，retry 内的 attempt spans 与传输事
 | 能力 | `telemetry.is_enabled=false` |
 |---|---|
 | call ID、session、seq、父子关系 | 仍建立 |
-| session 推断和 affinity header | 仍执行 |
+| session 推断 | 仍执行 |
 | retry、timeout、abort、下载 | 仍执行 |
 | Telemetry callback、tracing span | 不发布 |
 | recorder、session store、依赖该 operation 的 trace | 不采集 |
@@ -702,16 +684,11 @@ LM 的 start/end 是逻辑调用事件，retry 内的 attempt spans 与传输事
 
 Telemetry 保留当前采用范围的生命周期回调、object callbacks、embed/rerank callbacks、`execute_language_model_call`、`execute_tool`。callback 通过并发 future 集合通知，等待完成并吞掉通知错误；执行 wrapper 的错误仍影响执行结果。
 
-不实现 `onStepFinish` 的 deprecated 转发。Evaluation 若以后纳入范围，必须同时加入模型解析、操作、四个 evaluation callbacks 和 tracing，而不是本期仅列出一个永远不产生的事件。
+不实现 `onStepFinish` 的 deprecated 转发。`decide` 的 onStart / onEnd 回调与 tracing span（`ai@7.0.128 src/decide/decide.ts:95-190`）随本节的 op / attempt 事件一起接通（§9.1 已知差距），不先列出永远不产生的事件。
 
-对象生成明确采用 aimux 扩展：
+对象生成跟随上游（2026-10-13 修订）：上游 `generateObject` / `streamObject` 已标 `@deprecated`，改用 `generateText` / `streamText` 的 `output` 设置（ai 7.0.127 `A/generate-object/generate-object.ts:120`、`A/generate-object/stream-object.ts:190`）。aimux 的 `generate_object` 是 `generate_text` 加 `output` 的 deprecated 包装，走同一个 generate operation span、retry 内的 `LanguageModelCall` attempt span 和 scope，不另设 `GenerateObject` / `StreamObject` span；没有 `stream_object`，流式对象输出用 `stream_text` 的 `output`。原先的“对象生成采用 aimux 扩展”（独立 span、scope 与 object callback）撤销。
 
-- `GenerateObject`、`StreamObject` operation span；
-- retry 内 `LanguageModelCall` attempt span；
-- 对应 scope；
-- 现有 object callback 语义。
-
-非 LM 模态增加 `ModelCall { modality }` attempt span。不能把 SDK 的 operation 级 embed span描述为天然的逐 attempt span。
+非 LM 模态增加 `ModelCall { modality }` attempt span。不能把 SDK 的 operation 级 embed span描述为天然的逐 attempt span。（基线 ai 7.0.122 没有 speech / transcription 的 tracing；7.0.127 起上游增加了 generateSpeech / transcribe / streamTranscribe 的 tracing 类型与回调，见 `telemetry/tracing-channel.ts:12-14`，升级基线时重新核对哪些仍属 aimux 扩展。）
 
 **流结果所有权：**
 
@@ -743,15 +720,14 @@ pub struct TraceOptions {
 审计族选择顺序：
 
 1. 显式 `TraceOptions.audit_family`；
-2. 当前 resolved model 的包/方法/模型元数据；
-3. 注入 descriptor 索引中的唯一精确匹配；
-4. `Unknown`。
+2. 注入 descriptor 索引中的唯一精确匹配；
+3. `Unknown`。
 
 Unknown 不冒充 OpenAI，不输出需要厂商规则才能成立的结论。
 
 工具与绑定初始化时，用 providers 导出的 descriptors 构造 devtools metadata index，并传给 trace middleware。纯 Rust 用户可以显式注入；不注入也能执行普通 trace，但未知模型没有厂商专用 verdict。
 
-`SessionInferer` trait 和注册接口位于 `aimux`。devtools 只提供前缀推断实现；多租户宿主使用独立 runtime 配置，不以进程全局推断器混合会话。
+session 推断沿用现有的 opt-in 前缀推断实现（`SessionInferer`），由 generate 入口直接调用，留在 `aimux`；不抽象为 trait，不提供注册接口（2026-10-13 修订）。
 
 ---
 
@@ -779,12 +755,12 @@ providerOptions 必须描述**查找、合并、回退、回写**，而非仅列
 | OpenAI chat | `openai` |
 | OpenAI Responses/Azure Responses | 按包内 SDK 规则选择 `openai`/`azure`；保留当前跨包功能性 fallback |
 | Anthropic | canonical `anthropic` 与包内首段规则得到的 custom key 合并；custom 优先；按 SDK 记录 custom key 使用情况 |
-| Google/Vertex | 包内保留 Vertex 分支；使用 `googleVertex`，保留功能性的 `google` fallback |
-| Bedrock | `amazonBedrock`；另外独立读取 `anthropic` 选项，二者不是同一条 fallback 链 |
+| Google/Vertex | 包内保留 Vertex 分支；依次读取 `googleVertex`、旧键 `vertex`，保留功能性的 `google` fallback；metadata 同时写 `googleVertex` 与 `vertex`（视频另写 `google-vertex`） |
+| Bedrock | 读取 `amazonBedrock`，旧键 `bedrock` 兜底；metadata 同时写 `amazonBedrock` 与 `bedrock`；另外独立读取 `anthropic` 选项，二者不是同一条 fallback 链 |
 | compat | `openaiCompatible` 与 name 的规范 camelCase key；优先级及未知字段透传按包定义 |
 | aimux preset | 由 descriptor 明确命名空间，不通过宿主 registry alias 改变 |
 
-按本文的无兼容立场，SDK 中明确标记为历史兼容的 `vertex`、`bedrock`、`openai-compatible` 等旧键及对应双写/告警转发不移植。该偏差进入 §5，不能声称逐字复制 SDK 所有历史行为。
+SDK 为历史兼容保留的旧键照上游读取并回写：新键优先、旧键兜底地读取（Vertex 的 `vertex`、Bedrock 的 `bedrock`；compat 的 `openai-compatible` 读取时附 deprecated 告警），写 metadata 时新旧键都写（Vertex 写 `googleVertex` 与 `vertex`，视频另写 `google-vertex`；Bedrock 写 `amazonBedrock` 与 `bedrock`），与 `@ai-sdk/google`、`@ai-sdk/google-vertex`、`@ai-sdk/amazon-bedrock`、`@ai-sdk/openai-compatible` 一致。
 
 **compat 请求体顺序：**
 
@@ -856,8 +832,6 @@ Recording {
     parent?: { seq, attempt },
     step_label?,
     model: { provider, model_id, modality },
-    model_ref?,
-    package_id?,
     started_at,
     outcome
   }],
@@ -897,6 +871,8 @@ Recording {
 `Captured<T>` 明确区分已采集、被策略禁止和因丢失而缺失。主动关闭输入记录不等于事件丢失。
 
 不保存 provider settings、key 来源或可重建 config。
+
+`target.model_ref` 是操作收到的字符串模型 ID（如 `work:gpt-4o`）；操作收到的是模型实例时缺省。录制不保存结构化 registry 引用或元数据 sidecar（2026-10-13 修订）。
 
 **完成屏障：**
 
@@ -989,10 +965,9 @@ pub async fn replay_live(
 
 `ReplayLiveTarget` 明确接收宿主 registry 或显式模型目标：
 
-- 从 `recording.target.model_ref` 解析原 operation 的目标；
-- 保留命名方法，因此 chat 不会变成 Responses；
+- 用宿主 registry 解析 `recording.target.model_ref`（字符串模型 ID）得到原 operation 的目标；
 - 不使用 `model_calls[0]` 猜目标；
-- 直接 model 录制没有引用时，要求调用方指定目标；
+- 录制没有字符串 ID 时（直接传入模型实例，包括经命名方法取得的模型），要求调用方指定目标，因此 chat 不会被换成 Responses；
 - composite 从宿主提供的组合定义解析，不从 child 列表反向恢复完整路由策略；
 - 使用新的 call ID，默认创建新的 replay session，保存来源 call ID 供比较；
 - 凭证只能来自当前宿主配置；
@@ -1018,7 +993,7 @@ pub fn prepare_retries(
 | text/object/embed/image 等模型操作 | ai 层包住一次模型调用 |
 | `getAvailableModels` | 厂商扩展执行一次请求；需要重试时由 ai 层 discovery 操作包装 |
 | files upload | 对齐本地 SDK `uploadFile`，不自动重试完整上传 |
-| 已提交的异步 job | 仅重试安全的 poll/download 阶段，不重新 submit |
+| 异步 job | 跟随上游。start/status 模型：每次逻辑 start 铸造一个 idempotency-key（调用方在 headers 里给的优先），带同一个 key 重试 doStart；status 单独重试，每次 status 请求（含重试）与剩余的轮询预算竞争（ai 7.0.127 `A/generate-video/generate-video.ts:520-536`、`:576-625`）。submit 与 poll 都在 doGenerate 内的模型：与上游一样整体重试 doGenerate（`A/generate-image/generate-image.ts:206`、`A/transcribe/transcribe.ts:243`），因此可能重新 submit；包内只提交一次，轮询中的可重试错误在包内消化，以缩小这个窗口 |
 | Codex refresh | 不自动重试旋转 refresh token |
 | 已输出语义数据的 stream | 不重试整次生成、不切换备用模型 |
 
@@ -1028,7 +1003,7 @@ Router/MoA 保留 `LanguageModel` 外观，但明确属于 `aimux::composite` �
 
 ```rust
 pub struct CompositeChild {
-    pub model: LanguageModelRef,
+    pub model: Arc<dyn LanguageModel>,
     pub max_retries: Option<u32>,
 }
 ```
@@ -1069,8 +1044,8 @@ MoA 并发 child 各有 scope；aggregator 重试不重跑已完成 references�
 **Session：**
 
 - session ID 来自显式参数或可选 inferer。
-- affinity middleware 在签名前写 header，与 telemetry 开关无关。
-- SessionStore 消费 operation 事件，保存模型身份与目标引用。
+- 不设 session affinity middleware：会话头由调用方按请求经 `headers` 传入（RFC-0019），aimux 不自动注入（2026-10-13 修订）。
+- SessionStore 消费 operation 事件，保存模型身份与字符串模型 ID（如有）。
 - session 推断不得决定凭证、package 或 model resolution。
 
 **日志：**
@@ -1099,7 +1074,7 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | S1-1～S1-3 | §3.2：Fetch/WS、签名、headers、空 key、load helpers |
 | S1-4 | §3.2、§3.5、§4.3：scope 与统一 leaf 诊断替代侵入式录制 |
 | S1-5、S1-6 | §4.5、§4.1：调用级 retry；命名空间 helper 仅在适用的包内复用 |
-| S2-1～S2-4 | §3.1、§3.4、§4.3：模型契约、参数拆分、无快照录制、结构化引用 |
+| S2-1～S2-4 | §3.1、§3.4、§4.3：模型契约、参数拆分、无快照录制、字符串模型 ID 引用 |
 | S2-5、S2-6 | §4.2：metadata 往返、typed tool output、supportedUrls 和下载 |
 | S2-7、S2-8 | §3.1、§6：Provider、多模态、错误类型与所有消费方 |
 | S3-1～S3-3 | §3.5、§4.5、§7：child retry、scope、实际子模型身份、审计位置 |
@@ -1124,9 +1099,11 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 语言适配 | 泛型 telemetry wrapper | `Box<dyn Any + Send>` 擦除结果类型，保留所有权 |
 | 语言适配 | 工厂抛异常 | `Result<_, AiMuxError>` |
 | 产品选择 | 不可失败的默认 provider 访问 | 延后失败配置的解析；显式工厂仍返回 Result |
+| 产品选择 | headers 合并大小写不敏感 | 名称先转小写再按后者覆盖，`None` 删除同名头；上游 `combineHeaders` 按原样合并、`normalizeHeaders` 之后才转小写（`@ai-sdk/provider-utils` 5.0.53 `combine-headers.ts:1-11`、`normalize-headers.ts:8-38`），`{a: undefined}` 不删除先前的 `A`（§3.3） |
+| 语言适配 | 全局 fetch | Rust 没有 `globalThis.fetch`：代理属于 transport 实例（`ReqwestFetch::new(ProxyConfig)` 作为 provider 的 `fetch`）；未给 `fetch` 的 provider 每次请求读取进程默认 transport，`set_default_transport` 替换它，内建 WebSocket connector 与下载跳共用其代理设置（§3.3） |
 | 产品选择 | 默认字符串模型 | 绑定/工具安装本地 registry；不隐式请求 Vercel Gateway |
 | 产品选择 | 观测范围 | 为 object 和非 LM 模态增加 operation/attempt 事件 |
-| 产品选择 | telemetry 关闭 | 关闭观测，保留功能性 scope 与 session affinity |
+| 产品选择 | telemetry 关闭 | 关闭观测，保留功能性 scope 与 session 推断 |
 | 产品选择 | recording/replay/audit/session | devtools 能力，不进入 model trait |
 | 产品选择 | preset 数量与构建 | 单 crate 内嵌 registry，运行时解析成 descriptor 表；没有逐厂商的 Rust 函数，按名字创建 |
 | 产品选择 | preset 能力配置 | `max_tokens_key`、`supports_*` 等仅为显式 preset 适配，不冒充 SDK compat settings |
@@ -1136,17 +1113,25 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 产品选择 | retry 细节 | 保留 jitter、Retry-After 处理和既定错误历史 |
 | 产品选择 | helper 超时 | 非流式 30 秒上限，与注入 fetch 无关 |
 | 产品选择 | SSE 预读 | 保留首事件错误预读，明确计时影响 |
+| 产品选择 | 视频多批的 idempotency-key | 调用方给 key 时，多批按批次派生 `<key>:batch:<i>`，单批保持原键；上游每个批次的 doStart 带同一个调用方 key（ai 7.0.127 `A/generate-video/generate-video.ts:338-372`、`:520-536`），provider 可能据此把几个批次去重成一个任务 |
+| 尚未对齐 | 流中途重试 | 上游 `streamText` 有 `streamRetries`（不设时不重试；设为 n 时流中途的 provider error 最多重新调用模型 n 次，`onError` 也可请求重试，见 ai 7.0.127 `A/generate-text/stream-text.ts:374`、`:1948-1953`、`:2495-2665`）。aimux 待实现，现状与不设时相同：流返回后不重试（RFC-0031 §8.3） |
+| 尚未对齐 | 首块超时的起点 | 上游在 provider 响应流开始时才开始计 chunk 超时（`A/generate-text/stream-text.ts:2228-2243`、`:2671`）；aimux 的 provider 在 `do_stream` 内预读首个 SSE 事件，所以 `first_chunk_ms` 在 operation 开始时计时，覆盖请求建立。改成上游的时机要先让 `do_stream` 在响应头到达时返回，未决（RFC-0031 §8.1、§8.3） |
 | 产品选择 | core 工具循环 | 保持单步，不引入 agent loop |
 | 不采用 | workflow 模型序列化 | 不用于录制或重建 |
-| 不采用 | 历史版本和 deprecated 兼容 | 不实现 V2/V3 适配、旧 namespace 双写、旧方法转发、旧录制读取 |
-| 本期范围外 | Evaluation/Realtime/SpeechTranslation/Batch 等完整链路 | 不注册虚假能力；后续需完整接通操作与观测 |
+| 不采用 | 历史版本和 deprecated 兼容 | 不实现 V2/V3 适配、旧方法转发、旧录制读取；旧 namespace 键不在此列，照上游读取并双写（§4.1） |
+| 上游对齐 | Decision | `DecisionModelV4` 与 `decide`；aimux 扩展进 `providerOptions` / `providerMetadata`，无能力结构；不支持决策的 provider 返回 `None`；deprecated evaluation 别名不移植（§3.1） |
+| 本期范围外 | Realtime/SpeechTranslation/Batch 等完整链路 | 不注册虚假能力；后续需完整接通操作与观测 |
 | ABI 范围外 | C 宿主异步 fetch/model/headers/telemetry | 由独立异步 ABI 设计处理；本期提供 Rust 内建句柄 |
-| 语言适配 | `specification_version` / `Provider.name()` | `Provider` 与各模型 trait 不带 `specification_version`，`Provider` 不带 `name()`（D-c）：Rust trait 本身就是版本边界，注册名归持有 registry 的一方，身份由模型自己的 `provider()`（`"{name}.{method}"`）承担 |
+| 上游对齐 | `specification_version` | `Provider` 与各模型 trait 保留 `specification_version()`，默认返回 `"v4"`，与上游 `ProviderV4` 及各模型 V4 接口的 `specificationVersion: 'v4'` 一致 |
+| 语言适配 | `Provider.name()` | `Provider` 不带 `name()`（D-c）：注册名归持有 registry 的一方，身份由模型自己的 `provider()`（`"{name}.{method}"`）承担 |
 | 语言适配 | Rust `.call()` 的具体形式 | 每个包的 provider 提供 `call(model_id) -> Arc<dyn LanguageModel>`，与 `Provider::language_model` 返回同一个模型；Rust 无可调用对象，绑定侧在语言允许处恢复调用语法 |
 | 上游对齐 | OpenAI 默认 `language_model` | `language_model` 和 `call` 返回 Responses（`openai.responses`），与上游 `openai(id)` 一致；`chat(id)` 显式选择 Chat Completions。xAI、Hugging Face、Azure 的默认也为 Responses |
 | 产品选择 | Bedrock 上的 Anthropic InvokeModel | aimux 没有 `bedrock.anthropic.messages` 对应的 provider（`anthropic_aws` 是 Claude Platform on AWS，不是 Bedrock InvokeModel）；属新增能力，不在本期 |
 | 产品选择 | Azure 未移植的模型 | deepseek、completion、MAI speech 端点和 Foundry item type 未移植 |
-| 产品选择 | 视频轮询节奏 | provider 没有 poll 设置；`VideoModel::poll_config()` 保留在 core，作为包内常量的来源，调用级 `VideoCallOptions.poll` 逐字段覆盖 |
+| 产品选择 | Vertex 外部账号凭证的可执行程序来源（`credential_source.executable`） | 保留，作为登记的例外（RFC-0040 草案 §3.1）。行为同 `@ai-sdk/google-vertex` 在 Node 下所用 google-auth-library 的 pluggable auth：仅在 `GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1` 时运行；命令按空白拆分后直接启动，不经 shell；超时限 5–120 秒。开关未设时请求以 `InvalidArgument` 失败，不启动进程，也不发请求（`vertex/auth_external.rs` `executable`；测试 `vertex_upstream_e2e_test::executable_credential_without_the_opt_in_fails_and_spawns_nothing`） |
+| 上游对齐 | 视频轮询节奏 | provider 和 `VideoModel` 都没有 poll 设置（`VideoModel::poll_config()` 已删除，见 §8.1）；调用级 `VideoCallOptions.poll` 逐字段覆盖 AI SDK 默认值 5000 ms / 600000 ms（ai 7.0.127 `generate-video/generate-video.ts:543-544`） |
+| 上游对齐 | 操作级下载传输 | `generate_text` / `stream_text` 的 `download`（`DownloadFunction`，上游 `experimental_download`）以及 `transcribe`、`generate_video` 的 `download`（`Download`）可注入，缺省为受控下载 `create_download(None)`（D26）。prompt 只下载模型 `supported_urls()` 不覆盖的 URL；`transcribe` 下载 `AudioInput::Url`；`generate_video` 下载 URL 结果并返回 `VideoData::Binary`（ai 7.0.127 `prompt/convert-to-language-model-prompt.ts:36-55`、`transcribe/transcribe.ts:56`、`:192-199`、`generate-video/generate-video.ts:136`、`:383-410`） |
+| 产品选择 | 下载后的媒体类型 | Core 不做字节嗅探，省略上游的 `detectMediaType`：URL 音频取下载报告的媒体类型，否则沿用调用方的 `media_type`；视频依次取自身、下载报告的类型、`video/mp4`；prompt 文件只在原类型不完整时取下载报告的类型。`data:` URL 不进入下载计划，原样发送（上游先把它转成内联数据） |
 | 产品选择 | 录制重建原生协议 provider | `rebuild_provider` 只走 registry 与 overlay；原生协议包返回 `NoSuchProvider`，回放时改用 `replay_with_model` 传入模型 |
 
 本地没有安装源码的厂商包，不能仅凭命名推测宣称“已对齐 AI SDK”。descriptor 记录 `verified_sdk_source` 或 `aimux_extension`；发布前按实际支持承诺完成协议 fixture 验证。
@@ -1175,7 +1160,6 @@ enum ProviderHandle {
 
 - registry 句柄不擦除为 `Arc<dyn Provider>` 后丢失自身能力。
 - `aimux_registry_provider(registry, key)` 返回保留扩展与 source 的子 provider。
-- 从 registry 子 provider 取 model 时，model 句柄保留完整引用和 metadata sidecar。
 - wrap 后保留 source 和适用扩展。
 - custom provider 没有登记的厂商方法返回明确错误，不猜测或任意转发。
 - 传错句柄种类继续使用现有 InvalidHandle 体系。
@@ -1245,11 +1229,12 @@ aimux_error_t* aimux_stream_text(
     void* context);
 ```
 
-其他操作保持同一模型引用规则：
+其他操作保持同一模型引用规则（与上游一致）：
 
-- 字符串 ID；
-- model 句柄；
-- 显式 registry、ID、method 的结构化引用。
+- 字符串 ID，经 registry 解析；
+- model 句柄；需要命名方法时先用 `aimux_provider_model` 按方法取得。
+
+不另设 registry、ID、method 的结构化引用（2026-10-13 修订）。
 
 序列化对象是 **Wire DTO**，不是运行时 `LanguageModelCallOptions`。转换时校验句柄种类，并解析成 Rust model、AbortSignal、middleware 等对象。闭包和流不参加 JSON 序列化。
 
@@ -1371,8 +1356,8 @@ manifest 的 `types` 段覆盖 Recording、操作输入/结果、StreamPart、�
 | 类别 | 内容 | 决定者 |
 |---|---|---|
 | 模型身份 | `provider`、`model_id`、modality | model 实现 |
-| 可寻址引用 | registry namespace、key、method、model ID | 宿主注册与解析 |
-| 元数据来源 | package ID、catalogue 关联、audit family、namespace 规则 | descriptor 和显式注册 sidecar |
+| 可寻址引用 | 字符串模型 ID（registry key 加 model ID） | 宿主 registry 解析 |
+| 元数据来源 | package ID、catalogue 关联、audit family、namespace 规则 | descriptor 和宿主显式配置 |
 
 `package_id` 不进入 V4 model trait。它描述实现/目录来源，不保证账户、端点或实例唯一。
 
@@ -1383,11 +1368,8 @@ manifest 的 `types` 段覆盖 Recording、操作输入/结果、StreamPart、�
   provider = azure.responses
   model_id = production-deployment
 
-registry 引用：
-  namespace = team-a
-  key = work-azure
-  method = responses
-  model_id = production-deployment
+字符串模型 ID（由 team-a 的 registry 解析）：
+  work-azure:production-deployment
 
 元数据：
   package_id = azure
@@ -1396,13 +1378,9 @@ registry 引用：
 
 不能根据 `azure.responses` 恢复 resource、租户或 catalogue model。
 
-### 7.2 元数据传播
+### 7.2 元数据来源
 
-1. 厂商生成的注册条目携带 descriptor 和方法级 metadata resolver。
-2. registry resolution 将元数据放入 ResolvedModel sidecar。
-3. operation scope 将其提供给 trace、录制和 catalogue join。
-4. wrap 保留或显式替换元数据。
-5. 直接传任意 model 时，来源默认为 unknown；调用方可提供显式 annotation。
+元数据不随注册条目或模型传播：不设注册 sidecar，registry resolution、operation scope 与 wrap 都不携带元数据（2026-10-13 修订）。trace 按 §3.6 使用显式 `audit_family` 或宿主注入的 descriptor 索引；catalogue join 使用 §4.6 的显式 package/model 关联。都没有时来源为 unknown。
 
 仅凭固定 provider 字符串生成的精确索引是便利 fallback，无法处理所有自定义 name，也不能覆盖显式来源。
 
@@ -1500,19 +1478,41 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 
 ### 9.1 集成原则
 
-不采用“先删除核心类型，暂时允许 FFI 和工具失效数期”的方案，也不使用 deprecated 适配层保持编译。
+不采用“先删除核心类型，暂时允许 FFI 和工具失效数期”的方案，也不使用 deprecated 适配层或旧 API 转发保持编译。
 
-实施分为准备、完整切换、验证三个阶段：
+实施分为准备、分层切换、验证三个阶段（2026-10-12 修订：原方案在集成分支上一次性切换后整体合入主线，改为逐层合入主线，原因见 §0.4 Q3）：
 
-| 阶段 | 内容 | 集成门槛 |
+| 阶段 | 内容 | 合入门槛 |
 |---|---|---|
 | P0：基线与生成准备 | 固定源码基线、建立协议 fixtures、确定目标 schema/descriptor、生成器 PoC、列出完整消费闭包 | 不删除现有运行路径；当前 workspace 保持可构建 |
-| P1：原子对象模型切换 | 拆 crate、改全部 model/provider 实现、operation/runtime、录制回放、composite、FFI、八种接口、三个工具及全部必改项 | 整个依赖闭包作为一次可构建切换合入集成分支 |
-| P2：协议与生命周期验收 | 完成逐包差分、离线回放、并发、取消、认证、流、生成物检查和文档核对 | 全部发布门槛通过后合入主线 |
+| P1：分层切换 | 按依赖顺序拆成若干层（core 类型 → provider 工厂与请求层 → 厂商包与其余模型种类 → 公共 JSON → 下文所列的最后几层），每层一个 PR，直接合入主线 | 每层在同一 PR 内改完它删除或改动的符号在整个依赖闭包（FFI、八种接口、三个工具）中的全部消费方；合入时 §9.2 中已具备的检查全部通过 |
+| P2：协议与生命周期验收 | 完成逐包差分、离线回放、并发、取消、认证、流、生成物检查和文档核对 | 全部发布门槛通过后才发布 |
 
-P1 可以拆成多个审阅工作包，但这些工作包不被描述为独立可合入、全绿的纵向切片。只有完整替换后的集成结果进入可发布分支。
+每层直接写成目标设计，不引入之后要删除的过渡代码、deprecated 别名或旧 API 转发（D31）。某一层暂时达不到本文的某项要求时，在该层 PR 描述中写明缺什么、由哪一层补齐；与该层代码直接相关的本文修订随该层 PR 一起提交。例外：新 C ABI 与句柄对象模型（§6.1–§6.3）、descriptor/manifest/codegen（§6.5）、录制 schema 3（§4.3、§4.4），以及八种接口与工具的迁移（§6.4、§4.6），排在其余各层之后、发布之前。在此之前，现有按厂商命名的 C 构造器与按名字创建 provider 的入口保持对外签名，内部改调新工厂；它们随绑定迁移那一层一次替换，不另设 deprecated 别名，任何发布版本中都不会出现。每层 PR 描述还列出产物改前改后的体积（体积与性能门禁排在迁移之后，见 §0.7）。
 
-准备期间主线仍使用当前完整实现；切换后只保留新实现。release/hotfix 从当时已通过完整门槛的主线或发布分支产生，不从半完成集成状态发布。
+全部层合入并通过 P2 之前，主线处于迁移中途，**不从主线发布**。此期间已发布版本的修复，从对应 release 标签拉出维护分支发布（如 0.5.x 从 `v0.5.0` 拉出）。
+
+**已知差距**（2026-10-13 登记）：以下各项是本文已定的设计，迁移各层不实现，迁移完成后再做（另有注明的除外）；对应章节描述的是目标设计，迁移完成时代码尚不具备。§9.2、§9.3 中与之对应的检查随对应项一起补齐。
+
+- 拆 crate：`aimux-provider-utils` 不再依赖 `aimux-core`（§2.1、D17）。
+- OperationRuntime、DiagnosticScope、task-local scope 与 seq 分配器（§3.5、D3、D30）。
+- Telemetry 与 tracing 分开，`ModelCallOutput`，op / attempt 事件（§3.5、D27）。
+- ProviderRegistration 与厂商扩展，注册表里的具名方法可达（§3.4、D13、D29）；随绑定迁移那一层做。
+- 用 trace middleware 与宿主 scope 取代 `TraceLayer`（§3.6、§7.3、D6、D7）。
+- 审计族仍按 provider 字符串子串判断，改为显式元数据与 descriptor（§3.6、D8）。
+- CompositeChild、`child_call`、`servedBy` 与逐 child 重试预算（§4.5、D14）。
+- `providers_from_config` 与结构化 env 引用（§3.3）；随绑定迁移那一层做。
+- catalogue 仍用 `replace('-', '_')` 猜 package，改为显式关联（§4.6）。
+- 生产代码禁用 panic / unwrap / expect 的 lint（§9.2）。
+- feature 组合矩阵 CI（§9.2）。
+- 协议 fixture 扩到四个家族以外，逐字段比对结果与流（§9.3）。
+- CLI 探测加 `--method`；现在 OpenAI 只能探测 Responses（§4.6、RFC-0025）。
+- 录制 schema 3（§4.3、§4.4）；随最后几层做。在此之前各层仍写主线的 schema 2，`ProviderRecord` 只记身份；主线写的录制可以读取（只有主线写的字段忽略，只有新层写的字段读时可缺省；公共 JSON 层把信封与其中的选项、结果写成 camelCase，主线的 snake_case 信封键作为别名读取），回放不了的部分在回放时报错说明。
+- OpenAI 兼容输出的流带回上游的 id 与 model（RFC-0026）；这是回归，不是新功能。
+- Bedrock Mantle 仍是 registry 预设（OpenAI 兼容 chat），只对齐了 user-agent。上游 `createBedrockMantle` 是完整 provider，有 chat、responses 两种模型和自己的鉴权（amazon-bedrock 5.0.100 `mantle/bedrock-mantle-provider.ts:122-273`；§4.1）。
+- `decide` 的 onStart / onEnd 回调与 tracing span（`ai@7.0.128 src/decide/decide.ts:95-190`），随 Telemetry 一起做（§3.5）。
+- AWS SigV4 fetch（Bedrock、Anthropic-AWS）也给 GET 请求签名，即 `list_models`；上游只签带 body 的 POST（`amazon-bedrock-sigv4-fetch.ts:57-62`、`anthropic-aws-fetch.ts:57-62`）。模型列表是 aimux 独有的接口，不签名就调不通，所以保留这一差异，不再修改（§3.3）。
+- Swift 绑定的类型化值不保键序：`ProviderOptions`、`ProviderMetadata`、`UploadFileResult.providerReference` 与 `JSONValue.object` 是 Swift `Dictionary`，经 `JSONEncoder` / `JSONSerialization` 解码再编码后键的顺序可能改变；上游是 JS 对象，按插入顺序保留（#229 NP2-1，附录"namespace map 的顺序"）。Swift API 返回的 JSON 字符串保序，需要顺序时原样传递字符串（`docs/api/swift.md`）。要消除这一差异，需要把这些类型换成保序的容器，随绑定迁移那一层做。
 
 ### 9.2 必须通过的构建检查
 
@@ -1533,18 +1533,18 @@ P1 可以拆成多个审阅工作包，但这些工作包不被描述为独立�
 | 工厂 | base URL/name/auth 的求值时间；空 key；缺 key；默认实例与显式工厂 |
 | 身份 | OpenAI chat/Responses、Azure、Vertex、嵌套 Anthropic、Groq、xAI；自定义 registry key |
 | Headers | 大小写、覆盖、None 删除、无重复凭证、逐 attempt token 更新 |
-| 命名空间 | 读取、合并、metadata 回写、下一轮再输入；无旧键转发 |
+| 命名空间 | 读取、合并、metadata 回写、下一轮再输入；旧键照上游读取并双写 |
 | 请求体 | compat 透传顺序；原生包工具映射；Responses 默认方法完整可用 |
 | Prompt | supportedUrls、受控下载、图片/文件和 tool output |
 | 内容往返 | reasoning signature、thought metadata、tool IDs、图片、文件、provider-executed 结果 |
 | 流 | 事件顺序、可恢复错误、终结、Drop、pump 取消、TTFT 起算 |
 | Retry | 默认 2；Retry-After；仅调用层预算；组合模型不整组重跑 |
-| 状态操作 | poll/download 重试不重新 submit；upload 和 refresh 无隐式重跑 |
+| 状态操作 | start 带同一个 idempotency-key 重试、status 单独重试且受剩余轮询预算约束；doGenerate 内 submit+poll 的模型按 §4.5 整体重试；upload 和 refresh 无隐式重跑 |
 | 录制 | 全模态、attempt、并发 child、parent、准备阶段下载、WS、barrier、丢失与截断 |
 | Mock | 无真实凭证、禁网环境；OpenAI/Anthropic/Google/Vertex/Bedrock；multipart；Score/Prefix；poll/WS |
 | Leaf 边界 | Bedrock 原始 event-stream 录制后仅转换一次；错误转换不重复 |
 | Live replay | 显式会话 registry、chat/Responses 方法、direct model 缺引用、composite 目标 |
-| Trace/session | telemetry 关闭仍有 affinity；自定义 name；两个同名 registry key 的隔离 |
+| Trace/session | telemetry 关闭仍建立 session；自定义 name；两个同名 registry key 的隔离 |
 | 扩展 | registry/config/wrap 后 discovery、files、tools 和命名 model 方法仍可达 |
 | 绑定 | create→provider→model→info→generate/stream→replay→trace；取消、析构、worker/解释器退出 |
 | 工具 | base URL 覆盖不继承凭证；dry-run 不联网；Web mock 不依赖 provider 字符串相等 |
@@ -1579,7 +1579,7 @@ P1 可以拆成多个审阅工作包，但这些工作包不被描述为独立�
 | live replay 是否保存 settings 提示 | 不保存；使用 operation 目标引用与宿主 registry，直接模型要求显式目标 |
 | 多 endpoint 的 trace scope | 宿主提供实例 scope；不从 wire origin 反向恢复模型实例身份 |
 
-交付承诺是：所有现有已支持模态和工具能力接通新的对象模型，影响面地图 §3 的必要改动随切换完成；不以接口占位代替实现，不以 provider 数量代替协议对齐证据。
+交付承诺是：所有现有已支持模态和工具能力接通新的对象模型，影响面地图 §3 的必要改动随切换完成（§9.1 登记的已知差距除外）；不以接口占位代替实现，不以 provider 数量代替协议对齐证据。
 
 本期不交付旧版本兼容、旧录制读取、自动恢复配置、任何语言的宿主回调（含 C 宿主异步控制流），以及未纳入范围的新增模态完整运行时。
 
@@ -1592,14 +1592,14 @@ P1 可以拆成多个审阅工作包，但这些工作包不被描述为独立�
 | 意见 | 驳回范围及理由 |
 |---|---|
 | F6：应改成“47 个 model 类实现 WORKFLOW_SERIALIZE” | **数量修正仍不准确。**本地非测试 `src/*.ts` 中，48 个文件引用该符号；排除 `index.ts` 再导出和 `serialize-model-options.ts` 文档示例，实际有 **46** 个 `static [WORKFLOW_SERIALIZE]` 实现声明。正文不再依赖该数量论证 |
-| 事实核验未覆盖项：ProviderV4 缺 evaluationModel | **“ProviderV4 成员缺失”不成立。**本地 ProviderV4 无该成员；registry 实现确实通过扩展读取 evaluationModel。可以讨论是否纳入产品范围，不能把它认定为必选 V4 方法遗漏 |
+| 事实核验未覆盖项：ProviderV4 缺 evaluationModel | **“ProviderV4 成员缺失”不成立。**本地 ProviderV4 无该成员；registry 实现确实通过扩展读取 evaluationModel。可以讨论是否纳入产品范围，不能把它认定为必选 V4 方法遗漏（2026-10-13：Decision 已按 `DecisionModelV4` 对齐，`Provider::decision_model` 为可选方法，见 §3.1） |
 | F3 修复理由：UAF 和 double free 都会变成 InvalidHandle | **对重复 drop 的描述不成立。**现有读取已失效句柄会失败；`drop_handle()` 对不存在 ID 的 remove 是无操作。§6 保留明确的幂等释放，不声称现状会为重复 drop 返回错误 |
 | C5：当前能力是“任意 registry provider” | **术语过度。**当前 `aimux_provider_handle_new` 对 registry-backed preset 构造的是 provider 句柄，并非新设计的多 provider registry 对象。不过新稿确实必须补齐 registry 下 discovery 的可达性，缺陷判断接受 |
-| C6：catalogue 使用 package ID 与拒绝 endpoint 反解互相矛盾 | **逻辑矛盾判断不成立，来源缺口成立。**包元数据和可寻址身份可以独立存在。采用注册 sidecar 即可，无需新增 provider 字符串反查机制 |
+| C6：catalogue 使用 package ID 与拒绝 endpoint 反解互相矛盾 | **逻辑矛盾判断不成立，来源缺口成立。**包元数据和可寻址身份可以独立存在。由宿主显式提供元数据即可（§7.2），无需新增 provider 字符串反查机制 |
 | C2：Vertex mock 可直接改用 express | **不接受通用切换。**express 可能改变 URL、参数及可用模型；本地源码明确拒绝某些 tuned endpoint 与 express 组合。离线应保持原协议路径，注入固定认证能力 |
 | I7：auth 装饰器检测 replay leaf 后短路 | **不采用。**这会让正常 provider 鉴权实现依赖测试传输类型。离线组装层显式注入假凭证或固定 resolver，即可保留相同调用链 |
 | C3：boundary 由 call_id 派生即可保证回放 | **不足以解决问题。**回放 operation 会产生新 call ID，同一次调用也可能有多个 multipart 请求。采用 MIME 内容规范化，不以 operation ID 作为请求等价依据 |
-| I1 方案 A：保留 deprecated 旧符号直到后期删除 | **与用户立场冲突。**不引入过渡转发层，改用完整消费闭包的原子切换 |
+| I1 方案 A：保留 deprecated 旧符号直到后期删除 | **与用户立场冲突。**不引入过渡转发层；每层连同完整消费闭包一起切换（§9.1） |
 | 未覆盖项：补回 onStepFinish 转发 | **不接受历史兼容转发。**只保留 onStepEnd；Evaluation 等能力按完整范围处理，不为消除表面缺项增加空事件 |
 | 影响面 S0-2/S0-3：统一 `<optionsName>.<endpoint>` 和首段 namespace | **源码反例足够，不能作为全局规则。**Bedrock 身份不符合该模板，Google/Vertex 与 Responses 有包内分支，Anthropic 有 canonical/custom 合并。保留逐包规则 |
 | 影响面 S1-4：必须使用 RecordingFetch 装饰器 | **机制不必照搬。**需要的是可替换传输与同一录制/回放边界；provider-utils 的统一 leaf 诊断满足要求，且不要求用户手工排列录制包装器 |
@@ -1612,6 +1612,8 @@ P1 可以拆成多个审阅工作包，但这些工作包不被描述为独立�
 ---
 
 # 第二部分:core 消息协议统一设计
+
+> 范围说明:按 §0.4 Q1,本部分涉及工具执行、审批状态转换、多步聚合的转换规则只要求类型与 wire 就位,运行时不在本期范围(§5 登记为"尚未对齐的行为")。
 
 建议把消息协议拆成四层：**用户输入、provider 输入、provider 输出、core 输出**。每层只有一套明确契约，跨层通过显式转换连接；相同字段结构复用，语义不同的类型保留边界。当前最严重的问题正是边界消失：同一个工具调用类型既表示原始字符串又表示解析值，同一个内容联合同时承担用户消息和 provider prompt。
 
@@ -1665,7 +1667,7 @@ P1 可以拆成多个审阅工作包，但这些工作包不被描述为独立�
 | `Usage`、`TokenUsage` | 普通对象 | snake_case；`total=None` 输出 null，细分计数多数省略 | `C/types.rs:30` |
 | `Warning` | externally tagged | `{"Unsupported":{...}}` 等 | `C/types.rs:133` |
 | `ResponseFormat` | externally tagged | 单元分支为 `"Text"`；对象分支为 `{"Json":{...}}` | `C/options.rs:17` |
-| `ResponseMetadata`、`RequestInfo`、`ResponseInfo` | 普通对象 | snake_case；大量缺值输出 null；timestamp 是无约束字符串 | `C/types.rs:153`；`C/shared.rs:227` |
+| `ResponseMetadata`、`RequestInfo`、`ResponseInfo` | 普通对象 | snake_case；大量缺值输出 null；timestamp 是无约束字符串(C48 已改为 `Timestamp`) | `C/types.rs:153`；`C/shared.rs:227` |
 | `GenerateResult`、`GenerateTextResult`、聚合结果、对象结果 | 普通对象 | snake_case；request/response 结构不统一；大量派生字段独立存储 | `C/result.rs:165、212`；`C/generate.rs:143、195` |
 | `CallOptions`、`GenerateTextOptions` | 普通对象 | snake_case；多数可选项输出 null；运行时 signal、callback 等 `serde(skip)` | `C/options.rs:67`；`C/generate.rs:54` |
 | `AiMuxError` | 默认外部标签枚举 | 嵌入流、工具调用 error 后继续形成 PascalCase 外层；其内部分支另有命名约定 | `C/error.rs:168` |
@@ -1697,7 +1699,7 @@ AI SDK 两者均为 `Record<string, JSONObject>`，不是任意 JSON，也不是
 - `S4/shared-v4-provider-metadata.ts:24`
 - `U/provider-options.ts:9`
 
-需要统一的是**外层 namespace → 内层 JSON object** 的结构。`ProviderOptions` 与 `ProviderMetadata` 仍应保留不同语义名称，转换时显式表达方向。
+需要统一的是**外层 namespace → 内层 JSON object** 的结构。`ProviderOptions` 与 `ProviderMetadata` 与上游一样是同一结构的两个类型别名（上游回放直接写 `providerOptions: part.providerMetadata`，`A/generate-text/to-response-messages.ts:52`），方向由字段名和转换函数表达，不另建 newtype。
 
 `conversions`：当前协议经过以下转换点。
 
@@ -1776,7 +1778,7 @@ AI SDK 两者均为 `Record<string, JSONObject>`，不是任意 JSON，也不是
 | tool-result：TR-3 | 类型及 Google 路径确认 | tool_name 可选，构造器填 None，Google 回退为 tool_call_id。`C/content.rs:129、176`、`P/google/convert.rs:391`。远端拒绝仍是推断 |
 | tool-definition：TOOLDEF-1 | 确认 | examples 为 `Vec<Value>`，Anthropic 用 `get("input").unwrap_or(...)` 猜测。`C/tool.rs:34`、`P/anthropic/prepare_tools.rs:304`；V4 要求 `{input: JSONObject}` |
 | tool-definition：TOOLDEF-2 | 确认，但应归类为混层 | 当前 ToolChoice 是正确的用户层形态，却被直接用于 V4 CallOptions。缺的是 `prepare_tool_choice` 和独立 V4 类型。`C/tool.rs:178`；`A/prompt/prepare-tool-choice.ts:4` |
-| tool-definition：TOOLDEF-3 | 静态确认 | core 无 ToolChoiceViolation 定义/检查；解析工具后直接收集。`C/generate.rs:659`。SDK 在 generate 和 stream 两条路径检查：`A/generate-text/generate-text.ts:1155`、`stream-language-model-call.ts:644` |
+| tool-definition：TOOLDEF-3 | 静态确认 | core 无 ToolChoiceViolation 定义/检查；解析工具后直接收集。`C/generate.rs:659`。SDK 在 generate 和 stream 两条路径检查：`A/generate-text/generate-text.ts:1169`、`stream-language-model-call.ts:656` |
 | reasoning：RSN-1 | 确认 | core 从固定 namespace 提升 signature；Google 优先使用该顶层字段。`C/response_messages.rs:31、130`、`P/google/convert.rs:247` |
 | reasoning：RSN-2 | 确认 | 顶层 ReasoningPart 只有 text，转换丢 metadata。`C/result.rs:137`、`C/response_messages.rs:127` |
 | reasoning：RSN-4 | 确认 | Google 明确把 thought 图片降级为普通 File。`P/google/model.rs:578、827`；core 无对应 reasoning-file 分支 |
@@ -1841,16 +1843,15 @@ flowchart TD
 ```rust
 pub type JsonValue = serde_json::Value;
 pub type JsonObject = serde_json::Map<String, JsonValue>;
-pub type NamespaceMap = BTreeMap<String, JsonObject>;
-pub type ProviderReference = BTreeMap<String, String>;
+// 保持插入顺序的 map：上游是 JS 对象，键按插入顺序保留
+// （`S4/shared-v4-provider-options.ts:24`、`S4/shared-v4-provider-reference.ts:20`）。
+// 落地为 `IndexMap`（`aimux-core/src/shared.rs`）。
+pub type NamespaceMap = IndexMap<String, JsonObject>;
+pub type ProviderReference = IndexMap<String, String>;
 
-#[derive(Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct ProviderOptions(pub NamespaceMap);
-
-#[derive(Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct ProviderMetadata(pub NamespaceMap);
+// 与上游一样是同一结构的两个别名。
+pub type ProviderOptions = NamespaceMap;
+pub type ProviderMetadata = NamespaceMap;
 
 // 运行时持有 bytes；JSON 始终编码为 base64 字符串。
 #[derive(Serialize, Deserialize)]
@@ -1877,9 +1878,13 @@ pub enum Optional<T> {
 
 这样可以避免 `Option<Value>` 在反序列化时把“缺字段”和“值为 null”合并。普通运行时 API 可以继续用 Option；wire DTO 必须保留上游 JSONValue 的 null 语义。
 
+落地形式(#232 C34)：`Option<Value>` 字段使用 `#[serde(default, deserialize_with = "crate::wire::present", skip_serializing_if = "Option::is_none")]`，`None` 即 Missing，`Some(Value::Null)` 即显式 null，序列化时各自写回。已覆盖上游为 `unknown` 的字段：各模型结果的 response/request `body`(`language-model-v4-generate-result.ts:41, :56` 等)、`APICallError.data`(`errors/api-call-error.ts:18`)与工具审批请求的 `inputSchemaInput`(`provider-utils` `types/tool-approval-request.ts:41`)。绑定同样区分：Python 不再以 `exclude_none` 序列化，`Any` 字段显式设为 `None` 时写出 null；Go 以 `json.RawMessage` 读取这些 body 与 API 调用错误的 `Error.Data`；Kotlin 以 `JsonValuePresentSerializer`、Swift 以 `KeyedDecodingContainer.decodeIfPresent(JSONValue.self)` 重载、Dart 以 `hasBody`/`hasInputSchemaInput` 保留显式 null；Java 的 `JsonNode` 字段由 Jackson 读成 `NullNode`。
+
+namespace map 的顺序(#229 NP2-1)：Rust 侧 `NamespaceMap`/`SharedProviderReference` 按插入顺序读写，绑定侧也不得重排。Node(`JSON.parse`)、Python(`json.loads`/pydantic `dict`)、Java(Jackson `JsonNode`，`UploadFileResult.providerReference` 默认 `LinkedHashMap`)、Kotlin(`kotlinx.serialization` 的 `Map`)与 Dart(`jsonDecode` 的 `LinkedHashMap`)天然保序；Go 的 map 编码时按键排序，因此 `Tool.ProviderOptions`、`TranscriptionSessionOpts.ProviderOptions` 改为 `json.RawMessage`，`UploadFileResult.ProviderReference` 改为保存原始 JSON 的 `ProviderReference` 类型(以 `Get(provider)` 读取)。已知限制：Swift 的 `[String: String]` 与 `JSONValue.object` 是无序 `Dictionary`，经 `JSONEncoder` 写出时不保证顺序（§9.1 已知差距）。
+
 生成的 JSON TypeScript DTO 对缺失属性使用 `?`。上游运行时的 `number | undefined` 可在 SDK facade 中恢复，但不能要求 JSON 对象携带不存在的 undefined。
 
-provider options/metadata 的内部键完全透传，不执行 camelCase 改写，不从 `model.provider()` 拆字符串推导 namespace。
+provider options/metadata 的内部键完全透传，不执行 camelCase 改写。从 `model.provider()` 拆字符串推导 namespace 不作为通用规则；个别厂商包按上游各自的做法从 provider 名取 options 名（例如 `@ai-sdk/openai-compatible` 3.0.62 `openai-compatible-chat-language-model.ts:157-159`、`@ai-sdk/anthropic` 4.0.71 `anthropic-language-model.ts:373`），见下文衔接第 5 条。
 
 **用户输入 `ModelMessage` 应按 role 建模。**
 
@@ -1890,7 +1895,7 @@ provider options/metadata 的内部键完全透传，不执行 camelCase 改写�
 | assistant | String 或数组 | text、custom、file、reasoning、reasoning-file、tool-call、tool-result、tool-approval-request |
 | tool | 数组 | tool-result、tool-approval-response |
 
-四种消息都允许消息级 `providerOptions?`。依据是 `U/*-model-message.ts`，尤其 `assistant-model-message.ts:32` 和 `tool-model-message.ts:23`。
+四种消息都允许消息级 `providerOptions?`。依据是 `U/*-model-message.ts`，尤其 `assistant-model-message.ts:25` 和 `tool-model-message.ts:17`。
 
 ```rust
 #[derive(Serialize, Deserialize)]
@@ -1942,7 +1947,7 @@ pub enum AssistantContent {
 | part | 字段 |
 |---|---|
 | text | `text: String, providerOptions?` |
-| image | `image: DataContent \| URL \| ProviderReference, mediaType?, providerOptions?` |
+| image | `image: DataContent \| URL \| ProviderReference, mediaType?, providerOptions?`（上游已 `@deprecated`，改用 file，见 `U/types/content-part.ts:29`；仅作为输入接受） |
 | file | `data: FileData \| DataContent \| URL \| ProviderReference, mediaType, filename?, providerOptions?` |
 | reasoning | `text, providerOptions?` |
 | reasoning-file | `data: data/url 文件数据或 DataContent/URL, mediaType, providerOptions?` |
@@ -2044,6 +2049,8 @@ pub enum GeneratedFileData {
 
 普通 V4 输入 FilePart 使用完整 `FileData`，并有 `filename?`。V4 reasoning-file 输入，以及 V4 file/reasoning-file 输出，只使用 data/url 子集。现有输出 FileData 允许 reference/text 的范围过宽。
 
+用户层 `ContentPart` 的文件部件已落地为上游 `FilePart`(#232 C35，`provider-utils` `types/content-part.ts:62-102`)：只有 `file` 一个标签，`data` 为 `FilePartData` = 带标签的 `FileData` | 字符串(base64 或 URL) | 裸 `ProviderReference`；`reasoning-file` 的 `data` 为 `ReasoningFilePartData` = data/url 标签 | 字符串。`file-base64`/`file-url`/`file-reference` 已删除。转换为 V4 prompt 时按 `convertToLanguageModelV4FilePart`(`ai` `prompt/file-part-data.ts:89-141`)：字符串能解析为 URL 即为 URL(规范化后与原文不同则保留 `originalUrl`)，否则为 base64；`data:` URL 拆为内联数据，其媒体类型优先于部件的 `mediaType`；`{type:'data'}` 内出现 `data:` URL 报错(上游 `InvalidDataContentError`，此处为 `AI_InvalidPromptError`)。响应消息中的 file/reasoning-file 部件按 `to-response-messages.ts:69-84` 写成裸 base64 字符串。
+
 `originalUrl?` 也必须补齐，依据 `S4/shared-v4-file-data.ts:25`。
 
 工具结果输出应成为受判别的联合：
@@ -2090,7 +2097,7 @@ pub enum V4ToolResultOutput {
 
 最后这个 custom **没有 kind 字段**，不能与消息顶层 CustomPart 合并。
 
-用户层 `ModelToolResultOutput` 的外层结构相同，但 content 数组还包含当前 SDK 声明的 `file-data/file-url/file-id/file-reference/image-data/image-url/image-file-id/image-file-reference`。这些是当前上游输入面的组成部分，应由统一转换函数归一化，不能因为“不保留 aimux 兼容”而误删上游接口。
+用户层 `ModelToolResultOutput` 的外层结构相同，但 content 数组还包含当前 SDK 声明的 `file-data/file-url/file-id/file-reference/image-data/image-url/image-file-id/image-file-reference`。这些在上游都已标 `@deprecated`（`U/types/content-part.ts:361-517`，ai 侧 `prompt/convert-to-language-model-prompt.ts:41-42` 注明 file-id、image-file-id 在 v8 移除），但仍是当前上游输入面的组成部分：应由统一转换函数归一化后接受，aimux 自己不生成；不能因为“不保留 aimux 兼容”而误删上游接口。
 
 工具定义分成两套：
 
@@ -2285,12 +2292,14 @@ raw?: JSONObject
 
 core ToolCall 的 input 是解析后的值；provider raw input String 在解析、校验、repair 之前一直保持原文。
 
+解析结果要等于上游 `JSON.parse` 的值(`A/generate-text/parse-tool-call.ts:116`、`:256`，provider-utils `secure-json-parse.ts:31`)。JS 只有一种数字类型，`JSON.stringify(JSON.parse("1e2"))` 是 `100`；serde_json 却把带小数点或指数的数字保存为 `f64`，写回时是 `100.0`。落地方式(最小改动)：只在工具输入文本解析处(`parse_input_text`，有效与非法调用共用)遍历一次解析结果，把有限、整数值、绝对值小于 1e21 的 `f64` 换成 JS 会写出的整数：`f64` 的 `Display` 与 JS `Number::toString` 一样给出最短往返数字再补零(`2 ** 60` 写作 `1152921504606847000`)，`-0` 写作 `0`。其余数字不动：非整数与 1e21 以上的数 serde_json 的写法本来就与 JS 相同(`1.5`、`1e+300`)；约 1.8e19 到 1e21 之间的整数值超出 `i64`/`u64`，没有 `arbitrary_precision` 时无法表示，仍写成浮点(已知差异)。不带小数点或指数、但超过 2^53 的整数字面量由 serde_json 精确保存，而 JS 会舍入到最近的 double，也是已知差异(#229 item 10)。
+
 | core 类型 | 字段与约束 |
 |---|---|
 | StaticToolCall | `toolCallId, toolName, input, providerExecuted?, providerMetadata?, toolMetadata?, title?, dynamic?:false, invalid?:false`；无 error |
 | DynamicToolCall | 同上，`dynamic:true, invalid?:bool, error?` |
-| TypedToolResult | `toolCallId, toolName, input, output, providerExecuted?, providerMetadata?, toolMetadata?, dynamic, preliminary?, title?` |
-| TypedToolError | `toolCallId, toolName, input, error, providerExecuted?, providerMetadata?, toolMetadata?, dynamic, title?` |
+| TypedToolResult | `toolCallId, toolName, input, output, providerExecuted?, providerMetadata?, toolMetadata?, dynamic?:false`（static）/ `dynamic:true`（dynamic）`, preliminary?, title?` |
+| TypedToolError | `toolCallId, toolName, input, error, providerExecuted?, providerMetadata?, toolMetadata?, dynamic?:false`（static）/ `dynamic:true`（dynamic）`, title?` |
 | ToolApprovalRequestOutput | `approvalId, toolCall: TypedToolCall, reason?, isAutomatic?, signature?` |
 | ToolApprovalResponseOutput | `approvalId, toolCall: TypedToolCall, approved, reason?, providerExecuted?` |
 | ToolOutputDenied | `toolCallId, toolName, providerExecuted?, dynamic?:false` |
@@ -2299,7 +2308,7 @@ core ToolCall 的 input 是解析后的值；provider raw input String 在解析
 
 core 自己可以用 `ParseOutcome::Invalid { error, ... }` 保证解析失败一定携带错误，但不能把这个内部不变量误称为 SDK DynamicToolCall 的静态类型要求。
 
-provider deferred tool result 可能没有本轮可关联的调用输入，SDK 会设置 `input: undefined`，见 `A/generate-text/convert-language-model-content.ts:87`。wire 必须能表示这种缺失，不能凭空填 `{}` 或 null。
+provider deferred tool result 可能没有本轮可关联的调用输入，SDK 会设置 `input: undefined`，见 `A/generate-text/convert-language-model-content.ts:87`。只有对应工具是 provider 工具且声明了 `supportsDeferredResults` 时才允许这种结果，否则报 “Tool call … not found”（同文件 `:96-103`）。aimux 的工具定义还没有 `supportsDeferredResults` 标记，暂按“传入了同名 provider 工具”放行（2026-10-13，[4/8]）；标记随工具定义一起补。wire 必须能表示这种缺失，不能凭空填 `{}` 或 null。
 
 GeneratedFile 使用一个数据来源：
 
@@ -2316,6 +2325,8 @@ pub struct GeneratedFile {
 ```
 
 V4 file URL 在进入 core GeneratedFile 前按上游行为下载，见 `A/generate-text/resolve-generated-file-data.ts:14`。普通生成文件与 reasoning 文件分别进入相应输出分支。
+
+已落地(#232 C46，`ai` `generate-text/generated-file.ts:10-32`)：`GeneratedFile` 的 JSON 为 `{base64, mediaType, providerMetadata?}`，`files[]` 与 content/stream 的 `file`/`reasoning-file` 部件均为 `{type, file: GeneratedFile, providerMetadata?}`(`convert-language-model-content.ts:55-70`、`stream-language-model-call.ts:569-590`)；部件的 `providerMetadata` 留在部件上，文件本身不带。provider 层仍用 `LanguageModelFile` = `{mediaType, data: GeneratedFileData, providerMetadata?}`(V4 `LanguageModelV4File`)。与上游的已知差异：上游流中的文件对象是 `DefaultGeneratedFileWithType`，`JSON.stringify` 时多一个 `type:'file'` 字段，aimux 不输出该字段。
 
 core `ContentPart` 为 **11 类**：
 
@@ -2343,7 +2354,7 @@ pub enum ContentPart {
 
 | 事件 | core 形态 |
 |---|---|
-| text-delta / reasoning-delta | `id, text, providerMetadata?`，字段是 text |
+| text-delta / reasoning-delta | `id, text, providerMetadata?`，字段是 text(#229 B9 已落地；provider 层 StreamPart 仍为 delta) |
 | tool-input-delta | 仍为 `id, delta, providerMetadata?` |
 | tool-input-start | 在 V4 字段上增加 `toolMetadata?` |
 | tool-call/result/error | core 解析及执行后的类型 |
@@ -2400,6 +2411,8 @@ toolCalls / staticToolCalls / dynamicToolCalls
 toolResults / staticToolResults / dynamicToolResults
 ```
 
+派生出的元素仍是上游的带标签对象(#229 NP2-7 已落地)：`toolCalls[]` 与审批请求的 `toolCall` 是 `TypedToolCall`，带 `type: "tool-call"`(`A/generate-text/tool-call.ts:8-14`、`A/generate-text/tool-approval-request-output.ts:20`)；`sources[]` 是 `Source` = `LanguageModelV4Source`，带 `type: "source"`(`A/types/language-model.ts:92`、`V4/language-model-v4-source.ts:8`、`:36`)。aimux 的 `ToolCall`/`Source` 本身不带标签(在 `content` 与流中由联合写出)，独立出现的字段经 `wire::typed`/`wire::typed_vec` 写出标签，标签在最前；读取时缺标签可接受(旧 JSON)，标签不符则报错。TypeScript 侧对应 `TypedToolCall`、`TypedSource`。修复函数参数里的 `toolCall` 与 `applyToolCallRepair` 的结果同样带 `type: "tool-call"`(上游 `LanguageModelV4ToolCall`，`V4/language-model-v4-tool-call.ts:7`)。各绑定的独立 ToolCall/RawToolCall/Source 类型同样写出标签。
+
 `StepResultPerformance` 不能遗漏本地 SDK 已有字段：
 
 ```text
@@ -2437,6 +2450,8 @@ timeBetweenOutputChunksMs?: { min, p10, median, avg, p90, max }
 | output | 按 Output 配置得到的最终输出；没有输出时按 SDK 行为报错 |
 
 这不是旧版本常见的“usage 等于最后一步”。依据 `A/generate-text/generate-text.ts:1714`，尤其 `:1797`。
+
+表中 reasoning、reasoningText、totalUsage、request、response、providerMetadata 等便捷字段在上游已标 `@deprecated`，推荐改读 `finalStep.*` 与 `usage`（ai 7.0.127 `A/generate-text/generate-text-result.ts:52-160`；`StreamTextResult` 同样，`fullStream` 也已 deprecated、改用 `stream`，见 `A/generate-text/stream-text-result.ts:148-330`）。aimux 的规范结果以 `steps`、`final_step`、`usage` 为准，Rust 上的这些便捷 getter 同样标 `#[deprecated]`，wire snapshot 照上游保留这些字段，不为它们另立事实。
 
 `StreamTextResult` 是拥有流及完成结果的运行时对象。流完成后使用相同 StepResult/最终聚合逻辑，不再维护 `StreamTextResultAggregated` 的另一套字段定义。对象输出使用同一 Output/结果机制；现有 `GenerateObjectResult` 的重复 raw 镜像结构应删除。
 
@@ -2508,7 +2523,7 @@ fn aggregate_steps(
 1. **prompt 标准化**：非空检查、role/content 校验、instructions 展开、system opt-in，以及 prompt/messages 互斥。
 2. **文件准备**：Image→File、data URL 解析、保留 originalUrl、依据模型 supportedUrls 决定是否下载、mediaType 检测、provider reference 解析。
 3. **工具消息整理**：合并相邻 tool 消息，并按上游规则把前一条消息的 options 下沉至最后一个 part；检查缺失工具结果，考虑审批和 providerExecuted。
-4. **工具调用解析**：只在 core parse/schema/repair；V4 raw input 不预解析、不猜测对象还是字符串。
+4. **工具调用解析**：只在 core parse/schema/repair；V4 raw input 不预解析、不猜测对象还是字符串。空字符串或只有空白的 input 按 `{}` 交给 schema 校验（同上游，`A/generate-text/parse-tool-call.ts:203-204`、`:254-255`）。
 5. **流聚合**：以 `(事件类别, block id)` 定位 text/reasoning block，保留首次出现顺序，并按上游规则合并 metadata；不能只维护一个当前 text/reasoning 缓冲。
 6. **工具结果关联**：按 toolCallId 关联 input；支持 deferred provider results；isError 映射为 core tool-error；preliminary 事件可交给流消费者，但不纳入最终持久内容。
 7. **完成校验**：generate 与 stream 共用 ToolChoiceViolation 检查。
@@ -2526,7 +2541,11 @@ fn aggregate_steps(
 | 拒绝审批 | 追加 execution-denied 工具结果 |
 | source | 不进入 prompt |
 | 空 text | 过滤 |
-| 空 reasoning 但有 metadata | 保留 |
+| 空 reasoning | 保留（上游无条件保留，只过滤空 text，`A/generate-text/to-response-messages.ts:43`） |
+| 非法调用的非对象 input | 回放时写为 `{}`（同文件 `:93-94`） |
+| tool-approval-request 的 inputSchemaInput | 仅当与调用 input 按 `isDeepEqualData` 不相等时写入（同文件 `:133-146`，`A/util/is-deep-equal-data.ts:8-48`） |
+| tool 消息中的结果 | 按对应 tool-call 的出现顺序排列，未知调用的结果排在最后（同文件 `:220`、`:230-265`） |
+| tool-error 的 output | assistant 中按 json 错误、tool 消息中按 text 错误编码（同文件 `:122`、`:203`） |
 | providerMetadata | 映射为对应 part 的 providerOptions |
 | file/reasoning-file | 回放使用 base64 数据并保留 part metadata |
 
@@ -2559,6 +2578,8 @@ responseMessages 是 `AssistantModelMessage | ToolModelMessage` 的子集联合�
 
 这些规则是 **aimux 的 AI SDK JSON 适配规范**，不能宣称是直接 `JSON.stringify` 任意 SDK 实例的结果。例如 GeneratedFile 含 getter 和内部缓存字段，必须通过 DTO 导出。
 
+timestamp 已落地(#232 C48)：core 的 `Timestamp` 对应上游 `Date`，按 UTC 毫秒精度保存，序列化为 `toISOString()` 形式(`2025-03-06T13:50:19.000Z`)，反序列化只接受 RFC 3339 日期时间(任意时区与小数位，读入后即 `new Date(text).toISOString()`)，其他文本报错。provider 按上游构造：`created` 秒数为 `new Date(created * 1000)`，Bedrock 取 `Date` 响应头。语言绑定的 wire 类型仍是字符串，文档说明用各语言的 ISO 8601 解析器读取；恢复原生日期类型尚未落地。
+
 同一工具调用在三个阶段的 JSON 应明确不同：
 
 ```json
@@ -2578,8 +2599,7 @@ responseMessages 是 `AssistantModelMessage | ToolModelMessage` 的子集联合�
   "type": "tool-call",
   "toolCallId": "call_1",
   "toolName": "weather",
-  "input": {"city": "Shanghai"},
-  "dynamic": false
+  "input": {"city": "Shanghai"}
 }
 ```
 
@@ -2683,7 +2703,7 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 - 不再手写第二份消息 enum、result struct 或字段名映射。
 - Schema 是生成物，不与 Rust 同时人工维护。
 - 自定义 serde 类型必须同时提供生成描述：Optional、base64、ToolChoice、受约束静态/动态工具调用、日期和错误。
-- ~~`ts-rs` 可以继续生成原生 Rust DTO 的 TS 声明~~（**§0.5 已裁定不采纳**：ts-rs 与 `scripts/gen_*` 全部退役，第一部分 §6.5 的 descriptor + manifest 生成链是唯一生成来源）。若日后重新引入任何 TS 生成器，必须与同源 schema/serde fixture 校验，不能只靠 `derive(TS)` 推断自定义行为。
+- ~~`ts-rs` 可以继续生成原生 Rust DTO 的 TS 声明~~（**§0.5 已裁定不采纳**：ts-rs 与 `scripts/gen_*` 全部退役，第一部分 §6.5 的 descriptor + manifest 生成链是唯一生成来源；生成链落地前 ts-rs 保留为过渡，见 §0.5）。若日后重新引入任何 TS 生成器，必须与同源 schema/serde fixture 校验，不能只靠 `derive(TS)` 推断自定义行为。
 - Go 不再用 RawMessage 代替已知协议联合；opaque JSON 字段才使用通用 JSON 类型。
 - Java/Kotlin 不再为必填字段默认填空字符串、空对象。
 - Python/Dart 不再对同一 providerMetadata 字段一处接受 Any、一处强制字典。
@@ -2700,7 +2720,7 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 | optional/null | 缺失、null、false、0、空字符串、空数组、空对象分别测试 |
 | 二进制 | 空数据、0/255 字节、非 ASCII、原始 bytes/base64 同值 |
 | options/metadata | 双层对象约束、多个 namespace、深层任意 JSON、嵌套 null |
-| 工具调用 | 原始合法/非法 JSON、合法字符串参数、repair、static/dynamic、deferred result |
+| 工具调用 | 原始合法/非法 JSON、空或空白参数、合法字符串参数、repair、static/dynamic、deferred result |
 | 消息回放 | 生成图片、reasoning-file、signature-only reasoning、provider/server tools、审批拒绝 |
 | 流状态 | 交错 block id、metadata 增量、preliminary、finish-step/finish、abort/transport failure |
 | SDK 行为对照 | 相同 fixtures 比较本地 AI SDK 的标准化与 responseMessages 输出 |
@@ -2729,7 +2749,7 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 | `result::ReasoningPart/SourcePart/FilePart` | 删除有损镜像，改为规范 content 的投影 |
 | 三份 Source 字段 | 合并为一个 source payload/联合 |
 | `StreamPart::ResponseMetadata` 内联复制 | 复用统一 metadata payload |
-| `ProviderMetadata=Value`、各处 map/value options | 合并到共享 namespace map；输入/输出保留语义包装 |
+| `ProviderMetadata=Value`、各处 map/value options | 合并到共享 namespace map；输入/输出是同一结构的两个别名，与上游一致 |
 | 工厂 `ProviderOptions` | 按第一部分 §3.3 改为各包 `XxxProviderSettings`，避免与消息 options 混淆 |
 | 共用 `TokenUsage` | 拆 V4 input/output details；用户 Usage 另有显式映射 |
 | `StreamTextResultAggregated` | 删除，流完成走同一结果聚合模型 |
@@ -2745,7 +2765,7 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 
 第一部分已把 core 分为 Provider/Model 契约与用户操作两部分。本方案直接沿用这一方向：
 
-1. **Provider 负责构造模型。** 工厂 Settings、registry、默认 provider、ModelRef 不参与消息内容解析。
+1. **Provider 负责构造模型。** 工厂 Settings、registry、默认 provider、模型引用不参与消息内容解析。
 2. **LanguageModel 只接收 V4 CallOptions。** `do_generate` 返回 V4GenerateResult，`do_stream` 返回 V4StreamResult，不依赖 ModelMessage 或 core TypedToolCall。
 3. **模型提供标准化需要的能力。** 在现有 `provider/model_id` 外补齐上游 supportedUrls 等能力，文件标准化才能在调用模型前正确完成。
 4. **core 用户操作负责完整语义转换。** parse/repair、工具执行、审批、step 管理、结果聚合、responseMessages 均在这一层。
@@ -2754,18 +2774,17 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 7. **recording 保存层级明确的数据。** 记录原始用户输入、规范 V4 prompt、V4 输出/事件及 core 步骤；finish raw 和结构化 usage 原样保存。replay 不能继续把 V4 prompt 有损转换回旧 ModelMessage。
 8. **OpenAI 兼容输出接受 core 输出。** `to_chat_completion_stream` 参数改成 TextStreamPart；如确需接受 V4 流，另设显式转换入口，不能继续依赖同一 input 字段的隐含阶段。
 
-实施依赖顺序建议为：
+实施依赖顺序建议为（各步按 §9.1 逐层合入 master）：
 
 ```text
 固定 SDK 基线
-→ 协议基础类型与四层 DTO
-→ 同源生成与 wire fixtures
+→ 协议基础类型与四层 DTO（wire 形状先由 golden fixtures 固定）
 → prompt / tool / file 标准化
 → provider 输入输出适配
 → core content、stream、step、responseMessages
-→ FFI 与各语言 facade
-→ recording/replay、OpenAI 输出和组合模型
+→ OpenAI 输出和组合模型
 → 删除旧类型与旧 codec
+→ 最后、发版之前（§9.1）：同源生成链、新 C ABI 与各语言 facade、recording/replay 完整形态（schema 3）
 ```
 
 类型壳补齐不代表完成。例如只有审批 variant 而没有审批状态转换，或只有 file 分支而仍不进入 responseMessages，都不能算对齐。

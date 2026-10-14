@@ -36,8 +36,8 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_bas
 use crate::shared::{Credential, EndpointConfig, ProviderHeaders, SupportedUrlsSource};
 use model::DeepSeekChatConfig;
 
-const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
-const API_KEY_ENV_VAR: &str = "DEEPSEEK_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
+pub(crate) const API_KEY_ENV_VAR: &str = "DEEPSEEK_API_KEY";
 
 /// The URL patterns the chat model fetches itself (`supportedUrls` of the AI
 /// SDK's `DeepSeekChatLanguageModel`): `http(s)` images.
@@ -100,8 +100,14 @@ pub fn create_deepseek(settings: DeepSeekProviderSettings) -> Result<DeepSeekPro
             Vec::new(),
             settings.headers,
         )
-        .with_user_agent("deepseek", "3.0.56"),
-        fetch: settings.fetch,
+        .with_user_agent(
+            crate::shared::aisdk_pins::DEEPSEEK.name,
+            crate::shared::aisdk_pins::DEEPSEEK.version,
+        ),
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::DEEPSEEK,
+        )),
     })
 }
 
@@ -180,11 +186,8 @@ impl ProviderDiscovery for DeepSeekProvider {
     fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
         let config = self.endpoint_config("models");
         Box::pin(async move {
-            crate::shared::list_data_models(
-                &config,
-                aimux_provider_utils::create_standard_json_error_response_handler(),
-            )
-            .await
+            crate::shared::list_data_models(&config, types::deepseek_failed_response_handler())
+                .await
         })
     }
 }

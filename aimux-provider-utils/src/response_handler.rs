@@ -215,28 +215,6 @@ pub fn invalid_response_api_call(
     }))
 }
 
-/// Handler for the `{ "error": { "message", "type" | "code" } }` error shape,
-/// which several providers share verbatim. Providers whose error JSON differs
-/// keep their own mapping via [`create_json_error_response_handler`].
-#[must_use]
-pub fn create_standard_json_error_response_handler() -> ResponseHandler<AiMuxError> {
-    create_json_error_response_handler(|data| {
-        let error = data.get("error").unwrap_or(data);
-        ProviderErrorParts {
-            message: error
-                .get("message")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            provider_code: error
-                .get("type")
-                .or_else(|| error.get("code"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
-        }
-    })
-}
-
 /// Parse an error JSON and map its data to a provider message and code.
 #[must_use]
 pub fn create_json_error_response_handler<F>(
@@ -295,10 +273,12 @@ where
 
 /// Build the `ApiCallError` for an error event delivered *inside* a stream.
 ///
-/// The event rides on an already-successful response, so no HTTP status is
-/// fabricated: `status_code` is set only when the payload itself
-/// carried a numeric HTTP status, and retryability derives from that status
-/// alone. A `retry_after_ms` / `retry_after` field in the payload is
+/// The event rides on an already-successful response, so its 2xx status is
+/// not the error's: `status_code` is the status the caller maps the frame
+/// to — a numeric HTTP status the payload carried, or the status the
+/// provider's upstream package infers for such a frame (OpenAI's
+/// `createOpenAIProviderStreamError` from `code`/`type`, Anthropic's from the
+/// error type) — and retryability derives from that status alone. A `retry_after_ms` / `retry_after` field in the payload is
 /// surfaced through the response-headers channel so
 /// `AiMuxError::retry_after_hint()` observes it.
 ///

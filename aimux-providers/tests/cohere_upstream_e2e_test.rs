@@ -478,3 +478,17 @@ async fn rerank_object_documents() {
 async fn rerank_text_documents() {
     rerank(false).await;
 }
+
+/// TS: `supportedUrls` (cohere-chat-language-model.ts:51-53): image URLs go
+/// to the API as they are; other URLs are downloaded by the operation.
+#[tokio::test]
+async fn chat_supports_http_image_urls() {
+    let fetch = MockFetch::new(vec![]);
+    let urls = provider(&fetch)
+        .chat("command-r-plus")
+        .supported_urls()
+        .await;
+    assert_eq!(urls.0.len(), 1);
+    assert!(urls.0["image/*"][0].is_match("https://example.com/a.png"));
+    assert!(!urls.0["image/*"][0].is_match("ftp://example.com/a.png"));
+}

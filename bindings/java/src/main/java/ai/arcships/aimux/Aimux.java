@@ -131,9 +131,9 @@ public final class Aimux {
     }
 
     /**
-     * Set the global proxy configuration (M6, RFC-0016). Must be called before
-     * the first {@code generateText} / {@code streamText} call; a no-op if the
-     * shared HTTP client is already initialised.
+     * Replace the default transport with one routed by this proxy configuration
+     * (M6, RFC-0016). Requests started afterwards use it; calling it again
+     * replaces the previous configuration.
      *
      * @param configJson ProxyConfig JSON ({@code "http_url"}, {@code "https_url"},
      *                   {@code "all_url"}, {@code "no_proxy"} — all optional).

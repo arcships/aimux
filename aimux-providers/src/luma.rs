@@ -56,8 +56,8 @@ const MAX_POLL_ATTEMPTS: u32 = 120;
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://api.lumalabs.ai";
-const API_KEY_ENV_VAR: &str = "LUMA_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.lumalabs.ai";
+pub(crate) const API_KEY_ENV_VAR: &str = "LUMA_API_KEY";
 const DEFAULT_NAME: &str = "luma";
 
 /// Settings of [`create_luma`].
@@ -448,7 +448,7 @@ impl ImageModel for LumaImageModel {
             warnings,
             provider_metadata: None,
             response: ImageResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(rh),
             },

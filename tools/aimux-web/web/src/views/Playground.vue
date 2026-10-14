@@ -143,7 +143,7 @@ async function send() {
       for await (const ev of callStream(body, controller.signal)) {
         if (ev.event === 'stream_part') {
           const part = parseStreamPart(ev.data)
-          if (part.type === 'text-delta') assistant.text += part.delta
+          if (part.type === 'text-delta') assistant.text += part.text
           else if (part.type === 'tool-call')
             assistant.toolCalls.push({ id: part.toolCallId, name: part.toolName, input: part.input })
         } else if (ev.event === 'meta') {

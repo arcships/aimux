@@ -193,7 +193,7 @@ export async function runAgent(
 
 function applyPart(view: AgentStepView, part: TextStreamPart): void {
   if (part.type === 'text-delta') {
-    view.text += part.delta
+    view.text += part.text
   } else if (part.type === 'tool-call') {
     view.toolCalls.push({ id: part.toolCallId, name: part.toolName, input: part.input })
   } else if (part.type === 'tool-input-start') {
@@ -211,6 +211,6 @@ function applyPart(view: AgentStepView, part: TextStreamPart): void {
       }
     }
   } else if (part.type === 'finish') {
-    view.usage = part.usage
+    view.usage = part.totalUsage
   }
 }

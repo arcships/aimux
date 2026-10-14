@@ -22,7 +22,8 @@ import (
 
 // RawToolCall is a tool call as the provider emitted it: Input is the raw
 // argument *text*, not a parsed object. It is what a repair function reads
-// and what it returns.
+// and what it returns. Its JSON is the AI SDK's LanguageModelV4ToolCall,
+// tagged {"type":"tool-call",...}.
 type RawToolCall struct {
 	ToolCallID       string          `json:"toolCallId"`
 	ToolName         string          `json:"toolName"`
@@ -30,6 +31,33 @@ type RawToolCall struct {
 	ProviderExecuted *bool           `json:"providerExecuted,omitempty"`
 	Dynamic          *bool           `json:"dynamic,omitempty"`
 	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty"`
+}
+
+// MarshalJSON writes the call with its "type":"tool-call" tag first.
+func (c RawToolCall) MarshalJSON() ([]byte, error) {
+	type plain RawToolCall
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{"tool-call", plain(c)})
+}
+
+// UnmarshalJSON reads a call; a "type" field, when present, must be
+// "tool-call".
+func (c *RawToolCall) UnmarshalJSON(data []byte) error {
+	type plain RawToolCall
+	var tagged struct {
+		Type json.RawMessage `json:"type"`
+		plain
+	}
+	if err := json.Unmarshal(data, &tagged); err != nil {
+		return err
+	}
+	if err := checkTypeTag(tagged.Type, "tool-call"); err != nil {
+		return err
+	}
+	*c = RawToolCall(tagged.plain)
+	return nil
 }
 
 // ToolCallRepairContext is the argument handed to a RepairToolCallFunc — the
@@ -157,24 +185,17 @@ func repairReply(repair RepairToolCallFunc, contextJSON string) (string, error) 
 }
 
 // invalidToolCalls lists the invalid tool calls of a result document, in
-// order, as (id, JSON) pairs. A GenerateObjectResult carries the text result
-// under `raw`; a GenerateTextResult's own `raw` has no toolCalls, so the
-// same lookup covers both — and StreamTextResultAggregated, whose toolCalls
-// are top-level.
+// order, as (id, JSON) pairs: the top-level toolCalls of a
+// GenerateTextResult, generated or consumed from a stream. A
+// GenerateObjectResult has none.
 func invalidToolCalls(resultJSON string) [][2]string {
 	var doc struct {
 		ToolCalls []json.RawMessage `json:"toolCalls"`
-		Raw       struct {
-			ToolCalls []json.RawMessage `json:"toolCalls"`
-		} `json:"raw"`
 	}
 	if json.Unmarshal([]byte(resultJSON), &doc) != nil {
 		return nil
 	}
 	calls := doc.ToolCalls
-	if calls == nil {
-		calls = doc.Raw.ToolCalls
-	}
 	var invalid [][2]string
 	for _, call := range calls {
 		var head struct {

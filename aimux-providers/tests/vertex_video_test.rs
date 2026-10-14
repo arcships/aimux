@@ -1,7 +1,10 @@
 //! Rust translation of the Google Vertex video model tests.
 //! Source: `reference/ai/packages/google-vertex/src/google-vertex-video-model.test.ts`
 
+use std::sync::{Arc, Mutex};
+
 use aimux_core::Provider;
+use aimux_core::download::{Download, DownloadRequest, DownloadedFile};
 use aimux_core::video_model::{VideoCallOptions, generate_video};
 use aimux_providers::{VertexProvider, VertexProviderSettings, create_google_vertex};
 use serde_json::{Value, json};
@@ -18,7 +21,25 @@ fn fast_poll() -> Option<aimux_core::video_model::VideoPollOptions> {
 fn options(p: &str) -> VideoCallOptions {
     let mut o = VideoCallOptions::new(p);
     o.poll = fast_poll();
+    o.download = Some(recording_download(Arc::default()));
     o
+}
+
+/// The bytes the test download returns for every video URL.
+const VIDEO_BYTES: &[u8] = b"video bytes";
+
+/// A download that fetches nothing: it records each URL `generate_video`
+/// asks for and returns [`VIDEO_BYTES`].
+fn recording_download(requests: Arc<Mutex<Vec<String>>>) -> Download {
+    Download::new(move |request: DownloadRequest| {
+        requests.lock().unwrap().push(request.url);
+        async {
+            Ok(DownloadedFile {
+                data: VIDEO_BYTES.to_vec(),
+                media_type: None,
+            })
+        }
+    })
 }
 
 fn make_provider(server_uri: &str) -> VertexProvider {
@@ -58,16 +79,20 @@ async fn should_generate_video() {
         .video_model("veo-3.0-generate-001")
         .unwrap()
         .unwrap();
-    let r = generate_video(model.as_ref(), options("A cat"))
-        .await
-        .unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let mut opts = options("A cat");
+    opts.download = Some(recording_download(requests.clone()));
+    let r = generate_video(model.as_ref(), opts).await.unwrap();
+    // `generate_video` downloads the returned URL with the injected download
+    // (the guarded default fetches only HTTP(S), as upstream's `fetch`).
+    assert_eq!(*requests.lock().unwrap(), ["gs://bucket/video.mp4"]);
     assert_eq!(r.videos.len(), 1);
     match &r.videos[0] {
-        aimux_core::video_model::VideoData::Url { url, media_type } => {
-            assert_eq!(url, "gs://bucket/video.mp4");
+        aimux_core::video_model::VideoData::Binary { data, media_type } => {
+            assert_eq!(data, VIDEO_BYTES);
             assert_eq!(media_type, "video/mp4");
         }
-        _ => panic!("expected URL video"),
+        _ => panic!("expected the downloaded video"),
     }
 }
 

@@ -19,11 +19,12 @@ use std::collections::HashMap;
 use futures::StreamExt;
 
 use aimux_core::error::AiMuxError;
+use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
-use aimux_core::types::{ProviderMetadata, Warning};
+use aimux_core::types::{NamespacedKind, ProviderMetadata, Warning};
 use aimux_provider_utils::{HttpRequest, TransformStreamController, Transformer, pipe_through};
 use serde_json::{Value, json};
 
@@ -42,31 +43,65 @@ pub(crate) fn anthropic_stream_error(
     request_body_values: serde_json::Value,
     response_headers: HashMap<String, String>,
 ) -> AiMuxError {
-    // Documented Anthropic error types map to their documented statuses; an
-    // unknown type carries no status and is not retried (fabricating a 500
-    // here was the M3 bug).
-    let status_code = match error.error_type.as_deref() {
-        Some("rate_limit_error") => Some(429),
-        Some("overloaded_error") => Some(529),
-        Some("api_error") => Some(500),
-        _ => None,
+    // Upstream's `getAnthropicStreamErrorMetadata` (@ai-sdk/anthropic 4.0.71
+    // src/anthropic-language-model.ts:95-121): documented error types map to
+    // their statuses and retry flags; an unknown type carries no status and
+    // is not retried (fabricating a 500 here was the M3 bug). A status or
+    // retry flag in the frame itself wins (`createAnthropicStreamError`,
+    // :75-93).
+    let (inferred_status, inferred_retryable) = match error.error_type.as_deref() {
+        Some("api_error") => (Some(500), Some(true)),
+        Some("overloaded_error") => (Some(529), Some(true)),
+        Some("rate_limit_error") => (Some(429), Some(true)),
+        Some("request_too_large") => (Some(413), Some(false)),
+        Some("authentication_error") => (Some(401), Some(false)),
+        Some("permission_error") => (Some(403), Some(false)),
+        Some("not_found_error") => (Some(404), Some(false)),
+        Some("billing_error" | "invalid_request_error") => (Some(400), Some(false)),
+        _ => (None, None),
     };
-    let data = json!({
-        "type": "error",
-        "error": {
-            "type": error.error_type,
-            "message": error.message,
+    let status_code = error
+        .status_code
+        .as_ref()
+        .and_then(Value::as_u64)
+        .and_then(|status| u16::try_from(status).ok())
+        .or(inferred_status);
+    let is_retryable = error.is_retryable.or(inferred_retryable);
+    // The error as the chunk schema parses it (anthropic-api.ts:1450-1459):
+    // its known fields only.
+    let mut parsed = serde_json::Map::new();
+    if let Some(error_type) = &error.error_type {
+        parsed.insert("type".into(), json!(error_type));
+    }
+    parsed.insert("message".into(), json!(error.message));
+    for (key, value) in [
+        ("code", error.code.clone()),
+        ("statusCode", error.status_code.clone()),
+        ("isRetryable", error.is_retryable.map(Value::Bool)),
+    ] {
+        if let Some(value) = value {
+            parsed.insert(key.into(), value);
         }
-    });
-    aimux_provider_utils::stream_error_api_call(
+    }
+    let parsed = Value::Object(parsed);
+    // `data: 'data' in error ? error.data : error` (:91).
+    let data = error.data.clone().unwrap_or_else(|| parsed.clone());
+    let mut result = aimux_provider_utils::stream_error_api_call(
         error.message.clone(),
         error.error_type.clone(),
         status_code,
-        &data,
+        &json!({ "type": "error", "error": parsed }),
         url,
         request_body_values,
         response_headers,
-    )
+    );
+    if let AiMuxError::ApiCall(details) = &mut result {
+        if let Some(is_retryable) = is_retryable {
+            details.is_retryable = is_retryable;
+        }
+        details.data = (!data.is_null()).then(|| aimux_provider_utils::redact_error_context(data));
+    }
+    result
 }
 
 /// Read a string field, dropping absent / non-string values.
@@ -649,7 +684,8 @@ pub(crate) fn parse_anthropic_content(
         match block {
             ContentBlock::ContainerUpload { file_id } => {
                 content.push(GenerateContent::Custom {
-                    kind: "anthropic.container_upload".to_string(),
+                    kind: NamespacedKind::new("anthropic.container_upload")
+                        .expect("anthropic.container_upload is namespaced"),
                     provider_metadata: Some(
                         provider_namespace(CANONICAL, json!({ "fileId": file_id }))
                             .expect("provider metadata must be an object"),
@@ -1092,29 +1128,44 @@ pub(crate) async fn anthropic_stream_core(
     body: serde_json::Value,
     warnings: Vec<Warning>,
     config: &AnthropicModelConfig,
-    tool_names: ToolNameMapping,
+    options: &CallOptions,
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
     citation_documents: Vec<CitationDocument>,
     generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 ) -> Result<StreamResult, AiMuxError> {
+    let tool_names = ToolNameMapping::new(options.tools.as_deref());
+    let include_raw_chunks = options.include_raw_chunks == Some(true);
     let endpoint = request.url.clone();
     let options_name = config.provider_options_name.clone();
     let resp = aimux_provider_utils::post_json_to_api(
         request,
         body.clone(),
-        aimux_provider_utils::create_event_source_response_handler::<StreamEvent>(),
+        aimux_provider_utils::create_event_source_response_handler::<Value>(),
         config.failed_response_handler(),
     )
     .await?;
 
     let response_headers = resp.response_headers;
-    let mut sse_stream = resp.value;
+    // Each event as the AI SDK's `ParseResult`: the raw JSON when the data
+    // parsed as JSON, and the chunk schema's result.
+    let mut sse_stream = resp.value.map(move |item| match item {
+        Ok(raw) if include_raw_chunks => {
+            let event =
+                serde_json::from_value::<StreamEvent>(raw.clone()).map_err(AiMuxError::from);
+            (Some(raw), event)
+        }
+        Ok(raw) => (
+            None,
+            serde_json::from_value::<StreamEvent>(raw).map_err(AiMuxError::from),
+        ),
+        Err(error) => (None, Err(error)),
+    });
     let first_event = match sse_stream.next().await {
-        Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+        Some((_, Err(error @ AiMuxError::ApiCall(_)))) => return Err(error),
         first_event => first_event,
     };
-    if let Some(Ok(StreamEvent::Error { error })) = first_event.as_ref() {
+    if let Some((_, Ok(StreamEvent::Error { error }))) = first_event.as_ref() {
         return Err(anthropic_stream_error(
             error,
             &endpoint,
@@ -1128,6 +1179,7 @@ pub(crate) async fn anthropic_stream_core(
         futures::stream::iter(first_event).chain(sse_stream),
         AnthropicMessagesStream {
             warnings,
+            include_raw_chunks,
             stream_error_url: endpoint,
             stream_request_body: body.clone(),
             stream_response_headers: response_headers.clone(),
@@ -1169,6 +1221,8 @@ pub(crate) async fn anthropic_stream_core(
 /// The `TransformStream` of `AnthropicMessagesLanguageModel.doStream`.
 struct AnthropicMessagesStream {
     warnings: Vec<Warning>,
+    /// Forward every chunk as a raw part (`includeRawChunks`).
+    include_raw_chunks: bool,
     stream_error_url: String,
     stream_request_body: Value,
     stream_response_headers: HashMap<String, String>,
@@ -1689,7 +1743,9 @@ impl AnthropicMessagesStream {
 }
 
 impl Transformer for AnthropicMessagesStream {
-    type Input = Result<StreamEvent, AiMuxError>;
+    /// Each event as the AI SDK's `ParseResult`: the raw JSON (kept only when
+    /// raw chunks are requested) and the chunk schema's result.
+    type Input = (Option<Value>, Result<StreamEvent, AiMuxError>);
     type Output = StreamPart;
 
     fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
@@ -1701,9 +1757,22 @@ impl Transformer for AnthropicMessagesStream {
 
     fn transform(
         &mut self,
-        event: Result<StreamEvent, AiMuxError>,
+        (raw, event): (Option<Value>, Result<StreamEvent, AiMuxError>),
         controller: &mut TransformStreamController<StreamPart>,
     ) {
+        // Every chunk, valid or not, is forwarded first when raw chunks are
+        // requested (anthropic@4.0.71 `anthropic-language-model.ts:1956-1958`);
+        // a chunk that is not JSON has no raw value.
+        if self.include_raw_chunks
+            && (raw.is_some()
+                || event
+                    .as_ref()
+                    .is_err_and(AiMuxError::is_recoverable_stream_error))
+        {
+            controller.enqueue(StreamPart::Raw {
+                raw_value: raw.unwrap_or(Value::Null),
+            });
+        }
         let stream_event = match event {
             Ok(stream_event) => stream_event,
             Err(error) => {

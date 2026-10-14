@@ -13,7 +13,6 @@
 //! 3. If the file state is `PROCESSING`, poll `{base_url}/{file.name}` until
 //!    the state becomes `ACTIVE` or `FAILED`.
 
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -203,11 +202,16 @@ impl Files for GoogleFiles {
         // Nothing retries a file upload: the init, upload and poll exchanges
         // each run once, and a failure is reported as it happened (a replayed
         // upload would resend the file body).
+        // google-files.ts:84-92 starts the upload with the provider's plain
+        // `fetch`, not `postToApi`: the provider headers (their
+        // `ai-sdk-google/<v>` part included) go out with no
+        // `ai-sdk-provider-utils/<v>` part.
         let init_resp = aimux_provider_utils::post_json_to_api(
             exchange.with_transport(HttpRequest {
                 url: init_endpoint,
                 headers: init_headers,
                 abort_signal: options.abort_signal.clone(),
+                omit_provider_utils_user_agent: true,
                 ..Default::default()
             }),
             exchange.transform_body(init_body_value),
@@ -256,6 +260,8 @@ impl Files for GoogleFiles {
         // The upload URL comes from the init response's x-goog-upload-url
         // header and receives the user's file bytes; validate it. (AI SDK
         // fetches this URL unvalidated — kept stricter here deliberately.)
+        // Its plain `fetch` sends only the two `X-Goog-Upload-*` headers
+        // (google-files.ts:118-126), so there is no user-agent.
         let upload_resp = aimux_provider_utils::post_to_api(
             exchange.with_transport(HttpRequest {
                 url: upload_url,
@@ -264,6 +270,7 @@ impl Files for GoogleFiles {
                 validate_url: true,
                 trusted_origin: Some(exchange.base_url().to_string()),
                 credentialed_origin: Some(exchange.base_url().to_string()),
+                omit_provider_utils_user_agent: true,
                 ..Default::default()
             }),
             HttpBody::Bytes(file_bytes, media_type.clone()),
@@ -373,7 +380,7 @@ impl Files for GoogleFiles {
             metadata.insert("sha256Hash".to_string(), json!(sha256_hash));
         }
 
-        let mut provider_ref = HashMap::new();
+        let mut provider_ref = aimux_core::shared::SharedProviderReference::new();
         provider_ref.insert(GOOGLE.to_string(), file.uri.clone());
 
         let result_media_type = if file.mime_type.is_empty() {
@@ -386,7 +393,10 @@ impl Files for GoogleFiles {
             provider_reference: provider_ref,
             media_type: result_media_type,
             filename: None,
-            provider_metadata: Some(HashMap::from([(GOOGLE.to_string(), metadata)])),
+            provider_metadata: Some(aimux_core::shared::NamespaceMap::from([(
+                GOOGLE.to_string(),
+                metadata,
+            )])),
             warnings,
         })
     }

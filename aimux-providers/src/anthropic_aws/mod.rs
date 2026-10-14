@@ -8,9 +8,18 @@
 //! AWS SigV4 applied by a [`SigV4Fetch`](aimux_provider_utils::SigV4Fetch)
 //! transport decorator over the final request.
 //!
+//! The settings follow `@ai-sdk/anthropic-aws` 2.0.63: the region comes from
+//! the setting or `AWS_REGION` (no default), the workspace id from the setting
+//! or `ANTHROPIC_AWS_WORKSPACE_ID` (required), and with no `auth` a request
+//! uses `ANTHROPIC_AWS_API_KEY` when it is set and SigV4 with
+//! `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN`
+//! otherwise. All of them are read when a request is made.
+//!
 //! Reference: <https://docs.anthropic.com/en/api/messages>
 
 mod model;
+
+pub(crate) use model::{Auth, AwsHeaders};
 
 pub use model::AnthropicAwsModel;
 
@@ -18,7 +27,6 @@ use std::sync::{Arc, OnceLock};
 
 use futures::future::BoxFuture;
 
-use crate::shared::ProviderHeaders;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
@@ -26,18 +34,16 @@ use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{
-    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, validate_base_url,
+    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, default_fetch, validate_base_url,
 };
 
 use crate::anthropic::AnthropicMessagesModel;
-use crate::anthropic::config::{AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks};
+use crate::anthropic::config::{
+    AnthropicEndpoint, AnthropicHeaders, AnthropicModelConfig, AnthropicModelHooks,
+};
 use crate::anthropic::options::{CANONICAL, options_name_of};
 
 pub use crate::shared::TransformRequestBody;
-
-/// The region used when the settings name none and SigV4 credentials do not
-/// carry one.
-const DEFAULT_REGION: &str = "us-east-1";
 
 /// The provider name when the settings give none.
 const DEFAULT_NAME: &str = "anthropic-aws";
@@ -58,23 +64,31 @@ pub enum AnthropicAwsAuth {
 /// Settings of [`create_anthropic_aws`].
 ///
 /// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `region`, `base_url` and `name`; credentials and `headers`
-/// are evaluated on every request.
+/// created except `base_url`, an explicit `region` and `name`; the region,
+/// the workspace id, credentials and `headers` are resolved on every request.
 #[derive(Clone, Default)]
 pub struct AnthropicAwsProviderSettings {
     /// Base URL for the API calls, version segment included. Default
     /// `https://aws-external-anthropic.{region}.api.aws/v1`; a trailing slash
     /// is removed.
     pub base_url: Option<String>,
-    /// The AWS region of the default base URL. When unset, the region of
-    /// `Resolvable::Value` SigV4 credentials, else `us-east-1`. Never read
-    /// from the environment.
+    /// The AWS region: the host of the default base URL and the SigV4
+    /// signing region. `None` loads `AWS_REGION` when a request is made, else
+    /// the region of `Resolvable::Value` SigV4 credentials; with neither the
+    /// request fails with `AiMuxError::LoadSetting`. There is no default
+    /// region. The setting and `AWS_REGION` win over the region SigV4
+    /// credentials carry.
     pub region: Option<String>,
-    /// How requests are authenticated. `None` sends `x-api-key` from
-    /// `ANTHROPIC_AWS_API_KEY`, loaded when a request is made (a missing
-    /// variable fails that request with `AiMuxError::LoadApiKey`).
+    /// How requests are authenticated. `None` decides per request, as the AI
+    /// SDK does: `x-api-key` with `ANTHROPIC_AWS_API_KEY` when it is set and
+    /// not empty, else SigV4 with `AWS_ACCESS_KEY_ID`,
+    /// `AWS_SECRET_ACCESS_KEY` and the optional `AWS_SESSION_TOKEN` (a
+    /// missing one fails the request with `AiMuxError::LoadSetting`).
     pub auth: Option<AnthropicAwsAuth>,
-    /// Sent as `anthropic-workspace-id`.
+    /// Sent as `anthropic-workspace-id`. `None` loads
+    /// `ANTHROPIC_AWS_WORKSPACE_ID` when a request is made. Required: with
+    /// neither, the request fails with `AiMuxError::LoadSetting` and nothing
+    /// is sent.
     pub workspace_id: Option<String>,
     /// Extra headers on every request. A `None` value removes the header,
     /// including one of the fixed ones. Per-call headers win over these.
@@ -114,48 +128,29 @@ impl std::fmt::Debug for AnthropicAwsProviderSettings {
     }
 }
 
-/// A region is a hostname label: refuse anything that could change the host
-/// of the default base URL.
-fn validate_region(region: &str) -> Result<(), AiMuxError> {
-    let valid = !region.is_empty()
-        && region
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-');
-    if valid {
-        Ok(())
-    } else {
-        Err(AiMuxError::InvalidArgument(format!(
-            "invalid AWS region {region:?}: expected letters, digits and hyphens"
-        )))
-    }
-}
-
 /// Create an Anthropic-AWS provider.
 ///
 /// # Errors
 ///
 /// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
-/// URL with a host or `region` is not a valid hostname label. Those are the
-/// only ways this fails: credentials are loaded per request, not here.
+/// URL with a host, or, with no `base_url`, an explicit `region` is not a
+/// single DNS label. Those are the only ways this fails: the region, the
+/// workspace id and the credentials are loaded per request, not here.
 pub fn create_anthropic_aws(
     settings: AnthropicAwsProviderSettings,
 ) -> Result<AnthropicAwsProvider, AiMuxError> {
+    let auth = Arc::new(model::Auth {
+        region: settings.region,
+        workspace_id: settings.workspace_id,
+        auth: settings.auth,
+    });
     let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
+        Some(url) => Some(validate_base_url(url)?),
         None => {
-            let from_credentials = match &settings.auth {
-                Some(AnthropicAwsAuth::SigV4(Resolvable::Value(credentials))) => {
-                    Some(credentials.region.clone())
-                }
-                _ => None,
-            };
-            let region = settings
-                .region
-                .clone()
-                .or(from_credentials)
-                .unwrap_or_else(|| DEFAULT_REGION.to_string());
-            validate_region(&region)?;
-            format!("https://aws-external-anthropic.{region}.api.aws/v1")
+            if auth.region.is_some() {
+                auth.host_region()?;
+            }
+            None
         }
     };
     // The providerOptions key stays `anthropic` unless the caller named the
@@ -166,14 +161,14 @@ pub fn create_anthropic_aws(
         .map_or_else(|| CANONICAL.to_string(), options_name_of);
     let name = settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string());
     let (headers, fetch) = model::authenticated(
-        settings.auth,
-        settings.workspace_id,
+        auth.clone(),
         settings.headers,
-        settings.fetch,
+        settings.fetch.unwrap_or_else(default_fetch),
     );
     Ok(AnthropicAwsProvider {
         name,
         provider_options_name,
+        auth,
         base_url,
         headers,
         fetch,
@@ -183,7 +178,8 @@ pub fn create_anthropic_aws(
 
 /// The default provider: `create_anthropic_aws` with default settings, created
 /// on first use. Creating it reads nothing from the environment and cannot
-/// fail; a missing key surfaces from the first request instead.
+/// fail; a missing region, workspace id or credential surfaces from the first
+/// request instead.
 pub fn anthropic_aws() -> &'static AnthropicAwsProvider {
     static DEFAULT: OnceLock<AnthropicAwsProvider> = OnceLock::new();
     DEFAULT.get_or_init(|| {
@@ -197,24 +193,40 @@ pub fn anthropic_aws() -> &'static AnthropicAwsProvider {
 pub struct AnthropicAwsProvider {
     name: String,
     provider_options_name: String,
-    base_url: String,
-    headers: ProviderHeaders,
-    fetch: Option<FetchFunction>,
+    auth: Arc<model::Auth>,
+    /// The explicit base URL; `None` builds the regional one per request.
+    base_url: Option<String>,
+    headers: AwsHeaders,
+    fetch: FetchFunction,
     transform_request_body: Option<TransformRequestBody>,
 }
 
 impl AnthropicAwsProvider {
-    fn model_config(&self) -> AnthropicModelConfig {
+    /// The configuration of requests against `base_url`.
+    fn config_for(&self, base_url: String) -> AnthropicModelConfig {
         AnthropicModelConfig {
             provider: self.name.clone(),
-            headers: self.headers.clone(),
-            fetch: self.fetch.clone(),
+            headers: AnthropicHeaders::Aws(self.headers.clone()),
+            fetch: Some(self.fetch.clone()),
             supported_urls: SupportedUrls::default(),
             transform_request_body: self.transform_request_body.clone(),
-            base_url: self.base_url.clone(),
+            base_url,
             provider_options_name: self.provider_options_name.clone(),
             hooks: AnthropicModelHooks::default(),
             endpoint: AnthropicEndpoint::Fixed,
+        }
+    }
+
+    /// The model configuration. With no explicit base URL every request is
+    /// built against `https://aws-external-anthropic.{region}.api.aws/v1` for
+    /// the region resolved then (`getBaseURL`, anthropic-aws-provider.ts:229-231).
+    fn model_config(&self) -> AnthropicModelConfig {
+        if let Some(base_url) = &self.base_url {
+            return self.config_for(base_url.clone());
+        }
+        AnthropicModelConfig {
+            endpoint: AnthropicEndpoint::AwsRegional(self.auth.clone()),
+            ..self.config_for(String::new())
         }
     }
 

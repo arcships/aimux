@@ -9,8 +9,12 @@ import type { ProviderRecord } from "./ProviderRecord";
  */
 export type Recording = { 
 /**
- * 格式版本。读取时只接受当前 [`RECORDING_SCHEMA`];旧 schema 的录制带有
- * 配置快照(base_url / profile 等),不再读取。
+ * 格式版本。Written as [`RECORDING_SCHEMA`]; schemas 1 and 2 are read.
+ * Recordings written by aimux 0.5 and earlier also carry a configuration
+ * snapshot under `provider` (base URL, key source, profile, provider
+ * options), which is ignored, and write the envelope's keys snake_case
+ * (`call_id`, `recorded_at`, ...), which are read as aliases of the
+ * camelCase keys this version writes.
  */
 schema: number, 
 /**
@@ -38,7 +42,9 @@ exchanges: Array<HttpExchange>,
  */
 outcome: OutcomeRecord, 
 /**
- * wire 是否完整(流式 body 未补全时为 false;由 writer 标记)。
+ * wire 是否完整(流式 body 未补全时为 false;由 writer 标记)。A call
+ * that lost an event (full queue, writer gone) or was marked
+ * inconsistent (duplicate attempt, unmatched update) is never complete.
  */
 complete: boolean, 
 /**

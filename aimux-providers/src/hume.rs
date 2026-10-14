@@ -71,8 +71,8 @@ fn hume_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMux
 
 pub(crate) mod options;
 
-const DEFAULT_BASE_URL: &str = "https://api.hume.ai";
-const API_KEY_ENV_VAR: &str = "HUME_API_KEY";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.hume.ai";
+pub(crate) const API_KEY_ENV_VAR: &str = "HUME_API_KEY";
 const DEFAULT_NAME: &str = "hume";
 
 /// Settings of [`create_hume`].
@@ -234,11 +234,12 @@ impl SpeechModel for HumeSpeechModel {
 
         let audio_bytes = resp.value.to_vec();
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(SpeechResult {
             audio: AudioData::Binary(audio_bytes),
             warnings,
+            usage: None,
             request: Some(SpeechRequest {
                 body: Some(Value::Object(body)),
             }),

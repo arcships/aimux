@@ -18,7 +18,6 @@
 
 use aimux_core::tool::ToolResult;
 use aimux_core::tool::{FunctionTool, RawToolCall};
-use std::collections::HashMap;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -32,7 +31,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::options::{CallOptions, ResponseFormat, Tool, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat, Tool};
 use aimux_core::result::{GenerateContent, ReasoningOutput, Source};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
@@ -579,7 +578,7 @@ async fn should_handle_mcp_tools_with_annotations() {
     let result = generate_text(&model, "Hello", GenerateTextOptions::default())
         .await
         .expect("dynamic MCP call should pass Core validation without local tools");
-    let call = result.tool_calls.first().expect("MCP tool call");
+    let call = *result.tool_calls().first().expect("MCP tool call");
     assert_eq!(call.tool_name, "search");
     assert_eq!(call.provider_executed, Some(true));
     assert_eq!(call.dynamic, Some(true));
@@ -1669,7 +1668,7 @@ async fn should_send_provider_specific_options() {
     let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
     let mut options = default_options(test_prompt());
-    let mut po = HashMap::new();
+    let mut po = aimux_core::shared::SharedProviderOptions::new();
     po.insert(
         "huggingface".to_string(),
         serde_json::from_value(json!({
@@ -1744,7 +1743,7 @@ async fn should_prepare_tools_correctly() {
         )
         .with_description("Get weather information"),
     )]);
-    options.tool_choice = Some(ToolChoice::Tool {
+    options.tool_choice = Some(LanguageModelV4ToolChoice::Tool {
         tool_name: "getWeather".to_string(),
     });
 
@@ -1810,7 +1809,7 @@ async fn should_handle_auto_and_required_tool_choices() {
         "test",
         json!({ "type": "object" }),
     ))]);
-    options.tool_choice = Some(ToolChoice::Auto);
+    options.tool_choice = Some(LanguageModelV4ToolChoice::Auto);
 
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result
@@ -1825,7 +1824,7 @@ async fn should_handle_auto_and_required_tool_choices() {
         "test",
         json!({ "type": "object" }),
     ))]);
-    options.tool_choice = Some(ToolChoice::Required);
+    options.tool_choice = Some(LanguageModelV4ToolChoice::Required);
 
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result
@@ -1956,4 +1955,19 @@ fn normalizes_image_wildcard_via_detection() {
             "image_url": format!("data:image/png;base64,{}", PNG_BASE64)
         })
     );
+}
+
+/// TS: `supportedUrls` (huggingface-responses-language-model.ts:67-69): image
+/// URLs go to the API as they are; other URLs are downloaded by the operation.
+#[tokio::test]
+async fn supports_http_image_urls() {
+    let server = MockServer::start().await;
+    let urls = make_provider(&server)
+        .responses("deepseek-ai/DeepSeek-V3-0324")
+        .supported_urls()
+        .await;
+    assert_eq!(urls.0.len(), 1);
+    assert!(urls.0["image/*"][0].is_match("https://example.com/a.png"));
+    assert!(urls.0["image/*"][0].is_match("http://example.com/a.png"));
+    assert!(!urls.0["image/*"][0].is_match("ftp://example.com/a.png"));
 }

@@ -324,7 +324,7 @@ impl ImageModel for BedrockImageModel {
             });
         }
 
-        let current_date = chrono::Utc::now().to_rfc3339();
+        let current_date = aimux_core::Timestamp::now();
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(Value::Object(args));
         let body_str =

@@ -26,7 +26,7 @@ use futures::StreamExt;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
@@ -196,6 +196,19 @@ impl LanguageModel for XaiResponsesModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    /// Image, PDF and text URLs go to the API as they are, as `input_image`
+    /// or `input_file` (`xaiResponsesSupportedUrls`,
+    /// xai-responses-language-model.ts:142-149, :181).
+    async fn supported_urls(&self) -> SupportedUrls {
+        let http = regex::Regex::new(r"^https?://.*$").expect("static pattern");
+        SupportedUrls(
+            ["image/*", "application/pdf", "text/*"]
+                .into_iter()
+                .map(|media_type| (media_type.to_string(), vec![http.clone()]))
+                .collect(),
+        )
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
@@ -469,7 +482,7 @@ impl LanguageModel for XaiResponsesModel {
 
         let timestamp = data
             .created_at
-            .and_then(|c| chrono::DateTime::from_timestamp(c as i64, 0).map(|dt| dt.to_rfc3339()));
+            .and_then(|c| aimux_core::Timestamp::from_unix_seconds(c as f64));
 
         Ok(GenerateResult {
             content,
@@ -673,9 +686,8 @@ impl XaiResponsesStream {
                         let created_at = response
                             .get("created_at")
                             .and_then(serde_json::Value::as_u64);
-                        let timestamp = created_at.and_then(|c| {
-                            chrono::DateTime::from_timestamp(c as i64, 0).map(|dt| dt.to_rfc3339())
-                        });
+                        let timestamp = created_at
+                            .and_then(|c| aimux_core::Timestamp::from_unix_seconds(c as f64));
                         controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
                             id,
                             timestamp,

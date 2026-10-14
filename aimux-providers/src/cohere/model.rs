@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
@@ -93,6 +93,13 @@ impl LanguageModel for CohereModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    /// Image URLs go to the API as they are
+    /// (cohere-chat-language-model.ts:51-53).
+    async fn supported_urls(&self) -> SupportedUrls {
+        let http = regex::Regex::new(r"^https?://.*$").expect("static pattern");
+        SupportedUrls(std::iter::once(("image/*".to_string(), vec![http])).collect())
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {

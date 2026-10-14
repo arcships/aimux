@@ -788,11 +788,13 @@ type InputAudioFormat struct {
 // TranscriptionSessionOpts are the optional session options (RFC-0028):
 // input audio format, provider options, headers, includeRawChunks, timeout.
 type TranscriptionSessionOpts struct {
-	InputAudioFormat *InputAudioFormat          `json:"inputAudioFormat,omitempty"`
-	ProviderOptions  map[string]json.RawMessage `json:"providerOptions,omitempty"`
-	Headers          map[string]string          `json:"headers,omitempty"`
-	IncludeRawChunks *bool                      `json:"includeRawChunks,omitempty"`
-	Timeout          *TimeoutConfiguration      `json:"timeout,omitempty"`
+	InputAudioFormat *InputAudioFormat `json:"inputAudioFormat,omitempty"`
+	// ProviderOptions is a JSON object of provider namespaces, raw so that
+	// its keys keep their order.
+	ProviderOptions  json.RawMessage       `json:"providerOptions,omitempty"`
+	Headers          map[string]string     `json:"headers,omitempty"`
+	IncludeRawChunks *bool                 `json:"includeRawChunks,omitempty"`
+	Timeout          *TimeoutConfiguration `json:"timeout,omitempty"`
 }
 
 // ErrTranscriptionEnded is returned by NextPart when the stream ended

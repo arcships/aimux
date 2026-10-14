@@ -369,10 +369,10 @@ struct ToolCallAccum {
 | `StreamStart` | 首帧 `{delta:{role:"assistant", content:""}}` | `started=true` |
 | `ResponseMetadata { id, model_id }` | (不发 chunk) | 记录 id/model |
 | `ReasoningStart { id }` | (不发 chunk) | — |
-| `ReasoningDelta { delta }` | `{delta:{reasoning_content: delta}}` | — |
+| `ReasoningDelta { text }` | `{delta:{reasoning_content: text}}` | — |
 | `ReasoningEnd { id }` | (不发 chunk) | — |
 | `TextStart { id }` | 确保 `started`(惰性首帧) | — |
-| `TextDelta { delta }` | `{delta:{content: delta}}` | — |
+| `TextDelta { text }` | `{delta:{content: text}}` | — |
 | `TextEnd { id }` | (不发 chunk) | — |
 | `ToolInputStart { id, tool_name }` | `{delta:{tool_calls:[{index, id, type:"function", function:{name, arguments:""}}]}}` | 分配 index,记录 tool_call |
 | `ToolInputDelta { id, delta }` | `{delta:{tool_calls:[{index, function:{arguments: delta}}]}}` | 累积 arguments |

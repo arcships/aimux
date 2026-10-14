@@ -344,7 +344,7 @@ async fn should_forward_the_model_id() {
 #[tokio::test]
 async fn should_natively_support_http_image_urls() {
     let server = MockServer::start().await;
-    let urls = chat(&server, "deepseek-chat").supported_urls();
+    let urls = chat(&server, "deepseek-chat").supported_urls().await;
     let patterns = &urls.0["image/*"];
     assert_eq!(patterns.len(), 1);
     assert!(patterns[0].is_match("https://example.com/a.png"));
@@ -1193,16 +1193,16 @@ async fn tool_call_should_send_correct_request_body() {
 
 #[tokio::test]
 async fn tool_call_should_send_the_tool_choice() {
-    use aimux_core::options::ToolChoice;
+    use aimux_core::options::LanguageModelV4ToolChoice;
     let mut options = tool_options();
-    options.tool_choice = Some(ToolChoice::Tool {
+    options.tool_choice = Some(LanguageModelV4ToolChoice::Tool {
         tool_name: "weather".to_string(),
     });
     assert_eq!(
         generate_body("deepseek-reasoner", &options).await["tool_choice"],
         json!({ "type": "function", "function": { "name": "weather" } })
     );
-    options.tool_choice = Some(ToolChoice::Required);
+    options.tool_choice = Some(LanguageModelV4ToolChoice::Required);
     assert_eq!(
         generate_body("deepseek-reasoner", &options).await["tool_choice"],
         "required"
@@ -1214,7 +1214,7 @@ async fn tool_call_should_warn_about_provider_defined_tools() {
     use aimux_core::tool::ProviderTool;
     let mut options = options();
     options.tools = Some(vec![Tool::Provider(ProviderTool {
-        id: "test.search".to_string(),
+        id: "test.search".parse().unwrap(),
         name: "search".to_string(),
         args: serde_json::Map::new(),
     })]);
@@ -1433,6 +1433,29 @@ async fn stream_error(data: &Value) -> aimux_core::error::ApiCallError {
             _ => None,
         })
         .expect("expected a provider error part")
+}
+
+/// `deepSeekErrorSchema` as the chat model's failed-response handler
+/// (deepseek@3.0.56 `deepseek-chat-api-types.ts:117-124`,
+/// `deepseek-chat-language-model.ts:213-217`): `code` may be a number.
+#[tokio::test]
+async fn a_failed_response_reads_deepseeks_error_schema() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path_regex(".*/chat/completions$"))
+        .respond_with(ResponseTemplate::new(402).set_body_json(json!({ "error": {
+            "message": "Insufficient Balance", "type": "unknown_error", "param": null, "code": 4020
+        } })))
+        .mount(&server)
+        .await;
+    let Err(AiMuxError::ApiCall(error)) =
+        chat(&server, "deepseek-chat").do_generate(&options()).await
+    else {
+        panic!("expected an API call error");
+    };
+    assert_eq!(error.message, "Insufficient Balance");
+    assert_eq!(error.provider_code.as_deref(), Some("4020"));
+    assert_eq!(error.status_code, Some(402));
 }
 
 #[tokio::test]

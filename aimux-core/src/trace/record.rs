@@ -63,8 +63,8 @@ pub struct TraceRecord {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
-    /// From `CallOptions.session_id` (RFC-0024) — explicit first, inference
-    /// fallback; may also be the layer's default session.
+    /// The explicit session id of the operation (RFC-0024), else the
+    /// layer's default session.
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,

@@ -1,9 +1,12 @@
 //! Offline contract tests using official examples and recorded live responses.
 //! No live credentials or external requests are needed to replay them.
 
+use std::sync::Arc;
+
 use aimux_core::decision_model::*;
 use aimux_core::{AiMuxError, Provider};
 use aimux_providers::{JevConfig, JevProvider};
+use indexmap::IndexMap;
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -30,16 +33,17 @@ async fn optional_usage_counts_do_not_discard_valid_answers() {
         mount(&server, 200, response).await;
         let result = decide(model(&server).as_ref(), options()).await.unwrap();
         assert_eq!(result.answers.len(), 3);
-        let actual = result.usage.unwrap();
+        let input = usage["input_tokens"].as_u64().map(|n| n as u32);
+        let output = usage["output_tokens"].as_u64().map(|n| n as u32);
         assert_eq!(
-            actual.input_tokens.total,
-            usage["input_tokens"].as_u64().map(|n| n as u32)
+            result.usage,
+            DecideUsage {
+                input_tokens: input,
+                output_tokens: output,
+                total_tokens: input.zip(output).map(|(i, o)| i + o),
+            }
         );
-        assert_eq!(
-            actual.output_tokens.total,
-            usage["output_tokens"].as_u64().map(|n| n as u32)
-        );
-        assert_eq!(actual.raw.map(Value::Object), Some(usage));
+        assert_eq!(result.response.body.unwrap()["usage"], usage);
     }
     let server = MockServer::start().await;
     let mut response = fixture();
@@ -90,7 +94,14 @@ async fn official_choice_requires_a_maximum_probability_and_accepts_ties() {
             };
             assert_eq!(error.status_code, Some(200));
             assert!(!error.is_retryable);
-            assert!(error.message.contains("highest-probability"));
+            // ai@7.0.128 src/decide/validate-decision.ts:233-242
+            assert!(
+                error.message.ends_with(
+                    "Question \"department\" did not select a highest-probability option."
+                ),
+                "{}",
+                error.message
+            );
         }
         assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
@@ -102,59 +113,54 @@ async fn recorded_official_live_responses_replay_through_core_validation() {
         let recording: aimux_core::recording::Recording = serde_json::from_str(line).unwrap();
         let server = MockServer::start().await;
         common::replay::mount_recording(&server, &recording).await;
-        let request: DecisionCallOptions =
+        let request: DecideOptions =
             serde_json::from_value(recording.input.options.clone()).unwrap();
         let result = decide(model(&server).as_ref(), request).await.unwrap();
         let result = serde_json::to_value(result).unwrap();
         let expected = recording.outcome.decision_result.unwrap();
-        for field in ["answers", "model", "rounding", "usage"] {
+        for field in ["answers", "rounding", "usage", "providerMetadata"] {
+            assert!(expected.get(field).is_some(), "{field}");
             assert_eq!(result[field], expected[field]);
         }
         assert_eq!(result["response"]["body"], expected["response"]["body"]);
+        assert_eq!(result["response"]["modelId"], "jev-1.13.0");
     }
 }
 
-fn options() -> DecisionCallOptions {
-    DecisionCallOptions::new(
-        json!({"ticket": "Billed twice"}),
-        vec![
-            DecisionQuestion::Boolean {
-                criteria: None,
-                id: "is_urgent".into(),
-                instructions: "The message conveys urgency or time-sensitivity".into(),
-            },
-            DecisionQuestion::Choice {
-                id: "department".into(),
-                instructions: "Which team should handle this".into(),
-                options: ["billing", "technical", "sales"]
-                    .into_iter()
-                    .map(|label| DecisionOption {
-                        value: None,
-                        label: label.into(),
-                        description: None,
-                    })
-                    .collect(),
-            },
-            DecisionQuestion::Score {
-                id: "frustration".into(),
-                instructions: "How frustrated the customer appears".into(),
-                levels: [
-                    "Calm, just stating facts",
-                    "Frustrated but civil",
-                    "Very angry, strong language",
-                ]
-                .into_iter()
-                .map(DecisionDescription::from)
-                .collect(),
-            },
-        ],
-    )
+fn questions() -> DecisionQuestions {
+    serde_json::from_value(json!({
+        "is_urgent": {
+            "type": "boolean",
+            "instructions": "The message conveys urgency or time-sensitivity"
+        },
+        "department": {
+            "type": "choice",
+            "instructions": "Which team should handle this",
+            "criteria": {"billing": null, "technical": null, "sales": null}
+        },
+        "frustration": {
+            "type": "score",
+            "instructions": "How frustrated the customer appears",
+            "criteria": [
+                "Calm, just stating facts",
+                "Frustrated but civil",
+                "Very angry, strong language"
+            ]
+        }
+    }))
+    .unwrap()
 }
 
-fn model(server: &MockServer) -> Box<dyn DecisionModel> {
+fn options() -> DecideOptions {
+    let state: DecisionInput = serde_json::from_value(json!({"ticket": "Billed twice"})).unwrap();
+    DecideOptions::new(state, questions())
+}
+
+fn model(server: &MockServer) -> Arc<dyn DecisionModel> {
     let config = JevConfig::new("test-key").with_endpoint(format!("{}/v1/systemone", server.uri()));
     JevProvider::new(config)
         .decision_model("jev-latest")
+        .unwrap()
         .unwrap()
 }
 
@@ -177,45 +183,68 @@ async fn official_contract_round_trip_preserves_types_and_raw_metadata() {
     mount(&server, 200, fixture()).await;
     let model = model(&server);
     let result = decide(model.as_ref(), options()).await.unwrap();
-    assert!(
-        matches!(result.answers["is_urgent"], DecisionAnswer::Boolean { probability_true } if probability_true == 1.0)
-    );
-    assert!(
-        matches!(&result.answers["department"], DecisionAnswer::Choice { selected, probabilities: Some(p), .. } if selected == "technical" && p.len() == 3)
-    );
-    assert!(
-        matches!(&result.answers["frustration"], DecisionAnswer::Score { expected_value, probabilities: Some(p), .. } if *expected_value == 1.0 && p == &[0.0, 1.0, 0.0])
-    );
-    assert_eq!(result.model, "jev-1.13.0");
-    assert_eq!(result.model_version, None);
-    assert_eq!(result.usage.as_ref().unwrap().input_tokens.total, Some(392));
-    assert_eq!(result.usage.as_ref().unwrap().output_tokens.total, Some(65));
     assert_eq!(
-        result
-            .usage
-            .as_ref()
-            .unwrap()
-            .raw
-            .clone()
-            .map(Value::Object),
-        Some(fixture()["usage"].clone())
+        result.answers.keys().collect::<Vec<_>>(),
+        ["is_urgent", "department", "frustration"]
     );
     assert_eq!(
-        result.response.as_ref().unwrap().body.as_ref().unwrap(),
-        &fixture()
+        result.answers["is_urgent"],
+        DecisionAnswer::Boolean { probability: 1.0 }
     );
+    assert_eq!(
+        result.answers["department"],
+        DecisionAnswer::Choice {
+            choice: "technical".into(),
+            probabilities: Some(IndexMap::from([
+                ("technical".to_string(), 0.85),
+                ("sales".to_string(), 0.0),
+                ("billing".to_string(), 0.15),
+            ])),
+        }
+    );
+    assert_eq!(
+        result.answers["frustration"],
+        DecisionAnswer::Score {
+            score: 1.0,
+            probabilities: Some(IndexMap::from([
+                ("0".to_string(), 0.0),
+                ("1".to_string(), 1.0),
+                ("2".to_string(), 0.0),
+            ])),
+        }
+    );
+    assert_eq!(result.response.model_id.as_deref(), Some("jev-1.13.0"));
+    assert_eq!(
+        result.usage,
+        DecideUsage {
+            input_tokens: Some(392),
+            output_tokens: Some(65),
+            total_tokens: Some(457),
+        }
+    );
+    assert_eq!(
+        result.rounding,
+        Some(DecisionRounding {
+            probability_decimals: Some(2),
+            score_decimals: Some(2),
+        })
+    );
+    assert_eq!(result.response.body.as_ref().unwrap(), &fixture());
     assert_eq!(
         Value::Object(result.provider_metadata.as_ref().unwrap()["jev"].clone()),
-        fixture()
+        json!({
+            "probabilitySource": "native",
+            "answers": {"department": {"confidence": 0.78}, "frustration": {"confidence": 1.0}}
+        })
     );
     assert_eq!(
-        result.response.as_ref().unwrap().headers.as_ref().unwrap()["x-request-id"],
+        result.response.headers.as_ref().unwrap()["x-request-id"],
         "test-request"
     );
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
     let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["state"], options().state);
+    assert_eq!(body["state"], json!({"ticket": "Billed twice"}));
     assert_eq!(
         body["questions"]["is_urgent"],
         json!({"type":"noul", "instructions":"The message conveys urgency or time-sensitivity"})
@@ -243,6 +272,9 @@ async fn malformed_answers_fail_with_http_context_without_retry() {
         .unwrap()
         .remove("department");
     responses.push(missing);
+    let mut extra = fixture();
+    extra["answers"]["unasked"] = json!({"type":"noul", "noul":0.5});
+    responses.push(extra);
     let mut unknown = fixture();
     unknown["answers"]["department"]["choice"] = json!("unknown");
     responses.push(unknown);
@@ -303,52 +335,53 @@ async fn malformed_answers_fail_with_http_context_without_retry() {
 #[tokio::test]
 async fn invalid_requests_never_reach_http() {
     let server = MockServer::start().await;
-    let mut duplicate = options();
-    duplicate.questions.push(duplicate.questions[0].clone());
     let mut empty_choice = options();
-    if let DecisionQuestion::Choice { options, .. } = &mut empty_choice.questions[1] {
-        options.clear();
-    }
-    let mut duplicate_label = options();
-    if let DecisionQuestion::Choice { options, .. } = &mut duplicate_label.questions[1] {
-        options.push(options[0].clone());
+    if let Some(DecisionQuestion::Choice { criteria, .. }) =
+        empty_choice.questions.get_mut("department")
+    {
+        criteria.clear();
     }
     let mut too_many_choices = options();
-    if let DecisionQuestion::Choice { options, .. } = &mut too_many_choices.questions[1] {
-        *options = (0..256)
-            .map(|index| DecisionOption {
-                value: None,
-                label: format!("option{index}"),
-                description: None,
-            })
+    if let Some(DecisionQuestion::Choice { criteria, .. }) =
+        too_many_choices.questions.get_mut("department")
+    {
+        *criteria = (0..256)
+            .map(|index| (format!("option{index}"), None))
             .collect();
     }
     let mut too_many_levels = options();
-    if let DecisionQuestion::Score { levels, .. } = &mut too_many_levels.questions[2] {
-        *levels = (0..11)
-            .map(|index| format!("level{index}").into())
+    if let Some(DecisionQuestion::Score { criteria, .. }) =
+        too_many_levels.questions.get_mut("frustration")
+    {
+        *criteria = (0..11)
+            .map(|index| Some(format!("level{index}").into()))
             .collect();
     }
-    for state in [Value::Null, json!(true), json!(42)] {
-        let mut invalid_state = options();
-        invalid_state.state = state;
-        assert!(matches!(
-            decide(model(&server).as_ref(), invalid_state).await,
-            Err(AiMuxError::InvalidArgument(_))
-        ));
-    }
+    let mut no_questions = options();
+    no_questions.questions.clear();
     for options in [
-        duplicate,
         empty_choice,
-        duplicate_label,
         too_many_choices,
         too_many_levels,
+        no_questions,
     ] {
         assert!(matches!(
             decide(model(&server).as_ref(), options).await,
             Err(AiMuxError::InvalidArgument(_))
         ));
     }
+    let mut provider_options = options();
+    provider_options.provider_options = Some(
+        [(
+            "jev".to_string(),
+            json!({"x": 1}).as_object().unwrap().clone(),
+        )]
+        .into(),
+    );
+    assert!(matches!(
+        decide(model(&server).as_ref(), provider_options).await,
+        Err(AiMuxError::UnsupportedFunctionality(_))
+    ));
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 
@@ -385,8 +418,11 @@ async fn official_provider_failures_use_standard_retry_rules_and_preserve_codes(
     }
 }
 
+/// `ai@7.0.128 src/decide/decision-provider.ts:7-11`: a provider without
+/// decision models offers none, and the registry reports `NoSuchModel`
+/// (`src/registry/provider-registry.ts:447-461`).
 #[test]
-fn non_decision_provider_returns_unsupported() {
+fn non_decision_provider_offers_no_decision_model() {
     let provider = aimux_providers::create_provider(
         "deepseek",
         aimux_providers::PresetSettings {
@@ -395,24 +431,30 @@ fn non_decision_provider_returns_unsupported() {
         },
     )
     .unwrap();
+    assert!(provider.decision_model("gpt-test").is_none());
+    let registry = aimux_core::create_provider_registry(
+        std::collections::BTreeMap::from([("deepseek".to_string(), provider)]),
+        Default::default(),
+    );
     assert!(matches!(
-        provider.decision_model("gpt-test"),
-        Err(AiMuxError::UnsupportedFunctionality(_))
+        registry.decision_model("deepseek:gpt-test"),
+        Err(AiMuxError::NoSuchModel { model_type, .. }) if model_type == "decisionModel"
     ));
 }
 
+/// `@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4.ts:6-16`.
 #[test]
-fn official_defaults_and_capabilities() {
+fn official_defaults_and_model_properties() {
     let config = JevConfig::new("test-key");
     assert_eq!(config.endpoint, "https://api.typesafe.ai/v1/systemone");
     let model = JevProvider::new(config)
         .decision_model("jev-latest")
+        .unwrap()
         .unwrap();
-    let capabilities = model.capabilities();
-    assert_eq!(capabilities.max_questions, None);
-    assert_eq!(capabilities.min_choices, Some(1));
-    assert_eq!(capabilities.max_choices, Some(255));
-    assert_eq!(capabilities.max_score_levels, Some(10));
+    assert_eq!(model.specification_version(), "v4");
+    assert_eq!(model.provider(), "jev");
+    assert_eq!(model.model_id(), "jev-latest");
+    assert_eq!(model.supported_question_types(), DecisionQuestionType::ALL);
 }
 
 #[tokio::test]
@@ -421,20 +463,13 @@ async fn official_requests_accept_single_and_255_choices_and_more_than_20_questi
         let server = MockServer::start().await;
         let id = "问题.with punctuation";
         let labels: Vec<String> = (0..choice_count).map(|i| format!("label{i}")).collect();
-        let mut request = DecisionCallOptions::new(
-            json!([{"ticket": "Help"}]),
-            vec![DecisionQuestion::Choice {
-                id: id.into(),
+        let mut questions = DecisionQuestions::new();
+        questions.insert(
+            id.into(),
+            DecisionQuestion::Choice {
                 instructions: "a".repeat(1001).into(),
-                options: labels
-                    .iter()
-                    .map(|label| DecisionOption {
-                        value: None,
-                        label: label.clone(),
-                        description: None,
-                    })
-                    .collect(),
-            }],
+                criteria: labels.iter().map(|label| (label.clone(), None)).collect(),
+            },
         );
         let probabilities: serde_json::Map<String, Value> = labels
             .iter()
@@ -448,13 +483,16 @@ async fn official_requests_accept_single_and_255_choices_and_more_than_20_questi
         )]);
         for i in 0..21 {
             let id = format!("q{i}");
-            request.questions.push(DecisionQuestion::Boolean {
-                criteria: None,
-                id: id.clone(),
-                instructions: "Urgent?".into(),
-            });
+            questions.insert(
+                id.clone(),
+                DecisionQuestion::Boolean {
+                    instructions: "Urgent?".into(),
+                    criteria: None,
+                },
+            );
             answers.insert(id, json!({"type":"noul", "noul":1.0}));
         }
+        let state: DecisionInput = serde_json::from_value(json!([{"ticket": "Help"}])).unwrap();
         mount(
             &server,
             200,
@@ -462,7 +500,12 @@ async fn official_requests_accept_single_and_255_choices_and_more_than_20_questi
             "usage":{"input_tokens":100,"output_tokens":10}}),
         )
         .await;
-        decide(model(&server).as_ref(), request).await.unwrap();
+        decide(
+            model(&server).as_ref(),
+            DecideOptions::new(state, questions),
+        )
+        .await
+        .unwrap();
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests.len(), 1);
         let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
@@ -481,34 +524,33 @@ async fn structured_official_fields_and_legends_survive_without_stringification(
         "../../contract-tests/fixtures/decision-native.json"
     ))
     .unwrap();
-    let request: DecisionCallOptions = serde_json::from_value(fixture["request"].clone()).unwrap();
+    let request: DecideOptions = serde_json::from_value(fixture["request"].clone()).unwrap();
     let server = MockServer::start().await;
     mount(&server, 200, fixture["response"].clone()).await;
     let model = model(&server);
     let result = decide(model.as_ref(), request).await.unwrap();
-    assert_eq!(result.rounding, model.capabilities().rounding);
-    assert_eq!(result.rounding.probability_decimals, Some(2));
+    assert_eq!(result.rounding.unwrap().probability_decimals, Some(2));
     let requests = server.received_requests().await.unwrap();
     let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    let questions = &fixture["request"]["questions"];
     assert_eq!(
         body["questions"]["urgent"]["instructions"],
-        fixture["request"]["questions"][0]["instructions"]
+        questions["urgent"]["instructions"]
     );
     assert_eq!(
         body["questions"]["urgent"]["criteria"],
-        fixture["request"]["questions"][0]["criteria"]
+        questions["urgent"]["criteria"]
     );
     assert_eq!(
-        body["questions"]["department"]["criteria"]["billing"],
-        fixture["request"]["questions"][1]["options"][0]["description"]
+        body["questions"]["department"]["criteria"],
+        questions["department"]["criteria"]
     );
     assert_eq!(
         body["questions"]["severity"]["criteria"],
-        fixture["request"]["questions"][2]["levels"]
+        questions["severity"]["criteria"]
     );
-    let result = serde_json::to_value(result).unwrap();
     assert_eq!(
-        result["answers"]["severity"]["levels"],
-        fixture["request"]["questions"][2]["levels"]
+        serde_json::to_value(&result.answers["severity"]).unwrap(),
+        json!({"type": "score", "score": 0.25, "probabilities": {"0": 0.75, "1": 0.25}})
     );
 }

@@ -321,9 +321,9 @@ func TestStreamPartParseRoundTrip(t *testing.T) {
 		json string
 		typ  string
 	}{
-		{"text-delta", `{"type":"text-delta","id":"tx1","delta":"Hello"}`, "text-delta"},
-		{"finish", `{"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`, "finish"},
-		{"stream-start", `{"type":"stream-start","warnings":[]}`, "stream-start"},
+		{"text-delta", `{"type":"text-delta","id":"tx1","text":"Hello"}`, "text-delta"},
+		{"finish", `{"type":"finish","finishReason":"stop","totalUsage":{"inputTokens":3,"inputTokenDetails":{},"outputTokenDetails":{}}}`, "finish"},
+		{"start-step", `{"type":"start-step","request":{},"warnings":[]}`, "start-step"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -342,11 +342,15 @@ func TestStreamPartParseRoundTrip(t *testing.T) {
 }
 
 func TestParseTextDeltaPayload(t *testing.T) {
-	sp, _ := ParseStreamPart(`{"type":"text-delta","id":"tx1","delta":"Hello"}`)
+	// The text stream's delta field is "text" (ai stream-text-result.ts:435-440).
+	sp, _ := ParseStreamPart(`{"type":"text-delta","id":"tx1","text":"Hello"}`)
 	var td TextDeltaPayload
 	json.Unmarshal(sp.Raw, &td)
-	if td.ID != "tx1" || td.Delta != "Hello" {
+	if td.ID != "tx1" || td.Text != "Hello" {
 		t.Errorf("got %+v", td)
+	}
+	if out, _ := json.Marshal(td); string(out) != `{"id":"tx1","text":"Hello"}` {
+		t.Errorf("marshal: %s", out)
 	}
 }
 
@@ -355,6 +359,27 @@ func TestStreamPartSource(t *testing.T) {
 	src, err := sp.Source()
 	if err != nil || src.URL == nil || src.URL.URL != "https://example.com" {
 		t.Fatalf("source: %+v, %v", src, err)
+	}
+}
+
+// The finish part's totalUsage is the AI SDK's LanguageModelUsage (ai
+// types/usage.ts:10-67): camelCase counts, an unknown count absent.
+func TestParseFinishPayload(t *testing.T) {
+	sp, _ := ParseStreamPart(`{"type":"finish","finishReason":"tool-calls","rawFinishReason":"tool_use","totalUsage":{"inputTokens":3,"inputTokenDetails":{"cacheReadTokens":1},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5}}`)
+	var finish FinishPayload
+	if err := json.Unmarshal(sp.Raw, &finish); err != nil {
+		t.Fatal(err)
+	}
+	if finish.FinishReason != "tool-calls" || finish.RawFinishReason == nil || *finish.RawFinishReason != "tool_use" {
+		t.Errorf("finish reason: %+v", finish)
+	}
+	u := finish.TotalUsage
+	if u.InputTokens == nil || *u.InputTokens != 3 || u.TotalTokens == nil || *u.TotalTokens != 5 ||
+		u.InputTokenDetails.CacheReadTokens == nil || *u.InputTokenDetails.CacheReadTokens != 1 {
+		t.Errorf("total usage: %+v", u)
+	}
+	if out, _ := json.Marshal(u); string(out) != `{"inputTokens":3,"inputTokenDetails":{"cacheReadTokens":1},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5}` {
+		t.Errorf("marshal: %s", out)
 	}
 }
 
@@ -391,4 +416,130 @@ func contains(s, sub string) bool {
 		}
 		return false
 	})()
+}
+
+// ── Provider namespace order (#229 NP2-1) ───────────────────────────────────
+
+// Provider options, provider metadata and provider references are JS objects
+// upstream (@ai-sdk/provider shared-v4-provider-options.ts:24,
+// shared-v4-provider-metadata.ts:24, shared-v4-provider-reference.ts:20), so
+// their keys keep insertion order. They go through Rust as ordered maps and
+// stay raw JSON in Go, never a sorting Go map.
+func TestNamespaceMapsKeepInsertionOrder(t *testing.T) {
+	const metadata = `{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}}`
+	invalid := `{"toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},"dynamic":true,` +
+		`"invalid":true,"providerMetadata":` + metadata + `,"error":{"name":"AI_InvalidToolInputError",` +
+		`"toolName":"weather","toolInput":"{\"town\":\"SG\"}","cause":"missing city"}}`
+	opts := `{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}`
+	out, err := applyToolCallRepairJSON(invalid, opts, `{"type":"unchanged"}`)
+	if err != nil {
+		t.Fatalf("apply repair: %v", err)
+	}
+	var call ToolCall
+	if err := json.Unmarshal([]byte(out), &call); err != nil {
+		t.Fatalf("decode %s: %v", out, err)
+	}
+	if got := string(call.ProviderMetadata); got != metadata {
+		t.Errorf("providerMetadata through Rust: got %s, want %s", got, metadata)
+	}
+
+	tool, err := json.Marshal(Tool{
+		Type:            "function",
+		Name:            "weather",
+		ProviderOptions: json.RawMessage(`{"zeta":{},"alpha":{}}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(tool), `"providerOptions":{"zeta":{},"alpha":{}}`) {
+		t.Errorf("tool providerOptions reordered: %s", tool)
+	}
+
+	const reference = `{"openai":"file-abc123","anthropic":"file-xyz789","google":"files/1"}`
+	var upload UploadFileResult
+	if err := json.Unmarshal([]byte(`{"providerReference":`+reference+`}`), &upload); err != nil {
+		t.Fatal(err)
+	}
+	if id, ok := upload.ProviderReference.Get("anthropic"); !ok || id != "file-xyz789" {
+		t.Errorf("Get(anthropic) = %q, %v", id, ok)
+	}
+	if _, ok := upload.ProviderReference.Get("mistral"); ok {
+		t.Error("Get(mistral) found an id")
+	}
+	encoded, _ := json.Marshal(upload)
+	if !strings.HasPrefix(string(encoded), `{"providerReference":`+reference) {
+		t.Errorf("providerReference reordered: %s", encoded)
+	}
+	empty, _ := json.Marshal(UploadFileResult{})
+	if !strings.HasPrefix(string(empty), `{"providerReference":{}`) {
+		t.Errorf("empty providerReference: %s", empty)
+	}
+}
+
+// ── Standalone type tags (#229 NP2-7) ───────────────────────────────────────
+
+// A result's toolCalls and sources are the AI SDK's TypedToolCall and Source,
+// tagged {"type":"tool-call",...} (ai generate-text/tool-call.ts:8-14) and
+// {"type":"source","sourceType":...} (provider language-model-v4-source.ts:8,
+// :36); generate-text-result.ts:73, :78. A repair function's call is a tagged
+// LanguageModelV4ToolCall (language-model-v4-tool-call.ts:7).
+func TestStandaloneToolCallsAndSourcesAreTagged(t *testing.T) {
+	const wire = `{"text":"","toolCalls":[{"type":"tool-call","toolCallId":"call-1","toolName":"weather","input":{"city":"SG"}}],` +
+		`"sources":[{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"},` +
+		`{"type":"source","sourceType":"document","id":"s2","mediaType":"application/pdf","title":"Doc"}]}`
+	var result GenerateTextResult
+	if err := json.Unmarshal([]byte(wire), &result); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"toolCalls":[{"type":"tool-call","toolCallId":"call-1","toolName":"weather","input":{"city":"SG"}}]`,
+		`"sources":[{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"},` +
+			`{"type":"source","sourceType":"document","id":"s2","mediaType":"application/pdf","title":"Doc"}]`,
+	} {
+		if !strings.Contains(string(encoded), want) {
+			t.Errorf("want %s in %s", want, encoded)
+		}
+	}
+
+	raw, _ := json.Marshal(RawToolCall{ToolCallID: "c", ToolName: "t", Input: "{}"})
+	if string(raw) != `{"type":"tool-call","toolCallId":"c","toolName":"t","input":"{}"}` {
+		t.Errorf("raw tool call: %s", raw)
+	}
+
+	// JSON written before the tag still reads; another tag is an error.
+	var untagged ToolCall
+	if err := json.Unmarshal([]byte(`{"toolCallId":"c","toolName":"t","input":{}}`), &untagged); err != nil {
+		t.Errorf("untagged call: %v", err)
+	}
+	var mistagged ToolCall
+	if err := json.Unmarshal([]byte(`{"type":"source","toolCallId":"c","toolName":"t"}`), &mistagged); err == nil {
+		t.Error("a source-tagged tool call was accepted")
+	}
+	var source Source
+	if err := json.Unmarshal([]byte(`{"type":"tool-call","sourceType":"url","id":"s","url":"u"}`), &source); err == nil {
+		t.Error("a tool-call-tagged source was accepted")
+	}
+
+	// The native repair export writes the standalone call tagged.
+	invalid := `{"toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},"dynamic":true,"invalid":true,` +
+		`"error":{"name":"AI_InvalidToolInputError","toolName":"weather","toolInput":"{\"town\":\"SG\"}","cause":"missing city"}}`
+	opts := `{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}`
+	out, err := applyToolCallRepairJSON(invalid, opts, `{"type":"unchanged"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, `{"type":"tool-call","toolCallId":"call-1"`) {
+		t.Errorf("repaired call: %s", out)
+	}
+	context, err := toolCallRepairContextJSON(invalid, `{"prompt":"weather?"}`, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(context, `"toolCall":{"type":"tool-call","toolCallId":"call-1"`) {
+		t.Errorf("repair context: %s", context)
+	}
 }

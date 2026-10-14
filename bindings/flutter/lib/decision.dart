@@ -9,8 +9,8 @@ typedef _DecideC = Pointer<Void> Function(
     Uint64, Pointer<Utf8>, Uint64, Pointer<Pointer<Utf8>>);
 typedef _DecideD = Pointer<Void> Function(
     int, Pointer<Utf8>, int, Pointer<Pointer<Utf8>>);
-typedef _CapabilitiesC = Pointer<Void> Function(Uint64, Pointer<Pointer<Utf8>>);
-typedef _CapabilitiesD = Pointer<Void> Function(int, Pointer<Pointer<Utf8>>);
+typedef _DescribeC = Pointer<Void> Function(Uint64, Pointer<Pointer<Utf8>>);
+typedef _DescribeD = Pointer<Void> Function(int, Pointer<Pointer<Utf8>>);
 
 typedef _ProviderDecisionC = Pointer<Void> Function(Uint64, Pointer<Utf8>, Pointer<Uint64>);
 typedef _ProviderDecisionD = Pointer<Void> Function(int, Pointer<Utf8>, Pointer<Uint64>);
@@ -21,10 +21,11 @@ final _providerDecision = _lib.lookupFunction<_ProviderDecisionC, _ProviderDecis
 final _newDecision = _lib.lookupFunction<_New, _New>(
     'aimux_jev_decision_new_with_probability_source');
 final _decide = _lib.lookupFunction<_DecideC, _DecideD>('aimux_decide_with_abort');
-final _capabilities = _lib.lookupFunction<_CapabilitiesC, _CapabilitiesD>(
+final _describe = _lib.lookupFunction<_DescribeC, _DescribeD>(
     'aimux_decision_capabilities');
 
-/// Native decisions using the shared core JSON contract.
+/// A DecisionModelV4 model using the shared core JSON contract: DecideOptions
+/// in, DecideResult out.
 class DecisionModel {
   int _handle;
   DecisionModel._(this._handle);
@@ -68,11 +69,12 @@ class DecisionModel {
       (jsonDecode(decideJson(encodeJson(options, 'options'),
           abortHandle: abortHandle)) as Map).cast<String, dynamic>();
 
-  /// Query capabilities and rounding precision without HTTP.
-  Map<String, dynamic> capabilities() {
+  /// The model's DecisionModelV4 properties (`specificationVersion`,
+  /// `provider`, `modelId`, `supportedQuestionTypes`), without HTTP.
+  Map<String, dynamic> describe() {
     _checkOpen();
     return (jsonDecode(takeString(
-        (out) => _capabilities(_handle, out), 'decision capabilities')) as Map)
+        (out) => _describe(_handle, out), 'decision model description')) as Map)
         .cast<String, dynamic>();
   }
 

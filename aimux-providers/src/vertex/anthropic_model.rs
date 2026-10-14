@@ -70,7 +70,7 @@ pub(super) fn model(
     // every request uses the endpoint resolved for it.
     let config = AnthropicModelConfig {
         provider: PROVIDER.to_string(),
-        headers: ProviderHeaders::bearer(Credential::None, Vec::new(), None),
+        headers: ProviderHeaders::bearer(Credential::None, Vec::new(), None).into(),
         fetch,
         supported_urls: SupportedUrls::default(),
         transform_request_body,

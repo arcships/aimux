@@ -54,6 +54,7 @@ use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
+use crate::shared::aisdk_pins::Package;
 use crate::shared::{AuthScheme, Credential, ProviderHeaders};
 use config::{BaseUrl, ChatSettings, CompatModelConfig};
 
@@ -83,6 +84,10 @@ pub struct OpenAICompatibleProviderSettings {
     /// Whether the chat endpoint accepts `json_schema` response formats; when
     /// not, a schema degrades to `json_object` with a warning.
     pub supports_structured_outputs: Option<bool>,
+    /// Whether chat tool results may carry multi-part content: a `content`
+    /// tool output is then sent as an array of content parts instead of a
+    /// JSON string. Default `false`.
+    pub supports_multi_part_tool_content: Option<bool>,
     /// Rewrites each chat JSON request body once, after it is serialized and
     /// before it is sent.
     pub transform_request_body: Option<TransformRequestBody>,
@@ -113,6 +118,10 @@ impl std::fmt::Debug for OpenAICompatibleProviderSettings {
                 &self.supports_structured_outputs,
             )
             .field(
+                "supports_multi_part_tool_content",
+                &self.supports_multi_part_tool_content,
+            )
+            .field(
                 "transform_request_body",
                 &self.transform_request_body.is_some(),
             )
@@ -136,29 +145,61 @@ pub fn create_openai_compatible(
     let base_url = validate_base_url(&settings.base_url)?;
     let credential = settings
         .api_key
+        .clone()
         .filter(|key| !key.is_empty())
         .map_or(Credential::None, |key| {
             Credential::Explicit(Resolvable::Value(key))
         });
+    let headers = ProviderHeaders::bearer(credential, Vec::new(), settings.headers.clone());
+    build(
+        settings,
+        BaseUrl::Fixed(base_url),
+        headers,
+        None,
+        crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
+    )
+}
+
+/// [`create_openai_compatible`] for a package that builds on it with its own
+/// base URL source and provider headers (the AI SDK's sub-providers that
+/// call `createOpenAICompatible`). `settings.base_url`, `api_key` and
+/// `headers` are not read; the user-agent part of `package` (the
+/// openai-compatible version the calling package depends on) is added to
+/// `headers`. `fetch_headers` go over the per-call headers, as headers a
+/// package adds in its own fetch wrapper do.
+pub(crate) fn build(
+    settings: OpenAICompatibleProviderSettings,
+    base_url: BaseUrl,
+    headers: ProviderHeaders,
+    fetch_headers: Option<crate::vertex::PartnerHeaders>,
+    package: Package,
+) -> Result<OpenAICompatibleProvider, AiMuxError> {
     let defaults = ChatSettings::default();
-    OpenAICompatibleProvider::assemble(Assembly {
+    let mut provider = OpenAICompatibleProvider::assemble(Assembly {
         name: settings.name,
-        base_url: BaseUrl::Fixed(base_url),
-        credential,
+        base_url,
+        credential: Credential::None,
         fixed_headers: Vec::new(),
-        headers: settings.headers,
+        headers: None,
         query_params: settings.query_params,
         fetch: settings.fetch,
         transform_request_body: settings.transform_request_body,
+        package,
         chat: ChatSettings {
             include_usage: settings.include_usage.unwrap_or(false),
             supports_structured_outputs: settings.supports_structured_outputs.unwrap_or(false),
+            supports_multi_part_tool_content: settings
+                .supports_multi_part_tool_content
+                .unwrap_or(false),
             supported_urls: settings.supported_urls,
             convert_usage: settings.convert_usage,
             metadata_extractor: settings.metadata_extractor,
             ..defaults
         },
-    })
+    })?;
+    provider.headers = headers.with_user_agent(package.name, package.version);
+    provider.fetch_headers = fetch_headers;
+    Ok(provider)
 }
 
 /// Everything a compatible provider is made of. The public factory fills it
@@ -174,6 +215,9 @@ pub(crate) struct Assembly {
     pub fetch: Option<FetchFunction>,
     pub transform_request_body: Option<TransformRequestBody>,
     pub chat: ChatSettings,
+    /// The package the user-agent names: its `ai-sdk-{name}/{version}` part
+    /// in the provider headers, and its provider-utils in the transport.
+    pub package: Package,
 }
 
 /// An OpenAI-compatible provider (the AI SDK's `OpenAICompatibleProvider`).
@@ -183,6 +227,7 @@ pub struct OpenAICompatibleProvider {
     base_url: BaseUrl,
     query_params: Option<Arc<Vec<(String, String)>>>,
     headers: ProviderHeaders,
+    fetch_headers: Option<crate::vertex::PartnerHeaders>,
     fetch: Option<FetchFunction>,
     transform_request_body: Option<TransformRequestBody>,
     chat: ChatSettings,
@@ -204,9 +249,13 @@ impl OpenAICompatibleProvider {
                 scheme: AuthScheme::Bearer,
                 fixed: assembly.fixed_headers,
                 user: assembly.headers,
-                user_agent: Some(("openai-compatible", "3.0.59")),
+                user_agent: Some((assembly.package.name, assembly.package.version)),
             },
-            fetch: assembly.fetch,
+            fetch_headers: None,
+            fetch: Some(crate::shared::package_fetch(
+                assembly.fetch,
+                assembly.package,
+            )),
             transform_request_body: assembly.transform_request_body,
             chat: assembly.chat,
         })
@@ -218,6 +267,7 @@ impl OpenAICompatibleProvider {
             base_url: self.base_url.clone(),
             query_params: self.query_params.clone(),
             headers: self.headers.clone(),
+            fetch_headers: self.fetch_headers.clone(),
             fetch: self.fetch.clone(),
             transform_request_body: if method == "chat" {
                 self.transform_request_body.clone()
@@ -284,18 +334,22 @@ impl Provider for OpenAICompatibleProvider {
     }
 
     /// Native decisions of the official runtimes (Ollama, llama.cpp, LocalAI,
-    /// Laya, vLLM, SGLang, Cloudflare); any other preset has none.
+    /// Laya, vLLM, SGLang, Cloudflare); any other preset offers none.
     fn decision_model(
         &self,
         model_id: &str,
-    ) -> Result<Box<dyn aimux_core::DecisionModel>, AiMuxError> {
-        Ok(Box::new(
+    ) -> Option<Result<Arc<dyn aimux_core::DecisionModel>, AiMuxError>> {
+        if !crate::runtime_decision::supported(&self.name) {
+            return None;
+        }
+        Some(
             crate::runtime_decision::RuntimeDecisionModel::new(
                 &self.name,
                 model_id,
                 self.model_config("decision"),
-            )?,
-        ))
+            )
+            .map(|model| Arc::new(model) as Arc<dyn aimux_core::DecisionModel>),
+        )
     }
 }
 

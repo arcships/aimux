@@ -49,7 +49,7 @@ fn model(base_url: &str, headers: Option<Headers>) -> XaiTranscriptionModel {
 }
 
 fn xai_options(value: Value) -> SharedProviderOptions {
-    HashMap::from([("xai".to_string(), value.as_object().unwrap().clone())])
+    SharedProviderOptions::from([("xai".to_string(), value.as_object().unwrap().clone())])
 }
 
 // ── doGenerate helpers ──────────────────────────────────────────────────────
@@ -267,6 +267,7 @@ async fn run_with(
     let (base_url, cap) = start(events).await;
     let mut result = model(&base_url, headers)
         .do_stream(options)
+        .expect("the model has do_stream")
         .await
         .expect("do_stream");
     let response = result.response.take();
@@ -534,7 +535,11 @@ async fn should_require_channels_when_streaming_multichannel_audio() {
         "audio/pcm",
         Some(16000),
     );
-    let error = model(&base_url, None).do_stream(options).await.unwrap_err();
+    let error = model(&base_url, None)
+        .do_stream(options)
+        .expect("the model has do_stream")
+        .await
+        .unwrap_err();
 
     assert!(
         matches!(&error, AiMuxError::InvalidArgument(message) if message.contains(
@@ -738,4 +743,20 @@ async fn should_warn_on_unrecognized_input_audio_format_types() {
         },
         other => panic!("expected StreamStart, got {other:?}"),
     }
+}
+
+/// Only `transcribe` downloads an audio URL (layer 5's `AudioInput::Url`);
+/// the model itself refuses one before any request, as every transcription
+/// model does.
+#[tokio::test]
+async fn url_audio_is_refused_before_any_request() {
+    let server = MockServer::start().await;
+    let mut options = call(None, "audio/wav");
+    options.audio = AudioInput::Url("https://cdn.test/a.wav".into());
+    let error = model(&server.uri(), None)
+        .do_generate(&options)
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), AudioInput::url_error().to_string());
+    assert!(server.received_requests().await.unwrap().is_empty());
 }

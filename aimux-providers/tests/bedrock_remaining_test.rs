@@ -573,12 +573,12 @@ fn convert_mistral_normalize_tool_call_id() {
 // ── supportedUrls ────────────────────────────────────────────────────────────
 
 /// TS: "should support S3 URLs for image and video parts".
-#[test]
-fn model_supported_urls_s3() {
+#[tokio::test]
+async fn model_supported_urls_s3() {
     let model = create_amazon_bedrock(AmazonBedrockProviderSettings::default())
         .unwrap()
         .chat("amazon.nova-pro-v1:0");
-    let urls = model.supported_urls();
+    let urls = model.supported_urls().await;
     assert_eq!(urls.0.len(), 2);
     for kind in ["image/*", "video/*"] {
         assert_eq!(urls.0[kind].len(), 1);

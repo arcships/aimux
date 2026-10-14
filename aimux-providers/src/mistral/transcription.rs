@@ -104,6 +104,7 @@ impl TranscriptionModel for MistralTranscriptionModel {
         }
 
         let audio = match &options.audio {
+            AudioInput::Url(_) => return Err(AudioInput::url_error()),
             AudioInput::Binary(bytes) => bytes.clone(),
             AudioInput::Base64(data) => base64::engine::general_purpose::STANDARD
                 .decode(data)
@@ -220,7 +221,7 @@ impl TranscriptionModel for MistralTranscriptionModel {
             warnings: Vec::new(),
             request: None,
             response: TranscriptionResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(response.model),
                 headers: Some(resp.response_headers),
                 body: resp.raw_value,

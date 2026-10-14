@@ -36,7 +36,8 @@ pub struct EmbeddingCallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
-    /// Per-call retry override. `None` uses the model default.
+    /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
+    /// retrying. `None` uses 2, the AI SDK default.
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
@@ -120,7 +121,11 @@ pub struct EmbeddingResponse {
     pub headers: Option<SharedHeaders>,
     /// The response body (opaque JSON).
     #[ts(optional)]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::wire::present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub body: Option<serde_json::Value>,
 }
 
@@ -139,6 +144,11 @@ pub struct EmbeddingResponse {
 ///   `true`; otherwise they should return an error.
 #[async_trait]
 pub trait EmbeddingModel: Send + Sync {
+    /// Specification version (always `"v4"`).
+    fn specification_version(&self) -> &'static str {
+        "v4"
+    }
+
     /// Provider name, e.g. `"openai"`.
     fn provider(&self) -> &str;
 

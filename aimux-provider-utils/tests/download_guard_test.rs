@@ -35,6 +35,7 @@ fn request(
         trusted_origin: trusted_origin.map(str::to_owned),
         credentialed_origin: credentialed_origin.map(str::to_owned),
         fetch: None,
+        omit_provider_utils_user_agent: false,
     }
 }
 

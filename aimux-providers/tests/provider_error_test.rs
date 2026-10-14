@@ -536,4 +536,89 @@ mod anthropic_stream_errors {
             "expected retryable 529 ApiCall error, got {error:?}"
         );
     }
+
+    /// TS: "should forward error chunks" + "should forward overloaded error
+    /// during streaming".
+    ///
+    /// A text delta comes first, then an error event mid-stream. The error is
+    /// forwarded as a `StreamPart::Error` (anthropic-language-model.ts:3090-3096).
+    /// The stream then ends without `message_stop`, so no finish part follows:
+    /// upstream emits finish only on `message_stop` (:3031).
+    #[tokio::test]
+    async fn mid_stream_error_is_forwarded() {
+        let server = MockServer::start().await;
+        let body = concat!(
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_01\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-haiku-20240307\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":17,\"output_tokens\":1}}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n",
+            "event: error\n",
+            "data: {\"type\":\"error\",\"error\":{\"details\":null,\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n",
+        );
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
+
+        let stream = model(&server).do_stream(&options()).await.unwrap();
+        let parts = collect_stream(stream).await;
+
+        let text = parts
+            .iter()
+            .position(|p| matches!(p, StreamPart::TextDelta { delta, .. } if delta == "Hello"))
+            .unwrap_or_else(|| panic!("expected a 'Hello' text delta, got {parts:?}"));
+        let error = parts
+            .iter()
+            .position(|p| {
+                matches!(p,
+                    StreamPart::Error { error: AiMuxError::ApiCall(m) } if m.message == "Overloaded")
+            })
+            .unwrap_or_else(|| panic!("expected an error part carrying 'Overloaded', got {parts:?}"));
+        assert!(
+            text < error,
+            "the text delta comes before the error: {parts:?}"
+        );
+        assert!(
+            !parts.iter().any(|p| matches!(p, StreamPart::Finish { .. })),
+            "no message_stop, so no finish part: {parts:?}"
+        );
+    }
+
+    /// TS: "should forward error chunks": a generic (non-overloaded) error
+    /// event mid-stream is forwarded too.
+    #[tokio::test]
+    async fn mid_stream_generic_error_is_forwarded() {
+        let server = MockServer::start().await;
+        let body = concat!(
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_01\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-haiku-20240307\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":17,\"output_tokens\":1}}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"ping\"}\n\n",
+            "data: {\"type\":\"error\",\"error\":{\"type\":\"error\",\"message\":\"test error\"}}\n\n",
+        );
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
+
+        let stream = model(&server).do_stream(&options()).await.unwrap();
+        let parts = collect_stream(stream).await;
+        assert!(
+            parts.iter().any(|p| matches!(p,
+                StreamPart::Error { error: AiMuxError::ApiCall(m) } if m.message == "test error")),
+            "expected an error part carrying 'test error', got {parts:?}"
+        );
+        assert!(
+            !parts.iter().any(|p| matches!(p, StreamPart::Finish { .. })),
+            "no message_stop, so no finish part: {parts:?}"
+        );
+    }
 }

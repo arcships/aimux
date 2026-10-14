@@ -6,13 +6,11 @@
 //! response handlers selected by the provider.
 
 use std::pin::Pin;
-use std::sync::OnceLock;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use futures::{Stream, StreamExt, stream::BoxStream};
-use serde::{Deserialize, Serialize};
 
 use aimux_core::recording::{
     HttpExchange, HttpRecord, RecordingContext, ResponseRecord, TimingRecord,
@@ -25,35 +23,6 @@ use crate::fetch::{
 };
 use crate::handle_fetch_error::fetch_error_to_ai_mux_error;
 use crate::logging::{body_logging_enabled, redact_body};
-
-/// Process-wide proxy configuration, fixed before the first HTTP client is built.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ProxyConfig {
-    pub http_url: Option<String>,
-    pub https_url: Option<String>,
-    pub all_url: Option<String>,
-    pub no_proxy: Option<String>,
-}
-
-static GLOBAL_PROXY: OnceLock<ProxyConfig> = OnceLock::new();
-
-/// Set proxy configuration before the first HTTP operation.
-///
-/// The HTTP client snapshots this config when it is first built; the
-/// WebSocket connect path (RFC-0034 §2) re-reads it live on every connect,
-/// so a late `init_proxy` can affect WS while HTTP keeps its first-built
-/// client. Set it before any traffic either way.
-pub fn init_proxy(config: ProxyConfig) -> bool {
-    GLOBAL_PROXY.set(config).is_ok()
-}
-
-/// Return the process-wide proxy configuration (empty default when
-/// `init_proxy` was never called). Read by both the HTTP client builder and
-/// the WebSocket connect path (RFC-0034 §2), so `ws://`/`wss://` traffic
-/// honors the same proxy/no_proxy settings as HTTP.
-pub(crate) fn global_proxy() -> ProxyConfig {
-    GLOBAL_PROXY.get().cloned().unwrap_or_default()
-}
 
 /// Redirect ceiling for the manual validated-download loop.
 const MAX_REDIRECTS: usize = 10;
@@ -123,6 +92,12 @@ pub struct HttpRequest {
     /// provider-supplied URLs always use the SSRF guard's pinned transport,
     /// never a provider-injected one.
     pub fetch: Option<FetchFunction>,
+    /// Send the `user-agent` as given (or none), without the
+    /// `ai-sdk-provider-utils/<v>` part that the AI SDK's `postToApi` and
+    /// `getFromApi` append (post-to-api.ts:100-104, get-from-api.ts:77-81).
+    /// For an exchange the AI SDK makes with a plain `fetch` call or with
+    /// `downloadBlob` (google-files.ts:84-126, download-blob.ts:111-114).
+    pub omit_provider_utils_user_agent: bool,
 }
 
 /// The per-operation context every model's call options carry into an
@@ -145,7 +120,9 @@ impl ExchangeContext for aimux_core::options::CallOptions {
         self.abort_signal.clone()
     }
     fn call_id(&self) -> Option<String> {
-        self.call_id.clone()
+        self.recording_context
+            .as_ref()
+            .map(|ctx| ctx.call_id.clone())
     }
     fn recording_context(&self) -> Option<RecordingContext> {
         self.recording_context.clone()
@@ -232,6 +209,9 @@ pub(crate) struct PreparedRequest {
     /// [`RequestCredentials::Omit`] once the target is off the credentialed
     /// origin; never switched back.
     credentials: RequestCredentials,
+    /// Whether `ai-sdk-provider-utils/<v>` is appended to the `user-agent`
+    /// (not [`HttpRequest::omit_provider_utils_user_agent`]).
+    provider_utils_user_agent: bool,
 }
 
 impl HttpRequest {
@@ -242,9 +222,9 @@ impl HttpRequest {
         let mut headers = self.headers;
         let mut credentials = RequestCredentials::Include;
         if let Some(origin) = self.credentialed_origin.as_deref()
-            && !crate::download_guard::same_origin(&self.url, origin)
+            && !aimux_core::download_guard::same_origin(&self.url, origin)
         {
-            crate::download_guard::retain_user_agent(&mut headers);
+            aimux_core::download_guard::retain_user_agent(&mut headers);
             credentials = RequestCredentials::Omit;
         }
         PreparedRequest {
@@ -263,6 +243,7 @@ impl HttpRequest {
             }),
             fetch: self.fetch,
             credentials,
+            provider_utils_user_agent: !self.omit_provider_utils_user_agent,
         }
     }
 }
@@ -435,12 +416,16 @@ fn redirect_error(
 /// transport never follows one itself). The whole chain is one exchange to
 /// the caller, matching how an auto-following client behaves.
 ///
-/// - An ordinary API call follows a redirect only while it stays on the origin
-///   of the hop that issued it. A cross-origin `3xx` is returned as it is, so
-///   neither the request headers nor anything a transport decorator adds (a
+/// - An ordinary API call follows every redirect, as the AI SDK's `postToApi`
+///   does under fetch's default `redirect: "follow"` (provider-utils@5.0.53
+///   `post-to-api.ts:98-107`). Once a hop leaves the request's origin, every
+///   header except `User-Agent` is dropped and the transport is told
+///   `RequestCredentials::Omit`, as `fetchWithValidatedRedirects` does
+///   (`fetch-with-validated-redirects.ts:195-206`), so neither a provider key
+///   in a custom header nor anything a transport decorator adds (a
 ///   signature, a bearer token) reaches another origin. Every followed hop
-///   goes through the request's transport again, so a signing transport signs
-///   the URL it actually sends.
+///   goes through the request's transport again, so a signing transport
+///   signs the URL it actually sends.
 /// - A validated download (`validation` set) re-validates every hop and pins
 ///   its connection to the DNS answers that passed the guard (see
 ///   `download_guard`); it follows cross-origin hops with the caller headers
@@ -458,9 +443,9 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
         Some(_) => {
             // First-request credential gating already ran in `prepare`; this
             // strips hop-by-hop, forwarding, and metadata-service headers.
-            crate::download_guard::sanitize_download_headers(&mut current.headers);
+            aimux_core::download_guard::sanitize_download_headers(&mut current.headers);
             Some(
-                crate::download_guard::validate_download_target(&current.url, trusted_origin)
+                aimux_core::download_guard::validate_download_target(&current.url, trusted_origin)
                     .await?,
             )
         }
@@ -472,7 +457,15 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
     for redirect_count in 0..=MAX_REDIRECTS {
         let response = match &pinned {
             // Empty pins mean the hop is on the trusted origin.
-            Some(pins) => send_one_request(&PinnedFetch::new(pins.clone()), &current).await?,
+            // D26: the download hop is never provider-injected; it routes
+            // through the default transport's proxy settings.
+            Some(pins) => {
+                let hop = PinnedFetch::new(
+                    pins.clone(),
+                    crate::fetch::default_transport().proxy().clone(),
+                );
+                send_one_request(&hop, &current).await?
+            }
             None => send_one_request(api_fetch.as_ref(), &current).await?,
         };
         let status = response.status;
@@ -510,9 +503,10 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
         drop(response);
         if pinned.is_some() {
             let hop_trusted =
-                crate::download_guard::hop_trusted_origin(trusted_origin, &current.url);
-            pinned =
-                Some(crate::download_guard::validate_download_target(&next, hop_trusted).await?);
+                aimux_core::download_guard::hop_trusted_origin(trusted_origin, &current.url);
+            pinned = Some(
+                aimux_core::download_guard::validate_download_target(&next, hop_trusted).await?,
+            );
         }
         // Credentials are scoped to the credential anchor, not the previous
         // hop: once a redirect leaves it, headers cannot come back. An API
@@ -521,8 +515,8 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
         // only `User-Agent`, as `fetchWithValidatedRedirects` does: the fetch
         // spec strips only `Authorization`, and provider keys also travel in
         // custom headers. Signing decorators see `RequestCredentials::Omit`.
-        if !crate::download_guard::same_origin(&next, credential_anchor) {
-            crate::download_guard::retain_user_agent(&mut current.headers);
+        if !aimux_core::download_guard::same_origin(&next, credential_anchor) {
+            aimux_core::download_guard::retain_user_agent(&mut current.headers);
             current.credentials = RequestCredentials::Omit;
         }
         if status == http::StatusCode::SEE_OTHER
@@ -555,23 +549,28 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
             .map_err(|_| AiMuxError::InvalidArgument(format!("invalid header value for {name}")))?;
         headers.insert(header_name, header_value);
     }
-    let suffix = "ai-sdk-provider-utils/5.0.51";
-    let current = request
-        .headers
-        .iter()
-        .rev()
-        .find_map(|(name, value)| {
-            name.eq_ignore_ascii_case("user-agent")
-                .then_some(value.as_str())
-        })
-        .unwrap_or_default();
-    let user_agent = crate::headers::user_agent_value(current, suffix);
-    headers.insert(
-        http::header::USER_AGENT,
-        http::HeaderValue::try_from(user_agent).map_err(|_| {
-            AiMuxError::InvalidArgument("invalid header value for user-agent".to_string())
-        })?,
-    );
+    if request.provider_utils_user_agent {
+        let suffix = format!(
+            "ai-sdk-provider-utils/{}",
+            crate::aisdk_pins::PROVIDER_UTILS
+        );
+        let current = request
+            .headers
+            .iter()
+            .rev()
+            .find_map(|(name, value)| {
+                name.eq_ignore_ascii_case("user-agent")
+                    .then_some(value.as_str())
+            })
+            .unwrap_or_default();
+        let user_agent = crate::headers::user_agent_value(current, &suffix);
+        headers.insert(
+            http::header::USER_AGENT,
+            http::HeaderValue::try_from(user_agent).map_err(|_| {
+                AiMuxError::InvalidArgument("invalid header value for user-agent".to_string())
+            })?,
+        );
+    }
     let body = match &request.body {
         HttpBody::Json(value) => {
             if !headers.contains_key(http::header::CONTENT_TYPE) {
@@ -937,12 +936,53 @@ fn request_host(url: &str) -> String {
         .unwrap_or_else(|| "unknown".into())
 }
 
+/// The request URL as logs, errors and recordings show it: without the query
+/// (API keys travel there) and without the `user:password@` userinfo.
 pub(crate) fn sanitized_request_url(url: &str) -> String {
     match url::Url::parse(url) {
         Ok(mut parsed) => {
             parsed.set_query(None);
+            // Both fail only for URLs that cannot carry userinfo at all.
+            let _ = parsed.set_username("");
+            let _ = parsed.set_password(None);
             parsed.to_string()
         }
-        Err(_) => url.split('?').next().unwrap_or(url).to_owned(),
+        Err(_) => {
+            let without_query = url.split('?').next().unwrap_or(url);
+            // Unparseable: drop anything up to the last '@' of the authority.
+            if let Some((scheme, rest)) = without_query.split_once("://") {
+                let authority = &rest[..rest.find('/').unwrap_or(rest.len())];
+                if let Some(at) = authority.rfind('@') {
+                    return format!("{scheme}://{}", &rest[at + 1..]);
+                }
+            }
+            without_query.to_owned()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitized_request_url;
+
+    #[test]
+    fn sanitized_request_url_drops_userinfo_and_query() {
+        assert_eq!(
+            sanitized_request_url("https://user:secret@api.example.com/v1/chat?key=sk-1"),
+            "https://api.example.com/v1/chat"
+        );
+        assert_eq!(
+            sanitized_request_url("https://token@api.example.com/v1"),
+            "https://api.example.com/v1"
+        );
+        // Unparseable (space in the host): userinfo is still dropped.
+        assert_eq!(
+            sanitized_request_url("https://user:secret@bad host/v1?key=sk-1"),
+            "https://bad host/v1"
+        );
+        assert_eq!(
+            sanitized_request_url("https://api.example.com/v1/chat?key=sk-1"),
+            "https://api.example.com/v1/chat"
+        );
     }
 }

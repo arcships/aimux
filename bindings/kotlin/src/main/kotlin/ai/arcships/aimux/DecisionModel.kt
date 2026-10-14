@@ -3,7 +3,7 @@ package ai.arcships.aimux
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicLong
 
-/** Native decisions using the core JSON request/result contract. */
+/** A DecisionModelV4 model using the core JSON contract: DecideOptions in, DecideResult out. */
 class DecisionModel internal constructor(handle: Long) : Closeable {
     private val handle = AtomicLong(handle)
 
@@ -27,8 +27,11 @@ class DecisionModel internal constructor(handle: Long) : Closeable {
         }
     }
 
-    /** Query capabilities and rounding precision without HTTP. */
-    fun capabilities(): String = stringResult("decision capabilities") { out ->
+    /**
+     * The model's DecisionModelV4 properties as JSON
+     * ({specificationVersion, provider, modelId, supportedQuestionTypes}), without HTTP.
+     */
+    fun describe(): String = stringResult("decision model description") { out ->
         FFI.lib.aimux_decision_capabilities(requireHandle(), out)
     }
 

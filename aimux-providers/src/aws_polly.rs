@@ -35,8 +35,8 @@ use aimux_core::speech_model::{
 };
 use aimux_provider_utils::HttpBody;
 use aimux_provider_utils::{
-    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, SigV4Fetch, default_fetch,
-    load_optional_setting, load_setting, validate_base_url,
+    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, SigV4Fetch, SigV4Signing,
+    default_fetch, load_optional_setting, load_setting, validate_base_url,
 };
 
 use crate::shared::{Endpoint, EndpointConfig, EndpointSource};
@@ -290,6 +290,9 @@ pub fn create_aws_polly(
             async move { auth.credentials().await }
         }),
         SERVICE_NAME,
+        // No AI SDK counterpart: botocore-style, locked by
+        // tests/sigv4_signed_headers_test.rs.
+        SigV4Signing::AllHeaders,
     ));
     Ok(AwsPollyProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
@@ -385,11 +388,12 @@ impl SpeechModel for AwsPollySpeechModel {
 
         let audio_bytes = resp.value.to_vec();
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(SpeechResult {
             audio: AudioData::Binary(audio_bytes),
             warnings,
+            usage: None,
             request: Some(SpeechRequest {
                 body: Some(Value::Object(body)),
             }),

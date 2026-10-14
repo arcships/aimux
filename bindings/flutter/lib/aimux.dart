@@ -265,14 +265,18 @@ final class _AimuxFFI {
           'aimux_stream_text_as_openai');
   late final dropHandle =
       _lib.lookupFunction<_DropHandleC, _DropHandleDart>('aimux_drop_handle');
-  // NativeFinalizer callback pointer: aimux_drop_handle reinterpreted as
-  // Void Function(Pointer<Void>). The handle value is attached as the token
-  // (its address == the uint64 handle); on 64-bit the ABI is identical, so
-  // the finalizer releases the handle when a Model/ProviderHandle is GC'd
-  // without close(). NativeFinalizerFunction is already a NativeFunction<…>,
-  // so it is looked up directly (no extra NativeFunction wrapper).
+  // NativeFinalizer callback pointer: aimux_drop_handle_ptr, declared
+  // `void aimux_drop_handle_ptr(void *)` — exactly NativeFinalizerFunction
+  // (Void Function(Pointer<Void>)). The handle value is attached as the token
+  // (its address == the handle), and the finalizer releases the handle when
+  // a Model/ProviderHandle is GC'd without close(). aimux_drop_handle takes a
+  // uint64_t and must not be called through this signature: on 32-bit ARM
+  // (armeabi-v7a) a uint64_t argument does not travel like a pointer, so it
+  // would receive a garbage high word and leak the handle.
+  // NativeFinalizerFunction is already a NativeFunction<…>, so it is looked
+  // up directly (no extra NativeFunction wrapper).
   late final dropHandlePtr =
-      _lib.lookup<NativeFinalizerFunction>('aimux_drop_handle');
+      _lib.lookup<NativeFinalizerFunction>('aimux_drop_handle_ptr');
   late final initLogging =
       _lib.lookupFunction<_StrC, _StrDart>('aimux_init_logging');
   late final initRecording =
@@ -307,8 +311,8 @@ final _AimuxFFI _ffi = _AimuxFFI();
 /// Process-wide native finalizer that releases a handle when a [Model] or
 /// [ProviderHandle] is garbage-collected without [Model.close] /
 /// [ProviderHandle.close] (T9). The token attached is the handle value
-/// encoded as a `Pointer` (its address == the uint64 handle), so the
-/// `aimux_drop_handle` native callback receives it as a uint64.
+/// encoded as a `Pointer` (its address == the handle), which the
+/// `aimux_drop_handle_ptr` native callback takes as a pointer-sized value.
 final NativeFinalizer _handleFinalizer = NativeFinalizer(_ffi.dropHandlePtr);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -536,9 +540,9 @@ class Model implements Finalizable {
   /// Generate a structured JSON object (M12, RFC-0016).
   ///
   /// Same signature as [generateText]; returns the parsed
-  /// GenerateObjectResult as a Map. Pass `responseFormat: {"type": "json", ...}`
-  /// via [options] for schema control; aimux-core applies JSON repair before
-  /// parsing.
+  /// GenerateObjectResult as a Map. Pass `'output': {'type': 'object', 'schema': ...}`
+  /// via [options] to describe the object; the model's text must parse as
+  /// JSON and match the schema.
   ///
   /// [prompt] — a string or a list of message maps.
   /// [options] — optional generation options map.
@@ -553,7 +557,7 @@ class Model implements Finalizable {
   /// (M11, RFC-0016). Synchronous (blocks until the stream finishes).
   ///
   /// Same signature as [generateText]; returns the parsed
-  /// StreamTextResultAggregated as a Map.
+  /// GenerateTextResult as a Map.
   ///
   /// [prompt] — a string or a list of message maps.
   /// [options] — optional generation options map.
@@ -1002,9 +1006,9 @@ Model mockReplay(String recordingsJsonl) {
   return Model._(handle);
 }
 
-/// Set the global proxy configuration (M6, RFC-0016). Must be called before
-/// the first `generateText` / `streamText` call; a no-op if the shared HTTP
-/// client is already initialised.
+/// Replace the default transport with one routed by this proxy configuration
+/// (M6, RFC-0016). Requests started afterwards use it; calling it again
+/// replaces the previous configuration.
 ///
 /// `configJSON` shape: `{ "http_url", "https_url", "all_url", "no_proxy" }`
 /// (all fields optional). Wrong shape throws [InvalidArgumentError].

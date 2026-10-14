@@ -20,6 +20,12 @@ audio: AudioData,
  */
 warnings: Array<Warning>, 
 /**
+ * Usage information reported by the provider, in the provider's native
+ * JSON shape (`SpeechModelV4Result.usage?: JSONObject`,
+ * `@ai-sdk/provider@4.0.22 src/speech-model/v4/speech-model-v4-result.ts:23-27`).
+ */
+usage: { [key in string]: JsonValue } | null, 
+/**
  * Optional request information for telemetry and debugging.
  */
 request?: SpeechRequest, 

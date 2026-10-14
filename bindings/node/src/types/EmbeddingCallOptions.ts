@@ -13,7 +13,8 @@ export type EmbeddingCallOptions = {
  */
 values: Array<string>, 
 /**
- * Per-call retry override. `None` uses the model default.
+ * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
+ * retrying. `None` uses 2, the AI SDK default.
  */
 maxRetries?: number, 
 /**
