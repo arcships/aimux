@@ -675,10 +675,10 @@ fn derive_tool_choice(kind: Kind, b: &Value) -> Option<Value> {
     match kind {
         Kind::Chat | Kind::Cohere | Kind::Responses => match &b["tool_choice"] {
             Value::String(s) if ["auto", "none", "required"].contains(&s.as_str()) => {
-                Some(json!(s))
+                Some(json!({"type": s}))
             }
-            Value::String(s) if s == "REQUIRED" => Some(json!("required")),
-            Value::String(s) if s == "NONE" => Some(json!("none")),
+            Value::String(s) if s == "REQUIRED" => Some(json!({"type": "required"})),
+            Value::String(s) if s == "NONE" => Some(json!({"type": "none"})),
             Value::Object(o) => named(&o.get("function").map_or(
                 o.get("name").cloned().unwrap_or(Value::Null),
                 |f| f["name"].clone(),
@@ -686,20 +686,20 @@ fn derive_tool_choice(kind: Kind, b: &Value) -> Option<Value> {
             _ => None,
         },
         Kind::Messages => match b["tool_choice"]["type"].as_str() {
-            Some("auto") => Some(json!("auto")),
-            Some("any") => Some(json!("required")),
-            Some("none") => Some(json!("none")),
+            Some("auto") => Some(json!({"type": "auto"})),
+            Some("any") => Some(json!({"type": "required"})),
+            Some("none") => Some(json!({"type": "none"})),
             Some("tool") => named(&b["tool_choice"]["name"]),
             _ => None,
         },
         Kind::Gemini => {
             let c = &b["toolConfig"]["functionCallingConfig"];
             match c["mode"].as_str() {
-                Some("AUTO") => Some(json!("auto")),
-                Some("NONE") => Some(json!("none")),
+                Some("AUTO") => Some(json!({"type": "auto"})),
+                Some("NONE") => Some(json!({"type": "none"})),
                 Some("ANY") => match c["allowedFunctionNames"].as_array() {
                     Some(a) if a.len() == 1 => named(&a[0]),
-                    _ => Some(json!("required")),
+                    _ => Some(json!({"type": "required"})),
                 },
                 _ => None,
             }
@@ -707,9 +707,9 @@ fn derive_tool_choice(kind: Kind, b: &Value) -> Option<Value> {
         Kind::Converse => {
             let c = &b["toolConfig"]["toolChoice"];
             if c["auto"].is_object() {
-                Some(json!("auto"))
+                Some(json!({"type": "auto"}))
             } else if c["any"].is_object() {
-                Some(json!("required"))
+                Some(json!({"type": "required"}))
             } else if c["tool"].is_object() {
                 named(&c["tool"]["name"])
             } else {
@@ -998,6 +998,7 @@ fn build(
                 api_key: Some(Resolvable::Value(KEY.into())),
                 fetch: f,
                 headers: None,
+                user_agent_suffix: None,
                 transform_request_body: None,
             })
             .map_err(e)?
@@ -1367,7 +1368,6 @@ async fn run_once(spec: OpSpec) -> Value {
         Err(e) => json!({ "build_error": e }),
         Ok(model) => {
             let mut opts = spec.options.clone();
-            opts.max_retries = Some(0);
             if spec.raw {
                 opts.include_raw_chunks = Some(true);
             }
@@ -1502,7 +1502,7 @@ fn sweep_options() -> CallOptions {
         "stopSequences": ["STOP"],
         "tools": [{"type": "function", "name": "get_weather", "description": "Get weather",
                    "inputSchema": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}],
-        "toolChoice": "auto"
+        "toolChoice": {"type": "auto"}
     }))
     .unwrap()
 }
