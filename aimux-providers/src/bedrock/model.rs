@@ -18,12 +18,14 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage, Warning,
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
 };
 
 use serde_json::json;
 
-use aimux_provider_utils::{HttpBody, TransformStreamController, Transformer, pipe_through};
+use aimux_provider_utils::{HttpBody, Transformer, pipe_through};
+
+use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext};
 
 use super::convert::{
     build_request_body_checked, convert_usage, map_finish_reason, normalize_tool_call_id,
@@ -201,10 +203,7 @@ impl LanguageModel for BedrockModel {
             .stop_reason
             .as_deref()
             .map(map_finish_reason)
-            .unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            });
+            .unwrap_or(FINISH_OTHER);
 
         if is_json_response_from_tool && finish_reason.unified == FinishReasonUnified::ToolCalls {
             finish_reason.unified = FinishReasonUnified::Stop;
@@ -272,7 +271,6 @@ impl LanguageModel for BedrockModel {
         let response_headers = resp.response_headers;
 
         let body_stream = resp.value;
-        let include_raw_chunks = options.include_raw_chunks.unwrap_or(false);
         let request_id = response_headers
             .get("x-amzn-requestid")
             .cloned()
@@ -286,24 +284,19 @@ impl LanguageModel for BedrockModel {
         let stream = pipe_through(
             super::event_stream::decode_stream(body_stream),
             AmazonBedrockChatStream {
-                warnings,
+                ctx: StreamContext::new(
+                    options,
+                    warnings,
+                    error_url,
+                    &error_body,
+                    &response_headers,
+                ),
                 request_id,
                 response_timestamp,
                 model_id: self.model_id.clone(),
                 uses_json_tool,
-                include_raw_chunks,
-                error_url,
-                error_body,
                 extractor: uses_json_instruction.then(JsonObjectTextExtractor::default),
-                is_json_response_from_tool: false,
-                text_blocks: HashSet::new(),
-                reasoning_blocks: HashMap::new(),
-                block_counter: 0,
-                tool_blocks: HashMap::new(),
-                final_usage: Usage::default(),
-                final_finish_reason: None,
-                finish_meta: serde_json::Map::new(),
-                stop_sequence: None,
+                ..AmazonBedrockChatStream::default()
             },
         );
 
@@ -318,15 +311,13 @@ impl LanguageModel for BedrockModel {
 }
 
 /// The `TransformStream` of `BedrockChatLanguageModel.doStream`.
+#[derive(Default)]
 struct AmazonBedrockChatStream {
-    warnings: Vec<Warning>,
+    ctx: StreamContext,
     request_id: Option<String>,
     response_timestamp: Option<aimux_core::Timestamp>,
     model_id: String,
     uses_json_tool: bool,
-    include_raw_chunks: bool,
-    error_url: String,
-    error_body: serde_json::Value,
     extractor: Option<JsonObjectTextExtractor>,
     is_json_response_from_tool: bool,
     text_blocks: HashSet<usize>,
@@ -345,11 +336,7 @@ struct AmazonBedrockChatStream {
 }
 
 impl AmazonBedrockChatStream {
-    fn content_block_start(
-        &mut self,
-        payload: &serde_json::Value,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn content_block_start(&mut self, payload: &serde_json::Value, controller: &mut Controller) {
         let idx = payload
             .get("contentBlockIndex")
             .and_then(serde_json::Value::as_u64)
@@ -377,14 +364,7 @@ impl AmazonBedrockChatStream {
                     self.model_id.contains("mistral."),
                 );
                 if !(self.uses_json_tool && name == "json") {
-                    controller.enqueue(StreamPart::ToolInputStart {
-                        id: id.clone(),
-                        tool_name: name.clone(),
-                        provider_executed: None,
-                        dynamic: None,
-                        title: None,
-                        provider_metadata: None,
-                    });
+                    controller.tool_input_start(id.clone(), name.clone());
                 }
                 self.tool_blocks.insert(idx, (id, name, String::new()));
             } else {
@@ -392,27 +372,17 @@ impl AmazonBedrockChatStream {
                 self.block_counter = idx + 1;
                 let id = idx.to_string();
                 self.text_blocks.insert(idx);
-                controller.enqueue(StreamPart::TextStart {
-                    id,
-                    provider_metadata: None,
-                });
+                controller.text_start(id);
             }
         } else {
             // Default: text block.
             let id = idx.to_string();
             self.text_blocks.insert(idx);
-            controller.enqueue(StreamPart::TextStart {
-                id,
-                provider_metadata: None,
-            });
+            controller.text_start(id);
         }
     }
 
-    fn content_block_delta(
-        &mut self,
-        payload: &serde_json::Value,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn content_block_delta(&mut self, payload: &serde_json::Value, controller: &mut Controller) {
         let idx = payload
             .get("contentBlockIndex")
             .and_then(serde_json::Value::as_u64)
@@ -428,10 +398,7 @@ impl AmazonBedrockChatStream {
             if self.text_blocks.insert(idx) {
                 let id = idx.to_string();
                 self.text_blocks.insert(idx);
-                controller.enqueue(StreamPart::TextStart {
-                    id,
-                    provider_metadata: None,
-                });
+                controller.text_start(id);
             }
             let delta = self
                 .extractor
@@ -439,11 +406,7 @@ impl AmazonBedrockChatStream {
                 .map(|extractor| extractor.process(text))
                 .unwrap_or_else(|| text.to_string());
             if !delta.is_empty() {
-                controller.enqueue(StreamPart::TextDelta {
-                    id: idx.to_string(),
-                    delta,
-                    provider_metadata: None,
-                });
+                controller.text_delta(idx.to_string(), delta);
             }
         }
         // Tool use input delta
@@ -455,11 +418,7 @@ impl AmazonBedrockChatStream {
             acc.push_str(partial_str);
             if !(self.uses_json_tool && name == "json") {
                 let id = id.clone();
-                controller.enqueue(StreamPart::ToolInputDelta {
-                    id,
-                    delta: partial_str.to_string(),
-                    provider_metadata: None,
-                });
+                controller.tool_input_delta(id, partial_str.to_string());
             }
         }
         if let Some(rc) = delta.get("reasoningContent") {
@@ -478,17 +437,10 @@ impl AmazonBedrockChatStream {
                 self.reasoning_blocks.entry(idx)
             {
                 entry.insert(None);
-                controller.enqueue(StreamPart::ReasoningStart {
-                    id: id.clone(),
-                    provider_metadata: None,
-                });
+                controller.reasoning_start(id.clone());
             }
             if let Some(text) = rc.get("text").and_then(|v| v.as_str()) {
-                controller.enqueue(StreamPart::ReasoningDelta {
-                    id: id.clone(),
-                    delta: text.to_string(),
-                    provider_metadata: None,
-                });
+                controller.reasoning_delta(id.clone(), text.to_string());
             } else if let Some(sig) = rc
                 .get("signature")
                 .and_then(|v| v.as_str())
@@ -519,11 +471,7 @@ impl AmazonBedrockChatStream {
         }
     }
 
-    fn content_block_stop(
-        &mut self,
-        payload: &serde_json::Value,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn content_block_stop(&mut self, payload: &serde_json::Value, controller: &mut Controller) {
         let idx = payload
             .get("contentBlockIndex")
             .and_then(serde_json::Value::as_u64)
@@ -533,24 +481,11 @@ impl AmazonBedrockChatStream {
             if self.uses_json_tool && name == "json" {
                 self.is_json_response_from_tool = true;
                 let id = idx.to_string();
-                controller.enqueue(StreamPart::TextStart {
-                    id: id.clone(),
-                    provider_metadata: None,
-                });
-                controller.enqueue(StreamPart::TextDelta {
-                    id: id.clone(),
-                    delta: acc,
-                    provider_metadata: None,
-                });
-                controller.enqueue(StreamPart::TextEnd {
-                    id,
-                    provider_metadata: None,
-                });
+                controller.text_start(id.clone());
+                controller.text_delta(id.clone(), acc);
+                controller.text_end(id);
             } else {
-                controller.enqueue(StreamPart::ToolInputEnd {
-                    id: id.clone(),
-                    provider_metadata: None,
-                });
+                controller.tool_input_end(id.clone());
                 // Empty input normalizes to "{}" per the upstream
                 // provider.
                 let input = if acc.is_empty() {
@@ -573,10 +508,7 @@ impl AmazonBedrockChatStream {
                 provider_metadata: reasoning_redacted_meta(redacted),
             });
         } else if self.text_blocks.remove(&idx) {
-            controller.enqueue(StreamPart::TextEnd {
-                id: idx.to_string(),
-                provider_metadata: None,
-            });
+            controller.text_end(idx.to_string());
         }
     }
 
@@ -602,20 +534,13 @@ impl AmazonBedrockChatStream {
         }
     }
 
-    fn metadata(
-        &mut self,
-        payload: &serde_json::Value,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn metadata(&mut self, payload: &serde_json::Value, controller: &mut Controller) {
         if let Some(usage) = payload.get("usage") {
             let bedrock_usage: super::types::BedrockUsage =
                 match serde_json::from_value(usage.clone()) {
                     Ok(usage) => usage,
                     Err(error) => {
-                        self.final_finish_reason = Some(FinishReason {
-                            unified: FinishReasonUnified::Error,
-                            raw: None,
-                        });
+                        self.final_finish_reason = Some(FINISH_ERROR);
                         controller.enqueue(StreamPart::Error {
                             error: AiMuxError::InvalidResponseData(format!(
                                 "{error}; usage: {usage}"
@@ -651,11 +576,8 @@ impl Transformer for AmazonBedrockChatStream {
     type Input = Result<EventStreamMessage, AiMuxError>;
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        controller.enqueue(StreamPart::StreamStart {
-            warnings: std::mem::take(&mut self.warnings),
-        });
-
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
         controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
             id: self.request_id.take(),
             timestamp: self.response_timestamp.take(),
@@ -666,7 +588,7 @@ impl Transformer for AmazonBedrockChatStream {
     fn transform(
         &mut self,
         message: Result<EventStreamMessage, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
+        controller: &mut Controller,
     ) {
         let msg = match message {
             Ok(msg) => msg,
@@ -678,26 +600,19 @@ impl Transformer for AmazonBedrockChatStream {
         let payload: serde_json::Value = match serde_json::from_str(&msg.data) {
             Ok(v) => v,
             Err(error) => {
-                self.final_finish_reason = Some(FinishReason {
-                    unified: FinishReasonUnified::Error,
-                    raw: None,
-                });
+                self.final_finish_reason = Some(FINISH_ERROR);
                 controller.enqueue(StreamPart::Error {
                     error: AiMuxError::from(error),
                 });
                 return;
             }
         };
-        if self.include_raw_chunks {
-            controller.enqueue(StreamPart::Raw {
-                raw_value: json!({ msg.event_type.clone(): payload.clone() }),
-            });
-        }
+        self.ctx.raw(
+            &json!({ msg.event_type.clone(): payload.clone() }),
+            controller,
+        );
         if msg.message_type != "event" || msg.event_type.ends_with("Exception") {
-            self.final_finish_reason = Some(FinishReason {
-                unified: FinishReasonUnified::Error,
-                raw: None,
-            });
+            self.final_finish_reason = Some(FINISH_ERROR);
             let (status_code, is_retryable) = match msg.event_type.as_str() {
                 "internalServerException" | "InternalServerException" => (Some(500), true),
                 "modelStreamErrorException" | "ModelStreamErrorException" => (Some(424), true),
@@ -719,8 +634,8 @@ impl Transformer for AmazonBedrockChatStream {
                     data: Some(json!({msg.event_type.clone(): payload.clone()})),
                     ..aimux_core::ApiCallError::new(
                         message,
-                        self.error_url.clone(),
-                        self.error_body.clone(),
+                        self.ctx.url.clone(),
+                        self.ctx.request_body.clone(),
                     )
                 })),
             });
@@ -739,7 +654,7 @@ impl Transformer for AmazonBedrockChatStream {
         }
     }
 
-    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(mut self, controller: &mut Controller) {
         // #26: merge the stop sentinel into the metadata payload, then build
         // the Finish provider_metadata under `amazonBedrock` (mirrors the
         // TS `doStream` flush handler).
@@ -761,10 +676,7 @@ impl Transformer for AmazonBedrockChatStream {
         };
 
         controller.enqueue(StreamPart::Finish {
-            finish_reason: self.final_finish_reason.unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            }),
+            finish_reason: self.final_finish_reason.unwrap_or(FINISH_OTHER),
             usage: self.final_usage,
             provider_metadata,
         });

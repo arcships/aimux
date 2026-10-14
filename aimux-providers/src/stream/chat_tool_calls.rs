@@ -14,9 +14,9 @@ use aimux_core::error::AiMuxError;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::RawToolCall;
 use aimux_core::types::ProviderMetadata;
-use aimux_provider_utils::TransformStreamController;
 
 use super::tool_call_arguments::{StreamingToolCallArgumentState, starts_with_structured_value};
+use super::{Controller, Emit, GenerateId};
 
 /// Id used when the id generator returns a blank string.
 const FALLBACK_TOOL_CALL_ID: &str = "tool-call";
@@ -89,7 +89,7 @@ pub(crate) struct ChatToolCalls {
     calls: Vec<ToolCall>,
     /// Names a call without a usable wire id. Blank or repeated outputs are
     /// made unique.
-    generate_id: Arc<dyn Fn() -> String + Send + Sync>,
+    generate_id: GenerateId,
 }
 
 /// Ids from [`aimux_provider_utils::generate_id`].
@@ -100,7 +100,7 @@ impl Default for ChatToolCalls {
 }
 
 impl ChatToolCalls {
-    pub(crate) fn new(generate_id: Arc<dyn Fn() -> String + Send + Sync>) -> Self {
+    pub(crate) fn new(generate_id: GenerateId) -> Self {
         Self {
             calls: Vec::new(),
             generate_id,
@@ -113,11 +113,7 @@ impl ChatToolCalls {
     /// function name is the upstream `InvalidResponseDataError`: the stream
     /// ends with it and `false` is returned.
     #[must_use]
-    pub(crate) fn delta(
-        &mut self,
-        delta: ToolCallDelta<'_>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) -> bool {
+    pub(crate) fn delta(&mut self, delta: ToolCallDelta<'_>, controller: &mut Controller) -> bool {
         let ToolCallDelta {
             index,
             id,
@@ -164,11 +160,7 @@ impl ChatToolCalls {
                 if let Some(arguments) = arguments {
                     tool_call.argument_state.append(arguments);
                     tool_call.arguments.push_str(arguments);
-                    controller.enqueue(StreamPart::ToolInputDelta {
-                        id: tool_call.id.clone(),
-                        delta: arguments.to_string(),
-                        provider_metadata: None,
-                    });
+                    controller.tool_input_delta(tool_call.id.clone(), arguments.to_string());
                 }
                 call
             }
@@ -185,15 +177,12 @@ impl ChatToolCalls {
 
     /// End every call with `ToolInputEnd` and `ToolCall`, ordered by index
     /// when every call has one, otherwise by arrival.
-    pub(crate) fn finish(mut self, controller: &mut TransformStreamController<StreamPart>) {
+    pub(crate) fn finish(mut self, controller: &mut Controller) {
         if self.calls.iter().all(|c| c.index.is_some()) {
             self.calls.sort_by_key(|c| c.index); // stable: ties keep arrival order
         }
         for call in self.calls {
-            controller.enqueue(StreamPart::ToolInputEnd {
-                id: call.id.clone(),
-                provider_metadata: None,
-            });
+            controller.tool_input_end(call.id.clone());
             controller.enqueue(StreamPart::ToolCall(RawToolCall {
                 tool_call_id: call.id,
                 tool_name: call.name,
@@ -309,23 +298,12 @@ impl ChatToolCalls {
         name: &str,
         arguments: &str,
         provider_metadata: Option<ProviderMetadata>,
-        controller: &mut TransformStreamController<StreamPart>,
+        controller: &mut Controller,
     ) -> usize {
         let id = self.unique_id(wire_id);
-        controller.enqueue(StreamPart::ToolInputStart {
-            id: id.clone(),
-            tool_name: name.to_string(),
-            provider_executed: None,
-            dynamic: None,
-            title: None,
-            provider_metadata: None,
-        });
+        controller.tool_input_start(id.clone(), name.to_string());
         if !arguments.is_empty() {
-            controller.enqueue(StreamPart::ToolInputDelta {
-                id: id.clone(),
-                delta: arguments.to_string(),
-                provider_metadata: None,
-            });
+            controller.tool_input_delta(id.clone(), arguments.to_string());
         }
         self.calls.push(ToolCall {
             id,
@@ -364,7 +342,7 @@ impl ChatToolCalls {
 }
 
 /// End the stream with the upstream `InvalidResponseDataError`.
-fn invalid(controller: &mut TransformStreamController<StreamPart>, message: &str) -> bool {
+fn invalid(controller: &mut Controller, message: &str) -> bool {
     controller.error(AiMuxError::InvalidResponseData(message.to_string()));
     false
 }

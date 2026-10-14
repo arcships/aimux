@@ -20,12 +20,12 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+use aimux_core::types::{FinishReason, ResponseMetadata, Usage};
 
-use aimux_provider_utils::{TransformStreamController, Transformer, pipe_through};
+use aimux_provider_utils::{Transformer, pipe_through};
 
 use crate::shared::EndpointConfig;
-use crate::stream::{ChatToolCalls, StreamContext, ToolCallDelta};
+use crate::stream::{ChatToolCalls, Controller, Emit, FINISH_OTHER, StreamContext, ToolCallDelta};
 
 use super::convert::{build_request_body, parse_finish_reason, request_warnings};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
@@ -248,10 +248,7 @@ impl LanguageModel for MistralModel {
             .finish_reason
             .as_deref()
             .map(parse_finish_reason)
-            .unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            });
+            .unwrap_or(FINISH_OTHER);
 
         let usage = convert_usage(&data.usage);
 
@@ -290,16 +287,16 @@ impl LanguageModel for MistralModel {
 
         let stream = pipe_through(
             resp.value,
-            MistralChatStream::new(
-                StreamContext::new(
+            MistralChatStream::new(StreamContext {
+                generate_id: self.generate_id.clone(),
+                ..StreamContext::new(
                     options,
                     request_warnings(options, &self.model_id),
                     endpoint,
                     &body,
                     &response_headers,
-                ),
-                self.generate_id.clone(),
-            ),
+                )
+            }),
         );
 
         Ok(StreamResult {
@@ -316,10 +313,10 @@ impl LanguageModel for MistralModel {
 const TEXT_ID: &str = "0";
 
 /// The `TransformStream` of the Mistral chat model's `doStream`.
+#[derive(Default)]
 struct MistralChatStream {
+    /// Its id generator names reasoning blocks and id-less tool calls.
     ctx: StreamContext,
-    /// Names reasoning blocks and id-less tool calls.
-    generate_id: Arc<dyn Fn() -> String + Send + Sync>,
     tool_calls: ChatToolCalls,
     text_started: bool,
     /// The open reasoning block.
@@ -335,29 +332,23 @@ struct MistralChatStream {
 pub(crate) fn chat_test_stream(
     generate_id: Arc<dyn Fn() -> String + Send + Sync>,
 ) -> impl Transformer<Input = Result<Value, AiMuxError>, Output = StreamPart> {
-    MistralChatStream::new(StreamContext::default(), generate_id)
+    MistralChatStream::new(StreamContext {
+        generate_id,
+        ..StreamContext::default()
+    })
 }
 
 impl MistralChatStream {
-    fn new(ctx: StreamContext, generate_id: Arc<dyn Fn() -> String + Send + Sync>) -> Self {
+    fn new(ctx: StreamContext) -> Self {
         Self {
+            tool_calls: ChatToolCalls::new(ctx.generate_id.clone()),
             ctx,
-            tool_calls: ChatToolCalls::new(generate_id.clone()),
-            generate_id,
-            text_started: false,
-            reasoning_id: None,
-            final_usage: Usage::default(),
-            final_finish_reason: None,
-            response_metadata_emitted: false,
+            ..Self::default()
         }
     }
 
     /// Handle one parsed SSE `data:` payload.
-    fn transform_chunk(
-        &mut self,
-        parsed: Value,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform_chunk(&mut self, parsed: Value, controller: &mut Controller) {
         self.ctx.raw(&parsed, controller);
 
         if let Some(err_obj) = parsed.get("error") {
@@ -415,25 +406,15 @@ impl MistralChatStream {
             if self.reasoning_id.is_none() {
                 // End any active text before starting reasoning.
                 if self.text_started {
-                    controller.enqueue(StreamPart::TextEnd {
-                        id: TEXT_ID.to_string(),
-                        provider_metadata: None,
-                    });
+                    controller.text_end(TEXT_ID);
                     self.text_started = false;
                 }
-                let rid = (self.generate_id)();
+                let rid = (self.ctx.generate_id)();
                 self.reasoning_id = Some(rid.clone());
-                controller.enqueue(StreamPart::ReasoningStart {
-                    id: rid,
-                    provider_metadata: None,
-                });
+                controller.reasoning_start(rid);
             }
             if let Some(ref rid) = self.reasoning_id {
-                controller.enqueue(StreamPart::ReasoningDelta {
-                    id: rid.clone(),
-                    delta: reasoning_delta,
-                    provider_metadata: None,
-                });
+                controller.reasoning_delta(rid.clone(), reasoning_delta);
             }
         }
 
@@ -444,22 +425,12 @@ impl MistralChatStream {
             if !self.text_started {
                 // End reasoning before starting text.
                 if let Some(rid) = self.reasoning_id.take() {
-                    controller.enqueue(StreamPart::ReasoningEnd {
-                        id: rid,
-                        provider_metadata: None,
-                    });
+                    controller.reasoning_end(rid);
                 }
-                controller.enqueue(StreamPart::TextStart {
-                    id: TEXT_ID.to_string(),
-                    provider_metadata: None,
-                });
+                controller.text_start(TEXT_ID);
                 self.text_started = true;
             }
-            controller.enqueue(StreamPart::TextDelta {
-                id: TEXT_ID.to_string(),
-                delta: text_delta,
-                provider_metadata: None,
-            });
+            controller.text_delta(TEXT_ID, text_delta);
         }
 
         // Tool calls: assembled by the shared tracker.
@@ -491,15 +462,11 @@ impl Transformer for MistralChatStream {
     type Input = Result<Value, AiMuxError>;
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn start(&mut self, controller: &mut Controller) {
         self.ctx.start(controller);
     }
 
-    fn transform(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         match event {
             Ok(parsed) => self.transform_chunk(parsed, controller),
             Err(error) => {
@@ -509,28 +476,19 @@ impl Transformer for MistralChatStream {
         }
     }
 
-    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(mut self, controller: &mut Controller) {
         // Close any remaining open segments.
         if self.text_started {
-            controller.enqueue(StreamPart::TextEnd {
-                id: TEXT_ID.to_string(),
-                provider_metadata: None,
-            });
+            controller.text_end(TEXT_ID);
         }
         if let Some(rid) = self.reasoning_id.take() {
-            controller.enqueue(StreamPart::ReasoningEnd {
-                id: rid,
-                provider_metadata: None,
-            });
+            controller.reasoning_end(rid);
         }
 
         self.tool_calls.finish(controller);
 
         controller.enqueue(StreamPart::Finish {
-            finish_reason: self.final_finish_reason.unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            }),
+            finish_reason: self.final_finish_reason.unwrap_or(FINISH_OTHER),
             usage: self.final_usage,
             provider_metadata: None,
         });

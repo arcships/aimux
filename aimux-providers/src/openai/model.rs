@@ -19,11 +19,13 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+use aimux_core::types::{FinishReason, ResponseMetadata, Usage};
 
-use aimux_provider_utils::{HttpRequest, TransformStreamController, Transformer, pipe_through};
+use aimux_provider_utils::{HttpRequest, Transformer, pipe_through};
 
-use crate::stream::{ChatToolCalls, StreamContext, ToolCallDelta};
+use crate::stream::{
+    ChatToolCalls, Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext, ToolCallDelta,
+};
 
 use super::config::{OpenAIModelConfig, TransformRequestBody};
 use super::convert::{
@@ -317,10 +319,7 @@ pub(crate) async fn execute_generate(
         .finish_reason
         .as_deref()
         .map(parse_finish_reason)
-        .unwrap_or(FinishReason {
-            unified: FinishReasonUnified::Other,
-            raw: None,
-        });
+        .unwrap_or(FINISH_OTHER);
 
     let usage = data.usage.as_ref().map_or_else(Usage::default, |usage| {
         convert_usage(usage, response_value.get("usage"))
@@ -474,12 +473,9 @@ pub(crate) fn chat_test_stream(
 }
 
 impl OpenAIChatStream {
-    fn end_reasoning(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn end_reasoning(&mut self, controller: &mut Controller) {
         if self.reasoning_started {
-            controller.enqueue(StreamPart::ReasoningEnd {
-                id: REASONING_ID.to_string(),
-                provider_metadata: None,
-            });
+            controller.reasoning_end(REASONING_ID);
             self.reasoning_started = false;
         }
     }
@@ -489,15 +485,11 @@ impl Transformer for OpenAIChatStream {
     type Input = Result<Value, AiMuxError>;
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn start(&mut self, controller: &mut Controller) {
         self.ctx.start(controller);
     }
 
-    fn transform(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         let parsed = match event {
             Ok(parsed) => parsed,
             Err(error) => {
@@ -586,16 +578,9 @@ impl Transformer for OpenAIChatStream {
             {
                 if !self.reasoning_started {
                     self.reasoning_started = true;
-                    controller.enqueue(StreamPart::ReasoningStart {
-                        id: REASONING_ID.to_string(),
-                        provider_metadata: None,
-                    });
+                    controller.reasoning_start(REASONING_ID);
                 }
-                controller.enqueue(StreamPart::ReasoningDelta {
-                    id: REASONING_ID.to_string(),
-                    delta: reasoning,
-                    provider_metadata: None,
-                });
+                controller.reasoning_delta(REASONING_ID, reasoning);
             }
 
             // Text delta; an active reasoning block ends before text starts.
@@ -603,16 +588,9 @@ impl Transformer for OpenAIChatStream {
                 self.end_reasoning(controller);
                 if !self.text_started {
                     self.text_started = true;
-                    controller.enqueue(StreamPart::TextStart {
-                        id: TEXT_ID.to_string(),
-                        provider_metadata: None,
-                    });
+                    controller.text_start(TEXT_ID);
                 }
-                controller.enqueue(StreamPart::TextDelta {
-                    id: TEXT_ID.to_string(),
-                    delta: content,
-                    provider_metadata: None,
-                });
+                controller.text_delta(TEXT_ID, content);
             }
 
             // Tool-call deltas; an active reasoning block ends first.
@@ -670,14 +648,11 @@ impl Transformer for OpenAIChatStream {
         }
     }
 
-    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(mut self, controller: &mut Controller) {
         // Close any remaining open reasoning and text segments.
         self.end_reasoning(controller);
         if self.text_started {
-            controller.enqueue(StreamPart::TextEnd {
-                id: TEXT_ID.to_string(),
-                provider_metadata: None,
-            });
+            controller.text_end(TEXT_ID);
         }
 
         self.tool_calls.finish(controller);
@@ -702,15 +677,9 @@ impl Transformer for OpenAIChatStream {
 
         controller.enqueue(StreamPart::Finish {
             finish_reason: if self.stream_errored {
-                FinishReason {
-                    unified: FinishReasonUnified::Error,
-                    raw: None,
-                }
+                FINISH_ERROR
             } else {
-                self.final_finish_reason.unwrap_or(FinishReason {
-                    unified: FinishReasonUnified::Other,
-                    raw: None,
-                })
+                self.final_finish_reason.unwrap_or(FINISH_OTHER)
             },
             usage: self.final_usage,
             provider_metadata: Some(provider_metadata),

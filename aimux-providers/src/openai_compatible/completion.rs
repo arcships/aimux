@@ -1,7 +1,5 @@
 //! Text-completion endpoint shared by the native and compatible packages.
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde::Deserialize;
@@ -16,10 +14,11 @@ use aimux_core::result::{GenerateContent, GenerateResult};
 use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage,
-    Warning,
+    FinishReason, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage, Warning,
 };
-use aimux_provider_utils::{HttpRequest, TransformStreamController, Transformer, pipe_through};
+use aimux_provider_utils::{HttpRequest, Transformer, pipe_through};
+
+use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext};
 
 use super::config::CompatModelConfig;
 use super::convert::{parse_finish_reason, to_camel_case};
@@ -424,10 +423,7 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
             .finish_reason
             .as_deref()
             .map(parse_finish_reason)
-            .unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            });
+            .unwrap_or(FINISH_OTHER);
         Ok(GenerateResult {
             content: if self.native() || !choice.text.is_empty() {
                 vec![GenerateContent::Text {
@@ -474,9 +470,7 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
         .await?;
         let mut events = response.value;
         let response_headers = response.response_headers;
-        let stream_response_headers = response_headers.clone();
         let native = self.native();
-        let raw_chunks = options.include_raw_chunks == Some(true);
         let mut buffered = Vec::new();
         if native {
             while let Some(event) = events.next().await {
@@ -517,27 +511,17 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
         let stream = pipe_through(
             futures::stream::iter(buffered).chain(events),
             OpenAICompatibleCompletionStream {
-                warnings,
-                emit_raw_chunks: raw_chunks,
+                ctx: StreamContext::new(options, warnings, error_url, &body, &response_headers),
                 native,
                 compat_name,
-                error_url,
-                stream_error_body: body.clone(),
-                stream_response_headers: response_headers,
-                started: false,
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Other,
-                    raw: None,
-                },
-                usage: None,
-                logprobs: None,
+                ..OpenAICompatibleCompletionStream::default()
             },
         );
         Ok(StreamResult {
             stream: Box::pin(stream),
             request: Some(RequestInfo { body: Some(body) }),
             response: Some(StreamResponseInfo {
-                headers: Some(stream_response_headers),
+                headers: Some(response_headers),
             }),
         })
     }
@@ -545,32 +529,23 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
 
 /// The `TransformStream` of `OpenAICompatibleCompletionLanguageModel.doStream`
 /// (and of `OpenAICompletionLanguageModel.doStream` when native).
+#[derive(Default)]
 struct OpenAICompatibleCompletionStream {
-    warnings: Vec<Warning>,
-    emit_raw_chunks: bool,
+    ctx: StreamContext,
     native: bool,
     /// The provider options name of a compatible provider; `None` for the
     /// native OpenAI completion model.
     compat_name: Option<String>,
-    error_url: String,
-    stream_error_body: Value,
-    stream_response_headers: HashMap<String, String>,
     started: bool,
-    finish_reason: FinishReason,
+    /// `other` until a chunk says otherwise.
+    finish_reason: Option<FinishReason>,
     usage: Option<Map<String, Value>>,
     logprobs: Option<Value>,
 }
 
 impl OpenAICompatibleCompletionStream {
-    fn report_error(
-        &mut self,
-        error: AiMuxError,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
-        self.finish_reason = FinishReason {
-            unified: FinishReasonUnified::Error,
-            raw: None,
-        };
+    fn report_error(&mut self, error: AiMuxError, controller: &mut Controller) {
+        self.finish_reason = Some(FINISH_ERROR);
         controller.enqueue(StreamPart::Error { error });
     }
 }
@@ -579,26 +554,16 @@ impl Transformer for OpenAICompatibleCompletionStream {
     type Input = Result<Value, AiMuxError>;
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        controller.enqueue(StreamPart::StreamStart {
-            warnings: std::mem::take(&mut self.warnings),
-        });
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
     }
 
-    fn transform(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         let event = match event {
             Ok(event) => event,
             Err(error) => return self.report_error(error, controller),
         };
-        if self.emit_raw_chunks {
-            controller.enqueue(StreamPart::Raw {
-                raw_value: event.clone(),
-            });
-        }
+        self.ctx.raw(&event, controller);
         if let Some(error) = event.get("error") {
             // @ai-sdk/openai maps the frame to a status
             // (openai-completion-language-model.ts:305-313);
@@ -607,16 +572,16 @@ impl Transformer for OpenAICompatibleCompletionStream {
             let error = match &self.compat_name {
                 None => crate::openai::openai_stream_error(
                     error,
-                    &self.error_url,
-                    self.stream_error_body.clone(),
-                    self.stream_response_headers.clone(),
+                    &self.ctx.url,
+                    self.ctx.request_body.clone(),
+                    self.ctx.response_headers.clone(),
                 ),
                 Some(name) => super::chat::stream_error(
                     name,
                     error,
-                    &self.error_url,
-                    self.stream_error_body.clone(),
-                    self.stream_response_headers.clone(),
+                    &self.ctx.url,
+                    self.ctx.request_body.clone(),
+                    self.ctx.response_headers.clone(),
                 ),
             };
             return self.report_error(error, controller);
@@ -628,42 +593,32 @@ impl Transformer for OpenAICompatibleCompletionStream {
         if !self.started {
             self.started = true;
             controller.enqueue(StreamPart::ResponseMetadata(metadata(&parsed)));
-            controller.enqueue(StreamPart::TextStart {
-                id: "0".into(),
-                provider_metadata: None,
-            });
+            controller.text_start("0");
         }
         if parsed.usage.is_some() {
             self.usage = parsed.usage;
         }
         if let Some(choice) = parsed.choices.into_iter().next() {
             if let Some(reason) = choice.finish_reason {
-                self.finish_reason = parse_finish_reason(&reason);
+                self.finish_reason = Some(parse_finish_reason(&reason));
             }
             if self.native && choice.logprobs.is_some() {
                 self.logprobs = choice.logprobs;
             }
             if !self.native || !choice.text.is_empty() {
-                controller.enqueue(StreamPart::TextDelta {
-                    id: "0".into(),
-                    delta: choice.text,
-                    provider_metadata: None,
-                });
+                controller.text_delta("0", choice.text);
             }
         }
     }
 
-    fn flush(self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(self, controller: &mut Controller) {
         if self.started {
-            controller.enqueue(StreamPart::TextEnd {
-                id: "0".into(),
-                provider_metadata: None,
-            });
+            controller.text_end("0");
         }
         let native = self.native;
         let logprobs = self.logprobs;
         controller.enqueue(StreamPart::Finish {
-            finish_reason: self.finish_reason,
+            finish_reason: self.finish_reason.unwrap_or(FINISH_OTHER),
             usage: usage(self.usage, native),
             provider_metadata: native.then(|| {
                 provider_namespace(

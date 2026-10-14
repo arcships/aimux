@@ -26,6 +26,8 @@ use aimux_core::tool::RawToolCall;
 use aimux_core::types::ProviderMetadata;
 use aimux_provider_utils::{TransformStreamController, Transformer};
 
+use super::Controller;
+
 type GenerateId = Arc<dyn Fn() -> String + Send + Sync>;
 
 const MISSING_NAME: &str = "Expected 'function.name' to be a string.";
@@ -106,19 +108,19 @@ fn project(part: StreamPart) -> Option<Part> {
 /// A chat stream with its chunk type fixed, so the vendors can share one
 /// harness.
 trait ChatStream {
-    fn chunk(&mut self, chunk: Value, controller: &mut TransformStreamController<StreamPart>);
-    fn end(self: Box<Self>, controller: &mut TransformStreamController<StreamPart>);
+    fn chunk(&mut self, chunk: Value, controller: &mut Controller);
+    fn end(self: Box<Self>, controller: &mut Controller);
 }
 
 impl<T> ChatStream for T
 where
     T: Transformer<Input = Result<Value, AiMuxError>, Output = StreamPart>,
 {
-    fn chunk(&mut self, chunk: Value, controller: &mut TransformStreamController<StreamPart>) {
+    fn chunk(&mut self, chunk: Value, controller: &mut Controller) {
         self.transform(Ok(chunk), controller);
     }
 
-    fn end(self: Box<Self>, controller: &mut TransformStreamController<StreamPart>) {
+    fn end(self: Box<Self>, controller: &mut Controller) {
         (*self).flush(controller);
     }
 }
@@ -202,10 +204,7 @@ impl Harness {
         );
     }
 
-    fn collect(
-        &mut self,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) -> Result<(), String> {
+    fn collect(&mut self, controller: &mut Controller) -> Result<(), String> {
         let mut result = Ok(());
         for item in controller.drain() {
             match item {

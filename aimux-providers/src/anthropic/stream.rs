@@ -25,7 +25,7 @@ use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 use aimux_core::types::{NamespacedKind, ProviderMetadata, Warning};
-use aimux_provider_utils::{HttpRequest, TransformStreamController, Transformer, pipe_through};
+use aimux_provider_utils::{HttpRequest, Transformer, pipe_through};
 use serde_json::{Value, json};
 
 use super::config::AnthropicModelConfig;
@@ -36,6 +36,7 @@ use super::types::{
     AnthropicResponse, AnthropicUsage, ContentBlock, DeltaBlock, MessageDeltaBody,
     MessageStartData, StreamErrorData, StreamEvent, ToolCallCaller,
 };
+use crate::stream::{Controller, Emit, FINISH_OTHER, StreamContext};
 
 pub(crate) fn anthropic_stream_error(
     error: &StreamErrorData,
@@ -1046,10 +1047,7 @@ pub(crate) async fn anthropic_generate_core(
         .stop_reason
         .as_deref()
         .map(parse_stop_reason)
-        .unwrap_or(FinishReason {
-            unified: FinishReasonUnified::Other,
-            raw: None,
-        });
+        .unwrap_or(FINISH_OTHER);
 
     if is_json_response_from_tool && finish_reason.unified == FinishReasonUnified::ToolCalls {
         finish_reason.unified = FinishReasonUnified::Stop;
@@ -1178,34 +1176,18 @@ pub(crate) async fn anthropic_stream_core(
     let stream = pipe_through(
         futures::stream::iter(first_event).chain(sse_stream),
         AnthropicMessagesStream {
-            warnings,
-            include_raw_chunks,
-            stream_error_url: endpoint,
-            stream_request_body: body.clone(),
-            stream_response_headers: response_headers.clone(),
+            ctx: StreamContext {
+                generate_id,
+                ..StreamContext::new(options, warnings, endpoint, &body, &response_headers)
+            },
             options_name,
             tool_names,
             used_custom_options_key,
             uses_json_response_tool,
             citation_documents,
-            generate_id,
-            blocks: HashMap::new(),
-            is_json_response_from_tool: false,
-            final_usage: Usage::default(),
-            final_finish_reason: None,
             effective_usage: raw_usage.clone(),
             raw_usage,
-            stop_sequence: None,
-            container: None,
-            context_management: None,
-            stop_details: None,
-            input_transformations: None,
-            safeguard_results: None,
-            response_meta_emitted: false,
-            active_message_id: None,
-            message_stopped: false,
-            mcp_tool_calls: HashMap::new(),
-            server_tool_calls: HashMap::new(),
+            ..AnthropicMessagesStream::default()
         },
     );
 
@@ -1219,19 +1201,14 @@ pub(crate) async fn anthropic_stream_core(
 }
 
 /// The `TransformStream` of `AnthropicMessagesLanguageModel.doStream`.
+#[derive(Default)]
 struct AnthropicMessagesStream {
-    warnings: Vec<Warning>,
-    /// Forward every chunk as a raw part (`includeRawChunks`).
-    include_raw_chunks: bool,
-    stream_error_url: String,
-    stream_request_body: Value,
-    stream_response_headers: HashMap<String, String>,
+    ctx: StreamContext,
     options_name: String,
     tool_names: ToolNameMapping,
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
     citation_documents: Vec<CitationDocument>,
-    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
     blocks: HashMap<usize, BlockState>,
     is_json_response_from_tool: bool,
     final_usage: Usage,
@@ -1261,11 +1238,7 @@ struct AnthropicMessagesStream {
 }
 
 impl AnthropicMessagesStream {
-    fn message_start(
-        &mut self,
-        message: MessageStartData,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn message_start(&mut self, message: MessageStartData, controller: &mut Controller) {
         if let Some(active_id) = &self.active_message_id {
             if active_id == &message.id {
                 return;
@@ -1311,7 +1284,7 @@ impl AnthropicMessagesStream {
         &mut self,
         index: usize,
         content_block: ContentBlock,
-        controller: &mut TransformStreamController<StreamPart>,
+        controller: &mut Controller,
     ) {
         match content_block {
             ContentBlock::Text { .. } if self.uses_json_response_tool => {}
@@ -1322,10 +1295,7 @@ impl AnthropicMessagesStream {
                         citations: Vec::new(),
                     },
                 );
-                controller.enqueue(StreamPart::TextStart {
-                    id: index.to_string(),
-                    provider_metadata: None,
-                });
+                controller.text_start(index.to_string());
             }
             ContentBlock::Compaction { content, signature } => {
                 self.blocks.insert(
@@ -1341,18 +1311,11 @@ impl AnthropicMessagesStream {
                 if signature.is_some()
                     && let Some(text) = content.filter(|text| !text.is_empty())
                 {
-                    controller.enqueue(StreamPart::TextDelta {
-                        id: index.to_string(),
-                        delta: text,
-                        provider_metadata: None,
-                    });
+                    controller.text_delta(index.to_string(), text);
                 }
             }
             ContentBlock::Thinking { .. } => {
-                controller.enqueue(StreamPart::ReasoningStart {
-                    id: index.to_string(),
-                    provider_metadata: None,
-                });
+                controller.reasoning_start(index.to_string());
                 self.blocks.insert(index, BlockState::Thinking);
             }
             ContentBlock::ToolUse { name, .. }
@@ -1365,10 +1328,7 @@ impl AnthropicMessagesStream {
                         citations: Vec::new(),
                     },
                 );
-                controller.enqueue(StreamPart::TextStart {
-                    id: index.to_string(),
-                    provider_metadata: None,
-                });
+                controller.text_start(index.to_string());
             }
             ContentBlock::ToolUse {
                 id,
@@ -1382,14 +1342,7 @@ impl AnthropicMessagesStream {
                     |name| self.tool_names.to_custom_tool_name(name).to_string(),
                 );
                 let initial_input = initial_tool_input(&input);
-                controller.enqueue(StreamPart::ToolInputStart {
-                    id: id.clone(),
-                    tool_name: custom_name.clone(),
-                    provider_executed: None,
-                    dynamic: None,
-                    title: None,
-                    provider_metadata: None,
-                });
+                controller.tool_input_start(id.clone(), custom_name.clone());
                 self.blocks.insert(
                     index,
                     BlockState::ToolUse {
@@ -1515,7 +1468,7 @@ impl AnthropicMessagesStream {
                     &self.tool_names,
                     &self.mcp_tool_calls,
                     &self.server_tool_calls,
-                    self.generate_id.as_ref(),
+                    self.ctx.generate_id.as_ref(),
                 ) {
                     controller.enqueue(part);
                 }
@@ -1527,23 +1480,15 @@ impl AnthropicMessagesStream {
         &mut self,
         index: usize,
         delta: DeltaBlock,
-        controller: &mut TransformStreamController<StreamPart>,
+        controller: &mut Controller,
     ) {
         if !self.uses_json_response_tool
             && let Some(text) = delta.text
         {
-            controller.enqueue(StreamPart::TextDelta {
-                id: index.to_string(),
-                delta: text,
-                provider_metadata: None,
-            });
+            controller.text_delta(index.to_string(), text);
         }
         if let Some(text) = delta.content {
-            controller.enqueue(StreamPart::TextDelta {
-                id: index.to_string(),
-                delta: text,
-                provider_metadata: None,
-            });
+            controller.text_delta(index.to_string(), text);
         }
         if let Some(citation) = delta.citation {
             if let Some(BlockState::Text { citations }) = self.blocks.get_mut(&index) {
@@ -1552,7 +1497,7 @@ impl AnthropicMessagesStream {
             if let Some(source) = citation_source(
                 &citation,
                 &self.citation_documents,
-                self.generate_id.as_ref(),
+                self.ctx.generate_id.as_ref(),
             ) {
                 controller.enqueue(StreamPart::Source(source));
             }
@@ -1567,11 +1512,7 @@ impl AnthropicMessagesStream {
                 && matches!(self.blocks.get(&index), Some(BlockState::Text { .. }))
                 && !partial.is_empty()
             {
-                controller.enqueue(StreamPart::TextDelta {
-                    id: index.to_string(),
-                    delta: partial,
-                    provider_metadata: None,
-                });
+                controller.text_delta(index.to_string(), partial);
                 return;
             }
             if self.is_json_response_from_tool {
@@ -1607,19 +1548,11 @@ impl AnthropicMessagesStream {
                 _ => None,
             };
             if let Some((id, delta)) = delta_event {
-                controller.enqueue(StreamPart::ToolInputDelta {
-                    id,
-                    delta,
-                    provider_metadata: None,
-                });
+                controller.tool_input_delta(id, delta);
             }
         }
         if let Some(thinking) = delta.thinking {
-            controller.enqueue(StreamPart::ReasoningDelta {
-                id: index.to_string(),
-                delta: thinking,
-                provider_metadata: None,
-            });
+            controller.reasoning_delta(index.to_string(), thinking);
         }
         if let Some(sig) = delta.signature
             && let Some(BlockState::Thinking) = self.blocks.get(&index)
@@ -1635,11 +1568,7 @@ impl AnthropicMessagesStream {
         }
     }
 
-    fn content_block_stop(
-        &mut self,
-        index: usize,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn content_block_stop(&mut self, index: usize, controller: &mut Controller) {
         let Some(state) = self.blocks.remove(&index) else {
             return;
         };
@@ -1651,10 +1580,7 @@ impl AnthropicMessagesStream {
                 });
             }
             BlockState::Thinking => {
-                controller.enqueue(StreamPart::ReasoningEnd {
-                    id: index.to_string(),
-                    provider_metadata: None,
-                });
+                controller.reasoning_end(index.to_string());
             }
             BlockState::ToolUse {
                 id,
@@ -1677,16 +1603,9 @@ impl AnthropicMessagesStream {
                     if let Ok(input) = parsed {
                         accumulated_json = toolset_member_input(&member_name, &input).to_string();
                     }
-                    controller.enqueue(StreamPart::ToolInputDelta {
-                        id: id.clone(),
-                        delta: accumulated_json.clone(),
-                        provider_metadata: None,
-                    });
+                    controller.tool_input_delta(id.clone(), accumulated_json.clone());
                 }
-                controller.enqueue(StreamPart::ToolInputEnd {
-                    id: id.clone(),
-                    provider_metadata: None,
-                });
+                controller.tool_input_end(id.clone());
                 let input = finalize_streamed_tool_input(
                     accumulated_json,
                     provider_tool_name.as_deref(),
@@ -1748,22 +1667,19 @@ impl Transformer for AnthropicMessagesStream {
     type Input = (Option<Value>, Result<StreamEvent, AiMuxError>);
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        // First part: StreamStart.
-        controller.enqueue(StreamPart::StreamStart {
-            warnings: std::mem::take(&mut self.warnings),
-        });
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
     }
 
     fn transform(
         &mut self,
         (raw, event): (Option<Value>, Result<StreamEvent, AiMuxError>),
-        controller: &mut TransformStreamController<StreamPart>,
+        controller: &mut Controller,
     ) {
         // Every chunk, valid or not, is forwarded first when raw chunks are
         // requested (anthropic@4.0.71 `anthropic-language-model.ts:1956-1958`);
         // a chunk that is not JSON has no raw value.
-        if self.include_raw_chunks
+        if self.ctx.include_raw_chunks
             && (raw.is_some()
                 || event
                     .as_ref()
@@ -1810,9 +1726,9 @@ impl Transformer for AnthropicMessagesStream {
                 controller.enqueue(StreamPart::Error {
                     error: anthropic_stream_error(
                         &error,
-                        &self.stream_error_url,
-                        self.stream_request_body.clone(),
-                        self.stream_response_headers.clone(),
+                        &self.ctx.url,
+                        self.ctx.request_body.clone(),
+                        self.ctx.response_headers.clone(),
                     ),
                 });
             }
@@ -1820,14 +1736,14 @@ impl Transformer for AnthropicMessagesStream {
         }
     }
 
-    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(mut self, controller: &mut Controller) {
         self.finish(controller);
     }
 }
 
 impl AnthropicMessagesStream {
     /// Emit `Finish` once `message_stop` has arrived.
-    fn finish(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn finish(&mut self, controller: &mut Controller) {
         // The provider completes a message explicitly; EOF after an error
         // does not synthesize a finish event.
         if !self.message_stopped {
@@ -1854,10 +1770,7 @@ impl AnthropicMessagesStream {
             self.safeguard_results.as_ref(),
         );
         controller.enqueue(StreamPart::Finish {
-            finish_reason: self.final_finish_reason.take().unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            }),
+            finish_reason: self.final_finish_reason.take().unwrap_or(FINISH_OTHER),
             usage: std::mem::take(&mut self.final_usage),
             provider_metadata: Some(metadata),
         });

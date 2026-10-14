@@ -18,15 +18,15 @@ use aimux_core::shared::{
     RequestInfo, ResponseInfo, SharedProviderMetadata, StreamResponseInfo, provider_namespace,
 };
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{
-    FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage,
-};
-use aimux_provider_utils::{TransformStreamController, Transformer, generate_id, pipe_through};
+use aimux_core::types::{FinishReason, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage};
+use aimux_provider_utils::{Transformer, generate_id, pipe_through};
 
 use super::config::{ChatSettings, CompatModelConfig, StreamMetadataExtractor};
 use super::convert::{ChatBodySpec, RequestBodyResult, build_request_body, parse_finish_reason};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
-use crate::stream::{ChatToolCalls, StreamContext, ToolCallDelta};
+use crate::stream::{
+    ChatToolCalls, Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext, ToolCallDelta,
+};
 
 /// An OpenAI-compatible chat model. Holds no HTTP client: the request helpers
 /// of `aimux-provider-utils` use the injected or process-default transport.
@@ -273,10 +273,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
             .finish_reason
             .as_deref()
             .map(parse_finish_reason)
-            .unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            });
+            .unwrap_or(FINISH_OTHER);
 
         let chat = &self.config.chat;
         let usage = chat.convert_usage(raw.get("usage"));
@@ -413,32 +410,21 @@ impl OpenAICompatibleChatStream {
                 .expect("provider metadata must be an object")
         })
     }
-
-    fn error_finish_reason() -> FinishReason {
-        FinishReason {
-            unified: FinishReasonUnified::Error,
-            raw: None,
-        }
-    }
 }
 
 impl Transformer for OpenAICompatibleChatStream {
     type Input = Result<Value, AiMuxError>;
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn start(&mut self, controller: &mut Controller) {
         self.ctx.start(controller);
     }
 
-    fn transform(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         let parsed = match event {
             Ok(parsed) => parsed,
             Err(error) => {
-                self.final_finish_reason = Some(Self::error_finish_reason());
+                self.final_finish_reason = Some(FINISH_ERROR);
                 controller.enqueue(StreamPart::Error { error });
                 return;
             }
@@ -457,7 +443,7 @@ impl Transformer for OpenAICompatibleChatStream {
                     self.ctx.response_headers.clone(),
                 ),
             });
-            self.final_finish_reason = Some(Self::error_finish_reason());
+            self.final_finish_reason = Some(FINISH_ERROR);
             return;
         }
 
@@ -470,7 +456,7 @@ impl Transformer for OpenAICompatibleChatStream {
         let chunk: StreamChunk = match serde_json::from_value(parsed) {
             Ok(chunk) => chunk,
             Err(e) => {
-                self.final_finish_reason = Some(Self::error_finish_reason());
+                self.final_finish_reason = Some(FINISH_ERROR);
                 controller.enqueue(StreamPart::Error { error: e.into() });
                 return;
             }
@@ -515,45 +501,25 @@ impl Transformer for OpenAICompatibleChatStream {
                 match part {
                     GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
                         if self.text_started {
-                            controller.enqueue(StreamPart::TextEnd {
-                                id: TEXT_ID.to_string(),
-                                provider_metadata: None,
-                            });
+                            controller.text_end(TEXT_ID);
                             self.text_started = false;
                         }
                         if !self.reasoning_started {
                             self.reasoning_started = true;
-                            controller.enqueue(StreamPart::ReasoningStart {
-                                id: REASONING_ID.to_string(),
-                                provider_metadata: None,
-                            });
+                            controller.reasoning_start(REASONING_ID);
                         }
-                        controller.enqueue(StreamPart::ReasoningDelta {
-                            id: REASONING_ID.to_string(),
-                            delta: text,
-                            provider_metadata: None,
-                        });
+                        controller.reasoning_delta(REASONING_ID, text);
                     }
                     GenerateContent::Text { text, .. } => {
                         if self.reasoning_started {
-                            controller.enqueue(StreamPart::ReasoningEnd {
-                                id: REASONING_ID.to_string(),
-                                provider_metadata: None,
-                            });
+                            controller.reasoning_end(REASONING_ID);
                             self.reasoning_started = false;
                         }
                         if !self.text_started {
                             self.text_started = true;
-                            controller.enqueue(StreamPart::TextStart {
-                                id: TEXT_ID.to_string(),
-                                provider_metadata: None,
-                            });
+                            controller.text_start(TEXT_ID);
                         }
-                        controller.enqueue(StreamPart::TextDelta {
-                            id: TEXT_ID.to_string(),
-                            delta: text,
-                            provider_metadata: None,
-                        });
+                        controller.text_delta(TEXT_ID, text);
                     }
                     _ => unreachable!(),
                 }
@@ -561,10 +527,7 @@ impl Transformer for OpenAICompatibleChatStream {
 
             if let Some(deltas) = choice.delta.tool_calls.filter(|deltas| !deltas.is_empty()) {
                 if self.reasoning_started {
-                    controller.enqueue(StreamPart::ReasoningEnd {
-                        id: REASONING_ID.to_string(),
-                        provider_metadata: None,
-                    });
+                    controller.reasoning_end(REASONING_ID);
                     self.reasoning_started = false;
                 }
                 for dtc in &deltas {
@@ -643,18 +606,12 @@ impl Transformer for OpenAICompatibleChatStream {
         }
     }
 
-    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(mut self, controller: &mut Controller) {
         if self.reasoning_started {
-            controller.enqueue(StreamPart::ReasoningEnd {
-                id: REASONING_ID.to_string(),
-                provider_metadata: None,
-            });
+            controller.reasoning_end(REASONING_ID);
         }
         if self.text_started {
-            controller.enqueue(StreamPart::TextEnd {
-                id: TEXT_ID.to_string(),
-                provider_metadata: None,
-            });
+            controller.text_end(TEXT_ID);
         }
         for (index, entry) in std::mem::take(&mut self.pending) {
             let delta = ToolCallDelta {
@@ -693,9 +650,7 @@ impl Transformer for OpenAICompatibleChatStream {
             });
         }
         controller.enqueue(StreamPart::Finish {
-            finish_reason: self
-                .final_finish_reason
-                .unwrap_or_else(Self::error_finish_reason),
+            finish_reason: self.final_finish_reason.unwrap_or(FINISH_ERROR),
             usage: self.chat.convert_usage(self.final_usage_raw.as_ref()),
             provider_metadata: Some(metadata),
         });

@@ -16,13 +16,13 @@ use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning,
-};
-use aimux_provider_utils::{TransformStreamController, Transformer, generate_id, pipe_through};
+use aimux_core::types::{FinishReason, ReasoningEffort, ResponseMetadata, Warning};
+use aimux_provider_utils::{Transformer, generate_id, pipe_through};
 
 use crate::shared::EndpointConfig;
-use crate::stream::{ChatToolCalls, StreamContext, ToolCallDelta};
+use crate::stream::{
+    ChatToolCalls, Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext, ToolCallDelta,
+};
 
 use super::convert::convert_to_groq_chat_messages;
 use super::error::{GroqErrorData, groq_failed_response_handler};
@@ -404,12 +404,9 @@ pub(crate) fn chat_test_stream(
 }
 
 impl GroqChatStream {
-    fn end_active_reasoning(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn end_active_reasoning(&mut self, controller: &mut Controller) {
         if self.is_active_reasoning {
-            controller.enqueue(StreamPart::ReasoningEnd {
-                id: "reasoning-0".to_string(),
-                provider_metadata: None,
-            });
+            controller.reasoning_end("reasoning-0");
             self.is_active_reasoning = false;
         }
     }
@@ -419,15 +416,11 @@ impl Transformer for GroqChatStream {
     type Input = Result<Value, AiMuxError>;
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn start(&mut self, controller: &mut Controller) {
         self.ctx.start(controller);
     }
 
-    fn transform(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         let parsed = match event {
             Ok(parsed) => parsed,
             // a chunk that fails to parse is reported as an error part
@@ -438,10 +431,7 @@ impl Transformer for GroqChatStream {
                     return;
                 }
                 self.ctx.raw(&Value::Null, controller);
-                self.finish_reason = Some(FinishReason {
-                    unified: FinishReasonUnified::Error,
-                    raw: None,
-                });
+                self.finish_reason = Some(FINISH_ERROR);
                 controller.enqueue(StreamPart::Error { error });
                 return;
             }
@@ -452,10 +442,7 @@ impl Transformer for GroqChatStream {
 
         // handle error chunks:
         if parsed.get("error").is_some() {
-            self.finish_reason = Some(FinishReason {
-                unified: FinishReasonUnified::Error,
-                raw: None,
-            });
+            self.finish_reason = Some(FINISH_ERROR);
             controller.enqueue(StreamPart::Error {
                 error: create_groq_stream_error(
                     &parsed,
@@ -471,10 +458,7 @@ impl Transformer for GroqChatStream {
         let value: GroqChatChunk = match serde_json::from_value(parsed) {
             Ok(value) => value,
             Err(error) => {
-                self.finish_reason = Some(FinishReason {
-                    unified: FinishReasonUnified::Error,
-                    raw: None,
-                });
+                self.finish_reason = Some(FINISH_ERROR);
                 controller.enqueue(StreamPart::Error {
                     error: error.into(),
                 });
@@ -509,34 +493,20 @@ impl Transformer for GroqChatStream {
 
         if let Some(reasoning) = delta.reasoning.filter(|text| !text.is_empty()) {
             if !self.is_active_reasoning {
-                controller.enqueue(StreamPart::ReasoningStart {
-                    id: "reasoning-0".to_string(),
-                    provider_metadata: None,
-                });
+                controller.reasoning_start("reasoning-0");
                 self.is_active_reasoning = true;
             }
-            controller.enqueue(StreamPart::ReasoningDelta {
-                id: "reasoning-0".to_string(),
-                delta: reasoning,
-                provider_metadata: None,
-            });
+            controller.reasoning_delta("reasoning-0", reasoning);
         }
 
         if let Some(text) = delta.content.filter(|text| !text.is_empty()) {
             // end the active reasoning block before text starts
             self.end_active_reasoning(controller);
             if !self.is_active_text {
-                controller.enqueue(StreamPart::TextStart {
-                    id: "txt-0".to_string(),
-                    provider_metadata: None,
-                });
+                controller.text_start("txt-0");
                 self.is_active_text = true;
             }
-            controller.enqueue(StreamPart::TextDelta {
-                id: "txt-0".to_string(),
-                delta: text,
-                provider_metadata: None,
-            });
+            controller.text_delta("txt-0", text);
         }
 
         if let Some(deltas) = delta.tool_calls.filter(|deltas| !deltas.is_empty()) {
@@ -559,21 +529,15 @@ impl Transformer for GroqChatStream {
         }
     }
 
-    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(mut self, controller: &mut Controller) {
         self.end_active_reasoning(controller);
         if self.is_active_text {
-            controller.enqueue(StreamPart::TextEnd {
-                id: "txt-0".to_string(),
-                provider_metadata: None,
-            });
+            controller.text_end("txt-0");
         }
         self.tool_calls.finish(controller);
 
         controller.enqueue(StreamPart::Finish {
-            finish_reason: self.finish_reason.unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            }),
+            finish_reason: self.finish_reason.unwrap_or(FINISH_OTHER),
             usage: convert_groq_usage(self.usage.as_ref()),
             provider_metadata: None,
         });
