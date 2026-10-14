@@ -1114,8 +1114,8 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 产品选择 | helper 超时 | 非流式 30 秒上限，与注入 fetch 无关 |
 | 产品选择 | SSE 预读 | 保留首事件错误预读，明确计时影响 |
 | 产品选择 | 视频多批的 idempotency-key | 调用方给 key 时，多批按批次派生 `<key>:batch:<i>`，单批保持原键；上游每个批次的 doStart 带同一个调用方 key（ai 7.0.127 `A/generate-video/generate-video.ts:338-372`、`:520-536`），provider 可能据此把几个批次去重成一个任务 |
-| 尚未对齐 | 流中途重试 | 上游 `streamText` 有 `streamRetries`（不设时不重试；设为 n 时流中途的 provider error 最多重新调用模型 n 次，`onError` 也可请求重试，见 ai 7.0.127 `A/generate-text/stream-text.ts:374`、`:1948-1953`、`:2495-2665`）。aimux 待实现，现状与不设时相同：流返回后不重试（RFC-0031 §8.3） |
-| 尚未对齐 | 首块超时的起点 | 上游在 provider 响应流开始时才开始计 chunk 超时（`A/generate-text/stream-text.ts:2228-2243`、`:2671`）；aimux 的 provider 在 `do_stream` 内预读首个 SSE 事件，所以 `first_chunk_ms` 在 operation 开始时计时，覆盖请求建立。改成上游的时机要先让 `do_stream` 在响应头到达时返回，未决（RFC-0031 §8.1、§8.3） |
+| 尚未对齐 | 流中途重试 | 上游 `streamText` 有 `streamRetries`（不设时不重试；设为 n 时流中途的 provider error 最多重新调用模型 n 次，`onError` 也可请求重试，见 ai 7.0.127 `A/generate-text/stream-text.ts:374`、`:1948-1953`、`:2495-2665`）。aimux 待实现，现状与不设时相同：流返回后不重试（RFC-0031 §8.3；§9.1 已知差距） |
+| 产品选择 | 首块超时的起点 | 上游在 provider 响应流开始时才开始计 chunk 超时（`A/generate-text/stream-text.ts:2228-2243`、`:2671`）；aimux 的 provider 在 `do_stream` 内预读首个 SSE 事件，所以 `first_chunk_ms` 在 operation 开始时计时，覆盖请求建立。保留这一差异：provider 等到首个 SSE 事件才从 `do_stream` 返回，若计时推迟到响应流开始，返回 200 之后一直不发数据的流就没有时间上限（RFC-0031 §8.1、§8.3；§9.1 已知差距） |
 | 产品选择 | core 工具循环 | 保持单步，不引入 agent loop |
 | 不采用 | workflow 模型序列化 | 不用于录制或重建 |
 | 不采用 | 历史版本和 deprecated 兼容 | 不实现 V2/V3 适配、旧方法转发、旧录制读取；旧 namespace 键不在此列，照上游读取并双写（§4.1） |
@@ -1501,6 +1501,8 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - 用 trace middleware 与宿主 scope 取代 `TraceLayer`（§3.6、§7.3、D6、D7）。
 - 审计族仍按 provider 字符串子串判断，改为显式元数据与 descriptor（§3.6、D8）。
 - CompositeChild、`child_call`、`servedBy` 与逐 child 重试预算（§4.5、D14）。
+- 流中途重试：上游 `streamText` 的 `streamRetries` 与 `onError` 请求重试（§5、RFC-0031 §8.3）。现状与上游不设时相同，流返回后不重试。
+- 首块超时从 operation 开始计时，不从响应流开始（§5）。provider 在 `do_stream` 内等到首个 SSE 事件才返回，推迟计时会让返回 200 之后一直不发数据的流没有时间上限，所以保留这一差异，不再修改；要跟随上游，需先让每个 provider 在响应头到达时就返回。
 - `providers_from_config` 与结构化 env 引用（§3.3）；随绑定迁移那一层做。
 - catalogue 仍用 `replace('-', '_')` 猜 package，改为显式关联（§4.6）。
 - 生产代码禁用 panic / unwrap / expect 的 lint（§9.2）。
