@@ -37,10 +37,11 @@ import 'package:test/test.dart';
 // Mock server (mirrors structured_e2e_test.dart)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A chat-completions model against [baseUrl]: the registry's `groq` entry with
-/// a `baseUrl` setting (`Model.openai` speaks the Responses API).
+/// A chat-completions model against [baseUrl]: the registry's `deepseek`
+/// entry with a `baseUrl` setting (`Model.openai` speaks the Responses API;
+/// Groq reads stream usage from `x_groq` only, as upstream does).
 Model mockChatModel(String baseUrl, String apiKey, String modelId) =>
-    Model.provider('groq', modelId,
+    Model.provider('deepseek', modelId,
         apiKey: apiKey, configJson: jsonEncode({'baseUrl': baseUrl}));
 
 class MockOpenAIServer {
