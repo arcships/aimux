@@ -190,3 +190,72 @@ impl Emit for Controller {
         });
     }
 }
+
+/// Driving a stream's `Transformer` synchronously, without HTTP or SSE.
+#[cfg(test)]
+pub(crate) mod testing {
+    use aimux_core::error::AiMuxError;
+    use aimux_core::stream_part::StreamPart;
+    use aimux_provider_utils::Transformer;
+
+    use super::Controller;
+
+    /// What `pipe_through` would emit for `input`, one line per item: `start`,
+    /// `transform` per chunk until the stream is closed, then `flush` unless
+    /// it was.
+    pub(crate) fn run<T: Transformer<Output = StreamPart>>(
+        mut stream: T,
+        input: impl IntoIterator<Item = T::Input>,
+    ) -> Vec<String> {
+        let mut controller = Controller::new();
+        stream.start(&mut controller);
+        for chunk in input {
+            if controller.is_closed() {
+                break;
+            }
+            stream.transform(chunk, &mut controller);
+        }
+        if !controller.is_closed() {
+            stream.flush(&mut controller);
+        }
+        controller.drain().map(describe).collect()
+    }
+
+    /// The kind of an item and the fields a test tells parts apart by.
+    pub(crate) fn describe(item: Result<StreamPart, AiMuxError>) -> String {
+        let part = match item {
+            Ok(part) => part,
+            Err(error) => return format!("err {error}"),
+        };
+        match part {
+            StreamPart::StreamStart { .. } => "stream-start".to_string(),
+            StreamPart::ResponseMetadata(metadata) => {
+                format!("response-metadata {}", metadata.id.unwrap_or_default())
+            }
+            StreamPart::TextStart { id, .. } => format!("text-start {id}"),
+            StreamPart::TextDelta { id, delta, .. } => format!("text-delta {id} {delta}"),
+            StreamPart::TextEnd { id, .. } => format!("text-end {id}"),
+            StreamPart::ReasoningStart { id, .. } => format!("reasoning-start {id}"),
+            StreamPart::ReasoningDelta { id, delta, .. } => {
+                format!("reasoning-delta {id} {delta}")
+            }
+            StreamPart::ReasoningEnd { id, .. } => format!("reasoning-end {id}"),
+            StreamPart::ToolInputStart { id, tool_name, .. } => {
+                format!("tool-input-start {id} {tool_name}")
+            }
+            StreamPart::ToolInputDelta { id, delta, .. } => {
+                format!("tool-input-delta {id} {delta}")
+            }
+            StreamPart::ToolInputEnd { id, .. } => format!("tool-input-end {id}"),
+            StreamPart::ToolCall(call) => format!(
+                "tool-call {} {} {}",
+                call.tool_call_id, call.tool_name, call.input
+            ),
+            StreamPart::Error { error } => format!("error {error}"),
+            StreamPart::Finish { finish_reason, .. } => {
+                format!("finish {:?}", finish_reason.unified)
+            }
+            other => format!("{other:?}"),
+        }
+    }
+}
