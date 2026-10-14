@@ -665,7 +665,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gains `Transformer`, `TransformStreamController` and `pipe_through`, the
   Rust form of the WHATWG `TransformStream` the AI SDK models build `doStream`
   with (`start` / `transform` / `flush`; `enqueue`, `enqueue_error`, `error`,
-  `terminate`).
+  `terminate`). `pipe_through` returns `PipeThrough`, a `Stream` that calls
+  `start` immediately and the transformer's other methods as it is polled;
+  `TransformStreamController::new`, `drain` and `is_closed` let a test drive
+  a transformer without a stream.
 
 **Rust (aimux-providers)**
 

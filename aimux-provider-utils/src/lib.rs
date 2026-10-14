@@ -71,5 +71,5 @@ pub use sigv4_fetch::{AwsCredentials, SigV4Fetch, SigV4Signing};
 pub use streaming_tool_call_tracker::{
     StreamingToolCallDelta, StreamingToolCallTracker, TrackerError, TypeValidation,
 };
-pub use transform_stream::{TransformStreamController, Transformer, pipe_through};
+pub use transform_stream::{PipeThrough, TransformStreamController, Transformer, pipe_through};
 pub use url::{validate_base_url, without_trailing_slash, without_trailing_slash_opt};
