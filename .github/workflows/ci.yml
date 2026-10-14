@@ -67,10 +67,13 @@ jobs:
             target: aarch64-pc-windows-msvc
             binary: aimux.win32-arm64-msvc.node
             test: false
-          - host: macos-15-intel
+          # Cross-built on Apple Silicon and tested with x64 Node under
+          # Rosetta: Intel macOS runners are slower and scarcer.
+          - host: macos-latest
             target: x86_64-apple-darwin
             binary: aimux.darwin-x64.node
             test: true
+            node-arch: x64
           - host: macos-latest
             target: aarch64-apple-darwin
             binary: aimux.darwin-arm64.node
@@ -92,9 +95,13 @@ jobs:
         with:
           key: ${{ matrix.settings.target }}
           save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: Install Rosetta
+        if: matrix.settings.node-arch == 'x64' && runner.arch == 'ARM64'
+        run: /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          architecture: ${{ matrix.settings.node-arch }}
           cache: npm
           cache-dependency-path: bindings/node/package-lock.json
       - name: Install dependencies
@@ -195,7 +202,7 @@ jobs:
           pip install pytest pydantic
           python -m pytest tests/ -v
 
-  # ── aimux-ffi: build C ABI library (desktop matrix — source for C/C++ artifacts) ──
+  # ── aimux-ffi: build C ABI library (desktop matrix — source for C/C++ artifacts), test Go on it ──
   ffi-build:
     name: aimux-ffi (${{ matrix.target }})
     runs-on: ${{ matrix.host }}
@@ -233,99 +240,19 @@ jobs:
           path: |
             target/${{ matrix.target }}/release/${{ matrix.artifact }}
             aimux-ffi/aimux-ffi.h
-
-  # ── Java binding: build FFI lib + test across JDK versions ─────────────────
-  # Gradle 8.14.3 runs on JDK 8+; the build script only sets --release on JDK 9+,
-  # so the Java 8 matrix entry compiles with plain source/target compatibility.
-  java-binding:
-    name: Java binding (JDK ${{ matrix.java }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        java: [8, 11, 17, 21]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ffi-test"
-          save-if: ${{ github.ref == 'refs/heads/master' }}
-      - name: Build FFI library
-        run: cargo rustc -p aimux-ffi --release --crate-type cdylib
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.14.3"
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ matrix.java }}
-      - name: Test
-        working-directory: bindings/java
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
-        run: gradle test
-
-  # ── Kotlin binding: same gradle setup as Java ─────────────────────────────
-  # The Kotlin binding is published to Maven Central by release.yml but had no
-  # job here, so nothing ever compiled or ran its six test files. Its
-  # build.gradle.kts already points jna.library.path at target/release.
-  kotlin-binding:
-    name: Kotlin binding (JDK ${{ matrix.java }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        java: [17, 21]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ffi-test"
-          save-if: ${{ github.ref == 'refs/heads/master' }}
-      - name: Build FFI library
-        run: cargo rustc -p aimux-ffi --release --crate-type cdylib
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.14.3"
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ matrix.java }}
-      - name: Test
-        working-directory: bindings/kotlin
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
-        run: gradle test
-
-  # ── Go binding: build FFI static archive + vet/test ───────────────────────
-  go-binding:
-    name: Go binding (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # macOS included because the cgo LDFLAGS are platform-specific
-        # (ld64 rejects GNU -Bstatic/-Bdynamic; see bindings/go/aimux.go).
-        os: [ubuntu-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ffi-test"
-          save-if: ${{ github.ref == 'refs/heads/master' }}
+      # The Go binding links the static archive this build also produces.
+      # macOS is covered because the cgo LDFLAGS are platform-specific (ld64
+      # rejects GNU -Bstatic/-Bdynamic; see bindings/go/aimux.go).
       - uses: actions/setup-go@v5
+        if: runner.os != 'Windows'
         with:
           go-version: "1.24.x"
-      - name: Build static archive
-        run: cargo build -p aimux-ffi --release
       - name: Vet + test Go binding
+        if: runner.os != 'Windows'
         working-directory: bindings/go
         shell: bash
         run: |
-          export CGO_LDFLAGS="-L${{ github.workspace }}/target/release"
+          export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.target }}/release"
           go vet ./...
           go test ./...
       - name: Race test Go binding
@@ -333,8 +260,69 @@ jobs:
         working-directory: bindings/go
         shell: bash
         run: |
-          export CGO_LDFLAGS="-L${{ github.workspace }}/target/release"
+          export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.target }}/release"
           go test -race ./...
+
+  # ── Java + Kotlin bindings: one FFI build, every JDK in turn ─────────────
+  # Gradle 8.14.3 runs on JDK 8+; the Java build script only sets --release on
+  # JDK 9+, so JDK 8 compiles with plain source/target compatibility. The
+  # Kotlin build.gradle.kts points jna.library.path at target/release.
+  jvm-bindings:
+    name: Java + Kotlin bindings
+    runs-on: ubuntu-latest
+    env:
+      LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ffi-test"
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: Build FFI library
+        run: cargo rustc -p aimux-ffi --release --crate-type cdylib
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            11
+            17
+            21
+      - name: Java tests (JDK 8)
+        working-directory: bindings/java
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_8_X64 }}
+        run: gradle test --rerun-tasks
+      - name: Java tests (JDK 11)
+        working-directory: bindings/java
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_11_X64 }}
+        run: gradle test --rerun-tasks
+      - name: Java tests (JDK 17)
+        working-directory: bindings/java
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
+        run: gradle test --rerun-tasks
+      - name: Java tests (JDK 21)
+        working-directory: bindings/java
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
+        run: gradle test --rerun-tasks
+      # The Kotlin binding is published to Maven Central by release.yml.
+      - name: Kotlin tests (JDK 17)
+        working-directory: bindings/kotlin
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
+        run: gradle test --rerun-tasks
+      - name: Kotlin tests (JDK 21)
+        working-directory: bindings/kotlin
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
+        run: gradle test --rerun-tasks
 
   # ── Flutter binding: plugin structure + Dart tests (host FFI lib) ─────────
   flutter-binding:
