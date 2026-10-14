@@ -26,7 +26,7 @@ const _lmUsage = {
   'inputTokens': 3,
   'inputTokenDetails': {'cacheReadTokens': 1},
   'outputTokens': 2,
-  'outputTokenDetails': {},
+  'outputTokenDetails': <String, dynamic>{},
   'totalTokens': 5,
 };
 
@@ -177,7 +177,7 @@ void main() {
       {'type': 'start'},
       {
         'type': 'start-step',
-        'request': {},
+        'request': <String, dynamic>{},
         'warnings': [
           {'type': 'other', 'message': 'm'}
         ]
