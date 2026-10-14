@@ -16,9 +16,14 @@ env:
   # Test-only jobs do not ship binaries: skip single-threaded fat LTO and -Oz
   # size optimization. ffi-build uploads release artifacts and restores
   # Cargo.toml's release profile in its job env.
+  # opt-level 1, not 0: aimux_stream_text drives the whole stream future on
+  # the caller's thread, and at opt-level 0 that needs more than the 512 KB
+  # stack of a Swift cooperative thread (SIGBUS in the async Swift tests).
+  # Measured for one stream through the C ABI: ~530 KB at 0, ~110 KB at 1,
+  # ~160 KB with the shipping profile.
   CARGO_PROFILE_RELEASE_LTO: "false"
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
-  CARGO_PROFILE_RELEASE_OPT_LEVEL: "0"
+  CARGO_PROFILE_RELEASE_OPT_LEVEL: "1"
   CARGO_PROFILE_RELEASE_DEBUG: "0"
   CARGO_PROFILE_IOS_RELEASE_OPT_LEVEL: "z"
   CARGO_PROFILE_IOS_RELEASE_CODEGEN_UNITS: "1"
