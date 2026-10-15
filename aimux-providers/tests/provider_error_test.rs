@@ -333,6 +333,79 @@ mod openai_stream_errors {
             "expected a StreamPart::Error carrying 'stream failed after output', got {parts:?}"
         );
     }
+
+    /// openai-chat-language-model.ts:561-568, :656-670: an error frame after a
+    /// tool-call delta is forwarded as an `Error` part, and the stream still
+    /// flushes the tracker — `ToolInputEnd` and `ToolCall` (with the raw,
+    /// incomplete arguments) come after the error — before a `Finish` whose
+    /// finish reason is `error`.
+    #[tokio::test]
+    async fn tool_calls_are_flushed_after_an_error_frame() {
+        let server = MockServer::start().await;
+        let body = concat!(
+            "data: {\"id\":\"chatcmpl-err\",\"object\":\"chat.completion.chunk\",",
+            "\"created\":1702657020,\"model\":\"gpt-4o\",",
+            "\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"tool_calls\":[",
+            "{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",",
+            "\"function\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\"}}",
+            "]},\"finish_reason\":null}]}\n\n",
+            "data: {\"error\":{\"message\":\"stream failed after tool input\",",
+            "\"type\":\"server_error\",\"param\":null,\"code\":null}}\n\n",
+            "data: [DONE]\n\n",
+        );
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
+
+        let stream = model(&server).do_stream(&options()).await.unwrap();
+        let parts = collect_stream(stream).await;
+
+        let order: Vec<&str> = parts
+            .iter()
+            .filter_map(|part| match part {
+                StreamPart::ToolInputStart { .. } => Some("tool-input-start"),
+                StreamPart::ToolInputDelta { .. } => Some("tool-input-delta"),
+                StreamPart::ToolInputEnd { .. } => Some("tool-input-end"),
+                StreamPart::ToolCall(_) => Some("tool-call"),
+                StreamPart::Error { .. } => Some("error"),
+                StreamPart::Finish { .. } => Some("finish"),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            order,
+            [
+                "tool-input-start",
+                "tool-input-delta",
+                "error",
+                "tool-input-end",
+                "tool-call",
+                "finish"
+            ],
+            "{parts:?}"
+        );
+        assert!(
+            parts.iter().any(|part| matches!(part,
+                StreamPart::ToolCall(call)
+                    if call.tool_call_id == "call_1"
+                        && call.tool_name == "get_weather"
+                        && call.input == "{\"city\":")),
+            "{parts:?}"
+        );
+        assert!(
+            matches!(parts.last(),
+                Some(StreamPart::Finish { finish_reason, .. })
+                    if matches!(finish_reason.unified,
+                        aimux_core::types::FinishReasonUnified::Error)),
+            "{parts:?}"
+        );
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
