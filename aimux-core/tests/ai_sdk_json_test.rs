@@ -6,14 +6,16 @@
 //! test cites the upstream type it pins (`ai@7.0.127`,
 //! `@ai-sdk/provider@4.0.21`, `@ai-sdk/provider-utils@5.0.53`).
 
-use aimux_core::content::{AssistantContentPart, FilePartData, UserContentPart};
+use aimux_core::content::{
+    AssistantContentPart, FilePartData, ReasoningFilePartData, ToolContentPart, UserContentPart,
+};
 use aimux_core::error::ApiCallError;
 use aimux_core::generate::GenerateTextResult;
 use aimux_core::image_model::ImageOutputs;
 use aimux_core::language_model_message::{
     convert_file_part_data, convert_to_language_model_prompt,
 };
-use aimux_core::message::ModelMessage;
+use aimux_core::message::{AssistantContent, ModelMessage, ModelPrompt, UserContent};
 use aimux_core::result::{
     ContentPart, GenerateContent, GeneratedFile, GeneratedFileOutput, LanguageModelFile,
     ToolApprovalRequestOutput,
@@ -812,6 +814,95 @@ fn decisions_are_the_ai_sdk_json() {
         })
         .unwrap(),
         json!({ "inputTokens": 3 })
+    );
+}
+
+// ── Unknown types ───────────────────────────────────────────────────────────
+
+/// Every tagged union of the public JSON rejects an unknown `type` (or
+/// `role`) with an error that names it, never as empty content (RFC-0042
+/// §7.2, `rfc/0042-v4-type-boundaries.md:211`).
+#[test]
+fn an_unknown_type_is_a_decode_error_naming_it() {
+    use aimux_core::output::Output;
+    let unknown = json!({ "type": "no-such-type" });
+    for error in [
+        decode_error::<TextStreamPart>(unknown.clone()),
+        decode_error::<StreamPart>(unknown.clone()),
+        decode_error::<ContentPart>(unknown.clone()),
+        decode_error::<GenerateContent>(unknown.clone()),
+        decode_error::<UserContentPart>(unknown.clone()),
+        decode_error::<AssistantContentPart>(unknown.clone()),
+        decode_error::<ToolContentPart>(unknown.clone()),
+        decode_error::<FileData>(unknown.clone()),
+        decode_error::<GeneratedFileData>(unknown.clone()),
+        decode_error::<Output>(unknown),
+    ] {
+        assert!(error.contains("unknown variant `no-such-type`"), "{error}");
+    }
+    let error = decode_error::<ModelMessage>(json!({ "role": "robot", "content": "hi" }));
+    assert!(error.contains("unknown variant `robot`"), "{error}");
+}
+
+/// The wrappers around those unions keep the error. A prompt or message
+/// content with an unknown part names the part's `type`, and file `data`
+/// with a `type` is tagged data, never a provider reference (`ai@7.0.127`
+/// `src/prompt/file-part-data.ts:14-21` `isTaggedFileData`;
+/// `@ai-sdk/provider-utils@5.0.55` `src/is-provider-reference.ts:9-21`,
+/// `!('type' in data)`).
+#[test]
+fn untagged_wrappers_keep_the_unknown_type_error() {
+    let part = json!({ "type": "no-such-part", "text": "hi" });
+    for error in [
+        decode_error::<ModelPrompt>(json!([{ "role": "user", "content": [part.clone()] }])),
+        decode_error::<ModelPrompt>(json!([{ "role": "assistant", "content": [part.clone()] }])),
+        decode_error::<UserContent>(json!([part.clone()])),
+        decode_error::<AssistantContent>(json!([part])),
+    ] {
+        assert!(error.contains("unknown variant `no-such-part`"), "{error}");
+    }
+
+    for (data, tag) in [
+        (
+            json!({ "type": "URL", "url": "https://example.com/a.pdf" }),
+            "URL",
+        ),
+        (json!({ "type": "bogus" }), "bogus"),
+    ] {
+        let error = decode_error::<FilePartData>(data.clone());
+        assert!(
+            error.contains(&format!("unknown variant `{tag}`")),
+            "{error}"
+        );
+        // The same inside a prompt.
+        let error = decode_error::<ModelPrompt>(json!([{ "role": "user", "content": [
+            { "type": "file", "data": data, "mediaType": "application/pdf" }
+        ] }]));
+        assert!(
+            error.contains(&format!("unknown variant `{tag}`")),
+            "{error}"
+        );
+    }
+    let error = decode_error::<ReasoningFilePartData>(
+        json!({ "type": "reference", "reference": { "openai": "file-abc" } }),
+    );
+    assert!(error.contains("unknown variant `reference`"), "{error}");
+
+    // A bare `{ provider: id }` map is still a reference and a string still a
+    // string (`file_part_data_converts_as_the_ai_sdk_does` covers the rest).
+    assert!(matches!(
+        serde_json::from_value::<FilePartData>(json!({ "openai": "file-abc" })).unwrap(),
+        FilePartData::Reference(_)
+    ));
+    assert!(matches!(
+        serde_json::from_value::<FilePartData>(json!("aGk=")).unwrap(),
+        FilePartData::String(_)
+    ));
+    // Neither a string nor an array says what was expected.
+    let error = decode_error::<ModelPrompt>(json!(42));
+    assert!(
+        error.contains("expected a prompt string or an array of messages"),
+        "{error}"
     );
 }
 

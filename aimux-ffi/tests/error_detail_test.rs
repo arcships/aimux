@@ -71,6 +71,29 @@ fn generate_text_prompt_json_wire_vs_schema() {
     aimux_drop_handle(h);
 }
 
+/// RFC-0042 §7.2 at the C boundary: a prompt part with an unknown `type` is
+/// InvalidArgument naming the type, not "data did not match any variant of
+/// untagged enum ModelPrompt".
+#[test]
+fn generate_text_unknown_part_type_is_named() {
+    let h = valid_handle();
+    let mut out: *mut c_char = ptr::null_mut();
+    for prompt in [
+        r#"[{"role":"user","content":[{"type":"no-such-part","text":"hi"}]}]"#,
+        r#"{"prompt":[{"role":"user","content":[{"type":"no-such-part","text":"hi"}]}]}"#,
+    ] {
+        let e = aimux_generate_text(h, c(prompt).as_ptr(), ptr::null(), &mut out);
+        let (code, m) = expect_aimux_error(e, prompt);
+        assert_eq!(code, AIMUX_E_INVALID_ARGUMENT);
+        assert!(
+            m.contains("prompt_json:") && m.contains("unknown variant `no-such-part`"),
+            "{m}"
+        );
+        assert!(out.is_null());
+    }
+    aimux_drop_handle(h);
+}
+
 #[test]
 fn generate_text_null_prompt_json_fails() {
     let h = valid_handle();
