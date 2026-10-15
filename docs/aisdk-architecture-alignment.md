@@ -103,7 +103,7 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 
 [ROADMAP](../ROADMAP.md)(#197)与 [RFC-0036](../rfc/0036-positioning-and-layered-architecture.md)(#198)先于本文合入。本文不重写路线图,只对其中与本设计冲突或被本设计吸收的承诺逐项定性;下表之外的 ROADMAP 条目不受影响。旧文档中被调整的段落已加注指向本节,以免两份互相矛盾的要求同时有效。
 
-维护者同期提出的一批专题 RFC 草案(#206 RFC-0033 registry 维护、#207 RFC-0036 §12–§14 增补、#208 RFC-0038 体积/性能、#209 RFC-0039 ops/绑定、#210 RFC-0040 provider/auth/L0、#211 RFC-0041 replay/治理、#212 RFC-0042 V4 类型/生成)以本文的结构为目标、承接其后的实施验收;本节与 #207 §12.2 的"明确替代清单"逐行对应,二者合入后互相回链。专题 RFC 中标注为"待接受"的新增提案(如 RFC-0040 的 G2/G3、RFC-0042 的 T1–T5)不属于本文的决定。
+维护者同期提出的一批专题 RFC 草案(#206 RFC-0033 registry 维护、#207 RFC-0036 §12–§14 增补、#208 RFC-0043 体积/性能、#209 RFC-0039 ops/绑定、#210 RFC-0040 provider/auth/L0、#211 RFC-0041 replay/治理、#212 RFC-0042 V4 类型/生成)以本文的结构为目标、承接其后的实施验收;本节与 #207 §12.2 的"明确替代清单"逐行对应,二者合入后互相回链。专题 RFC 中标注为"待接受"的新增提案(如 RFC-0040 的 G2/G3、RFC-0042 的 T1–T5)不属于本文的决定。
 
 | ROADMAP / RFC-0036 承诺 | 定性 | 说明 |
 |---|---|---|
@@ -116,8 +116,8 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 | #174 Auth L1(registry `auth` schema + `apply_auth()`)、#175 Auth L2(Credential 解析序 + CredentialStore + TokenRefresher) | 调整 | 鉴权按 D11 在各厂商包内以 headers 闭包 / fetch 装饰器 / Rust 内建 credential resolver 实现(§3.3、§4.1),registry `auth` 列作为 preset descriptor 数据保留,`apply_auth()` 即生成 headers 闭包。CredentialStore / TokenRefresher 涉及宿主回调与有状态刷新,与 Q4 一并后置;RFC-0018 的无状态刷新边界保留(§4.1 Codex 行) |
 | #167 transport-level replay("mock 挂 HTTP 层跑真协议代码";`ProviderRecord` = registry 行 + protocol)、#179 replay 子命令 | 保留,机制按本文 | 即 D4 / D5 的 `replay_fetch` / `replay_web_socket`(§4.3):录制与回放共用 provider-utils 的 leaf 边界,真实 provider 编码器与解析器参与回放。"`ProviderRecord` = registry 行 + protocol"撤销:录制 schema 3 不保存可重建的 ProviderRecord,live replay 由宿主 registry 与 operation 目标引用驱动(D24、§4.4)。#179 子命令保留在 tools |
 | #185 "删 `StreamingToolCallTracker`(纯删)→ `ToolInput{Raw,Parsed}`" | 调整 | tracker 不删,改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils,由 OpenAI chat 流驱动(#204);`ToolInput` 的 Raw / Parsed 区分由第二部分的四层消息协议承担(V4 tool-call `input` 为原文 String,core 层 `parse_tool_call` 产出解析值) |
-| A2–A5 机械清理、E1 内部清理与文档重组、#170 / #171 registry 维护、#180 / #181 小项 | 保留,不受影响 | 与本文无依赖;A2(#203)独立于本文推进 |
-| S1 / S2 / S3 体积工作、P 性能门禁、CLI 体积预算、0.9 能力矩阵 | 保留,不属于本文,迁移之后做 | 排期见 [ROADMAP](../ROADMAP.md) §6.1。体积与性能门禁等维护者改写 #208(RFC-0038 体积/性能预算)后再定;在此之前,每个迁移层的 PR 描述列出产物改前改后的体积(2026-10-13 修订) |
+| A2–A5 机械清理、E1 内部清理与文档重组、#170 / #171 registry 维护、#180 / #181 小项、S1 / S2 / S3 / P 门禁 | 保留,不受影响 | 与本文无依赖;A2(#203)独立于本文推进。体积与性能门禁按 [RFC-0043](../rfc/0043-size-performance-budgets.md)(#208);迁移各层的 PR 描述列出产物改前改后的体积(2026-10-15 修订) |
+| 0.9 能力矩阵 | 保留,不属于本文,迁移之后做 | 排期见 [ROADMAP](../ROADMAP.md) §6.1(2026-10-13 修订) |
 | "瘦身不改变对外 API"(ROADMAP §3 / §6.1) | 保留 | 该约束限定体积工作;本文的 API 替换是独立的设计决定,不以瘦身为由 |
 | 0.9 治理(漂移检测、`aimux probe / replay / diff`) | 保留 | 依赖本文 §4.3 的录制 schema 3 与 leaf 诊断,不另行设计 |
 
@@ -1468,7 +1468,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 | P1：分层切换 | 按依赖顺序拆成若干层（core 类型 → provider 工厂与请求层 → 厂商包与其余模型种类 → 公共 JSON → 下文所列的最后几层），每层一个 PR，直接合入主线 | 每层在同一 PR 内改完它删除或改动的符号在整个依赖闭包（FFI、八种接口、三个工具）中的全部消费方；合入时 §9.2 中已具备的检查全部通过 |
 | P2：协议与生命周期验收 | 完成逐包差分、离线回放、并发、取消、认证、流、生成物检查和文档核对 | 全部发布门槛通过后才发布 |
 
-每层直接写成目标设计，不引入之后要删除的过渡代码、deprecated 别名或旧 API 转发（D31）。某一层暂时达不到本文的某项要求时，在该层 PR 描述中写明缺什么、由哪一层补齐；与该层代码直接相关的本文修订随该层 PR 一起提交。例外：新 C ABI 与句柄对象模型（§6.1–§6.3）、descriptor/manifest/codegen（§6.5）、录制 schema 3 的完整形态（§4.3、§4.4），以及八种接口与工具的迁移（§6.4、§4.6），排在其余各层之后、发布之前。在此之前，现有按厂商命名的 C 构造器与按名字创建 provider 的入口保持对外签名，内部改调新工厂；它们随绑定迁移那一层一次替换，不另设 deprecated 别名，任何发布版本中都不会出现。每层 PR 描述还列出产物改前改后的体积（体积与性能门禁排在迁移之后，见 §0.7）。
+每层直接写成目标设计，不引入之后要删除的过渡代码、deprecated 别名或旧 API 转发（D31）。某一层暂时达不到本文的某项要求时，在该层 PR 描述中写明缺什么、由哪一层补齐；与该层代码直接相关的本文修订随该层 PR 一起提交。例外：新 C ABI 与句柄对象模型（§6.1–§6.3）、descriptor/manifest/codegen（§6.5）、录制 schema 3 的完整形态（§4.3、§4.4），以及八种接口与工具的迁移（§6.4、§4.6），排在其余各层之后、发布之前。在此之前，现有按厂商命名的 C 构造器与按名字创建 provider 的入口保持对外签名，内部改调新工厂；它们随绑定迁移那一层一次替换，不另设 deprecated 别名，任何发布版本中都不会出现。每层 PR 描述还列出产物改前改后的体积（体积与性能门禁按 RFC-0043，见 §0.7）。
 
 全部层合入并通过 P2 之前，主线处于迁移中途，**不从主线发布**。此期间已发布版本的修复，从对应 release 标签拉出维护分支发布（如 0.5.x 从 `v0.5.0` 拉出）。
 

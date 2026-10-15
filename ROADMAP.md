@@ -54,9 +54,9 @@ aimux 是 **provider 接入与治理的运行时**：
 | 项 | 内容 |
 |---|---|
 | RFC | RFC-0031 / 0032（写入 #166 的 7 条修正）/ 0033 入库——B1、#170、#174、#175 均引用它们 |
-| **S1** | 桌面 `.a` 切 LTO-off staticlib profile（`ios-release` 改名 `staticlib-release`）。**只改 staticlib job**：`aimux-ffi` 同时产出 cdylib，`.so/.dylib/.dll` 保持 fat-LTO。实测 138.4 → 66.5 MB；后置到全链路对齐迁移之后（见 §6.1） |
-| **S2** | 体积门禁推广到所有发布产物，**每个产物给具体阈值**（初期取当前值 +10%），CI 输出体积报告；后置到全链路对齐迁移之后（见 §6.1） |
-| **P** | 性能回归门禁：单请求开销、流式吞吐、RSS 增长；后置到全链路对齐迁移之后（见 §6.1） |
+| **S1** | 桌面 `.a` 切 LTO-off staticlib profile（`ios-release` 改名 `staticlib-release`）。**只改 staticlib job**：`aimux-ffi` 同时产出 cdylib，`.so/.dylib/.dll` 保持 fat-LTO。实测 138.4 → 66.5 MB |
+| **S2** | 体积门禁推广到所有发布产物，**每个产物给具体阈值**（初期取当前值 +10%），CI 输出体积报告 |
+| **P** | 性能回归门禁：单请求开销、流式吞吐、RSS 增长 |
 | A2–A5 | 删 `ProviderName` 枚举及各语言副本；归档 `provider-inventory/`；aimux-web 类型副本；Flutter example 桌面脚手架 |
 | E1 | 内部清理 + 文档三层重组 |
 | #185 | `ToolInput{Raw,Parsed}`；tracker 不删，改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils（#204）；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系) |
@@ -77,7 +77,7 @@ aimux 是 **provider 接入与治理的运行时**：
 | B2–B8 | 17 个 LanguageModel 实现 → ~7 个协议；33 个 wrapper 退役；responses 家族合并（遵循 #166 修正 3/6） |
 | #174 / #175 | registry `auth` schema + `apply_auth()`；Credential 解析序 + CredentialStore + TokenRefresher |
 | L2 补齐 | `StreamPart::Raw` / `provider_metadata` 在各协议接线——投影不下的不得静默丢弃 |
-| **S3** | `cargo-bloat` 审计 0.5.0 增重（Android `.so` 13.4 → 21 MB）；feature gating 仅作可选小体积路径，默认全量；后置到全链路对齐迁移之后（见 §6.1） |
+| **S3** | `cargo-bloat` 审计 0.5.0 增重（Android `.so` 13.4 → 21 MB）；feature gating 仅作可选小体积路径，默认全量 |
 | ~~调研 RFC~~ | ~~L2 数据模型选型（AI SDK 形态 / Open Responses items / 自有），指标见 RFC-0036 §3~~ 撤销：选型已定为 AI SDK V4 形态（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 
 版本语义：Rust API 大 breaking（33 wrapper 退役）；C ABI 经 C2 转发不受影响。
@@ -149,7 +149,7 @@ aimux 是 **provider 接入与治理的运行时**：
 
 ### 6.1 产物体积与性能（硬门禁）
 
-> 2026-10-13 调整：全链路对齐迁移按 [docs/aisdk-architecture-alignment.md §9.1](docs/aisdk-architecture-alignment.md#91-集成原则) 逐层合入主线。S1–S3、P、`aimux` CLI 体积预算与 0.9 能力矩阵排在迁移之后；体积与性能门禁的阈值和形式等维护者改写 #208（RFC-0038 体积/性能预算）后再定。在此之前，每个迁移层的 PR 描述列出产物改前改后的体积。
+> 2026-10-13 调整：全链路对齐迁移按 [docs/aisdk-architecture-alignment.md §9.1](docs/aisdk-architecture-alignment.md#91-集成原则) 逐层合入主线，每个迁移层的 PR 描述列出产物改前改后的体积；0.9 能力矩阵排在迁移之后。2026-10-15 修订：体积与性能门禁的计量、预算与判定按 [RFC-0043](rfc/0043-size-performance-budgets.md)（#208），不以迁移完成为前提。
 
 | 产物 | v0.5.0 | 目标 | 手段 |
 |---|---|---|---|
