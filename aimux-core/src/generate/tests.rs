@@ -1313,3 +1313,118 @@ async fn generated_and_streamed_output_replay_the_same_messages() {
         serde_json::to_value(generated.response_messages()).unwrap()
     );
 }
+
+/// stream-text.ts:1725-1757: an abort after a step finished keeps the step;
+/// the result resolves with the recorded step and, without a `finish` part,
+/// the null total usage. Only a stream that recorded no step fails with the
+/// abort (:1729-1740; `an_aborted_stream_ends_with_an_abort_part`).
+#[tokio::test]
+async fn an_abort_after_a_finished_step_keeps_the_step() {
+    let model = ScriptedModel::streaming(text_stream(&["Hel", "lo"], FinishReasonUnified::Stop));
+    let mut result = stream_text(&model, "hi", GenerateTextOptions::default())
+        .await
+        .unwrap();
+    let mut parts: Vec<TextStreamPart> =
+        std::mem::replace(&mut result.stream, Box::pin(futures::stream::empty()))
+            .map(|part| part.expect("no transport error"))
+            .collect()
+            .await;
+    // stream_text itself never lets an abort in here: Finish directly
+    // follows FinishStep.
+    assert!(matches!(parts.pop(), Some(TextStreamPart::Finish { .. })));
+    assert!(matches!(
+        parts.last(),
+        Some(TextStreamPart::FinishStep { .. })
+    ));
+    parts.push(TextStreamPart::Abort {
+        reason: Some("request aborted".into()),
+    });
+    result.stream = Box::pin(futures::stream::iter(parts.into_iter().map(Ok)));
+
+    let result = result.consume().await.expect("the finished step is kept");
+    assert_eq!(result.steps().len(), 1);
+    assert_eq!(result.text(), "Hello");
+    assert_eq!(result.usage(), &LanguageModelUsage::default());
+}
+
+/// stream-language-model-call.ts:432, :705-707, :764: both calls with a
+/// repeated id are forwarded, and a provider result for that id carries the
+/// input of the last one.
+#[tokio::test]
+async fn a_repeated_tool_call_id_resolves_to_the_last_call_in_the_stream() {
+    let mut parts = text_stream(&["hi"], FinishReasonUnified::ToolCalls);
+    let finish = parts.pop().unwrap();
+    parts.extend([
+        Ok(provider_call("srv-1", "web_search", r#"{"q":"first"}"#)),
+        Ok(provider_call("srv-1", "web_search", r#"{"q":"second"}"#)),
+        Ok(StreamPart::ToolResult(provider_result(
+            "srv-1",
+            "web_search",
+            json!(["hit"]),
+            None,
+        ))),
+    ]);
+    parts.push(finish);
+    let model = ScriptedModel::streaming(parts);
+    let parts = collect(
+        stream_text(&model, "hi", GenerateTextOptions::default())
+            .await
+            .unwrap(),
+    )
+    .await;
+
+    let inputs: Vec<&Value> = parts
+        .iter()
+        .filter_map(|part| match part {
+            TextStreamPart::ToolCall(call) => Some(&call.input),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        inputs,
+        [&json!({ "q": "first" }), &json!({ "q": "second" })]
+    );
+
+    let result = parts
+        .iter()
+        .find(|part| matches!(part, TextStreamPart::ToolResult(_)))
+        .expect("the provider result");
+    assert_eq!(
+        serde_json::to_value(result).unwrap()["ToolResult"]["input"],
+        json!({ "q": "second" })
+    );
+}
+
+/// convert-language-model-content.ts:74-84: the generated content maps each
+/// `tool-call` part to the first parsed call with its id, so both parts of a
+/// repeated id show the first call.
+#[tokio::test]
+async fn a_repeated_tool_call_id_maps_to_the_first_call_when_generated() {
+    let call = |input: &str| {
+        GenerateContent::ToolCall(RawToolCall {
+            tool_call_id: "srv-1".into(),
+            tool_name: "web_search".into(),
+            input: input.into(),
+            provider_executed: Some(true),
+            dynamic: Some(true),
+            provider_metadata: None,
+        })
+    };
+    let model = ScriptedModel::generating(generated(
+        vec![call(r#"{"q":"first"}"#), call(r#"{"q":"second"}"#)],
+        FinishReasonUnified::ToolCalls,
+    ));
+    let result = generate_text(&model, "hi", GenerateTextOptions::default())
+        .await
+        .unwrap();
+    let inputs: Vec<&Value> = result
+        .final_step()
+        .content
+        .iter()
+        .filter_map(|part| match part {
+            ContentPart::ToolCall(call) => Some(&call.input),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(inputs, [&json!({ "q": "first" }), &json!({ "q": "first" })]);
+}

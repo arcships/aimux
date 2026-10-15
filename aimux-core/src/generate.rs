@@ -806,6 +806,12 @@ impl StreamTextResult {
                     total_usage = Some(usage);
                     break;
                 }
+                // stream-text.ts:1725-1757: an abort after a recorded step
+                // resolves the result (null total usage without `finish`);
+                // only a stream that recorded no step fails with the abort
+                // (:1729-1740). stream_text itself yields FinishStep and
+                // Finish back to back, so this order only comes from a
+                // caller-supplied stream.
                 TextStreamPart::Abort { reason } => {
                     aborted = Some(AiMuxError::Aborted(
                         reason.unwrap_or_else(|| "request aborted".into()),
