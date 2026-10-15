@@ -465,4 +465,30 @@ mod tests {
             }])
         );
     }
+
+    // A part's provider metadata is replayed whole into the response
+    // message's providerOptions (RFC-0042): unknown and empty namespaces and
+    // nested nulls survive, in order, on the one-shot text path and on the
+    // streamed reasoning path, where the metadata arrives on the end event.
+    // Comparing serialized text pins key order, which `Value` equality on an
+    // order-preserving map does not.
+    #[test]
+    fn part_metadata_replays_whole_into_provider_options() {
+        let metadata: SharedProviderMetadata = serde_json::from_value(json!({
+            "zz-gateway": { "trace": { "id": null, "hops": [1, null, { "x": null }] } },
+            "anthropic": { "signature": "sig-1" },
+            "acme": {}
+        }))
+        .unwrap();
+        let mut builder = ResponseMessageBuilder::new();
+        builder.text("hi", Some(&metadata));
+        builder.reasoning_start("r1".into(), None);
+        builder.reasoning_delta("r1".into(), "thinking", None);
+        builder.reasoning_end("r1".into(), Some(metadata.clone()));
+        let messages = builder.finish().messages;
+
+        let expected = serde_json::to_string(&metadata).unwrap();
+        let replayed = serde_json::to_string(&messages).unwrap();
+        assert_eq!(replayed.matches(expected.as_str()).count(), 2, "{replayed}");
+    }
 }
