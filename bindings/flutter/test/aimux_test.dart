@@ -97,6 +97,41 @@ void main() {
       }
     });
 
+    // The NativeFinalizer callback: aimux_drop_handle_ptr takes the handle
+    // as a pointer-sized value (NativeFinalizerFunction), so it is safe on
+    // 32-bit targets where aimux_drop_handle(uint64_t) is not.
+    test('aimux_drop_handle_ptr releases the handle its address names', () {
+      final dropHandlePtr = lib.lookupFunction<Void Function(Pointer<Void>),
+          void Function(Pointer<Void>)>('aimux_drop_handle_ptr');
+      expect(() => lib.lookup<NativeFinalizerFunction>('aimux_drop_handle_ptr'),
+          returnsNormally);
+      final outHandle = calloc<Uint64>();
+      final outJson = calloc<Pointer<Utf8>>();
+      try {
+        final e = withUtf8('sk-test-fake-key',
+            (k) => withUtf8('gpt-4o-mini', (m) => openaiNew(k, m, outHandle)));
+        expect(e, nullptr);
+        final handle = outHandle.value;
+        expect(handle, isNot(0));
+        dropHandlePtr(Pointer<Void>.fromAddress(handle));
+        // The handle is gone: a call on it is the dead-handle failure (203).
+        expect(
+          () => withUtf8('"hi"', (p) {
+            final e = generateText(handle, p, nullptr, outJson);
+            expect(errorCode(e), 203);
+            expectAimuxError(e, 'generate_text');
+          }),
+          throwsA(isA<StateError>()),
+        );
+        expect(outJson.value, nullptr);
+        // NULL is handle 0: a no-op.
+        dropHandlePtr(nullptr);
+      } finally {
+        calloc.free(outHandle);
+        calloc.free(outJson);
+      }
+    });
+
     // Bad wire JSON is only reachable when checkJson pre-validation was
     // bypassed (raw C call here); it is a C ABI failure → StateError.
     test('bad wire JSON at the raw C ABI → StateError', () {

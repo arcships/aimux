@@ -38,8 +38,8 @@ pub mod provider;
 pub mod replay;
 pub use provider::{
     ExternalProviderEntry, ProviderOptions, ProviderProfile, is_external_provider,
-    load_providers_from_json, provider, provider_from_env, provider_handle, provider_names,
-    provider_registry_entry, register_provider,
+    load_providers_from_json, provider, provider_api_key_env, provider_from_env, provider_handle,
+    provider_names, provider_registry_entry, register_provider,
 };
 pub use replay::{rebuild_decision_provider, rebuild_provider};
 

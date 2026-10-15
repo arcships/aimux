@@ -64,11 +64,16 @@ cargo run -p aimux-web -- --port 8787 --no-open
    "记住(写入磁盘)" 会持久化到配置目录的 `keys.json`(权限 `0600`)并在下次
    启动自动加载。列表只显示掩码(末 4 位),明文永不回传前端。
 2. **shell 环境变量(可选)**:`export OPENAI_API_KEY=sk-…`(或对应 provider
-   的注册 env var);Playground 等页的 key 字段也可填 `env:VAR` 引用。
+   的注册 env var);Playground 等页的 key 字段也可填 `env:VAR` 引用,`VAR`
+   只能是所选 provider 注册的 key 变量(如 `env:OPENAI_API_KEY`)。
 
 调用优先级:请求内显式 `env:` 引用 > Settings 已存 key > provider 注册的默认
 env var。非回环绑定(`--host 0.0.0.0` 等)时网页内 key 管理自动禁用,只能走
 `env:` 引用。
+
+自填 `base_url`(不是该 provider 的默认地址)时只用请求里直接给的 key(仅回环
+绑定可填明文):Settings 已存 key 和环境变量都不会发往该地址,`env:` 引用被拒绝;
+key 留空则不带 key 调用。Replay 一条指向非默认地址的录制时同样如此。
 
 打开后使用 Playground / Agent 页跑一次调用,Traces 页即可看到完整录制。
 
