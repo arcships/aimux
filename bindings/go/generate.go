@@ -4,7 +4,7 @@
 //
 //	go generate ./...
 //
-// from your module to download the prebuilt archive for your platform from
+// from your module to download the matching generated header and archive from
 // the GitHub Release assets (built by CI on every release). Requires network
 // access; pin a version with AIMUX_FFI_VERSION=v0.1.0.
 //

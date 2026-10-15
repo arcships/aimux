@@ -1,16 +1,7 @@
-// Example: typed text generation and multimodal with aimux.
-//
-// Prerequisites:
-//   cargo build -p aimux-ffi --release
-//
-// Run:
-//   cd bindings/go
-//   OPENAI_API_KEY=sk-... go run ./examples/generate
-
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -19,49 +10,26 @@ import (
 )
 
 func main() {
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		log.Fatal("OPENAI_API_KEY not set")
-	}
-
-	// ── Typed text generation (no manual JSON) ────────────────────────────
-	model := aimux.OpenAI(apiKey, "gpt-4o")
-	defer model.Close()
-
-	result, err := model.Generate("Explain Rust ownership in one sentence.", nil)
+	ctx := context.Background()
+	provider, err := aimux.Create(ctx, nil, "provider.create", map[string]any{
+		"package": "openai", "settings": map[string]any{"apiKey": os.Getenv("OPENAI_API_KEY")},
+	})
 	if err != nil {
-		log.Fatalf("generate failed: %v", err)
+		log.Fatal(err)
+	}
+	defer provider.Close()
+	model, err := aimux.Create(ctx, provider, "provider.model", map[string]any{
+		"method": "languageModel", "modelId": "gpt-4o-mini",
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer model.Close()
+	result, err := aimux.CallInto[aimux.GenerateTextResult](ctx, model, "text.generate", map[string]any{
+		"prompt": "Say hello in one sentence.",
+	})
+	if err != nil {
+		log.Fatal(err)
 	}
 	fmt.Println(result.Text)
-
-	// ── Typed streaming ────────────────────────────────────────────────────
-	fmt.Println("\n--- Streaming ---")
-	stream, err := model.Stream("Write a haiku about Rust.", nil)
-	if err != nil {
-		log.Fatalf("stream failed: %v", err)
-	}
-	for part := range stream.Parts() {
-		if part.Type == "text-delta" {
-			var td aimux.TextDeltaPayload
-			json.Unmarshal(part.Raw, &td)
-			fmt.Print(td.Text)
-		}
-	}
-	if err := stream.Err(); err != nil {
-		log.Fatalf("stream error: %v", err)
-	}
-	fmt.Println()
-
-	// ── Multimodal: Embedding ──────────────────────────────────────────────
-	emb, err := aimux.NewOpenAIEmbedding(apiKey, "text-embedding-3-small")
-	if err != nil {
-		log.Fatalf("embedding model failed: %v", err)
-	}
-	defer emb.Close()
-	// emb.Embed([]string{"hello", "world"}, nil) — requires network
-
-	// ── DeepSeek (OpenAI-compatible convenience) ──────────────────────────
-	deepseek := aimux.DeepSeek(os.Getenv("DEEPSEEK_API_KEY"), "deepseek-chat")
-	defer deepseek.Close()
-	// result, _ = deepseek.Generate("Hello", nil) — requires network
 }

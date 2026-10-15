@@ -1,71 +1,92 @@
 # aimux-go
 
-Go bindings for [aimux](https://github.com/arcships/aimux) — a unified LLM
-access layer for 325 AI providers, built on a Rust core.
-
-## Install
-
-```bash
-go get github.com/arcships/aimux/bindings/go
-go generate github.com/arcships/aimux/bindings/go   # downloads libaimux_ffi.a for your platform
-go build ./...
-```
-
-The binding links `libaimux_ffi.a` (static archive) via cgo. Every release
-builds the archive for 4 platforms (linux x64, macOS x64/arm64, Windows x64)
-on CI and ships them on the [GitHub Releases](https://github.com/arcships/aimux/releases)
-page. `go generate` fetches the right one for your machine — a few MB, no
-Rust toolchain, no compilation. Pin a specific version with
-`AIMUX_FFI_VERSION=v0.1.0 go generate github.com/arcships/aimux/bindings/go`.
-
-> Platforms without a prebuilt archive (e.g. FreeBSD, RISC-V): clone the
-> repo and run `cargo build -p aimux-ffi --release` locally, then build
-> your Go code from that checkout.
-> The archive lands in `<module-cache>/.../aimux/target/release/`; a `go
-> clean -modcache` or Go upgrade removes it — re-run `go generate`.
-
-## Quick start
+Go bindings for the operation C ABI. Requires cgo, Go 1.23+, the matching
+generated `aimux-ffi/include/aimux.h`, and a matching Rust library.
+Provider-specific constructors have been replaced by operation calls.
 
 ```go
-package main
-
-import (
-    "fmt"
-    "log"
-
-    aimux "github.com/arcships/aimux/bindings/go"
-)
-
-func main() {
-    p, err := aimux.NewOpenAI("sk-...", "gpt-4o")
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer p.Close()
-
-    result, err := p.Generate("Explain Rust ownership in one sentence.", nil)
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Println(result.Text)
-}
+ctx := context.Background()
+provider, err := aimux.Create(ctx, nil, "provider.create", map[string]any{
+    "package": "openai",
+    "settings": map[string]any{"apiKey": os.Getenv("OPENAI_API_KEY")},
+})
+if err != nil { return err }
+defer provider.Close()
+model, err := aimux.Create(ctx, provider, "provider.model", map[string]any{
+    "method": "languageModel", "modelId": "gpt-4o-mini",
+})
+if err != nil { return err }
+defer model.Close()
+result, err := aimux.CallInto[aimux.GenerateTextResult](ctx, model, "text.generate", map[string]any{
+    "prompt": "Hello", "options": aimux.GenerateTextOptions{},
+})
+if err != nil { return err }
+fmt.Println(result.Text)
 ```
 
-`GenerateText` / `StreamText` take and return raw JSON strings; `Generate` /
-`Stream` are the typed wrappers. The JSON is the AI SDK JSON: camelCase field
-names, unions tagged by `type` (`"tool-call"`, `"text-delta"`, ...), optional
-fields absent. A tool result is a `tool-result` content part
-(`toolCallId`, `toolName`, `output`). See [docs/api/go.md](../../docs/api/go.md).
+`Call` invokes a global operation; `Handle.Call` invokes one on an owned
+handle. `Create` owns the returned entry, whether the operation returns a
+decimal handle string or an object containing `handle`. Names are available
+in `generated/ops.go` and `Manifest()`. The first operation checks ABI major
+and the exact generated operation version. Manifest metadata remains available
+to callers; per-type schema revision/hash metadata is not currently generated.
 
-## Features
+Calls accept typed values or `json.RawMessage` and return canonical raw JSON.
+`CallInto[T]` decodes a typed result. `Params` preserves absent keys versus
+explicit null. `WireDTO[T]` retains the complete immutable JSON document,
+including unknown fields and large integers; `Value()` decodes a separate
+typed view and `Field()` reports presence. For example,
+`CallInto[aimux.WireDTO[aimux.GenerateTextResult]]` provides lossless storage.
+Nil parameters encode `null`; use `struct{}{}` for `{}`. Handle IDs encode as
+decimal strings, including above 2^53. Never adopt an ID twice.
 
-- Typed API for text, streaming, embeddings, tools, images, speech, and more
-- One API for 325 providers (OpenAI, Anthropic, Google, Bedrock, …)
-- Single static binary — the Rust core is linked in, no runtime deps
+Context cancellation signals native Abort. `StartOperation` retains its
+context signal through the transcription operation lifetime. `Push` submits
+binary input and may return ResourceLimit when native admission is full.
+`InputDone`, `NextPart`, `Status`, `Cancel` and `Close` expose operation
+controls. `NextPart` distinguishes Part, Ended and PollTimeout; its timeout
+must be nonnegative, with zero polling immediately. A terminal failure is
+delivered once by polling and remains available through Status.
 
-See the [API docs](https://github.com/arcships/aimux/blob/master/docs/API.md)
-for the full API surface.
+`Handle.Stream` returns copied event JSON through `Events()`. The queue holds
+seven events plus one pending producer, with at most 1 MiB per event and
+bounded frame overhead. The producer alone closes the channel after callbacks
+return. `Cancel` releases a full queue even without a consumer. `Err` and
+`Terminal` wait for producer completion; drain Events first or cancel when
+abandoning consumption. Terminal control state is stored separately from data.
+A late cancellation preserves the recorded native outcome. Always close an
+abandoned stream.
 
-## License
+Native errors support `errors.As` with `*aimux.Error`. `Envelope` contains the
+domain, code, message, complete error payload and optional retry hint;
+`RawEnvelope` also retains unknown envelope fields. The binding adds no retry
+policy. Handles support concurrent calls and idempotent Close. Use Close for
+normal cleanup; the fallback finalizer only enqueues native cleanup.
 
-MIT
+## Build and test
+
+Build `aimux-ffi` with the matching source and header. By default cgo searches
+`target/release` for `libaimux_ffi`; a shared library can also be selected with
+`CGO_LDFLAGS` and the platform loader's library path. `go generate ./...`
+downloads the platform archive and header from one release; pin it with
+`AIMUX_FFI_VERSION`.
+
+For a built shared library:
+
+```sh
+AIMUX_LIBRARY_DIR=/absolute/path/to/target/debug ./test-native.sh -count=1
+```
+
+This runs `go test -race -timeout 60s ./...` against Rust, including manifest
+checks, provider/model/composite ownership, concurrent Close/call dispatch,
+stream admission and terminal errors, and persistent operation errors. Tests
+use local validation and unsupported operations without network I/O.
+
+`./test-abi.sh -count=1` builds a deterministic C double against the production
+header in a temporary directory. It tests cgo ownership, borrowed-memory
+copies, malformed callbacks, full-queue cancellation, operation lifetime,
+large handle IDs and callback-token cleanup. These tests skip against Rust;
+Rust integration tests skip against the double. Both suites include bridge
+race tests and typed DTO round trips. Live provider calls, successful audio
+transport, cross-platform packaging and Go 1.23 itself require separate
+verification.

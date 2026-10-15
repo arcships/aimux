@@ -5,9 +5,7 @@
 // on (camelCase, the AI SDK JSON) — without them, a rename in aimux-core could
 // silently break Go clients.
 //
-// Also includes regression tests for the two bugs found in code review:
-//   - ToolChoiceTool JSON injection (now uses json.Marshal)
-//   - channel double-close panic (now guarded by sync.Once)
+// Also covers tool choice escaping and provider namespace insertion order.
 
 package aimux
 
@@ -406,6 +404,7 @@ func TestParseStreamPartRejectsInvalid(t *testing.T) {
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 func u32ptr(v uint32) *uint32 { return &v }
+func boolPtr(v bool) *bool    { return &v }
 
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (func() bool {
@@ -427,20 +426,15 @@ func contains(s, sub string) bool {
 // stay raw JSON in Go, never a sorting Go map.
 func TestNamespaceMapsKeepInsertionOrder(t *testing.T) {
 	const metadata = `{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}}`
-	invalid := `{"toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},"dynamic":true,` +
+	invalid := `{"type":"tool-call","toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},"dynamic":true,` +
 		`"invalid":true,"providerMetadata":` + metadata + `,"error":{"name":"AI_InvalidToolInputError",` +
 		`"toolName":"weather","toolInput":"{\"town\":\"SG\"}","cause":"missing city"}}`
-	opts := `{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}`
-	out, err := applyToolCallRepairJSON(invalid, opts, `{"type":"unchanged"}`)
-	if err != nil {
-		t.Fatalf("apply repair: %v", err)
-	}
 	var call ToolCall
-	if err := json.Unmarshal([]byte(out), &call); err != nil {
-		t.Fatalf("decode %s: %v", out, err)
+	if err := json.Unmarshal([]byte(invalid), &call); err != nil {
+		t.Fatalf("decode %s: %v", invalid, err)
 	}
 	if got := string(call.ProviderMetadata); got != metadata {
-		t.Errorf("providerMetadata through Rust: got %s, want %s", got, metadata)
+		t.Errorf("providerMetadata: got %s, want %s", got, metadata)
 	}
 
 	tool, err := json.Marshal(Tool{
@@ -510,10 +504,10 @@ func TestStandaloneToolCallsAndSourcesAreTagged(t *testing.T) {
 		t.Errorf("raw tool call: %s", raw)
 	}
 
-	// JSON written before the tag still reads; another tag is an error.
+	// Missing or mismatched canonical tags are rejected.
 	var untagged ToolCall
-	if err := json.Unmarshal([]byte(`{"toolCallId":"c","toolName":"t","input":{}}`), &untagged); err != nil {
-		t.Errorf("untagged call: %v", err)
+	if err := json.Unmarshal([]byte(`{"toolCallId":"c","toolName":"t","input":{}}`), &untagged); err == nil {
+		t.Error("untagged call accepted")
 	}
 	var mistagged ToolCall
 	if err := json.Unmarshal([]byte(`{"type":"source","toolCallId":"c","toolName":"t"}`), &mistagged); err == nil {
@@ -524,22 +518,4 @@ func TestStandaloneToolCallsAndSourcesAreTagged(t *testing.T) {
 		t.Error("a tool-call-tagged source was accepted")
 	}
 
-	// The native repair export writes the standalone call tagged.
-	invalid := `{"toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},"dynamic":true,"invalid":true,` +
-		`"error":{"name":"AI_InvalidToolInputError","toolName":"weather","toolInput":"{\"town\":\"SG\"}","cause":"missing city"}}`
-	opts := `{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}`
-	out, err := applyToolCallRepairJSON(invalid, opts, `{"type":"unchanged"}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(out, `{"type":"tool-call","toolCallId":"call-1"`) {
-		t.Errorf("repaired call: %s", out)
-	}
-	context, err := toolCallRepairContextJSON(invalid, `{"prompt":"weather?"}`, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(context, `"toolCall":{"type":"tool-call","toolCallId":"call-1"`) {
-		t.Errorf("repair context: %s", context)
-	}
 }
