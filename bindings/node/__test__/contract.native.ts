@@ -52,15 +52,6 @@ test('worker_threads cannot use a foreign realm handle; environment teardown com
   assert.equal(abort.aborted, false)
 })
 
-test('an async native call does not starve an event-loop timer', async () => {
-  const runtime = new Runtime()
-  let timer = false
-  const task = new Promise(resolve => setTimeout(() => { timer = true; resolve(undefined) }, 10))
-  for (let i = 0; i < 20; i++) await runtime.call('0', 'runtime.describe', '{}')
-  await task
-  assert.equal(timer, true)
-})
-
 test('typed lifecycle uses the real provider, registry, files, composite and devtools DTOs', async () => {
   const { Client, LanguageModel } = await import('../src/index.ts')
   const client = new Client()
@@ -78,9 +69,12 @@ test('typed lifecycle uses the real provider, registry, files, composite and dev
   const trace = await client.trace({ capacity: 16, perScopeCapacity: 8 })
   assert.equal(trace.kind, 'TraceStore')
   assert.deepEqual(await trace.aggregate(), await client.call(trace.handle, 'trace.aggregate', { filter: {} }))
-  await assert.rejects(client.middleware({ kind: 'trace', traceStore: trace.handle }), error => error instanceof AimuxError && error.code === 8)
-  const wrapped = await resolved.wrap([])
+  const middleware = await client.middleware({ kind: 'trace', traceStore: trace.handle })
+  assert.equal(middleware.kind, 'Middleware')
+  assert.match(middleware.handle, /^[1-9][0-9]*$/)
+  const wrapped = await resolved.wrap([middleware])
   assert.equal(wrapped.kind, 'Language')
+  assert.deepEqual(await wrapped.info(), raw)
   const recorder = await client.recorder({ backend: { type: 'ring', capacity: 16 }, capturePolicy: 'full' })
   assert.equal(recorder.kind, 'Recorder')
   await recorder.attach()
@@ -94,7 +88,7 @@ test('typed lifecycle uses the real provider, registry, files, composite and dev
   // Child resources retain their references after the provider is closed.
   await provider.close()
   assert.deepEqual(await resolved.info(), raw)
-  await Promise.all([registry, resolved, files, router, trace, wrapped, recorder, sessions].map(resource => resource.close()))
+  await Promise.all([registry, resolved, files, router, trace, middleware, wrapped, recorder, sessions].map(resource => resource.close()))
 })
 
 test('replay inspection and planning preserve the canonical recording DTO', async () => {

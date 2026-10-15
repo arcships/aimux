@@ -3,7 +3,7 @@
 mod bridge;
 mod error;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::SystemTime;
@@ -22,7 +22,6 @@ use error::{WireResult, envelope};
 #[derive(Default)]
 struct Resources {
     closed: bool,
-    handles: HashSet<u64>,
     active: HashMap<u64, Weak<AbortSignal>>,
     // Operations must keep the context cancellation signal until handle.drop.
     operations: HashMap<u64, Arc<AbortSignal>>,
@@ -105,11 +104,8 @@ impl Realm {
             if resources.closed {
                 signal.abort();
                 drop(HandleRegistry::global().remove(self.owner, HandleId(id)));
-            } else {
-                resources.handles.insert(id);
-                if op == "transcription.start" {
-                    resources.operations.insert(id, signal.clone());
-                }
+            } else if op == "transcription.start" {
+                resources.operations.insert(id, signal.clone());
             }
         }
     }
@@ -118,7 +114,6 @@ impl Realm {
         let (active, operations) = {
             let mut resources = self.lock();
             resources.closed = true;
-            resources.handles.clear();
             (
                 std::mem::take(&mut resources.active),
                 std::mem::take(&mut resources.operations),
@@ -172,10 +167,8 @@ fn handle(value: &str) -> std::result::Result<HandleId, ErrorEnvelope> {
 fn collect_handles(value: &Value, result: &mut Vec<u64>) {
     match value {
         Value::String(id) => {
-            if let Ok(HandleId(id)) = handle(id) {
-                if id != 0 {
-                    result.push(id);
-                }
+            if let Ok(HandleId(id @ 1..)) = handle(id) {
+                result.push(id);
             }
         }
         Value::Object(fields) => {
@@ -237,11 +230,7 @@ impl Runtime {
         WireResult((|| {
             let id = handle(&id)?;
             let entry = HandleRegistry::global().remove(self.realm.owner, id);
-            let signal = {
-                let mut resources = self.realm.lock();
-                resources.handles.remove(&id.0);
-                resources.operations.remove(&id.0)
-            };
+            let signal = self.realm.lock().operations.remove(&id.0);
             if let Some(signal) = signal {
                 signal.abort();
             }
@@ -282,7 +271,6 @@ impl Runtime {
                 self.realm.remember(&op, &result, &signal);
                 if op == "handle.drop" {
                     let mut resources = self.realm.lock();
-                    resources.handles.remove(&id.0);
                     if let Some(signal) = resources.operations.remove(&id.0) {
                         signal.abort();
                     }
@@ -401,7 +389,6 @@ impl Abort {
             .map_err(|error| {
                 error::throwable(&env, envelope(error)).unwrap_or_else(|error| error)
             })?;
-        runtime.realm.lock().handles.insert(id.0);
         Ok(Self {
             id: AtomicU64::new(id.0),
             realm: runtime.realm.clone(),
@@ -423,7 +410,6 @@ impl Abort {
     pub fn close(&self) {
         let id = self.id.swap(0, Ordering::AcqRel);
         if id != 0 {
-            self.realm.lock().handles.remove(&id);
             drop(HandleRegistry::global().remove(self.realm.owner, HandleId(id)));
         }
     }

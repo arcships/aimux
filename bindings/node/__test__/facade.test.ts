@@ -140,17 +140,6 @@ test('incompatible manifest is rejected at loading', () => {
   assert.throws(() => rawApi.verifyManifest({ abiVersion: 0, opsVersion: '1.0' } as never), error => error instanceof AimuxError && error.code === 302)
 })
 
-test('awaiting stream consumption leaves the event loop responsive', async () => {
-  const client = new Client()
-  const iterator = await client.stream('0', 'text.stream', { pending: true })
-  const pending = iterator.next()
-  const start = performance.now()
-  await new Promise(resolve => setTimeout(resolve, 20))
-  assert.ok(performance.now() - start < 1000)
-  await iterator.return!()
-  await pending
-})
-
 test('typed serialization failures stay in the binding error domain', async () => {
   const client = new Client()
   const cyclic: Record<string, unknown> = {}

@@ -64,16 +64,12 @@ streams. Build the addon with `npm run build:debug` and the typed facade with
 `npm run build:typed`. Run Rust unit tests with
 `cargo test --manifest-path bindings/node/Cargo.toml --lib`.
 
-The older benchmark programs have not been migrated to the breaking ops API;
-their previous measurements do not describe this adapter.
-
 For C ABI parity, build `aimux-ffi`, set `AIMUX_FFI_LIBRARY` to its absolute library
 path, and run `npm run test:c-parity` (Python 3 is required). This compares the
 same provider, registry, trace, recorder, session, replay and error vectors.
 
 Recorder, session storage and inference state are process-wide. Trace middleware
-creation currently reports UnsupportedFunctionality because the shared runtime
-has no canonical model-wrapper hook. Credential resolver creation and replay
-transport capabilities also report UnsupportedFunctionality. Recording schemas
+wraps language models using a TraceStore. Credential resolver creation and replay
+transport capabilities report UnsupportedFunctionality. Recording schemas
 are unchanged; business type schema generation and per-platform installation
 verification are separate release work.

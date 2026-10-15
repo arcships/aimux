@@ -5,7 +5,7 @@ const envelope = (kind, code, name, message, fields = {}) => Object.assign(new E
   kind, code, error: { name, ...fields },
 })
 class Runtime {
-  constructor() { this.owner = 1; this.calls = []; this.iterators = [] }
+  constructor() { this.owner = 1 }
   manifestJson() { return JSON.stringify({ abiVersion: 65536, opsVersion: '1.0', manifestRevision: 'fixture', ops: [], handleKinds: [], errorCodes: [] }) }
   manifestDigest() { return 'a'.repeat(64) }
   create(kind) {
@@ -20,7 +20,6 @@ class Runtime {
   dropHandle(id) { if (handles.get(id)?.owner === this.owner) handles.delete(id) }
   async call(id, op, json, abort) {
     const params = JSON.parse(json)
-    this.calls.push({ id, op, params, abort })
     if (op === 'handle.drop') {
       if (handles.get(id)?.owner === this.owner) handles.delete(id)
       return '{}'
@@ -65,9 +64,7 @@ class Runtime {
       return: async () => { closed = true; if (abort) abort.signal(); resolvePending?.({ done: true, value: undefined }); return { done: true, value: undefined } },
       throw: async error => { await iterator.return(); throw error },
       [Symbol.asyncIterator]() { return this },
-      get closed() { return closed },
     }
-    this.iterators.push(iterator)
     return { [Symbol.asyncIterator]() { return iterator } }
   }
   async operationPush(id, data) { this.check(id); this.lastPush = new Uint8Array(data) }

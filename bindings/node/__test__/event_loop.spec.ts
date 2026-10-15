@@ -36,7 +36,6 @@ function createAdapter(binding: typeof native) {
       if (frame.outcome === 'error') throw new Error(JSON.stringify(frame.error))
       return { type: 'end' }
     },
-    foreignHandle(handle: string) { return handle },
   }
 }
 const api = createAdapter(native)
@@ -257,19 +256,11 @@ test('worker realms: a live foreign model is rejected before provider I/O', asyn
   `, null)
   t.after(() => w.terminate())
   await bounded(once(w, 'message'), 'worker ready')
-  // Opaque native objects may be rejected at structured clone; numeric handles
-  // must instead reach the destination realm's native ownership check (203).
   const reply = once(w, 'message')
-  try {
-    w.postMessage(api.foreignHandle(model))
-  } catch (error) {
-    if (!(error instanceof Error) || error.name !== 'DataCloneError') throw error
-    assert.equal(f.requests(), 0)
-    return
-  }
+  w.postMessage(model)
   const [result] = await bounded(reply, 'foreign handle rejection')
   assert.equal(result.accepted, false)
-  assert.ok(result.code === 203 || result.code === 'InvalidArg', JSON.stringify(result))
+  assert.equal(result.code, 203)
   assert.equal(f.requests(), 0)
 })
 
