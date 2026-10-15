@@ -1,42 +1,108 @@
-# aimux (Python)
+# aimux Python binding
 
-Unified LLM service layer for Python — one API for **325 AI providers**
-(OpenAI, Anthropic, Google, Bedrock, Vertex, DeepSeek, …), powered by a Rust
-core.
-
-## Install
-
-```bash
-pip install arcships-aimux
-```
-
-Pre-built wheels for Linux, macOS, and Windows (Python ≥ 3.8). No Rust
-toolchain needed.
-
-## Quick start
+PyO3 calls `aimux_ops::dispatch` directly. Provider selection, wire validation,
+retries, recording, replay and operation lifecycle run in the shared Rust layer.
+The package requires CPython 3.9 or newer. Install `arcships-aimux[typed]` for
+optional Pydantic schemas and text helpers in `aimux.wrapper`.
 
 ```python
-from aimux import generate_text, openai
+from aimux import Client
 
-model = openai("sk-...", "gpt-4o")
-result = generate_text(model, "Explain Rust ownership in one sentence.")
-print(result["text"])
+client = Client()
+with client.adopt(client.call("provider.create", {
+    "package": "openai", "settings": {"apiKey": "your-api-key"},
+})["handle"]) as provider:
+    with client.adopt(provider.call("provider.model", {
+        "method": "languageModel", "modelId": "your-model",
+    })["handle"]) as model:
+        result = model.call("text.generate", {"prompt": "Hello", "options": {}})
+        with model.stream("text.stream", {"prompt": "Hello", "options": {}}) as events:
+            for frame in events:
+                print(frame["seq"], frame["event"])
 ```
 
-## Features
+`Client.call(op, params=None, *, handle="0", abort=None)` returns parsed JSON.
+Operation names and DTO identifiers come from `aimux.manifest`; business DTO
+schemas remain in the existing core wire types. Control fields use camelCase.
+Handle IDs are decimal strings. Adopt each returned handle for explicit and GC
+cleanup. Provider/model constructors have been replaced by shared operations.
+`provider.create` and `provider.model` return objects with `handle` fields;
+`provider.files` and `transcription.start` return handle strings directly.
 
-- **Unified interface** — switch providers by changing one constructor
-- **Streaming** — token-by-token output with cancellation
-- **Full modality coverage** — text, embeddings, images, speech,
-  transcription, video, reranking, files
-- **Fast** — Rust core, zero GC pauses; benchmarked faster than the official
-  OpenAI SDK in [docs/PERF-RESULTS.md](https://github.com/arcships/aimux/blob/master/docs/PERF-RESULTS.md)
+`Client.stream(op, params=None, *, handle, abort=None)` and `Handle.stream`
+return synchronous context-managed iterators over `{type, seq, event}` frames.
+Validation errors raise before acceptance. Successful exhaustion produces
+`StopIteration`; terminal failures raise typed errors. End frames are consumed
+by the adapter. `join()` waits for producer teardown without draining events;
+drain or cancel a full stream before joining. `close()` cancels, joins and
+clears the queue, with a five-second cleanup deadline. Cancellation after a
+settled terminal preserves its outcome.
 
-## Documentation
+Use `Abort.cancel()` from another thread to interrupt a call or stream.
+Closing a stream, context exit, cancellation and GC trigger teardown. Blocking
+native waits release the GIL and check Python signals every 20 ms;
+`KeyboardInterrupt` cancels the worker. The bridge holds at most 64 events and
+8 MiB of queued data, with at most 1 MiB per serialized event. Terminal state
+has independent storage. Worker tasks never acquire the GIL.
 
-- [Full API reference](https://github.com/arcships/aimux/blob/master/docs/API.md)
-- [Project overview](https://github.com/arcships/aimux/blob/master/docs/PROJECT-OVERVIEW.md)
+For realtime transcription, adopt the handle returned by `transcription.start`.
+`Handle.push(data)`, or `client.operation_push(handle, data)`, admits raw bytes
+through the shared binary service:
 
-## License
+```python
+with client.adopt(model.call("transcription.start")) as operation:
+    operation.push(b"\x00\x00")
+    operation.call("operation.inputDone")
+    part = operation.call("operation.next", {"timeoutMs": 500})
+```
 
-MIT
+Push accepts bytes, bytearray and memoryview; chunks above 1 MiB or a full
+64-item / 8 MiB input queue raise `ResourceLimit` (protocol code 305).
+Admission returns immediately. Polling returns `part`, `ended` or `timeout`.
+A JSON call named `operation.push` is invalid; use the binary method.
+
+Each interpreter receives a private token from the shared owner allocator.
+Clients in one interpreter share that token. CPython C APIs identify the
+interpreter; monkeypatching Python modules cannot forge an owner. Handle GC
+queues teardown, and owner teardown queues release of remaining resources.
+PyO3 0.22 limits subinterpreter imports; this package does not extend support.
+
+`AimuxError` subclasses preserve the shared `envelope`, `error`, `kind`, `code`
+and optional `retry_after_ms`. Payload attributes use snake_case. Retry
+`errors` retain typed attempts in order; `last_error` is the last attempt.
+Typed causes also appear as `__cause__`. Recording, binding and protocol errors
+have separate bases. Python never recomputes retry hints or performs retries.
+
+`ABI_VERSION`, `OPS_VERSION`, `manifest` and `manifest_digest()` are public.
+Import checks the exact ABI/ops versions and digest pinned in the generated
+metadata. `verify_contract(other_digest)` checks an additional consumer pin.
+Recorder/session/infer state is process-wide. Recording schema migration,
+transport replay, credential creation, generated business schemas and complete
+platform install verification are outside this package's current guarantees.
+
+## Development checks
+
+```sh
+# Build/install the native wheel and optional test dependencies:
+python3 -m maturin develop --extras test
+AIMUX_REAL_OPS=1 python3 -m unittest discover -s tests -p 'test_ops_*.py' -v
+
+# Include localhost provider HTTP/WS fixtures and per-entry GIL assertions:
+AIMUX_REAL_OPS=1 AIMUX_HTTP_TESTS=1 python3 -m unittest discover -s tests -p 'test_ops_*.py' -v
+python3 -m pytest tests/test_gil_release.py -v
+
+# Test the already-built production cdylib before wheel installation:
+python3 tests/run_real.py /absolute/path/to/libaimux.dylib
+
+# Isolated boundary tests for queue limits, terminals, cancellation, interrupts,
+# concurrent consumers, GC and error chains (no provider behavior assertions):
+python3 tests/run_native_contract.py
+AIMUX_CORE_DOUBLE=1 python3 tests/run_native_contract.py
+```
+
+The isolated runner substitutes test doubles only in a temporary copy. By
+default it uses real core and a dispatcher double; the faster mode uses a core
+error double with the real AbortSignal source. `AIMUX_BUILD_COMMAND` can supply
+a build executable, and `AIMUX_CONTRACT_TARGET` can select its target directory.
+Neither mode verifies wheel installation or real provider behavior. All public
+execution APIs are synchronous; use an application executor for asyncio.

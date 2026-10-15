@@ -1,0 +1,12 @@
+# Test-only dispatcher double. Never a production dependency.
+[package]
+name = "aimux-ops"
+version = "0.0.0"
+edition = "2024"
+[dependencies]
+aimux-core = { path = "../../../../aimux-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures = "0.3"
+tokio = { version = "1", features = ["full"] }
+[workspace]

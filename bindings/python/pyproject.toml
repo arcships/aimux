@@ -5,16 +5,15 @@ build-backend = "maturin"
 [project]
 name = "arcships-aimux"
 version = "0.5.0"
-description = "Unified LLM service layer for Python (Rust core, 325 providers)"
+description = "Python binding for the aimux shared operations dispatcher"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -23,6 +22,13 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 
+[project.optional-dependencies]
+typed = ["pydantic>=2,<3"]
+test = ["pytest>=7,<9", "pydantic>=2,<3"]
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
 python-source = "python"
+
+include = ["generated/ops.py"]
+module-name = "aimux.aimux"

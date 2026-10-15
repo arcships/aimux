@@ -1,1358 +1,296 @@
-//! aimux-python: Python binding (PyO3, native path).
-//!
-//! Directly uses aimux-providers, bypassing aimux-ffi.
-//! PyO3 maps Rust async to Python via a tokio runtime + async generator.
+//! Thin synchronous Python adapter for the shared asynchronous ops dispatcher.
+#![allow(unsafe_op_in_unsafe_fn, unexpected_cfgs, clippy::useless_conversion)]
 
-// pyo3 0.22 macros generate unsafe-op-in-unsafe-fn calls that trigger
-// edition-2024 lint. Suppress until pyo3 0.23+ lands.
-#![allow(unsafe_op_in_unsafe_fn)]
-// The same macros test the `gil-refs` feature of the *calling* crate, which
-// this crate does not declare (rustc's check-cfg flags it).
-#![allow(unexpected_cfgs)]
-// pyo3 0.22's `#[pyfunction]` / `#[pymethods]` expansion converts a `PyErr` into
-// itself on every `PyResult` return (fixed in 0.23); clippy blames the
-// signature.
-#![allow(clippy::useless_conversion)]
-
-mod decision;
+mod bridge;
 mod error;
-mod multimodal;
-pub use decision::*;
-pub use multimodal::*;
 
-use std::sync::Arc;
+include!(concat!(env!("OUT_DIR"), "/contract.rs"));
 
-use crate::error::{
-    AiMuxBindingError, BindingError, binding_py_err, serialize_result, to_py_err, wire_json,
-};
-use aimux_core::AiMuxError;
-#[allow(deprecated)]
-use aimux_core::generate::generate_object;
-use aimux_core::generate::{
-    GenerateTextOptions, GenerateTextResult, generate_text, generate_text_as_openai,
-    generate_text_result_to_chat_completion, stream_text, stream_text_as_openai,
-};
-use aimux_core::language_model::LanguageModel;
-use aimux_core::message::ModelPrompt;
-use aimux_core::openai_output::OpenAiStreamOptions;
-use aimux_core::parse_tool_call::{ToolCallRepairReply, tool_call_repair_inputs};
-use aimux_core::tool::ToolCall;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::time::SystemTime;
+
+use aimux_core::AbortSignal;
+use aimux_ops::dispatch::{self, Ctx};
+use aimux_ops::envelope::{BindingError, OpsError, ProtocolError};
+use aimux_ops::handle::{HandleId, HandleRegistry, Owner};
 use pyo3::prelude::*;
+use serde_json::Value;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Global tokio runtime
-// ─────────────────────────────────────────────────────────────────────────────
+use bridge::{StreamIterator, wait_call};
 
-pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
-    use std::sync::OnceLock;
-    static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RT.get_or_init(|| tokio::runtime::Runtime::new().expect("failed to build tokio runtime"))
+static RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
+
+fn runtime() -> Result<&'static tokio::runtime::Runtime, OpsError> {
+    RUNTIME
+        .get_or_init(|| tokio::runtime::Runtime::new().map_err(|error| error.to_string()))
+        .as_ref()
+        .map_err(|message| OpsError::Binding(BindingError::CallbackFailure(message.clone())))
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Model — a provider model instance accessible from Python.
-// ─────────────────────────────────────────────────────────────────────────────
+fn context(owner: Owner, abort: AbortSignal) -> Ctx {
+    Ctx {
+        owner,
+        abort: Some(abort),
+        now: SystemTime::now,
+    }
+}
 
+fn invalid_state(message: &str) -> OpsError {
+    OpsError::Protocol(ProtocolError::InvalidState(message.into()))
+}
+
+fn parse_handle(value: &str) -> Result<HandleId, OpsError> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(OpsError::Protocol(ProtocolError::InvalidParams(
+            "handle must be a decimal u64 string".into(),
+        )));
+    }
+    value
+        .parse()
+        .map(HandleId)
+        .map_err(|_| OpsError::Protocol(ProtocolError::InvalidParams("handle exceeds u64".into())))
+}
+
+fn parse_params(text: &str) -> Result<Value, OpsError> {
+    serde_json::from_str(text).map_err(|error| {
+        OpsError::Binding(BindingError::InvalidWireJson {
+            argument: "params_json".into(),
+            message: error.to_string(),
+        })
+    })
+}
+
+fn serialize(value: &impl serde::Serialize) -> Result<String, OpsError> {
+    serde_json::to_string(value)
+        .map_err(|error| OpsError::Binding(BindingError::ResultSerialization(error.to_string())))
+}
+
+fn interpreter_id(py: Python<'_>) -> PyResult<i64> {
+    // SAFETY: Python's token guarantees an attached thread holding the GIL.
+    // Both functions are in CPython's stable ABI from Python 3.9 onward.
+    let id = unsafe { pyo3::ffi::PyInterpreterState_GetID(pyo3::ffi::PyInterpreterState_Get()) };
+    if id < 0 {
+        return Err(PyErr::fetch(py));
+    }
+    Ok(id)
+}
+
+struct InterpreterOwner {
+    token: Owner,
+}
+
+impl Drop for InterpreterOwner {
+    fn drop(&mut self) {
+        if let Some(Ok(rt)) = RUNTIME.get() {
+            let owner = self.token;
+            // Resource destructors may perform I/O. Interpreter teardown only
+            // enqueues cleanup; no registry lock or GIL crosses the join.
+            rt.spawn_blocking(move || HandleRegistry::global().release_owner(owner));
+        }
+    }
+}
+
+fn current_owner(py: Python<'_>) -> PyResult<Arc<InterpreterOwner>> {
+    static OWNERS: OnceLock<Mutex<HashMap<i64, Weak<InterpreterOwner>>>> = OnceLock::new();
+    let interpreter = interpreter_id(py)?;
+    let mut owners = OWNERS
+        .get_or_init(Mutex::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(owner) = owners.get(&interpreter).and_then(Weak::upgrade) {
+        return Ok(owner);
+    }
+    let token = Owner::new_python().map_err(|e| error::ops_error(py, e))?;
+    let owner = Arc::new(InterpreterOwner { token });
+    owners.retain(|_, owner| owner.strong_count() > 0);
+    owners.insert(interpreter, Arc::downgrade(&owner));
+    Ok(owner)
+}
+
+fn check_owner(py: Python<'_>, owner: Owner) -> PyResult<()> {
+    if current_owner(py)?.token != owner {
+        return Err(error::ops_error(
+            py,
+            invalid_state("object belongs to another interpreter"),
+        ));
+    }
+    Ok(())
+}
+
+// The module keeps the token alive even between Client instances.
 #[pyclass]
-struct Model {
-    inner: Arc<dyn LanguageModel>,
-    /// Probe store — `Some` only for traced models (RFC-0015).
-    trace_store: Option<Arc<aimux_core::trace::RingTraceStore>>,
+struct OwnerGuard {
+    _owner: Arc<InterpreterOwner>,
+}
+
+#[pyclass(module = "aimux.aimux")]
+struct Abort {
+    owner: Arc<InterpreterOwner>,
+    signal: AbortSignal,
 }
 
 #[pymethods]
-impl Model {
-    /// Wrap this model in a cache-probe layer (RFC-0015) WITHOUT an
-    /// auditor (records fingerprints only; verdicts stay None).
-    fn trace(&self) -> PyResult<Model> {
-        let store = Arc::new(aimux_core::trace::RingTraceStore::new());
-        let layer = aimux_core::trace::TraceLayer::new(self.inner.clone(), store.clone());
-        Ok(Model {
-            inner: Arc::new(layer),
-            trace_store: Some(store),
+impl Abort {
+    #[new]
+    fn new(py: Python<'_>) -> PyResult<Self> {
+        Ok(Self {
+            owner: current_owner(py)?,
+            signal: AbortSignal::new(),
         })
     }
 
-    /// Wrap this model in a probe layer with the built-in rules auditor.
-    /// `strict=True` = strict mode (self-hosted single instance);
-    /// `strict=False` = shared mode (safe default).
-    #[pyo3(signature = (strict=false))]
-    fn trace_audited(&self, strict: bool) -> PyResult<Model> {
-        let store = Arc::new(aimux_core::trace::RingTraceStore::new());
-        let layer = aimux_core::trace::TraceLayer::new(self.inner.clone(), store.clone())
-            .with_rules_auditor(strict);
-        Ok(Model {
-            inner: Arc::new(layer),
-            trace_store: Some(store),
-        })
+    fn cancel(&self, py: Python<'_>) -> PyResult<()> {
+        check_owner(py, self.owner.token)?;
+        self.signal.abort();
+        Ok(())
     }
 
-    /// Aggregated probe statistics (RFC-0015 §5.3), filtered by an optional
-    /// JSON `TraceFilter`. Returns a JSON `TraceStats[]` string.
-    #[pyo3(signature = (filter_json=None))]
-    fn trace_aggregate(&self, filter_json: Option<&str>) -> PyResult<String> {
-        let Some(store) = &self.trace_store else {
-            return Err(to_py_err(&AiMuxError::InvalidArgument(
-                "model is not traced; call trace() first".into(),
-            )));
-        };
-        let filter = match filter_json {
-            Some(f) => wire_json("filter_json", f)?,
-            None => Default::default(),
-        };
-        serialize_result(&store.aggregate(&filter))
+    #[getter]
+    fn cancelled(&self) -> bool {
+        self.signal.is_aborted()
     }
+}
 
-    /// One session's chain view. Returns a JSON `SessionChainView` string.
-    fn trace_session_chain(&self, session_id: &str) -> PyResult<String> {
-        let Some(store) = &self.trace_store else {
-            return Err(to_py_err(&AiMuxError::InvalidArgument(
-                "model is not traced; call trace() first".into(),
-            )));
-        };
-        let view = store
-            .session_chain(session_id)
-            .ok_or_else(|| to_py_err(&AiMuxError::InvalidArgument("unknown session".into())))?;
-        serialize_result(&view)
-    }
-
-    /// Export all probe records as JSONL (one `TraceRecord` per line).
-    fn trace_export_jsonl(&self) -> PyResult<String> {
-        let Some(store) = &self.trace_store else {
-            return Err(to_py_err(&AiMuxError::InvalidArgument(
-                "model is not traced; call trace() first".into(),
-            )));
-        };
-        let mut buf = Vec::new();
-        store.export_jsonl(&mut buf).map_err(|e| {
-            binding_py_err(&BindingError::ResultSerialization {
-                message: format!("export: {e}"),
-            })
-        })?;
-        String::from_utf8(buf).map_err(|e| {
-            binding_py_err(&BindingError::ResultSerialization {
-                message: format!("utf8: {e}"),
-            })
-        })
-    }
-
-    /// Clear all probe records of this traced model.
-    fn trace_clear(&self) {
-        if let Some(store) = &self.trace_store {
-            store.clear();
-        }
-    }
-
-    /// Generate text (non-streaming).
-    ///
-    /// prompt_json: JSON string (bare prompt or {"prompt": ...})
-    /// opts_json: optional JSON-serialized GenerateTextOptions
-    /// Returns JSON-serialized GenerateTextResult.
-    #[pyo3(signature = (prompt_json, opts_json=None))]
-    fn generate_text(
-        &self,
-        py: Python<'_>,
-        prompt_json: &str,
-        opts_json: Option<&str>,
-    ) -> PyResult<String> {
-        let prompt = parse_prompt(prompt_json)?;
-        let opts = parse_opts(opts_json)?;
-
-        let rt = runtime();
-        let result = py.allow_threads(|| {
-            rt.block_on(async move { generate_text(&*self.inner, prompt, opts).await })
-        });
-
-        match result {
-            Ok(r) => serialize_result(&r),
-            Err(e) => Err(to_py_err(&e)),
-        }
-    }
-
-    /// Generate a structured JSON object from the model (M12, RFC-0016).
-    ///
-    /// prompt_json: JSON string (bare prompt or {"prompt": ...})
-    /// opts_json: optional JSON-serialized GenerateTextOptions
-    /// Returns JSON-serialized GenerateObjectResult (core's deprecated
-    /// `generate_object` wrapper). Pass `output: { "type": "object", "schema": ... }`
-    /// via opts_json to describe the value; the model's text must parse and
-    /// match the schema.
-    #[pyo3(signature = (prompt_json, opts_json=None))]
-    #[allow(deprecated)]
-    fn generate_object(
-        &self,
-        py: Python<'_>,
-        prompt_json: &str,
-        opts_json: Option<&str>,
-    ) -> PyResult<String> {
-        let prompt = parse_prompt(prompt_json)?;
-        let opts = parse_opts(opts_json)?;
-
-        let rt = runtime();
-        let result = py.allow_threads(|| {
-            rt.block_on(async move { generate_object(&*self.inner, prompt, opts).await })
-        });
-
-        match result {
-            Ok(r) => serialize_result(&r),
-            Err(e) => Err(to_py_err(&e)),
-        }
-    }
-
-    /// Consume a stream to completion and return the aggregated result
-    /// (M11, RFC-0016).
-    ///
-    /// prompt_json: JSON string (bare prompt or {"prompt": ...})
-    /// opts_json: optional JSON-serialized GenerateTextOptions
-    /// Returns JSON-serialized GenerateTextResult, the same result
-    /// `generate_text` returns.
-    #[pyo3(signature = (prompt_json, opts_json=None))]
-    fn consume_stream_text(
-        &self,
-        py: Python<'_>,
-        prompt_json: &str,
-        opts_json: Option<&str>,
-    ) -> PyResult<String> {
-        let prompt = parse_prompt(prompt_json)?;
-        let opts = parse_opts(opts_json)?;
-
-        let rt = runtime();
-        let result = py.allow_threads(|| {
-            rt.block_on(async move {
-                let stream_result = stream_text(&*self.inner, prompt, opts).await?;
-                stream_result.consume().await
-            })
-        });
-
-        match result {
-            Ok(r) => serialize_result(&r),
-            Err(e) => Err(to_py_err(&e)),
-        }
-    }
-
-    /// Stream text from the model.
-    ///
-    /// Returns a StreamIterator that yields StreamPart JSON strings.
-    #[pyo3(signature = (prompt_json, opts_json=None))]
-    fn stream_text(&self, prompt_json: &str, opts_json: Option<&str>) -> PyResult<StreamIterator> {
-        let prompt = parse_prompt(prompt_json)?;
-        let opts = parse_opts(opts_json)?;
-        let model = self.inner.clone();
-
-        let (tx, rx) =
-            tokio::sync::mpsc::channel::<Result<String, crate::error::AiMuxBindingError>>(64);
-
-        rt_spawn(async move {
-            match stream_text(&*model, prompt, opts).await {
-                Ok(stream_result) => {
-                    use futures::StreamExt;
-                    let mut stream = stream_result.stream;
-                    while let Some(item) = stream.next().await {
-                        match item {
-                            Ok(part) => {
-                                // A part that cannot be serialized ends the stream with the
-                                // binding's ResultSerialization — never a silent "{}".
-                                let json = match serde_json::to_string(&part) {
-                                    Ok(j) => j,
-                                    Err(e) => {
-                                        let _ = tx
-                                            .send(Err(
-                                                crate::error::BindingError::ResultSerialization {
-                                                    message: format!("stream part: {e}"),
-                                                }
-                                                .into(),
-                                            ))
-                                            .await;
-                                        break;
-                                    }
-                                };
-                                if tx.send(Ok(json)).await.is_err() {
-                                    break;
-                                }
-                            }
-                            Err(e) if e.is_recoverable_stream_error() => {
-                                // Core keeps the stream alive across a malformed frame;
-                                // deliver it as a StreamPart::Error data item and keep
-                                // pumping.
-                                match serde_json::to_string(
-                                    &aimux_core::stream_part::TextStreamPart::Error { error: e },
-                                ) {
-                                    Ok(json) => {
-                                        if tx.send(Ok(json)).await.is_err() {
-                                            break;
-                                        }
-                                    }
-                                    Err(_) => break,
-                                }
-                            }
-                            Err(e) => {
-                                let _ = tx.send(Err(e.into())).await;
-                                break;
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    let _ = tx.send(Err(e.into())).await;
-                }
+fn signal_for(
+    py: Python<'_>,
+    owner: Owner,
+    abort: Option<PyRef<'_, Abort>>,
+) -> PyResult<AbortSignal> {
+    match abort {
+        Some(abort) => {
+            check_owner(py, abort.owner.token)?;
+            if abort.owner.token != owner {
+                return Err(error::ops_error(py, invalid_state("foreign abort signal")));
             }
-        });
+            Ok(abort.signal.clone())
+        }
+        None => Ok(AbortSignal::new()),
+    }
+}
 
-        Ok(StreamIterator { rx })
+/// All operation names, handle validation and wire schemas belong to aimux-ops.
+#[pyclass(module = "aimux.aimux")]
+struct Client {
+    owner: Arc<InterpreterOwner>,
+}
+
+#[pymethods]
+impl Client {
+    #[new]
+    fn new(py: Python<'_>) -> PyResult<Self> {
+        let owner = current_owner(py)?;
+        py.allow_threads(runtime)
+            .map_err(|e| error::ops_error(py, e))?;
+        Ok(Self { owner })
     }
 
-    /// Generate text as an OpenAI Chat Completion (non-streaming, RFC-0026).
-    ///
-    /// prompt_json: JSON string (bare prompt or {"prompt": ...})
-    /// opts_json: optional JSON-serialized GenerateTextOptions
-    /// Returns JSON-serialized ChatCompletion (OpenAI `chat.completion` object).
-    #[pyo3(signature = (prompt_json, opts_json=None))]
-    fn generate_text_as_openai(
+    #[pyo3(signature = (handle, op, params_json="{}", abort=None))]
+    fn call(
         &self,
         py: Python<'_>,
-        prompt_json: &str,
-        opts_json: Option<&str>,
+        handle: String,
+        op: String,
+        params_json: &str,
+        abort: Option<PyRef<'_, Abort>>,
     ) -> PyResult<String> {
-        let prompt = parse_prompt(prompt_json)?;
-        let opts = parse_opts(opts_json)?;
+        check_owner(py, self.owner.token)?;
+        let handle = parse_handle(&handle).map_err(|e| error::ops_error(py, e))?;
+        let params = parse_params(params_json).map_err(|e| error::ops_error(py, e))?;
+        let signal = signal_for(py, self.owner.token, abort)?;
+        let ctx = context(self.owner.token, signal.clone());
+        // No Python references cross this boundary, including in construction,
+        // discovery, poll and recorder flush operations.
+        wait_call(py, signal, async move {
+            let value = dispatch::call(ctx, handle, &op, params).await?;
+            serialize(&value)
+        })
+    }
 
-        let rt = runtime();
-        let result = py.allow_threads(|| {
-            rt.block_on(async move { generate_text_as_openai(&*self.inner, prompt, opts).await })
-        });
-
-        match result {
-            Ok(r) => serialize_result(&r),
-            Err(e) => Err(to_py_err(&e)),
+    /// Binary admission is bounded by the shared operation service.
+    fn operation_push(&self, py: Python<'_>, handle: String, data: &[u8]) -> PyResult<()> {
+        check_owner(py, self.owner.token)?;
+        let handle = parse_handle(&handle).map_err(|e| error::ops_error(py, e))?;
+        if data.len() > 1024 * 1024 {
+            return Err(error::ops_error(
+                py,
+                OpsError::Protocol(ProtocolError::ResourceLimit(
+                    "audio chunk exceeds 1 MiB".into(),
+                )),
+            ));
         }
+        let data = data.to_vec();
+        let owner = self.owner.token;
+        py.allow_threads(move || {
+            dispatch::operation_push(&context(owner, AbortSignal::new()), handle, &data)
+        })
+        .map_err(|e| error::ops_error(py, e))
     }
 
-    /// Convert a serialized GenerateTextResult into a serialized
-    /// ChatCompletion — the conversion half of `generate_text_as_openai`.
-    ///
-    /// For repairing on the host (RFC-0035): patch the native result, then
-    /// convert it, so the completion's tool calls are the repaired ones. This
-    /// model only supplies the fallback model id.
-    fn generate_text_result_as_openai(&self, result_json: &str) -> PyResult<String> {
-        let result: GenerateTextResult = wire_json("result_json", result_json)?;
-        serialize_result(&generate_text_result_to_chat_completion(
-            &result,
-            self.inner.model_id(),
-        ))
+    /// GC teardown only queues work; explicit Handle.close uses checked call.
+    fn drop_later(&self, py: Python<'_>, handle: String) -> PyResult<()> {
+        check_owner(py, self.owner.token)?;
+        let handle = parse_handle(&handle).map_err(|e| error::ops_error(py, e))?;
+        let owner = self.owner.token;
+        let rt = py
+            .allow_threads(runtime)
+            .map_err(|e| error::ops_error(py, e))?;
+        rt.spawn(async move {
+            let _ = dispatch::call(
+                context(owner, AbortSignal::new()),
+                handle,
+                "handle.drop",
+                serde_json::json!({}),
+            )
+            .await;
+        });
+        Ok(())
     }
 
-    /// Stream text as OpenAI Chat Completion chunks (RFC-0026).
-    ///
-    /// Returns a StreamIterator that yields ChatCompletionChunk JSON strings.
-    /// Stream options (`include_usage`, `include_reasoning`) are read from
-    /// `opts.provider_options.openai.stream_options` (both default to `true`).
-    #[pyo3(signature = (prompt_json, opts_json=None))]
-    fn stream_text_as_openai(
+    #[pyo3(signature = (handle, op, params_json="{}", abort=None))]
+    fn stream(
         &self,
-        prompt_json: &str,
-        opts_json: Option<&str>,
+        py: Python<'_>,
+        handle: String,
+        op: String,
+        params_json: &str,
+        abort: Option<PyRef<'_, Abort>>,
     ) -> PyResult<StreamIterator> {
-        let prompt = parse_prompt(prompt_json)?;
-        let opts = parse_opts(opts_json)?;
-        let model = self.inner.clone();
-
-        // Extract OpenAI stream options from opts.provider_options.openai.stream_options
-        // (same logic as aimux-ffi's stream_text_as_openai_with_signal).
-        let stream_options = opts
-            .provider_options
-            .as_ref()
-            .and_then(|po| po.get("openai"))
-            .and_then(|o| o.get("stream_options"))
-            .cloned()
-            .map(|v| OpenAiStreamOptions {
-                include_usage: v
-                    .get("include_usage")
-                    .and_then(|b| b.as_bool())
-                    .unwrap_or(true),
-                include_reasoning: v
-                    .get("include_reasoning")
-                    .and_then(|b| b.as_bool())
-                    .unwrap_or(true),
-            })
-            .unwrap_or_default();
-
-        let (tx, rx) =
-            tokio::sync::mpsc::channel::<Result<String, crate::error::AiMuxBindingError>>(64);
-
-        rt_spawn(async move {
-            match stream_text_as_openai(&*model, prompt, opts, stream_options).await {
-                Ok(stream_result) => {
-                    use futures::StreamExt;
-                    let mut stream = stream_result.stream;
-                    while let Some(item) = stream.next().await {
-                        match item {
-                            Ok(chunk) => {
-                                let json = match serde_json::to_string(&chunk) {
-                                    Ok(j) => j,
-                                    Err(e) => {
-                                        let _ = tx
-                                            .send(Err(
-                                                crate::error::BindingError::ResultSerialization {
-                                                    message: format!("stream chunk: {e}"),
-                                                }
-                                                .into(),
-                                            ))
-                                            .await;
-                                        break;
-                                    }
-                                };
-                                if tx.send(Ok(json)).await.is_err() {
-                                    break;
-                                }
-                            }
-                            Err(e) if e.is_recoverable_stream_error() => {
-                                // Consumers type this path as ChatCompletionChunk; the
-                                // error cannot ride it — skip and keep pumping (full
-                                // fidelity lives on the StreamPart path).
-                            }
-                            Err(e) => {
-                                let _ = tx.send(Err(e.into())).await;
-                                break;
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    let _ = tx.send(Err(e.into())).await;
-                }
-            }
-        });
-
-        Ok(StreamIterator { rx })
+        check_owner(py, self.owner.token)?;
+        let handle = parse_handle(&handle).map_err(|e| error::ops_error(py, e))?;
+        let params = parse_params(params_json).map_err(|e| error::ops_error(py, e))?;
+        let signal = signal_for(py, self.owner.token, abort)?;
+        StreamIterator::start(py, self.owner.clone(), handle, op, params, signal)
     }
 }
 
-/// Python iterator that yields StreamPart JSON strings from a tokio channel.
-#[pyclass]
-struct StreamIterator {
-    rx: tokio::sync::mpsc::Receiver<Result<String, crate::error::AiMuxBindingError>>,
-}
-
-#[pymethods]
-impl StreamIterator {
-    fn __iter__(slf: Py<Self>) -> Py<Self> {
-        slf
-    }
-
-    fn __next__(&mut self, py: Python<'_>) -> PyResult<Option<PyObject>> {
-        // Block on the next channel item, allowing other Python threads to run.
-        let item = py.allow_threads(|| runtime().block_on(self.rx.recv()));
-
-        match item {
-            Some(Ok(json)) => Ok(Some(json.to_object(py).into())),
-            Some(Err(f)) => Err(f.to_py_err()),
-            None => Ok(None), // stream finished
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Provider constructors
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// An OpenAI provider for an explicit key handed over by the host, with an
-/// optional base URL. The key is an explicit value (`""` included), so it never
-/// falls back to `OPENAI_API_KEY`.
-pub(crate) fn openai_provider(
-    api_key: &str,
-    base_url: Option<&str>,
-) -> PyResult<aimux_providers::openai::OpenAIProvider> {
-    aimux_providers::openai::create_openai(aimux_providers::openai::OpenAIProviderSettings {
-        api_key: Some(api_key.to_string()),
-        base_url: base_url.map(str::to_string),
-        ..Default::default()
-    })
-    .map_err(|e| to_py_err(&e))
-}
-
-/// Create an OpenAI model instance.
 #[pyfunction]
-#[pyo3(signature = (api_key, model_id, base_url=None))]
-fn openai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
-    use aimux_core::provider::Provider;
-
-    let provider = openai_provider(api_key, base_url)?;
-    Ok(Model {
-        inner: provider
-            .language_model(model_id)
-            .map_err(|e| to_py_err(&e))?,
-        trace_store: None,
-    })
+fn manifest_json(py: Python<'_>) -> PyResult<String> {
+    py.allow_threads(|| serialize(&aimux_ops::manifest::manifest()))
+        .map_err(|e| error::ops_error(py, e))
 }
 
-/// Create an Anthropic model instance.
 #[pyfunction]
-#[pyo3(signature = (api_key, model_id, base_url=None))]
-fn anthropic(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
-
-    let provider = create_anthropic(AnthropicProviderSettings {
-        api_key: Some(api_key.to_string()),
-        base_url: base_url.map(str::to_string),
-        ..Default::default()
-    })
-    .map_err(|e| to_py_err(&e))?;
-    let model = provider
-        .language_model(model_id)
-        .map_err(|e| to_py_err(&e))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
-    })
-}
-
-/// Create a DeepSeek model instance (registry-backed since RFC-0017 phase 4).
-#[pyfunction]
-#[pyo3(signature = (api_key, model_id, base_url=None))]
-fn deepseek(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
-    let options = base_url.map(|url| aimux_providers::provider::ProviderOptions {
-        base_url: Some(url.to_string()),
-        ..Default::default()
-    });
-    let model = aimux_providers::provider::provider(
-        "deepseek",
-        Some(api_key.to_string()),
-        model_id,
-        options,
-    )
-    .map_err(|e| to_py_err(&e))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
-    })
-}
-
-/// Create a Google Gemini language model instance (native `generateContent`
-/// protocol — not OpenAI-compatible, so not registry-backed).
-#[pyfunction]
-#[pyo3(signature = (api_key, model_id, base_url=None))]
-fn google(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::google::{GoogleProviderSettings, create_google};
-
-    let provider = create_google(GoogleProviderSettings {
-        api_key: Some(api_key.to_string()),
-        base_url: base_url.map(str::to_string),
-        ..Default::default()
-    })
-    .map_err(|e| to_py_err(&e))?;
-    let model = provider
-        .language_model(model_id)
-        .map_err(|e| to_py_err(&e))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
-    })
-}
-
-/// Create a Cohere language model instance.
-#[pyfunction]
-#[pyo3(signature = (api_key, model_id, base_url=None))]
-fn cohere(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
-
-    let provider = create_cohere(CohereProviderSettings {
-        api_key: Some(api_key.to_string()),
-        base_url: base_url.map(str::to_string),
-        ..Default::default()
-    })
-    .map_err(|e| to_py_err(&e))?;
-    let model = provider
-        .language_model(model_id)
-        .map_err(|e| to_py_err(&e))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
-    })
-}
-
-/// Create a Mistral language model instance.
-#[pyfunction]
-#[pyo3(signature = (api_key, model_id, base_url=None))]
-fn mistral(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::mistral::{MistralProviderSettings, create_mistral};
-
-    let provider = create_mistral(MistralProviderSettings {
-        api_key: Some(api_key.to_string()),
-        base_url: base_url.map(str::to_string),
-        ..Default::default()
-    })
-    .map_err(|e| to_py_err(&e))?;
-    let model = provider
-        .language_model(model_id)
-        .map_err(|e| to_py_err(&e))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
-    })
-}
-
-/// Create an xAI language model instance.
-#[pyfunction]
-#[pyo3(signature = (api_key, model_id, base_url=None))]
-fn xai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::xai::{XAIProviderSettings, create_xai};
-
-    let provider = create_xai(XAIProviderSettings {
-        api_key: Some(api_key.to_string()),
-        base_url: base_url.map(str::to_string),
-        ..Default::default()
-    })
-    .map_err(|e| to_py_err(&e))?;
-    let model = provider
-        .language_model(model_id)
-        .map_err(|e| to_py_err(&e))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
-    })
-}
-
-/// Create a Bedrock language model instance (AWS SigV4 credentials).
-#[pyfunction]
-#[pyo3(signature = (access_key_id, secret_access_key, region, model_id, base_url=None))]
-fn bedrock(
-    access_key_id: &str,
-    secret_access_key: &str,
-    region: &str,
-    model_id: &str,
-    base_url: Option<&str>,
-) -> PyResult<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::bedrock::{AmazonBedrockProviderSettings, create_amazon_bedrock};
-
-    let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
-        credential_provider: Some(aimux_provider_utils::Resolvable::Value(
-            aimux_provider_utils::AwsCredentials {
-                access_key_id: access_key_id.to_string(),
-                secret_access_key: secret_access_key.to_string(),
-                session_token: None,
-                region: region.to_string(),
-            },
-        )),
-        region: Some(region.to_string()),
-        base_url: base_url.map(str::to_string),
-        ..Default::default()
-    })
-    .map_err(|e| to_py_err(&e))?;
-    let model = provider
-        .language_model(model_id)
-        .map_err(|e| to_py_err(&e))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
-    })
-}
-
-/// Create a Vertex AI language model instance (GCP bearer token).
-#[pyfunction]
-#[pyo3(signature = (access_token, project, location, model_id, base_url=None))]
-fn vertex(
-    access_token: &str,
-    project: &str,
-    location: &str,
-    model_id: &str,
-    base_url: Option<&str>,
-) -> PyResult<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::vertex::{VertexProviderSettings, create_google_vertex};
-
-    let provider = create_google_vertex(VertexProviderSettings {
-        access_token: Some(aimux_provider_utils::Resolvable::Value(
-            access_token.to_string(),
-        )),
-        project: Some(project.to_string()),
-        location: Some(location.to_string()),
-        base_url: base_url.map(str::to_string),
-        ..Default::default()
-    })
-    .map_err(|e| to_py_err(&e))?;
-    let model = provider
-        .language_model(model_id)
-        .map_err(|e| to_py_err(&e))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
-    })
-}
-
-/// Create an Anthropic-on-AWS language model instance (API key + region).
-#[pyfunction]
-#[pyo3(signature = (api_key, region, model_id, base_url=None))]
-fn anthropic_aws(
-    api_key: &str,
-    region: &str,
-    model_id: &str,
-    base_url: Option<&str>,
-) -> PyResult<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::anthropic_aws::{
-        AnthropicAwsAuth, AnthropicAwsProviderSettings, create_anthropic_aws,
-    };
-
-    let provider = create_anthropic_aws(AnthropicAwsProviderSettings {
-        region: Some(region.to_string()),
-        auth: Some(AnthropicAwsAuth::ApiKey(
-            aimux_provider_utils::Resolvable::Value(api_key.to_string()),
-        )),
-        base_url: base_url.map(str::to_string),
-        ..Default::default()
-    })
-    .map_err(|e| to_py_err(&e))?;
-    let model = provider
-        .language_model(model_id)
-        .map_err(|e| to_py_err(&e))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
-    })
-}
-
-/// Create an Azure OpenAI language model instance (API key + resource name).
-///
-/// The deployment name is passed as `model_id`; `api_version` is optional.
-#[pyfunction]
-#[pyo3(signature = (api_key, resource_name, deployment, api_version=None, base_url=None))]
-fn azure(
-    api_key: &str,
-    resource_name: &str,
-    deployment: &str,
-    api_version: Option<&str>,
-    base_url: Option<&str>,
-) -> PyResult<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::azure::{AzureOpenAIProviderSettings, create_azure};
-
-    let mut config = AzureOpenAIProviderSettings {
-        api_key: Some(aimux_provider_utils::Resolvable::Value(api_key.to_string())),
-        base_url: base_url.map(str::to_string),
-        ..Default::default()
-    };
-    // A dated `api_version` belongs to the deployment URL form.
-    if let Some(version) = api_version
-        && !version.is_empty()
-    {
-        config.api_version = Some(version.to_string());
-        config.use_deployment_based_urls = true;
-    }
-    if !resource_name.is_empty() {
-        config.resource_name = Some(resource_name.to_string());
-    }
-    let provider = create_azure(config).map_err(|e| to_py_err(&e))?;
-    let model = provider
-        .language_model(deployment)
-        .map_err(|e| to_py_err(&e))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
-    })
-}
-
-/// Create a language model from the built-in registry by provider name
-/// (RFC-0017 phase 4). `api_key=None` reads the provider's env var.
-/// `config_json` is a serialized `ProviderOptions` object (`base_url` /
-/// `headers` / `organization` / `project` / `params`; `max_retries` and
-/// `body_overrides` are rejected as invalid arguments); the `base_url`
-/// parameter wins over the JSON field.
-#[pyfunction]
-#[pyo3(signature = (name, api_key, model_id, base_url=None, config_json=None))]
-fn provider(
-    name: &str,
-    api_key: Option<String>,
-    model_id: &str,
-    base_url: Option<&str>,
-    config_json: Option<&str>,
-) -> PyResult<Model> {
-    let mut options: Option<aimux_providers::provider::ProviderOptions> = match config_json {
-        Some(s) if !s.trim().is_empty() && s.trim() != "null" => Some(wire_json("config_json", s)?),
-        _ => None,
-    };
-    if let Some(url) = base_url {
-        options.get_or_insert_with(Default::default).base_url = Some(url.to_string());
-    }
-    let model = aimux_providers::provider::provider(name, api_key, model_id, options)
-        .map_err(|e| to_py_err(&e))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
-    })
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Provider handles (RFC-0027) — createProvider / listModels / model
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// A provider handle — created by `create_provider`, supports `list_models()`
-/// (runtime discovery) and `model()` (build a model from a discovered id).
-#[pyclass]
-struct ProviderHandle {
-    inner: Arc<dyn aimux_core::provider::Provider>,
-}
-
-#[pymethods]
-impl ProviderHandle {
-    /// This provider's decision model, with its existing config; a provider
-    /// without decision models raises `NoSuchModelError`.
-    fn decision_model(&self, model_id: &str) -> PyResult<DecisionModel> {
-        let model = self
-            .inner
-            .decision_model(model_id)
-            .unwrap_or_else(|| Err(AiMuxError::no_such_model(model_id, "decisionModel")))
-            .map_err(|error| to_py_err(&error))?;
-        Ok(DecisionModel { inner: model })
-    }
-
-    /// List models available on this provider (runtime discovery + anya2a spec).
-    /// Returns a JSON array of RuntimeModel.
-    fn list_models(&self, py: Python<'_>) -> PyResult<String> {
-        let discovery = self.inner.discovery().ok_or_else(|| {
-            to_py_err(&AiMuxError::UnsupportedFunctionality(
-                "provider does not support model listing".into(),
-            ))
-        })?;
-        let rt = runtime();
-        let models = py
-            .allow_threads(|| rt.block_on(discovery.list_models()))
-            .map_err(|e| to_py_err(&e))?;
-        serialize_result(&models)
-    }
-
-    /// Build a language model from a discovered model id.
-    fn model(&self, model_id: &str) -> PyResult<Model> {
-        let m = self
-            .inner
-            .language_model(model_id)
-            .map_err(|e| to_py_err(&e))?;
-        Ok(Model {
-            inner: Arc::from(m),
-            trace_store: None,
-        })
-    }
-}
-
-/// Create a **provider handle** (RFC-0027) for a registry-backed provider.
-///
-/// Unlike `provider()` (which binds to a single model_id), this returns a
-/// `ProviderHandle` that supports `list_models()` and `model()`.
-#[pyfunction]
-#[pyo3(signature = (name, api_key=None, base_url=None, config_json=None))]
-fn create_provider(
-    name: &str,
-    api_key: Option<String>,
-    base_url: Option<&str>,
-    config_json: Option<&str>,
-) -> PyResult<ProviderHandle> {
-    let mut options: Option<aimux_providers::provider::ProviderOptions> = match config_json {
-        Some(s) if !s.trim().is_empty() && s.trim() != "null" => Some(wire_json("config_json", s)?),
-        _ => None,
-    };
-    if let Some(url) = base_url {
-        options.get_or_insert_with(Default::default).base_url = Some(url.to_string());
-    }
-    let inner = aimux_providers::provider::provider_handle(name, api_key, options)
-        .map_err(|e| to_py_err(&e))?;
-    Ok(ProviderHandle { inner })
-}
-
-/// Fetch the community model catalogue (RFC-0027) and return it as a JSON
-/// string (serialized `Catalogue`). `source_url` defaults to the anya2a
-/// `dist/all.json`.
-#[pyfunction]
-#[pyo3(signature = (source_url=None))]
-fn get_model_specs(py: Python<'_>, source_url: Option<&str>) -> PyResult<String> {
-    let catalogue = py
-        .allow_threads(|| {
-            runtime().block_on(async { aimux_providers::get_model_specs(source_url).await })
-        })
-        .map_err(|e| to_py_err(&e))?;
-    serialize_result(&catalogue)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Module
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// 初始化全局日志（RFC-0014）。幂等：多次调用无副作用；宿主已自建
-/// subscriber 时 no-op。级别：off|error|warn|info|debug|trace（空串回退
-/// warn）。`AIMUX_LOG` / `AIMUX_LOG_LEVEL` 环境变量优先级更高。
-/// 日志输出到 stderr。
-#[pyfunction]
-fn init_logging(level: &str) {
-    let level = if level.trim().is_empty() {
-        "warn"
-    } else {
-        level
-    };
-    aimux_providers::init_logging(level);
-}
-
-/// Register external OpenAI-compatible providers from a JSON config string
-/// (RFC-0020). Entries override same-named built-ins or add new ones.
-///
-/// `config_json` shape: `{ "providers": [ { "name": "...", "base_url": "...", ... } ] }`.
-/// Malformed JSON text raises `ValueError`; a well-formed document the
-/// registry rejects (bad base_url scheme, empty name, unsupported protocol,
-/// wrong shape) raises `InvalidArgumentError`.
-#[pyfunction]
-fn register_providers(config_json: &str) -> PyResult<()> {
-    let _: serde_json::Value = wire_json("config_json", config_json)?;
-    aimux_providers::provider::load_providers_from_json(config_json).map_err(|e| match e {
-        AiMuxError::JsonParse(m) => {
-            to_py_err(&AiMuxError::InvalidArgument(format!("config_json: {m}")))
-        }
-        e => to_py_err(&e),
-    })
-}
-
-/// Replace the default transport with one routed by this proxy configuration
-/// (M6, RFC-0016). Requests started afterwards use it; calling it again
-/// replaces the previous configuration.
-///
-/// `config_json` shape: `{ "http_url": "...", "https_url": "...", "all_url":
-/// "...", "no_proxy": "..." }` (all fields optional). Raises `ValueError` on
-/// malformed JSON, `AimuxError` on a bad value.
-#[pyfunction]
-fn init_proxy(config: &str) -> PyResult<()> {
-    let proxy_config: aimux_provider_utils::ProxyConfig = wire_json("config", config)?;
-    // Replaces the default transport for later requests (see
-    // `aimux_init_proxy`).
-    aimux_provider_utils::set_default_transport(aimux_provider_utils::ReqwestFetch::new(
-        proxy_config,
-    ));
-    Ok(())
-}
-
-/// Register the global session store (RFC-0024). Replaces any previous one.
-/// Until called, calls are not grouped and the query functions return empty
-/// results.
-#[pyfunction]
-fn init_session_store() {
-    aimux_core::session::init_session_store(std::sync::Arc::new(
-        aimux_core::session::SessionStore::new(),
-    ));
-}
-
-/// Enable/disable the global session inferer (RFC-0024, opt-in, off by
-/// default). Explicit `session_id` values always win regardless.
-#[pyfunction]
-fn init_session_infer(enabled: bool) {
-    aimux_core::session::init_session_infer(enabled);
-}
-
-/// Query: all calls of a session (RFC-0024), as a JSON-serialized
-/// `SessionCall[]` (ordered by step). Empty array if unknown / no store.
-#[pyfunction]
-fn session_calls(session_id: &str) -> PyResult<String> {
-    serialize_result(&aimux_core::session::session_calls(session_id))
-}
-
-/// Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`.
-#[pyfunction]
-fn list_sessions() -> PyResult<String> {
-    serialize_result(&aimux_core::session::list_sessions())
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Recording + mock replay (RFC-0023)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// 启动录制(RFC-0023):把完整 `Recording` 写 JSONL 到 `{dir}/recordings.jsonl`
-/// (目录自动创建)。录制 opt-in;再次调用(不同 dir)替换 recorder。
-/// Raises `RecordingError` (``code`` "Init" / "OpenFile" / "Spawn") when the
-/// recorder cannot be set up; the previous recorder, if any, stays in place.
-#[pyfunction]
-fn init_recording(dir: &str) -> PyResult<()> {
-    let rec = aimux_core::recording::JsonlRecorder::try_new(dir.to_string())
-        .map_err(|e| AiMuxBindingError::from(e).to_py_err())?;
-    aimux_core::recording::init_recording(Some(std::sync::Arc::new(rec)));
-    Ok(())
-}
-
-/// 启动内存有界录制(RFC-0023 P6):FIFO ring,丢弃计数可查。
-///
-/// `cap` 可省略:省略时使用库默认容量(等价于 FFI `aimux_init_recording_ring_default()`;
-/// 本绑定直接依赖 aimux-core 而非 aimux-ffi,故调用等价 core API `RingRecorder::default()`)。
-/// 显式传 `cap == 0` 报错(保持与各绑定统一的"传 0 报错"语义)。
-#[pyfunction]
-#[pyo3(signature = (cap=None))]
-fn init_recording_ring(cap: Option<u64>) -> PyResult<()> {
-    match cap {
-        // 省略 cap:库默认容量(镜像 FFI default 变体)。
-        None => aimux_core::recording::init_recording(Some(std::sync::Arc::new(
-            aimux_core::recording::RingRecorder::default(),
-        ))),
-        // 显式 cap == 0:报错(保持统一语义)。
-        Some(0) => {
-            return Err(to_py_err(&AiMuxError::InvalidArgument(
-                "init_recording_ring: cap must be > 0".into(),
-            )));
-        }
-        // 显式 cap > 0:指定容量的有界 ring。
-        Some(c) => aimux_core::recording::init_recording(Some(std::sync::Arc::new(
-            aimux_core::recording::RingRecorder::with_capacity(c as usize),
-        ))),
-    }
-    Ok(())
-}
-
-/// 停止录制:全局 recorder = None(新调用不再录制)。
-#[pyfunction]
-fn recording_stop() {
-    aimux_core::recording::init_recording(None);
-}
-
-/// 刷盘全局 recorder(阻塞至 JSONL 落盘;ring 模式 no-op)。
-#[pyfunction]
-fn recording_flush(py: Python<'_>) {
-    if let Some(rec) = aimux_core::recording::recorder() {
-        py.allow_threads(|| rec.flush());
-    }
-}
-
-/// Flush the global recorder and **report write failures**: raises
-/// `RecordingError` (``code`` is "WriterGone" / "FlushTimeout" / "Write") when
-/// the data could not be confirmed on disk. `RecordingError` is its own
-/// exception type, not an `AimuxError`. Returns normally when nothing is
-/// recording. The legacy `recording_flush` stays and never reports.
-#[pyfunction]
-fn recording_try_flush(py: Python<'_>) -> PyResult<()> {
-    let Some(rec) = aimux_core::recording::recorder() else {
-        return Ok(());
-    };
-    py.allow_threads(|| rec.try_flush())
-        .map_err(|e| AiMuxBindingError::from(e).to_py_err())
-}
-
-/// 从录制 JSONL 创建 mock 回放 model(RFC-0023 P3):按输入匹配录制响应,
-/// 不发真实 API。返回的 Model 可用于 generate_text / stream_text。
-#[pyfunction]
-fn mock_replay(recordings_jsonl: &str) -> PyResult<Model> {
-    let mut recordings: Vec<aimux_core::recording::Recording> = Vec::new();
-    for (idx, line) in recordings_jsonl.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        // Same split as everywhere else: text that does not parse is the
-        // binding's (ValueError); a parsed line with the wrong shape is core's
-        // InvalidArgument. Both name the line.
-        let rec: aimux_core::recording::Recording = serde_json::from_str(line).map_err(|e| {
-            let msg = format!("recordings line {}: {e}", idx + 1);
-            match e.classify() {
-                serde_json::error::Category::Data => to_py_err(&AiMuxError::InvalidArgument(msg)),
-                _ => binding_py_err(&BindingError::InvalidWireJson {
-                    argument: "recordings_jsonl",
-                    message: msg,
-                }),
-            }
-        })?;
-        recordings.push(rec);
-    }
-    if recordings.is_empty() {
-        return Err(to_py_err(&AiMuxError::InvalidArgument(
-            "no recordings".into(),
-        )));
-    }
-    let model = aimux_core::replay::MockReplayModel::new(
-        recordings[0].provider.provider.clone(),
-        recordings[0].provider.model_id.clone(),
-        recordings,
-    );
-    Ok(Model {
-        inner: Arc::new(model),
-        trace_store: None,
-    })
-}
-
-/// Create a RouterModel (RFC-0021) over the given child models. The returned
-/// model routes each call to one child and falls back across the rest on error
-/// (per config_json). `models` must be non-empty.
-///
-/// `config_json` (optional): {"router": "rule"|"weighted", "weights": [...],
-/// "fallback": "on_error"|"none", "provider_name", "model_id"}.
-#[pyfunction]
-#[pyo3(signature = (models, config_json=None))]
-fn router(models: Vec<PyRef<Model>>, config_json: Option<&str>) -> PyResult<Model> {
-    if models.is_empty() {
-        return Err(to_py_err(&AiMuxError::InvalidArgument(
-            "router: models must be non-empty".into(),
-        )));
-    }
-    let children: Vec<Arc<dyn LanguageModel>> = models.iter().map(|m| m.inner.clone()).collect();
-    let cfg: RouterFfiConfig = match config_json {
-        Some(json) => wire_json("config_json", json)?,
-        None => RouterFfiConfig::default(),
-    };
-    let router: Box<dyn aimux_core::router::Router> = match cfg.router.as_deref() {
-        Some("weighted") => {
-            let weights = cfg.weights.unwrap_or_else(|| vec![1.0; children.len()]);
-            Box::new(aimux_core::router::WeightedRouter::new(weights))
-        }
-        _ => Box::new(aimux_core::router::RuleRouter),
-    };
-    let fallback = if cfg.fallback.as_deref() == Some("none") {
-        aimux_core::router::FallbackPolicy::None
-    } else {
-        aimux_core::router::FallbackPolicy::OnError
-    };
-    let router_cfg = aimux_core::router::RouterConfig {
-        provider_name: cfg.provider_name.unwrap_or_else(|| "router".into()),
-        model_id: cfg.model_id.unwrap_or_else(|| "router".into()),
-    };
-    let model = aimux_core::router::RouterModel::new(children, router, fallback, router_cfg);
-    Ok(Model {
-        inner: Arc::new(model),
-        trace_store: None,
-    })
-}
-
-/// Create a MoaModel (RFC-0022) over reference models + one aggregator.
-/// References fan out in parallel, then the aggregator synthesizes a final
-/// answer. `references` may be empty (runs aggregator only).
-///
-/// `config_json` (optional) is a serialized MoaConfig.
-#[pyfunction]
-#[pyo3(signature = (references, aggregator, config_json=None))]
-fn moa(
-    references: Vec<PyRef<Model>>,
-    aggregator: PyRef<Model>,
-    config_json: Option<&str>,
-) -> PyResult<Model> {
-    let refs: Vec<Arc<dyn LanguageModel>> = references.iter().map(|m| m.inner.clone()).collect();
-    let cfg: aimux_core::moa::MoaConfig = match config_json {
-        Some(json) => wire_json("config_json", json)?,
-        None => aimux_core::moa::MoaConfig::default(),
-    };
-    let model = aimux_core::moa::MoaModel::new(refs, aggregator.inner.clone(), cfg);
-    Ok(Model {
-        inner: Arc::new(model),
-        trace_store: None,
-    })
-}
-
-/// Lenient router config (mirrors the FFI-side shape; all fields optional).
-#[derive(Default, serde::Deserialize)]
-struct RouterFfiConfig {
-    router: Option<String>,
-    weights: Option<Vec<f64>>,
-    fallback: Option<String>,
-    provider_name: Option<String>,
-    model_id: Option<String>,
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Host-side tool-call repair (RFC-0035)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Build the repair argument for one invalid tool call.
-///
-/// `tool_call_json` is a ``GenerateTextResult.tool_calls`` entry with
-/// ``"invalid": true``. `prompt_json` and `opts_json` are **the same two
-/// strings the call was generated with** (``generate_text`` /
-/// ``stream_text``); messages, instructions, and the tool set are derived
-/// from them here, so no caller repeats that derivation.
-///
-/// Returns ``{tool_call, error, input_schema, tools, messages, instructions}``
-/// — the AI SDK ``repairToolCall`` argument, with ``tool_call.input`` the
-/// provider's raw argument text — or the JSON literal ``"null"`` when the
-/// options carried no tools: as in the AI SDK, a call made without a tool set
-/// is never repaired, and the caller skips it. ``"null"`` is a success.
-///
-/// Pure and synchronous: no model, no network. Raises
-/// ``InvalidArgumentError`` when the call is not an invalid one.
-#[pyfunction]
-#[pyo3(signature = (tool_call_json, prompt_json, opts_json=None))]
-fn tool_call_repair_context(
-    tool_call_json: &str,
-    prompt_json: &str,
-    opts_json: Option<&str>,
-) -> PyResult<String> {
-    let tool_call: ToolCall = wire_json("tool_call_json", tool_call_json)?;
-    let prompt = parse_prompt(prompt_json)?;
-    let opts = parse_opts(opts_json)?;
-    let (messages, instructions, tools) = tool_call_repair_inputs(prompt, &opts);
-    let context = aimux_core::parse_tool_call::tool_call_repair_context(
-        &tool_call,
-        tools,
-        &messages,
-        instructions,
-    )
-    .map_err(|e| to_py_err(&e))?;
-    serialize_result(&context)
-}
-
-/// Resolve one invalid tool call against a host's repair reply.
-///
-/// `opts_json` is the same string the call was generated with; the tool set
-/// comes from it. `reply_json` is ``{"type":"repaired","toolCall":{…}}``,
-/// ``{"type":"unchanged"}``, or ``{"type":"failed","message":"…"}``. Returns
-/// the resulting ``ToolCall`` JSON, tagged ``"type": "tool-call"`` — valid,
-/// or invalid carrying a nested ``ToolCallRepairError``.
-///
-/// Options carrying no tools raise ``InvalidArgumentError``: such a call is
-/// not repairable, and ``tool_call_repair_context`` already said so by
-/// returning ``"null"``.
-#[pyfunction]
-#[pyo3(signature = (tool_call_json, opts_json, reply_json))]
-fn apply_tool_call_repair(
-    tool_call_json: &str,
-    opts_json: Option<&str>,
-    reply_json: &str,
-) -> PyResult<String> {
-    let tool_call: ToolCall = wire_json("tool_call_json", tool_call_json)?;
-    let opts = parse_opts(opts_json)?;
-    let reply: ToolCallRepairReply = wire_json("reply_json", reply_json)?;
-    let repaired = aimux_core::parse_tool_call::apply_tool_call_repair(
-        &tool_call,
-        opts.tools.as_deref(),
-        reply,
-    )
-    .map_err(|e| to_py_err(&e))?;
-    serialize_result(&aimux_core::wire::Tagged(&repaired))
-}
-
-/// Apply a repair reply to a serialized ``GenerateTextResult``, rewriting the
-/// call in its steps' content and the matching response-message tool-call
-/// part. `opts_json` is the same string the call was generated with.
-///
-/// The OpenAI-shaped result has no equivalent: it carries no ``invalid`` /
-/// ``error``, so repair is driven from the native result, which
-/// ``Model.generate_text_result_as_openai`` then converts.
-#[pyfunction]
-#[pyo3(signature = (result_json, opts_json, tool_call_id, reply_json))]
-fn apply_tool_call_repair_to_result(
-    result_json: &str,
-    opts_json: Option<&str>,
-    tool_call_id: &str,
-    reply_json: &str,
-) -> PyResult<String> {
-    let result: serde_json::Value = wire_json("result_json", result_json)?;
-    let opts = parse_opts(opts_json)?;
-    let reply: ToolCallRepairReply = wire_json("reply_json", reply_json)?;
-    let patched = aimux_core::parse_tool_call::apply_tool_call_repair_to_result(
-        &result,
-        opts.tools.as_deref(),
-        tool_call_id,
-        reply,
-    )
-    .map_err(|e| to_py_err(&e))?;
-    serialize_result(&patched)
+fn manifest_digest(py: Python<'_>) -> String {
+    py.allow_threads(aimux_ops::manifest::manifest_digest)
 }
 
 #[pymodule]
-fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    crate::error::register(m)?;
-    m.add_class::<Model>()?;
+fn aimux(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let owner = current_owner(m.py())?;
+    m.add(
+        "_owner_guard",
+        Py::new(m.py(), OwnerGuard { _owner: owner })?,
+    )?;
+    m.add_class::<Client>()?;
+    m.add_class::<Abort>()?;
     m.add_class::<StreamIterator>()?;
-    m.add_function(wrap_pyfunction!(init_logging, m)?)?;
-    m.add_function(wrap_pyfunction!(init_session_store, m)?)?;
-    m.add_function(wrap_pyfunction!(init_session_infer, m)?)?;
-    m.add_function(wrap_pyfunction!(session_calls, m)?)?;
-    m.add_function(wrap_pyfunction!(list_sessions, m)?)?;
-    m.add_function(wrap_pyfunction!(init_recording, m)?)?;
-    m.add_function(wrap_pyfunction!(init_recording_ring, m)?)?;
-    m.add_function(wrap_pyfunction!(recording_stop, m)?)?;
-    m.add_function(wrap_pyfunction!(recording_flush, m)?)?;
-    m.add_function(wrap_pyfunction!(recording_try_flush, m)?)?;
-    m.add_function(wrap_pyfunction!(mock_replay, m)?)?;
-    m.add_function(wrap_pyfunction!(router, m)?)?;
-    {
-        use crate::multimodal::start_transcription_session;
-        m.add_function(wrap_pyfunction!(start_transcription_session, m)?)?;
-    }
-    m.add_function(wrap_pyfunction!(moa, m)?)?;
-    m.add_function(wrap_pyfunction!(register_providers, m)?)?;
-    m.add_function(wrap_pyfunction!(init_proxy, m)?)?;
-    m.add_function(wrap_pyfunction!(openai, m)?)?;
-    m.add_function(wrap_pyfunction!(anthropic, m)?)?;
-    m.add_function(wrap_pyfunction!(deepseek, m)?)?;
-    m.add_function(wrap_pyfunction!(google, m)?)?;
-    m.add_function(wrap_pyfunction!(cohere, m)?)?;
-    m.add_function(wrap_pyfunction!(mistral, m)?)?;
-    m.add_function(wrap_pyfunction!(xai, m)?)?;
-    m.add_function(wrap_pyfunction!(bedrock, m)?)?;
-    m.add_function(wrap_pyfunction!(vertex, m)?)?;
-    m.add_function(wrap_pyfunction!(anthropic_aws, m)?)?;
-    m.add_function(wrap_pyfunction!(azure, m)?)?;
-    m.add_function(wrap_pyfunction!(provider, m)?)?;
-    m.add_function(wrap_pyfunction!(create_provider, m)?)?;
-    m.add_function(wrap_pyfunction!(get_model_specs, m)?)?;
-    m.add_function(wrap_pyfunction!(tool_call_repair_context, m)?)?;
-    m.add_function(wrap_pyfunction!(apply_tool_call_repair, m)?)?;
-    m.add_function(wrap_pyfunction!(apply_tool_call_repair_to_result, m)?)?;
-    m.add_class::<ProviderHandle>()?;
-
-    // Multimodal classes.
-    m.add_class::<EmbeddingModel>()?;
-    m.add_class::<SpeechModel>()?;
-    m.add_class::<ImageModel>()?;
-    m.add_class::<TranscriptionModel>()?;
-    m.add_class::<crate::multimodal::TranscriptionSession>()?;
-    m.add_class::<RerankingModel>()?;
-    m.add_class::<VideoModel>()?;
-    m.add_class::<SearchModel>()?;
-    m.add_class::<DecisionModel>()?;
-    m.add_function(wrap_pyfunction!(jev_decision, m)?)?;
-    m.add_class::<Files>()?;
-
-    // Multimodal factory functions.
-    m.add_function(wrap_pyfunction!(openai_embedding, m)?)?;
-    m.add_function(wrap_pyfunction!(openai_speech, m)?)?;
-    m.add_function(wrap_pyfunction!(openai_image, m)?)?;
-    m.add_function(wrap_pyfunction!(openai_transcription, m)?)?;
-    m.add_function(wrap_pyfunction!(openai_files, m)?)?;
-    m.add_function(wrap_pyfunction!(cohere_embedding, m)?)?;
-    m.add_function(wrap_pyfunction!(cohere_reranking, m)?)?;
-    m.add_function(wrap_pyfunction!(google_embedding, m)?)?;
-    m.add_function(wrap_pyfunction!(google_image, m)?)?;
-    m.add_function(wrap_pyfunction!(google_video, m)?)?;
-    m.add_function(wrap_pyfunction!(tavily_search, m)?)?;
+    m.add_function(wrap_pyfunction!(manifest_json, m)?)?;
+    m.add_function(wrap_pyfunction!(manifest_digest, m)?)?;
+    m.add("EXPECTED_MANIFEST_DIGEST", EXPECTED_MANIFEST_DIGEST)?;
+    m.add("EXPECTED_ABI_VERSION", EXPECTED_ABI_VERSION)?;
+    m.add("EXPECTED_OPS_VERSION", EXPECTED_OPS_VERSION)?;
+    m.add("ABI_VERSION", aimux_ops::op::ABI_VERSION)?;
+    m.add("OPS_VERSION", aimux_ops::op::OPS_VERSION)?;
     Ok(())
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn rt_spawn<F>(future: F)
-where
-    F: std::future::Future<Output = ()> + Send + 'static,
-{
-    runtime().spawn(future);
-}
-
-fn parse_prompt(json: &str) -> PyResult<ModelPrompt> {
-    // Malformed text is the binding's failure; a well-formed prompt the core
-    // would reject is core-owned.
-    let value: serde_json::Value = wire_json("prompt_json", json)?;
-    let inner = match &value {
-        serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
-            obj.get("prompt").expect("checked by guard")
-        }
-        _ => &value,
-    };
-    serde_json::from_value(inner.clone())
-        .map_err(|e| to_py_err(&AiMuxError::InvalidArgument(format!("invalid prompt: {e}"))))
-}
-
-fn parse_opts(json: Option<&str>) -> PyResult<GenerateTextOptions> {
-    match json {
-        None => Ok(GenerateTextOptions::default()),
-        Some(s) => {
-            let trimmed = s.trim();
-            if trimmed.is_empty() || trimmed == "null" {
-                return Ok(GenerateTextOptions::default());
-            }
-            wire_json("opts_json", s)
-        }
-    }
 }
