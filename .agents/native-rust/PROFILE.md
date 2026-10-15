@@ -15,7 +15,7 @@
 | `@ai-sdk/<vendor>` | `aimux-providers/src/<vendor>/`；`google-vertex` → `vertex/`，`amazon-bedrock` → `bedrock/`；按模块头注释的 `packages/<pkg>/src/<file>.ts` 找 |
 | 无上游 | `aimux-ffi`、`bindings/`、`recording.rs`/`replay.rs`、`decision_*`：只能新旧差分 |
 
-281 个 OpenAI-compatible preset 来自 `provider_registry.json` 的运行时 descriptor 表（D12），没有逐厂商代码。
+OpenAI-compatible preset 来自 `provider_registry.json` 的运行时 descriptor 表（D12），没有逐厂商代码。
 
 ## 设计文档
 
