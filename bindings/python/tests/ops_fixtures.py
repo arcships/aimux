@@ -178,7 +178,9 @@ def _http_server(connection, body, content_type, delay, status):
             if self.command == "POST":
                 self.rfile.read(int(self.headers.get("Content-Length", 0)))
             time.sleep(delay)
-            payload = body[self.command] if isinstance(body, dict) else body
+            # A dict body is keyed by request path suffix first, then by method.
+            payload = next((value for key, value in body.items() if self.path.endswith(key)),
+                           body.get(self.command)) if isinstance(body, dict) else body
             if isinstance(payload, str): payload = payload.encode()
             self.send_response(status)
             self.send_header("Content-Type", content_type)

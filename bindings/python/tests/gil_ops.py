@@ -74,16 +74,16 @@ def modality(name):
 
 @contextmanager
 def video():
-    # Core downloads this URL directly; the localhost provider fixture cannot
-    # intercept it. Fake-IP DNS can make its non-public-address guard reject it.
+    # Inline bytes keep the result off core's download path, whose
+    # non-public-address guard refuses the localhost fixture.
     body = {
-        "POST": json.dumps({"name": "operations/gil"}),
-        "GET": json.dumps({"done": True, "response": {"generateVideoResponse": {
-            "generatedSamples": [{"video": {"uri": "https://example.invalid/video.mp4"}}],
-        }}}),
+        ":predictLongRunning": json.dumps({"name": "operations/gil"}),
+        ":fetchPredictOperation": json.dumps({"done": True, "response": {"videos": [
+            {"bytesBase64Encoded": "dGVzdA==", "mimeType": "video/mp4"},
+        ]}}),
     }
     with slow_http(body) as url:
-        with model_at(url, "videoModel", "veo-3.0", "google") as model:
+        with model_at(url, "videoModel", "veo-3.0-generate-001", "google_vertex") as model:
             yield lambda: model.call("video.generate", {"prompt": "otter", "n": 1,
                 "providerOptions": {}, "maxRetries": 0, "poll": {"intervalMs": 1, "timeoutMs": 5000}})
 
@@ -100,16 +100,18 @@ def decision():
 @contextmanager
 def discovery(catalogue=False):
     import aimux
-    body = json.dumps({"providers": {}} if catalogue else {"data": [{"id": "gpt-4o", "object": "model"}]})
+    if catalogue:
+        import pytest
+        # catalogue.fetch refuses loopback sources before any I/O, so no local
+        # fixture can make it block; it shares Client.call with list_models.
+        pytest.skip("catalogue.fetch refuses non-public sources; same native call path as list_models")
+    body = json.dumps({"data": [{"id": "gpt-4o", "object": "model"}]})
     with slow_http(body) as url:
         client = aimux.Client()
-        if catalogue:
-            yield lambda: client.call("catalogue.fetch", {"sourceUrl": url})
-        else:
-            with client.adopt(client.call("provider.create", {
-                "package": "openai", "settings": {"apiKey": "test-key", "baseUrl": url},
-            })["handle"]) as provider:
-                yield lambda: provider.call("provider.invoke", {"method": "listModels"})
+        with client.adopt(client.call("provider.create", {
+            "package": "openai", "settings": {"apiKey": "test-key", "baseUrl": url},
+        })["handle"]) as provider:
+            yield lambda: provider.call("provider.invoke", {"method": "listModels"})
 
 
 @contextmanager
@@ -162,8 +164,13 @@ def recording(method):
                         model.call("text.generate", {"prompt": "hi", "options": {"maxRetries": 0}})
                 if method == "close": recorder.call("recorder.stop")
                 def invoke():
+                    nonlocal recorder
                     drain.set()
-                    return recorder.close() if method == "close" else recorder.call("recorder.flush")
+                    if method != "close":
+                        return recorder.call("recorder.flush")
+                    # A closed handle is gone; teardown must not stop it again.
+                    closing, recorder = recorder, None
+                    return closing.close()
                 yield invoke
         finally:
             opened.set()
