@@ -179,7 +179,7 @@ RFC-0035 已记录的 Swift/JVM repair 线程/取消限制仍是基线；本 RFC
 - usage.raw、finishReason.raw、response metadata 与 tool metadata 分别归属，不把全部内容铺平塞进一个 map
 - 流聚合按 `(类别, block id)` 维护首次出现顺序，text/reasoning id 同名也不冲突；不能只保留最后一个 block 的 metadata
 
-验收采用“字段去向表”：每个协议 fixture 的特性字段标记为规范字段、metadata、raw-only 或明确拒绝，并提供下一轮重编码断言。重编码断言与固定基线的上游请求比较，不要求还原 core 值：工具参数的厂商编码遵循各包上游编码器，包括对非对象 input 的规范化（OpenAI chat 写 `{}`、Bedrock 包 `rawInvalidInput`、Groq/DeepSeek 写 `JSON.stringify(input)`）。JSON 等价不等于 HTTP 字节等价；二者分开报告。L2 的旧独立模型调研不再阻塞这些缺陷修复；如果未来另换数据模型，需要新的 RFC 与版本决定。
+验收采用“字段去向表”：每个协议 fixture 的特性字段标记为规范字段、metadata、raw-only 或明确拒绝，并提供下一轮重编码断言。重编码断言与固定基线的上游请求比较，不要求还原 core 值：工具参数的厂商编码遵循各包上游编码器，包括对非对象 input 的规范化（OpenAI chat 写 `{}`、Anthropic/Bedrock 包 `rawInvalidInput`、Groq/DeepSeek 写 `JSON.stringify(input)`）。JSON 等价不等于 HTTP 字节等价；二者分开报告。L2 的旧独立模型调研不再阻塞这些缺陷修复；如果未来另换数据模型，需要新的 RFC 与版本决定。
 
 ## 7. D8：单一生成来源
 
