@@ -2,7 +2,6 @@ package ai.arcships.aimux;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
@@ -29,22 +28,13 @@ import com.fasterxml.jackson.databind.node.TextNode;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Supplier;
 
 /**
- * aimux — typed data classes mirroring the Kotlin binding in
- * `bindings/kotlin` (which in turn mirrors the ts-rs output in
- * `bindings/node/src/types`).
- *
- * Field names are camelCase in Java and on the wire (the AI SDK JSON), so
- * {@link JsonProperty} only pins them. The raw JSON boundary is handled by
- * {@link TypedModel} — callers of this layer never parse JSON by hand.
+ * Typed data classes for the aimux wire format. Field names are camelCase
+ * in Java and on the wire.
  *
  * These types are intentionally lenient on decode (unknown keys ignored, every
  * field has a default) so that future provider/engine additions do not break
@@ -52,18 +42,6 @@ import java.util.function.Supplier;
  */
 public final class Types {
     private Types() {}
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Shared ObjectMapper.
-    //
-    //  - FAIL_ON_UNKNOWN_PROPERTIES disabled : tolerate forward-compatible fields.
-    //  - NON_NULL inclusion                   : omit null fields on encode so
-    //                                           GenerateTextOptions only carries
-    //                                           fields the caller actually set.
-    //  - FIELD visibility ANY                 : read/write fields directly; the
-    //                                           package-private @JsonCreator ctor
-    //                                           handles instantiation.
-    // ─────────────────────────────────────────────────────────────────────────────
 
     /**
      * Check the {@code type} tag of a value that always carries one (a
@@ -79,29 +57,13 @@ public final class Types {
     public static final class AimuxJson {
         private AimuxJson() {}
 
-        public static final ObjectMapper MAPPER = createMapper();
+        public static final ObjectMapper MAPPER = configure(new ObjectMapper(), true);
 
         /**
-         * Inner mapper used by the `type`-tagged polymorphic serializers
-         * ({@link ContentPartSerializer}, {@link StreamPartSerializer},
-         * {@link GenerateContentSerializer}) to serialize the concrete variant
-         * as a plain POJO. It deliberately does NOT register those four
-         * polymorphic serializers, so {@code valueToTree} on a concrete subtype
-         * (e.g. {@code StreamPart.TextDelta}) uses default field serialization
-         * instead of re-entering the polymorphic serializer — which would
-         * otherwise infinite-recurse ({@code StackOverflowError}). Non-recursing
-         * serializers that concrete variants may transitively contain
-         * ({@link ToolChoice}, {@link FileBytes}, {@link GeneratedFileData}) are kept.
+         * Serializes concrete variants without re-entering their polymorphic
+         * serializers. Non-recursing serializers remain registered.
          */
-        public static final ObjectMapper INNER_MAPPER = createInnerMapper();
-
-        private static ObjectMapper createMapper() {
-            return configure(new ObjectMapper(), true);
-        }
-
-        private static ObjectMapper createInnerMapper() {
-            return configure(new ObjectMapper(), false);
-        }
+        public static final ObjectMapper INNER_MAPPER = configure(new ObjectMapper(), false);
 
         private static ObjectMapper configure(ObjectMapper m, boolean polymorphic) {
             m.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
