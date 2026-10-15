@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include <errno.h>
 #include "../../native/aimux_ops.h"
 #include <pthread.h>
 #include <stdatomic.h>
@@ -13,7 +14,8 @@ static atomic_int aborted[4096], drops[4096];
 static atomic_int produced, completed, pushes;
 static void delay_ms(int ms) {
     struct timespec t = {ms / 1000, (ms % 1000) * 1000000L};
-    nanosleep(&t, NULL);
+    /* The Dart VM signals its threads on Linux; resume after EINTR. */
+    while (nanosleep(&t, &t) == -1 && errno == EINTR) {}
 }
 static char *copy(const char *value) {
     char *out = malloc(strlen(value) + 1);
