@@ -81,6 +81,7 @@ async fn run_inner(state: AppState, req: ProbeRequest) -> Result<Response, AiMux
         &req.provider,
         &state.keys,
         state.loopback,
+        model_builder::is_custom_base_url(&req.provider, req.base_url.as_deref()),
     )?;
     let model =
         model_builder::build_model(&req.provider, key, &req.model, req.base_url.as_deref())?;
