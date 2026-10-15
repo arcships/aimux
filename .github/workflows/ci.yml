@@ -647,6 +647,13 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: ts-rs export drift (checked-in types must match generator output)
         run: python3 scripts/gen_ts_types.py --check
+      # The AI SDK pin tooling: VERSIONS.json format and integrity rules, and
+      # fetch-aisdk.sh against a registry served on 127.0.0.1 (no network).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: AI SDK pin scripts (fetch-aisdk.sh, VERSIONS.json helpers)
+        run: node --test scripts/fetch-aisdk.test.mjs scripts/aisdk-fixtures/versions.test.mjs
 
   # Swift tests need macOS (XCTest) and the FFI cdylib, which the Swift package
   # links via the CAimuxFFI system module.
