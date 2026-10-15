@@ -145,3 +145,7 @@ tools/aimux-web/
   `web/src/types/generated/`(同样由 `scripts/gen_ts_types.py` 生成、CI `--check` 防漂移)。
   不导出到 `bindings/node`,因为它们属于前端而非 node 绑定。改 `src/wire.rs` 后运行
   `scripts/gen_ts_types.py` 并一起提交,**不要手改** `generated/` 下的文件。
+- **已知债务(D8 前)**:`aimux-core` 里的 `#[ts(export)]` 没有 feature 门控(wire 类型有),
+  而 `.cargo/config.toml` 的 `TS_RS_EXPORT_DIR` 指向 `bindings/node/src/types/`,所以普通
+  `cargo test` 也会改写这个受跟踪目录。以 `scripts/gen_ts_types.py`(临时目录 + `--check`)
+  的结果为准,`cargo test` 后若该目录出现改动直接丢弃;ts-rs 随 D8 退役(RFC-0042 §7.3)。
