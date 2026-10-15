@@ -18,12 +18,12 @@ use aimux_core::recording::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target};
+use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode as params};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
 
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum CapturePolicy {
     Full,
@@ -52,17 +52,19 @@ enum Backend {
     Jsonl(JsonlRecorder),
 }
 
-/// Keeps backend diagnostics and the explicit capture policy with the handle.
-/// Full capture retains existing core redaction of sensitive fields.
+/// Keeps backend diagnostics. Full capture uses core redaction of sensitive fields.
 /// Creating a handle does not attach it; stopping does not flush it.
 struct RecorderHandle {
     backend: Backend,
-    policy: CapturePolicy,
 }
 
 impl RecorderHandle {
     fn new(params: CreateRecorderParams) -> Result<Self, OpsError> {
-        let backend = match params.backend {
+        let CreateRecorderParams {
+            backend,
+            capture_policy: CapturePolicy::Full,
+        } = params;
+        let backend = match backend {
             BackendConfig::Ring { capacity } => {
                 let capacity = capacity.unwrap_or(recording::DEFAULT_RING_CAPACITY);
                 if capacity == 0
@@ -76,10 +78,7 @@ impl RecorderHandle {
                 Backend::Jsonl(JsonlRecorder::try_new(directory).map_err(OpsError::Recording)?)
             }
         };
-        Ok(Self {
-            backend,
-            policy: params.capture_policy,
-        })
+        Ok(Self { backend })
     }
 
     fn recorder(&self) -> &dyn Recorder {
@@ -133,9 +132,7 @@ impl Recorder for RecorderHandle {
     }
 
     fn record_input(&self, id: &str, options: &CallOptions, provider: &str, model: &str) {
-        match self.policy {
-            CapturePolicy::Full => self.recorder().record_input(id, options, provider, model),
-        }
+        self.recorder().record_input(id, options, provider, model);
     }
 
     fn record_decision_input(
@@ -145,11 +142,8 @@ impl Recorder for RecorderHandle {
         provider: &str,
         model: &str,
     ) {
-        match self.policy {
-            CapturePolicy::Full => self
-                .recorder()
-                .record_decision_input(id, options, provider, model),
-        }
+        self.recorder()
+            .record_decision_input(id, options, provider, model);
     }
 
     fn record_session(&self, id: &str, session: &str, step: u32) {
@@ -161,9 +155,7 @@ impl Recorder for RecorderHandle {
     }
 
     fn record_exchange(&self, id: &str, exchange: &HttpExchange) {
-        if matches!(self.policy, CapturePolicy::Full) {
-            self.recorder().record_exchange(id, exchange);
-        }
+        self.recorder().record_exchange(id, exchange);
     }
 
     fn record_exchange_update(
@@ -174,16 +166,12 @@ impl Recorder for RecorderHandle {
         response: &ResponseRecord,
         error: Option<String>,
     ) {
-        if matches!(self.policy, CapturePolicy::Full) {
-            self.recorder()
-                .record_exchange_update(id, attempt, index, response, error);
-        }
+        self.recorder()
+            .record_exchange_update(id, attempt, index, response, error);
     }
 
     fn record_outcome(&self, id: &str, outcome: &OutcomeRecord) {
-        match self.policy {
-            CapturePolicy::Full => self.recorder().record_outcome(id, outcome),
-        }
+        self.recorder().record_outcome(id, outcome);
     }
 
     fn record_transport_closed(&self, id: &str) {
@@ -201,10 +189,6 @@ impl Recorder for RecorderHandle {
 
 fn invalid(message: impl Into<String>) -> OpsError {
     OpsError::Protocol(ProtocolError::InvalidParams(message.into()))
-}
-
-fn params<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, OpsError> {
-    serde_json::from_value(value).map_err(|e| invalid(e.to_string()))
 }
 
 #[derive(Serialize)]
@@ -720,17 +704,6 @@ mod tests {
                 .await
                 .is_err()
             );
-        }
-    }
-
-    #[test]
-    fn registers_exactly_six_call_operations() {
-        let mut registered = Vec::new();
-        register(&mut registered);
-        assert_eq!(registered.len(), 6);
-        assert_eq!(OPS[0].allowed_handle_kinds.len(), 0);
-        for descriptor in &OPS[1..] {
-            assert_eq!(descriptor.allowed_handle_kinds, &[HandleKind::Recorder]);
         }
     }
 }

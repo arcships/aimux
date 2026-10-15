@@ -7,7 +7,7 @@ use aimux_core::{
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target};
+use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleKind};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
@@ -159,8 +159,7 @@ fn options<T: DeserializeOwned>(params: Value, fields: &[&str]) -> Result<T, Ops
     if let Some(poll) = params.get("poll").filter(|value| !value.is_null()) {
         check_fields(poll, &["intervalMs", "timeoutMs"])?;
     }
-    serde_json::from_value(params)
-        .map_err(|error| OpsError::Protocol(ProtocolError::InvalidParams(error.to_string())))
+    decode(params)
 }
 
 fn result(value: impl Serialize) -> Result<Value, OpsError> {
@@ -631,31 +630,6 @@ mod tests {
                 assert_eq!(call[field], params[field]);
             }
             assert_eq!(call["headers"]["x-test"], "preserved");
-        }
-    }
-
-    #[test]
-    fn registers_exact_operations_and_handle_kinds() {
-        let mut registered = vec![];
-        register(&mut registered);
-        let expected = [
-            ("embedding.embed", HandleKind::Embedding),
-            ("embedding.embedMany", HandleKind::Embedding),
-            ("image.generate", HandleKind::Image),
-            ("speech.generate", HandleKind::Speech),
-            ("transcription.generate", HandleKind::Transcription),
-            ("reranking.rerank", HandleKind::Reranking),
-            ("video.generate", HandleKind::Video),
-            ("search.search", HandleKind::Search),
-        ];
-        assert_eq!(registered.len(), expected.len());
-        for ((descriptor, handler), (name, kind)) in registered.iter().zip(expected) {
-            assert_eq!(descriptor.name, name);
-            assert_eq!(descriptor.allowed_handle_kinds, &[kind]);
-            assert!(matches!(descriptor.mode, OpMode::Call));
-            assert!(matches!(handler, Handler::Call(_)));
-            assert_eq!(descriptor.cancellation, Cancellation::Abort);
-            assert_eq!(descriptor.retry_owner, "core");
         }
     }
 

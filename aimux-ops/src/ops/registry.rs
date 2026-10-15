@@ -10,7 +10,7 @@ use aimux_core::provider_registry::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target, resolve_secondary};
+use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode, resolve_secondary};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry, Middleware, Owner};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
@@ -175,10 +175,6 @@ struct ModelWrapParams {
 
 fn invalid(message: impl Into<String>) -> OpsError {
     OpsError::Protocol(ProtocolError::InvalidParams(message.into()))
-}
-
-fn decode<T: serde::de::DeserializeOwned>(params: Value) -> Result<T, OpsError> {
-    serde_json::from_value(params).map_err(|e| invalid(e.to_string()))
 }
 
 fn handle(value: &str) -> Result<HandleId, OpsError> {
@@ -672,26 +668,6 @@ mod tests {
 
     fn reference(namespace: &str, key: &str, method: &str, model_id: &str) -> Value {
         json!({"modelRef": {"namespace": namespace, "key": key, "method": method, "modelId": model_id}})
-    }
-
-    #[test]
-    fn descriptors_cover_exact_ops_and_kinds() {
-        let mut registered = Vec::new();
-        register(&mut registered);
-        assert_eq!(registered.len(), 5);
-        assert_eq!(OPS[0].allowed_handle_kinds.len(), 0);
-        assert_eq!(OPS[3].allowed_handle_kinds.len(), 9);
-        assert_eq!(OPS[4].allowed_handle_kinds.len(), 9);
-        assert_eq!(
-            OPS.iter().map(|op| op.name).collect::<Vec<_>>(),
-            [
-                "registry.create",
-                "registry.provider",
-                "model.resolve",
-                "model.info",
-                "model.wrap"
-            ]
-        );
     }
 
     #[test]

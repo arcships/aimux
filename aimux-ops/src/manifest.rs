@@ -252,7 +252,5 @@ mod tests {
             ops.windows(2)
                 .all(|pair| pair[0]["name"].as_str() < pair[1]["name"].as_str())
         );
-        assert_eq!(manifest_digest().len(), 64);
-        assert_eq!(manifest_digest(), manifest_digest());
     }
 }

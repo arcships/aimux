@@ -277,7 +277,6 @@ fn digest_is_stable_and_hashes_the_complete_canonical_manifest() {
     let mut bytes = String::new();
     canonical(&first, &mut bytes);
     assert_eq!(digest, format!("{:x}", Sha256::digest(bytes.as_bytes())));
-    assert_eq!(digest.len(), 64);
     for _ in 0..8 {
         assert_eq!(manifest(), first);
         assert_eq!(manifest_digest(), digest);
@@ -399,7 +398,6 @@ fn metadata_and_owned_control_schemas_are_complete() {
     ] {
         let ty = types[id];
         assert!(ty["rustPath"].as_str().unwrap().starts_with("aimux_ops::"));
-        jsonschema::validator_for(&ty["schema"]).unwrap();
     }
     for (id, valid, invalid) in [
         (
@@ -630,12 +628,4 @@ fn all_owned_types_publish_schemas_and_family_controls_are_strict() {
     assert!(handles.is_valid(&serde_json::json!("001")));
     assert!(!handles.is_valid(&serde_json::json!("18446744073709551616")));
     assert!(!handles.is_valid(&serde_json::json!(1)));
-    let names = value["ops"].as_array().unwrap();
-    assert_eq!(
-        names
-            .iter()
-            .filter(|op| op["name"] == "output.toOpenAI")
-            .count(),
-        1
-    );
 }

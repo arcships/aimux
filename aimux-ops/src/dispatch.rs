@@ -376,10 +376,9 @@ where
     S: Stream<Item = Result<T, OpsError>> + Send + 'static,
     T: serde::Serialize + Send + 'static,
 {
-    Box::pin(source.map(serialize_event::<T>))
-}
-fn serialize_event<T: serde::Serialize>(event: Result<T, OpsError>) -> Result<Value, OpsError> {
-    serde_json::to_value(event?).map_err(|error| {
-        crate::envelope::BindingError::ResultSerialization(error.to_string()).into()
-    })
+    Box::pin(source.map(|event| {
+        serde_json::to_value(event?).map_err(|error| {
+            crate::envelope::BindingError::ResultSerialization(error.to_string()).into()
+        })
+    }))
 }

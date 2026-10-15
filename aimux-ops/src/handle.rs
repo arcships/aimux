@@ -117,7 +117,6 @@ pub enum Entry {
 }
 
 impl Entry {
-    /// Global is not a resource kind; callers inspect that variant separately.
     #[must_use]
     pub fn kind(&self) -> HandleKind {
         match self {
@@ -207,7 +206,7 @@ impl HandleRegistry {
     /// Insert a resource, failing permanently rather than wrapping the allocator.
     ///
     /// # Errors
-    /// Returns InvalidState for global scope or HandleExhausted on overflow.
+    /// Returns HandleExhausted on overflow.
     pub fn insert(&self, owner: Owner, entry: Entry) -> Result<HandleId, OpsError> {
         let id = allocate(&NEXT_ID)?;
         self.entries

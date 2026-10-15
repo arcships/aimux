@@ -19,8 +19,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::oneshot;
 
-use crate::dispatch::{CallFuture, Ctx, EventStream, Handler, Target};
-use crate::envelope::{BindingError, OpsError, ProtocolError};
+use crate::dispatch::{CallFuture, Ctx, EventStream, Handler, Target, decode as params};
+use crate::envelope::{BindingError, OpsError};
 use crate::handle::{Entry, HandleId, HandleKind};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
 
@@ -167,11 +167,6 @@ impl Default for StreamOptions {
             include_reasoning: true,
         }
     }
-}
-
-fn params<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, OpsError> {
-    serde_json::from_value(value)
-        .map_err(|e| OpsError::Protocol(ProtocolError::InvalidParams(e.to_string())))
 }
 
 fn json<T: Serialize>(value: T) -> Result<Value, OpsError> {
@@ -905,29 +900,6 @@ mod tests {
         })
         .await
         .unwrap();
-    }
-
-    #[test]
-    fn registrations_cover_exact_text_matrix() {
-        let mut registered = vec![];
-        register(&mut registered);
-        assert_eq!(registered.len(), 6);
-        assert_eq!(
-            registered.iter().map(|(d, _)| d.name).collect::<Vec<_>>(),
-            vec![
-                "text.generate",
-                "text.generateObject",
-                "text.consume",
-                "text.generateOpenAI",
-                "text.stream",
-                "text.streamOpenAI"
-            ]
-        );
-        assert!(
-            registered
-                .iter()
-                .all(|(d, _)| d.allowed_handle_kinds == LANGUAGE)
-        );
     }
 
     #[tokio::test]

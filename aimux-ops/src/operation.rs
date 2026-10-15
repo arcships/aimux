@@ -2,7 +2,6 @@
 
 use std::collections::{BTreeSet, VecDeque};
 use std::future::Future;
-use std::io::{self, Write};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{Context, Poll};
@@ -424,10 +423,7 @@ impl Operation {
     }
 
     fn check_input_length(&self, length: usize) -> Result<(), OpsError> {
-        if length > isize::MAX as usize
-            || length > self.shared.limits.item_bytes
-            || length > self.shared.limits.input_bytes
-        {
+        if length > self.shared.limits.item_bytes || length > self.shared.limits.input_bytes {
             return Err(resource_limit("audio chunk exceeds the input budget"));
         }
         Ok(())
@@ -768,47 +764,13 @@ async fn wait_output_capacity(shared: &Shared, bytes: usize) -> Result<(), OpsEr
     }
 }
 
-struct PartSize {
-    bytes: usize,
-    maximum: usize,
-    exceeded: bool,
-}
-
-impl Write for PartSize {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        match self.bytes.checked_add(bytes.len()) {
-            Some(total) if total <= self.maximum => self.bytes = total,
-            _ => {
-                self.exceeded = true;
-                return Err(io::Error::other("event exceeds the output budget"));
-            }
-        }
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
 fn part_size(part: &TranscriptionStreamPart, maximum: usize) -> Result<usize, OpsError> {
-    let mut size = PartSize {
-        bytes: 0,
-        maximum,
-        exceeded: false,
-    };
-    if let Err(error) = serde_json::to_writer(&mut size, part) {
-        return if size.exceeded {
-            Err(resource_limit(
-                "transcription event exceeds the output budget",
-            ))
-        } else {
-            Err(OpsError::Binding(BindingError::ResultSerialization(
-                error.to_string(),
-            )))
-        };
-    }
-    Ok(size.bytes)
+    crate::limits::check_wire_item(part, maximum).map_err(|error| match error {
+        OpsError::Protocol(ProtocolError::ResourceLimit(_)) => {
+            resource_limit("transcription event exceeds the output budget")
+        }
+        error => error,
+    })
 }
 
 async fn join_driver(shared: &Shared, mut task: JoinHandle<()>) {

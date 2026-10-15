@@ -85,7 +85,6 @@ struct MiddlewareParams {
     kind: String,
     trace_store: Option<HandleId>,
     scope_name: Option<String>,
-    #[serde(default)]
     audit_mode: Option<AuditMode>,
 }
 

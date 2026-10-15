@@ -83,9 +83,6 @@ impl Stream for FrameStream {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
-        if this.events.is_none() {
-            return Poll::Ready(None);
-        }
         if this
             .cancelled
             .as_mut()

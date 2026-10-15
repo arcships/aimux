@@ -155,7 +155,6 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CatalogueFetchRequest {
-    #[serde(default)]
     source_url: Option<String>,
     #[serde(default, rename = "abort")]
     _abort: Option<HandleId>,

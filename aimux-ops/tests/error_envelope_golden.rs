@@ -168,42 +168,13 @@ fn assert_golden(name: &str, error: OpsError) {
     assert!(expected["error"]["name"].is_string(), "{name}");
 }
 
-macro_rules! aimux_golden_tests {
-    ($($test:ident => $slug:literal),* $(,)?) => {
-        $(
-            #[test]
-            fn $test() {
-                let name = concat!("aimux-", $slug);
-                let error: AiMuxError = serde_json::from_value(fixture(name)["error"].clone()).unwrap();
-                assert_golden(name, error.into());
-            }
-        )*
-    };
-}
-
-aimux_golden_tests! {
-    aimux_other => "other",
-    aimux_json_parse => "json-parse",
-    aimux_invalid_response_data => "invalid-response-data",
-    aimux_tool_call_not_found_for_approval => "tool-call-not-found-for-approval",
-    aimux_invalid_argument => "invalid-argument",
-    aimux_invalid_prompt => "invalid-prompt",
-    aimux_missing_tool_results => "missing-tool-results",
-    aimux_token_expired => "token-expired",
-    aimux_unsupported_functionality => "unsupported-functionality",
-    aimux_no_such_model => "no-such-model",
-    aimux_no_such_provider => "no-such-provider",
-    aimux_api_call => "api-call",
-    aimux_timeout => "timeout",
-    aimux_aborted => "aborted",
-    aimux_retry => "retry",
-    aimux_no_such_tool => "no-such-tool",
-    aimux_invalid_tool_input => "invalid-tool-input",
-    aimux_tool_call_repair => "tool-call-repair",
-    aimux_no_output_generated => "no-output-generated",
-    aimux_load_api_key => "load-api-key",
-    aimux_load_setting => "load-setting",
-    aimux_tool_choice_violation => "tool-choice-violation",
+#[test]
+fn every_aimux_variant_matches_golden_and_round_trips() {
+    for slug in AIMUX {
+        let name = format!("aimux-{slug}");
+        let error: AiMuxError = serde_json::from_value(fixture(&name)["error"].clone()).unwrap();
+        assert_golden(&name, error.into());
+    }
 }
 
 #[test]

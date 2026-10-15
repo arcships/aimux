@@ -10,7 +10,7 @@ use aimux_core::router::{
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target, resolve_secondary};
+use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode, resolve_secondary};
 use crate::envelope::{OpsError, ProtocolError};
 use crate::handle::{Entry, HandleKind, HandleRegistry, Owner};
 use crate::op::{Cancellation, OPS_VERSION, OpDescriptor, OpMode, RequestBytePolicy, Scope};
@@ -22,9 +22,7 @@ struct RouterParams {
     strategy: Strategy,
     #[serde(default)]
     fallback: Fallback,
-    #[serde(default)]
     provider_name: Option<String>,
-    #[serde(default)]
     model_id: Option<String>,
 }
 
@@ -79,8 +77,7 @@ fn store(owner: Owner, model: Arc<dyn LanguageModel>) -> Result<Value, OpsError>
 
 fn router(ctx: Ctx, _target: Target, params: Value) -> CallFuture {
     Box::pin(async move {
-        let params: RouterParams =
-            serde_json::from_value(params).map_err(|e| invalid(e.to_string()))?;
+        let params: RouterParams = decode(params)?;
         if params.children.is_empty() {
             return Err(invalid("router children must not be empty"));
         }
@@ -111,8 +108,7 @@ fn router(ctx: Ctx, _target: Target, params: Value) -> CallFuture {
 
 fn moa(ctx: Ctx, _target: Target, params: Value) -> CallFuture {
     Box::pin(async move {
-        let params: MoaParams =
-            serde_json::from_value(params).map_err(|e| invalid(e.to_string()))?;
+        let params: MoaParams = decode(params)?;
         let references = languages(&ctx, &params.references)?;
         let aggregator = language(&ctx, &params.aggregator)?;
         store(

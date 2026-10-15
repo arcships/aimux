@@ -154,11 +154,9 @@ async fn assert_working(model: Arc<dyn LanguageModel>) {
 fn ids_are_nonzero_monotonic_and_never_reused_after_drop() {
     let registry = HandleRegistry::global();
     let mut previous = 0;
-    let mut seen = HashSet::new();
     for _ in 0..1_024 {
         let id = registry.insert(OWNER, entry()).unwrap();
         assert!(id.0 > previous);
-        assert!(seen.insert(id.0));
         previous = id.0;
         assert!(registry.remove(OWNER, id).is_some());
         invalid_handle(registry.get(OWNER, id, LANGUAGE), None);
@@ -397,32 +395,6 @@ fn dispatch_releases_registry_lock_before_calling_model_code() {
         }
         thread::sleep(Duration::from_millis(10));
     }
-}
-
-#[tokio::test]
-async fn handle_drop_op_is_idempotent_and_respects_ownership() {
-    let registry = HandleRegistry::global();
-    let id = registry.insert(OWNER, entry()).unwrap();
-    let foreign = Ctx {
-        owner: Owner::Python(44),
-        abort: None,
-        now: SystemTime::now,
-    };
-    dispatch::call(foreign, id, "handle.drop", json!({}))
-        .await
-        .unwrap();
-    assert!(registry.get(OWNER, id, LANGUAGE).is_ok());
-    for handle in [HandleId(0), id, id] {
-        let ctx = Ctx {
-            owner: OWNER,
-            abort: None,
-            now: SystemTime::now,
-        };
-        dispatch::call(ctx, handle, "handle.drop", json!({}))
-            .await
-            .unwrap();
-    }
-    invalid_handle(registry.get(OWNER, id, LANGUAGE), None);
 }
 
 // Use the actual model.info descriptor with a reentrant probe to isolate

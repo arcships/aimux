@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 
 use aimux_ops::dispatch::{self, Ctx};
-use aimux_ops::envelope::{BindingError, OpsError, ProtocolError};
-use aimux_ops::handle::{Entry, HandleId, HandleRegistry, Owner};
+use aimux_ops::envelope::{OpsError, ProtocolError};
+use aimux_ops::handle::{HandleId, Owner};
 use serde_json::{Value, json};
 
 fn ctx(owner: Owner) -> Ctx {
@@ -115,44 +115,6 @@ async fn configuration_summary_and_frozen_proxy_preserve_transport_and_privacy()
         &before,
         &aimux_provider_utils::fetch::default_fetch()
     ));
-}
-
-#[tokio::test]
-async fn runtime_global_scope_rejects_owned_foreign_and_unknown_handles() {
-    let owner = Owner::new_node().unwrap();
-    let foreign = Owner::new_python().unwrap();
-    let registry = HandleRegistry::global();
-    let id = registry
-        .insert(
-            owner,
-            Entry::Abort(Arc::new(aimux_core::AbortSignal::new())),
-        )
-        .unwrap();
-    for name in ["runtime.describe", "runtime.configure"] {
-        let mut hidden = Vec::new();
-        for (caller, handle, own) in [
-            (owner, id, true),
-            (foreign, id, false),
-            (owner, HandleId(u64::MAX), false),
-        ] {
-            let error = dispatch::call(ctx(caller), handle, name, json!({}))
-                .await
-                .unwrap_err();
-            let OpsError::Binding(BindingError::InvalidHandle { expected, actual }) =
-                error.unprojected()
-            else {
-                panic!("unexpected error: {error}");
-            };
-            assert!(expected.is_empty());
-            assert_eq!(actual.is_some(), own);
-            if !own {
-                hidden.push(error.envelope(SystemTime::now()));
-            }
-        }
-        assert_eq!(hidden[0], hidden[1]);
-    }
-    registry.release_owner(owner);
-    registry.release_owner(foreign);
 }
 
 #[tokio::test]

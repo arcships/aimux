@@ -112,9 +112,6 @@ impl OpsError {
     /// should retain this envelope rather than recompute date-based hints.
     #[must_use]
     pub fn envelope(&self, now: SystemTime) -> ErrorEnvelope {
-        if let Self::Projected(error) = self {
-            return error.envelope.clone();
-        }
         let (kind, error) = match self {
             Self::Projected(error) => return error.envelope.clone(),
             Self::AiMux(error) => match serde_json::to_value(error) {
