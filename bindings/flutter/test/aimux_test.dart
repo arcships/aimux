@@ -66,17 +66,13 @@ void main() {
   });
 
   test('blocking call leaves the caller isolate responsive', () async {
-    var ticks = 0;
-    final timer = Timer.periodic(
-      const Duration(milliseconds: 5),
-      (_) => ticks++,
-    );
-    try {
-      expect(await client.call('test.sleep'), {'ok': true});
-      expect(ticks, greaterThan(0));
-    } finally {
-      timer.cancel();
-    }
+    // The fixture sleeps natively for 180 ms. A caller-side timer must fire
+    // while that call is still pending, which a blocked isolate cannot do.
+    var done = false;
+    final call = client.call('test.sleep').whenComplete(() => done = true);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(done, isFalse);
+    expect(await call, {'ok': true});
   });
 
   test(
