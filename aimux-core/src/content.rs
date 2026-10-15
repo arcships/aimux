@@ -334,7 +334,7 @@ impl ToolContentPart {
 }
 
 /// The result of a tool call (upstream `ToolResultPart`,
-/// `provider-utils` `types/content-part.ts:240-268`).
+/// `provider-utils` `types/content-part.ts:218-241`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]

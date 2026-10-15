@@ -4,14 +4,14 @@ import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
  * The result of a tool call (upstream `ToolResultPart`,
- * `provider-utils` `types/content-part.ts:240-268`).
+ * `provider-utils` `types/content-part.ts:218-241`).
  */
-export type ToolResultPart = { toolCallId: string, 
+export type ToolResultPart = { toolCallId: string,
 /**
  * The tool name. Required upstream; when absent here, the conversion
  * takes it from the preceding tool call with the same id.
  */
-toolName?: string, output: ToolResultOutput, 
+toolName?: string, output: ToolResultOutput,
 /**
  * Provider-specific options for this part (e.g. `anthropic.cacheControl`).
  */

@@ -141,7 +141,6 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageMod
     ReasoningStart {
         id: String,
         /// Provider-specific metadata (e.g. xAI `itemId`).
-        #[allow(unused)]
         #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
@@ -150,7 +149,6 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageMod
         id: String,
         delta: String,
         /// Provider-specific metadata (e.g. xAI `itemId`).
-        #[allow(unused)]
         #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
@@ -158,7 +156,6 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageMod
     ReasoningEnd {
         id: String,
         /// Provider-specific metadata (e.g. xAI `itemId`, `reasoningEncryptedContent`).
-        #[allow(unused)]
         #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,

@@ -344,10 +344,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tool_approval_response { approval_id, approved, reason, provider_executed }`,
   which reaches the provider only for a provider-executed tool, as upstream;
   a tool message left empty is dropped. Wire format: the role and part tags
-  are unchanged; a tool result still reads the earlier `result` (or untyped
-  `output`) value with `is_error` and writes `text` / `json` / error outputs
-  that way, while `output` holding an AI SDK output object is read as typed;
-  a part its role does not allow (an `image` in an assistant message, a
+  are unchanged; a tool result carries only `output`, an AI SDK output
+  object, and the earlier `result` / `is_error` fields are no longer read or
+  written; a part its role does not allow (an `image` in an assistant message, a
   non-text system message, a string or text part in a tool message) is now
   rejected when the prompt is parsed instead of when it is converted.
 
