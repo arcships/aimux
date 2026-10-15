@@ -3,8 +3,18 @@ name: CI
 on:
   push:
     branches: [master]
+  # Every pull request runs the checks, whatever its base: stacked PRs are
+  # reviewed against the PR below them.
   pull_request:
-    branches: [master]
+
+# A new push to a pull request cancels its older run. Pushes to master each
+# get their own group: GitHub cancels a pending run in a group when another
+# one queues, and "changes" only diffs a push against the one before it, so a
+# documentation push queued behind a cancelled code push would leave that
+# code untested on master.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
