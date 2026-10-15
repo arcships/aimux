@@ -1,0 +1,21 @@
+{
+  "kind": "aimux",
+  "code": 3,
+  "message": "Model response did not contain a call to the required tool 'weather'.",
+  "error": {
+    "name": "AI_ToolChoiceViolationError",
+    "toolChoice": {
+      "type": "tool",
+      "toolName": "weather"
+    },
+    "finishReason": "stop",
+    "provider": "openai.chat",
+    "modelId": "gpt-4o",
+    "content": [
+      {
+        "type": "text",
+        "text": "sunny"
+      }
+    ]
+  }
+}

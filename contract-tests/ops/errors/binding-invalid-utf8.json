@@ -1,0 +1,9 @@
+{
+  "kind": "binding",
+  "code": 201,
+  "message": "op: must be valid UTF-8",
+  "error": {
+    "name": "InvalidUtf8",
+    "argument": "op"
+  }
+}

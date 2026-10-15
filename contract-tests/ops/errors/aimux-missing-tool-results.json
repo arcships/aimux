@@ -1,0 +1,11 @@
+{
+  "kind": "aimux",
+  "code": 6,
+  "message": "Tool result is missing for tool call call-1.",
+  "error": {
+    "name": "AI_MissingToolResultsError",
+    "toolCallIds": [
+      "call-1"
+    ]
+  }
+}

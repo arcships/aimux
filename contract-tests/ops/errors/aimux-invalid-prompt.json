@@ -1,0 +1,9 @@
+{
+  "kind": "aimux",
+  "code": 6,
+  "message": "invalid prompt: bad prompt",
+  "error": {
+    "name": "AI_InvalidPromptError",
+    "message": "bad prompt"
+  }
+}

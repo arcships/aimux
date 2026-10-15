@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "name": "late-cancel-after-success",
+  "description": "Cancel after the success end cannot rewrite it or produce another end.",
+  "boundary": "eventStream",
+  "queueLimits": {
+    "items": 256,
+    "bytes": 8388608,
+    "maxEventBytes": 1048576
+  },
+  "script": [
+    {
+      "action": "event",
+      "event": {
+        "type": "text-delta",
+        "id": "text-0",
+        "text": "hello 世界 👋"
+      }
+    },
+    {
+      "action": "eof"
+    }
+  ],
+  "controls": [
+    {
+      "action": "drain"
+    },
+    {
+      "action": "cancel"
+    },
+    {
+      "action": "drain"
+    }
+  ],
+  "expected": {
+    "accepted": true,
+    "preflightError": null,
+    "frames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "end",
+        "seq": "1",
+        "outcome": "success"
+      }
+    ],
+    "consumerFrames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "end",
+        "seq": "1",
+        "outcome": "success"
+      }
+    ],
+    "abortObserved": true,
+    "queueFullObserved": false,
+    "consumerClosed": false,
+    "sourceStarted": true,
+    "sourceEventsPolled": 1
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "name": "terminal-error",
+  "description": "An Err from the runtime preserves earlier data and produces one error end; no second returned error.",
+  "boundary": "eventStream",
+  "queueLimits": {
+    "items": 256,
+    "bytes": 8388608,
+    "maxEventBytes": 1048576
+  },
+  "script": [
+    {
+      "action": "event",
+      "event": {
+        "type": "text-delta",
+        "id": "text-0",
+        "text": "hello 世界 👋"
+      }
+    },
+    {
+      "action": "terminalError",
+      "kind": "apiCall",
+      "message": "mock transport failure"
+    },
+    {
+      "action": "event",
+      "event": {
+        "type": "text-delta",
+        "id": "text-0",
+        "text": "must not be delivered"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "action": "drain"
+    }
+  ],
+  "expected": {
+    "accepted": true,
+    "preflightError": null,
+    "frames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "end",
+        "seq": "1",
+        "outcome": "error",
+        "error": {
+          "kind": "aimux",
+          "code": 11,
+          "error": {
+            "name": "AI_APICallError"
+          }
+        }
+      }
+    ],
+    "consumerFrames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "end",
+        "seq": "1",
+        "outcome": "error",
+        "error": {
+          "kind": "aimux",
+          "code": 11,
+          "error": {
+            "name": "AI_APICallError"
+          }
+        }
+      }
+    ],
+    "abortObserved": null,
+    "queueFullObserved": false,
+    "consumerClosed": false,
+    "sourceStarted": true,
+    "sourceEventsPolled": 1
+  }
+}

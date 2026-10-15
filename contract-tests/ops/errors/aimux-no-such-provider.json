@@ -1,0 +1,14 @@
+{
+  "kind": "aimux",
+  "code": 10,
+  "message": "No such provider: acme (available providers: other)",
+  "error": {
+    "name": "AI_NoSuchProviderError",
+    "providerId": "acme",
+    "modelId": "acme:model",
+    "modelType": "languageModel",
+    "availableProviders": [
+      "other"
+    ]
+  }
+}

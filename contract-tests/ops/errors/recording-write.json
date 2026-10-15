@@ -1,0 +1,9 @@
+{
+  "kind": "recording",
+  "code": 105,
+  "message": "recording write failed: disk full",
+  "error": {
+    "name": "Write",
+    "message": "disk full"
+  }
+}

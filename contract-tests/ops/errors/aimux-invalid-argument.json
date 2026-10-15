@@ -1,0 +1,9 @@
+{
+  "kind": "aimux",
+  "code": 5,
+  "message": "invalid argument: bad arg",
+  "error": {
+    "name": "AI_InvalidArgumentError",
+    "message": "bad arg"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "kind": "aimux",
+  "code": 7,
+  "message": "token expired: expired",
+  "error": {
+    "name": "AI_TokenExpiredError",
+    "message": "expired"
+  }
+}

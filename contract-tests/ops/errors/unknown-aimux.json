@@ -1,0 +1,18 @@
+{
+  "kind": "aimux",
+  "code": 21,
+  "message": "future error",
+  "error": {
+    "name": "AI_FutureError",
+    "providerData": {
+      "explicitNull": null,
+      "nested": [
+        1,
+        {
+          "name": "FutureCause",
+          "value": "保留 😀"
+        }
+      ]
+    }
+  }
+}

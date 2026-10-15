@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "name": "serialization-failure",
+  "description": "An injected native event-serialization failure ends with binding ResultSerialization, retaining earlier events.",
+  "boundary": "eventStream",
+  "queueLimits": {
+    "items": 256,
+    "bytes": 8388608,
+    "maxEventBytes": 1048576
+  },
+  "script": [
+    {
+      "action": "event",
+      "event": {
+        "type": "text-delta",
+        "id": "text-0",
+        "text": "hello 世界 👋"
+      }
+    },
+    {
+      "action": "serializationFailure",
+      "message": "mock serializer failure"
+    },
+    {
+      "action": "eof"
+    }
+  ],
+  "controls": [
+    {
+      "action": "drain"
+    }
+  ],
+  "expected": {
+    "accepted": true,
+    "preflightError": null,
+    "frames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "end",
+        "seq": "1",
+        "outcome": "error",
+        "error": {
+          "kind": "binding",
+          "code": 205,
+          "error": {
+            "name": "ResultSerialization"
+          }
+        }
+      }
+    ],
+    "consumerFrames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "end",
+        "seq": "1",
+        "outcome": "error",
+        "error": {
+          "kind": "binding",
+          "code": 205,
+          "error": {
+            "name": "ResultSerialization"
+          }
+        }
+      }
+    ],
+    "abortObserved": null,
+    "queueFullObserved": false,
+    "consumerClosed": false,
+    "sourceStarted": true,
+    "sourceEventsPolled": 1
+  }
+}

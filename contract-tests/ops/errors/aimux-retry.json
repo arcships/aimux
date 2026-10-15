@@ -1,0 +1,27 @@
+{
+  "kind": "aimux",
+  "code": 14,
+  "message": "Failed after 1 attempts. Last error: slow down",
+  "error": {
+    "name": "AI_RetryError",
+    "reason": "maxRetriesExceeded",
+    "errors": [
+      {
+        "name": "AI_APICallError",
+        "url": "https://example.test/v1",
+        "requestBodyValues": {
+          "input": null
+        },
+        "statusCode": 429,
+        "providerCode": "rate_limit",
+        "message": "slow down",
+        "responseBody": "{\"error\":null}",
+        "responseHeaders": {
+          "retry-after-ms": "1500"
+        },
+        "data": null,
+        "isRetryable": true
+      }
+    ]
+  }
+}

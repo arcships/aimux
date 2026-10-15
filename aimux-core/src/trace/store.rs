@@ -381,9 +381,19 @@ pub enum BreakKind {
     Unknown,
 }
 
-/// The built-in bounded sink: FIFO ring (global) + per-scope cap + per-session
-/// index. Thread-safe; queries are consistent snapshots.
+/// Rule-auditor policy inherited by decorators attached to a trace store.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TraceAuditMode {
+    #[default]
+    Off,
+    Shared,
+    Strict,
+}
+
+/// The bounded sink: FIFO ring, per-scope cap and per-session index.
+/// Queries are consistent snapshots.
 pub struct RingTraceStore {
+    audit_mode: TraceAuditMode,
     inner: Mutex<Inner>,
 }
 
@@ -407,12 +417,25 @@ impl RingTraceStore {
     pub fn with_capacity(cap: usize, per_scope_cap: usize) -> Self {
         assert!(cap > 0 && per_scope_cap > 0);
         Self {
+            audit_mode: TraceAuditMode::Off,
             inner: Mutex::new(Inner {
                 store: TraceStore::new(cap, per_scope_cap),
                 records: VecDeque::with_capacity(cap),
                 by_session: HashMap::new(),
             }),
         }
+    }
+
+    /// Audit policy inherited by trace decorators created for this store.
+    #[must_use]
+    pub fn with_audit_mode(mut self, mode: TraceAuditMode) -> Self {
+        self.audit_mode = mode;
+        self
+    }
+
+    #[must_use]
+    pub fn audit_mode(&self) -> TraceAuditMode {
+        self.audit_mode
     }
 
     pub fn clear(&self) {

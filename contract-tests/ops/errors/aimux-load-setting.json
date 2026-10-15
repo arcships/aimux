@@ -1,0 +1,10 @@
+{
+  "kind": "aimux",
+  "code": 20,
+  "message": "No value found for setting `region`. Please provide it via the `region` parameter or set the `AWS_REGION` environment variable.",
+  "error": {
+    "name": "AI_LoadSettingError",
+    "envVar": "AWS_REGION",
+    "settingName": "region"
+  }
+}

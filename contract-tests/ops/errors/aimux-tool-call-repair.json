@@ -1,0 +1,16 @@
+{
+  "kind": "aimux",
+  "code": 17,
+  "message": "Error repairing tool call: repair failed",
+  "error": {
+    "name": "AI_ToolCallRepairError",
+    "originalError": {
+      "name": "AI_NoSuchToolError",
+      "toolName": "weathr"
+    },
+    "cause": {
+      "name": "AI_Error",
+      "message": "repair failed"
+    }
+  }
+}

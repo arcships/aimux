@@ -1,0 +1,8 @@
+{
+  "kind": "protocol",
+  "code": 306,
+  "message": "handle IDs exhausted",
+  "error": {
+    "name": "HandleExhausted"
+  }
+}

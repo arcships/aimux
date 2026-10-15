@@ -1,0 +1,9 @@
+{
+  "kind": "aimux",
+  "code": 1,
+  "message": "misc",
+  "error": {
+    "name": "AI_Error",
+    "message": "misc"
+  }
+}

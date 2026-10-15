@@ -1,0 +1,8 @@
+{
+  "kind": "binding",
+  "code": 204,
+  "message": "re-entrant FFI call from within a callback is not allowed",
+  "error": {
+    "name": "ReentrantCall"
+  }
+}

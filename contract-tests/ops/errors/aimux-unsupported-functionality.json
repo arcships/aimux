@@ -1,0 +1,9 @@
+{
+  "kind": "aimux",
+  "code": 8,
+  "message": "unsupported functionality: no audio",
+  "error": {
+    "name": "AI_UnsupportedFunctionalityError",
+    "message": "no audio"
+  }
+}

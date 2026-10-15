@@ -1,0 +1,9 @@
+{
+  "kind": "aimux",
+  "code": 12,
+  "message": "request timed out: total timeout",
+  "error": {
+    "name": "TimeoutError",
+    "message": "total timeout"
+  }
+}

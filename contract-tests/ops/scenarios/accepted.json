@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "name": "accepted",
+  "description": "Acceptance is a successful stream return, never an accepted callback frame; empty accepted source ends explicitly.",
+  "boundary": "eventStream",
+  "queueLimits": {
+    "items": 256,
+    "bytes": 8388608,
+    "maxEventBytes": 1048576
+  },
+  "script": [
+    {
+      "action": "eof"
+    }
+  ],
+  "controls": [
+    {
+      "action": "drain"
+    }
+  ],
+  "expected": {
+    "accepted": true,
+    "preflightError": null,
+    "frames": [
+      {
+        "type": "end",
+        "seq": "0",
+        "outcome": "success"
+      }
+    ],
+    "consumerFrames": [
+      {
+        "type": "end",
+        "seq": "0",
+        "outcome": "success"
+      }
+    ],
+    "abortObserved": null,
+    "queueFullObserved": false,
+    "consumerClosed": false,
+    "sourceStarted": true,
+    "sourceEventsPolled": 0
+  }
+}

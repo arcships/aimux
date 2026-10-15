@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "name": "duplicate-finish",
+  "description": "Two finish data parts are preserved without generating two control ends.",
+  "boundary": "eventStream",
+  "queueLimits": {
+    "items": 256,
+    "bytes": 8388608,
+    "maxEventBytes": 1048576
+  },
+  "script": [
+    {
+      "action": "event",
+      "event": {
+        "type": "finish",
+        "finishReason": "stop",
+        "totalUsage": {
+          "inputTokens": {},
+          "outputTokens": {}
+        }
+      }
+    },
+    {
+      "action": "event",
+      "event": {
+        "type": "finish",
+        "finishReason": "stop",
+        "totalUsage": {
+          "inputTokens": {},
+          "outputTokens": {}
+        }
+      }
+    },
+    {
+      "action": "eof"
+    }
+  ],
+  "controls": [
+    {
+      "action": "drain"
+    }
+  ],
+  "expected": {
+    "accepted": true,
+    "preflightError": null,
+    "frames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "finish",
+          "finishReason": "stop",
+          "totalUsage": {
+            "inputTokens": {},
+            "outputTokens": {}
+          }
+        }
+      },
+      {
+        "type": "event",
+        "seq": "1",
+        "event": {
+          "type": "finish",
+          "finishReason": "stop",
+          "totalUsage": {
+            "inputTokens": {},
+            "outputTokens": {}
+          }
+        }
+      },
+      {
+        "type": "end",
+        "seq": "2",
+        "outcome": "success"
+      }
+    ],
+    "consumerFrames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "finish",
+          "finishReason": "stop",
+          "totalUsage": {
+            "inputTokens": {},
+            "outputTokens": {}
+          }
+        }
+      },
+      {
+        "type": "event",
+        "seq": "1",
+        "event": {
+          "type": "finish",
+          "finishReason": "stop",
+          "totalUsage": {
+            "inputTokens": {},
+            "outputTokens": {}
+          }
+        }
+      },
+      {
+        "type": "end",
+        "seq": "2",
+        "outcome": "success"
+      }
+    ],
+    "abortObserved": null,
+    "queueFullObserved": false,
+    "consumerClosed": false,
+    "sourceStarted": true,
+    "sourceEventsPolled": 2
+  }
+}

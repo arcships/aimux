@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "name": "preflight-failure",
+  "description": "Control DTO rejection happens before source startup; no acceptance or callback.",
+  "boundary": "eventStream",
+  "queueLimits": {
+    "items": 256,
+    "bytes": 8388608,
+    "maxEventBytes": 1048576
+  },
+  "script": [
+    {
+      "action": "eof"
+    }
+  ],
+  "controls": [
+    {
+      "action": "drain"
+    }
+  ],
+  "expected": {
+    "accepted": false,
+    "preflightError": {
+      "kind": "protocol",
+      "code": 301,
+      "error": {
+        "name": "InvalidParams"
+      }
+    },
+    "frames": [],
+    "consumerFrames": [],
+    "abortObserved": false,
+    "queueFullObserved": false,
+    "consumerClosed": false,
+    "sourceStarted": false,
+    "sourceEventsPolled": 0
+  },
+  "fault": {
+    "stage": "preflight",
+    "kind": "invalidParams",
+    "message": "mock invalid params"
+  }
+}

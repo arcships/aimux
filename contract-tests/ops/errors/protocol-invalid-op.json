@@ -1,0 +1,9 @@
+{
+  "kind": "protocol",
+  "code": 300,
+  "message": "invalid op: missing.op",
+  "error": {
+    "name": "InvalidOp",
+    "message": "missing.op"
+  }
+}

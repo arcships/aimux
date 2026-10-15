@@ -1,0 +1,10 @@
+{
+  "kind": "binding",
+  "code": 202,
+  "message": "params_json: invalid JSON: expected object",
+  "error": {
+    "name": "InvalidWireJson",
+    "argument": "params_json",
+    "message": "expected object"
+  }
+}

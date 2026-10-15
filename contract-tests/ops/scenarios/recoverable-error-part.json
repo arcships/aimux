@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "name": "recoverable-error-part",
+  "description": "An Ok(error part) remains data and does not prevent later data or success.",
+  "boundary": "eventStream",
+  "queueLimits": {
+    "items": 256,
+    "bytes": 8388608,
+    "maxEventBytes": 1048576
+  },
+  "script": [
+    {
+      "action": "event",
+      "event": {
+        "type": "error",
+        "error": {
+          "name": "AI_APICallError",
+          "message": "recoverable mock error",
+          "url": "https://mock.invalid",
+          "requestBodyValues": {},
+          "isRetryable": false
+        }
+      }
+    },
+    {
+      "action": "event",
+      "event": {
+        "type": "text-delta",
+        "id": "text-0",
+        "text": "hello 世界 👋"
+      }
+    },
+    {
+      "action": "event",
+      "event": {
+        "type": "finish",
+        "finishReason": "stop",
+        "totalUsage": {
+          "inputTokens": {},
+          "outputTokens": {}
+        }
+      }
+    },
+    {
+      "action": "eof"
+    }
+  ],
+  "controls": [
+    {
+      "action": "drain"
+    }
+  ],
+  "expected": {
+    "accepted": true,
+    "preflightError": null,
+    "frames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "error",
+          "error": {
+            "name": "AI_APICallError",
+            "message": "recoverable mock error",
+            "url": "https://mock.invalid",
+            "requestBodyValues": {},
+            "isRetryable": false
+          }
+        }
+      },
+      {
+        "type": "event",
+        "seq": "1",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "2",
+        "event": {
+          "type": "finish",
+          "finishReason": "stop",
+          "totalUsage": {
+            "inputTokens": {},
+            "outputTokens": {}
+          }
+        }
+      },
+      {
+        "type": "end",
+        "seq": "3",
+        "outcome": "success"
+      }
+    ],
+    "consumerFrames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "error",
+          "error": {
+            "name": "AI_APICallError",
+            "message": "recoverable mock error",
+            "url": "https://mock.invalid",
+            "requestBodyValues": {},
+            "isRetryable": false
+          }
+        }
+      },
+      {
+        "type": "event",
+        "seq": "1",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "2",
+        "event": {
+          "type": "finish",
+          "finishReason": "stop",
+          "totalUsage": {
+            "inputTokens": {},
+            "outputTokens": {}
+          }
+        }
+      },
+      {
+        "type": "end",
+        "seq": "3",
+        "outcome": "success"
+      }
+    ],
+    "abortObserved": null,
+    "queueFullObserved": false,
+    "consumerClosed": false,
+    "sourceStarted": true,
+    "sourceEventsPolled": 3
+  }
+}

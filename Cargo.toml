@@ -1,10 +1,12 @@
 [workspace]
 members = [
+    "aimux-ops",
     "aimux-core",
     "aimux-ffi",
     "aimux-provider-utils",
     "aimux-providers",
     "aimux-stream",
+    "tools/aimux-codegen",
     "tools/aimux-cli",
     "tools/aimux-replay",
     "tools/aimux-web",

@@ -1,0 +1,9 @@
+{
+  "kind": "aimux",
+  "code": 13,
+  "message": "request aborted",
+  "error": {
+    "name": "AbortError",
+    "message": "request aborted"
+  }
+}

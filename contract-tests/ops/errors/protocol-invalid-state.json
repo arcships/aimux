@@ -1,0 +1,9 @@
+{
+  "kind": "protocol",
+  "code": 304,
+  "message": "invalid state: already finished",
+  "error": {
+    "name": "InvalidState",
+    "message": "already finished"
+  }
+}

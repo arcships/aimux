@@ -1,0 +1,9 @@
+{
+  "kind": "aimux",
+  "code": 2,
+  "message": "JSON parse error: bad json",
+  "error": {
+    "name": "AI_JSONParseError",
+    "message": "bad json"
+  }
+}
