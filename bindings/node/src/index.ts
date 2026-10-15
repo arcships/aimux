@@ -1,681 +1,306 @@
-// aimux — Typed wrapper layer for the Node.js (napi-rs) binding.
-//
-// The native binding speaks JSON strings:
-//   generateText(prompt: string, options?: string): Promise<string>
-//   streamText(prompt: string, options?: string): Promise<AsyncGenerator<string>>
-// Users would otherwise have to JSON.stringify every input and JSON.parse every
-// output, with no static types. This wrapper erases that JSON boundary: inputs
-// and outputs are typed objects, using the ts-rs generated types from
-// `./types.ts` (ts-rs exports directly into `./types/` — single source of
-// truth in the Rust core, packaged with the npm tarball).
-//
-// The generated napi loader stays untouched. `native.ts` registers the canonical
-// JS Error constructors; this file adds the typed JSON layer on top.
+import { Runtime } from './native.ts'
+import type { Abort as RawAbort, Manifest } from './native.ts'
+import { AimuxError, protocolError } from './error.ts'
+import type { ErrorEnvelope } from './error.ts'
+import type { DecideOptions } from './types/DecideOptions'
+import type { DecideResult } from './types/DecideResult'
+import type { GenerateTextOptions } from './types/GenerateTextOptions'
+import type { GenerateTextResult } from './types/GenerateTextResult'
+import type { GenerateObjectResult } from './types/GenerateObjectResult'
+import type { ModelPrompt } from './types/ModelPrompt'
+import type { TextStreamPart } from './types/TextStreamPart'
+import type { EmbeddingCallOptions } from './types/EmbeddingCallOptions'
+import type { EmbeddingResult } from './types/EmbeddingResult'
+import type { ImageCallOptions } from './types/ImageCallOptions'
+import type { ImageResult } from './types/ImageResult'
+import type { SpeechCallOptions } from './types/SpeechCallOptions'
+import type { SpeechResult } from './types/SpeechResult'
+import type { TranscriptionCallOptions } from './types/TranscriptionCallOptions'
+import type { TranscriptionResult } from './types/TranscriptionResult'
+import type { RerankingCallOptions } from './types/RerankingCallOptions'
+import type { RerankingResult } from './types/RerankingResult'
+import type { VideoCallOptions } from './types/VideoCallOptions'
+import type { VideoResult } from './types/VideoResult'
+import type { TranscriptionStreamPart } from './types/TranscriptionStreamPart'
+import type { SearchCallOptions } from './types/SearchCallOptions'
+import type { SearchResult } from './types/SearchResult'
+import type { UploadFileCallOptions } from './types/UploadFileCallOptions'
+import type { UploadFileResult } from './types/UploadFileResult'
+import type { TraceFilter } from './types/TraceFilter'
+import type { TraceStats } from './types/TraceStats'
+import type { SessionChainView } from './types/SessionChainView'
 
-import * as native from './native.ts'
-import {
-  AbortBridge,
-  applyToolCallRepair,
-  applyToolCallRepairToResult,
-  createProvider as rawCreateProvider,
-  getModelSpecs as rawGetModelSpecs,
-  toolCallRepairContext,
-} from './native.ts'
-import type { Model, ProviderConfig, ProviderHandle as RawProviderHandle } from './native.ts'
+export * from './error.ts'
+export type * from './types.ts'
+export type { Manifest } from './native.ts'
 
-// Canonical ts-rs generated types (local copy, packaged with the npm tarball).
-// These are type-only imports, so they are fully erased at runtime (the
-// wrapper only touches the registered raw entrypoint).
-import type {
-  GenerateTextOptions,
-  GenerateTextResult,
-  StreamPart,
-  TextStreamPart,
-  ModelMessage,
-  Tool,
-  ToolChoice,
-  ToolCall,
-  TypedToolCall,
-  TypedSource,
-  ToolResult,
-  Usage,
-  InputTokenUsage,
-  OutputTokenUsage,
-  LanguageModelUsage,
-  InputTokenDetails,
-  OutputTokenDetails,
-  StepResult,
-  StepResponse,
-  StepResponseMetadata,
-  StepModel,
-  StepResultPerformance,
-  FinishReasonUnified,
-  Output,
-  GenerateObjectResult,
-  GenerateObjectResponse,
-  ContentPart,
-  ReasoningPart,
-  GeneratedFile,
-  GeneratedFileOutput,
-  LanguageModelFile,
-  Source,
-  GeneratedFileData,
-  RawToolApprovalRequest,
-  ToolApprovalRequestOutput,
-  TypedToolResult,
-  TaggedToolResult,
-  TypedToolError,
-  ToolOutputDenied,
-  ToolApprovalResponseOutput,
-  FinishReason,
-  Warning,
-  UserContent,
-  AssistantContent,
-  UserContentPart,
-  AssistantContentPart,
-  ToolContentPart,
-  ToolResultPart,
-  ToolResultOutput,
-  ResponseFormat,
-  ReasoningEffort,
-  GenerateResult,
-  FunctionTool,
-  SessionCall,
-  SessionSource,
-  SessionView,
-  ChatCompletion,
-  ChatCompletionChunk,
+export type HandleKind = 'Provider' | 'Registry' | 'Language' | 'Embedding' | 'Image' | 'Speech'
+  | 'Transcription' | 'Reranking' | 'Video' | 'Search' | 'Files' | 'Operation' | 'Abort'
+  | 'Fetch' | 'WebSocket' | 'Download' | 'CredentialResolver' | 'Middleware' | 'TraceStore'
+  | 'Recorder' | 'SessionStore' | 'ReplaySession' | 'Decision'
+export interface HandleRef { handle: string; kind: HandleKind }
+export type Frame<T> = { type: 'event'; seq: string; event: T }
+  | { type: 'end'; seq: string; outcome: 'success' | 'error' | 'cancelled'; error?: ErrorEnvelope }
+export interface CallOptions { signal?: AbortSignal; abort?: Abort }
+export type PollResult<T> = { type: 'part'; part: T } | { type: 'ended' } | { type: 'timeout' }
+export interface ProviderSettings { [key: string]: unknown }
+export interface ProviderParams { package: string; settings?: ProviderSettings }
+export type ModelMethod = 'languageModel' | 'embeddingModel' | 'imageModel' | 'speechModel'
+  | 'transcriptionModel' | 'rerankingModel' | 'videoModel' | 'searchModel' | 'decision'
+export interface ModelRef { namespace: string; key: string; method: ModelMethod; modelId: string }
+export interface ModelInfo { provider: string; modelId: string; modality: string; [key: string]: unknown }
 
-  ModelSpec,
-  RuntimeModel,
-  VideoCallOptions,
-  VideoPollOptions,
-  AiMuxError,
-  JsonValue,
-  RawToolCall,
-  ToolCallRepairReply,
-  DecideOptions,
-  DecideResult,
-  DecisionQuestionType,
-} from './types'
-
-// Error hierarchy (throw/catch). Wire payload type `AiMuxError` lives under StreamPart only.
-export {
-  AimuxError,
-  APICallError,
-  RetryError,
-  type RetryErrorReason,
-  JSONParseError,
-  InvalidResponseDataError,
-  NoOutputGeneratedError,
-  NoSuchToolError,
-  InvalidToolInputError,
-  ToolCallRepairError,
-  InvalidArgumentError,
-  InvalidPromptError,
-  LoadAPIKeyError,
-  LoadSettingError,
-  TokenExpiredError,
-  UnsupportedFunctionalityError,
-  NoSuchModelError,
-  NoSuchProviderError,
-  TimeoutError,
-  RequestAbortedError,
-  OtherError,
-  RecordingError,
-  type RecordingErrorCode,
-} from './error.ts'
-
-// Re-export the raw napi constructors/factories so consumers can do everything
-// from a single import: `import { openai, generateText } from 'aimux'`.
-// Rust fn names are snake_case; napi-rs exposes them camelCased (like
-// `init_logging` → `initLogging`).
-//
-// Native functions pass through unchanged: Rust already constructs the
-// registered JavaScript error subclasses before throwing.
-export {
-  Model,
-  StreamTextGenerator,
-  AbortBridge,
-  initLogging,
-  recordingFlush,
-  recordingStop,
-  initSessionStore,
-  initSessionInfer,
-  sessionCalls,
-  listSessions,
-  mockReplay,
-  initRecordingRing,
-  router,
-  moa,
-  openai,
-  anthropic,
-  deepseek,
-  google,
-  cohere,
-  mistral,
-  xai,
-  bedrock,
-  vertex,
-  anthropicAws,
-  azure,
-  provider,
-  DecisionModel,
-  type ProviderHandle,
-} from './native.ts'
-
-// Spell these as `void` in the public wrapper instead of leaking the generated
-// `AimuxResult<undefined>` implementation type.
-export const recordingTryFlush: () => void = native.recordingTryFlush
-export const initRecording: (dir: string) => void = native.initRecording
-
-// Public type surface — typed objects, no `any`.
-export type {
-  GenerateTextOptions,
-  GenerateTextResult,
-  StreamPart,
-  TextStreamPart,
-  ModelMessage,
-  Tool,
-  ToolChoice,
-  ToolCall,
-  TypedToolCall,
-  TypedSource,
-  ToolResult,
-  Usage,
-  InputTokenUsage,
-  OutputTokenUsage,
-  LanguageModelUsage,
-  InputTokenDetails,
-  OutputTokenDetails,
-  StepResult,
-  StepResponse,
-  StepResponseMetadata,
-  StepModel,
-  StepResultPerformance,
-  FinishReasonUnified,
-  Output,
-  GenerateObjectResult,
-  GenerateObjectResponse,
-  ContentPart,
-  ReasoningPart,
-  GeneratedFile,
-  GeneratedFileOutput,
-  LanguageModelFile,
-  Source,
-  GeneratedFileData,
-  RawToolApprovalRequest,
-  ToolApprovalRequestOutput,
-  TypedToolResult,
-  TaggedToolResult,
-  TypedToolError,
-  ToolOutputDenied,
-  ToolApprovalResponseOutput,
-  FinishReason,
-  Warning,
-  UserContent,
-  AssistantContent,
-  UserContentPart,
-  AssistantContentPart,
-  ToolContentPart,
-  ToolResultPart,
-  ToolResultOutput,
-  ResponseFormat,
-  ReasoningEffort,
-  GenerateResult,
-  FunctionTool,
-  SessionCall,
-  SessionSource,
-  SessionView,
-  ChatCompletion,
-  ChatCompletionChunk,
-
-  ModelSpec,
-  RuntimeModel,
-  VideoCallOptions,
-  VideoPollOptions,
-  RawToolCall,
-  ToolCallRepairReply,
-  DecideOptions,
-  DecideResult,
-}
-
-/**
- * Answer questions about one shared state (AI SDK `decide`): validates the
- * input, retries transient failures (two retries by default), validates the
- * answers and completes usage and response information. Same JSON contract
- * as Rust and C.
- */
-export async function decide(
-  model: native.DecisionModel,
-  options: DecideOptions,
-  signal?: AbortSignal,
-): Promise<DecideResult> {
-  const bridge = signal ? new AbortBridge(signal) : undefined
-  return JSON.parse(await model.decide(JSON.stringify(options), bridge)) as DecideResult
-}
-
-/**
- * The DecisionModelV4 properties of a decision model, without a network
- * request, named as the AI SDK names them (`decision-model-v4.ts:7-11`).
- */
-export interface DecisionModelDescription {
-  specificationVersion: 'v4'
-  provider: string
-  modelId: string
-  supportedQuestionTypes: DecisionQuestionType[]
-}
-
-/** Describe a native decision model without making a network request. */
-export function describeDecisionModel(model: native.DecisionModel): DecisionModelDescription {
-  return JSON.parse(model.describe()) as DecisionModelDescription
-}
-
-/** How a System One endpoint produces probabilities (reported as provider metadata). */
-export type DecisionProbabilitySource = 'native' | 'logit_scoring' | 'model_estimate'
-
-/** Declare how a hosted or self-hosted System One endpoint produces probabilities. */
-export async function jevDecision(
-  apiKey: string,
-  modelId: string,
-  endpoint?: string,
-  probabilitySource?: DecisionProbabilitySource,
-): Promise<native.DecisionModel> {
-  return native.jevDecision(apiKey, modelId, endpoint, probabilitySource)
-}
-
-/**
- * A raw napi `Model` instance returned by `openai()` / `anthropic()` / …
- *
- * The wrapper accepts one of these and hides the JSON-string boundary behind
- * typed inputs and outputs. `RawModel` is just an alias for the napi `Model`
- * class instance type — pass the exact object a provider factory gives you.
- */
-export type RawModel = Model
-
-export type {
-  DecisionAnswer,
-  DecisionBooleanCriteria,
-  DecisionCallOptions,
-  DecisionInput,
-  DecisionQuestion,
-  DecisionQuestionType,
-  DecisionResult,
-  DecisionRounding,
-  DecisionUsage,
-  DecideUsage,
-} from './types'
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tool-call repair (RFC-0035) — host-side, mirroring AI SDK `repairToolCall`
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** The argument passed to a {@link RepairToolCall} function. */
-export type ToolCallRepairContext = {
-  /** The failed call, tagged as the AI SDK's `LanguageModelV4ToolCall`. */
-  toolCall: { type: 'tool-call' } & RawToolCall
-  /** The lookup / parse / validation failure that made the call invalid. */
-  error: AiMuxError
-  /** JSON Schema of the called tool; the empty-object schema when unknown. */
-  inputSchema: JsonValue
-  tools: Tool[]
-  messages: ModelMessage[]
-  instructions: string | null
-}
-
-/**
- * Repairs one invalid tool call, mirroring the AI SDK's `repairToolCall`.
- *
- * Return a replacement call, or `null` to leave the call invalid with its
- * original error. Throwing marks the repair as failed: the call stays invalid
- * and carries a {@link ToolCallRepairError} whose cause is the thrown message.
- * A returned call is re-parsed and re-validated; if it still does not parse or
- * match the schema, the original call stays invalid with that new error
- * (not wrapped), as in the AI SDK.
- *
- * Runs outside any native call, so it may itself call back into aimux (the
- * usual implementation asks a model to rewrite the arguments). It is invoked at
- * most once per tool call, and never for a call made without a tool set.
- */
-export type RepairToolCall = (
-  context: ToolCallRepairContext,
-) => RawToolCall | null | Promise<RawToolCall | null>
-
-/**
- * {@link GenerateTextOptions} plus the host-side `repairToolCall` function.
- *
- * `repairToolCall` is a function, so `JSON.stringify` drops it — it never
- * reaches the provider request. It does **not** apply to the OpenAI-format
- * entry points (`generateTextAsOpenai` / `streamTextAsOpenai`): that shape
- * carries no `invalid` marker, so there is nothing to drive repair from.
- */
-export type GenerateTextOptionsWithRepair = GenerateTextOptions & {
-  repairToolCall?: RepairToolCall
-}
-
-/**
- * The AI SDK's `getErrorMessage`, so a thrown value renders exactly as it
- * would in the SDK's own `ToolCallRepairError` message: strings verbatim,
- * `Error` instances via `toString()` (name included), anything else as JSON.
- */
-function errorMessage(e: unknown): string {
-  if (e == null) return 'unknown error'
-  if (typeof e === 'string') return e
-  if (e instanceof Error) return e.toString()
-  return JSON.stringify(e)
-}
-
-/**
- * Run the user's repair function for one invalid call and turn its outcome
- * into the wire reply. Returns `null` when the call is not repairable at all
- * (no tool set — the AI SDK rule, decided in core).
- */
-async function repairReplyFor(
-  call: unknown,
-  promptJson: string,
-  optsJson: string | undefined,
-  repair: RepairToolCall,
-): Promise<string | null> {
-  const context = JSON.parse(
-    toolCallRepairContext(JSON.stringify(call), promptJson, optsJson),
-  ) as ToolCallRepairContext | null
-  if (context === null) return null
-
-  let reply: ToolCallRepairReply
+function json(value: unknown): string {
   try {
-    const replacement = await repair(context)
-    reply = replacement ? { type: 'repaired', toolCall: replacement } : { type: 'unchanged' }
-  } catch (e) {
-    reply = { type: 'failed', message: errorMessage(e) }
+    const serialized = JSON.stringify(value, (_key, item: unknown) => {
+      if (typeof item === 'function' || typeof item === 'symbol') throw new TypeError('Ops parameters must contain JSON data only')
+      return item
+    })
+    if (serialized === undefined) throw new TypeError('Parameters must be JSON data')
+    return serialized
+  } catch (error) {
+    throw new AimuxError({ kind: 'binding', code: 202, message: `params: ${String(error)}`, error: { name: 'InvalidWireJson', argument: 'params', message: String(error) } })
   }
-  return JSON.stringify(reply)
 }
 
-/**
- * Repair every invalid call in a serialized generate-text result, before it is
- * decoded. Its `toolCalls` are the final step's calls.
- */
-async function repairResultJson(
-  resultJson: string,
-  promptJson: string,
-  optsJson: string | undefined,
-  repair: RepairToolCall,
-): Promise<string> {
-  const result = JSON.parse(resultJson) as { toolCalls?: ToolCall[] }
-  const calls = result.toolCalls ?? []
+/** A Client owns a realm-local runtime; IDs must never be transferred to workers. */
+export class Client {
+  readonly raw: Runtime
+  constructor() { this.raw = new Runtime() }
+  get manifest(): Manifest { return this.raw.manifest }
+  get manifestDigest(): string { return this.raw.manifestDigest }
 
-  let patched = resultJson
-  for (const call of calls) {
-    if (call.invalid !== true) continue
-    const reply = await repairReplyFor(call, promptJson, optsJson, repair)
-    if (reply === null) continue
-    patched = applyToolCallRepairToResult(patched, optsJson, call.toolCallId, reply)
+  async call<T = unknown>(handle: string, op: string, params: unknown = {}, options: CallOptions = {}): Promise<T> {
+    const abort = this.bridge(options)
+    return JSON.parse(await this.raw.call(handle, op, json(params), abort)) as T
   }
-  return patched
-}
 
-/**
- * Generate text (non-streaming). Returns a typed {@link GenerateTextResult}.
- *
- * @param model   - A raw model instance from `openai()`, `anthropic()`, etc.
- * @param prompt  - A plain string or an array of typed chat messages.
- * @param options - Optional typed generation options (tools, toolChoice,
- *                  temperature, output, …). Invalid tool calls arrive
- *                  with `invalid`/`error` set on the tool call; pass
- *                  {@link RepairToolCall | `repairToolCall`} to fix them up
- *                  before the result is decoded.
- * @param signal  - Optional `AbortSignal`; aborting it cancels the call.
- *
- * Internally calls the raw
- * `model.generateText(JSON.stringify(prompt), options ? JSON.stringify(options) : undefined)`
- * and `JSON.parse`s the returned JSON into a typed object.
- *
- * @example
- * ```ts
- * import { openai, generateText } from 'aimux'
- * const model = await openai(apiKey, 'gpt-4o')
- * const result = await generateText(model, 'What is Rust?')
- * console.log(result.text, result.usage)
- * ```
- */
-export async function generateText(
-  model: RawModel,
-  prompt: string | ModelMessage[],
-  options?: GenerateTextOptionsWithRepair,
-  signal?: AbortSignal,
-): Promise<GenerateTextResult> {
-  const promptJson = JSON.stringify(prompt)
-  const optsJson = options ? JSON.stringify(options) : undefined
-  const bridge = signal ? new AbortBridge(signal) : undefined
-  let resultJson = await model.generateText(promptJson, optsJson, bridge)
-  if (options?.repairToolCall) {
-    resultJson = await repairResultJson(resultJson, promptJson, optsJson, options.repairToolCall)
+  async stream<T = unknown>(handle: string, op: string, params: unknown = {}, options: CallOptions = {}): Promise<AsyncIterableIterator<Frame<T>>> {
+    const abort = this.bridge(options)
+    const inner = await this.raw.stream(handle, op, json(params), abort)
+    return mapIterator(inner, value => JSON.parse(value) as Frame<T>, () => abort?.signal())
   }
-  return JSON.parse(resultJson) as GenerateTextResult
-}
 
-/**
- * Stream text from a model. Yields typed {@link TextStreamPart}s.
- *
- * @param model   - A raw model instance from `openai()`, `anthropic()`, etc.
- * @param prompt  - A plain string or an array of typed chat messages.
- * @param options - Optional typed generation options (tools, toolChoice, …).
- * @param signal  - Optional `AbortSignal`; aborting it cancels the stream.
- *
- * Internally drives the raw `model.streamText(JSON.stringify(prompt), …)`
- * async generator and `JSON.parse`s each JSON-string chunk before yielding it
- * as a typed `TextStreamPart`.
- *
- * @example
- * ```ts
- * import { openai, streamText } from 'aimux'
- * const model = await openai(apiKey, 'gpt-4o')
- * for await (const part of streamText(model, 'Write a haiku about Rust.')) {
- *   if (part.type === 'text-delta') process.stdout.write(part.text)
- * }
- * ```
- */
-export async function* streamText(
-  model: RawModel,
-  prompt: string | ModelMessage[],
-  options?: GenerateTextOptionsWithRepair,
-  signal?: AbortSignal,
-): AsyncGenerator<TextStreamPart> {
-  const promptJson = JSON.stringify(prompt)
-  const optsJson = options ? JSON.stringify(options) : undefined
-  const bridge = signal ? new AbortBridge(signal) : undefined
-  const repair = options?.repairToolCall
-  const gen = await model.streamText(promptJson, optsJson, bridge)
-  for await (const json of gen) {
-    const part = JSON.parse(json) as TextStreamPart
-    // Only the settled tool-call part is repairable; tool-input-delta parts are
-    // the provider's raw text and pass through immediately (AI SDK behaviour).
-    if (repair && part.type === 'tool-call' && part.invalid === true) {
-      const reply = await repairReplyFor(part, promptJson, optsJson, repair)
-      if (reply !== null) {
-        // The native function writes the call with its `type` tag.
-        yield JSON.parse(applyToolCallRepair(JSON.stringify(part), optsJson, reply)) as TypedToolCall
-        continue
-      }
+  private bridge(options: CallOptions): RawAbort | undefined {
+    if (options.abort) {
+      if (options.signal) throw protocolError(301, 'InvalidParams', 'Pass either signal or abort')
+      return options.abort.native
     }
-    yield part
+    return options.signal ? this.raw.abort(options.signal) : undefined
+  }
+
+  async provider(params: ProviderParams): Promise<Provider> { return new Provider(this, await this.call('0', 'provider.create', params)) }
+  async defaultProvider(params: unknown): Promise<Provider> { return new Provider(this, await this.call('0', 'provider.default', params)) }
+  async customProvider(params: unknown): Promise<Provider> { return new Provider(this, await this.call('0', 'provider.custom', params)) }
+  async registry(entries: Record<string, Provider>, namespace = ''): Promise<Registry> {
+    const refs = Object.entries(entries).map(([key, provider]) => ({ key, provider: provider.handle }))
+    return new Registry(this, await this.call('0', 'registry.create', { namespace, entries: refs }))
+  }
+  abort(signal?: AbortSignal): Abort { return new Abort(this, signal) }
+  async configure(params: unknown): Promise<unknown> { return this.call('0', 'runtime.configure', params) }
+  async describe(): Promise<unknown> { return this.call('0', 'runtime.describe') }
+  async trace(params: unknown = {}): Promise<TraceStore> { return new TraceStore(this, handleRef(await this.call('0', 'trace.create', params), 'TraceStore')) }
+  async recorder(params: unknown): Promise<Recorder> { return new Recorder(this, handleRef(await this.call('0', 'recorder.create', params), 'Recorder')) }
+  async sessionStore(params: { infer: boolean }): Promise<SessionStore> { return new SessionStore(this, handleRef(await this.call('0', 'sessionStore.create', params), 'SessionStore')) }
+  async replay(params: unknown): Promise<ReplaySession> { return new ReplaySession(this, handleRef(await this.call('0', 'replay.create', params), 'ReplaySession')) }
+  async middleware(params: unknown): Promise<Middleware> { return new Middleware(this, await this.call('0', 'middleware.create', params)) }
+  async transport(params: unknown): Promise<Resource> { return new Resource(this, await this.call('0', 'transport.create', params)) }
+  async credential(params: unknown): Promise<Resource> { return new Resource(this, await this.call('0', 'credential.create', params)) }
+  async catalogue(params: unknown): Promise<unknown> { return this.call('0', 'catalogue.fetch', params) }
+  async router(params: unknown): Promise<LanguageModel> { return new LanguageModel(this, handleRef(await this.call('0', 'composite.router', params), 'Language')) }
+  async moa(params: unknown): Promise<LanguageModel> { return new LanguageModel(this, handleRef(await this.call('0', 'composite.moa', params), 'Language')) }
+}
+
+// Finalization is a fallback. Explicit close/flush remains the normal protocol.
+const finalizer = new FinalizationRegistry<{ client: Client; handle: string }>(held => {
+  try { held.client.raw.drop(held.handle) } catch { /* Env cleanup owns remaining resources. */ }
+})
+
+export class Resource {
+  readonly client: Client
+  readonly kind: HandleKind
+  #handle: string | undefined
+  constructor(client: Client, ref: HandleRef) {
+    this.client = client
+    this.kind = ref.kind
+    this.#handle = ref.handle
+    finalizer.register(this, { client, handle: ref.handle }, this)
+  }
+  get handle(): string {
+    if (this.#handle === undefined) throw new AimuxError({ kind: 'binding', code: 203, message: 'Handle is closed', error: { name: 'InvalidHandle', expected: [this.kind] } })
+    return this.#handle
+  }
+  async close(): Promise<void> {
+    const handle = this.#handle
+    if (handle === undefined) return
+    this.#handle = undefined
+    finalizer.unregister(this)
+    this.client.raw.drop(handle)
+  }
+  protected call<T = unknown>(op: string, params: unknown = {}, options?: CallOptions): Promise<T> { return this.client.call(this.handle, op, params, options) }
+}
+
+export class Abort {
+  readonly client: Client
+  readonly native: RawAbort
+  constructor(client: Client, signal?: AbortSignal) { this.client = client; this.native = client.raw.abort(signal) }
+  get handle(): string { return this.native.handle }
+  get aborted(): boolean { return this.native.aborted }
+  signal(): void { this.native.signal() }
+  close(): void { this.native.close() }
+}
+
+export class Provider extends Resource {
+  async model(modelId: string, method?: ModelMethod): Promise<Model> {
+    return model(this.client, await this.call('provider.model', { modelId, ...(method ? { method } : {}) }))
+  }
+  async invoke<T = unknown>(method: string, call?: CallOptions): Promise<T> { return this.call('provider.invoke', { method }, call) }
+  async files(): Promise<Files> { return new Files(this.client, handleRef(await this.call('provider.files'), 'Files')) }
+  async wrap(language: Middleware[] = [], image: Middleware[] = []): Promise<Provider> {
+    return new Provider(this.client, await this.call('provider.wrap', { languageModelMiddleware: language.map(value => value.handle), imageModelMiddleware: image.map(value => value.handle) }))
+  }
+}
+export class Registry extends Resource {
+  async provider(key: string): Promise<Provider> { return new Provider(this.client, await this.call('registry.provider', { key })) }
+  async resolve(modelRef: ModelRef): Promise<Model> { return model(this.client, await this.call('model.resolve', { modelRef })) }
+}
+export class Model extends Resource {
+  async info(): Promise<ModelInfo> { return this.call('model.info') }
+  async wrap(middleware: Middleware[]): Promise<Model> {
+    return model(this.client, await this.call('model.wrap', { middleware: middleware.map(value => value.handle) }))
+  }
+}
+export class LanguageModel extends Model {
+  async generate(prompt: ModelPrompt, options: GenerateTextOptions = {}, call?: CallOptions): Promise<GenerateTextResult> { return this.call('text.generate', { prompt, options }, call) }
+  async generateObject(params: unknown, call?: CallOptions): Promise<GenerateObjectResult> { return this.call('text.generateObject', params, call) }
+  async consume(params: unknown, call?: CallOptions): Promise<GenerateTextResult> { return this.call('text.consume', params, call) }
+  async generateOpenAI(params: unknown, call?: CallOptions): Promise<unknown> { return this.call('text.generateOpenAI', params, call) }
+  async stream(prompt: ModelPrompt, options: GenerateTextOptions = {}, call?: CallOptions): Promise<AsyncIterableIterator<Frame<TextStreamPart>>> { return this.client.stream(this.handle, 'text.stream', { prompt, options }, call) }
+  async streamOpenAI(params: unknown, call?: CallOptions): Promise<AsyncIterableIterator<Frame<unknown>>> { return this.client.stream(this.handle, 'text.streamOpenAI', params, call) }
+}
+export class EmbeddingModel extends Model {
+  async embed(params: unknown, call?: CallOptions): Promise<EmbeddingResult> { return this.call('embedding.embed', params, call) }
+  async embedMany(params: EmbeddingCallOptions, call?: CallOptions): Promise<EmbeddingResult> { return this.call('embedding.embedMany', params, call) }
+}
+export class ImageModel extends Model { async generate(params: ImageCallOptions, call?: CallOptions): Promise<ImageResult> { return this.call('image.generate', params, call) } }
+export class SpeechModel extends Model { async generate(params: SpeechCallOptions, call?: CallOptions): Promise<SpeechResult> { return this.call('speech.generate', params, call) } }
+export class TranscriptionModel extends Model {
+  async generate(params: TranscriptionCallOptions, call?: CallOptions): Promise<TranscriptionResult> { return this.call('transcription.generate', params, call) }
+  async start(params: unknown, call?: CallOptions): Promise<Operation<TranscriptionStreamPart>> { return new Operation(this.client, handleRef(await this.call('transcription.start', params, call), 'Operation')) }
+}
+export class RerankingModel extends Model { async rerank(params: RerankingCallOptions, call?: CallOptions): Promise<RerankingResult> { return this.call('reranking.rerank', params, call) } }
+export class VideoModel extends Model { async generate(params: VideoCallOptions, call?: CallOptions): Promise<VideoResult> { return this.call('video.generate', params, call) } }
+export class SearchModel extends Model { async search(params: SearchCallOptions, call?: CallOptions): Promise<SearchResult> { return this.call('search.search', params, call) } }
+export class DecisionModel extends Model {
+  async decide(options: DecideOptions, call?: CallOptions): Promise<DecideResult> { return this.call('decision.decide', { options }, call) }
+  async capabilities(): Promise<unknown> { return this.call('decision.capabilities') }
+}
+export class Files extends Resource { async upload(params: UploadFileCallOptions, call?: CallOptions): Promise<UploadFileResult> { return this.call('files.upload', params, call) } }
+export class Middleware extends Resource {}
+
+function handleRef(value: string | { handle: string }, kind: HandleKind): HandleRef {
+  return { handle: typeof value === 'string' ? value : value.handle, kind }
+}
+
+function model(client: Client, ref: HandleRef): Model {
+  switch (ref.kind) {
+    case 'Language': return new LanguageModel(client, ref)
+    case 'Embedding': return new EmbeddingModel(client, ref)
+    case 'Image': return new ImageModel(client, ref)
+    case 'Speech': return new SpeechModel(client, ref)
+    case 'Transcription': return new TranscriptionModel(client, ref)
+    case 'Reranking': return new RerankingModel(client, ref)
+    case 'Video': return new VideoModel(client, ref)
+    case 'Search': return new SearchModel(client, ref)
+    case 'Decision': return new DecisionModel(client, ref)
+    default: throw protocolError(304, 'InvalidState', `Invalid model kind: ${ref.kind}`)
   }
 }
 
-/**
- * All calls of a session, ordered by step (RFC-0024). Empty if the session
- * is unknown or no store is registered.
- *
- * `initSessionStore()` / `initSessionInfer(enabled)` (raw napi, re-exported
- * above) must be called first to register the store / opt-in inferer.
- */
-export function getSessionCalls(sessionId: string): SessionCall[] {
-  return JSON.parse(native.sessionCalls(sessionId)) as SessionCall[]
-}
-
-/**
- * All known sessions (RFC-0024).
- */
-export function getSessions(): SessionView[] {
-  return JSON.parse(native.listSessions()) as SessionView[]
-}
-
-/**
- * Generate text and return an OpenAI Chat Completion (non-streaming).
- *
- * Works with **any** provider — the result is always a standard OpenAI
- * `ChatCompletion` object.
- *
- * With {@link RepairToolCall | `repairToolCall`}, invalid calls are repaired
- * on the native result first and the completion is converted from it, so its
- * `tool_calls` carry the repaired arguments (a `ChatCompletion` has no
- * `invalid` marker to repair from).
- *
- * @example
- * ```ts
- * import { openai, generateTextAsOpenai } from 'aimux'
- * const model = await openai(apiKey, 'gpt-4o')
- * const completion = await generateTextAsOpenai(model, 'What is Rust?')
- * console.log(completion.choices[0].message.content)
- * ```
- */
-export async function generateTextAsOpenai(
-  model: RawModel,
-  prompt: string | ModelMessage[],
-  options?: GenerateTextOptionsWithRepair,
-  signal?: AbortSignal,
-): Promise<ChatCompletion> {
-  const promptJson = JSON.stringify(prompt)
-  const optsJson = options ? JSON.stringify(options) : undefined
-  const bridge = signal ? new AbortBridge(signal) : undefined
-  if (options?.repairToolCall) {
-    let resultJson = await model.generateText(promptJson, optsJson, bridge)
-    resultJson = await repairResultJson(resultJson, promptJson, optsJson, options.repairToolCall)
-    return JSON.parse(model.generateTextResultAsOpenai(resultJson)) as ChatCompletion
-  }
-  const resultJson = await model.generateTextAsOpenai(promptJson, optsJson, bridge)
-  return JSON.parse(resultJson) as ChatCompletion
-}
-
-/**
- * Stream text as OpenAI Chat Completion chunks.
- *
- * Works with **any** provider — yields standard OpenAI `ChatCompletionChunk`
- * objects. Pass `streamOptions` via `providerOptions.openai.stream_options`:
- * `{ include_usage: true, include_reasoning: true }` (both default true).
- *
- * @example
- * ```ts
- * import { openai, streamTextAsOpenai } from 'aimux'
- * const model = await openai(apiKey, 'gpt-4o')
- * for await (const chunk of streamTextAsOpenai(model, 'Write a haiku.')) {
- *   const delta = chunk.choices[0]?.delta?.content
- *   if (delta) process.stdout.write(delta)
- * }
- * ```
- */
-export async function* streamTextAsOpenai(
-  model: RawModel,
-  prompt: string | ModelMessage[],
-  options?: GenerateTextOptions,
-  signal?: AbortSignal,
-): AsyncGenerator<ChatCompletionChunk> {
-  const optsJson = options ? JSON.stringify(options) : undefined
-  const bridge = signal ? new AbortBridge(signal) : undefined
-  const gen = await model.streamTextAsOpenai(JSON.stringify(prompt), optsJson, bridge)
-  for await (const json of gen) {
-    yield JSON.parse(json) as ChatCompletionChunk
+export class Operation<T = unknown> extends Resource {
+  async push(data: Uint8Array): Promise<void> { await this.client.raw.operationPush(this.handle, data) }
+  async inputDone(): Promise<void> { await this.call('operation.inputDone') }
+  async next(timeoutMs: number = 1000): Promise<PollResult<T>> { return this.call('operation.next', { timeoutMs }) }
+  async status(): Promise<unknown> { return this.call('operation.status') }
+  async cancel(): Promise<unknown> { return this.call('operation.cancel') }
+  events(): AsyncIterableIterator<T> {
+    const operation = this
+    let ended = false
+    return {
+      async next() {
+        if (ended) return { done: true, value: undefined }
+        try {
+          for (;;) {
+            const next = await operation.next()
+            if (ended) return { done: true, value: undefined }
+            if (next.type === 'part') return { done: false, value: next.part }
+            if (next.type === 'ended') { ended = true; return { done: true, value: undefined } }
+          }
+        } catch (error) { if (!(error instanceof AimuxError && error.code === 303)) ended = true; throw error }
+      },
+      async return() { ended = true; await operation.cancel(); return { done: true, value: undefined } },
+      async throw(error?: unknown) { ended = true; await operation.cancel(); throw error },
+      [Symbol.asyncIterator]() { return this },
+    }
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Provider handles (RFC-0027) — createProvider / listModels / model
-// ─────────────────────────────────────────────────────────────────────────────
+export class TraceStore extends Resource {
+  async aggregate(filter: TraceFilter = {}): Promise<TraceStats[]> { return this.call('trace.aggregate', { filter }) }
+  async sessionChain(sessionId: string): Promise<SessionChainView> { return this.call('trace.sessionChain', { sessionId }) }
+  async sessionTrajectory(sessionId: string): Promise<unknown> { return this.call('trace.sessionTrajectory', { sessionId }) }
+  async export(): Promise<unknown> { return this.call('trace.export') }
+  async clear(): Promise<void> { await this.call('trace.clear') }
+}
+export class Recorder extends Resource {
+  async attach(): Promise<unknown> { return this.call('recorder.attach') }
+  async stop(): Promise<unknown> { return this.call('recorder.stop') }
+  async flush(): Promise<unknown> { return this.call('recorder.flush') }
+  async stats(): Promise<unknown> { return this.call('recorder.stats') }
+  async export(): Promise<unknown> { return this.call('recorder.export') }
+}
+export class SessionStore extends Resource {
+  async attach(): Promise<unknown> { return this.call('sessionStore.attach') }
+  async list(params: unknown = {}): Promise<unknown> { return this.call('sessionStore.list', params) }
+  async calls(sessionId: string): Promise<unknown> { return this.call('sessionStore.calls', { sessionId }) }
+}
+export class ReplaySession extends Resource {
+  async capabilities(): Promise<unknown> { return this.call('replay.capabilities') }
+  async inspect(): Promise<unknown> { return this.call('replay.inspect') }
+  async dryRun(params: unknown = {}): Promise<unknown> { return this.call('replay.dryRun', params) }
+  async live(params: unknown): Promise<unknown> { return this.call('replay.live', params) }
+}
 
-/**
- * A typed wrapper around the raw napi `ProviderHandle` class. Created by
- * {@link createProvider}, supports {@link ProviderHandleTyped.listModels} and
- * {@link ProviderHandleTyped.model}.
- *
- * @example
- * ```ts
- * import { createProvider, generateText } from 'aimux'
- * const p = await createProvider('deepseek', apiKey)
- * const models = await p.listModels()
- * const model = await p.model(models[0].id)
- * const result = await generateText(model, 'Hello')
- * ```
- */
-export class ProviderHandleTyped {
-  private readonly raw: RawProviderHandle
-
-  constructor(raw: RawProviderHandle) {
-    this.raw = raw
-  }
-
-  /** List models available on this provider (runtime discovery + anya2a spec). */
-  async listModels(): Promise<RuntimeModel[]> {
-    return JSON.parse(await this.raw.listModels()) as RuntimeModel[]
-  }
-
-  /** Build a language model from a discovered model id. */
-  async model(modelId: string): Promise<RawModel> {
-    return this.raw.model(modelId)
-  }
-
-  /** Build a native decision model using this provider's connection config. */
-  async decisionModel(modelId: string): Promise<native.DecisionModel> {
-    return this.raw.decisionModel(modelId)
+function mapIterator<A, B>(inner: AsyncIterableIterator<A>, map: (value: A) => B, cancel: () => void): AsyncIterableIterator<B> {
+  let ended = false
+  return {
+    async next() {
+      if (ended) return { done: true, value: undefined }
+      try {
+        const result = await inner.next()
+        if (ended || result.done) { ended = true; return { done: true, value: undefined } }
+        return { done: false, value: map(result.value) }
+      } catch (error) {
+        if (error instanceof AimuxError && error.code === 303) throw error
+        ended = true; cancel(); if (inner.return) await inner.return().catch(() => {}); throw error
+      }
+    },
+    async return() { ended = true; cancel(); if (inner.return) await inner.return(); return { done: true, value: undefined } },
+    async throw(error?: unknown) { ended = true; cancel(); if (inner.return) await inner.return(); throw error },
+    [Symbol.asyncIterator]() { return this },
   }
 }
 
-/**
- * Create a **provider handle** (RFC-0027) for a registry-backed provider.
- *
- * Unlike `provider()` (which binds to a single modelId), this returns a handle
- * that supports `listModels()` (runtime discovery) and `model()`.
- *
- * @param name     - Provider name (e.g. `"deepseek"`, `"groq"`).
- * @param apiKey   - API key; omit/null to read the provider's env var.
- * @param config   - Optional provider config (baseUrl, headers, …).
- *
- * @example
- * ```ts
- * import { createProvider, generateText } from 'aimux'
- * const p = await createProvider('deepseek', process.env.DEEPSEEK_API_KEY)
- * const models = await p.listModels()
- * const model = await p.model(models[0].id)
- * const result = await generateText(model, 'Hello')
- * ```
- */
-export async function createProvider(
-  name: string,
-  apiKey?: string,
-  config?: ProviderConfig,
-): Promise<ProviderHandleTyped> {
-  const raw = await rawCreateProvider(name, apiKey ?? null, config ?? null)
-  return new ProviderHandleTyped(raw)
-}
-
-/**
- * Fetch the community model catalogue (anya2a). Returns a `Catalogue` object
- * with a `lookup(provider, modelId)` method. Thin fetch — no caching; the host
- * decides how to persist/reuse the result.
- *
- * @param sourceUrl - Optional URL override (default = anya2a endpoint).
- *
- * @example
- * ```ts
- * import { createProvider, getModelSpecs, generateText } from 'aimux'
- * const [p, catalogue] = await Promise.all([
- *   createProvider('deepseek', apiKey),
- *   getModelSpecs(),
- * ])
- * const models = await p.listModels()
- * const model = await p.model(models[0].id)
- * const spec = catalogue.specs?.['deepseek']?.[models[0].id] // community portrait
- * ```
- */
-export async function getModelSpecs(sourceUrl?: string): Promise<unknown> {
-  return JSON.parse(await rawGetModelSpecs(sourceUrl ?? null))
+/** A pull source with zero prefetch; reader.cancel() immediately invokes return(). */
+export function readable<T>(iterator: AsyncIterableIterator<T>): ReadableStream<T> {
+  return new ReadableStream<T>({
+    async pull(controller) {
+      try {
+        const result = await iterator.next()
+        if (result.done) controller.close()
+        else controller.enqueue(result.value)
+      } catch (error) { controller.error(error); if (iterator.return) await iterator.return().catch(() => {}) }
+    },
+    async cancel() { if (iterator.return) await iterator.return() },
+  }, { highWaterMark: 0 })
 }

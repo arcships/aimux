@@ -1,11 +1,68 @@
-// Native napi surface with the package's canonical JavaScript Error classes.
-// Rust constructs these classes directly, so native throws and promise
-// rejections preserve their prototype chain.
-
-import * as native from '../index.js'
-import * as errors from './error.ts'
-
-native.__registerErrorClasses(errors)
-
-export * from '../index.js'
+// Raw JSON entrypoint. The adapter is asynchronous and never calls the C ABI.
+import { Runtime as NativeRuntime, Abort as NativeAbort } from '../index.js'
+import { rethrow, protocolError } from './error.ts'
 export * from './error.ts'
+export type { FrameIterator } from '../index.js'
+export type { NativeAbort as Abort }
+
+export interface Manifest {
+  abiVersion: number
+  opsVersion: string
+  manifestRevision: string | number
+  ops: ReadonlyArray<{ name: string; mode: string; [key: string]: unknown }>
+  handleKinds: ReadonlyArray<unknown>
+  errorCodes: ReadonlyArray<unknown>
+  [key: string]: unknown
+}
+
+export function verifyManifest(manifest: Manifest): void {
+  if (manifest.abiVersion !== 65536 || manifest.opsVersion !== '1.0') {
+    throw protocolError(302, 'UnsupportedOpsVersion', 'This Node binding requires ABI 1.0 and ops 1.0')
+  }
+}
+
+export class Runtime {
+  readonly #inner: NativeRuntime
+  readonly manifest: Manifest
+  readonly manifestDigest: string
+
+  constructor() {
+    this.#inner = new NativeRuntime()
+    this.manifest = JSON.parse(this.#inner.manifestJson()) as Manifest
+    verifyManifest(this.manifest)
+    this.manifestDigest = this.#inner.manifestDigest()
+  }
+
+  abort(signal?: AbortSignal): NativeAbort { return new NativeAbort(this.#inner, signal) }
+
+  drop(handle: string): void {
+    try { this.#inner.dropHandle(handle) } catch (error) { rethrow(error) }
+  }
+
+  async call(handle: string, op: string, paramsJson: string, abort?: NativeAbort): Promise<string> {
+    try { return await this.#inner.call(handle, op, paramsJson, abort) } catch (error) { rethrow(error) }
+  }
+
+  async stream(handle: string, op: string, paramsJson: string, abort?: NativeAbort): Promise<AsyncIterableIterator<string>> {
+    let inner: AsyncIterableIterator<string>
+    try { inner = (await this.#inner.stream(handle, op, paramsJson, abort))[Symbol.asyncIterator]() } catch (error) { rethrow(error) }
+    // This is deliberately an explicit iterator: return() must cancel while next() is pending.
+    const iterator: AsyncIterableIterator<string> = {
+      async next() { try { return await inner.next() } catch (error) { rethrow(error) } },
+      async return() { try { return inner.return ? await inner.return() : { done: true as const, value: undefined } } catch (error) { rethrow(error) } },
+      async throw(error?: unknown) {
+        try {
+          if (inner.throw) return await inner.throw(error)
+          if (inner.return) await inner.return()
+          throw error
+        } catch (error) { rethrow(error) }
+      },
+      [Symbol.asyncIterator]() { return this },
+    }
+    return iterator
+  }
+
+  async operationPush(handle: string, data: Uint8Array): Promise<void> {
+    try { await this.#inner.operationPush(handle, data) } catch (error) { rethrow(error) }
+  }
+}

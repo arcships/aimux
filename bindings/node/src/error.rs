@@ -1,474 +1,69 @@
-//! Map core failures into the JavaScript `Error` classes registered by the
-//! package's JS entrypoint.
-//!
-//! Construction needs a napi `Env` (available when `ToNapiValue` runs on the
-//! JS thread). Async methods therefore return [`AimuxResult`] instead of
-//! `napi::Result`, so the error is materialised with `Env` present.
+//! Project the shared envelope once, then materialize it on the JS thread.
+use std::time::SystemTime;
 
-use std::collections::HashMap;
+use aimux_ops::envelope::{BindingError, ErrorEnvelope, OpsError};
+use napi::bindgen_prelude::*;
+use napi::{Env, sys};
 
-use aimux_core::{AiMuxError, RetryErrorReason, recording::RecordingError};
-use napi::bindgen_prelude::{
-    Function, FunctionRef, JsValue, Object, Result as NapiResult, ToNapiValue, TypeName, ValueType,
-};
-use napi::{Env, Error, Status, sys};
-use napi_derive::napi;
+pub struct WireResult<T>(pub(crate) std::result::Result<T, ErrorEnvelope>);
 
-const ERROR_CLASS_NAMES: &[&str] = &[
-    "APICallError",
-    "RetryError",
-    "JSONParseError",
-    "InvalidResponseDataError",
-    "NoOutputGeneratedError",
-    "NoSuchToolError",
-    "InvalidToolInputError",
-    "ToolCallRepairError",
-    "InvalidArgumentError",
-    "InvalidPromptError",
-    "LoadAPIKeyError",
-    "LoadSettingError",
-    "TokenExpiredError",
-    "UnsupportedFunctionalityError",
-    "NoSuchModelError",
-    "NoSuchProviderError",
-    "TimeoutError",
-    "RequestAbortedError",
-    "OtherError",
-    "RecordingError",
-];
-
-type ErrorConstructor = FunctionRef<String, ()>;
-
-struct ErrorConstructors(HashMap<&'static str, ErrorConstructor>);
-
-/// Register the canonical JS error constructors for this Node environment.
-///
-/// Keeping the constructors in the environment, rather than a process-global,
-/// preserves class identity and keeps Worker environments isolated.
-#[napi(js_name = "__registerErrorClasses", ts_return_type = "void")]
-pub fn register_error_classes(env: Env, constructors: Object) -> NapiResult<()> {
-    let mut registered = HashMap::with_capacity(ERROR_CLASS_NAMES.len());
-    for &name in ERROR_CLASS_NAMES {
-        let constructor = constructors
-            .get::<Function<String, ()>>(name)?
-            .ok_or_else(|| {
-                Error::new(
-                    Status::InvalidArg,
-                    format!("missing JavaScript error constructor: {name}"),
-                )
-            })?;
-        registered.insert(name, constructor.create_ref()?);
-    }
-
-    let registry = ErrorConstructors(registered);
-    if let Some(current) = env.get_instance_data::<ErrorConstructors>()? {
-        *current = registry;
-    } else {
-        env.set_instance_data(registry, (), |_| {})?;
-    }
-    Ok(())
+pub(crate) fn envelope(error: OpsError) -> ErrorEnvelope {
+    error.envelope(SystemTime::now())
 }
 
-/// Failures of the binding's own layer (napi-rs side) — never disguised
-/// as an `AiMuxError`. Surfaces in JS as napi-rs's own plain `Error`
-/// (`code` = napi status: `InvalidArg` / `GenericFailure`).
-#[derive(Clone, Debug)]
-pub(crate) enum BindingError {
-    /// A JSON *text* the binding transports did not parse (schema violations
-    /// of well-formed JSON stay `AiMuxError::InvalidArgument`).
-    InvalidWireJson {
-        argument: &'static str,
-        message: String,
-    },
-    /// A closed session / dropped handle handed to the binding.
-    InvalidHandle { message: &'static str },
-    /// The binding could not serialize a result to JSON.
-    ResultSerialization { message: String },
-    /// A binding invariant broke.
-    InvariantViolation { message: String },
-}
-
-impl std::fmt::Display for BindingError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidWireJson { argument, message } => {
-                write!(f, "{argument}: invalid JSON: {message}")
-            }
-            Self::InvalidHandle { message } => f.write_str(message),
-            Self::ResultSerialization { message } => write!(f, "serialize result: {message}"),
-            Self::InvariantViolation { message } => {
-                write!(f, "binding invariant violation: {message}")
-            }
-        }
-    }
-}
-
-/// One internal error carrier for Node binding returns.
-///
-/// The variants remain separate all the way to JS: `AiMux` becomes one of the
-/// typed AimuxError subclasses, `Recording` becomes RecordingError, and
-/// `Binding` becomes napi-rs's plain Error. This carrier does not merge the
-/// public error families.
-#[derive(Debug)]
-pub(crate) enum AiMuxBindingError {
-    AiMux(AiMuxError),
-    Recording(RecordingError),
-    Binding(BindingError),
-}
-
-impl From<AiMuxError> for AiMuxBindingError {
-    fn from(error: AiMuxError) -> Self {
-        Self::AiMux(error)
-    }
-}
-
-impl From<&AiMuxError> for AiMuxBindingError {
-    fn from(error: &AiMuxError) -> Self {
-        Self::AiMux(error.clone())
-    }
-}
-
-impl From<RecordingError> for AiMuxBindingError {
-    fn from(error: RecordingError) -> Self {
-        Self::Recording(error)
-    }
-}
-
-impl From<BindingError> for AiMuxBindingError {
-    fn from(error: BindingError) -> Self {
-        Self::Binding(error)
-    }
-}
-
-/// Parse a JSON text the binding transports (`prompt_json`, `opts_json`, …).
-/// Malformed text → binding `InvalidWireJson`; well-formed JSON that violates
-/// the schema → `AiMuxError::InvalidArgument` (what the core would say).
-pub(crate) fn parse_wire_json<T: serde::de::DeserializeOwned>(
-    argument: &'static str,
+pub(crate) fn parse(
+    argument: &str,
     json: &str,
-) -> MResult<T> {
-    serde_json::from_str(json).map_err(|e| wire_error(argument, &e))
-}
-
-/// The classification above, for callers that produce the `serde_json::Error`
-/// themselves rather than through [`parse_wire_json`].
-pub(crate) fn wire_error(argument: &'static str, e: &serde_json::Error) -> AiMuxBindingError {
-    match e.classify() {
-        serde_json::error::Category::Data => AiMuxBindingError::from(AiMuxError::InvalidArgument(
-            format!("invalid {argument}: {e}"),
-        )),
-        _ => BindingError::InvalidWireJson {
-            argument,
-            message: e.to_string(),
-        }
-        .into(),
-    }
-}
-
-/// Serialize a result for the JS side; failure is a binding `ResultSerialization`.
-pub(crate) fn serialize_result<T: serde::Serialize>(value: &T) -> MResult<String> {
-    serde_json::to_string(value).map_err(|e| {
-        BindingError::ResultSerialization {
-            message: e.to_string(),
-        }
-        .into()
+) -> std::result::Result<serde_json::Value, ErrorEnvelope> {
+    serde_json::from_str(json).map_err(|error| {
+        envelope(OpsError::Binding(BindingError::InvalidWireJson {
+            argument: argument.to_owned(),
+            message: error.to_string(),
+        }))
     })
 }
 
-fn aimux_error_class_name(error: &AiMuxError) -> &'static str {
-    match error {
-        AiMuxError::ApiCall(_) => "APICallError",
-        AiMuxError::Retry(_) => "RetryError",
-        AiMuxError::JsonParse(_) => "JSONParseError",
-        AiMuxError::NoOutputGenerated(_) => "NoOutputGeneratedError",
-        // No class of their own yet for the AI SDK's ToolChoiceViolationError
-        // and MissingToolResultsError (binding migration).
-        AiMuxError::InvalidResponseData(_)
-        | AiMuxError::ToolCallNotFoundForApproval { .. }
-        | AiMuxError::ToolChoiceViolation(_) => "InvalidResponseDataError",
-        AiMuxError::NoSuchTool { .. } => "NoSuchToolError",
-        AiMuxError::InvalidToolInput { .. } => "InvalidToolInputError",
-        AiMuxError::ToolCallRepair { .. } => "ToolCallRepairError",
-        AiMuxError::InvalidArgument(_) => "InvalidArgumentError",
-        AiMuxError::InvalidPrompt(_) | AiMuxError::MissingToolResults { .. } => {
-            "InvalidPromptError"
-        }
-        AiMuxError::LoadApiKey { .. } => "LoadAPIKeyError",
-        AiMuxError::LoadSetting { .. } => "LoadSettingError",
-        AiMuxError::TokenExpired(_) => "TokenExpiredError",
-        AiMuxError::UnsupportedFunctionality(_) => "UnsupportedFunctionalityError",
-        AiMuxError::NoSuchModel { .. } => "NoSuchModelError",
-        AiMuxError::NoSuchProvider { .. } => "NoSuchProviderError",
-        AiMuxError::Timeout(_) => "TimeoutError",
-        AiMuxError::Aborted(_) => "RequestAbortedError",
-        AiMuxError::Other(_) => "OtherError",
+pub(crate) fn serialize(
+    value: &impl serde::Serialize,
+) -> std::result::Result<String, ErrorEnvelope> {
+    serde_json::to_string(value).map_err(|error| {
+        envelope(OpsError::Binding(BindingError::ResultSerialization(
+            error.to_string(),
+        )))
+    })
+}
+
+pub(crate) fn throwable(env: &Env, value: ErrorEnvelope) -> napi::Result<napi::Error> {
+    let mut object = env.create_error(napi::Error::from_reason(value.message.clone()))?;
+    object.set("name", "AimuxError")?;
+    object.set(
+        "kind",
+        serde_json::to_value(value.kind)
+            .map_err(|error| napi::Error::from_reason(error.to_string()))?,
+    )?;
+    object.set("code", value.code)?;
+    object.set("error", value.error)?;
+    if let Some(ms) = value.retry_after_ms {
+        // This is the same projection as the envelope; never recompute hints.
+        object.set("retryAfterMs", ms)?;
     }
+    Ok(napi::Error::from(object.to_unknown()))
 }
 
-/// Convert one internal failure into its public JavaScript error family.
-pub(crate) fn create_throwable(env: &Env, error: &AiMuxBindingError) -> NapiResult<Error> {
-    match error {
-        AiMuxBindingError::AiMux(error) => create_aimux_throwable(env, error),
-        AiMuxBindingError::Recording(error) => create_recording_throwable(env, error),
-        AiMuxBindingError::Binding(error) => Ok(create_binding_throwable(error)),
-    }
-}
-
-fn new_registered_error<'env>(
-    env: &'env Env,
-    class_name: &str,
-    message: &str,
-) -> NapiResult<Object<'env>> {
-    let constructors = env
-        .get_instance_data::<ErrorConstructors>()?
-        .ok_or_else(|| {
-            Error::new(
-                Status::GenericFailure,
-                "JavaScript error constructors are not registered",
-            )
-        })?;
-    let constructor = constructors.0.get(class_name).ok_or_else(|| {
-        Error::new(
-            Status::GenericFailure,
-            format!("JavaScript error constructor was not registered: {class_name}"),
-        )
-    })?;
-    let instance = constructor
-        .borrow_back(env)?
-        .new_instance(message.to_owned())?;
-    instance.coerce_to_object()
-}
-
-/// Build the exact JS subclass registered for this core variant.
-fn create_aimux_throwable(env: &Env, error: &AiMuxError) -> NapiResult<Error> {
-    Ok(Error::from(aimux_error_object(env, error)?.to_unknown()))
-}
-
-/// The error instance as an `Object`, so `ToolCallRepair` can nest its
-/// `originalError` as a real registered subclass instance.
-fn aimux_error_object<'env>(env: &'env Env, error: &AiMuxError) -> NapiResult<Object<'env>> {
-    let message = error.to_string();
-    let mut obj = new_registered_error(env, aimux_error_class_name(error), &message)?;
-    if let Some(status) = error.status_code() {
-        obj.set("status", i32::from(status))?;
-    }
-    match error {
-        AiMuxError::ApiCall(detail) => {
-            obj.set("retryable", detail.is_retryable)?;
-            if let Some(retry_ms) = error.retry_after_hint() {
-                obj.set("retryMs", retry_ms)?;
-            }
-            if !detail.url.is_empty() {
-                obj.set("url", detail.url.as_str())?;
-            }
-            if !detail.request_body_values.is_null() {
-                obj.set("requestBodyValues", detail.request_body_values.clone())?;
-            }
-            if let Some(provider_code) = &detail.provider_code {
-                obj.set("providerCode", provider_code.as_str())?;
-            }
-            if !detail.message.is_empty() {
-                obj.set("providerMessage", detail.message.as_str())?;
-            }
-            if let Some(response_body) = &detail.response_body {
-                obj.set("responseBody", response_body.as_str())?;
-            }
-            if let Some(headers) = &detail.response_headers {
-                obj.set("responseHeaders", headers.clone())?;
-            }
-            if let Some(data) = &detail.data {
-                obj.set("data", data.clone())?;
-            }
-        }
-        AiMuxError::Retry(retry) => {
-            let reason = match retry.reason {
-                RetryErrorReason::MaxRetriesExceeded => "maxRetriesExceeded",
-                RetryErrorReason::ErrorNotRetryable => "errorNotRetryable",
-            };
-            obj.set("reason", reason)?;
-            let mut attempts = Vec::with_capacity(retry.errors.len());
-            for attempt in &retry.errors {
-                attempts.push(aimux_error_object(env, attempt)?);
-            }
-            obj.set("errors", attempts)?;
-        }
-        AiMuxError::NoSuchModel {
-            model_id,
-            model_type,
-        } => {
-            obj.set("modelId", model_id.as_str())?;
-            if !model_type.is_empty() {
-                obj.set("modelType", model_type.as_str())?;
-            }
-        }
-        AiMuxError::NoSuchProvider {
-            provider_id,
-            model_id,
-            model_type,
-            available_providers,
-        } => {
-            obj.set("providerId", provider_id.as_str())?;
-            obj.set("modelId", model_id.as_str())?;
-            obj.set("modelType", model_type.as_str())?;
-            obj.set("availableProviders", available_providers.clone())?;
-        }
-        AiMuxError::LoadApiKey {
-            env_var,
-            description,
-        } => {
-            obj.set("envVar", env_var.as_str())?;
-            obj.set("description", description.as_str())?;
-        }
-        AiMuxError::LoadSetting { env_var, name } => {
-            obj.set("envVar", env_var.as_str())?;
-            obj.set("settingName", name.as_str())?;
-        }
-        AiMuxError::NoSuchTool {
-            tool_name,
-            available_tools,
-            tool_input,
-        } => {
-            obj.set("toolName", tool_name.as_str())?;
-            if let Some(input) = tool_input {
-                obj.set("toolInput", input.as_str())?;
-            }
-            if let Some(tools) = available_tools {
-                obj.set("availableTools", tools.clone())?;
-            }
-        }
-        AiMuxError::InvalidToolInput {
-            tool_name,
-            tool_input,
-            ..
-        } => {
-            obj.set("toolName", tool_name.as_str())?;
-            obj.set("toolInput", tool_input.as_str())?;
-        }
-        AiMuxError::ToolCallRepair { original_error, .. } => {
-            obj.set("originalError", aimux_error_object(env, original_error)?)?;
-        }
-        _ => {}
-    }
-    Ok(obj)
-}
-
-/// A [`BindingError`] as napi-rs's own plain `Error`: caller-side faults
-/// (bad wire JSON, closed handle) → `InvalidArg`, everything else →
-/// `GenericFailure`. napi-rs sets `code` from the status when it throws.
-pub(crate) fn create_binding_throwable(b: &BindingError) -> Error {
-    let status = match b {
-        BindingError::InvalidWireJson { .. } | BindingError::InvalidHandle { .. } => {
-            Status::InvalidArg
-        }
-        BindingError::ResultSerialization { .. } | BindingError::InvariantViolation { .. } => {
-            Status::GenericFailure
-        }
-    };
-    Error::new(status, b.to_string())
-}
-
-/// Fallible return type for napi methods. Converts to a value or rejects/throws
-/// the corresponding public error family when `Env` is available on the JS
-/// thread.
-pub struct AimuxResult<T>(pub(crate) std::result::Result<T, AiMuxBindingError>);
-
-impl<T: ToNapiValue> ToNapiValue for AimuxResult<T> {
-    unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> NapiResult<sys::napi_value> {
-        match val.0 {
-            Ok(v) => unsafe { T::to_napi_value(env, v) },
-            Err(m) => {
-                let env = Env::from_raw(env);
-                Err(create_throwable(&env, &m)?)
-            }
+impl<T: ToNapiValue> ToNapiValue for WireResult<T> {
+    unsafe fn to_napi_value(env: sys::napi_env, value: Self) -> napi::Result<sys::napi_value> {
+        match value.0 {
+            Ok(value) => unsafe { T::to_napi_value(env, value) },
+            Err(error) => Err(throwable(&Env::from_raw(env), error)?),
         }
     }
 }
 
-impl<T: TypeName> TypeName for AimuxResult<T> {
+impl<T: TypeName> TypeName for WireResult<T> {
     fn type_name() -> &'static str {
         T::type_name()
     }
-
     fn value_type() -> ValueType {
         T::value_type()
     }
-}
-
-/// Internal result alias used by helpers (`?` with [`AiMuxBindingError`]).
-pub(crate) type MResult<T> = std::result::Result<T, AiMuxBindingError>;
-
-impl<T> From<MResult<T>> for AimuxResult<T> {
-    fn from(r: MResult<T>) -> Self {
-        Self(r)
-    }
-}
-
-/// Item yielded by the stream generator. `AsyncGenerator::next` returns
-/// `napi::Result` without an `Env`, so errors ride the channel as typed
-/// [`AiMuxBindingError`]s and convert into a structured throwable here, where
-/// `ToNapiValue` runs on the JS thread with an `Env` present.
-enum StreamItemValue {
-    Json(String),
-    Failure(AiMuxBindingError),
-}
-
-pub struct StreamItem {
-    value: StreamItemValue,
-}
-
-impl StreamItem {
-    pub(crate) fn json(value: String) -> Self {
-        Self {
-            value: StreamItemValue::Json(value),
-        }
-    }
-
-    pub(crate) fn failure(error: AiMuxBindingError) -> Self {
-        Self {
-            value: StreamItemValue::Failure(error),
-        }
-    }
-}
-
-impl ToNapiValue for StreamItem {
-    unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> NapiResult<sys::napi_value> {
-        match val.value {
-            StreamItemValue::Json(s) => unsafe { String::to_napi_value(env, s) },
-            StreamItemValue::Failure(m) => {
-                let env = Env::from_raw(env);
-                Err(create_throwable(&env, &m)?)
-            }
-        }
-    }
-}
-
-impl TypeName for StreamItem {
-    fn type_name() -> &'static str {
-        "string"
-    }
-
-    fn value_type() -> ValueType {
-        ValueType::String
-    }
-}
-
-/// Build the registered JS `RecordingError`. It remains separate from the
-/// `AimuxError` hierarchy.
-pub(crate) fn create_recording_throwable(
-    env: &Env,
-    e: &aimux_core::recording::RecordingError,
-) -> NapiResult<Error> {
-    use aimux_core::recording::RecordingError as R;
-    let code = match e {
-        R::Init { .. } => "Init",
-        R::OpenFile { .. } => "OpenFile",
-        R::Spawn { .. } => "Spawn",
-        R::WriterGone => "WriterGone",
-        R::FlushTimeout => "FlushTimeout",
-        R::Write(_) => "Write",
-    };
-    let message = e.to_string();
-    let mut obj = new_registered_error(env, "RecordingError", &message)?;
-    obj.set("code", code)?;
-    Ok(Error::from(obj.to_unknown()))
 }
