@@ -45,7 +45,8 @@ public struct BoundedStream<Element: Sendable>: AsyncSequence, Sendable {
         public mutating func next() async throws -> Element? {
             // Keep the lease alive throughout suspension, including cancellation.
             defer { withExtendedLifetime(lease) {} }
-            guard lease.admitted else { throw Failure.multipleConsumers }
+            // Qualified: inside AsyncIterator, Failure names the protocol associated type.
+            guard lease.admitted else { throw BoundedStream.Failure.multipleConsumers }
             return try await withTaskCancellationHandler {
                 try await lease.state.next()
             } onCancel: { [state = lease.state] in
