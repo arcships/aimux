@@ -94,6 +94,7 @@ fun <T> aimuxFlow(
     }.catch { throw projectError(it) }
 }
 
+// Preserve CancellationException with its Java source error for coroutine cancellation semantics.
 internal fun projectError(error: Throwable): Throwable = when (error) {
     is ExecutionException, is CompletionException -> error.cause?.let(::projectError) ?: error
     is NativeException -> AimuxException.fromJava(error)

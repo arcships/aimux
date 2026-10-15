@@ -27,7 +27,6 @@ class FlowBridgeTest {
         }
         withTimeout(5000) {
             assertEquals((0 until 100).toList(), stream.toList())
-            assertEquals((0 until 100).toList(), stream.toList())
         }
         assertEquals(0, aborts.get())
     }

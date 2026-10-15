@@ -38,12 +38,7 @@ tasks.named("compileKotlin") {
     dependsOn(verifyJavaArtifact)
 }
 
-// Declare the JVM the binding is built and tested against. Without this the
-// bytecode level of a published artifact depends on whichever JDK happened to
-// run the release, which is not something a Maven Central consumer can read
-// off the POM. 17 is what CI runs, so the declaration and the verification
-// agree — see bindings/java for the alternative shape, where an explicit
-// 1.8 target is backed by a four-JDK matrix.
+// Keep published bytecode and tests on JVM 17.
 kotlin {
     jvmToolchain(17)
 }
@@ -55,9 +50,6 @@ tasks.test {
         System.getenv("AIMUX_FFI_LIB_DIR") ?: projectDir.resolve("../../target/debug").canonicalPath
     )
     System.getenv("AIMUX_LIBRARY_PATH")?.let { systemProperty("aimux.library", it) }
-    // Gradle prints only "there were failing tests" by default; the names live
-    // in an HTML report that CI logs never surface. Without this, a red build
-    // tells you nothing about which test broke.
     testLogging {
         events("failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
@@ -74,18 +66,7 @@ val javadocJar by tasks.registering(Jar::class) {
     from(tasks.named("dokkaJavadoc"))
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Maven Central (Sonatype OSSRH) publishing — same layout as aimux-java.
-//
-// Secrets are NEVER stored in the repo. They are read from Gradle project
-// properties — set either as `ORG_GRADLE_PROJECT_<name>` environment variables
-// or `-P<name>=...` system properties:
-//   signingKey / signingPassword   ASCII-armored GPG private key + passphrase
-//   ossrhUsername / ossrhPassword  Sonatype (s01.oss.sonatype.org) credentials
-// When the keys are absent, signing/publishing configuration stays inert, so
-// local builds and `gradle test` are unaffected.
-// ─────────────────────────────────────────────────────────────────────────────
-
+// Publishing credentials come from Gradle properties; absent keys leave signing inert.
 val ossrhUsername = findProperty("ossrhUsername") as String?
 val ossrhPassword = findProperty("ossrhPassword") as String?
 val signingKey = findProperty("signingKey") as String?
@@ -127,13 +108,6 @@ publishing {
 
     repositories {
         if (ossrhUsername != null && ossrhPassword != null) {
-            // Central Publisher Portal — OSSRH Staging API compatibility
-            // service (s01.oss.sonatype.org is deprecated; it returns 402).
-            // After uploading, release.yml POSTs /manual/upload/defaultRepository
-            // to move the deployment into the Portal.
-            // Snapshot versions go to the snapshots repository; release
-            // versions to the staging service (the snapshots repo rejects
-            // non-SNAPSHOT versions with 403).
             if (version.toString().endsWith("SNAPSHOT")) {
                 maven {
                     name = "CentralPortal"

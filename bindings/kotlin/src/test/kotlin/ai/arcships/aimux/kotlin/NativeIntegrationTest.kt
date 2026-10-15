@@ -1,8 +1,10 @@
 package ai.arcships.aimux.kotlin
 
 import ai.arcships.aimux.Aimux
+import ai.arcships.aimux.AimuxException as JavaAimuxException
 import ai.arcships.aimux.KotlinInteropFixtures
 import ai.arcships.aimux.StreamFrame
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
@@ -75,10 +77,11 @@ class NativeIntegrationTest {
                             }.collect { frames.add(it) }
                         }
                         fail("expected native cancellation")
-                    } catch (expected: RequestAbortedError) {
+                    } catch (expected: CancellationException) {
+                        val source = assertInstanceOf(JavaAimuxException.RequestAbortedError::class.java, expected.cause)
                         assertTrue(frames.single().isEnd)
                         assertEquals(StreamFrame.Outcome.CANCELLED, frames.single().outcome)
-                        assertEquals(expected.envelope, frames.single().error.envelope)
+                        assertEquals(source.envelope, frames.single().error.envelope)
                     }
                 }
             }

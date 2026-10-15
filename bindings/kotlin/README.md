@@ -72,16 +72,6 @@ package and Kotlin additions from `ai.arcships.aimux.kotlin`. No compatibility
 aliases are provided. Pass the actual request DTO shape described by the native
 manifest; for example, text ops use `{"prompt":...,"options":...}`.
 
-Kotlin tests cover every known core error subtype (including numeric-code
-aliases), all error domains, unknown Java subtypes, unsigned retry hints, open
-and nested payloads, exhaustive sealed `when`, IO execution, bounded queues,
-startup and terminal failure, cancellation during admission, `take(1)`, and
-callback lifetime. Native tests load the real Rust library through Java and
-exercise provider/model identity, manifest loading, real envelopes, and stream
-preacceptance and terminal failures. Java's `AbiContractTest` and
-`MultimodalTypesTest` cover the shared adapter and DTOs; their fixture coverage
-does not replace these native tests.
-
 ## Build and test
 
 Build `aimux-ffi` first and set `AIMUX_LIBRARY_PATH` to the absolute cdylib path.

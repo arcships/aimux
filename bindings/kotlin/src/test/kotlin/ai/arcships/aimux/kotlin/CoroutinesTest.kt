@@ -2,6 +2,7 @@ package ai.arcships.aimux.kotlin
 
 import ai.arcships.aimux.AimuxException as JavaAimuxException
 import ai.arcships.aimux.KotlinInteropFixtures
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -19,11 +20,9 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
-import java.util.function.Consumer
 
 class CoroutinesTest {
     private fun javaError(name: String, code: Int): JavaAimuxException =
@@ -275,6 +274,25 @@ class CoroutinesTest {
         release.countDown()
         job.join()
         assertEquals(1, operation.aborts.get())
+    }
+
+    @Test
+    fun `Java cancellation keeps its source error through call and Flow`() = runBlocking {
+        val source = javaError("AbortError", 13)
+        val cancellation = CancellationException("Native stream cancelled").apply { initCause(source) }
+        val future = CompletableFuture<Unit>().apply { completeExceptionally(cancellation) }
+        for (await in listOf<suspend () -> Unit>(
+            { aimuxCall { future } },
+            { aimuxFlow<Int> { _, _ -> future }.collect() },
+        )) {
+            try {
+                await()
+                fail("expected cancellation")
+            } catch (error: CancellationException) {
+                assertSame(cancellation, error)
+                assertSame(source, error.cause)
+            }
+        }
     }
 
     @Test

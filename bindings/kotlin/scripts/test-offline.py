@@ -60,6 +60,7 @@ if existing_jar:
     java_jar = Path(existing_jar).resolve(strict=True)
 else:
     sources = sorted((binding.parent / 'java/src/main/java').rglob('*.java'))
+    sources += sorted((binding.parent / 'java/generated').rglob('*.java'))
     run('javac', '--release', '8', '-encoding', 'UTF-8', '-cp', cp, '-d', java_classes, *sources)
     java_jar = out / 'aimux-java.jar'
     run('jar', 'cf', java_jar, '-C', java_classes, '.')
