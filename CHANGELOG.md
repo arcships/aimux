@@ -689,6 +689,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged; the closures callers pass in settings (`transform_request_body`,
   `generate_id`, the compatible `supported_urls`, `convert_usage` and
   `metadata_extractor`) are kept as given.
+- `PresetDescriptor` gains a crate-private field (the row's usage converter),
+  so code outside the crate can no longer build one with a struct literal;
+  descriptors come from the registry JSON.
 
 **Rust (provider factory, RFC-0036)**
 
