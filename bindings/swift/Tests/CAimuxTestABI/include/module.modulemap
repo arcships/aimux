@@ -1,0 +1,4 @@
+module CAimuxTestABI {
+    header "TestABI.h"
+    export *
+}
