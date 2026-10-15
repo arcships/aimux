@@ -700,6 +700,6 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
-module.exports.Runtime = nativeBinding.Runtime
 module.exports.Abort = nativeBinding.Abort
 module.exports.FrameIterator = nativeBinding.FrameIterator
+module.exports.Runtime = nativeBinding.Runtime
