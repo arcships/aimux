@@ -529,7 +529,9 @@ mod tests {
         let previous = default_transport();
         let config = ProxyConfig {
             http_url: Some(proxy),
-            no_proxy: Some("localhost".to_string()),
+            // Tests running alongside talk to mock servers on 127.0.0.1; leave them
+            // on a direct route while the default is swapped.
+            no_proxy: Some("localhost,127.0.0.1".to_string()),
             ..ProxyConfig::default()
         };
         set_default_transport(ReqwestFetch::new(config.clone()));
