@@ -1,1095 +1,442 @@
-// aimux.dart — Flutter/Dart binding for aimux (dart:ffi, C ABI path).
-//
-// Calls aimux-ffi's C ABI directly via dart:ffi. No flutter_rust_bridge,
-// no codegen step. The native library (libaimux_ffi.so / .dylib / .dll)
-// must be on the library path or bundled in the Flutter app.
-//
-// This is the C ABI path (RFC §3.2) — same as Swift and Kotlin.
-//
-// Error transport (aimux-error.h): every fallible call returns
-// `aimux_error_t *` (NULL = success, result in the trailing out-param).
-// Call sites hand the pointer to the decoder in errors.dart — expectAimuxError
-// (model calls) / expectRecordingError (recorder) / expectFfiError ([C ABI] calls) —
-// which throws AimuxException / RecordingException, or StateError('aimux ffi:
-// …') for a C ABI failure. Raw JSON string parameters are pre-validated
-// with checkJson; JSON this binding builds itself goes through encodeJson;
-// every string crossing the ABI goes through toCString / toCStringOrNull. All
-// three reject what the Rust side cannot represent (unpaired surrogates,
-// interior NULs) as a FormatException here rather than a StateError there.
-
-// The Flutter tool resolves `dartPluginClass` from the package's main
-// library, so the plugin registration class must be visible here.
-export 'aimux_plugin.dart';
-export 'decision.dart';
-import 'decision.dart';
-export 'errors.dart'
-    hide
-        openAimuxLibrary,
-        aimuxFreeString,
-        aimuxDropHandle,
-        withUtf8,
-        toCString,
-        toCStringOrNull,
-        takeHandle,
-        takeString,
-        expectAimuxError,
-        expectRecordingError,
-        expectFfiError,
-        checkJson,
-        checkPortable,
-        encodeJson,
-        construct2;
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
+import 'dart:isolate';
+import 'dart:typed_data';
+
 import 'package:ffi/ffi.dart';
 
 import 'errors.dart';
+import 'src/bridge.dart';
+import 'src/native.dart';
+import 'src/stream_bridge.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FFI type aliases. `_Err` is `aimux_error_t *` (opaque; NULL = success);
-// results come back through the trailing out-param (`uint64_t *out_handle` /
-// `char **out_json`). Pointer types are spelled the same in the C and Dart
-// signatures, so a single alias serves both.
-// ─────────────────────────────────────────────────────────────────────────────
+export 'aimux_plugin.dart';
+export 'errors.dart' show OpsException;
 
-typedef _Err = Pointer<Void>;
+/// One version-checked C ABI library. All blocking work runs in worker isolates.
+final class Aimux {
+  final String? _libraryPath, _bridgePath;
+  final Map<String, dynamic> manifest;
+  final NativeApi _native;
+  final DartBridge _bridge;
+  final Map<int, WeakReference<OpsHandle>> _handles = {};
 
-typedef _NewC = _Err Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Uint64> outHandle);
-typedef _NewDart = _Err Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Uint64> outHandle);
+  Aimux._(this._libraryPath, this._bridgePath, this.manifest)
+      : _native = NativeApi(_libraryPath),
+        _bridge = DartBridge(_bridgePath);
 
-// Constructors with a custom base URL (aimux_*_new_with_base).
-typedef _NewWithBaseC = _Err Function(Pointer<Utf8> apiKey,
-    Pointer<Utf8> modelId, Pointer<Utf8> baseUrl, Pointer<Uint64> outHandle);
-typedef _NewWithBaseDart = _Err Function(Pointer<Utf8> apiKey,
-    Pointer<Utf8> modelId, Pointer<Utf8> baseUrl, Pointer<Uint64> outHandle);
-
-// Registry provider constructor (aimux_provider_new, RFC-0017 phase 4).
-typedef _ProviderNewC = _Err Function(
-    Pointer<Utf8> name,
-    Pointer<Utf8>? apiKey,
-    Pointer<Utf8> modelId,
-    Pointer<Utf8>? configJson,
-    Pointer<Uint64> outHandle);
-typedef _ProviderNewDart = _Err Function(
-    Pointer<Utf8> name,
-    Pointer<Utf8>? apiKey,
-    Pointer<Utf8> modelId,
-    Pointer<Utf8>? configJson,
-    Pointer<Uint64> outHandle);
-
-// Provider handle constructor (aimux_provider_handle_new, RFC-0027).
-typedef _ProviderHandleNewC = _Err Function(Pointer<Utf8> name,
-    Pointer<Utf8>? apiKey, Pointer<Utf8>? configJson, Pointer<Uint64> outHandle);
-typedef _ProviderHandleNewDart = _Err Function(Pointer<Utf8> name,
-    Pointer<Utf8>? apiKey, Pointer<Utf8>? configJson, Pointer<Uint64> outHandle);
-
-// Provider handle list_models / model (RFC-0027).
-typedef _ProviderListModelsC = _Err Function(
-    Uint64 handle, Pointer<Pointer<Utf8>> outModelsJson);
-typedef _ProviderListModelsDart = _Err Function(
-    int handle, Pointer<Pointer<Utf8>> outModelsJson);
-
-typedef _ProviderModelC = _Err Function(
-    Uint64 handle, Pointer<Utf8> modelId, Pointer<Uint64> outHandle);
-typedef _ProviderModelDart = _Err Function(
-    int handle, Pointer<Utf8> modelId, Pointer<Uint64> outHandle);
-
-typedef _GetModelSpecsC = _Err Function(
-    Pointer<Utf8>? sourceUrl, Pointer<Pointer<Utf8>> outSpecsJson);
-typedef _GetModelSpecsDart = _Err Function(
-    Pointer<Utf8>? sourceUrl, Pointer<Pointer<Utf8>> outSpecsJson);
-
-typedef _GenerateTextC = _Err Function(Uint64 handle, Pointer<Utf8> promptJson,
-    Pointer<Utf8>? optsJson, Pointer<Pointer<Utf8>> outJson);
-typedef _GenerateTextDart = _Err Function(int handle, Pointer<Utf8> promptJson,
-    Pointer<Utf8>? optsJson, Pointer<Pointer<Utf8>> outJson);
-
-// (handle, result_json, out_json) → error: aimux_generate_text_result_as_openai.
-typedef _ResultAsOpenAIC = _Err Function(
-    Uint64 handle, Pointer<Utf8> resultJson, Pointer<Pointer<Utf8>> outJson);
-typedef _ResultAsOpenAIDart = _Err Function(
-    int handle, Pointer<Utf8> resultJson, Pointer<Pointer<Utf8>> outJson);
-
-typedef _DropHandleC = Void Function(Uint64);
-typedef _DropHandleDart = void Function(int);
-
-// (const char *) → error: aimux_init_logging, aimux_init_recording,
-// aimux_init_proxy.
-typedef _StrC = _Err Function(Pointer<Utf8>);
-typedef _StrDart = _Err Function(Pointer<Utf8>);
-
-// Recording + mock replay (RFC-0023).
-typedef _RecordingRingC = _Err Function(Uint64 cap);
-typedef _RecordingRingDart = _Err Function(int cap);
-typedef _VoidNoArgC = Void Function();
-typedef _VoidNoArgDart = void Function();
-typedef _RecordingTryFlushC = _Err Function();
-typedef _RecordingTryFlushDart = _Err Function();
-typedef _MockReplayC = _Err Function(
-    Pointer<Utf8> recordingsJsonl, Pointer<Uint64> outHandle);
-typedef _MockReplayDart = _Err Function(
-    Pointer<Utf8> recordingsJsonl, Pointer<Uint64> outHandle);
-
-// Composite models (RFC-0021 / RFC-0022). Take a pointer to an array of
-// handles + a length, plus an optional JSON config (nullptr = defaults).
-typedef _RouterNewC = _Err Function(Pointer<Uint64> handles, IntPtr len,
-    Pointer<Utf8> configJson, Pointer<Uint64> outHandle);
-typedef _RouterNewDart = _Err Function(Pointer<Uint64> handles, int len,
-    Pointer<Utf8> configJson, Pointer<Uint64> outHandle);
-typedef _MoaNewC = _Err Function(Pointer<Uint64> referenceHandles, IntPtr refLen,
-    Uint64 aggregator, Pointer<Utf8> configJson, Pointer<Uint64> outHandle);
-typedef _MoaNewDart = _Err Function(Pointer<Uint64> referenceHandles, int refLen,
-    int aggregator, Pointer<Utf8> configJson, Pointer<Uint64> outHandle);
-
-// Multi-arg constructor C signatures (bedrock/vertex/azure).
-typedef _FourStrC = _Err Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
-    Pointer<Utf8>, Pointer<Uint64>);
-typedef _FourStrDart = _Err Function(Pointer<Utf8>, Pointer<Utf8>,
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<Uint64>);
-typedef _FiveStrC = _Err Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<Uint64>);
-typedef _FiveStrDart = _Err Function(Pointer<Utf8>, Pointer<Utf8>,
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Uint64>);
-// Azure: 3 required strings + nullable api_version + out_handle.
-typedef _FourStrOptC = _Err Function(Pointer<Utf8>, Pointer<Utf8>,
-    Pointer<Utf8>, Pointer<Utf8>?, Pointer<Uint64>);
-typedef _FourStrOptDart = _Err Function(Pointer<Utf8>, Pointer<Utf8>,
-    Pointer<Utf8>, Pointer<Utf8>?, Pointer<Uint64>);
-
-// Stream callbacks: on_part(json, stream_ctx) / on_done(stream_ctx).
-// No on_error — a terminal failure returns a non-NULL error (no on_done);
-// NULL after on_done is the clean end.
-typedef _OnPartC = Void Function(Pointer<Utf8> json, Pointer<Void> streamCtx);
-typedef _OnDoneC = Void Function(Pointer<Void> streamCtx);
-
-typedef _StreamTextC = _Err Function(
-    Uint64,
-    Pointer<Utf8>,
-    Pointer<Utf8>?,
-    Pointer<NativeFunction<_OnPartC>>,
-    Pointer<NativeFunction<_OnDoneC>>,
-    Pointer<Void>);
-typedef _StreamTextDart = _Err Function(
-    int,
-    Pointer<Utf8>,
-    Pointer<Utf8>?,
-    Pointer<NativeFunction<_OnPartC>>,
-    Pointer<NativeFunction<_OnDoneC>>,
-    Pointer<Void>);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FFI library wrapper (process-wide singleton — dlopen + symbol lookups
-// happen once, lazily per symbol)
-// ─────────────────────────────────────────────────────────────────────────────
-
-final class _AimuxFFI {
-  final DynamicLibrary _lib = openAimuxLibrary();
-
-  late final openaiNew =
-      _lib.lookupFunction<_NewC, _NewDart>('aimux_openai_new');
-  late final anthropicNew =
-      _lib.lookupFunction<_NewC, _NewDart>('aimux_anthropic_new');
-  late final openaiNewWithBase = _lib
-      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_openai_new_with_base');
-  late final anthropicNewWithBase = _lib
-      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_anthropic_new_with_base');
-  late final cohereNew =
-      _lib.lookupFunction<_NewC, _NewDart>('aimux_cohere_new');
-  late final cohereNewWithBase = _lib
-      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_cohere_new_with_base');
-  late final mistralNew =
-      _lib.lookupFunction<_NewC, _NewDart>('aimux_mistral_new');
-  late final mistralNewWithBase = _lib
-      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_mistral_new_with_base');
-  late final xaiNew = _lib.lookupFunction<_NewC, _NewDart>('aimux_xai_new');
-  late final xaiNewWithBase = _lib
-      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_xai_new_with_base');
-  late final bedrockNew =
-      _lib.lookupFunction<_FourStrC, _FourStrDart>('aimux_bedrock_new');
-  late final bedrockNewWithBase = _lib
-      .lookupFunction<_FiveStrC, _FiveStrDart>('aimux_bedrock_new_with_base');
-  late final vertexNew =
-      _lib.lookupFunction<_FourStrC, _FourStrDart>('aimux_vertex_new');
-  late final vertexNewWithBase = _lib
-      .lookupFunction<_FiveStrC, _FiveStrDart>('aimux_vertex_new_with_base');
-  late final anthropicAwsNew = _lib
-      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_anthropic_aws_new');
-  late final anthropicAwsNewWithBase = _lib
-      .lookupFunction<_FourStrC, _FourStrDart>(
-          'aimux_anthropic_aws_new_with_base');
-  late final azureNew =
-      _lib.lookupFunction<_FourStrOptC, _FourStrOptDart>('aimux_azure_new');
-  late final azureNewWithBase = _lib
-      .lookupFunction<_FourStrOptC, _FourStrOptDart>(
-          'aimux_azure_new_with_base');
-  late final providerNew = _lib
-      .lookupFunction<_ProviderNewC, _ProviderNewDart>('aimux_provider_new');
-  late final providerHandleNew = _lib
-      .lookupFunction<_ProviderHandleNewC, _ProviderHandleNewDart>(
-          'aimux_provider_handle_new');
-  late final providerListModels = _lib
-      .lookupFunction<_ProviderListModelsC, _ProviderListModelsDart>(
-          'aimux_provider_list_models');
-  late final providerModel = _lib
-      .lookupFunction<_ProviderModelC, _ProviderModelDart>(
-          'aimux_provider_model');
-  late final getModelSpecs = _lib
-      .lookupFunction<_GetModelSpecsC, _GetModelSpecsDart>(
-          'aimux_get_model_specs');
-  late final generateText = _lib
-      .lookupFunction<_GenerateTextC, _GenerateTextDart>('aimux_generate_text');
-  late final generateObject = _lib
-      .lookupFunction<_GenerateTextC, _GenerateTextDart>('aimux_generate_object');
-  late final consumeStreamText = _lib.lookupFunction<_GenerateTextC, _GenerateTextDart>(
-      'aimux_consume_stream_text');
-  late final streamText =
-      _lib.lookupFunction<_StreamTextC, _StreamTextDart>('aimux_stream_text');
-  late final generateTextAsOpenAI = _lib
-      .lookupFunction<_GenerateTextC, _GenerateTextDart>(
-          'aimux_generate_text_as_openai');
-  late final generateTextResultAsOpenAI = _lib
-      .lookupFunction<_ResultAsOpenAIC, _ResultAsOpenAIDart>(
-          'aimux_generate_text_result_as_openai');
-  late final streamTextAsOpenAI = _lib
-      .lookupFunction<_StreamTextC, _StreamTextDart>(
-          'aimux_stream_text_as_openai');
-  late final dropHandle =
-      _lib.lookupFunction<_DropHandleC, _DropHandleDart>('aimux_drop_handle');
-  // NativeFinalizer callback pointer: aimux_drop_handle_ptr, declared
-  // `void aimux_drop_handle_ptr(void *)` — exactly NativeFinalizerFunction
-  // (Void Function(Pointer<Void>)). The handle value is attached as the token
-  // (its address == the handle), and the finalizer releases the handle when
-  // a Model/ProviderHandle is GC'd without close(). aimux_drop_handle takes a
-  // uint64_t and must not be called through this signature: on 32-bit ARM
-  // (armeabi-v7a) a uint64_t argument does not travel like a pointer, so it
-  // would receive a garbage high word and leak the handle.
-  // NativeFinalizerFunction is already a NativeFunction<…>, so it is looked
-  // up directly (no extra NativeFunction wrapper).
-  late final dropHandlePtr =
-      _lib.lookup<NativeFinalizerFunction>('aimux_drop_handle_ptr');
-  late final initLogging =
-      _lib.lookupFunction<_StrC, _StrDart>('aimux_init_logging');
-  late final initRecording =
-      _lib.lookupFunction<_StrC, _StrDart>('aimux_init_recording');
-  late final initRecordingRing = _lib
-      .lookupFunction<_RecordingRingC, _RecordingRingDart>(
-          'aimux_init_recording_ring');
-  late final initRecordingRingDefault = _lib
-      .lookupFunction<_VoidNoArgC, _VoidNoArgDart>(
-          'aimux_init_recording_ring_default');
-  late final recordingStop = _lib
-      .lookupFunction<_VoidNoArgC, _VoidNoArgDart>('aimux_recording_stop');
-  late final recordingFlush = _lib
-      .lookupFunction<_VoidNoArgC, _VoidNoArgDart>('aimux_recording_flush');
-  late final recordingTryFlush = _lib
-      .lookupFunction<_RecordingTryFlushC, _RecordingTryFlushDart>(
-          'aimux_recording_try_flush');
-  late final mockReplayNew = _lib
-      .lookupFunction<_MockReplayC, _MockReplayDart>('aimux_mock_replay_new');
-  late final initProxy =
-      _lib.lookupFunction<_StrC, _StrDart>('aimux_init_proxy');
-  late final routerNew = _lib
-      .lookupFunction<_RouterNewC, _RouterNewDart>('aimux_router_new');
-  late final moaNew =
-      _lib.lookupFunction<_MoaNewC, _MoaNewDart>('aimux_moa_new');
-}
-
-/// Process-wide FFI table. Lazily created on first use; shared by every
-/// [Model] / [ProviderHandle] and the top-level functions.
-final _AimuxFFI _ffi = _AimuxFFI();
-
-/// Process-wide native finalizer that releases a handle when a [Model] or
-/// [ProviderHandle] is garbage-collected without [Model.close] /
-/// [ProviderHandle.close] (T9). The token attached is the handle value
-/// encoded as a `Pointer` (its address == the handle), which the
-/// `aimux_drop_handle_ptr` native callback takes as a pointer-sized value.
-final NativeFinalizer _handleFinalizer = NativeFinalizer(_ffi.dropHandlePtr);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Stream callback trampolines (global — safe because aimux_stream_text
-// is synchronous, blocks the caller until done).
-// ─────────────────────────────────────────────────────────────────────────────
-
-StreamController<Map<String, dynamic>>? _currentController;
-
-void _onPart(Pointer<Utf8> jsonPtr, Pointer<Void> streamCtx) {
-  final controller = _currentController;
-  if (controller == null || jsonPtr == nullptr) return;
-  // Never let an exception escape into the C ABI (undefined behavior);
-  // surface decode failures on the stream instead.
-  try {
-    controller.add(
-        jsonDecode(jsonPtr.toDartString()) as Map<String, dynamic>);
-  } catch (e, st) {
-    controller.addError(e, st);
+  static Future<Aimux> open({
+    String? libraryPath,
+    String? bridgePath,
+    Iterable<String> requiredOps = const [],
+  }) async {
+    final manifest = await execute(
+      NativeRequest(libraryPath, 'load'),
+    ) as Map<String, dynamic>;
+    final names =
+        (manifest['ops'] as List).map((op) => (op as Map)['name']).toSet();
+    final missing = requiredOps.where((op) => !names.contains(op)).toList();
+    if (missing.isNotEmpty)
+      throw StateError('Missing required aimux ops: $missing');
+    final client = Aimux._(libraryPath, bridgePath, manifest);
+    // Resolve the bridge entry points at load, rather than at first use.
+    client._bridge.finalizer;
+    client._bridge.tokenNew;
+    client._bridge.tokenDispose;
+    client._bridge.create;
+    client._bridge.ack;
+    client._bridge.cancel;
+    client._bridge.free;
+    client._bridge.frameFree;
+    client._bridge.pending;
+    client._bridge.failure;
+    client._bridge.event;
+    return client;
   }
-}
 
-void _onDone(Pointer<Void> streamCtx) {
-  _currentController?.close();
-}
+  /// Transfers ownership of a decimal handle returned by an op to Dart.
+  /// Duplicate live wrappers are rejected; close releases the native resource.
+  OpsHandle adopt(String wireHandle) {
+    _handles.removeWhere((_, reference) => reference.target == null);
+    final id = parseHandle(wireHandle);
+    if (_handles[id]?.target case final handle? when !handle.isClosed) {
+      throw StateError('Handle already has a live owner');
+    }
+    final handle = OpsHandle._(this, id);
+    _handles[id] = WeakReference(handle);
+    return handle;
+  }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Constructor helpers
-// ─────────────────────────────────────────────────────────────────────────────
+  Future<Object?> call(
+    String op, {
+    OpsHandle? handle,
+    Object? params = const <String, dynamic>{},
+    OpsHandle? abort,
+  }) {
+    checkString(op);
+    return execute(
+      NativeRequest(
+        _libraryPath,
+        'call',
+        handle: _id(handle),
+        abort: _id(abort),
+        op: op,
+        params: encodeParams(params),
+      ),
+    );
+  }
 
-/// Shared constructor for 4-string providers (bedrock/vertex).
-int _construct4(
-  String a,
-  String b,
-  String c,
-  String modelId,
-  String? baseUrl,
-  _FourStrDart plain,
-  _FiveStrDart withBase,
-) {
-  return withUtf8(a, (aPtr) {
-    return withUtf8(b, (bPtr) {
-      return withUtf8(c, (cPtr) {
-        return withUtf8(modelId, (idPtr) {
-          if (baseUrl == null) {
-            return takeHandle(
-                (out) => plain(aPtr, bPtr, cPtr, idPtr, out), 'new');
-          }
-          return withUtf8(baseUrl, (basePtr) {
-            return takeHandle(
-                (out) => withBase(aPtr, bPtr, cPtr, idPtr, basePtr, out),
-                'new_with_base');
-          });
-        });
-      });
+  /// Raw frames include exactly one terminal after acceptance. A rejected start
+  /// is a stream error; terminal failures remain in EndFrame.error, once.
+  Stream<StreamFrame> stream(
+    String op, {
+    required OpsHandle handle,
+    Object? params = const <String, dynamic>{},
+  }) {
+    checkString(op);
+    return _StreamPump(this, _id(handle), op, encodeParams(params)).stream;
+  }
+
+  /// Nonblocking native signal; independent of stream credit and worker queues.
+  void abort(OpsHandle handle) => _native.ffi.abort(_id(handle));
+
+  Future<void> push(OpsHandle operation, Uint8List bytes) {
+    final id = _id(operation);
+    if (bytes.length > 1024 * 1024) {
+      throw resourceLimit('Audio chunk exceeds 1 MiB');
+    }
+    return execute(
+      NativeRequest(
+        _libraryPath,
+        'push',
+        handle: id,
+        bytes: Uint8List.fromList(bytes),
+      ),
+    ).then((_) {});
+  }
+
+  Future<PollResult> next(OpsHandle operation, {int timeoutMs = 0}) {
+    if (timeoutMs < 0) throw ArgumentError.value(timeoutMs, 'timeoutMs');
+    return execute(
+      NativeRequest(
+        _libraryPath,
+        'poll',
+        handle: _id(operation),
+        timeout: timeoutMs,
+      ),
+    ).then((value) {
+      final json = value as Map<String, dynamic>;
+      return PollResult._(json['state'] as String, json['part']);
     });
-  });
+  }
+
+  int _id(OpsHandle? handle) {
+    if (handle == null) return 0;
+    if (!identical(handle._client, this)) {
+      throw ArgumentError('Handle belongs to a different Aimux instance');
+    }
+    if (handle.isClosed) throw StateError('Handle is closed');
+    return handle._id;
+  }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Model
-// ─────────────────────────────────────────────────────────────────────────────
+/// NativeFinalizer uses an allocated token, preserving all 64 bits on 32-bit
+/// targets. Explicit close takes ownership and detaches before scheduling drop.
+final class OpsHandle implements Finalizable {
+  final Aimux _client;
+  final Object _detachKey = Object();
+  late final Pointer<Void> _token;
+  int _id;
+  Future<void>? _closing;
 
-/// A model instance backed by a Rust `Arc<dyn LanguageModel>`.
-///
-/// Call [close] to release the native handle. AiMuxError values throw
-/// [AimuxException] (or a subclass); using a closed handle throws
-/// [StateError].
-/// Implements [Finalizable] so a [NativeFinalizer] can release the handle if
-/// [close] is forgotten (T9).
-class Model implements Finalizable {
-  final int _handle;
-  bool _closed = false;
-
-  Model._(this._handle) {
-    // Register a native finalizer so the handle is released even if close()
-    // is never called. The token is the handle value as a Pointer.
-    _handleFinalizer.attach(this, Pointer<Void>.fromAddress(_handle));
+  OpsHandle._(this._client, this._id) {
+    _token = _client._bridge.tokenNew(
+      _id,
+      _client._native.ffi.library.lookup<NativeFunction<ReleaseHandle>>(
+        'aimux_drop',
+      ),
+    );
+    if (_token == nullptr)
+      throw StateError('Could not allocate finalizer token');
+    _client._bridge.finalizer.attach(this, _token, detach: _detachKey);
   }
 
-  /// Handle read for composite-model factories (router/moa). Throws if closed.
-  int _requireHandle() {
-    if (_closed) throw StateError('Model is closed');
-    return _handle;
+  bool get isClosed => _id == 0;
+  String get wireId {
+    if (isClosed) throw StateError('Handle is closed');
+    return BigInt.from(_id).toUnsigned(64).toString();
   }
 
-  /// Create an OpenAI model instance.
-  ///
-  /// Pass [baseUrl] to target an OpenAI-compatible endpoint (Azure, Groq,
-  /// a local mock server, etc.). When null, the provider's standard URL is
-  /// used via `aimux_openai_new`.
-  factory Model.openai(String apiKey, String modelId, {String? baseUrl}) =>
-      Model._(construct2(
-          apiKey, modelId, baseUrl, _ffi.openaiNew, _ffi.openaiNewWithBase));
-
-  /// Create an Anthropic model instance.
-  ///
-  /// Pass [baseUrl] to target a custom Anthropic-compatible endpoint. When
-  /// null, the provider's standard URL is used via `aimux_anthropic_new`.
-  factory Model.anthropic(String apiKey, String modelId, {String? baseUrl}) =>
-      Model._(construct2(apiKey, modelId, baseUrl, _ffi.anthropicNew,
-          _ffi.anthropicNewWithBase));
-
-  /// Create a Cohere model instance.
-  factory Model.cohere(String apiKey, String modelId, {String? baseUrl}) =>
-      Model._(construct2(
-          apiKey, modelId, baseUrl, _ffi.cohereNew, _ffi.cohereNewWithBase));
-
-  /// Create a Mistral model instance.
-  factory Model.mistral(String apiKey, String modelId, {String? baseUrl}) =>
-      Model._(construct2(
-          apiKey, modelId, baseUrl, _ffi.mistralNew, _ffi.mistralNewWithBase));
-
-  /// Create an xAI model instance.
-  factory Model.xai(String apiKey, String modelId, {String? baseUrl}) =>
-      Model._(construct2(
-          apiKey, modelId, baseUrl, _ffi.xaiNew, _ffi.xaiNewWithBase));
-
-  /// Create a Bedrock model instance (AWS SigV4 credentials).
-  factory Model.bedrock(
-          String accessKeyId, String secretAccessKey, String region,
-          String modelId,
-          {String? baseUrl}) =>
-      Model._(_construct4(accessKeyId, secretAccessKey, region, modelId,
-          baseUrl, _ffi.bedrockNew, _ffi.bedrockNewWithBase));
-
-  /// Create a Vertex AI model instance (GCP bearer token).
-  factory Model.vertex(
-          String accessToken, String project, String location, String modelId,
-          {String? baseUrl}) =>
-      Model._(_construct4(accessToken, project, location, modelId, baseUrl,
-          _ffi.vertexNew, _ffi.vertexNewWithBase));
-
-  /// Create an Anthropic-on-AWS model instance (API key + region).
-  factory Model.anthropicAws(String apiKey, String region, String modelId,
-      {String? baseUrl}) {
-    final handle = withUtf8(apiKey, (keyPtr) {
-      return withUtf8(region, (rPtr) {
-        return withUtf8(modelId, (idPtr) {
-          if (baseUrl == null) {
-            return takeHandle(
-                (out) => _ffi.anthropicAwsNew(keyPtr, rPtr, idPtr, out),
-                'anthropic_aws_new');
-          }
-          return withUtf8(baseUrl, (basePtr) {
-            return takeHandle(
-                (out) => _ffi.anthropicAwsNewWithBase(
-                    keyPtr, rPtr, idPtr, basePtr, out),
-                'anthropic_aws_new_with_base');
-          });
-        });
-      });
-    });
-    return Model._(handle);
+  Future<void> close() {
+    if (_closing != null) return _closing!;
+    final id = _id;
+    _id = 0;
+    _client._handles.remove(id);
+    _client._bridge.finalizer.detach(_detachKey);
+    _client._bridge.tokenDispose(_token);
+    _closing = execute(NativeRequest(_client._libraryPath, 'drop', handle: id))
+        .then((_) {});
+    return _closing!;
   }
+}
 
-  /// Create an Azure OpenAI model instance (API key + resource name).
-  /// The deployment name is passed as [deployment]; [apiVersion] is optional.
-  factory Model.azure(String apiKey, String resourceName, String deployment,
-      {String? apiVersion, String? baseUrl}) {
-    final handle = withUtf8(apiKey, (keyPtr) {
-      return withUtf8(deployment, (dPtr) {
-        final vPtr = toCStringOrNull(apiVersion);
-        try {
-          if (baseUrl == null) {
-            return withUtf8(resourceName, (rPtr) {
-              return takeHandle(
-                  (out) => _ffi.azureNew(keyPtr, rPtr, dPtr, vPtr, out),
-                  'azure_new');
-            });
-          }
-          return withUtf8(baseUrl, (bPtr) {
-            return takeHandle(
-                (out) => _ffi.azureNewWithBase(keyPtr, bPtr, dPtr, vPtr, out),
-                'azure_new_with_base');
-          });
-        } finally {
-          if (vPtr != nullptr) calloc.free(vPtr);
+final class PollResult {
+  final String state;
+  final Object? part;
+  const PollResult._(this.state, this.part);
+}
+
+sealed class StreamFrame {
+  final String seq;
+  const StreamFrame(this.seq);
+  factory StreamFrame.fromJson(Map<String, dynamic> json) {
+    final seq = json['seq'];
+    if (seq is! String ||
+        seq.length > 20 ||
+        !RegExp(r'^(0|[1-9][0-9]*)$').hasMatch(seq) ||
+        BigInt.parse(seq) > (BigInt.one << 64) - BigInt.one) {
+      throw const FormatException('Invalid stream sequence');
+    }
+    switch (json['type']) {
+      case 'event':
+        if (!json.containsKey('event'))
+          throw const FormatException('Missing event');
+        return EventFrame(seq, json['event']);
+      case 'end':
+        final outcome = json['outcome'];
+        if (!const ['success', 'error', 'cancelled'].contains(outcome)) {
+          throw const FormatException('Invalid stream outcome');
         }
-      });
-    });
-    return Model._(handle);
-  }
-
-  /// Create a model from the provider registry by name (RFC-0017 phase 4).
-  ///
-  /// [apiKey] may be null to read the provider's env var from the registry
-  /// entry. [configJson] is an optional JSON object of ProviderOptions
-  /// (`{"baseUrl": "...", "headers": {...}, "organization": "...",
-  /// "project": "...", "params": {...}}`). Any other key (`maxRetries` is a
-  /// per-call option, `bodyOverrides` is gone) is rejected as
-  /// [InvalidArgumentError].
-  factory Model.provider(String name, String modelId,
-      {String? apiKey, String? configJson}) {
-    checkJson(configJson, 'config_json', emptyIsDefault: true);
-    final handle = withUtf8(name, (namePtr) {
-      return withUtf8(modelId, (idPtr) {
-        final keyPtr = toCStringOrNull(apiKey);
-        final cfgPtr = toCStringOrNull(configJson);
-        try {
-          return takeHandle(
-              (out) => _ffi.providerNew(namePtr, keyPtr, idPtr, cfgPtr, out),
-              'provider_new');
-        } finally {
-          if (keyPtr != nullptr) calloc.free(keyPtr);
-          if (cfgPtr != nullptr) calloc.free(cfgPtr);
+        final error = json['error'] == null
+            ? null
+            : OpsException.fromJson(json['error'] as Map<String, dynamic>);
+        if (outcome == 'error' && error == null ||
+            outcome == 'success' && error != null) {
+          throw const FormatException('Invalid terminal error');
         }
-      });
-    });
-    return Model._(handle);
+        return EndFrame(seq, outcome as String, error);
+      default:
+        throw const FormatException('Unknown stream frame');
+    }
   }
+}
 
-  /// Generate text (non-streaming).
-  ///
-  /// [prompt] — a string or a list of message maps.
-  /// [options] — optional generation options map.
-  /// Returns the parsed GenerateTextResult as a Map.
-  /// Throws [AimuxException] on AiMuxError failure.
-  Map<String, dynamic> generateText(
-    Object prompt, [
-    Map<String, dynamic>? options,
-  ]) =>
-      _callJson(_ffi.generateText, 'generate_text', prompt, options);
+final class EventFrame extends StreamFrame {
+  final Object? event;
+  const EventFrame(super.seq, this.event);
+}
 
-  /// Generate a structured JSON object (M12, RFC-0016).
-  ///
-  /// Same signature as [generateText]; returns the parsed
-  /// GenerateObjectResult as a Map. Pass `'output': {'type': 'object', 'schema': ...}`
-  /// via [options] to describe the object; the model's text must parse as
-  /// JSON and match the schema.
-  ///
-  /// [prompt] — a string or a list of message maps.
-  /// [options] — optional generation options map.
-  /// Throws [AimuxException] on AiMuxError failure.
-  Map<String, dynamic> generateObject(
-    Object prompt, [
-    Map<String, dynamic>? options,
-  ]) =>
-      _callJson(_ffi.generateObject, 'generate_object', prompt, options);
+final class EndFrame extends StreamFrame {
+  final String outcome;
+  final OpsException? error;
+  const EndFrame(super.seq, this.outcome, this.error);
+}
 
-  /// Consume a stream to completion and return the aggregated result
-  /// (M11, RFC-0016). Synchronous (blocks until the stream finishes).
-  ///
-  /// Same signature as [generateText]; returns the parsed
-  /// GenerateTextResult as a Map.
-  ///
-  /// [prompt] — a string or a list of message maps.
-  /// [options] — optional generation options map.
-  /// Throws [AimuxException] on AiMuxError failure.
-  Map<String, dynamic> consumeStreamText(
-    Object prompt, [
-    Map<String, dynamic>? options,
-  ]) =>
-      _callJson(
-          _ffi.consumeStreamText, 'consume_stream_text', prompt, options);
+final class _StreamRequest {
+  final String? libraryPath, bridgePath;
+  final int handle, abort, bridgeAddress;
+  final String op, params;
+  const _StreamRequest(
+    this.libraryPath,
+    this.bridgePath,
+    this.handle,
+    this.abort,
+    this.bridgeAddress,
+    this.op,
+    this.params,
+  );
+}
 
-  /// Generate text (non-streaming) with OpenAI Chat Completions output
-  /// (RFC-0026).
-  ///
-  /// Same as [generateText], but returns a parsed ChatCompletion map (OpenAI
-  /// `chat.completion` object). Works with any provider.
-  Map<String, dynamic> generateTextAsOpenAI(
-    Object prompt, [
-    Map<String, dynamic>? options,
-  ]) =>
-      _callJson(_ffi.generateTextAsOpenAI, 'generate_text_as_openai', prompt,
-          options);
-
-  /// Convert a GenerateTextResult map into a ChatCompletion map — the
-  /// conversion half of [generateTextAsOpenAI].
-  ///
-  /// For repairing on the host (RFC-0035): patch the native result, then
-  /// convert it, so the completion's tool calls are the repaired ones. This
-  /// model only supplies the fallback model id; nothing is generated.
-  Map<String, dynamic> generateTextResultAsOpenAI(Map<String, dynamic> result) {
-    _checkOpen();
-    final resultJson = encodeJson(result, 'result');
-    final completion = withUtf8(
-        resultJson,
-        (resultPtr) => takeString(
-            (out) => _ffi.generateTextResultAsOpenAI(_handle, resultPtr, out),
-            'generate_text_result_as_openai'));
-    return jsonDecode(completion) as Map<String, dynamic>;
-  }
-
-  /// Shared body of the four `(handle, prompt_json, opts_json, out_json)`
-  /// calls: encode, call, [expectAimuxError] (via [takeString]), decode.
-  Map<String, dynamic> _callJson(
-    _GenerateTextDart fn,
-    String context,
-    Object prompt,
-    Map<String, dynamic>? options,
-  ) {
-    _checkOpen();
-    final promptJson = promptToJson(prompt);
-    final optsJson = options != null ? encodeJson(options, 'options') : null;
-
-    final resultStr = withUtf8(promptJson, (promptPtr) {
-      final optsPtr = toCStringOrNull(optsJson);
+Future<void> _runStream(_StreamRequest request) => Isolate.run(() {
+      final api = NativeApi(request.libraryPath);
+      final bridge = DartBridge(request.bridgePath);
+      final op = request.op.toNativeUtf8();
+      final params = request.params.toNativeUtf8();
       try {
-        return takeString(
-            (out) => fn(_handle, promptPtr, optsPtr, out), context);
+        api.checkError(
+          api.ffi.stream(
+            request.handle,
+            op,
+            params,
+            request.abort,
+            bridge.event,
+            Pointer<Void>.fromAddress(request.bridgeAddress),
+          ),
+        );
       } finally {
-        if (optsPtr != nullptr) calloc.free(optsPtr);
+        calloc.free(op);
+        calloc.free(params);
       }
     });
 
-    return jsonDecode(resultStr) as Map<String, dynamic>;
-  }
+// The listener isolate stays responsive while the C call runs separately.
+BlockingStreamProducer _streamProducer(Object? request) =>
+    _NativeStreamProducer(request! as _StreamRequest);
 
-  /// Stream text from the model.
-  ///
-  /// Returns a Stream of StreamPart maps. Recoverable frame errors arrive
-  /// as `error` stream-part maps and the stream continues; only
-  /// transport/Core failures throw [AimuxException] via [Stream.addError]
-  /// (and do not call on_done).
-  ///
-  /// NOTE: the underlying `aimux_stream_text` call is synchronous — this
-  /// method blocks the calling isolate until the stream completes, so all
-  /// parts are effectively buffered and delivered only after completion. Run
-  /// it in a worker isolate for UI code. Making this truly incremental is
-  /// follow-up work.
-  Stream<Map<String, dynamic>> streamText(
-    Object prompt, [
-    Map<String, dynamic>? options,
-  ]) {
-    _checkOpen();
-    return _stream(_ffi.streamText, 'stream_text', prompt, options);
-  }
+final class _NativeStreamProducer implements BlockingStreamProducer {
+  final _StreamRequest request;
+  _NativeStreamProducer(this.request);
 
-  /// Stream text from the model with OpenAI Chat Completions output
-  /// (RFC-0026).
-  ///
-  /// Returns a Stream of ChatCompletionChunk maps (OpenAI
-  /// `chat.completion.chunk` objects). Stream options (`include_usage`,
-  /// `include_reasoning`) are passed via
-  /// `options['providerOptions']['openai']['stream_options']`.
-  ///
-  /// NOTE: like [streamText], this blocks the calling isolate until the
-  /// stream completes and effectively buffers all parts until then.
-  Stream<Map<String, dynamic>> streamTextAsOpenAI(
-    Object prompt, [
-    Map<String, dynamic>? options,
-  ]) {
-    _checkOpen();
-    return _stream(
-        _ffi.streamTextAsOpenAI, 'stream_text_as_openai', prompt, options);
-  }
-
-  Stream<Map<String, dynamic>> _stream(
-    _StreamTextDart streamFn,
-    String context,
-    Object prompt,
-    Map<String, dynamic>? options,
-  ) {
-    final promptJson = promptToJson(prompt);
-    final optsJson = options != null ? encodeJson(options, 'options') : null;
-
-    final controller = StreamController<Map<String, dynamic>>();
-
-    withUtf8(promptJson, (promptPtr) {
-      final optsPtr = toCStringOrNull(optsJson);
+  @override
+  Future<void> run(StreamBridgeSink sink) async {
+    final api = NativeApi(request.libraryPath);
+    final bridge = DartBridge(request.bridgePath);
+    Pointer<Void> context = nullptr;
+    Object? failure;
+    StackTrace? failureStack;
+    String? terminal;
+    BigInt? lastSeq;
+    bool cancelled = false;
+    final drained = Completer<void>();
+    bool producerDone = false;
+    void receive(Pointer<Utf8> pointer) {
       try {
-        final partCb = Pointer.fromFunction<_OnPartC>(_onPart);
-        final doneCb = Pointer.fromFunction<_OnDoneC>(_onDone);
-
-        final Pointer<Void> e;
-        _currentController = controller;
-        try {
-          e = streamFn(_handle, promptPtr, optsPtr, partCb, doneCb, nullptr);
-        } finally {
-          _currentController = null;
+        if (failure != null || cancelled) return;
+        final json = pointer.toDartString();
+        final frame = StreamFrame.fromJson(
+          jsonDecode(json) as Map<String, dynamic>,
+        );
+        final seq = BigInt.parse(frame.seq);
+        if (terminal != null || lastSeq != null && seq <= lastSeq!) {
+          throw const FormatException('Invalid stream frame order');
         }
+        lastSeq = seq;
+        if (frame is EndFrame) {
+          terminal = json;
+        } else if (!sink.add(json)) {
+          cancelled = true;
+          bridge.cancel(context);
+        }
+      } catch (error, stack) {
+        failure ??= bindingFailure('Could not deliver native stream: $error');
+        failureStack ??= stack;
+        bridge.cancel(context);
+      } finally {
+        bridge.frameFree(pointer);
+        bridge.ack(context);
+        if (producerDone && !drained.isCompleted) drained.complete();
+      }
+    }
 
-        // NULL after on_done = clean end. Non-NULL = terminal failure, on_done
-        // was not called: expectAimuxError throws AimuxException or the native
-        // StateError for a C ABI failure; either way the error must not be
-        // swallowed and the controller must not stay open.
-        try {
-          expectAimuxError(e, context);
-        } catch (failure) {
-          if (controller.isClosed) rethrow;
-          controller
-            ..addError(failure)
-            ..close();
+    final listener = NativeCallable<Notify>.listener(receive);
+    try {
+      context = bridge.create(
+        listener.nativeFunction,
+        api.ffi.library.lookup<NativeFunction<ReleaseHandle>>('aimux_abort'),
+        request.abort,
+      );
+      if (context == nullptr)
+        throw StateError('Could not allocate stream bridge');
+      try {
+        await _runStream(_StreamRequest(
+          request.libraryPath,
+          request.bridgePath,
+          request.handle,
+          request.abort,
+          context.address,
+          request.op,
+          request.params,
+        ));
+      } finally {
+        producerDone = true;
+        if (bridge.pending(context) != 0) await drained.future;
+      }
+      final code = bridge.failure(context);
+      if (code != 0) {
+        failure ??= code == 305
+            ? resourceLimit('Stream frame exceeds 1 MiB')
+            : bindingFailure('Native stream bridge could not copy frame');
+      }
+      if (failure != null)
+        Error.throwWithStackTrace(failure!, failureStack ?? StackTrace.current);
+      if (terminal != null) {
+        sink.endFrame(terminal!);
+      } else if (cancelled) {
+        sink.end();
+      } else {
+        throw bindingFailure('Native stream ended without terminal');
+      }
+    } finally {
+      if (context != nullptr) bridge.free(context);
+      listener.close();
+    }
+  }
+}
+
+final class _StreamPump {
+  final Aimux client;
+  final int handle;
+  final String op, params;
+  _StreamPump(this.client, this.handle, this.op, this.params);
+
+  Stream<StreamFrame> get stream {
+    OpsHandle? abort;
+    StreamBridge? bridge;
+    bool cancelled = false;
+    late final StreamController<StreamFrame> controller;
+    StreamSubscription<String>? subscription;
+    final finished = Completer<void>();
+    Future<void> start() async {
+      try {
+        final requestParams = jsonDecode(params);
+        final suppliedAbort =
+            requestParams is Map ? requestParams['abort'] : null;
+        late final int abortId;
+        if (suppliedAbort != null) {
+          if (suppliedAbort is! String) {
+            throw const FormatException(
+                'Abort must be a decimal handle string');
+          }
+          abortId = parseHandle(suppliedAbort);
+        } else {
+          final result =
+              await client.call('abort.create') as Map<String, dynamic>;
+          abort = client.adopt(result['handle'] as String);
+          abortId = client._id(abort);
+        }
+        if (cancelled) return;
+        bridge = StreamBridge(
+          producer: _streamProducer,
+          request: _StreamRequest(client._libraryPath, client._bridgePath,
+              handle, abortId, 0, op, params),
+          abort: () => client._native.ffi.abort(abortId),
+          credits: 1,
+        );
+        subscription = bridge!.stream.listen(
+          (json) => controller.add(
+              StreamFrame.fromJson(jsonDecode(json) as Map<String, dynamic>)),
+          onError: (Object error, StackTrace stack) =>
+              controller.addError(error, stack),
+          onDone: () => unawaited(controller.close()),
+        );
+        if (controller.isPaused) subscription!.pause();
+        await bridge!.done;
+      } catch (error, stack) {
+        if (!cancelled) {
+          controller.addError(error, stack);
+          unawaited(controller.close());
         }
       } finally {
-        if (optsPtr != nullptr) calloc.free(optsPtr);
+        try {
+          await abort?.close();
+        } finally {
+          if (!finished.isCompleted) finished.complete();
+        }
       }
-    });
+    }
 
+    controller = StreamController<StreamFrame>(
+      sync: true,
+      onListen: () => unawaited(start()),
+      onPause: () => subscription?.pause(),
+      onResume: () => subscription?.resume(),
+      onCancel: () async {
+        cancelled = true;
+        await subscription?.cancel();
+        await finished.future;
+      },
+    );
     return controller.stream;
   }
-
-
-  /// Release the native handle. Safe to call multiple times.
-  ///
-  /// Detaches the native finalizer first so the GC cannot double-free the
-  /// handle after an explicit close.
-  void close() {
-    if (_closed) return;
-    _closed = true;
-    _handleFinalizer.detach(this);
-    _ffi.dropHandle(_handle);
-  }
-
-  void _checkOpen() {
-    if (_closed) throw StateError('Model is closed');
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ProviderConfig (RFC-0027)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Per-provider construction options (RFC-0027), mirroring the Rust
-/// `ProviderOptions` wire format. Pass to [createProvider] to override
-/// individual fields of the registry entry.
-///
-/// All fields are optional; null fields are omitted from the serialized JSON
-/// so the provider's defaults apply.
-class ProviderConfig {
-  /// Override the registry base URL.
-  final String? baseUrl;
-
-  /// Extra headers merged into every request.
-  final Map<String, String>? headers;
-
-  /// OpenAI organization ID (`OpenAI-Organization` header).
-  final String? organization;
-
-  /// OpenAI project ID (`OpenAI-Project` header).
-  final String? project;
-
-  /// Values of a preset's template parameters (`account_id`, `region`, ...);
-  /// only the ones the preset declares are accepted.
-  ///
-  /// Retry is a per-call setting ([GenerateTextOptions.maxRetries]) and
-  /// request-body overrides no longer exist: a `maxRetries` or
-  /// `bodyOverrides` key in the config is rejected as [InvalidArgumentError],
-  /// so this class has neither.
-  final Map<String, String>? params;
-
-  const ProviderConfig({
-    this.baseUrl,
-    this.headers,
-    this.organization,
-    this.project,
-    this.params,
-  });
-
-  /// Serialize to the `config_json` wire format (camelCase keys, null fields
-  /// omitted). Returns null when no field is set, so callers can
-  /// pass null to the FFI for defaults.
-  String? toJson() {
-    final map = <String, dynamic>{};
-    if (baseUrl != null) map['baseUrl'] = baseUrl;
-    if (headers != null) map['headers'] = headers;
-    if (organization != null) map['organization'] = organization;
-    if (project != null) map['project'] = project;
-    if (params != null) map['params'] = params;
-    if (map.isEmpty) return null;
-    return encodeJson(map, 'config_json');
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ProviderHandle (RFC-0027)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// A provider handle (RFC-0027) backed by a Rust `Arc<dyn Provider>`.
-///
-/// Created by [createProvider]. Unlike [Model.provider] (which binds to a
-/// single model id), a provider handle supports runtime model discovery via
-/// [listModels] and building a [Model] from a discovered id via [model].
-/// Call [close] to release the native handle. Implements [Finalizable] so a
-/// [NativeFinalizer] can release the handle if [close] is forgotten (T9).
-///
-/// ```dart
-/// final p = createProvider('deepseek', apiKey);
-/// try {
-///   final models = p.listModels();
-///   final model = p.model('deepseek-chat');
-///   try {
-///     print(model.generateText('Hello'));
-///   } finally {
-///     model.close();
-///   }
-/// } finally {
-///   p.close();
-/// }
-/// ```
-class ProviderHandle implements Finalizable {
-  final int _handle;
-  bool _closed = false;
-
-  ProviderHandle._(this._handle) {
-    // Register a native finalizer so the handle is released even if close()
-    // is never called. The token is the handle value as a Pointer.
-    _handleFinalizer.attach(this, Pointer<Void>.fromAddress(_handle));
-  }
-
-  /// List models available on this provider (runtime discovery via the
-  /// provider's `/models` endpoint), enriched with community knowledge
-  /// (anya2a) when available.
-  ///
-  /// Returns a JSON array string of `ResolvedModel`
-  /// (`[{"id":"...","ownedBy":"...","created":<u64>,"spec":{...}}, ...]`).
-  /// Synchronous: blocks the calling isolate until the network call completes.
-  String listModels() {
-    _checkOpen();
-    return takeString(
-        (out) => _ffi.providerListModels(_handle, out), 'provider_list_models');
-  }
-
-  /// Build a native decision model with this provider's connection configuration.
-  DecisionModel decisionModel(String modelId) {
-    _checkOpen();
-    return DecisionModel.fromProviderHandle(_handle, modelId);
-  }
-
-  /// Build a language [Model] from a discovered [modelId].
-  ///
-  /// The returned [Model] is backed by a fresh native handle (separate from
-  /// this provider handle) and is usable with `generateText` / `streamText`.
-  /// The caller owns the returned [Model] and must [Model.close] it.
-  Model model(String modelId) {
-    _checkOpen();
-    final handle = withUtf8(modelId, (idPtr) {
-      return takeHandle(
-          (out) => _ffi.providerModel(_handle, idPtr, out), 'provider_model');
-    });
-    return Model._(handle);
-  }
-
-  /// Release the native provider handle. Safe to call multiple times.
-  ///
-  /// Detaches the native finalizer first so the GC cannot double-free the
-  /// handle after an explicit close.
-  void close() {
-    if (_closed) return;
-    _closed = true;
-    _handleFinalizer.detach(this);
-    _ffi.dropHandle(_handle);
-  }
-
-  void _checkOpen() {
-    if (_closed) throw StateError('ProviderHandle is closed');
-  }
-}
-
-/// Create a **provider handle** (RFC-0027) for a registry-backed provider.
-///
-/// Unlike [Model.provider] (which binds to a single `modelId`), this returns a
-/// [ProviderHandle] supporting runtime model discovery
-/// ([ProviderHandle.listModels]) and building a [Model] from a discovered id
-/// ([ProviderHandle.model]).
-///
-/// [name] is a registry provider name (e.g. `"deepseek"`, `"groq"`). [apiKey]
-/// may be null to read the provider's env var from the registry entry.
-/// [config] overrides individual fields of the registry entry.
-ProviderHandle createProvider(
-    String name, String? apiKey, ProviderConfig? config) {
-  final configJson = config?.toJson();
-  final handle = withUtf8(name, (namePtr) {
-    final keyPtr = toCStringOrNull(apiKey);
-    final cfgPtr = toCStringOrNull(configJson);
-    try {
-      return takeHandle(
-          (out) => _ffi.providerHandleNew(namePtr, keyPtr, cfgPtr, out),
-          'provider_handle_new');
-    } finally {
-      if (keyPtr != nullptr) calloc.free(keyPtr);
-      if (cfgPtr != nullptr) calloc.free(cfgPtr);
-    }
-  });
-  return ProviderHandle._(handle);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Model specs (RFC-0027) — get_model_specs
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Fetch the community model catalogue (anya2a). Returns a JSON-serialized
-/// Catalogue string. Thin fetch — no caching.
-String getModelSpecs(String? sourceUrl) {
-  final urlPtr = toCStringOrNull(sourceUrl);
-  try {
-    return takeString(
-        (out) => _ffi.getModelSpecs(urlPtr, out), 'get_model_specs');
-  } finally {
-    if (urlPtr != nullptr) calloc.free(urlPtr);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// The `prompt_json` string every generate/stream call sends: a bare string
-/// prompt is encoded as-is, anything else goes inside the `{"prompt": …}`
-/// wrapper the C ABI accepts. Public because tool-call repair must pass the
-/// same string the call was generated with (RFC-0035 §3.0).
-String promptToJson(Object prompt) {
-  if (prompt is String) return encodeJson(prompt, 'prompt');
-  return encodeJson({'prompt': prompt}, 'prompt');
-}
-
-/// Initialize the global logger (RFC-0014).
-///
-/// Idempotent — safe to call any number of times from any thread; only the
-/// first call has an effect. If the host already registered its own
-/// `tracing` subscriber, this is a no-op (aimux never overrides a consumer's
-/// logger).
-///
-/// [level]: "off" | "error" | "warn" | "info" | "debug" | "trace"; empty
-/// defaults to "warn". The `AIMUX_LOG` / `AIMUX_LOG_LEVEL` environment
-/// variables take precedence when set. Logs go to stderr.
-void initLogging(String level) {
-  withUtf8(level.isEmpty ? 'warn' : level,
-      (p) => expectFfiError(_ffi.initLogging(p), 'init_logging'));
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Recording + mock replay (RFC-0023)
-//
-// Recording is opt-in and global (not tied to a Model instance).
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Start recording: complete Recording JSONL is written to
-/// `{dir}/recordings.jsonl` (dir is auto-created). Calling again replaces the
-/// recorder. Throws [RecordingException] with [RecordingException.code] one of
-/// [RecordingErrorCode.init] (dir could not be created, also for an empty
-/// [dir]), [RecordingErrorCode.openFile] or [RecordingErrorCode.spawn] when
-/// the recorder cannot be constructed; on failure the previous recorder (if
-/// any) stays in place.
-void initRecording(String dir) {
-  withUtf8(dir, (p) => expectRecordingError(_ffi.initRecording(p), 'init_recording'));
-}
-
-/// Start in-memory bounded recording (ring recorder, FIFO eviction, dropped
-/// count queryable).
-///
-/// [cap] is optional: omit it (or pass null) to use the library default
-/// capacity (FFI `aimux_init_recording_ring_default`). When provided, [cap]
-/// must be positive: the C ABI rejects `0`, and a negative Dart int would be
-/// reinterpreted as a huge u64 by the FFI. This binding validates up front and
-/// throws [ArgumentError] for `cap <= 0`, matching Kotlin/Java.
-void initRecordingRing([int? cap]) {
-  if (cap == null) {
-    _ffi.initRecordingRingDefault();
-    return;
-  }
-  if (cap <= 0) {
-    throw ArgumentError.value(cap, 'cap', 'must be positive');
-  }
-  expectAimuxError(_ffi.initRecordingRing(cap), 'init_recording_ring');
-}
-
-/// Stop recording: the global recorder becomes None.
-void recordingStop() => _ffi.recordingStop();
-
-/// Flush the global recorder (blocks until JSONL is on disk; no-op for the
-/// ring recorder). Never reports — see [recordingTryFlush].
-void recordingFlush() => _ffi.recordingFlush();
-
-/// Flush the global recorder and report failure: throws [RecordingException]
-/// with [RecordingException.code] one of [RecordingErrorCode.writerGone],
-/// [RecordingErrorCode.flushTimeout] or [RecordingErrorCode.write] (not an
-/// [AimuxException] — recording errors are a separate type). Returns normally
-/// when data is on disk or nothing is recording. The legacy [recordingFlush]
-/// stays and never reports.
-void recordingTryFlush() {
-  expectRecordingError(_ffi.recordingTryFlush(), 'recording_try_flush');
-}
-
-/// Create a mock replay model from recorded JSONL (one `Recording` per line).
-///
-/// Matches recorded inputs and returns the recorded responses — no real API
-/// is sent. The returned [Model] works with [Model.generateText] /
-/// [Model.streamText]. Call [Model.close] to release the native handle.
-Model mockReplay(String recordingsJsonl) {
-  // Mirror the FFI: blank lines are skipped, every other line is one JSON doc.
-  for (final line in LineSplitter.split(recordingsJsonl)) {
-    if (line.trim().isNotEmpty) checkJson(line, 'recordings_jsonl');
-  }
-  final handle = withUtf8(recordingsJsonl, (jsonlPtr) {
-    return takeHandle(
-        (out) => _ffi.mockReplayNew(jsonlPtr, out), 'mock_replay_new');
-  });
-  return Model._(handle);
-}
-
-/// Replace the default transport with one routed by this proxy configuration
-/// (M6, RFC-0016). Requests started afterwards use it; calling it again
-/// replaces the previous configuration.
-///
-/// `configJSON` shape: `{ "http_url", "https_url", "all_url", "no_proxy" }`
-/// (all fields optional). Wrong shape throws [InvalidArgumentError].
-void initProxy(String configJSON) {
-  checkJson(configJSON, 'config_json');
-  withUtf8(configJSON, (p) => expectAimuxError(_ffi.initProxy(p), 'init_proxy'));
-}
-
-/// Create a RouterModel (RFC-0021) over the given child models. The returned
-/// model routes each call to one child and falls back across the rest on error
-/// (per `configJson`).
-///
-/// `configJson` (optional): `{"router": "rule"|"weighted", "weights": [...],
-/// "fallback": "on_error"|"none", "providerName", "modelId"}`.
-Model router(List<Model> models, {String? configJson}) {
-  if (models.isEmpty) {
-    throw ArgumentError('router: models must be non-empty');
-  }
-  checkJson(configJson, 'config_json', emptyIsDefault: true);
-  final handles = models.map((m) => m._requireHandle()).toList();
-  final ptr = calloc<Uint64>(handles.length);
-  final int handle;
-  try {
-    ptr.asTypedList(handles.length).setAll(0, handles);
-    Pointer<Utf8> cfgPtr = nullptr;
-    if (configJson != null) {
-      cfgPtr = toCString(configJson);
-    }
-    try {
-      handle = takeHandle(
-          (out) => _ffi.routerNew(ptr, handles.length, cfgPtr, out),
-          'router_new');
-    } finally {
-      if (cfgPtr != nullptr) {
-        calloc.free(cfgPtr);
-      }
-    }
-  } finally {
-    calloc.free(ptr);
-  }
-  return Model._(handle);
-}
-
-/// Create a MoaModel (RFC-0022) over reference models + one aggregator.
-/// References fan out in parallel, then the aggregator synthesizes a final
-/// answer.
-///
-/// `references` may be empty (runs aggregator only). `configJson` (optional) is
-/// a serialized MoaConfig.
-Model moa(List<Model> references, Model aggregator, {String? configJson}) {
-  checkJson(configJson, 'config_json', emptyIsDefault: true);
-  final aggregatorHandle = aggregator._requireHandle();
-  // Allocate the reference-handle array (NULL when there are no references).
-  final refPtr = references.isEmpty
-      ? Pointer<Uint64>.fromAddress(0)
-      : calloc<Uint64>(references.length);
-  final shouldFree = !references.isEmpty;
-  final int handle;
-  try {
-    if (shouldFree) {
-      final handles = references.map((m) => m._requireHandle()).toList();
-      refPtr.asTypedList(references.length).setAll(0, handles);
-    }
-    Pointer<Utf8> cfgPtr = nullptr;
-    if (configJson != null) {
-      cfgPtr = toCString(configJson);
-    }
-    try {
-      handle = takeHandle(
-          (out) => _ffi.moaNew(
-              refPtr, references.length, aggregatorHandle, cfgPtr, out),
-          'moa_new');
-    } finally {
-      if (cfgPtr != nullptr) {
-        calloc.free(cfgPtr);
-      }
-    }
-  } finally {
-    if (shouldFree) {
-      calloc.free(refPtr);
-    }
-  }
-  return Model._(handle);
 }

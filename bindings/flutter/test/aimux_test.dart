@@ -1,289 +1,345 @@
-// Tests for aimux Flutter/Dart binding.
-//
-// These tests do NOT make real API calls — they verify the API surface
-// and error handling. They require the native library (libaimux_ffi.so)
-// to be on the library path.
-//
-// Run: LD_LIBRARY_PATH=../../target/release dart test
+@Timeout(Duration(minutes: 2))
+library;
 
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:aimux/aimux.dart';
-import 'package:aimux/errors.dart'
-    show aimuxDropHandle, aimuxFreeString, expectAimuxError, openAimuxLibrary, withUtf8;
-import 'package:aimux/multimodal.dart' show EmbeddingModel;
-import 'package:ffi/ffi.dart';
+import 'package:aimux/multimodal.dart';
+import 'package:aimux/src/bridge.dart';
+import 'package:aimux/src/native.dart';
 import 'package:test/test.dart';
 
-// Raw C signatures (aimux-ffi.h / aimux-error.h) for C ABI tests.
-typedef _OpenaiNewC = Pointer<Void> Function(
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<Uint64>);
-typedef _GenerateTextC = Pointer<Void> Function(
-    Uint64, Pointer<Utf8>, Pointer<Utf8>, Pointer<Pointer<Utf8>>);
-typedef _GenerateTextDart = Pointer<Void> Function(
-    int, Pointer<Utf8>, Pointer<Utf8>, Pointer<Pointer<Utf8>>);
-typedef _IntOfPtrC = Int32 Function(Pointer<Void>);
-typedef _IntOfPtrDart = int Function(Pointer<Void>);
-typedef _StrOfPtr = Pointer<Utf8> Function(Pointer<Void>);
+String fixture([String name = 'ops_fixture']) =>
+    '${Directory.current.path}/.dart_tool/native/$name.${Platform.isMacOS ? 'dylib' : 'so'}';
 
 void main() {
-  // Error transport (aimux-error.h): a failed call returns an opaque
-  // `aimux_error_t *`; the decoder (expectAimuxError / expectRecordingError)
-  // reads the unified code, copies the fields, frees the returned error once,
-  // and throws. Codes 200..206 become StateError('aimux ffi: …').
-  group('aimux_error_t → AimuxException / native errors', () {
-    final lib = openAimuxLibrary();
-    final errorCode = lib.lookupFunction<_IntOfPtrC, _IntOfPtrDart>(
-        'aimux_error_code');
-    final ffiMessage =
-        lib.lookupFunction<_StrOfPtr, _StrOfPtr>('aimux_error_message');
-    final openaiNew =
-        lib.lookupFunction<_OpenaiNewC, _OpenaiNewC>('aimux_openai_new');
-    final generateText = lib.lookupFunction<_GenerateTextC, _GenerateTextDart>(
-        'aimux_generate_text');
+  late Aimux client;
+  late OpsHandle handle;
 
-    test('unknown provider carries the requested provider id', () {
+  setUp(() async {
+    client = await Aimux.open(libraryPath: fixture(), bridgePath: fixture());
+    final result = await client.call('test.handle') as Map;
+    handle = client.adopt(result['handle'] as String);
+    await client.call('test.reset');
+  });
+  tearDown(() => handle.close());
+
+  Future<Map> stats() async =>
+      await client.call('test.stats', handle: handle) as Map;
+
+  test('load validates ABI, manifest and required ops', () async {
+    expect(client.manifest['opsVersion'], '1.0');
+    await expectLater(
+      Aimux.open(libraryPath: fixture('missing_symbol'), bridgePath: fixture()),
+      throwsArgumentError,
+    );
+    await expectLater(
+      Aimux.open(
+          libraryPath: fixture('missing_finalizer'), bridgePath: fixture()),
+      throwsArgumentError,
+    );
+    await expectLater(
+      Aimux.open(libraryPath: fixture('bad_abi'), bridgePath: fixture()),
+      throwsStateError,
+    );
+    await expectLater(
+      Aimux.open(libraryPath: fixture('bad_manifest'), bridgePath: fixture()),
+      throwsStateError,
+    );
+    await expectLater(
+      Aimux.open(
+        libraryPath: fixture(),
+        bridgePath: fixture(),
+        requiredOps: ['missing.op'],
+      ),
+      throwsStateError,
+    );
+    await Aimux.open(
+      libraryPath: fixture(),
+      bridgePath: fixture(),
+      requiredOps: ['runtime.describe', 'text.stream'],
+    );
+  });
+
+  test('blocking call leaves the caller isolate responsive', () async {
+    var ticks = 0;
+    final timer = Timer.periodic(
+      const Duration(milliseconds: 5),
+      (_) => ticks++,
+    );
+    try {
+      expect(await client.call('test.sleep'), {'ok': true});
+      expect(ticks, greaterThan(0));
+    } finally {
+      timer.cancel();
+    }
+  });
+
+  test(
+    'opaque error keeps unknown payload fields and is delivered once',
+    () async {
+      await expectLater(
+        client.call('test.fail'),
+        throwsA(
+          isA<OpsException>().having((e) => e.code, 'code', 203).having(
+            (e) => e.error['futureField'],
+            'futureField',
+            [1, 2],
+          ),
+        ),
+      );
+    },
+  );
+
+  test('parameters preserve open JSON, Unicode and escaped NUL', () async {
+    final params = {
+      'providerOptions': {
+        'future': ['中文', '\u0000', null],
+      },
+    };
+    expect(await client.call('test.echo', params: params), params);
+    expect(() => client.call('bad\u0000op'), throwsFormatException);
+    expect(
+      () => client.call('test.echo', params: String.fromCharCode(0xd800)),
+      throwsFormatException,
+    );
+  });
+
+  test('uint64 handles round trip without a pointer-sized token', () async {
+    final high = client.adopt('18446744073709551615');
+    expect(high.wireId, '18446744073709551615');
+    await high.close();
+    expect(() => client.adopt('18446744073709551616'), throwsFormatException);
+    expect(() => client.adopt('0'), throwsFormatException);
+    expect(() => client.adopt('01'), throwsFormatException);
+  });
+
+  test(
+    'close detaches once, is idempotent and rejects later admission',
+    () async {
+      final id = handle.wireId;
+      expect(() => client.adopt(id), throwsStateError);
+      final first = handle.close();
+      final second = handle.close();
+      expect(identical(first, second), isTrue);
+      expect(handle.isClosed, isTrue);
+      expect(() => client.call('test.echo', handle: handle), throwsStateError);
+      await first;
+      // Read the native drop counter without acquiring ownership a second time.
+      final native = NativeApi(fixture());
+      final json = native.call(parseHandle(id), 'test.stats', '{}', 0) as Map;
+      expect(json['drops'], 1);
+    },
+  );
+
+  test(
+    'typed token trampoline queues cleanup off the finalizer thread',
+    () async {
+      final bridge = DartBridge(fixture());
+      final native = NativeApi(fixture());
+      final token = bridge.tokenNew(
+        4000,
+        native.ffi.library.lookup<NativeFunction<ReleaseHandle>>('aimux_drop'),
+      );
+      final finalize = bridge.library.lookupFunction<
+          Void Function(Pointer<Void>),
+          void Function(Pointer<Void>)>('aimux_dart_finalize');
+      finalize(token);
+      Map result = {};
+      for (var i = 0; i < 100; i++) {
+        result = native.call(4000, 'test.stats', '{}', 0) as Map;
+        if (result['drops'] == 1) break;
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(result['drops'], 1);
+    },
+  );
+
+  for (final mode in ['leak', 'close']) {
+    test('NativeFinalizer group shutdown versus explicit $mode releases once',
+        () async {
+      final ready = ReceivePort();
+      final exited = ReceivePort();
+      final errors = ReceivePort();
+      final failure = Completer<void>();
+      final errorSubscription = errors.listen((error) {
+        if (!failure.isCompleted) failure.completeError(StateError('$error'));
+      });
+      try {
+        final idFuture = ready.first;
+        final exitFuture = exited.first;
+        await Isolate.spawnUri(
+            Uri.file(
+                '${Directory.current.path}/test/native/finalizer_isolate.dart'),
+            [fixture(), mode],
+            ready.sendPort,
+            onExit: exited.sendPort,
+            onError: errors.sendPort);
+        final id = await Future.any([idFuture, failure.future]) as String;
+        await Future.any([exitFuture, failure.future]);
+        final native = NativeApi(fixture());
+        Map result = {};
+        for (var i = 0; i < 100; i++) {
+          result = native.call(parseHandle(id), 'test.stats', '{}', 0) as Map;
+          if (result['drops'] == 1) break;
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        expect(result['drops'], 1);
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+        expect(
+            (native.call(parseHandle(id), 'test.stats', '{}', 0)
+                as Map)['drops'],
+            1);
+      } finally {
+        ready.close();
+        exited.close();
+        await errorSubscription.cancel();
+        errors.close();
+      }
+    },
+        skip: const bool.fromEnvironment('dart.library.ui')
+            ? 'spawnUri isolate groups require the standalone Dart VM'
+            : false);
+  }
+
+  test(
+    'native worker thread delivers lossless ordered frames and one terminal',
+    () async {
+      final frames =
+          await client.stream('test.stream', handle: handle).toList();
+      final events = frames.whereType<EventFrame>().toList();
+      expect(events.length, 1000);
       expect(
-        () => Model.provider('definitely-not-a-provider', 'm', apiKey: 'k'),
-        throwsA(isA<NoSuchProviderError>()
-            .having((e) => e.providerId, 'providerId',
-                'definitely-not-a-provider')
-            .having((e) => e.status, 'status', -1)
-            .having((e) => e.retryable, 'retryable', isFalse)),
+        events.map((f) => (f.event as Map)['text']),
+        List.generate(1000, (i) => '$i'),
+      );
+      expect(frames.whereType<EndFrame>().single.outcome, 'success');
+      expect((await stats())['completed'], 1);
+    },
+  );
+
+  test('pause withholds credit, resume is lossless', () async {
+    final first = Completer<void>();
+    final done = Completer<void>();
+    final frames = <StreamFrame>[];
+    late StreamSubscription<StreamFrame> sub;
+    sub = client.stream('test.stream', handle: handle).listen(
+      (frame) {
+        frames.add(frame);
+        if (frames.length == 1) {
+          sub.pause();
+          first.complete();
+        }
+      },
+      onError: done.completeError,
+      onDone: done.complete,
+    );
+    await first.future;
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    final before = (await stats())['produced'];
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect((await stats())['produced'], before);
+    // One transport credit plus the next C callback, waiting for credit.
+    expect(before, 2);
+    sub.resume();
+    await done.future;
+    expect(frames.whereType<EventFrame>().length, 1000);
+    expect(frames.whereType<EndFrame>().length, 1);
+  });
+
+  test('cancel wakes producer while credit is exhausted', () async {
+    final first = Completer<void>();
+    late StreamSubscription<StreamFrame> sub;
+    sub = client.stream('test.stream', handle: handle).listen((_) {
+      sub.pause();
+      first.complete();
+    });
+    await first.future;
+    await sub.cancel().timeout(const Duration(seconds: 5));
+    expect((await stats())['completed'], 1);
+  });
+
+  test(
+    'cancel before native startup finishes cleans up without producing',
+    () async {
+      final sub = client.stream('test.stream', handle: handle).listen((_) {});
+      await sub.cancel().timeout(const Duration(seconds: 5));
+      expect((await stats())['produced'], 0);
+    },
+  );
+
+  test(
+    'each subscription has an independent abort and credit bridge',
+    () async {
+      final counts = await Future.wait(
+        List.generate(
+          3,
+          (_) async =>
+              (await client.stream('test.stream', handle: handle).toList())
+                  .length,
+        ),
+      );
+      expect(counts, [1001, 1001, 1001]);
+    },
+  );
+
+  test('pre-acceptance failure has no frame and one error', () async {
+    final frames = <StreamFrame>[];
+    final errors = <Object>[];
+    await client.stream('test.reject', handle: handle).handleError((Object e) {
+      errors.add(e);
+    }).forEach(frames.add);
+    expect(frames, isEmpty);
+    expect(
+      errors.single,
+      isA<OpsException>().having((e) => e.code, 'code', 203),
+    );
+  });
+
+  test('accepted runtime failure is only in the single EndFrame', () async {
+    final frames =
+        await client.stream('test.terminalError', handle: handle).toList();
+    final end = frames.whereType<EndFrame>().single;
+    expect(end.outcome, 'error');
+    expect(end.error!.code, 11);
+    expect(frames.length, 1001);
+  });
+
+  for (final entry in {
+    'test.badFrame': 206,
+    'test.noTerminal': 206,
+    'test.oversize': 305,
+  }.entries) {
+    test('${entry.key} reports one failure and frees the bridge', () async {
+      final errors = <Object>[];
+      await client.stream(entry.key, handle: handle).handleError((Object e) {
+        errors.add(e);
+      }).drain<void>();
+      expect(
+        errors.single,
+        isA<OpsException>().having((e) => e.code, 'code', entry.value),
       );
     });
+  }
 
-    // Raw-FFI misuse a correct binding never commits: a NULL argument is a
-    // C ABI failure code 200 maps to StateError.
-    test('NULL argument at the raw C ABI → code 200 → StateError',
-        () {
-      final out = calloc<Uint64>();
-      try {
-        final e = openaiNew(nullptr, nullptr, out);
-        expect(e, isNot(nullptr));
-        expect(out.value, 0);
-        expect(errorCode(e), 200);
-        final m = ffiMessage(e);
-        expect(m, isNot(nullptr));
-        expect(m.toDartString(), contains('api_key'));
-        aimuxFreeString(m);
-        expect(
-          () => expectAimuxError(e, 'openai_new'), // frees the owner
-          throwsA(isA<StateError>()
-              .having((e) => e.message, 'message', contains('aimux ffi:'))
-              .having((e) => e.message, 'message', contains('api_key'))),
-        );
-      } finally {
-        calloc.free(out);
-      }
-    });
-
-    test('dead handle at the raw C ABI → StateError', () {
-      final out = calloc<Pointer<Utf8>>();
-      try {
-        expect(
-          () => withUtf8('"hi"', (p) {
-            final e = generateText(0x7FFFFFFFFFFF, p, nullptr, out);
-            expect(errorCode(e), 203);
-            expectAimuxError(e, 'generate_text');
-          }),
-          throwsA(isA<StateError>()
-              .having((e) => e.message, 'message', contains('model'))),
-        );
-        expect(out.value, nullptr);
-      } finally {
-        calloc.free(out);
-      }
-    });
-
-    // The NativeFinalizer callback: aimux_drop_handle_ptr takes the handle
-    // as a pointer-sized value (NativeFinalizerFunction), so it is safe on
-    // 32-bit targets where aimux_drop_handle(uint64_t) is not.
-    test('aimux_drop_handle_ptr releases the handle its address names', () {
-      final dropHandlePtr = lib.lookupFunction<Void Function(Pointer<Void>),
-          void Function(Pointer<Void>)>('aimux_drop_handle_ptr');
-      expect(() => lib.lookup<NativeFinalizerFunction>('aimux_drop_handle_ptr'),
-          returnsNormally);
-      final outHandle = calloc<Uint64>();
-      final outJson = calloc<Pointer<Utf8>>();
-      try {
-        final e = withUtf8('sk-test-fake-key',
-            (k) => withUtf8('gpt-4o-mini', (m) => openaiNew(k, m, outHandle)));
-        expect(e, nullptr);
-        final handle = outHandle.value;
-        expect(handle, isNot(0));
-        dropHandlePtr(Pointer<Void>.fromAddress(handle));
-        // The handle is gone: a call on it is the dead-handle failure (203).
-        expect(
-          () => withUtf8('"hi"', (p) {
-            final e = generateText(handle, p, nullptr, outJson);
-            expect(errorCode(e), 203);
-            expectAimuxError(e, 'generate_text');
-          }),
-          throwsA(isA<StateError>()),
-        );
-        expect(outJson.value, nullptr);
-        // NULL is handle 0: a no-op.
-        dropHandlePtr(nullptr);
-      } finally {
-        calloc.free(outHandle);
-        calloc.free(outJson);
-      }
-    });
-
-    // Bad wire JSON is only reachable when checkJson pre-validation was
-    // bypassed (raw C call here); it is a C ABI failure → StateError.
-    test('bad wire JSON at the raw C ABI → StateError', () {
-      final outHandle = calloc<Uint64>();
-      final outJson = calloc<Pointer<Utf8>>();
-      try {
-        final e = withUtf8('sk-test-fake-key',
-            (k) => withUtf8('gpt-4o-mini', (m) => openaiNew(k, m, outHandle)));
-        expect(e, nullptr);
-        final handle = outHandle.value;
-        expect(handle, isNot(0));
-        try {
-          expect(
-            () => withUtf8('{not json', (p) {
-              final e = generateText(handle, p, nullptr, outJson);
-              expect(errorCode(e), 202);
-              expectAimuxError(e, 'generate_text');
-            }),
-            throwsA(isA<StateError>()
-                .having((e) => e.message, 'message', contains('prompt_json'))),
-          );
-        } finally {
-          aimuxDropHandle(handle);
-        }
-      } finally {
-        calloc.free(outHandle);
-        calloc.free(outJson);
-      }
-    });
-
-    test('NULL error is success: expectAimuxError returns', () {
-      expect(() => expectAimuxError(nullptr, 'noop'), returnsNormally);
-    });
-  });
-
-  test('Model.openai creates an instance', () {
-    final model = Model.openai('sk-test-fake-key', 'gpt-4o-mini');
-    expect(model, isNotNull);
-    model.close();
-  });
-
-  test('Model.anthropic creates an instance', () {
-    final model = Model.anthropic('sk-ant-test-fake-key', 'claude-3-5-sonnet-20241022');
-    expect(model, isNotNull);
-    model.close();
-  });
-
-  test('raw configJson is validated in Dart before the C call', () {
-    // FormatException naming the parameter, not AiMuxError.jsonParse.
-    expect(
-      () => Model.provider('openai', 'gpt-4o-mini',
-          apiKey: 'k', configJson: '{invalid json}'),
-      throwsA(isA<FormatException>()
-          .having((e) => e.source, 'source', 'config_json')),
+  test('operation push and typed poll states use the new primitives', () async {
+    final operation = TranscriptionOperation(client, handle);
+    await operation.push(Uint8List.fromList([1, 2, 3]));
+    await operation.push(Uint8List(0));
+    expect((await operation.next(timeoutMs: 1)).part, {'type': 'transcript'});
+    expect((await operation.next(timeoutMs: 2)).state, 'ended');
+    expect((await operation.next()).state, 'timeout');
+    await expectLater(
+      operation.next(timeoutMs: 99),
+      throwsA(isA<OpsException>()),
     );
-  });
-
-  test('multimodal use-after-close throws StateError', () {
-    final m = EmbeddingModel.openai('sk-test-fake-key', 'text-embedding-3-small');
-    m.close();
     expect(
-      () => m.embed('["a"]'),
-      throwsA(isA<StateError>()
-          .having((e) => e.message, 'message', contains('closed'))),
+      () => operation.push(Uint8List(1024 * 1024 + 1)),
+      throwsA(isA<OpsException>().having((e) => e.code, 'code', 305)),
     );
-  });
-
-  test('model close is idempotent', () {
-    final model = Model.openai('sk-test-fake-key', 'gpt-4o-mini');
-    model.close();
-    model.close(); // should not throw
-  });
-
-  test('generateText on closed model throws StateError', () {
-    final model = Model.openai('sk-test-fake-key', 'gpt-4o-mini');
-    model.close();
-    // Use-after-close is guarded locally: native StateError, not AimuxException.
-    expect(
-      () => model.generateText('"hello"'),
-      throwsA(isA<StateError>()
-          .having((e) => e.message, 'message', contains('closed'))),
-    );
-  });
-
-  // T11/T12: initRecordingRing must validate cap up front. A negative Dart int
-  // would otherwise be reinterpreted as a huge u64 by the FFI; cap == 0 is
-  // rejected by the C ABI. Both are caught in Dart with ArgumentError,
-  // matching Kotlin/Java.
-  test('initRecordingRing rejects cap <= 0 (T11/T12)', () {
-    expect(() => initRecordingRing(0), throwsArgumentError);
-    expect(() => initRecordingRing(-1), throwsArgumentError);
-    expect(() => initRecordingRing(-9999), throwsArgumentError);
-  });
-
-  test('initRecordingRing accepts positive cap', () {
-    expect(() => initRecordingRing(8), returnsNormally);
-    recordingStop();
-  });
-
-  // Omitting cap uses the library default capacity (FFI
-  // aimux_init_recording_ring_default) and must not throw.
-  test('initRecordingRing with no cap uses library default', () {
-    expect(() => initRecordingRing(), returnsNormally);
-    recordingStop();
-  });
-
-  // aimux_recording_try_flush: NULL = data on disk (also when nothing is
-  // recording); otherwise an error with the recording view → RecordingException
-  // (its own type, not an AimuxException).
-  group('recordingTryFlush', () {
-    test('returns normally when nothing is recording', () {
-      recordingStop();
-      expect(recordingTryFlush, returnsNormally);
-    });
-
-    test('initRecording reports INIT for an unwritable directory', () {
-      // Parent path is a regular file → the recorder cannot be constructed,
-      // so init itself fails with code INIT and nothing is installed; a
-      // try-flush afterwards is a no-op.
-      final blocker = Directory.systemTemp.createTempSync('aimux-flutter-rec');
-      final occupied = File('${blocker.path}/occupied')..writeAsStringSync('x');
-      try {
-        recordingStop();
-        expect(
-          () => initRecording('${occupied.path}/sub'),
-          throwsA(allOf(
-              isA<RecordingException>()
-                  .having((e) => e.code, 'code', RecordingErrorCode.init),
-              isNot(isA<AimuxException>()))),
-        );
-        expect(recordingTryFlush, returnsNormally);
-      } finally {
-        recordingStop();
-        blocker.deleteSync(recursive: true);
-      }
-    });
-  });
-
-  // T9: Model/ProviderHandle register a NativeFinalizer so a forgotten close()
-  // does not leak the native handle. close() detaches the finalizer first,
-  // so an explicit close cannot double-free.
-  test('Model close is idempotent and detaches the finalizer (T9)', () {
-    final model = Model.openai('sk-test-fake-key', 'gpt-4o-mini');
-    model.close();
-    model.close(); // second close is a no-op (finalizer already detached)
-    expect(() => model.generateText('"hi"'), throwsStateError);
-  });
-
-  test('ProviderHandle close is idempotent and detaches the finalizer (T9)', () {
-    final p = createProvider('deepseek', 'sk-test-fake-key', null);
-    p.close();
-    p.close(); // should not throw
-    expect(() => p.listModels(), throwsStateError);
   });
 }

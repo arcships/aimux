@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.18)
+project(aimux_dart C)
+add_library(aimux_dart SHARED aimux_dart.c)
+set_target_properties(aimux_dart PROPERTIES C_STANDARD 11 C_VISIBILITY_PRESET hidden)
+if(NOT WIN32)
+  find_package(Threads REQUIRED)
+  target_link_libraries(aimux_dart PRIVATE Threads::Threads)
+endif()
