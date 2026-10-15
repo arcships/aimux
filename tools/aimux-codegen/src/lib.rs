@@ -13,6 +13,10 @@ use std::{
 pub type Artifacts = BTreeMap<PathBuf, Vec<u8>>;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 const INDEX: &str = "tools/aimux-codegen/generated-files.json";
+const HEADERS: [&str; 2] = [
+    "aimux-ffi/include/aimux.h",
+    "bindings/flutter/native/aimux_ops.h",
+];
 const SCHEMA_BASE: &str = "https://aimux.dev/schema/ops/";
 const LANGUAGES: &[(&str, &str)] = &[
     ("go", "ops.go"),
@@ -65,7 +69,6 @@ enum Mode {
 struct ErrorCode {
     name: String,
     code: i32,
-    #[serde(default)]
     kind: Option<String>,
 }
 
@@ -74,20 +77,9 @@ struct ErrorCode {
 /// # Errors
 /// Returns an error if JSON serialization fails.
 pub fn canonical_json(value: &Value) -> Result<Vec<u8>> {
-    fn sorted(value: &Value) -> Value {
-        match value {
-            Value::Object(map) => {
-                let entries: BTreeMap<_, _> = map
-                    .iter()
-                    .map(|(key, value)| (key.clone(), sorted(value)))
-                    .collect();
-                Value::Object(entries.into_iter().collect())
-            }
-            Value::Array(values) => Value::Array(values.iter().map(sorted).collect()),
-            _ => value.clone(),
-        }
-    }
-    Ok(serde_json::to_vec(&sorted(value))?)
+    let mut value = value.clone();
+    value.sort_all_objects();
+    Ok(serde_json::to_vec(&value)?)
 }
 
 fn pretty_json(value: &Value) -> Result<Vec<u8>> {
@@ -213,10 +205,10 @@ pub fn generate(value: &Value, runtime_digest: &str) -> Result<Artifacts> {
     manifest.ops.sort_by(|a, b| a.name.cmp(&b.name));
     manifest.error_codes.sort_by_key(|error| error.code);
     let mut artifacts = Artifacts::new();
-    artifacts.insert(
-        "aimux-ffi/include/aimux.h".into(),
-        header(&manifest, &digest)?.into_bytes(),
-    );
+    let header = header(&manifest, &digest)?.into_bytes();
+    let [c_header, flutter_header] = HEADERS;
+    artifacts.insert(c_header.into(), header.clone());
+    artifacts.insert(flutter_header.into(), header);
     for &(language, filename) in LANGUAGES {
         artifacts.insert(
             format!("bindings/{language}/generated/{filename}").into(),
@@ -234,7 +226,6 @@ pub fn generate(value: &Value, runtime_digest: &str) -> Result<Artifacts> {
         .map(|path| path.to_string_lossy().into_owned())
         .collect();
     files.push(INDEX.into());
-    files.sort();
     artifacts.insert(
         INDEX.into(),
         pretty_json(&json!({"manifestDigest": digest, "files": files}))?,
@@ -452,7 +443,6 @@ fn schemas(manifest: &Manifest) -> Result<BTreeMap<String, Value>> {
         json!({"oneOf": requests})
     };
     documents.insert("request".into(), schema_document("request", request_schema));
-    // Explicit open dictionaries for provider-private namespaces and metadata.
     documents.insert(
         "provider-options".into(),
         schema_document(
@@ -475,7 +465,7 @@ fn schemas(manifest: &Manifest) -> Result<BTreeMap<String, Value>> {
 }
 
 fn managed_path(path: &Path) -> bool {
-    if path == Path::new(INDEX) || path == Path::new("aimux-ffi/include/aimux.h") {
+    if path == Path::new(INDEX) || HEADERS.iter().any(|header| path == Path::new(header)) {
         return true;
     }
     if path.starts_with("schema/ops") {
@@ -515,7 +505,7 @@ fn collect_files(root: &Path, relative: &Path, output: &mut BTreeSet<PathBuf>) -
 
 fn existing_files(root: &Path) -> Result<BTreeSet<PathBuf>> {
     let mut files = BTreeSet::new();
-    for path in [INDEX, "aimux-ffi/include/aimux.h", "schema/ops"] {
+    for path in [INDEX].into_iter().chain(HEADERS).chain(["schema/ops"]) {
         collect_files(root, Path::new(path), &mut files)?;
     }
     for &(language, _) in LANGUAGES {

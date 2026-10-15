@@ -1,7 +1,7 @@
 # C and C++ primitives
 
 The examples include the generated `aimux-ffi/include/aimux.h` and use only
-RFC-0039 primitives. Both examples run offline and print the manifest and
+ABI primitives. Both examples run offline and print the manifest and
 runtime description. `aimux_raii.hpp` owns strings, errors, and handles;
 its stream trampoline copies borrowed frame bytes, catches every C++ exception,
 requests abort, and rethrows the first exception only after `aimux_stream` returns.
@@ -11,9 +11,9 @@ Callbacks must return promptly.
 From the repository root:
 
 ```sh
-OPS=/path/to/ops scripts/test-c-abi.sh
-OPS=/path/to/ops scripts/test-c-abi.sh --asan
-OPS=/path/to/ops scripts/test-c-abi.sh --asan-lsan # Linux only
+scripts/test-c-abi.sh
+scripts/test-c-abi.sh --asan
+scripts/test-c-abi.sh --asan-lsan # Linux only
 scripts/test-c-abi.sh --compile-only
 scripts/test-c-abi.sh --asan-compile-only
 ```
@@ -25,9 +25,7 @@ executables run and their exit statuses are reported, even if an earlier one
 fails. To test a specific already built cdylib, set
 `AIMUX_C_LIB_DIR` to its directory. `CC` and `CXX` select compilers;
 `AIMUX_C_HEADER_DIR` explicitly selects a different generated header directory.
-Missing headers, missing symbols, compiler failures, sanitizer findings, and
-assertion failures fail the script. Compile-only mode neither links nor runs.
-Assertions remain enabled in every mode.
+Compile-only mode neither links nor runs. Assertions remain enabled in every mode.
 
 ASan instruments the C/C++ harnesses. A normal Rust cdylib is not itself
 ASan-instrumented: full Rust bounds instrumentation requires a separately
@@ -51,7 +49,7 @@ existing provider (preferably against a local deterministic fixture server):
 export AIMUX_C_TEST_PROVIDER_PARAMS='<provider.create request JSON>'
 export AIMUX_C_TEST_MODEL_PARAMS='<provider.model request JSON>'
 export AIMUX_C_TEST_STREAM_PARAMS='<text.stream request JSON>'
-OPS=/path/to/ops scripts/test-c-abi.sh
+scripts/test-c-abi.sh
 ```
 
 The request DTOs come from the generated schema. Tests expect handle-producing

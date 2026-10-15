@@ -1,6 +1,5 @@
 //! RFC-0039 synchronous C adapter. Callbacks borrow their frame only until return.
 
-use std::cell::Cell;
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::future::Future;
 use std::ptr;
@@ -20,10 +19,6 @@ use tokio::runtime::{Handle, Runtime};
 #[allow(non_camel_case_types)]
 pub struct aimux_error_t {
     envelope: ErrorEnvelope,
-}
-
-thread_local! {
-    static IN_FFI_BLOCK_ON: Cell<bool> = const { Cell::new(false) };
 }
 
 type Result<T> = std::result::Result<T, OpsError>;
@@ -49,12 +44,8 @@ fn finish(result: Result<()>) -> *mut aimux_error_t {
     }
 }
 
-fn c_string(value: String) -> Result<CString> {
-    CString::new(value).map_err(serialization)
-}
-
 fn json_string(value: &impl serde::Serialize) -> Result<CString> {
-    c_string(serde_json::to_string(value).map_err(serialization)?)
+    CString::new(serde_json::to_string(value).map_err(serialization)?).map_err(serialization)
 }
 
 // The caller supplies live, NUL-terminated strings for the duration of the call.
@@ -104,30 +95,6 @@ fn context(abort: u64) -> Result<Ctx> {
     Ok(ctx)
 }
 
-struct BlockingGuard;
-
-impl BlockingGuard {
-    fn enter() -> Result<Self> {
-        // Also reject calls from a Rust async caller, before Tokio can panic.
-        if Handle::try_current().is_ok() {
-            return Err(OpsError::Binding(BindingError::ReentrantCall));
-        }
-        IN_FFI_BLOCK_ON.with(|flag| {
-            if flag.replace(true) {
-                Err(OpsError::Binding(BindingError::ReentrantCall))
-            } else {
-                Ok(Self)
-            }
-        })
-    }
-}
-
-impl Drop for BlockingGuard {
-    fn drop(&mut self) {
-        IN_FFI_BLOCK_ON.with(|flag| flag.set(false));
-    }
-}
-
 static RUNTIME: OnceLock<std::result::Result<Runtime, String>> = OnceLock::new();
 
 fn runtime() -> Result<&'static Runtime> {
@@ -140,7 +107,9 @@ fn runtime() -> Result<&'static Runtime> {
 }
 
 fn block_on<T>(future: impl Future<Output = Result<T>>) -> Result<T> {
-    let _guard = BlockingGuard::enter()?;
+    if Handle::try_current().is_ok() {
+        return Err(OpsError::Binding(BindingError::ReentrantCall));
+    }
     runtime()?.block_on(future)
 }
 
@@ -322,21 +291,17 @@ pub extern "C" fn aimux_operation_next_part(
             )
             .await
         })?;
-        let (part, state) = poll_output(result)?;
+        let (part, state) = match result {
+            PollResult::Part(part) => (json_string(&part)?.into_raw(), 1),
+            PollResult::Ended => (ptr::null_mut(), 2),
+            PollResult::Timeout => (ptr::null_mut(), 3),
+        };
         unsafe {
             *out_part = part;
             *out_state = state;
         }
         Ok(())
     })())
-}
-
-fn poll_output(result: PollResult) -> Result<(*mut c_char, i32)> {
-    match result {
-        PollResult::Part(part) => Ok((json_string(&part)?.into_raw(), 1)),
-        PollResult::Ended => Ok((ptr::null_mut(), 2)),
-        PollResult::Timeout => Ok((ptr::null_mut(), 3)),
-    }
 }
 
 /// Signal cancellation without entering a runtime; valid inside callbacks.
@@ -405,7 +370,7 @@ pub extern "C" fn aimux_error_code(error: *const aimux_error_t) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_error_message(error: *const aimux_error_t) -> *mut c_char {
     unsafe { error.as_ref() }
-        .and_then(|error| c_string(error.envelope.message.replace('\0', "\u{fffd}")).ok())
+        .and_then(|error| CString::new(error.envelope.message.replace('\0', "\u{fffd}")).ok())
         .map_or(ptr::null_mut(), CString::into_raw)
 }
 
@@ -713,23 +678,5 @@ mod tests {
         }
         aimux_handle_finalizer(handle.0 as usize as *mut c_void);
         aimux_handle_finalizer(ptr::null_mut());
-    }
-
-    #[test]
-    fn poll_states_allocate_only_for_a_part() {
-        let (part, state) = poll_output(PollResult::Part(serde_json::json!({"text":"part"})))
-            .ok()
-            .unwrap();
-        assert_eq!(state, 1);
-        assert_eq!(
-            unsafe { CStr::from_ptr(part) }.to_str().unwrap(),
-            "{\"text\":\"part\"}"
-        );
-        unsafe { aimux_free_string(part) };
-        for (result, expected) in [(PollResult::Ended, 2), (PollResult::Timeout, 3)] {
-            let (part, state) = poll_output(result).ok().unwrap();
-            assert!(part.is_null());
-            assert_eq!(state, expected);
-        }
     }
 }

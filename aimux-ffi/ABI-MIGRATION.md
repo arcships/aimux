@@ -5,9 +5,9 @@ names are reimplemented solely in `src/abi.rs`; 126 retired names are absent.
 The final ABI exports 14 primitives, including `aimux_handle_finalizer`.
 
 The table below maps every removed symbol to its replacement and covering test.
-`scripts/gen_ts_types.py`
-is retained for G-d; recording schema migration remains G-b. Decision coverage
-is provided by `decision.decide` / `decision.capabilities`.
+Business DTO generation remains in `scripts/gen_ts_types.py`; recording schema
+migration is separate. Decision coverage is provided by `decision.decide` /
+`decision.capabilities`.
 
 | Old symbol | Replacement op / primitive | Replacement test target |
 |---|---|---|

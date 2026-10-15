@@ -29,16 +29,21 @@ fn cli_generates_and_checks_the_runtime_manifest_in_a_selected_root() {
         "{}",
         String::from_utf8_lossy(&checked.stderr)
     );
-    fs::remove_file(root.path().join("aimux-ffi/include/aimux.h")).unwrap();
-    let stale = std::process::Command::new(binary)
-        .arg("--root")
-        .arg(root.path())
-        .arg("--check")
-        .output()
-        .unwrap();
-    assert!(!stale.status.success());
-    assert!(String::from_utf8_lossy(&stale.stderr).contains("missing: aimux-ffi/include/aimux.h"));
-    assert!(!root.path().join("aimux-ffi/include/aimux.h").exists());
+    for header in [
+        "aimux-ffi/include/aimux.h",
+        "bindings/flutter/native/aimux_ops.h",
+    ] {
+        fs::remove_file(root.path().join(header)).unwrap();
+        let stale = std::process::Command::new(binary)
+            .arg("--root")
+            .arg(root.path())
+            .arg("--check")
+            .output()
+            .unwrap();
+        assert!(!stale.status.success());
+        assert!(String::from_utf8_lossy(&stale.stderr).contains(&format!("missing: {header}")));
+        assert!(!root.path().join(header).exists());
+    }
     assert!(
         !std::process::Command::new(binary)
             .arg("--unknown")
@@ -115,6 +120,10 @@ fn canonical_digest_sorts_nested_objects_without_reordering_arrays() {
         digest(&first),
         digest(&json!({"a": [1,2], "z": {"a": 1, "b": 2}}))
     );
+    assert_eq!(
+        canonical_json(&json!({"z": -0.0, "a": u64::MAX})).unwrap(),
+        br#"{"a":18446744073709551615,"z":-0.0}"#
+    );
     assert!(
         generate(&fixture(), "wrong digest")
             .unwrap_err()
@@ -127,7 +136,18 @@ fn canonical_digest_sorts_nested_objects_without_reordering_arrays() {
 fn deterministic_complete_outputs_cover_every_language_and_abi_primitive() {
     let outputs = artifacts();
     assert_eq!(outputs, artifacts());
-    assert_eq!(outputs.len(), 15);
+    assert_eq!(outputs.len(), 16);
+    assert_eq!(
+        outputs[Path::new("aimux-ffi/include/aimux.h")],
+        outputs[Path::new("bindings/flutter/native/aimux_ops.h")]
+    );
+    let inventory: Value =
+        serde_json::from_slice(&outputs[Path::new("tools/aimux-codegen/generated-files.json")])
+            .unwrap();
+    assert_eq!(
+        inventory["files"],
+        json!(outputs.keys().collect::<Vec<_>>())
+    );
     let header =
         String::from_utf8(outputs[Path::new("aimux-ffi/include/aimux.h")].clone()).unwrap();
     for primitive in [
@@ -177,10 +197,14 @@ fn check_detects_missing_stale_and_changed_files_without_rewriting() {
     fs::remove_file(dir.path().join("bindings/node/generated/ops.ts")).unwrap();
     fs::write(dir.path().join("schema/ops/stale.json"), b"{}").unwrap();
     fs::write(dir.path().join("bindings/go/generated/ops.go"), b"changed").unwrap();
+    let packaged = dir.path().join("bindings/flutter/native/aimux_ops.h");
+    fs::write(&packaged, b"changed").unwrap();
     let error = check(dir.path(), &outputs).unwrap_err().to_string();
     assert!(error.contains("missing: bindings/node/generated/ops.ts"));
     assert!(error.contains("stale: schema/ops/stale.json"));
     assert!(error.contains("differs: bindings/go/generated/ops.go"));
+    assert!(error.contains("differs: bindings/flutter/native/aimux_ops.h"));
+    assert_eq!(fs::read(packaged).unwrap(), b"changed");
     assert_eq!(
         fs::read(dir.path().join("bindings/go/generated/ops.go")).unwrap(),
         b"changed"
@@ -217,12 +241,15 @@ fn writes_preserve_unowned_binding_types_and_reject_path_traversal() {
     write(dir.path(), &outputs).unwrap();
     let types = dir.path().join("bindings/node/generated/types.ts");
     fs::write(&types, b"export type OwnedElsewhere = string;").unwrap();
+    let native = dir.path().join("bindings/flutter/native/unowned.h");
+    fs::write(&native, b"binding-owned").unwrap();
     let cache = dir.path().join("bindings/python/generated/__pycache__");
     fs::create_dir_all(&cache).unwrap();
     fs::write(cache.join("ops.pyc"), b"compiled cache").unwrap();
     write(dir.path(), &outputs).unwrap();
     check(dir.path(), &outputs).unwrap();
     assert!(types.exists());
+    assert_eq!(fs::read(native).unwrap(), b"binding-owned");
     assert!(cache.join("ops.pyc").exists());
     let mut invalid = outputs.clone();
     invalid.insert("schema/ops/../../README.md".into(), b"bad".to_vec());

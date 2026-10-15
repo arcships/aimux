@@ -9,9 +9,6 @@ categories = ["api-bindings", "asynchronous", "development-tools::ffi"]
 documentation = "https://docs.rs/aimux-ffi"
 
 [lib]
-# Produce linkable artifacts for C ABI consumers
-# (C/C++, Go, Kotlin, Java, Swift, and Flutter).
-# `rlib` lets other Rust crates depend on this crate too.
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
@@ -19,12 +16,10 @@ aimux-ops = { path = "../aimux-ops", version = "0.5.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-# Drive the shared dispatcher's framed stream on the C calling thread.
 futures = { workspace = true }
 
 [dev-dependencies]
 aimux-core = { workspace = true }
-serde_json = { workspace = true }
 async-trait = { workspace = true }
 
 [lints]

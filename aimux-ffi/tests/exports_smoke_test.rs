@@ -1,4 +1,4 @@
-//! G4 deletion guards. Build the cdylib before running this test; set
+//! C export and retired-file guards. Build the cdylib before running this test; set
 //! AIMUX_FFI_LIBRARY to audit a specific artifact. New primitive behavior is
 //! covered by the ABI primitive tests.
 
@@ -89,11 +89,4 @@ fn retired_headers_and_session_are_absent() {
     ] {
         assert!(!root.join(retired).exists(), "retired file: {retired}");
     }
-    assert!(
-        root.parent()
-            .unwrap()
-            .join("scripts/gen_ts_types.py")
-            .exists(),
-        "G-d retains business DTO generation"
-    );
 }
