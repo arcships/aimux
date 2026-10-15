@@ -61,7 +61,8 @@ impl<O> TransformStreamController<O> {
 
     /// Emit `error` and keep the stream open: the next chunk is transformed
     /// as usual. For errors a consumer may skip (a malformed event inside an
-    /// otherwise valid stream).
+    /// otherwise valid stream). The AI SDK's models do this by enqueueing an
+    /// `{ type: 'error', error }` part and carrying on.
     pub fn enqueue_error(&mut self, error: AiMuxError) {
         if !self.closed {
             self.queue.push_back(Err(error));
@@ -69,7 +70,7 @@ impl<O> TransformStreamController<O> {
     }
 
     /// Emit `error` and end the stream: no further chunk is transformed and
-    /// `flush` is not called.
+    /// `flush` is not called. WHATWG `controller.error(e)`.
     pub fn error(&mut self, error: AiMuxError) {
         if !self.closed {
             self.queue.push_back(Err(error));
@@ -78,7 +79,8 @@ impl<O> TransformStreamController<O> {
     }
 
     /// End the stream without an error: no further chunk is transformed and
-    /// `flush` is not called.
+    /// `flush` is not called. WHATWG `controller.terminate()`. Anything
+    /// emitted after the stream ended is dropped.
     pub fn terminate(&mut self) {
         self.closed = true;
     }
@@ -247,6 +249,19 @@ mod tests {
         doubler.transform(-1, &mut controller);
         assert!(controller.is_closed());
         assert!(controller.drain().next().unwrap().is_err());
+    }
+
+    #[test]
+    fn nothing_is_emitted_after_the_stream_ended() {
+        let mut controller = TransformStreamController::new();
+        controller.enqueue(1);
+        controller.terminate();
+        controller.enqueue(2);
+        controller.enqueue_error(AiMuxError::InvalidResponseData("late".into()));
+        controller.error(AiMuxError::InvalidResponseData("late".into()));
+        let emitted: Vec<i32> = controller.drain().map(Result::unwrap).collect();
+        assert_eq!(emitted, [1]);
+        assert!(controller.is_closed());
     }
 
     #[tokio::test]
