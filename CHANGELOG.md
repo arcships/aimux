@@ -131,6 +131,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name ends the stream with `InvalidResponseData` (previously it started a
   call with an empty name). `DeltaToolCall.index` is now `Option<usize>`.
 
+### Removed
+
+- The cross-language contract fixtures are retired (#249):
+  `contract-tests/fixtures/wire-format.json` (a record of Rust's own serde
+  output, not of the AI SDK), `tool-call-repair.json`, the Node runner
+  `contract-tests/run-node.ts`, `aimux-core/tests/contract_test.rs` and the
+  bindings' contract and repair tests are deleted. Wire behaviour is pinned
+  instead by fixtures recorded from the pinned AI SDK packages under
+  `fixtures/aisdk/` (versions and sha512 integrity in
+  `fixtures/aisdk/VERSIONS.json`, fetched by `scripts/fetch-aisdk.sh`) and by
+  tests ported from upstream. The two decision fixtures stay in
+  `contract-tests/fixtures/`.
+
 ### RFCs
 
 - `docs/aisdk-architecture-alignment.md`: the V4 migration now lands on
