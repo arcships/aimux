@@ -594,6 +594,37 @@ pub fn provider_from_env(
     provider(name, None, model_id, options)
 }
 
+/// The environment variable [`provider`] / [`provider_handle`] read `name`'s
+/// API key from when no key is passed: the runtime overlay's `api_key`
+/// `env:` reference or its `env_var`, `{NAME}_API_KEY` for the local
+/// OpenAI-compatible servers (ollama, llamacpp, …), or the registry entry's
+/// `env_var`. `None` for an unknown name or an entry without one.
+///
+/// Hosts that let a caller pick a key by variable name (the aimux-web
+/// console's `env:VAR`) use it to allow only the provider's own variable.
+#[must_use]
+pub fn provider_api_key_env(name: &str) -> Option<String> {
+    if let Some(ext) = overlays().read().unwrap().get(name) {
+        return ext
+            .api_key
+            .as_deref()
+            .and_then(|key| key.strip_prefix("env:"))
+            .or(ext.env_var.as_deref())
+            .filter(|var| !var.is_empty())
+            .map(str::to_string);
+    }
+    match name {
+        "ollama" | "llamacpp" | "localai" | "vllm" | "sglang" | "laya" => {
+            Some(format!("{}_API_KEY", name.to_uppercase()))
+        }
+        "openai" => Some("OPENAI_API_KEY".to_string()),
+        _ => registry()
+            .iter()
+            .find(|entry| entry.name == name)
+            .map(|entry| entry.env_var.clone()),
+    }
+}
+
 /// Public lookup of a registered provider's runtime profile — used by tests
 /// that assert registry wiring (e.g. `max_tokens_key`) without constructing a
 /// model. Returns `None` for unknown provider names.
@@ -609,6 +640,46 @@ pub fn provider_registry_entry(name: &str) -> Option<OpenAICompatProfile> {
 mod tests {
     use super::*;
     use crate::provider_name::ProviderName;
+
+    #[test]
+    fn provider_api_key_env_names_the_variable_the_provider_reads() {
+        assert_eq!(
+            provider_api_key_env("groq").as_deref(),
+            Some("GROQ_API_KEY")
+        );
+        assert_eq!(
+            provider_api_key_env("openai").as_deref(),
+            Some("OPENAI_API_KEY")
+        );
+        assert_eq!(
+            provider_api_key_env("ollama").as_deref(),
+            Some("OLLAMA_API_KEY")
+        );
+        assert_eq!(provider_api_key_env("no-such-provider"), None);
+
+        let name = "key-env-overlay-test";
+        let entry = |api_key: Option<&str>, env_var: Option<&str>| ExternalProviderEntry {
+            name: name.into(),
+            display: None,
+            base_url: "https://overlay.example/v1".into(),
+            env_var: env_var.map(str::to_string),
+            api_key: api_key.map(str::to_string),
+            protocol: "openai_compat".into(),
+            profile: ProviderProfile::default(),
+            headers: None,
+            organization: None,
+            project: None,
+            max_retries: None,
+            body_overrides: None,
+            comment: None,
+        };
+        register_provider(entry(None, Some("OVERLAY_KEY"))).unwrap();
+        assert_eq!(provider_api_key_env(name).as_deref(), Some("OVERLAY_KEY"));
+        // An `env:` api_key reference wins, as in key resolution.
+        register_provider(entry(Some("env:OVERLAY_REF"), Some("OVERLAY_KEY"))).unwrap();
+        assert_eq!(provider_api_key_env(name).as_deref(), Some("OVERLAY_REF"));
+        clear_overlay(name);
+    }
 
     #[test]
     fn provider_builds_groq_model() {

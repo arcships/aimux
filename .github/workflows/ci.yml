@@ -7,8 +7,13 @@ on:
   # reviewed against the PR below them.
   pull_request:
 
+# A new push to a pull request cancels its older run. Pushes to master each
+# get their own group: GitHub cancels a pending run in a group when another
+# one queues, and "changes" only diffs a push against the one before it, so a
+# documentation push queued behind a cancelled code push would leave that
+# code untested on master.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -29,10 +34,175 @@ env:
   CARGO_PROFILE_IOS_RELEASE_CODEGEN_UNITS: "1"
 
 jobs:
+  # Decides once which jobs a change needs and where they run. "CI result" at
+  # the end always runs and reports it, so a check required by branch
+  # protection never waits on a skipped workflow (RFC-0043 §9.2).
+  #
+  # What runs, on a pull request:
+  # - Documentation only (top-level Markdown, docs/, rfc/, assets/): nothing.
+  #   docs/api/providers.md is generated and checked, so it counts as code.
+  # - Only inside bindings/<name>/: that binding's jobs. The Rust workspace
+  #   does not read the bindings, so nothing else can break.
+  # - aimux-ffi/: the Rust jobs and every binding that links the C ABI. Node
+  #   and Python link the Rust crates directly, not the C ABI. Go is tested
+  #   inside ffi-build, Java and Kotlin share one job.
+  # - Anything else (the Rust crates, tools, scripts, contract fixtures,
+  #   Cargo manifests, workflows): every job.
+  # Generator drift checks run for any code change: they check generated
+  # files that live in every binding.
+  #
+  # Where it runs, on a pull request: the Rust code is platform-neutral
+  # (rustls, no platform cfg outside tools/), so jobs run on Linux, and the
+  # macOS and Windows legs are added only when the change touches what differs
+  # per platform: the C ABI, the Node, Go, Flutter or Swift bindings, a Cargo
+  # manifest (dependencies), a build script, line-ending rules
+  # (.gitattributes), the toolchain or the workflows.
+  # Shared Rust changes still get one Windows leg (Node x64 tests); Swift
+  # tests are macOS-only and run whenever they are needed: they
+  # drive the C ABI from async Swift, which caught a stack overflow no Linux
+  # job hit.
+  #
+  # Pushes to master, and runs with no base to compare with, run everything.
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+      run: ${{ steps.diff.outputs.run }}
+      node-legs: ${{ steps.legs.outputs.node }}
+      ffi-legs: ${{ steps.legs.outputs.ffi }}
+      example-legs: ${{ steps.legs.outputs.example }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            # The test merge commit's first parent is the base branch head,
+            # so this diff is exactly what the pull request changes.
+            base=HEAD^1
+            everything=false
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] \
+              && git fetch --no-tags --depth=1 origin "$BEFORE"; then
+            base=$BEFORE
+            everything=true
+          else
+            echo "No base to compare with: running everything."
+            base=
+            everything=true
+          fi
+          if [ -n "$base" ]; then
+            git diff --name-only "$base" HEAD
+          fi
+          # changed PATHSPEC...: prints true when the change touches any of them.
+          changed() {
+            if [ -n "$base" ] && git diff --quiet "$base" HEAD -- "$@"; then
+              echo false
+            else
+              echo true
+            fi
+          }
+          not_docs=(. ':(exclude,glob)*.md' ':(exclude)docs' ':(exclude)rfc' ':(exclude)assets')
+          generated_doc=$(changed docs/api/providers.md)
+          code=$(changed "${not_docs[@]}")
+          shared=$(changed "${not_docs[@]}" ':(exclude)bindings' ':(exclude)aimux-ffi')
+          # Line-ending rules apply to files of every job, wherever the
+          # .gitattributes lives.
+          if [ "$generated_doc" = true ] \
+              || [ "$(changed ':(glob)**/.gitattributes')" = true ]; then
+            code=true
+            shared=true
+          fi
+          if [ "$everything" = true ]; then
+            shared=$code
+          fi
+          platforms=$everything
+          if [ "$(changed .github rust-toolchain.toml .cargo aimux-ffi bindings/node \
+                bindings/go bindings/flutter bindings/swift \
+                scripts/build-ios-xcframework.sh ':(glob)**/.gitattributes' \
+                ':(glob)**/Cargo.toml' ':(glob)**/build.rs')" = true ]; then
+            platforms=true
+          fi
+          # job NAME DIRECTORY...: the job runs when shared code changed, or
+          # any of the directories it builds and tests.
+          job() {
+            local name=$1 run=$shared
+            shift
+            if [ "$(changed "$@")" = true ]; then
+              run=true
+            fi
+            printf '"%s": %s,' "$name" "$run"
+          }
+          run="{
+            $(job rust-test aimux-ffi)
+            $(job node-binding bindings/node)
+            $(job python-binding bindings/python)
+            $(job ffi-build aimux-ffi bindings/go)
+            $(job jvm-bindings aimux-ffi bindings/java bindings/kotlin)
+            $(job flutter-binding aimux-ffi bindings/flutter)
+            $(job flutter-example-build aimux-ffi bindings/flutter)
+            $(job swift-contract-tests aimux-ffi bindings/swift)
+            \"contract-tests\": $code}"
+          run=$(jq -c . <<< "$run")
+          printf 'code=%s\nshared=%s\nplatforms=%s\nrun=%s\n' \
+            "$code" "$shared" "$platforms" "$run" \
+            | tee -a "$GITHUB_OUTPUT"
+      # The matrices of the jobs that have macOS or Windows legs. A leg on
+      # another host than ubuntu-latest runs only when "platforms" is true,
+      # except the Windows x64 Node test leg, which also runs whenever the
+      # shared Rust code changed: it is the only job that runs that code on
+      # Windows, where I/O errors and refused connections behave differently
+      # (Swift tests cover macOS).
+      - id: legs
+        env:
+          PLATFORMS: ${{ steps.diff.outputs.platforms }}
+          SHARED: ${{ steps.diff.outputs.shared }}
+        run: |
+          legs() {
+            jq -c --arg platforms "$PLATFORMS" --arg shared "$SHARED" \
+              'map(select(.host == "ubuntu-latest" or $platforms == "true"
+                or (.shared == true and $shared == "true")) | del(.shared))'
+          }
+          # darwin-x64 is cross-built on Apple Silicon and tested with x64 Node
+          # under Rosetta: Intel macOS runners are slower and scarcer.
+          node=$(legs <<'EOF'
+          [
+            {"host": "windows-latest", "target": "x86_64-pc-windows-msvc", "binary": "aimux.win32-x64-msvc.node", "test": true, "shared": true},
+            {"host": "windows-latest", "target": "aarch64-pc-windows-msvc", "binary": "aimux.win32-arm64-msvc.node", "test": false},
+            {"host": "macos-latest", "target": "x86_64-apple-darwin", "binary": "aimux.darwin-x64.node", "test": true, "node-arch": "x64"},
+            {"host": "macos-latest", "target": "aarch64-apple-darwin", "binary": "aimux.darwin-arm64.node", "test": true},
+            {"host": "ubuntu-latest", "target": "x86_64-unknown-linux-gnu", "binary": "aimux.linux-x64-gnu.node", "test": true},
+            {"host": "ubuntu-latest", "target": "aarch64-unknown-linux-gnu", "binary": "aimux.linux-arm64-gnu.node", "test": false}
+          ]
+          EOF
+          )
+          ffi=$(legs <<'EOF'
+          [
+            {"host": "ubuntu-latest", "target": "x86_64-unknown-linux-gnu", "artifact": "libaimux_ffi.so"},
+            {"host": "macos-latest", "target": "aarch64-apple-darwin", "artifact": "libaimux_ffi.dylib"},
+            {"host": "windows-latest", "target": "x86_64-pc-windows-msvc", "artifact": "aimux_ffi.dll"}
+          ]
+          EOF
+          )
+          example=$(legs <<'EOF'
+          [
+            {"platform": "ios", "host": "macos-latest", "targets": "aarch64-apple-ios aarch64-apple-ios-sim"},
+            {"platform": "android", "host": "ubuntu-latest", "targets": "aarch64-linux-android armv7-linux-androideabi x86_64-linux-android"}
+          ]
+          EOF
+          )
+          printf 'node=%s\nffi=%s\nexample=%s\n' "$node" "$ffi" "$example" \
+            | tee -a "$GITHUB_OUTPUT"
+
   # ── Rust core: fmt + clippy + tests (single OS — cassettes are platform-agnostic) ──
   rust-test:
     name: Rust core (fmt + clippy + test)
     runs-on: ubuntu-latest
+    needs: changes
+    if: fromJSON(needs.changes.outputs.run)['rust-test']
     env:
       # No debug info for the workspace's test binaries: linking them is most
       # of this job. Only this job: node-binding uploads a dev-profile build.
@@ -58,39 +228,14 @@ jobs:
   node-binding:
     name: Node binding (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.host }}
+    needs: changes
+    if: fromJSON(needs.changes.outputs.run)['node-binding']
     env:
       MACOSX_DEPLOYMENT_TARGET: '10.13'
     strategy:
       fail-fast: false
       matrix:
-        settings:
-          - host: windows-latest
-            target: x86_64-pc-windows-msvc
-            binary: aimux.win32-x64-msvc.node
-            test: true
-          - host: windows-latest
-            target: aarch64-pc-windows-msvc
-            binary: aimux.win32-arm64-msvc.node
-            test: false
-          # Cross-built on Apple Silicon and tested with x64 Node under
-          # Rosetta: Intel macOS runners are slower and scarcer.
-          - host: macos-latest
-            target: x86_64-apple-darwin
-            binary: aimux.darwin-x64.node
-            test: true
-            node-arch: x64
-          - host: macos-latest
-            target: aarch64-apple-darwin
-            binary: aimux.darwin-arm64.node
-            test: true
-          - host: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            binary: aimux.linux-x64-gnu.node
-            test: true
-          - host: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            binary: aimux.linux-arm64-gnu.node
-            test: false
+        settings: ${{ fromJSON(needs.changes.outputs.node-legs) }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -185,6 +330,8 @@ jobs:
   python-binding:
     name: Python binding
     runs-on: ubuntu-latest
+    needs: changes
+    if: fromJSON(needs.changes.outputs.run)['python-binding']
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -215,6 +362,8 @@ jobs:
   ffi-build:
     name: aimux-ffi (${{ matrix.target }})
     runs-on: ${{ matrix.host }}
+    needs: changes
+    if: fromJSON(needs.changes.outputs.run)['ffi-build']
     env:
       CARGO_PROFILE_RELEASE_LTO: "true"
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
@@ -222,16 +371,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - host: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact: libaimux_ffi.so
-          - host: macos-latest
-            target: aarch64-apple-darwin
-            artifact: libaimux_ffi.dylib
-          - host: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact: aimux_ffi.dll
+        include: ${{ fromJSON(needs.changes.outputs.ffi-legs) }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -280,6 +420,8 @@ jobs:
   jvm-bindings:
     name: Java + Kotlin bindings
     runs-on: ubuntu-latest
+    needs: changes
+    if: fromJSON(needs.changes.outputs.run)['jvm-bindings']
     env:
       LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
     steps:
@@ -338,6 +480,8 @@ jobs:
   flutter-binding:
     name: Flutter binding
     runs-on: ubuntu-latest
+    needs: changes
+    if: fromJSON(needs.changes.outputs.run)['flutter-binding']
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -392,16 +536,12 @@ jobs:
   flutter-example-build:
     name: Flutter example (${{ matrix.platform }})
     runs-on: ${{ matrix.host }}
+    needs: changes
+    if: fromJSON(needs.changes.outputs.run)['flutter-example-build']
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: ios
-            host: macos-latest
-            targets: aarch64-apple-ios aarch64-apple-ios-sim
-          - platform: android
-            host: ubuntu-latest
-            targets: aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+        include: ${{ fromJSON(needs.changes.outputs.example-legs) }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -435,7 +575,7 @@ jobs:
         if: matrix.platform == 'android'
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-ndk
+          tool: cargo-ndk@4.1.2
       - uses: gradle/actions/setup-gradle@v4
         if: matrix.platform == 'android'
       - name: Build iOS xcframework
@@ -493,6 +633,8 @@ jobs:
   contract-tests:
     name: Generator drift checks
     runs-on: ubuntu-latest
+    needs: changes
+    if: fromJSON(needs.changes.outputs.run)['contract-tests']
     steps:
       - uses: actions/checkout@v4
       - name: ProviderName generator drift (checked-in files must match generator output)
@@ -501,18 +643,31 @@ jobs:
         run: python3 scripts/gen_providers_doc.py --check
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: ts-rs export drift (checked-in types must match generator output)
         run: python3 scripts/gen_ts_types.py --check
+      # The AI SDK pin tooling: VERSIONS.json format and integrity rules, and
+      # fetch-aisdk.sh against a registry served on 127.0.0.1 (no network).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: AI SDK pin scripts (fetch-aisdk.sh, VERSIONS.json helpers)
+        run: node --test scripts/fetch-aisdk.test.mjs scripts/aisdk-fixtures/versions.test.mjs
 
   # Swift tests need macOS (XCTest) and the FFI cdylib, which the Swift package
   # links via the CAimuxFFI system module.
   swift-contract-tests:
     name: Swift tests
     runs-on: macos-latest
+    needs: changes
+    if: fromJSON(needs.changes.outputs.run)['swift-contract-tests']
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: Build the FFI library the Swift package links against
         run: cargo build -p aimux-ffi --release
       - name: Run Swift tests
@@ -521,3 +676,38 @@ jobs:
           DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
         run: |
           swift test -Xlinker -L${{ github.workspace }}/target/release
+
+  # The one check to require in branch protection. It runs whatever happened
+  # above: a job may be skipped only because "changes" decided it is not
+  # needed; any other skip, failure or cancellation fails it. A new job goes
+  # into the map in "changes" (a job missing there turns this red) and into
+  # the list below (a job missing here is not checked at all).
+  ci-result:
+    name: CI result
+    if: always()
+    needs:
+      - changes
+      - rust-test
+      - node-binding
+      - python-binding
+      - ffi-build
+      - jvm-bindings
+      - flutter-binding
+      - flutter-example-build
+      - contract-tests
+      - swift-contract-tests
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+          RUN: ${{ needs.changes.outputs.run }}
+          CODE: ${{ needs.changes.outputs.code }}
+        run: |
+          echo "$NEEDS" | jq -e --argjson run "${RUN:-null}" '
+            .changes.result == "success" and
+            (del(.changes) | to_entries | all(.value.result == "success"
+              or (.value.result == "skipped" and $run[.key] == false)))'
+          if [ "$CODE" = false ]; then
+            echo "Documentation-only change: build and test jobs not applicable." \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          fi

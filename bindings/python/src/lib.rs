@@ -144,12 +144,19 @@ impl Model {
     /// opts_json: optional JSON-serialized GenerateTextOptions
     /// Returns JSON-serialized GenerateTextResult.
     #[pyo3(signature = (prompt_json, opts_json=None))]
-    fn generate_text(&self, prompt_json: &str, opts_json: Option<&str>) -> PyResult<String> {
+    fn generate_text(
+        &self,
+        py: Python<'_>,
+        prompt_json: &str,
+        opts_json: Option<&str>,
+    ) -> PyResult<String> {
         let prompt = parse_prompt(prompt_json)?;
         let opts = parse_opts(opts_json)?;
 
         let rt = runtime();
-        let result = rt.block_on(async move { generate_text(&*self.inner, prompt, opts).await });
+        let result = py.allow_threads(|| {
+            rt.block_on(async move { generate_text(&*self.inner, prompt, opts).await })
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -167,12 +174,19 @@ impl Model {
     /// match the schema.
     #[pyo3(signature = (prompt_json, opts_json=None))]
     #[allow(deprecated)]
-    fn generate_object(&self, prompt_json: &str, opts_json: Option<&str>) -> PyResult<String> {
+    fn generate_object(
+        &self,
+        py: Python<'_>,
+        prompt_json: &str,
+        opts_json: Option<&str>,
+    ) -> PyResult<String> {
         let prompt = parse_prompt(prompt_json)?;
         let opts = parse_opts(opts_json)?;
 
         let rt = runtime();
-        let result = rt.block_on(async move { generate_object(&*self.inner, prompt, opts).await });
+        let result = py.allow_threads(|| {
+            rt.block_on(async move { generate_object(&*self.inner, prompt, opts).await })
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -188,14 +202,21 @@ impl Model {
     /// Returns JSON-serialized GenerateTextResult, the same result
     /// `generate_text` returns.
     #[pyo3(signature = (prompt_json, opts_json=None))]
-    fn consume_stream_text(&self, prompt_json: &str, opts_json: Option<&str>) -> PyResult<String> {
+    fn consume_stream_text(
+        &self,
+        py: Python<'_>,
+        prompt_json: &str,
+        opts_json: Option<&str>,
+    ) -> PyResult<String> {
         let prompt = parse_prompt(prompt_json)?;
         let opts = parse_opts(opts_json)?;
 
         let rt = runtime();
-        let result = rt.block_on(async move {
-            let stream_result = stream_text(&*self.inner, prompt, opts).await?;
-            stream_result.consume().await
+        let result = py.allow_threads(|| {
+            rt.block_on(async move {
+                let stream_result = stream_text(&*self.inner, prompt, opts).await?;
+                stream_result.consume().await
+            })
         });
 
         match result {
@@ -283,6 +304,7 @@ impl Model {
     #[pyo3(signature = (prompt_json, opts_json=None))]
     fn generate_text_as_openai(
         &self,
+        py: Python<'_>,
         prompt_json: &str,
         opts_json: Option<&str>,
     ) -> PyResult<String> {
@@ -290,8 +312,9 @@ impl Model {
         let opts = parse_opts(opts_json)?;
 
         let rt = runtime();
-        let result =
-            rt.block_on(async move { generate_text_as_openai(&*self.inner, prompt, opts).await });
+        let result = py.allow_threads(|| {
+            rt.block_on(async move { generate_text_as_openai(&*self.inner, prompt, opts).await })
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -742,10 +765,10 @@ impl ProviderHandle {
 
     /// List models available on this provider (runtime discovery + anya2a spec).
     /// Returns a JSON array of RuntimeModel.
-    fn list_models(&self) -> PyResult<String> {
+    fn list_models(&self, py: Python<'_>) -> PyResult<String> {
         let rt = runtime();
-        let models = rt
-            .block_on(async { self.inner.list_models().await })
+        let models = py
+            .allow_threads(|| rt.block_on(async { self.inner.list_models().await }))
             .map_err(|e| to_py_err(&e))?;
         serialize_result(&models)
     }
@@ -793,9 +816,11 @@ fn create_provider(
 /// `dist/all.json`.
 #[pyfunction]
 #[pyo3(signature = (source_url=None))]
-fn get_model_specs(source_url: Option<&str>) -> PyResult<String> {
-    let catalogue = runtime()
-        .block_on(async { aimux_providers::get_model_specs(source_url).await })
+fn get_model_specs(py: Python<'_>, source_url: Option<&str>) -> PyResult<String> {
+    let catalogue = py
+        .allow_threads(|| {
+            runtime().block_on(async { aimux_providers::get_model_specs(source_url).await })
+        })
         .map_err(|e| to_py_err(&e))?;
     serialize_result(&catalogue)
 }
@@ -933,9 +958,9 @@ fn recording_stop() {
 
 /// 刷盘全局 recorder(阻塞至 JSONL 落盘;ring 模式 no-op)。
 #[pyfunction]
-fn recording_flush() {
+fn recording_flush(py: Python<'_>) {
     if let Some(rec) = aimux_core::recording::recorder() {
-        rec.flush();
+        py.allow_threads(|| rec.flush());
     }
 }
 
@@ -945,11 +970,11 @@ fn recording_flush() {
 /// exception type, not an `AimuxError`. Returns normally when nothing is
 /// recording. The legacy `recording_flush` stays and never reports.
 #[pyfunction]
-fn recording_try_flush() -> PyResult<()> {
+fn recording_try_flush(py: Python<'_>) -> PyResult<()> {
     let Some(rec) = aimux_core::recording::recorder() else {
         return Ok(());
     };
-    rec.try_flush()
+    py.allow_threads(|| rec.try_flush())
         .map_err(|e| AiMuxBindingError::from(e).to_py_err())
 }
 
