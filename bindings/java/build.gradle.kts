@@ -16,6 +16,8 @@ java {
     targetCompatibility = JavaVersion.VERSION_1_8
 }
 
+sourceSets["main"].java.srcDir("generated")
+
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     // JDK 8's javac has no --release flag; only set it on JDK 9+ so the
@@ -30,6 +32,7 @@ dependencies {
     implementation("net.java.dev.jna:jna:5.14.0")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.17.2")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
+    testImplementation("org.junit.platform:junit-platform-launcher:1.10.0")
     testImplementation("org.assertj:assertj-core:3.26.0")
     testImplementation("org.json:json:20240303")
 }
@@ -151,4 +154,23 @@ signing {
         useInMemoryPgpKeys(signingKey, signingPassword)
         sign(publishing.publications["mavenJava"])
     }
+}
+
+// Deterministic JNA contract tests use a test-only C implementation of the frozen ABI.
+val nativeFixture = layout.buildDirectory.file("native/${System.mapLibraryName("aimux_abi_fixture")}")
+val compileNativeFixture by tasks.registering(Exec::class) {
+    inputs.file("src/test/native/abi_fixture.c")
+    inputs.file("../../aimux-ffi/include/aimux.h")
+    outputs.file(nativeFixture)
+    doFirst {
+        nativeFixture.get().asFile.parentFile.mkdirs()
+        val sharedFlag = if (System.getProperty("os.name").startsWith("Mac")) "-dynamiclib" else "-shared"
+        commandLine("cc", "-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Wall", "-Wextra", "-Werror",
+            sharedFlag, "-fPIC", "-I../../aimux-ffi/include", "src/test/native/abi_fixture.c", "-o", nativeFixture.get().asFile.absolutePath)
+    }
+}
+
+tasks.test {
+    dependsOn(compileNativeFixture)
+    systemProperty("aimux.testLibrary", nativeFixture.get().asFile.absolutePath)
 }

@@ -1,132 +1,29 @@
 package ai.arcships.aimux;
 
-import com.sun.jna.Pointer;
-import com.sun.jna.ptr.LongByReference;
-import com.sun.jna.ptr.PointerByReference;
-import java.util.Objects;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import ai.arcships.aimux.generated.AimuxOps;
 
-/**
- * A provider handle — created by {@link Model#createProvider}, supports
- * {@link #listModels()} (runtime discovery) and {@link #model(String)} (build a
- * model from a discovered id).
- *
- * <p>Implements {@link AutoCloseable}; the native handle is released on
- * {@link #close()}. Use try-with-resources or call {@code close()} explicitly.
- *
- * <p><b>Thread-safety / concurrency.</b> Safe for concurrent use. The native
- * handle is guarded by a Go-style {@link ReentrantReadWriteLock} (fair, FIFO):
- * {@link #listModels()} and {@link #model(String)} hold the <em>read</em> lock
- * for the entire FFI call, and {@link #close()} takes the <em>write</em> lock.
- * {@code close()} therefore blocks until in-flight calls finish before dropping
- * the native handle — closes the check-then-use use-after-free race where a
- * caller could pass the closed-flag check and then race with {@code close()}'s
- * drop.
- */
-public class ProviderHandle implements AutoCloseable {
+import com.fasterxml.jackson.databind.JsonNode;
 
-    // Go-style read/write lock — see Model for the rationale. Each FFI call
-    // (listModels/model) holds the read lock for its whole duration; close()
-    // takes the write lock and waits for in-flight calls before dropping the
-    // handle, preventing a use-after-free.
-    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock(true);
-    private long handle;
-    private boolean closed;
+/** Provider resource. Provider configuration is data, passed unchanged to provider.create. */
+public final class ProviderHandle extends NativeHandle {
+    ProviderHandle(Aimux aimux, long id) { super(aimux, id); }
 
-    ProviderHandle(long handle) {
-        this.handle = handle;
+    private long modelId(String method, String modelId) {
+        com.fasterxml.jackson.databind.node.ObjectNode request = Types.AimuxJson.MAPPER.createObjectNode();
+        request.put("method", method);
+        request.put("modelId", java.util.Objects.requireNonNull(modelId, "modelId"));
+        return AimuxResult.handle(call(AimuxOps.OP_PROVIDER_MODEL, request.toString()));
     }
 
-    /**
-     * Release the native handle. Idempotent and thread-safe: subsequent calls
-     * are no-ops. Acquires the write lock and blocks until in-flight
-     * {@link #listModels()} / {@link #model(String)} calls finish before
-     * dropping the native handle (prevents use-after-free).
-     */
-    @Override
-    public void close() {
-        lock.writeLock().lock();
-        try {
-            if (closed || handle == 0) {
-                return;
-            }
-            long h = handle;
-            handle = 0;
-            closed = true;
-            AimuxFFI.INSTANCE.aimux_drop_handle(h);
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
-
-    @Override
-    protected void finalize() {
-        close();
-    }
-
-    // Caller MUST already hold the read lock; held across the FFI call so
-    // close() cannot drop the handle mid-call.
-    private long requireHandleLocked() {
-        if (closed || handle == 0) {
-            throw new IllegalStateException("ProviderHandle is closed");
-        }
-        return handle;
-    }
-
-    /**
-     * List models available on this provider (runtime discovery via the
-     * provider's {@code /models} endpoint), enriched with community knowledge
-     * (anya2a) when available.
-     *
-     * @return a JSON array of ResolvedModel
-     * @throws IllegalStateException if this handle is closed
-     * @throws AimuxException on engine / transport failure
-     */
-    public String listModels() {
-        lock.readLock().lock();
-        try {
-            long h = requireHandleLocked();
-            PointerByReference out = new PointerByReference();
-            return AimuxResult.extractString(
-                AimuxFFI.INSTANCE.aimux_provider_list_models(h, out),
-                out,
-                "list_models");
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-
-    /**
-     * Build a language model from a discovered model id.
-     *
-     * @param modelId the model id (e.g. from {@link #listModels()})
-     * @return a new {@link Model}
-     * @throws IllegalStateException if this handle is closed
-     * @throws AimuxException on construction failure
-     */
-    public Model model(String modelId) {
-        Objects.requireNonNull(modelId, "modelId");
-        lock.readLock().lock();
-        try {
-            long h = requireHandleLocked();
-            LongByReference out = new LongByReference();
-            Pointer e = AimuxFFI.INSTANCE.aimux_provider_model(h, modelId, out);
-            return new Model(AimuxResult.extractHandle(e, out, "Failed to create model: " + modelId));
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-    /** Build a decision model using this provider's connection configuration. */
-    public DecisionModel decisionModel(String modelId) {
-        Objects.requireNonNull(modelId, "modelId");
-        lock.readLock().lock();
-        try {
-            LongByReference out = new LongByReference();
-            Pointer error = AimuxFFI.INSTANCE.aimux_provider_decision_model(requireHandleLocked(), modelId, out);
-            return new DecisionModel(AimuxResult.extractHandle(error, out, "decision model"));
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-
+    public Model languageModel(String modelId) { return new Model(aimux, modelId("languageModel", modelId)); }
+    public EmbeddingModel embeddingModel(String modelId) { return new EmbeddingModel(aimux, modelId("embeddingModel", modelId)); }
+    public ImageModel imageModel(String modelId) { return new ImageModel(aimux, modelId("imageModel", modelId)); }
+    public SpeechModel speechModel(String modelId) { return new SpeechModel(aimux, modelId("speechModel", modelId)); }
+    public TranscriptionModel transcriptionModel(String modelId) { return new TranscriptionModel(aimux, modelId("transcriptionModel", modelId)); }
+    public RerankingModel rerankingModel(String modelId) { return new RerankingModel(aimux, modelId("rerankingModel", modelId)); }
+    public VideoModel videoModel(String modelId) { return new VideoModel(aimux, modelId("videoModel", modelId)); }
+    public SearchModel searchModel(String modelId) { return new SearchModel(aimux, modelId("searchModel", modelId)); }
+    public DecisionModel decisionModel(String modelId) { return new DecisionModel(aimux, modelId("decision", modelId)); }
+    public Files files() { return new Files(aimux, AimuxResult.handle(call(AimuxOps.OP_PROVIDER_FILES, "{}"))); }
+    public JsonNode invoke(String paramsJson) { return call(AimuxOps.OP_PROVIDER_INVOKE, paramsJson); }
 }

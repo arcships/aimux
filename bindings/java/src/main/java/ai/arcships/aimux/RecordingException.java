@@ -1,44 +1,42 @@
 package ai.arcships.aimux;
 
-import com.sun.jna.Pointer;
+import com.fasterxml.jackson.databind.JsonNode;
 
-/**
- * Recording (RFC-0023) failure from {@link Aimux#initRecording(String)} /
- * {@link Aimux#recordingTryFlush()}.
- *
- * <p>Deliberately <em>not</em> an {@link AimuxException}: {@code AiMuxError} and
- * {@code recording::RecordingError} are unrelated Rust types, and this binding
- * mirrors that — the two share only {@link RuntimeException}.
- * Message text comes from the C layer.
- */
-public class RecordingException extends RuntimeException {
-
-    private static final long serialVersionUID = 1L;
-
-    private final RecordingErrorCode code;
-
-    public RecordingException(RecordingErrorCode code, String message) {
-        super(message);
-        this.code = code;
-    }
-
-    public RecordingErrorCode getCode() {
-        return code;
-    }
-
-    /**
-     * Build from a returned {@code const aimux_error_t *}. Reads the unified
-     * code and message, frees the string; the caller
-     * ({@link AimuxResult#expectRecordingError}) frees the returned error.
-     * Separate from {@link AimuxException#fromC} on purpose.
-     */
-    static RecordingException fromC(Pointer error, String prefix) {
-        AimuxFFI ffi = AimuxFFI.INSTANCE;
-        RecordingErrorCode code = RecordingErrorCode.fromC(ffi.aimux_error_code(error));
-        String msg = AimuxResult.takeString(ffi.aimux_error_message(error));
-        if (msg == null || msg.isEmpty()) {
-            msg = "aimux: recording " + code;
+/** Recording domain errors from the RFC-0039 envelope. */
+public abstract class RecordingException extends NativeException {
+    RecordingException(JsonNode envelope) { super(envelope); }
+    static RecordingException decode(JsonNode envelope) {
+        switch (envelope.path("error").path("name").asText()) {
+            case "Init": return new Init(envelope);
+            case "OpenFile": return new OpenFile(envelope);
+            case "Spawn": return new Spawn(envelope);
+            case "WriterGone": return new WriterGone(envelope);
+            case "FlushTimeout": return new FlushTimeout(envelope);
+            case "Write": return new Write(envelope);
+            default: return new Unknown(envelope);
         }
-        return new RecordingException(code, prefix + msg);
+    }
+
+    public static final class Init extends RecordingException {
+        Init(JsonNode envelope) { super(envelope); }
+    }
+    public static final class OpenFile extends RecordingException {
+        OpenFile(JsonNode envelope) { super(envelope); }
+    }
+    public static final class Spawn extends RecordingException {
+        Spawn(JsonNode envelope) { super(envelope); }
+    }
+    public static final class WriterGone extends RecordingException {
+        WriterGone(JsonNode envelope) { super(envelope); }
+    }
+    public static final class FlushTimeout extends RecordingException {
+        FlushTimeout(JsonNode envelope) { super(envelope); }
+    }
+    public static final class Write extends RecordingException {
+        Write(JsonNode envelope) { super(envelope); }
+    }
+    /** An unrecognized variant, retaining its complete envelope. */
+    public static final class Unknown extends RecordingException {
+        Unknown(JsonNode envelope) { super(envelope); }
     }
 }

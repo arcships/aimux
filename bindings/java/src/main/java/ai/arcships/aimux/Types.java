@@ -1912,8 +1912,8 @@ public final class Types {
 
     /**
      * A tool call as the provider emitted it: {@code input} is the raw argument
-     * TEXT, not the parsed object. This is what a {@link ToolCallRepair}
-     * inspects and what it returns as the replacement. Its JSON carries
+     * TEXT, not the parsed object. {@link ToolCallRepairs} inspects this data
+     * and validates replacements. Its JSON carries
      * {@code "type": "tool-call"}, as the AI SDK's {@code LanguageModelV4ToolCall}.
      */
     public static class RawToolCall {
@@ -1975,7 +1975,7 @@ public final class Types {
     }
 
     /**
-     * The argument handed to a {@link ToolCallRepair} — the aimux equivalent of
+     * The context returned by {@link ToolCallRepairs} — the aimux equivalent of
      * the AI SDK {@code repairToolCall} context. Built by the library from the
      * invalid call plus the prompt and options the call was generated with, so
      * {@link #getMessages()} is the conversation the model actually saw.
@@ -2028,9 +2028,6 @@ public final class Types {
         @JsonProperty("includeRawChunks") private Boolean includeRawChunks;
         @JsonProperty("timeout") private TimeoutConfiguration timeout;
         @JsonProperty("sessionId") private String sessionId;
-        // Host-side only (RFC-0035): a function cannot cross the C ABI, and the
-        // native layer must never see this key.
-        @JsonIgnore private ToolCallRepair repairToolCall;
 
         @JsonCreator
         GenerateTextOptions() {}
@@ -2083,29 +2080,6 @@ public final class Types {
         public TimeoutConfiguration getTimeout() { return timeout; }
         public String getSessionId() { return sessionId; }
 
-        /**
-         * Host-side one-shot repair for invalid tool calls (RFC-0035), the
-         * aimux equivalent of the AI SDK {@code repairToolCall}.
-         *
-         * <p>Applies to {@link TypedModel} calls only and is never serialized
-         * into the options JSON. {@code generateTextAsOpenAI} repairs the
-         * native result before converting it; {@code streamTextAsOpenAI} does
-         * not reflect repair (its tool-argument deltas are the provider's
-         * text, as in the AI SDK).
-         *
-         * <p>If a repair fails at the boundary while streaming (not in the
-         * hook — a throwing hook is a {@code ToolCallRepair} error on the
-         * call), {@code onError} is told and the unrepaired part is still
-         * delivered. The stream waits for the hook, without a timeout.
-         *
-         * <p>A stream hook may call back into the model being streamed, but
-         * only from the thread it is invoked on: that thread borrows the
-         * stream's read hold on the model, while extra threads the hook starts
-         * itself do not and would deadlock against a concurrent
-         * {@link Model#close()}.
-         */
-        public ToolCallRepair getRepairToolCall() { return repairToolCall; }
-
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
@@ -2128,7 +2102,6 @@ public final class Types {
             private Boolean includeRawChunks;
             private TimeoutConfiguration timeout;
             private String sessionId;
-            private ToolCallRepair repairToolCall;
 
             public Builder maxOutputTokens(Long v) { this.maxOutputTokens = v; return this; }
             public Builder temperature(Double v) { this.temperature = v; return this; }
@@ -2149,17 +2122,12 @@ public final class Types {
             public Builder includeRawChunks(Boolean v) { this.includeRawChunks = v; return this; }
             public Builder timeout(TimeoutConfiguration v) { this.timeout = v; return this; }
             public Builder sessionId(String v) { this.sessionId = v; return this; }
-            /** See {@link GenerateTextOptions#getRepairToolCall()} (RFC-0035). */
-            public Builder repairToolCall(ToolCallRepair v) { this.repairToolCall = v; return this; }
 
             public GenerateTextOptions build() {
                 GenerateTextOptions options = new GenerateTextOptions(maxOutputTokens, temperature,
                     stopSequences, topP, topK, presencePenalty, frequencyPenalty, output, seed,
                     tools, toolChoice, headers, providerOptions, reasoning, instructions,
                     maxRetries, includeRawChunks, timeout, sessionId);
-                // Set outside the constructor: the hook is host-side state, not
-                // part of the serialized option set.
-                options.repairToolCall = repairToolCall;
                 return options;
             }
         }
