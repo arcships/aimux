@@ -1,0 +1,6 @@
+{
+  "$comment": "Canonical business schema is deferred to RFC-0042 (G-d).",
+  "$id": "https://aimux.dev/schema/ops/type-AIMUX_OPS_OPS_REPLAY_REPLAY_LIVE_RESULT.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-aimux-type": "aimux_core::generate::GenerateTextResult | aimux_core::decision_model::DecideResult"
+}
