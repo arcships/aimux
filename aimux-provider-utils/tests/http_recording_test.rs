@@ -169,6 +169,59 @@ async fn one_helper_call_records_one_finalized_exchange() {
     let _ = std::fs::remove_dir_all(directory);
 }
 
+/// Provider auth headers whose names carry no `token` / `api-key` (Prodia,
+/// Azure Speech) are stored as `[REDACTED]`, like `authorization`.
+#[tokio::test]
+#[serial]
+async fn provider_auth_headers_are_recorded_redacted() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/call"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": true})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let (recorder, directory) = recorder("provider-auth-headers");
+    recording::init_recording(Some(recorder.clone()));
+
+    let mut request = request(
+        format!("{}/call", server.uri()),
+        "call-auth",
+        recorder.clone(),
+    );
+    request
+        .headers
+        .push(("X-Prodia-Key".into(), "prodia-secret".into()));
+    request
+        .headers
+        .push(("Ocp-Apim-Subscription-Key".into(), "azure-secret".into()));
+    post_json_to_api(
+        request,
+        json!({"prompt": "hi"}),
+        create_json_response_handler::<Reply>(),
+        failed(),
+    )
+    .await
+    .unwrap();
+    finish_call(recorder.as_ref(), "call-auth");
+
+    let recording = read_recording(&directory);
+    let headers = &recording.exchanges[0].request.headers;
+    for name in ["X-Prodia-Key", "Ocp-Apim-Subscription-Key"] {
+        let (_, value) = headers
+            .iter()
+            .find(|(header, _)| header.eq_ignore_ascii_case(name))
+            .unwrap_or_else(|| panic!("{name} missing from the recording"));
+        assert_eq!(value, "[REDACTED]", "{name}");
+    }
+    let stored = std::fs::read_to_string(directory.join("recordings.jsonl")).unwrap();
+    assert!(!stored.contains("prodia-secret"), "{stored}");
+    assert!(!stored.contains("azure-secret"), "{stored}");
+
+    recording::init_recording(None);
+    let _ = std::fs::remove_dir_all(directory);
+}
+
 #[tokio::test]
 #[serial]
 async fn cancelled_exchange_is_recorded_as_finalized_failure() {

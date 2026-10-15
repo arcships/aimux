@@ -439,6 +439,7 @@ A pull timeout is a **state**, not an error.
 | Function | Description |
 |------|------|
 | `void aimux_drop_handle(handle)` | Free a handle (`0` is a no-op) |
+| `void aimux_drop_handle_ptr(void *handle)` | Same, with the handle cast to a pointer: the `void (*)(void *)` callback a finalizer (Dart `NativeFinalizer`) needs. Never call `aimux_drop_handle` through that signature |
 | `void aimux_free_string(ptr)` | Free a result / getter string (`NULL` is safe) |
 | `void aimux_error_free(err)` | Release a returned error (`NULL` is safe); never `aimux_drop_handle` / `aimux_free_string` |
 | `aimux_error_code` / `aimux_error_message` / `aimux_error_*` | Read an error (see aimux-error.h) |
