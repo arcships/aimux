@@ -96,7 +96,7 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 
 ### 0.6 独立于本文的事项
 
-- **安全**:aimux-web 绑定非 loopback 地址时,请求可用 `env:任意变量` + 自带 `base_url` 把服务进程的密钥发往任意主机(附录 tl:TOOLS-1,已核实)。已单独立任务修复,不等待本文。
+- **安全**:aimux-web 绑定非 loopback 地址时,请求可用 `env:任意变量` + 自带 `base_url` 把服务进程的密钥发往任意主机(附录 tl:TOOLS-1,已核实)。已在 master 修复,不等待本文:`env:` 只接受该 provider 注册的 key 变量;请求自带非默认 `base_url` 时只用请求内直接给的 key,不用 Settings 已存 key,也不读环境变量(`tools/aimux-web/src/wire.rs` `resolve_api_key`)。
 - **真实 bug**:附录 §5 列出 53 条,标注了"重构后自然消除 / 需独立修复"。其中 SSE 1 MiB 单事件上限(as:STREAM-1)、Bedrock converse-stream 非真流式与吞 exception(as:STREAM-2)、Bedrock/Vertex embedding 只嵌入第一个值(ce:BUG-1)、Python 阻塞调用持有 GIL(bd:BIND-4)不依赖重构,建议先行修复。
 
 ### 0.7 与 ROADMAP / RFC-0036 既有承诺的关系
