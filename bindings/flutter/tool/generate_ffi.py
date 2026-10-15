@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Generate the versioned ops ABI primitives from a C header; reject unexpected layouts."""
+"""Generate Dart ABI primitives from aimux-codegen's packaged header; reject unexpected layouts."""
 import argparse
 import pathlib
 import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('header', nargs='?', type=pathlib.Path, default=ROOT.parents[1] / 'aimux-ffi/include/aimux.h')
+parser.add_argument('header', nargs='?', type=pathlib.Path, default=ROOT / 'native/aimux_ops.h')
 parser.add_argument('--check', action='store_true')
 args = parser.parse_args()
 source = re.sub(r'/\*.*?\*/|//[^\n]*', '', args.header.read_text(), flags=re.S)
@@ -67,10 +67,7 @@ lines.extend(['}', ''])
 output = '\n'.join(lines)
 target = ROOT / 'lib/src/ffi.g.dart'
 if args.check:
-    if (ROOT / 'native/aimux_ops.h').read_text() != args.header.read_text():
-        raise SystemExit('packaged header differs; run tool/generate_ffi.py')
     if target.read_text() != output:
         raise SystemExit('generated declarations differ; run tool/generate_ffi.py')
 else:
     target.write_text(output)
-    (ROOT / 'native/aimux_ops.h').write_text(args.header.read_text())

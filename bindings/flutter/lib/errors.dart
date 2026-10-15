@@ -1,4 +1,4 @@
-/// The lossless RFC-0039 error envelope. Unknown payload variants are preserved.
+/// The lossless error envelope. Unknown payload variants are preserved.
 final class OpsException implements Exception {
   final Map<String, dynamic> envelope;
 

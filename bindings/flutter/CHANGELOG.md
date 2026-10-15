@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Switch to RFC-0039's versioned ops C ABI with manifest validation.
+- Switch to the versioned ops C ABI with manifest validation.
 - Run blocking native work in isolates and bridge streams with bounded credit/ack.
 - Add correct allocated-token NativeFinalizer cleanup and asynchronous explicit close.
 - Preserve complete error envelopes and expose operation push/poll primitives.

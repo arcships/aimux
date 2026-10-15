@@ -1,6 +1,6 @@
 # aimux for Flutter / Dart
 
-The RFC-0039 binding uses the versioned C ops ABI. `Aimux.open()` checks the ABI
+The binding uses the versioned C ops ABI. `Aimux.open()` checks the ABI
 major, ops major, manifest structure and any required operations before use.
 The previous unversioned constructors and per-feature native exports are removed.
 
@@ -91,10 +91,10 @@ available for development/tests; iOS normally uses process lookup for both.
 The stream credit transport currently requires POSIX pipes (Android, iOS, macOS
 and Linux); Windows streaming is unsupported.
 
-FFI declarations and the packaged C header are generated from
-`aimux-ffi/include/aimux.h` by `tool/generate_ffi.py`. All 14 ABI primitives
-are checked, including the nonblocking native handle finalizer. Dart uses its
-own allocated uint64 token trampoline to preserve handles on 32-bit targets.
+aimux-codegen owns the packaged `native/aimux_ops.h`. `tool/generate_ffi.py`
+generates Dart declarations from that header and checks all 14 ABI primitives,
+including the nonblocking native handle finalizer. Dart uses its own allocated
+uint64 token trampoline to preserve handles on 32-bit targets.
 No old ABI is accepted.
 
 ## Verification

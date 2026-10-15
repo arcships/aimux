@@ -95,7 +95,7 @@ final class Aimux {
     Object? params = const <String, dynamic>{},
   }) {
     checkString(op);
-    return _StreamPump(this, _id(handle), op, encodeParams(params)).stream;
+    return _stream(this, _id(handle), op, encodeParams(params));
   }
 
   /// Nonblocking native signal; independent of stream credit and worker queues.
@@ -235,20 +235,20 @@ final class EndFrame extends StreamFrame {
 
 final class _StreamRequest {
   final String? libraryPath, bridgePath;
-  final int handle, abort, bridgeAddress;
+  final int handle, abort;
   final String op, params;
   const _StreamRequest(
     this.libraryPath,
     this.bridgePath,
     this.handle,
     this.abort,
-    this.bridgeAddress,
     this.op,
     this.params,
   );
 }
 
-Future<void> _runStream(_StreamRequest request) => Isolate.run(() {
+Future<void> _runStream(_StreamRequest request, int bridgeAddress) =>
+    Isolate.run(() {
       final api = NativeApi(request.libraryPath);
       final bridge = DartBridge(request.bridgePath);
       final op = request.op.toNativeUtf8();
@@ -261,7 +261,7 @@ Future<void> _runStream(_StreamRequest request) => Isolate.run(() {
             params,
             request.abort,
             bridge.event,
-            Pointer<Void>.fromAddress(request.bridgeAddress),
+            Pointer<Void>.fromAddress(bridgeAddress),
           ),
         );
       } finally {
@@ -329,15 +329,7 @@ final class _NativeStreamProducer implements BlockingStreamProducer {
       if (context == nullptr)
         throw StateError('Could not allocate stream bridge');
       try {
-        await _runStream(_StreamRequest(
-          request.libraryPath,
-          request.bridgePath,
-          request.handle,
-          request.abort,
-          context.address,
-          request.op,
-          request.params,
-        ));
+        await _runStream(request, context.address);
       } finally {
         producerDone = true;
         if (bridge.pending(context) != 0) await drained.future;
@@ -364,79 +356,71 @@ final class _NativeStreamProducer implements BlockingStreamProducer {
   }
 }
 
-final class _StreamPump {
-  final Aimux client;
-  final int handle;
-  final String op, params;
-  _StreamPump(this.client, this.handle, this.op, this.params);
-
-  Stream<StreamFrame> get stream {
-    OpsHandle? abort;
-    StreamBridge? bridge;
-    bool cancelled = false;
-    late final StreamController<StreamFrame> controller;
-    StreamSubscription<String>? subscription;
-    final finished = Completer<void>();
-    Future<void> start() async {
+Stream<StreamFrame> _stream(Aimux client, int handle, String op, String params) {
+  OpsHandle? abort;
+  bool cancelled = false;
+  late final StreamController<StreamFrame> controller;
+  StreamSubscription<String>? subscription;
+  final finished = Completer<void>();
+  Future<void> start() async {
+    try {
+      final requestParams = jsonDecode(params);
+      final suppliedAbort =
+          requestParams is Map ? requestParams['abort'] : null;
+      late final int abortId;
+      if (suppliedAbort != null) {
+        if (suppliedAbort is! String) {
+          throw const FormatException(
+              'Abort must be a decimal handle string');
+        }
+        abortId = parseHandle(suppliedAbort);
+      } else {
+        final result =
+            await client.call('abort.create') as Map<String, dynamic>;
+        abort = client.adopt(result['handle'] as String);
+        abortId = client._id(abort);
+      }
+      if (cancelled) return;
+      final bridge = StreamBridge(
+        producer: _streamProducer,
+        request: _StreamRequest(client._libraryPath, client._bridgePath,
+            handle, abortId, op, params),
+        abort: () => client._native.ffi.abort(abortId),
+        credits: 1,
+      );
+      subscription = bridge.stream.listen(
+        (json) => controller.add(
+            StreamFrame.fromJson(jsonDecode(json) as Map<String, dynamic>)),
+        onError: (Object error, StackTrace stack) =>
+            controller.addError(error, stack),
+        onDone: () => unawaited(controller.close()),
+      );
+      if (controller.isPaused) subscription!.pause();
+      await bridge.done;
+    } catch (error, stack) {
+      if (!cancelled) {
+        controller.addError(error, stack);
+        unawaited(controller.close());
+      }
+    } finally {
       try {
-        final requestParams = jsonDecode(params);
-        final suppliedAbort =
-            requestParams is Map ? requestParams['abort'] : null;
-        late final int abortId;
-        if (suppliedAbort != null) {
-          if (suppliedAbort is! String) {
-            throw const FormatException(
-                'Abort must be a decimal handle string');
-          }
-          abortId = parseHandle(suppliedAbort);
-        } else {
-          final result =
-              await client.call('abort.create') as Map<String, dynamic>;
-          abort = client.adopt(result['handle'] as String);
-          abortId = client._id(abort);
-        }
-        if (cancelled) return;
-        bridge = StreamBridge(
-          producer: _streamProducer,
-          request: _StreamRequest(client._libraryPath, client._bridgePath,
-              handle, abortId, 0, op, params),
-          abort: () => client._native.ffi.abort(abortId),
-          credits: 1,
-        );
-        subscription = bridge!.stream.listen(
-          (json) => controller.add(
-              StreamFrame.fromJson(jsonDecode(json) as Map<String, dynamic>)),
-          onError: (Object error, StackTrace stack) =>
-              controller.addError(error, stack),
-          onDone: () => unawaited(controller.close()),
-        );
-        if (controller.isPaused) subscription!.pause();
-        await bridge!.done;
-      } catch (error, stack) {
-        if (!cancelled) {
-          controller.addError(error, stack);
-          unawaited(controller.close());
-        }
+        await abort?.close();
       } finally {
-        try {
-          await abort?.close();
-        } finally {
-          if (!finished.isCompleted) finished.complete();
-        }
+        if (!finished.isCompleted) finished.complete();
       }
     }
-
-    controller = StreamController<StreamFrame>(
-      sync: true,
-      onListen: () => unawaited(start()),
-      onPause: () => subscription?.pause(),
-      onResume: () => subscription?.resume(),
-      onCancel: () async {
-        cancelled = true;
-        await subscription?.cancel();
-        await finished.future;
-      },
-    );
-    return controller.stream;
   }
+
+  controller = StreamController<StreamFrame>(
+    sync: true,
+    onListen: () => unawaited(start()),
+    onPause: () => subscription?.pause(),
+    onResume: () => subscription?.resume(),
+    onCancel: () async {
+      cancelled = true;
+      await subscription?.cancel();
+      await finished.future;
+    },
+  );
+  return controller.stream;
 }

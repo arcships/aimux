@@ -77,7 +77,6 @@ class StreamBridge {
   bool _paused = false;
   bool _cancelled = false;
   bool _terminal = false;
-  bool _abortSent = false;
   int _pendingAcks = 0;
 
   Stream<String> get stream => _controller.stream;
@@ -159,10 +158,7 @@ class StreamBridge {
     if (!_terminal && !_cancelled) {
       _cancelled = true;
       try {
-        if (!_abortSent) {
-          _abortSent = true;
-          _abort();
-        }
+        _abort();
       } finally {
         // Independent of credit count: wake a callback blocked in read().
         _pipe?.send(0);

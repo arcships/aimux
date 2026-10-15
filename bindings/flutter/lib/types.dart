@@ -45,9 +45,7 @@ List<int> decodeBase64Bytes(Object? json) {
   return base64.decode(text);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Shared enums
-// ─────────────────────────────────────────────────────────────────────────────
 
 enum Role {
   system('system'),
@@ -93,9 +91,7 @@ enum ReasoningEffort {
   String toJson() => wireValue;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Token usage, finish reason
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Input token usage detail with cache breakdown. Mirrors `InputTokenUsage.ts`.
 class InputTokenUsage {
@@ -240,9 +236,7 @@ class FinishReason {
   Json toJson() => {'unified': unified, if (raw != null) 'raw': raw};
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Tool calls
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// A parsed tool call requested by the model. Mirrors `ToolCall.ts`.
 ///
@@ -311,9 +305,7 @@ Json _checkTypeTag(Json j, String expected) {
   return j;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Tool-call repair (RFC-0035)
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// A tool call as the model emitted it: [input] is the provider's raw argument
 /// **text**, not a decoded object. Mirrors `RawToolCall.ts`.
@@ -444,9 +436,7 @@ class ToolCallRepairContext {
 typedef RepairToolCall = FutureOr<RawToolCall?> Function(
     ToolCallRepairContext context);
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Tools
-// ─────────────────────────────────────────────────────────────────────────────
 
 class FunctionToolInputExample {
   final Json input;
@@ -539,9 +529,7 @@ class ToolChoice {
       : ToolChoice._('tool', (json as Json)['toolName'] as String);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Request / response metadata
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Mirrors `RequestInfo.ts`.
 class RequestInfo {
@@ -610,9 +598,7 @@ class ResponseMetadata {
       };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // File data, generated files, sources
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Raw bytes or a base64 string — `FileBytes.ts` is `string`, the AI SDK's
 /// `Uint8Array | string` in JSON (`shared-v4-file-data.ts:7-10`). Binary bytes
@@ -913,9 +899,7 @@ final class DocumentSource extends Source {
       };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // ContentPart (message content) — `{"type": "text", ...}`
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// The output of a tool call in a `tool-result` part. Mirrors
 /// `ToolResultOutput.ts`: `{"type":"text"|"error-text","value":"…"}`,
@@ -1202,9 +1186,7 @@ final class ContentPartUnknown extends ContentPart {
   Json toJson() => data;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Messages
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// A single chat message. Mirrors `ModelMessage.ts`.
 ///
@@ -1235,9 +1217,7 @@ class ModelMessage {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // GenerateResult (provider result) and its content
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// A content item in a [GenerateResult]. Mirrors `GenerateContent.ts` with the
 /// provider-level parameters (`RawToolCall`, `RawToolApprovalRequest`,
@@ -1450,9 +1430,7 @@ class GenerateResult {
       };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Results / options
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Result of `generate_text` and of a consumed stream (user-facing), the AI
 /// SDK's `GenerateTextResult`. Mirrors `GenerateTextResult.ts`.
@@ -1773,9 +1751,7 @@ class GenerateTextOptions {
       };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Streaming
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// A single part of the stream returned by `stream_text`. Mirrors
 /// `TextStreamPart.ts`, the AI SDK's full stream: `start`, then per step
@@ -2325,14 +2301,12 @@ final class StreamPartUnknown extends StreamPart {
   Json toJson() => data;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // OpenAI Chat Completions output (RFC-0026).
 //
 // Mirrors `aimux-core::openai_output`. Field names are camelCase; `@JsonKey`
 // maps to the wire's snake_case. The `type` field is JSON `"type"` (Rust
 // `#[serde(rename = "type")]`) → `toolType`. Arbitrary-JSON fields
 // (`logprobs`, `annotations`) are `dynamic` / `List<dynamic>?`.
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// A complete Chat Completion response (non-streaming). Mirrors OpenAI
 /// `chat.completion`.
