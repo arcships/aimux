@@ -2,10 +2,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Worker } from 'node:worker_threads'
-import { fileURLToPath } from 'node:url'
 import { Runtime, AimuxError } from '../src/native.ts'
 
-const source = fileURLToPath(new URL('../src/native.ts', import.meta.url))
+const source = new URL('../src/native.ts', import.meta.url).href
 
 test('native errors preserve the shared envelope and reject invalid wire JSON', async () => {
   const runtime = new Runtime()
