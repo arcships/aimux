@@ -1,5 +1,6 @@
 #include "test_support.h"
 #include "aimux_raii.hpp"
+#include <cstring>
 #include <type_traits>
 
 int main() {
