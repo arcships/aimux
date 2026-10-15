@@ -5,11 +5,13 @@
 
 use std::sync::Arc;
 
+use aimux_core::AiMuxError;
 use aimux_provider_utils::{
     AwsCredentials, HttpRequest, ProviderErrorParts, Resolvable, SigV4Fetch,
     create_json_error_response_handler, create_json_response_handler, default_fetch,
     post_json_to_api,
 };
+use chrono::{TimeZone, Utc};
 use serde::Deserialize;
 use serde_json::json;
 use wiremock::matchers::{method, path};
@@ -176,4 +178,83 @@ async fn a_303_turns_the_hop_into_a_get() {
     post(credentialed(format!("{}/call", provider.uri()))).await;
 
     assert_eq!(only_request(&foreign).await.method.as_str(), "GET");
+}
+
+/// `MAX_REDIRECTS` (http.rs:28): the request and ten followed hops go out;
+/// the eleventh redirect fails the call with the 3xx status (http.rs:488-489).
+/// The fetch spec allows 20; aimux stops at 10 like the AI SDK's
+/// `MAX_DOWNLOAD_REDIRECTS` (provider-utils@5.0.55
+/// `fetch-with-validated-redirects.ts:10`).
+#[tokio::test]
+async fn an_eleventh_redirect_fails_the_call() {
+    let provider = MockServer::start().await;
+    Mock::given(path("/loop"))
+        .respond_with(ResponseTemplate::new(307).insert_header("location", "/loop"))
+        .mount(&provider)
+        .await;
+
+    let result = post_json_to_api(
+        credentialed(format!("{}/loop", provider.uri())),
+        json!({"prompt": "hi"}),
+        create_json_response_handler::<Reply>(),
+        failed(),
+    )
+    .await;
+
+    let Err(AiMuxError::ApiCall(error)) = result else {
+        panic!("a redirect loop must fail with an API call error");
+    };
+    assert!(
+        error.message.contains("too many redirects"),
+        "{}",
+        error.message
+    );
+    assert_eq!(error.status_code, Some(307));
+    assert_eq!(provider.received_requests().await.unwrap().len(), 11);
+}
+
+/// A same-origin hop goes through the signing transport again and is signed
+/// for the URL it is sent to (RFC-0040 §3.2: 同 origin 重定向也必须重新签名，
+/// 不能复用旧签名). With the clock fixed, the two signatures can differ only
+/// because the path differs.
+#[tokio::test]
+async fn a_same_origin_hop_is_signed_again_for_its_own_url() {
+    let provider = MockServer::start().await;
+    redirect(&provider, "/call", "/moved".into()).await;
+    ok(&provider, "/moved").await;
+    let signing = SigV4Fetch::new(
+        default_fetch(),
+        Resolvable::from(AwsCredentials {
+            access_key_id: "AKIDEXAMPLE".into(),
+            secret_access_key: "secret".into(),
+            session_token: Some("SESSION".into()),
+            region: "us-east-1".into(),
+        }),
+        "bedrock",
+    )
+    .with_clock(|| Utc.with_ymd_and_hms(2026, 10, 15, 0, 0, 0).unwrap());
+
+    post(HttpRequest {
+        url: format!("{}/call", provider.uri()),
+        fetch: Some(Arc::new(signing)),
+        ..Default::default()
+    })
+    .await;
+
+    let received = provider.received_requests().await.unwrap();
+    assert_eq!(received.len(), 2);
+    assert_eq!(received[1].url.path(), "/moved");
+    let header = |request: &Request, name: &str| request.headers[name].to_str().unwrap().to_owned();
+    for request in &received {
+        assert!(has(request, "authorization") && has(request, "x-amz-security-token"));
+    }
+    assert_eq!(
+        header(&received[0], "x-amz-date"),
+        header(&received[1], "x-amz-date")
+    );
+    assert_ne!(
+        header(&received[0], "authorization"),
+        header(&received[1], "authorization"),
+        "the hop must carry a signature for /moved, not the one for /call"
+    );
 }
