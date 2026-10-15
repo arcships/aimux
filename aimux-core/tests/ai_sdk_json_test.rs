@@ -748,6 +748,17 @@ fn output_specifications_are_tagged() {
     assert!(serde_json::from_value::<Output>(json!({ "Object": { "schema": {} } })).is_err());
 }
 
+/// The video frame type is snake_case because upstream's is
+/// (`@ai-sdk/provider@4.0.22` `src/video-model/v4/video-model-v4-frame-image.ts:9`:
+/// `'first_frame' | 'last_frame'`).
+#[test]
+fn video_frame_types_are_upstream_literals() {
+    use aimux_core::video_model::VideoFrameType;
+    assert_json_back::<VideoFrameType>(json!("first_frame"));
+    assert_json_back::<VideoFrameType>(json!("last_frame"));
+    assert!(serde_json::from_value::<VideoFrameType>(json!("firstFrame")).is_err());
+}
+
 /// Decisions are the AI SDK's JSON. The model's call options
 /// (`@ai-sdk/provider@4.0.22 decision-model/v4/decision-model-v4-call-options.ts:7-14`)
 /// and result (`decision-model-v4-result.ts:31-56`: `rounding
