@@ -36,9 +36,13 @@ pub fn hop_trusted_origin<'a>(
     trusted_origin.filter(|origin| same_origin(current_url, origin))
 }
 
+/// The URL as an error message may show it: no query, no userinfo.
 fn without_query(parsed: &url::Url) -> String {
     let mut redacted = parsed.clone();
     redacted.set_query(None);
+    // Both fail only for URLs that cannot carry userinfo at all.
+    let _ = redacted.set_username("");
+    let _ = redacted.set_password(None);
     redacted.to_string()
 }
 
@@ -348,6 +352,16 @@ mod tests {
                 panic!("{url} must be allowed: {error:?}");
             });
         }
+    }
+
+    #[test]
+    fn rejected_url_error_omits_userinfo_and_query() {
+        let error = validate_download_url("ftp://user:secret@example.com/file?token=t0k")
+            .expect_err("ftp must be blocked");
+        let message = error.to_string();
+        assert!(message.contains("ftp://example.com/file"), "{message}");
+        assert!(!message.contains("secret"), "{message}");
+        assert!(!message.contains("t0k"), "{message}");
     }
 
     #[test]

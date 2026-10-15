@@ -23,8 +23,9 @@ pub fn build_model(
     base_url: Option<&str>,
 ) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
     macro_rules! native {
-        ($provider_mod:ident, $config:ident, $provider_type:ident, $env:literal) => {{
-            let key = native_key(provider, $env, api_key.clone())?;
+        ($provider_mod:ident, $config:ident, $provider_type:ident) => {{
+            let env = native_key_env(provider).unwrap_or_default();
+            let key = native_key(provider, env, api_key.clone())?;
             let mut cfg = aimux_providers::$provider_mod::$config::new(key);
             if let Some(url) = base_url {
                 cfg = cfg.with_base_url(url);
@@ -35,22 +36,12 @@ pub fn build_model(
     }
 
     match provider {
-        "openai" => native!(openai, OpenAIConfig, OpenAIProvider, "OPENAI_API_KEY"),
-        "anthropic" => native!(
-            anthropic,
-            AnthropicConfig,
-            AnthropicProvider,
-            "ANTHROPIC_API_KEY"
-        ),
-        "google" => native!(
-            google,
-            GoogleConfig,
-            GoogleProvider,
-            "GOOGLE_GENERATIVE_AI_API_KEY"
-        ),
-        "mistral" => native!(mistral, MistralConfig, MistralProvider, "MISTRAL_API_KEY"),
-        "xai" => native!(xai, XAIConfig, XAIProvider, "XAI_API_KEY"),
-        "cohere" => native!(cohere, CohereConfig, CohereProvider, "COHERE_API_KEY"),
+        "openai" => native!(openai, OpenAIConfig, OpenAIProvider),
+        "anthropic" => native!(anthropic, AnthropicConfig, AnthropicProvider),
+        "google" => native!(google, GoogleConfig, GoogleProvider),
+        "mistral" => native!(mistral, MistralConfig, MistralProvider),
+        "xai" => native!(xai, XAIConfig, XAIProvider),
+        "cohere" => native!(cohere, CohereConfig, CohereProvider),
         _ => {
             let mut options = ProviderOptions::default();
             if let Some(url) = base_url {
@@ -63,6 +54,36 @@ pub fn build_model(
     }
 }
 
+/// Whether `base_url` points somewhere other than `provider`'s own default
+/// endpoint. Stored and environment keys are never sent to such a URL: it
+/// came from the caller (a request field, or an imported recording).
+///
+/// The default is what [`build_model`] uses when no base URL is given; when
+/// it cannot be determined (an unknown provider, a templated registry URL)
+/// every given URL counts as custom.
+pub fn is_custom_base_url(provider: &str, base_url: Option<&str>) -> bool {
+    let Some(url) = base_url else {
+        return false;
+    };
+    let default = build_model(provider, Some(String::new()), "default-base-url", None)
+        .ok()
+        .and_then(|model| model.config_snapshot().base_url);
+    default.is_none_or(|default| default.trim_end_matches('/') != url.trim_end_matches('/'))
+}
+
+/// The env var a native provider (see [`build_model`]) reads its key from.
+pub fn native_key_env(provider: &str) -> Option<&'static str> {
+    Some(match provider {
+        "openai" => "OPENAI_API_KEY",
+        "anthropic" => "ANTHROPIC_API_KEY",
+        "google" => "GOOGLE_GENERATIVE_AI_API_KEY",
+        "mistral" => "MISTRAL_API_KEY",
+        "xai" => "XAI_API_KEY",
+        "cohere" => "COHERE_API_KEY",
+        _ => return None,
+    })
+}
+
 /// Resolve the key for a native provider: explicit key, else the standard env var.
 fn native_key(provider: &str, env: &str, api_key: Option<String>) -> Result<String, AiMuxError> {
     match api_key {
@@ -72,5 +93,40 @@ fn native_key(provider: &str, env: &str, api_key: Option<String>) -> Result<Stri
                 "provider '{provider}' needs an API key — set `{env}` or pass api_key=\"env:{env}\""
             ))
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_custom_base_url;
+
+    #[test]
+    fn only_the_providers_own_default_is_not_custom() {
+        assert!(!is_custom_base_url("openai", None));
+        assert!(!is_custom_base_url(
+            "openai",
+            Some("https://api.openai.com/v1")
+        ));
+        assert!(!is_custom_base_url(
+            "openai",
+            Some("https://api.openai.com/v1/")
+        ));
+        assert!(!is_custom_base_url(
+            "groq",
+            Some("https://api.groq.com/openai/v1")
+        ));
+        assert!(is_custom_base_url(
+            "openai",
+            Some("https://attacker.example/v1")
+        ));
+        assert!(is_custom_base_url(
+            "groq",
+            Some("https://api.openai.com/v1")
+        ));
+        // No known default: every given URL counts as custom.
+        assert!(is_custom_base_url(
+            "no-such-provider",
+            Some("https://x.example")
+        ));
     }
 }

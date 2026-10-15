@@ -2143,6 +2143,19 @@ pub extern "C" fn aimux_drop_handle(handle: u64) {
     }
 }
 
+/// [`aimux_drop_handle`] with the handle passed as a pointer-sized value, for
+/// callers that can only register a `void (*)(void *)` callback, such as a
+/// Dart `NativeFinalizer`. The pointer is never dereferenced: its address is
+/// the handle. Calling `aimux_drop_handle` through a `void (*)(void *)`
+/// pointer instead passes a garbage high word on 32-bit targets, where a
+/// `uint64_t` argument does not travel like a pointer.
+///
+/// Safe to call with NULL or an unknown handle (no-op).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_drop_handle_ptr(handle: *mut c_void) {
+    aimux_drop_handle(handle.addr() as u64);
+}
+
 /// Free a C string previously returned by any aimux function that hands out
 /// `*mut c_char` — result JSON, error getters.
 ///
@@ -4196,6 +4209,24 @@ mod tests {
         let e = aimux_router_new(std::ptr::null(), 2, std::ptr::null(), &mut h);
         assert_eq!(h, 0);
         assert_eq!(expect_ffi_error(e), "handles: must not be NULL");
+    }
+
+    #[test]
+    fn drop_handle_ptr_releases_the_handle_its_address_names() {
+        let handle = aimux_abort_signal_new();
+        let other = aimux_abort_signal_new();
+        assert!(get_handle(handle).is_some());
+
+        aimux_drop_handle_ptr(std::ptr::without_provenance_mut(handle as usize));
+        assert!(get_handle(handle).is_none());
+        assert!(
+            get_handle(other).is_some(),
+            "only the named handle is released"
+        );
+
+        // NULL is handle 0: a no-op, like aimux_drop_handle(0).
+        aimux_drop_handle_ptr(std::ptr::null_mut());
+        aimux_drop_handle(other);
     }
 
     struct MockStreamingTranscriber;

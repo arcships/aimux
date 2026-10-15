@@ -408,12 +408,16 @@ impl StreamingToolCallTracker {
         if !used(generated) {
             return generated.to_string();
         }
-        // Ids are never released, so the first free suffix equals what the
-        // upstream resume-from-last-suffix search returns.
-        (1..)
-            .map(|suffix| format!("{generated}-{suffix}"))
-            .find(|id| !used(id))
-            .expect("finitely many ids are in use")
+        // `generated` is one of the `n` ids in use, so at most `n - 1` of
+        // `generated-1 ..= generated-n` are: one of them is free (the
+        // pigeonhole bound of streaming-tool-call-tracker.ts:468-485). Ids are
+        // never released, so the first free suffix is what upstream's
+        // resume-from-the-last-suffix search returns.
+        let n = self.calls.len();
+        let suffix = (1..=n)
+            .find(|suffix| !used(&format!("{generated}-{suffix}")))
+            .unwrap_or(n + 1);
+        format!("{generated}-{suffix}")
     }
 }
 

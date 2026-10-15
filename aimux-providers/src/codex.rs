@@ -473,7 +473,10 @@ impl LanguageModel for CodexModel {
 }
 
 /// Tokens returned by the Codex OAuth token endpoint (RFC-0018 §2 V3).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Debug` is hand-written so both tokens are redacted from logs and error
+/// output.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CodexTokens {
     /// Access token to pass as `CodexConfig::subscription(..)`.
     pub access_token: String,
@@ -482,6 +485,19 @@ pub struct CodexTokens {
     pub refresh_token: Option<String>,
     /// Access-token lifetime in seconds, if the endpoint reports it.
     pub expires_in_secs: Option<u64>,
+}
+
+impl std::fmt::Debug for CodexTokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CodexTokens")
+            .field("access_token", &"[REDACTED]")
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("expires_in_secs", &self.expires_in_secs)
+            .finish()
+    }
 }
 
 /// Stateless OAuth token-refresh helper for the Codex subscription channel
@@ -573,5 +589,18 @@ mod tests {
         assert_eq!(snap.model_id, model.model_id());
         assert!(snap.base_url.is_some());
         assert_eq!(snap.api_key_source, "explicit");
+    }
+
+    #[test]
+    fn tokens_debug_redacts_secrets() {
+        let tokens = CodexTokens {
+            access_token: "at-secret-value".to_string(),
+            refresh_token: Some("rt-secret-value".to_string()),
+            expires_in_secs: Some(3600),
+        };
+        let printed = format!("{tokens:?}");
+        assert!(!printed.contains("at-secret-value"));
+        assert!(!printed.contains("rt-secret-value"));
+        assert!(printed.contains("3600"));
     }
 }

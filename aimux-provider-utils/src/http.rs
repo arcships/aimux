@@ -1001,12 +1001,53 @@ fn request_host(url: &str) -> String {
         .unwrap_or_else(|| "unknown".into())
 }
 
+/// The request URL as logs, errors and recordings show it: without the query
+/// (API keys travel there) and without the `user:password@` userinfo.
 pub(crate) fn sanitized_request_url(url: &str) -> String {
     match url::Url::parse(url) {
         Ok(mut parsed) => {
             parsed.set_query(None);
+            // Both fail only for URLs that cannot carry userinfo at all.
+            let _ = parsed.set_username("");
+            let _ = parsed.set_password(None);
             parsed.to_string()
         }
-        Err(_) => url.split('?').next().unwrap_or(url).to_owned(),
+        Err(_) => {
+            let without_query = url.split('?').next().unwrap_or(url);
+            // Unparseable: drop anything up to the last '@' of the authority.
+            if let Some((scheme, rest)) = without_query.split_once("://") {
+                let authority = &rest[..rest.find('/').unwrap_or(rest.len())];
+                if let Some(at) = authority.rfind('@') {
+                    return format!("{scheme}://{}", &rest[at + 1..]);
+                }
+            }
+            without_query.to_owned()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitized_request_url;
+
+    #[test]
+    fn sanitized_request_url_drops_userinfo_and_query() {
+        assert_eq!(
+            sanitized_request_url("https://user:secret@api.example.com/v1/chat?key=sk-1"),
+            "https://api.example.com/v1/chat"
+        );
+        assert_eq!(
+            sanitized_request_url("https://token@api.example.com/v1"),
+            "https://api.example.com/v1"
+        );
+        // Unparseable (space in the host): userinfo is still dropped.
+        assert_eq!(
+            sanitized_request_url("https://user:secret@bad host/v1?key=sk-1"),
+            "https://bad host/v1"
+        );
+        assert_eq!(
+            sanitized_request_url("https://api.example.com/v1/chat?key=sk-1"),
+            "https://api.example.com/v1/chat"
+        );
     }
 }
