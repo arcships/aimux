@@ -4,6 +4,7 @@ The production manifest is never rewritten. Set AIMUX_BUILD_COMMAND to override
 the build executable. This suite verifies the PyO3 boundary independently of
 provider behavior.
 """
+import json
 import os
 from pathlib import Path
 import shutil
@@ -49,15 +50,12 @@ with tempfile.TemporaryDirectory(prefix="aimux-python-contract-") as folder:
         os.killpg(process.pid, signal.SIGTERM)
         process.communicate()
         raise
-    for line in output.splitlines():
-        if line.startswith('{'):
-            item = __import__('json').loads(line)
-            if item.get('reason') == 'compiler-message':
-                print(item['message'].get('rendered', ''), end='')
+    artifacts = [json.loads(line) for line in output.splitlines() if line.startswith('{')]
+    for item in artifacts:
+        if item.get('reason') == 'compiler-message':
+            print(item['message'].get('rendered', ''), end='')
     if process.returncode:
         sys.exit(process.returncode)
-    import json
-    artifacts = [json.loads(line) for line in output.splitlines() if line.startswith('{')]
     libraries = [path for item in artifacts if item.get('reason') == 'compiler-artifact' and item['target']['name'] == 'aimux'
                  for path in item['filenames'] if path.endswith(('.dylib', '.so', '.dll'))]
     if len(libraries) != 1:

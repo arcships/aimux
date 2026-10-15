@@ -8,22 +8,41 @@ import time
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-OPENAI_CHAT = json.dumps({
-    "id": "chatcmpl-test",
+# The OpenAI provider's default languageModel uses the Responses API.
+OPENAI_RESPONSES = json.dumps({
+    "id": "resp-test",
+    "object": "response",
     "model": "gpt-4o",
-    "choices": [{
-        "message": {"role": "assistant", "content": "Rust is a systems programming language."},
-        "finish_reason": "stop",
+    "status": "completed",
+    "output": [{
+        "id": "msg-test", "type": "message", "role": "assistant", "status": "completed",
+        "content": [{"type": "output_text", "text": "Rust is a systems programming language.",
+                     "annotations": []}],
     }],
-    "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18},
+    "usage": {"input_tokens": 10, "output_tokens": 8, "total_tokens": 18},
 })
 
-OPENAI_STREAM = (
-    'data: {"id":"1","model":"gpt-4o","choices":[{"delta":{"content":"Hello"}}]}\n\n'
-    'data: {"id":"1","model":"gpt-4o","choices":[{"delta":{"content":" world"}}]}\n\n'
-    'data: {"id":"1","model":"gpt-4o","choices":[{"delta":{},"finish_reason":"stop"}],'
-    '"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}\n\n'
-    'data: [DONE]\n\n'
+OPENAI_RESPONSES_STREAM = "".join(
+    f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in (
+        {"type": "response.created", "response": {
+            "id": "resp-test", "model": "gpt-4o", "created_at": 1234,
+        }},
+        {"type": "response.output_item.added", "output_index": 0, "item": {
+            "id": "msg-test", "type": "message", "role": "assistant", "content": [],
+        }},
+        {"type": "response.output_text.delta", "output_index": 0,
+         "item_id": "msg-test", "content_index": 0, "delta": "Hello"},
+        {"type": "response.output_text.delta", "output_index": 0,
+         "item_id": "msg-test", "content_index": 0, "delta": " world"},
+        {"type": "response.output_item.done", "output_index": 0, "item": {
+            "id": "msg-test", "type": "message", "role": "assistant", "status": "completed",
+            "content": [{"type": "output_text", "text": "Hello world", "annotations": []}],
+        }},
+        {"type": "response.completed", "response": {
+            "id": "resp-test", "status": "completed",
+            "usage": {"input_tokens": 5, "output_tokens": 2, "total_tokens": 7},
+        }},
+    )
 )
 
 EMBEDDING_RESP = json.dumps({
@@ -176,7 +195,7 @@ def _http_server(connection, body, content_type, delay, status):
 
 
 @contextmanager
-def slow_http(body=OPENAI_CHAT, content_type="application/json", delay=0.5, status=200):
+def slow_http(body=OPENAI_RESPONSES, content_type="application/json", delay=0.5, status=200):
     parent, child = multiprocessing.Pipe()
     process = multiprocessing.Process(target=_http_server, args=(child, body, content_type, delay, status))
     process.start()

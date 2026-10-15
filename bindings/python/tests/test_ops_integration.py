@@ -192,6 +192,24 @@ class RealProviderRoundTrips(unittest.TestCase):
             with self.subTest(op=op), language(op) as invoke:
                 result = invoke()
                 self.assertIsInstance(result, list if op.startswith('text.stream') else dict)
+                if op.startswith('text.stream'):
+                    self.assertEqual(result[-1]['type'], 'end')
+                    self.assertEqual(result[-1]['outcome'], 'success')
+                    events = [frame['event'] for frame in result if frame['type'] == 'event']
+                    if op == 'text.stream':
+                        text = ''.join(event['text'] for event in events if event['type'] == 'text-delta')
+                    else:
+                        text = ''.join(choice['delta'].get('content', '')
+                                       for event in events for choice in event['choices'])
+                    self.assertEqual(text, 'Hello world')
+                elif op == 'text.generateObject':
+                    self.assertEqual(result['object'], {'answer': 'hello'})
+                elif op == 'text.generateOpenAI':
+                    self.assertEqual(result['choices'][0]['message']['content'],
+                                     'Rust is a systems programming language.')
+                else:
+                    self.assertEqual(result['text'], 'Hello world' if op == 'text.consume'
+                                     else 'Rust is a systems programming language.')
 
     def test_video_and_decision(self):
         from gil_ops import video, decision

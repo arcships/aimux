@@ -24,7 +24,6 @@ from pydantic.alias_generators import to_camel
 from . import Handle
 
 __all__ = [
-    # type aliases
     "Role",
     "FinishReasonUnified",
     "ReasoningEffort",
@@ -43,7 +42,6 @@ __all__ = [
     "FileBytes",
     "Warning",
     "AiMuxErrorValue",
-    # models
     "InputTokenUsage",
     "OutputTokenUsage",
     "GeneratedFileData",
@@ -74,11 +72,9 @@ __all__ = [
     "GenerateResult",
     "GenerateResponseMetadata",
     "RequestInfo",
-    # functions
     "generate_text",
     "stream_text",
     "parse_stream_part",
-    # OpenAI Chat Completions output (RFC-0026)
     "ChatCompletion",
     "ChatCompletionChoice",
     "ChatCompletionMessage",
@@ -129,19 +125,12 @@ class _Meta(_Wire):
     provider_metadata: Optional[Dict[str, Any]] = None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# String-literal type aliases (mirror serde rename rules)
-# ─────────────────────────────────────────────────────────────────────────────
-
-#: Message sender. Rust ``Role`` serializes as lowercase strings.
 Role = Literal["system", "user", "assistant", "tool"]
 
-#: Unified finish reason. Rust ``FinishReasonUnified`` uses ``kebab-case``.
 FinishReasonUnified = Literal[
     "stop", "length", "content-filter", "tool-calls", "error", "other"
 ]
 
-#: Reasoning effort. Rust ``ReasoningEffort`` uses ``kebab-case``.
 ReasoningEffort = Literal[
     "provider-default", "none", "minimal", "low", "medium", "high", "xhigh"
 ]
@@ -152,10 +141,6 @@ ReasoningEffort = Literal[
 #: exception.
 AiMuxErrorValue = Any
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Simple struct models
-# ─────────────────────────────────────────────────────────────────────────────
 
 class InputTokenUsage(_Wire):
     total: Optional[int] = None
@@ -278,12 +263,6 @@ class RawToolCall(_Meta):
     dynamic: Optional[bool] = None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Unions: internally tagged by ``type`` (kebab-case), as in the AI SDK.
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ── Warning ──────────────────────────────────────────────────────────────────
-
 class _WarningUnsupported(_Wire):
     type: Literal["unsupported"]
     feature: str
@@ -307,14 +286,11 @@ class _WarningOther(_Wire):
     message: str
 
 
-#: A provider warning (Rust ``Warning``).
 Warning = Annotated[
     Union[_WarningUnsupported, _WarningCompatibility, _WarningDeprecated, _WarningOther],
     Field(discriminator="type"),
 ]
 
-
-# ── FileBytes / FileData ────────────────────────────────────────────────────
 
 def _bytes_to_base64(value: Any) -> Any:
     if isinstance(value, (bytes, bytearray, memoryview)):
@@ -326,7 +302,6 @@ def _bytes_to_base64(value: Any) -> Any:
 #: ``bytes`` given here are encoded (Rust ``wire::base64_bytes``).
 Base64Bytes = Annotated[str, BeforeValidator(_bytes_to_base64)]
 
-#: File bytes: one base64 string on the wire (Rust ``FileBytes``).
 FileBytes = Base64Bytes
 
 
@@ -351,7 +326,6 @@ class _FileDataText(_Wire):
     text: str
 
 
-#: File data (Rust ``FileData``).
 FileData = Annotated[
     Union[_FileDataData, _FileDataUrl, _FileDataReference, _FileDataText],
     Field(discriminator="type"),
@@ -382,8 +356,6 @@ class GeneratedFile(_Meta):
         """The file's bytes, decoded from ``base64``."""
         return base64.b64decode(self.base64)
 
-
-# ── Content / stream parts ──────────────────────────────────────────────────
 
 class _UrlSource(_Meta):
     # A source is the AI SDK's tagged ``Source`` (provider
@@ -532,7 +504,6 @@ class _ApprovalResponse(_Wire):
     provider_executed: Optional[bool] = None
 
 
-#: A content item in the raw generation result (Rust ``GenerateContent``).
 GenerateContent = Annotated[
     Union[
         _Text,
@@ -548,7 +519,6 @@ GenerateContent = Annotated[
     Field(discriminator="type"),
 ]
 
-#: A content item of a text result (Rust ``result::ContentPart``).
 TextContent = Annotated[
     Union[
         _Text,
@@ -566,8 +536,6 @@ TextContent = Annotated[
     Field(discriminator="type"),
 ]
 
-
-# ── StreamPart ───────────────────────────────────────────────────────────────
 
 class _SPIdMeta(_Meta):
     id: str
@@ -702,10 +670,6 @@ StreamPart = Annotated[
 ]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ResponseFormat — ``{"type": "text"}`` | ``{"type": "json", schema?, ...}``
-# ─────────────────────────────────────────────────────────────────────────────
-
 class _ResponseFormatText(_Wire):
     type: Literal["text"] = "text"
 
@@ -717,15 +681,10 @@ class _ResponseFormatJson(_Wire):
     description: Optional[str] = None
 
 
-#: How the model should format its response (Rust ``ResponseFormat``).
 ResponseFormat = Annotated[
     Union[_ResponseFormatText, _ResponseFormatJson], Field(discriminator="type")
 ]
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Tools
-# ─────────────────────────────────────────────────────────────────────────────
 
 class FunctionToolInputExample(_Wire):
     input: Dict[str, Any]
@@ -757,8 +716,6 @@ Tool = Annotated[
     Field(discriminator="type"),
 ]
 
-
-# ── ContentPart (prompt parts: internal tag ``type``, kebab-case) ───────────
 
 class _PartOptions(_Wire):
     provider_options: Optional[Any] = None
@@ -863,13 +820,8 @@ ContentPart = Annotated[
 ]
 
 
-#: Message body: a plain string or multi-part content (Rust ``MessageContent``).
 MessageContent = Union[str, List[ContentPart]]
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# ToolChoice — ``"auto" | "none" | "required" | {"type": "tool", "toolName": ...}``
-# ─────────────────────────────────────────────────────────────────────────────
 
 class ToolChoiceTool(_Wire):
     """The ``tool`` tool-choice variant (forces a specific tool)."""
@@ -881,10 +833,6 @@ class ToolChoiceTool(_Wire):
 ToolChoice = Union[Literal["auto", "none", "required"], ToolChoiceTool]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# User-facing prompt / message models
-# ─────────────────────────────────────────────────────────────────────────────
-
 class ModelMessage(_Wire):
     """A single user-facing chat message (Rust ``ModelMessage``).
 
@@ -895,10 +843,6 @@ class ModelMessage(_Wire):
     role: Role
     content: MessageContent
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Options + results
-# ─────────────────────────────────────────────────────────────────────────────
 
 class TimeoutConfiguration(_Wire):
     """Per-call timeout configuration (Rust ``TimeoutConfiguration``).
@@ -1080,16 +1024,6 @@ class GenerateObjectResult(_Wire):
     provider_metadata: Optional[Dict[str, Any]] = None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# OpenAI Chat Completions output (RFC-0026)
-#
-# Mirrors ``aimux_core::openai_output``. Field names match the serde wire
-# format; ``skip_serializing_if = "Option::is_none"`` maps to ``Optional[...] =
-# None``. The Rust field ``tool_type`` serializes as ``"type"`` (via
-# ``#[serde(rename = "type")]``), so the pydantic field is named ``type``
-# directly (same convention as ``FunctionTool`` above).
-# ─────────────────────────────────────────────────────────────────────────────
-
 class ChatCompletionFunction(BaseModel):
     """Function payload of a tool call (Rust ``ChatCompletionFunction``)."""
 
@@ -1204,10 +1138,6 @@ class ChatCompletionChunk(BaseModel):
     usage: Optional[ChatCompletionUsage] = None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
 Prompt = Union[str, List[ModelMessage], List[Dict[str, Any]]]
 
 
@@ -1243,11 +1173,6 @@ def _opts_to_json(options: Optional[GenerateTextOptions]) -> Optional[str]:
             "options must be a GenerateTextOptions instance, got "
             f"{type(options).__name__}"
         )
-    # ``_Wire`` omits unset ``None`` fields as Rust's
-    # ``#[serde(skip_serializing_if = "Option::is_none")]`` does and keeps a
-    # JSON ``null`` a JSON-value field was given. ``by_alias`` emits the
-    # ``schema`` field of the JSON response-format body and the camelCase keys
-    # of every model.
     return options.model_dump_json(by_alias=True)
 
 

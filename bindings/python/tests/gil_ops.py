@@ -8,7 +8,7 @@ import tempfile
 import time
 
 from ops_fixtures import (
-    OPENAI_CHAT, OPENAI_STREAM, EMBEDDING_RESP, SPEECH_RESP, IMAGE_RESP,
+    OPENAI_RESPONSES, OPENAI_RESPONSES_STREAM, EMBEDDING_RESP, SPEECH_RESP, IMAGE_RESP,
     TRANSCRIPTION_RESP, RERANKING_RESP, SEARCH_RESP, FILES_RESP, slow_http, slow_ws,
 )
 
@@ -30,11 +30,11 @@ def model_at(url, method="languageModel", model_id="test-model", package="openai
 @contextmanager
 def language(op):
     streaming = op in ("text.stream", "text.streamOpenAI", "text.consume")
-    body = OPENAI_STREAM if streaming else OPENAI_CHAT
+    body = OPENAI_RESPONSES_STREAM if streaming else OPENAI_RESPONSES
     options = {"maxRetries": 0, "timeout": {"totalMs": 5000}}
     if op == "text.generateObject":
-        body = json.loads(OPENAI_CHAT)
-        body["choices"][0]["message"]["content"] = '{"answer":"hello"}'
+        body = json.loads(OPENAI_RESPONSES)
+        body["output"][0]["content"][0]["text"] = '{"answer":"hello"}'
         body = json.dumps(body)
         options["output"] = {"type": "object", "schema": {
             "type": "object", "properties": {"answer": {"type": "string"}},
@@ -74,6 +74,8 @@ def modality(name):
 
 @contextmanager
 def video():
+    # Core downloads this URL directly; the localhost provider fixture cannot
+    # intercept it. Fake-IP DNS can make its non-public-address guard reject it.
     body = {
         "POST": json.dumps({"name": "operations/gil"}),
         "GET": json.dumps({"done": True, "response": {"generateVideoResponse": {
@@ -153,8 +155,8 @@ def recording(method):
                 opened.set()
                 recorder = client.adopt(client.call("recorder.create", params)["handle"])
                 recorder.call("recorder.attach")
-                body = json.loads(OPENAI_CHAT)
-                body["choices"][0]["message"]["content"] = "x" * (2 * 1024 * 1024)
+                body = json.loads(OPENAI_RESPONSES)
+                body["output"][0]["content"][0]["text"] = "x" * (2 * 1024 * 1024)
                 with slow_http(json.dumps(body), delay=0) as url:
                     with model_at(url) as model:
                         model.call("text.generate", {"prompt": "hi", "options": {"maxRetries": 0}})

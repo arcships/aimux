@@ -9,9 +9,7 @@ HAS_TYPED = importlib.util.find_spec("pydantic") is not None and any(
 if HAS_TYPED:
     from pydantic import TypeAdapter
     from aimux.wrapper import (
-        ContentPart, GenerateContent, GeneratedFile, GenerateTextOptions,
-        GenerateTextResult, ModelMessage, StreamPart, TextContent,
-        TextContentPart, FunctionTool, ToolChoiceTool, _opts_to_json,
+        ContentPart, GenerateContent, GeneratedFile, StreamPart, TextContent, TextContentPart,
     )
 
 @unittest.skipUnless(HAS_TYPED, "requires installed binding and optional Pydantic")
