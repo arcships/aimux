@@ -262,10 +262,17 @@ impl HandleRegistry {
 
 fn allocate(next: &AtomicU64) -> Result<u64, OpsError> {
     // 0 is an exhausted sentinel, reached after allocating u64::MAX once.
-    next.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| {
-        (id != 0).then(|| id.checked_add(1).unwrap_or(0))
-    })
-    .map_err(|_| OpsError::Protocol(ProtocolError::HandleExhausted))
+    let mut id = next.load(Ordering::Relaxed);
+    loop {
+        if id == 0 {
+            return Err(OpsError::Protocol(ProtocolError::HandleExhausted));
+        }
+        let following = id.checked_add(1).unwrap_or(0);
+        match next.compare_exchange_weak(id, following, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(allocated) => return Ok(allocated),
+            Err(current) => id = current,
+        }
+    }
 }
 
 #[cfg(test)]
