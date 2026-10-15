@@ -26,7 +26,7 @@ func TestStreamBridgeOrderedCompletion(t *testing.T) {
 	for _, capacity := range []int{0, 1, 4} {
 		handle := &bridgeMockHandle{}
 		s := newStreamBridge(context.Background(), capacity, func(ctx context.Context, emit func(int) bool) error {
-			defer newCallbackHandleLease(handle).Delete()
+			defer handle.Delete()
 			for i := 0; i < 100; i++ {
 				if !emit(i) {
 					return ctx.Err()
@@ -158,12 +158,11 @@ func TestStreamBridgeCancelWithoutConsumer(t *testing.T) {
 
 func TestStreamBridgeCancelKeepsHandleUntilProducerReturns(t *testing.T) {
 	handle := &bridgeMockHandle{}
-	lease := newCallbackHandleLease(handle)
 	entered := make(chan struct{})
 	canceled := make(chan struct{})
 	release := make(chan struct{})
 	s := newStreamBridge(context.Background(), 1, func(ctx context.Context, emit func(int) bool) error {
-		defer lease.Delete()
+		defer handle.Delete()
 		close(entered)
 		<-ctx.Done() // Simulates native Abort acknowledgment.
 		close(canceled)
@@ -189,39 +188,16 @@ func TestStreamBridgeCancelKeepsHandleUntilProducerReturns(t *testing.T) {
 	}
 	close(release)
 	bridgeAwait(t, s.Done())
-	lease.Delete()
 	if handle.deletes.Load() != 1 {
 		t.Fatalf("handle Delete count = %d, want 1", handle.deletes.Load())
 	}
-}
-
-func TestCallbackHandleLeaseDeleteOnce(t *testing.T) {
-	handle := &bridgeMockHandle{}
-	lease := newCallbackHandleLease(handle)
-	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			lease.Delete()
-		}()
-	}
-	wg.Wait()
-	lease.Delete()
-	if handle.deletes.Load() != 1 {
-		t.Fatalf("handle Delete count = %d, want 1", handle.deletes.Load())
-	}
-	newCallbackHandleLease(nil).Delete()
-	var absent *callbackHandleLease
-	absent.Delete()
 }
 
 func TestStreamBridgeProducerErrorReleasesHandle(t *testing.T) {
 	handle := &bridgeMockHandle{}
-	lease := newCallbackHandleLease(handle)
 	want := errors.New("native startup failed")
 	s := newStreamBridge(context.Background(), 1, func(context.Context, func(int) bool) error {
-		defer lease.Delete()
+		defer handle.Delete()
 		return want
 	})
 	bridgeAwait(t, s.Done())
@@ -238,7 +214,7 @@ func TestStreamBridgeCancellationCompletionRace(t *testing.T) {
 		started := make(chan struct{})
 		release := make(chan struct{})
 		s := newStreamBridge(ctx, 1, func(context.Context, func(int) bool) error {
-			defer newCallbackHandleLease(handle).Delete()
+			defer handle.Delete()
 			close(started)
 			<-release
 			return nil

@@ -44,12 +44,8 @@ func (b *Bytes) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ── Shared types ────────────────────────────────────────────────────────────
-
 // Warning represents a provider warning.
 type Warning = json.RawMessage
-
-// ── Embedding ────────────────────────────────────────────────────────────────
 
 // EmbeddingUsage is token usage for an embedding call (input tokens only).
 type EmbeddingUsage struct {
@@ -79,8 +75,6 @@ type EmbeddingCallOptions struct {
 	ProviderOptions jsonObj               `json:"providerOptions"`
 	Headers         map[string]string     `json:"headers,omitempty"`
 }
-
-// ── Speech (TTS) ──────────────────────────────────────────────────────────────
 
 // AudioData is generated audio: a base64 string on the wire, decoded to bytes.
 type AudioData = Bytes
@@ -123,8 +117,6 @@ type SpeechCallOptions struct {
 	Headers         map[string]string     `json:"headers,omitempty"`
 }
 
-// ── Image ─────────────────────────────────────────────────────────────────────
-
 // ImageOutputs is the generated images: base64 strings on the wire, decoded
 // to bytes.
 type ImageOutputs = []Bytes
@@ -166,8 +158,6 @@ type ImageCallOptions struct {
 	ProviderOptions jsonObj               `json:"providerOptions"`
 	Headers         map[string]string     `json:"headers,omitempty"`
 }
-
-// ── Transcription (STT) ───────────────────────────────────────────────────────
 
 // TranscriptionSegment is a transcript segment with timing.
 type TranscriptionSegment struct {
@@ -215,8 +205,6 @@ type TranscriptionCallOptions struct {
 	Headers         map[string]string     `json:"headers,omitempty"`
 }
 
-// ── Reranking ────────────────────────────────────────────────────────────────
-
 // RerankingRank is a single reranked entry.
 type RerankingRank struct {
 	Index          int     `json:"index"`
@@ -250,8 +238,6 @@ type RerankingCallOptions struct {
 	ProviderOptions jsonObj               `json:"providerOptions"`
 	Headers         map[string]string     `json:"headers,omitempty"`
 }
-
-// ── Video ───────────────────────────────────────────────────────────────────
 
 // VideoData is generated video, tagged by Type: "url" (URL), "base64" or
 // "binary" (Data, decoded to bytes).
@@ -303,8 +289,6 @@ type VideoCallOptions struct {
 	Headers         map[string]string     `json:"headers,omitempty"`
 }
 
-// ── Search ──────────────────────────────────────────────────────────────────
-
 // SearchResultItem is a single search result.
 type SearchResultItem struct {
 	Title      *string  `json:"title,omitempty"`
@@ -342,8 +326,6 @@ type SearchCallOptions struct {
 	ProviderOptions   jsonObj               `json:"providerOptions"`
 	Headers           map[string]string     `json:"headers,omitempty"`
 }
-
-// ── Files ───────────────────────────────────────────────────────────────────
 
 // UploadFileResult is the result of a file upload.
 type UploadFileResult struct {

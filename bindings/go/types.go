@@ -16,8 +16,6 @@ import (
 	"fmt"
 )
 
-// ── Enums (string-backed on the wire) ──────────────────────────────────────
-
 type Role string
 
 const (
@@ -64,18 +62,12 @@ func ToolChoiceRequired() ToolChoice { return json.RawMessage(`"required"`) }
 // ToolChoiceTool builds a ToolChoice selecting a specific tool.
 // Uses json.Marshal with a struct to ensure correct field order and escaping.
 func ToolChoiceTool(name string) ToolChoice {
-	b, err := json.Marshal(struct {
+	b, _ := json.Marshal(struct {
 		Type     string `json:"type"`
 		ToolName string `json:"toolName"`
 	}{Type: "tool", ToolName: name})
-	if err != nil {
-		// Should not happen for a string — fall back to a safe literal.
-		return json.RawMessage(`{"type":"tool","toolName":""}`)
-	}
 	return json.RawMessage(b)
 }
-
-// ── Core types ───────────────────────────────────────────────────────────────
 
 // Source is a URL or document source. Exactly one variant is populated.
 // Its JSON is the AI SDK's Source, tagged {"type":"source","sourceType":...}
@@ -443,8 +435,6 @@ func ParseGenerateObjectResult(jsonStr string) (*GenerateObjectResult, error) {
 	return &r, nil
 }
 
-// ── ModelMessage (for multi-role prompts) ─────────────────────────────────────
-
 // ModelMessage is a single message in a conversation.
 // Content is `any` so it can be a plain string (common case) or a slice of
 // ContentParts (multi-part content, e.g. tool results).
@@ -466,8 +456,6 @@ func MarshalMessages(msgs []ModelMessage) (string, error) {
 	}
 	return string(b), nil
 }
-
-// ── GenerateTextOptions (for typed options building) ──────────────────────────
 
 // GenerateTextOptions is the typed options for text generation.
 // TimeoutConfiguration sets per-call timeouts.
@@ -539,8 +527,6 @@ func MarshalOptions(opts *GenerateTextOptions) (string, error) {
 	return string(b), nil
 }
 
-// ── StreamPart parsing ─────────────────────────────────────────────────────
-
 // StreamPart is a parsed stream part. The wire format is an object tagged by
 // its "type" key (e.g. {"type":"text-delta","id":"...","text":"..."}).
 type StreamPart struct {
@@ -592,8 +578,6 @@ type FinishPayload struct {
 	RawFinishReason *string             `json:"rawFinishReason,omitempty"`
 	TotalUsage      LanguageModelUsage  `json:"totalUsage"`
 }
-
-// ── Cache probing (RFC-0015) wire types ─────────────────────────────────────
 
 // TraceFilter filters aggregate queries (RFC-0015 §5.3).
 type TraceFilter struct {
@@ -680,8 +664,6 @@ type PrefixBreak struct {
 	Kind          string `json:"kind"`
 }
 
-// ── OpenAI Chat Completions output (RFC-0026) ──────────────────────────────
-//
 // Mirrors aimux_core::openai_output. JSON tags match the serde wire format:
 // Rust `#[serde(skip_serializing_if = "Option::is_none")]` → Go `omitempty`;
 // Rust `#[serde(rename = "type")]` → Go `json:"type"`. Fields without

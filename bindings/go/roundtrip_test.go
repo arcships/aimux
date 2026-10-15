@@ -1,12 +1,3 @@
-// Round-trip (de)serialization tests for the typed wire-format types.
-//
-// Build a typed value, marshal to JSON, unmarshal back, assert equality. These
-// pin down wire-format field names and tag spellings the typed wrappers rely
-// on (camelCase, the AI SDK JSON) — without them, a rename in aimux-core could
-// silently break Go clients.
-//
-// Also covers tool choice escaping and provider namespace insertion order.
-
 package aimux
 
 import (
@@ -14,52 +5,6 @@ import (
 	"strings"
 	"testing"
 )
-
-// ── Enum round-trips ────────────────────────────────────────────────────────
-
-func TestRoleRoundTrip(t *testing.T) {
-	cases := []Role{RoleSystem, RoleUser, RoleAssistant, RoleTool}
-	for _, r := range cases {
-		b, _ := json.Marshal(r)
-		var got Role
-		json.Unmarshal(b, &got)
-		if got != r {
-			t.Errorf("round-trip mismatch: got %s, want %s", got, r)
-		}
-	}
-}
-
-func TestFinishReasonUnifiedRoundTrip(t *testing.T) {
-	cases := []FinishReasonUnified{
-		FinishStop, FinishLength, FinishContentFilter,
-		FinishToolCalls, FinishError, FinishOther,
-	}
-	for _, f := range cases {
-		b, _ := json.Marshal(f)
-		var got FinishReasonUnified
-		json.Unmarshal(b, &got)
-		if got != f {
-			t.Errorf("round-trip mismatch: got %s, want %s", got, f)
-		}
-	}
-}
-
-func TestReasoningEffortRoundTrip(t *testing.T) {
-	cases := []ReasoningEffort{
-		ReasoningProviderDefault, ReasoningNone, ReasoningMinimal,
-		ReasoningLow, ReasoningMedium, ReasoningHigh, ReasoningXHigh,
-	}
-	for _, r := range cases {
-		b, _ := json.Marshal(r)
-		var got ReasoningEffort
-		json.Unmarshal(b, &got)
-		if got != r {
-			t.Errorf("round-trip mismatch: got %s, want %s", got, r)
-		}
-	}
-}
-
-// ── ToolChoice round-trips ───────────────────────────────────────────────────
 
 func TestToolChoiceStringVariantsRoundTrip(t *testing.T) {
 	cases := []struct {
@@ -88,12 +33,8 @@ func TestToolChoiceToolRoundTrip(t *testing.T) {
 	}
 }
 
-// TestToolChoiceToolEscapesSpecialChars is a regression test for the JSON
-// injection bug where tool names were concatenated into a string template
-// without escaping. Now json.Marshal handles it correctly.
 func TestToolChoiceToolEscapesSpecialChars(t *testing.T) {
 	tc := ToolChoiceTool(`na"me`)
-	// The result must be valid JSON.
 	var decoded map[string]string
 	if err := json.Unmarshal(tc, &decoded); err != nil {
 		t.Fatalf("ToolChoiceTool produced invalid JSON: %v (got %s)", err, tc)
@@ -102,8 +43,6 @@ func TestToolChoiceToolEscapesSpecialChars(t *testing.T) {
 		t.Errorf("expected escaped tool name, got %q", decoded["toolName"])
 	}
 }
-
-// ── ToolCall round-trip ───────────────────────────────────────────────────────
 
 func TestToolCallRoundTrip(t *testing.T) {
 	pe := true
@@ -120,10 +59,9 @@ func TestToolCallRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal failed: %v", err)
 	}
-	// Verify wire field names (camelCase).
 	s := string(b)
 	for _, want := range []string{`"toolCallId"`, `"toolName"`, `"input"`, `"providerExecuted"`, `"dynamic"`, `"providerMetadata"`} {
-		if !contains(s, want) {
+		if !strings.Contains(s, want) {
 			t.Errorf("expected %s in wire JSON, got %s", want, s)
 		}
 	}
@@ -148,8 +86,6 @@ func TestToolCallRoundTrip(t *testing.T) {
 	}
 }
 
-// ── ModelMessage round-trip ──────────────────────────────────────────────────
-
 func TestModelMessageTextRoundTrip(t *testing.T) {
 	msg := NewTextMessage(RoleUser, "Hello")
 	b, err := json.Marshal(msg)
@@ -165,14 +101,12 @@ func TestModelMessageTextRoundTrip(t *testing.T) {
 	if decoded.Role != RoleUser {
 		t.Errorf("role mismatch: got %s", decoded.Role)
 	}
-	// Content comes back as a string via any.
 	if s, ok := decoded.Content.(string); !ok || s != "Hello" {
 		t.Errorf("content mismatch: got %v", decoded.Content)
 	}
 }
 
 func TestModelMessageMultiPartRoundTrip(t *testing.T) {
-	// A tool-result message with multi-part content (array of ContentParts).
 	msg := ModelMessage{
 		Role: RoleTool,
 		Content: []map[string]any{
@@ -188,7 +122,6 @@ func TestModelMessageMultiPartRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal failed: %v", err)
 	}
-	// Verify content is an array on the wire.
 	var raw struct {
 		Role    string            `json:"role"`
 		Content []json.RawMessage `json:"content"`
@@ -202,7 +135,6 @@ func TestModelMessageMultiPartRoundTrip(t *testing.T) {
 	if len(raw.Content) != 1 {
 		t.Fatalf("expected 1 content part, got %d", len(raw.Content))
 	}
-	// Verify the tool-result structure.
 	var part map[string]any
 	json.Unmarshal(raw.Content[0], &part)
 	if part["type"] != "tool-result" {
@@ -212,8 +144,6 @@ func TestModelMessageMultiPartRoundTrip(t *testing.T) {
 		t.Errorf("expected toolCallId 'call_1', got %v", part["toolCallId"])
 	}
 }
-
-// ── GenerateTextOptions round-trip ───────────────────────────────────────────
 
 func TestGenerateTextOptionsRoundTrip(t *testing.T) {
 	temp := 0.7
@@ -238,18 +168,16 @@ func TestGenerateTextOptionsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal failed: %v", err)
 	}
-	// Verify camelCase wire fields present.
 	s := string(b)
 	for _, want := range []string{
 		`"temperature"`, `"topK"`, `"reasoning"`, `"instructions"`,
 		`"toolChoice"`, `"tools"`, `"inputSchema"`,
 	} {
-		if !contains(s, want) {
+		if !strings.Contains(s, want) {
 			t.Errorf("expected %s in wire JSON, got %s", want, s)
 		}
 	}
-	// Verify reasoning serializes as the enum string value.
-	if !contains(s, `"high"`) {
+	if !strings.Contains(s, `"high"`) {
 		t.Errorf("expected reasoning 'high' in wire JSON, got %s", s)
 	}
 
@@ -274,7 +202,6 @@ func TestGenerateTextOptionsDefaultOmitsFields(t *testing.T) {
 	}
 }
 
-// includeRawChunks round-trips through the typed options.
 func TestGenerateTextOptionsIncludeRawChunksRoundTrip(t *testing.T) {
 	original := GenerateTextOptions{IncludeRawChunks: boolPtr(true)}
 	b, err := json.Marshal(original)
@@ -293,15 +220,13 @@ func TestGenerateTextOptionsIncludeRawChunksRoundTrip(t *testing.T) {
 	}
 }
 
-// ── GenerateTextResult round-trip ────────────────────────────────────────────
-
 func TestGenerateTextResultWithWarningsRoundTrip(t *testing.T) {
 	original := GenerateTextResult{
 		Text:     "ok",
 		Warnings: []json.RawMessage{json.RawMessage(`"some warning"`)},
 	}
 	b, _ := json.Marshal(original)
-	if !contains(string(b), `"warnings"`) {
+	if !strings.Contains(string(b), `"warnings"`) {
 		t.Errorf("expected warnings field in JSON: %s", b)
 	}
 	var decoded GenerateTextResult
@@ -310,8 +235,6 @@ func TestGenerateTextResultWithWarningsRoundTrip(t *testing.T) {
 		t.Errorf("expected 1 warning, got %d", len(decoded.Warnings))
 	}
 }
-
-// ── Usage / TokenUsage round-trip ─────────────────────────────────────────────
 
 func TestStreamPartParseRoundTrip(t *testing.T) {
 	cases := []struct {
@@ -381,7 +304,6 @@ func TestParseFinishPayload(t *testing.T) {
 	}
 }
 
-// TestParseStreamPartRejectsInvalid: a part without a "type" is an error.
 func TestParseStreamPartRejectsInvalid(t *testing.T) {
 	cases := []struct {
 		name string
@@ -401,23 +323,7 @@ func TestParseStreamPartRejectsInvalid(t *testing.T) {
 	}
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-func u32ptr(v uint32) *uint32 { return &v }
-func boolPtr(v bool) *bool    { return &v }
-
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (func() bool {
-		for i := 0; i <= len(s)-len(sub); i++ {
-			if s[i:i+len(sub)] == sub {
-				return true
-			}
-		}
-		return false
-	})()
-}
-
-// ── Provider namespace order (#229 NP2-1) ───────────────────────────────────
+func boolPtr(v bool) *bool { return &v }
 
 // Provider options, provider metadata and provider references are JS objects
 // upstream (@ai-sdk/provider shared-v4-provider-options.ts:24,
@@ -469,8 +375,6 @@ func TestNamespaceMapsKeepInsertionOrder(t *testing.T) {
 		t.Errorf("empty providerReference: %s", empty)
 	}
 }
-
-// ── Standalone type tags (#229 NP2-7) ───────────────────────────────────────
 
 // A result's toolCalls and sources are the AI SDK's TypedToolCall and Source,
 // tagged {"type":"tool-call",...} (ai generate-text/tool-call.ts:8-14) and

@@ -88,35 +88,3 @@ func (s *streamBridge[T]) Err() error {
 
 // Cancel is concurrent-safe and never waits for a consumer or the producer.
 func (s *streamBridge[T]) Cancel() { s.cancel() }
-
-// callbackHandle is implemented by runtime/cgo.Handle without importing cgo
-// into the bridge. Tests can substitute a pure Go handle.
-type callbackHandle interface {
-	Delete()
-}
-
-// callbackHandleLease owns one cgo.Handle. Keep and share the lease by pointer;
-// do not copy it or delete the original handle separately. The producer should
-// defer lease.Delete immediately after allocating its callback handle, so every
-// return path releases it after the synchronous native call and callbacks end.
-// Cancel must not delete the handle while callbacks can still access it.
-type callbackHandleLease struct {
-	once   sync.Once
-	handle callbackHandle
-}
-
-func newCallbackHandleLease(handle callbackHandle) *callbackHandleLease {
-	return &callbackHandleLease{handle: handle}
-}
-
-func (h *callbackHandleLease) Delete() {
-	if h == nil {
-		return
-	}
-	h.once.Do(func() {
-		if h.handle != nil {
-			h.handle.Delete()
-			h.handle = nil
-		}
-	})
-}

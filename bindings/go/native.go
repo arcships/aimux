@@ -97,9 +97,8 @@ func nativeStream(id uint64, op string, params []byte, abort uint64, s *Stream) 
 	// Only callback state is stored in cgo.Handle. Rust sees an integer token,
 	// never a retained Go pointer. Delete only after all callbacks have exited.
 	callback := cgo.NewHandle(s)
-	lease := newCallbackHandleLease(callback)
 	activeCallbacks.Add(1)
-	defer func() { lease.Delete(); activeCallbacks.Add(-1) }()
+	defer func() { callback.Delete(); activeCallbacks.Add(-1) }()
 	e := C.stream_call(C.uint64_t(id), cOp, cParams, C.uint64_t(abort), C.uintptr_t(callback))
 	return nativeError(e)
 }
