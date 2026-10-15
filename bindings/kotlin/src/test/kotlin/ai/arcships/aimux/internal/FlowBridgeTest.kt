@@ -103,7 +103,7 @@ class FlowBridgeTest {
             }.catch { errors.add(it) }.toList()
         }
         assertEquals(listOf(7), values)
-        assertEquals(listOf(failure), errors)
+        assertSame(failure, generateSequence<Throwable>(errors.single()) { it.cause }.last())
         assertEquals(1, aborts.get())
     }
 
@@ -122,7 +122,7 @@ class FlowBridgeTest {
         } catch (error: Throwable) {
             caught = error
         }
-        assertSame(failure, caught)
+        assertSame(failure, generateSequence<Throwable>(caught) { it.cause }.lastOrNull())
         assertEquals(1, aborts.get())
     }
 

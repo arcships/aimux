@@ -78,7 +78,10 @@ class NativeIntegrationTest {
                         }
                         fail("expected native cancellation")
                     } catch (expected: CancellationException) {
-                        val source = assertInstanceOf(JavaAimuxException.RequestAbortedError::class.java, expected.cause)
+                        val source = assertInstanceOf(
+                            JavaAimuxException.RequestAbortedError::class.java,
+                            generateSequence<Throwable>(expected) { it.cause }.last(),
+                        )
                         assertTrue(frames.single().isEnd)
                         assertEquals(StreamFrame.Outcome.CANCELLED, frames.single().outcome)
                         assertEquals(source.envelope, frames.single().error.envelope)

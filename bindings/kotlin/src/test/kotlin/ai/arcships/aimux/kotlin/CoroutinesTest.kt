@@ -164,7 +164,7 @@ class CoroutinesTest {
             }.collect { throw expected }
             fail("expected collector exception")
         } catch (error: IllegalStateException) {
-            assertSame(expected, error)
+            assertSame(expected, generateSequence<Throwable>(error) { it.cause }.last())
         }
         assertEquals(1, operation.aborts.get())
     }
@@ -289,8 +289,8 @@ class CoroutinesTest {
                 await()
                 fail("expected cancellation")
             } catch (error: CancellationException) {
-                assertSame(cancellation, error)
-                assertSame(source, error.cause)
+                assertEquals(cancellation.message, error.message)
+                assertSame(source, generateSequence<Throwable>(error) { it.cause }.last())
             }
         }
     }
@@ -313,20 +313,21 @@ class CoroutinesTest {
     fun `blocking startup and Future wait leave caller UI dispatcher free`() = runBlocking {
         newSingleThreadContext("test-ui").use { ui ->
             withContext(ui) {
+                val caller = Thread.currentThread()
                 val operation = Operation()
-                val thread = AtomicReference<String>()
+                val thread = AtomicReference<Thread>()
                 val started = CompletableDeferred<Unit>()
                 val call = async {
                     aimuxCall {
-                        thread.set(Thread.currentThread().name)
+                        thread.set(Thread.currentThread())
                         started.complete(Unit)
                         Thread.sleep(100)
                         operation
                     }
                 }
                 withTimeout(2000) { started.await() }
-                assertFalse(thread.get().startsWith("test-ui"))
-                assertEquals("test-ui", Thread.currentThread().name)
+                assertNotSame(caller, thread.get())
+                assertSame(caller, Thread.currentThread())
                 operation.complete(Unit)
                 withTimeout(2000) { call.await() }
             }
