@@ -2652,7 +2652,7 @@ pub extern "C" fn aimux_transcription_generate(
 /// `{ "inputAudioFormat": { "formatType": "audio/pcm", "rate": 24000 },
 ///    "providerOptions": { … }, "headers": { … }, "includeRawChunks": false }`.
 #[derive(serde::Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TranscriptionSessionFfiOptions {
     input_audio_format: Option<aimux_core::transcription_model::InputAudioFormat>,
     provider_options: Option<aimux_core::shared::SharedProviderOptions>,
@@ -3715,9 +3715,10 @@ pub extern "C" fn aimux_moa_new(
     })
 }
 
-/// FFI-side router config (lenient: all fields optional).
+/// FFI-side router config: camelCase, all fields optional, unknown keys
+/// rejected.
 #[derive(Default, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RouterFfiConfig {
     router: Option<String>,
     weights: Option<Vec<f64>>,

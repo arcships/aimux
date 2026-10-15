@@ -301,6 +301,12 @@ jobs:
           if ($dependencies -match '(?im)^\s*(?:VCRUNTIME|MSVCP|UCRTBASE|api-ms-win-crt)[^\s]*\.dll\s*$') {
             throw "Dynamic MSVC runtime dependency found:`n$dependencies"
           }
+      # The binding crate's own Rust unit tests (JSON parsing, no Node
+      # runtime). The crate is not a member of the main workspace, so
+      # rust-test does not run them; one leg suffices.
+      - name: Rust unit tests
+        if: matrix.settings.test && runner.os == 'Linux'
+        run: cargo test --lib --manifest-path bindings/node/Cargo.toml
       - name: Test
         if: matrix.settings.test
         working-directory: bindings/node
@@ -346,6 +352,10 @@ jobs:
           cache-dependency-path: bindings/python/pyproject.toml
       - name: Install maturin
         run: pip install "maturin[patchelf]"
+      # The binding crate's own Rust unit tests (JSON parsing); the crate is
+      # not a member of the main workspace, so rust-test does not run them.
+      - name: Rust unit tests
+        run: cargo test --lib --manifest-path bindings/python/Cargo.toml
       - name: Build
         working-directory: bindings/python
         shell: bash

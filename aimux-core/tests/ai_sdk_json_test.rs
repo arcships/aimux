@@ -815,6 +815,116 @@ fn decisions_are_the_ai_sdk_json() {
     );
 }
 
+// ── Request configuration ───────────────────────────────────────────────────
+
+/// The message of a value that must not decode.
+fn decode_error<T: DeserializeOwned>(wire: Value) -> String {
+    match serde_json::from_value::<T>(wire) {
+        Ok(_) => panic!("decoded a value that must not decode"),
+        Err(error) => error.to_string(),
+    }
+}
+
+/// Request configuration rejects unknown keys (RFC-0042 §7.2,
+/// `rfc/0042-v4-type-boundaries.md:212`): aimux 0.5's snake_case keys and
+/// typos fail naming the key instead of falling back to the default.
+#[test]
+fn request_options_reject_unknown_keys() {
+    use aimux_core::decision_model::DecideOptions;
+    use aimux_core::embedding_model::EmbeddingCallOptions;
+    use aimux_core::files_model::UploadFileCallOptions;
+    use aimux_core::generate::GenerateTextOptions;
+    use aimux_core::image_model::ImageCallOptions;
+    use aimux_core::moa::MoaConfig;
+    use aimux_core::options::{CallOptions, TimeoutConfiguration};
+    use aimux_core::reranking_model::RerankingCallOptions;
+    use aimux_core::search_model::SearchCallOptions;
+    use aimux_core::speech_model::SpeechCallOptions;
+    use aimux_core::transcription_model::TranscriptionCallOptions;
+    use aimux_core::video_model::VideoCallOptions;
+
+    let options: GenerateTextOptions = serde_json::from_value(json!({
+        "maxRetries": 0,
+        "timeout": { "totalMs": 10000 },
+        "maxOutputTokens": 5,
+    }))
+    .unwrap();
+    assert_eq!(options.max_retries, Some(0));
+    assert_eq!(options.timeout.and_then(|t| t.total_ms), Some(10000));
+    assert_eq!(options.max_output_tokens, Some(5));
+    for (wire, key) in [
+        (json!({ "max_retries": 0 }), "max_retries"),
+        (json!({ "timeout": { "total_ms": 10000 } }), "total_ms"),
+        (json!({ "maxRetries": 0, "temprature": 0.2 }), "temprature"),
+    ] {
+        let error = decode_error::<GenerateTextOptions>(wire);
+        assert!(error.contains(&format!("unknown field `{key}`")), "{error}");
+    }
+
+    // The other operations' options, the nested settings objects and the MoA
+    // config. The unknown key is reported before any missing field.
+    for (error, key) in [
+        (
+            decode_error::<TimeoutConfiguration>(json!({ "first_chunk_ms": 1 })),
+            "first_chunk_ms",
+        ),
+        (
+            decode_error::<EmbeddingCallOptions>(json!({ "max_retries": 0 })),
+            "max_retries",
+        ),
+        (
+            decode_error::<SpeechCallOptions>(json!({ "output_format": "mp3" })),
+            "output_format",
+        ),
+        (
+            decode_error::<ImageCallOptions>(json!({ "aspect_ratio": "1:1" })),
+            "aspect_ratio",
+        ),
+        (
+            decode_error::<TranscriptionCallOptions>(json!({ "media_type": "audio/wav" })),
+            "media_type",
+        ),
+        (
+            decode_error::<RerankingCallOptions>(json!({ "top_n": 2 })),
+            "top_n",
+        ),
+        (
+            decode_error::<VideoCallOptions>(json!({ "poll": { "interval_ms": 10 } })),
+            "interval_ms",
+        ),
+        (
+            decode_error::<SearchCallOptions>(json!({ "max_results": 5 })),
+            "max_results",
+        ),
+        (
+            decode_error::<UploadFileCallOptions>(json!({ "media_type": "text/plain" })),
+            "media_type",
+        ),
+        (
+            decode_error::<DecideOptions>(json!({ "max_retries": 0 })),
+            "max_retries",
+        ),
+        (
+            decode_error::<MoaConfig>(json!({ "fail_mode": "fail_fast" })),
+            "fail_mode",
+        ),
+    ] {
+        assert!(error.contains(&format!("unknown field `{key}`")), "{error}");
+    }
+
+    // `CallOptions` stays lenient: a recording holds the call options and
+    // the operation settings in one object, and replay reads both from it.
+    let call: CallOptions = serde_json::from_value(json!({
+        "prompt": [],
+        "temperature": 0.5,
+        "maxRetries": 1,
+        "timeout": { "totalMs": 5 },
+        "sessionId": "s",
+    }))
+    .unwrap();
+    assert_eq!(call.temperature, Some(0.5));
+}
+
 /// Parse `wire` and check that it serializes back unchanged.
 fn assert_json_back<T: Serialize + DeserializeOwned>(wire: Value) -> T {
     let value: T = serde_json::from_value(wire.clone()).unwrap();

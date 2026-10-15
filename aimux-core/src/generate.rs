@@ -113,8 +113,12 @@ async fn resolve_file(
 ///
 /// Unlike `CallOptions` (provider-facing), this does not include `prompt`
 /// (passed separately) and defaults are more ergonomic.
+///
+/// Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+/// 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+/// naming the key instead of the default it would silently fall back to.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export)]
 pub struct GenerateTextOptions {
     #[ts(optional)]

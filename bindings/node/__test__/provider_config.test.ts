@@ -62,10 +62,11 @@ const RESPONSES_RESPONSE = JSON.stringify({
 
 // ── removed: bodyOverrides ───────────────────────────────────────────────────
 
-test('per-call body_overrides no longer reaches the request body', async (t) => {
-  let requestBody: any = null
+test('per-call body_overrides is rejected, not ignored', async (t) => {
+  let requests = 0
   const { server, url } = await startMockServer(async (req, res) => {
-    requestBody = await readBody(req)
+    requests += 1
+    await readBody(req)
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(RESPONSES_RESPONSE)
   })
@@ -76,10 +77,10 @@ test('per-call body_overrides no longer reaches the request body', async (t) => 
       temperature: 0.9,
       body_overrides: { temperature: 0.1, enable_thinking: false },
     })
-    await model.generateText(JSON.stringify('Hello'), opts)
-
-    t.is(requestBody.temperature, 0.9, 'the standard option stands')
-    t.true(requestBody.enable_thinking === undefined, 'the override is not applied')
+    const err = await t.throwsAsync(() => model.generateText(JSON.stringify('Hello'), opts))
+    t.true(err instanceof InvalidArgumentError)
+    t.regex(err!.message, /unknown field `body_overrides`/)
+    t.is(requests, 0, 'the call fails before any request')
   } finally {
     await closeServer(server)
   }

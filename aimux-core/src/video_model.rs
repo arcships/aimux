@@ -114,7 +114,7 @@ pub enum VideoData {
 ///
 /// Aligned with V4 `VideoModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export)]
 pub struct VideoCallOptions {
     /// Text prompt for the video generation. `None` when not required.
@@ -251,7 +251,7 @@ impl VideoCallOptions {
 /// ai@7.0.127 `generate-video/generate-video.ts:55-80`). The poll settings
 /// belong to the operation, as upstream: a video model has none of its own.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export)]
 pub struct VideoPollOptions {
     /// Delay between consecutive status checks, in milliseconds.

@@ -153,6 +153,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and result this way, and replay refuses recorded options with snake_case
   keys instead of ignoring them.
 
+- Request options reject keys they do not have (RFC-0042 §7.2):
+  `GenerateTextOptions` and its `timeout`, the options of the other
+  operations (embedding, speech, image, transcription, reranking, video and
+  its `poll`, search, file upload, `decide`), the MoA config, and the router
+  and transcription-session configs of the C ABI, Node and Python. aimux
+  0.5's snake_case keys (`max_retries`, `timeout.total_ms`, `fail_mode`,
+  `provider_name`) and typos fail naming the key instead of falling back to
+  the default. The Node and Python router and transcription-session configs
+  are camelCase, as the C ABI's are.
+
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
   model and provider ids take precedence over middleware overrides.

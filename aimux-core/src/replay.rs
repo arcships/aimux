@@ -572,6 +572,22 @@ pub(crate) fn snake_case_option_keys(options: &serde_json::Value) -> Vec<String>
     keys
 }
 
+/// The recorded options as this version reads them: the null-valued keys of
+/// the `timeout` object are dropped. aimux 0.5 wrote every timeout key, an
+/// unset one as `null` (`"step_ms": null`); such a key carries nothing, so
+/// [`snake_case_option_keys`] does not report it, but the strict
+/// `TimeoutConfiguration` would reject its name.
+pub(crate) fn readable_options(options: &serde_json::Value) -> serde_json::Value {
+    let mut options = options.clone();
+    if let Some(timeout) = options
+        .get_mut("timeout")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        timeout.retain(|_, value| !value.is_null());
+    }
+    options
+}
+
 /// 解析 finish_reason 字符串为 unified 枚举。
 fn parse_finish(raw: Option<&str>) -> (FinishReasonUnified, Option<String>) {
     let unified = match raw {
@@ -1043,14 +1059,13 @@ pub async fn replay_with_model(
     }
     // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)
     //    and the operation settings recorded next to them.
-    let mut call_options: CallOptions = serde_json::from_value(recording.input.options.clone())
-        .map_err(|e| {
-            AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
-        })?;
-    let settings: OperationSettings = serde_json::from_value(recording.input.options.clone())
-        .map_err(|e| {
-            AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
-        })?;
+    let options = readable_options(&recording.input.options);
+    let mut call_options: CallOptions = serde_json::from_value(options.clone()).map_err(|e| {
+        AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
+    })?;
+    let settings: OperationSettings = serde_json::from_value(options).map_err(|e| {
+        AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
+    })?;
 
     // 2. 应用 overrides。
     if let Some(o) = overrides {

@@ -205,15 +205,15 @@ pub async fn replay_decision_with_model(
             unread.join(", ")
         )));
     }
-    let options: DecideOptions =
-        serde_json::from_value(recording.input.options.clone()).map_err(|e| {
-            if recording.provider.provider_id.is_empty() {
-                AiMuxError::JsonParse(format!(
-                    "decision replay: the recording was {OLDER_RECORDING}: {e}"
-                ))
-            } else {
-                AiMuxError::JsonParse(e.to_string())
-            }
-        })?;
+    let options = crate::replay::readable_options(&recording.input.options);
+    let options: DecideOptions = serde_json::from_value(options).map_err(|e| {
+        if recording.provider.provider_id.is_empty() {
+            AiMuxError::JsonParse(format!(
+                "decision replay: the recording was {OLDER_RECORDING}: {e}"
+            ))
+        } else {
+            AiMuxError::JsonParse(e.to_string())
+        }
+    })?;
     decide(model, options).await
 }
