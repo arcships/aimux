@@ -1105,6 +1105,7 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 产品选择 | discovery/search/composite | aimux 扩展，有独立 descriptor 和测试 |
 | 产品选择 | retry 细节 | 保留 jitter、Retry-After 处理和既定错误历史 |
 | 产品选择 | helper 超时 | 非流式 30 秒上限，与注入 fetch 无关 |
+| 产品选择 | API 请求的 redirect | 默认跟随，同上游 `postToApi`（provider-utils@5.0.55 `post-to-api.ts:98-107`）；离开请求的 origin 后只保留 `User-Agent`，transport 收到 `RequestCredentials::Omit`，跳回原 origin 也不恢复；最多 10 跳。比上游严：fetch 规范跨 origin 只去掉 `Authorization`、最多 20 跳（`fetch-with-validated-redirects.ts:89-92`）。与 RFC-0040 §3.2 原文“默认不跟随 redirect”不同，该节已加修订说明（#253） |
 | 产品选择 | SSE 预读 | 保留首事件错误预读，明确计时影响 |
 | 产品选择 | 视频多批的 idempotency-key | 调用方给 key 时，多批按批次派生 `<key>:batch:<i>`，单批保持原键；上游每个批次的 doStart 带同一个调用方 key（ai 7.0.127 `A/generate-video/generate-video.ts:338-372`、`:520-536`），provider 可能据此把几个批次去重成一个任务 |
 | 尚未对齐 | 流中途重试 | 上游 `streamText` 有 `streamRetries`（不设时不重试；设为 n 时流中途的 provider error 最多重新调用模型 n 次，`onError` 也可请求重试，见 ai 7.0.127 `A/generate-text/stream-text.ts:374`、`:1948-1953`、`:2495-2665`）。aimux 待实现，现状与不设时相同：流返回后不重试（RFC-0031 §8.3；§9.1 已知差距） |
