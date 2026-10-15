@@ -10,10 +10,53 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Decides once whether a change can affect anything the jobs below build or
+  # test. A change that only touches documentation skips them; "CI result" at
+  # the end still runs and reports it, so a check required by branch
+  # protection never waits on a skipped workflow (RFC-0043 §9.2).
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            # The test merge commit's first parent is the base branch head,
+            # so this diff is exactly what the pull request changes.
+            base=HEAD^1
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] \
+              && git fetch --no-tags --depth=1 origin "$BEFORE"; then
+            base=$BEFORE
+          else
+            echo "No base to compare with: treating it as a code change."
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$base" HEAD
+          # Documentation nothing builds or tests: Markdown at the top level,
+          # docs/, rfc/ and assets/. docs/api/providers.md is generated and
+          # contract-tests checks it against its generator, so it is code.
+          if git diff --quiet "$base" HEAD -- . ':(exclude,glob)*.md' \
+                ':(exclude)docs' ':(exclude)rfc' ':(exclude)assets' \
+              && git diff --quiet "$base" HEAD -- docs/api/providers.md; then
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
+
   # ── Rust core: fmt + clippy + tests (single OS — cassettes are platform-agnostic) ──
   rust-test:
     name: Rust core (fmt + clippy + test)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -33,6 +76,8 @@ jobs:
   node-binding:
     name: Node binding (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.host }}
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     env:
       MACOSX_DEPLOYMENT_TARGET: '10.13'
     strategy:
@@ -145,6 +190,8 @@ jobs:
   python-binding:
     name: Python binding
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -170,6 +217,8 @@ jobs:
   ffi-build:
     name: aimux-ffi (${{ matrix.target }})
     runs-on: ${{ matrix.host }}
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -205,6 +254,8 @@ jobs:
   java-binding:
     name: Java binding (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -235,6 +286,8 @@ jobs:
   kotlin-binding:
     name: Kotlin binding (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -262,6 +315,8 @@ jobs:
   go-binding:
     name: Go binding (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -296,6 +351,8 @@ jobs:
   flutter-binding:
     name: Flutter binding
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -324,6 +381,8 @@ jobs:
   flutter-example-build:
     name: Flutter example (${{ matrix.platform }})
     runs-on: ${{ matrix.host }}
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -394,6 +453,8 @@ jobs:
   contract-tests:
     name: Contract tests
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v4
       - name: ProviderName generator drift (checked-in files must match generator output)
@@ -426,6 +487,8 @@ jobs:
   swift-contract-tests:
     name: Swift contract tests
     runs-on: macos-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -438,3 +501,37 @@ jobs:
           DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
         run: |
           swift test -Xlinker -L${{ github.workspace }}/target/release
+
+  # The one check to require in branch protection. It runs whatever happened
+  # above: a job may be skipped only because "changes" found no code change;
+  # any other skip, failure or cancellation fails it.
+  ci-result:
+    name: CI result
+    if: always()
+    needs:
+      - changes
+      - rust-test
+      - node-binding
+      - python-binding
+      - ffi-build
+      - java-binding
+      - kotlin-binding
+      - go-binding
+      - flutter-binding
+      - flutter-example-build
+      - contract-tests
+      - swift-contract-tests
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+          CODE: ${{ needs.changes.outputs.code }}
+        run: |
+          echo "$NEEDS" | jq -e --arg code "$CODE" '
+            .changes.result == "success" and
+            (del(.changes) | all(.result == "success"
+              or (.result == "skipped" and $code == "false")))'
+          if [ "$CODE" = false ]; then
+            echo "Documentation-only change: build and test jobs not applicable." \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
