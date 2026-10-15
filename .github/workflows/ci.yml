@@ -411,10 +411,18 @@ jobs:
       - name: Require shared contract vectors
         shell: bash
         run: test -n "$(find "$AIMUX_CONTRACT_VECTORS/scenarios" -name '*.json' -print -quit)"
+      - name: Build the ABI test fixtures and the Dart bridge
+        working-directory: bindings/flutter
+        run: |
+          python3 tool/build_test_fixture.py
+          cc -std=c11 -Wall -Wextra -Werror -fPIC -shared -pthread native/aimux_dart.c \
+            -o .dart_tool/native/libaimux_dart.so
       - name: Test Flutter binding and shared contract vectors
         working-directory: bindings/flutter
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+          AIMUX_NATIVE_LIBRARY: ${{ github.workspace }}/target/release/libaimux_ffi.so
+          AIMUX_DART_BRIDGE: ${{ github.workspace }}/bindings/flutter/.dart_tool/native/libaimux_dart.so
         run: flutter test
       - name: Analyze
         working-directory: bindings/flutter
