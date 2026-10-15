@@ -4,13 +4,13 @@
 >
 > **Date**: 2026-10-03
 >
-> **代码事实基线**: master `72a37b5058ecd620d75dfe66bee34ef51f89294a`。本文是设计及验收规范，不是实施报告；没有运行真实 provider 探测或声称下述测试通过。
+> **代码事实基线**: master `a8e3a996`。本文是设计及验收规范，不是实施报告；没有运行真实 provider 探测或声称下述测试通过。
 >
-> **设计方向基线**: [PR #200](https://github.com/arcships/aimux/pull/200) 的 `d8c3d15a9b84eaa176b64fe9c5f84d678498634d`，第一部分 §4.3–4.6。该 PR 记录的决策作为本稿目标，不等于已合并实现。其 RFC-0036 编号冲突由索引维护处理，本文用 PR 与 SHA 标识来源。
+> **设计方向基线**: [#200](https://github.com/arcships/aimux/pull/200) 已于 `d8fb4ac5` 合入为 [docs/aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md)，不占 RFC 编号；其第一部分 §4.3–4.6 是本稿目标。
 >
 > **Tracks**: [#167](https://github.com/arcships/aimux/issues/167)、[#179](https://github.com/arcships/aimux/issues/179)、[#180](https://github.com/arcships/aimux/issues/180)、[#181](https://github.com/arcships/aimux/issues/181)
 >
-> **Amends**: RFC-0023 的配置快照重建、mock 解码与格式；RFC-0025 的 CLI 后续范围；RFC-0015 §10 的验收状态。保留 RFC-0024 已落地的显式会话优先、opt-in strong-prefix 推断。
+> **Amends**: RFC-0023 的配置快照重建、mock 解码与格式；RFC-0025 的 CLI 后续范围；RFC-0015 §10 的验收状态；[RFC-0037](0037-decision-api.md) 的录制与回放段（旧稿在录制里默认 language model、能力快照存入 provider.profile、不带 `--mock` 时重建 Jev）；[RFC-0038](0038-decision-provider-expansion.md) 的录制记 key 来源、旧请求与录制保持可读、provider snapshot 保存连接/能力、重建 provider→HTTP replay 各段。保留 RFC-0024 已落地的显式会话优先、opt-in strong-prefix 推断。
 
 ## 1. 问题与范围
 
@@ -37,10 +37,11 @@
 | RFC-0025 | `cache-probe offline/session/provider` | 增统一命令面；provider 是真实请求，不是 attach |
 | RFC-0015 | session_id 接线、TTFT 观测、若干缓存回归测试 | 不重复立项；补 spans、meta cap 与逐项证据 |
 | #180 | response-cache header、Anthropic 三字段、Bedrock equality、部分聚合测试 | 不把这些测试泛化成 20-block/quota/完整 A1–A5/并发均完成 |
+| RFC-0037/0038（Decision） | 旧稿要求能力快照存 profile、录制记 key 来源、provider snapshot 保存连接/能力并重建 provider→HTTP replay | decision 当作普通 operation 录制/回放（§4）；不保存能力快照、key 来源或可重建 config，模型由回放时宿主 registry 重建 |
 
 #167 原建议的「ProviderRecord = registry row + protocol」不再是目标；不保存 settings、key 来源，不从录制 URL/child 列表反推 provider 或组合策略。原 `PassthroughOnMiss` 与离线保证冲突，本期不提供：所有 miss 为错误。若日后需要混合运行，必须另设清楚标为联网的功能和授权契约，不能成为离线模式的开关。
 
-旧 schema 不自动读取、不提供旧 API alias 或数据迁移。新的 reader 遇旧格式返回 `UnsupportedRecordingSchema`，提示重新采集。旧 fixture 在切换工作中由维护者审核后重新制作为 schema 3；不把历史真实流量偷偷转存。删除旧消费方与新入口切换属于同一集成闭包，Draft 文档合入不触发删除。
+旧 schema 不自动读取、不提供旧 API alias 或数据迁移。新的 reader 遇旧格式返回 `UnsupportedRecordingSchema`，提示重新采集。旧 fixture 在切换工作中由维护者审核后重新制作为 schema 3；不把历史真实流量偷偷转存。删除旧消费方与新入口切换随同一 V4 层成批替换，Draft 文档合入不触发删除。
 
 ## 3. 分层、所有权与 API
 
@@ -75,7 +76,9 @@ ReplaySession::close(); // 幂等，释放 buffers/timers/任务
 
 ## 4. 唯一录制格式与完整性
 
-沿用 #200 的 `schema: 3`，不定义「CLI schema」「cassette schema」分叉。每个 JSONL 行为一个 operation 的 Recording；小型 fixture 也采用该 envelope。schema 3 的新增必需字段在 schema 3 首次实施前冻结；实施后不兼容变更必须升版本。
+沿用 #200 的 `schema: 3`，不定义「CLI schema」「cassette schema」分叉。每个 JSONL 行为一个 operation 的 Recording；小型 fixture 也采用该 envelope。V4 各层合入 master 期间录制继续写现行 schema 2；schema 3 与新 C ABI、绑定迁移一起放在最后、发版之前交付。schema 3 的新增必需字段在**首个写出 schema 3 的发布**冻结（不是代码中首次出现 schema 3 相关字样时）；冻结后的不兼容变更必须升版本。
+
+Decision（RFC-0037/0038）作为普通 operation 录制与回放，不另建格式：`input` 记录上游 `DecisionModelV4CallOptions` 的 `state`、`questions`、`providerOptions`（headers 按策略脱敏）；`outcome` 记录 `DecisionModelV4Result`。不另存能力快照——`supportedQuestionTypes` 是模型属性，回放时由宿主 registry 重建的模型自带（V4 实现已移除 `input.decision_capabilities`，见 [#255](https://github.com/arcships/aimux/pull/255)；其当前仍写 schema 2，不表示完整 schema 3 / transport replay 已完成）。上游对 decision 没有录制或回放格式，本节即其唯一规范。
 
 ### 4.1 结构约束
 
@@ -339,7 +342,7 @@ CI 离线协议任务禁止网络和真实 secrets，使用固定 seed、时钟�
 | G4 治理命令 | G3、SessionStore query、trace/descriptor 投影 | probe/replay/diff/session 报告与退出码、live 目标隔离、meta cap |
 | G5 证据收尾 | G1–G4、RFC-0040/0042 descriptor/manifest 与 §10.3 证据 ledger | §10.3 能力证据矩阵、§10.4 定期重录/三层 diff、§10.5 月度/季度报告与升级门、#180 残余证据、#181 决策记录，全部未验证项可检索 |
 
-G1/G2 可以在集成分支分别评审；主线切换必须满足消费闭包，不能通过旧 schema shim 把未完成依赖藏起来。版本排期仍由 ROADMAP 管理，本稿不承诺日历工期。
+G1/G2 随 V4 各层直接合入 master、每层 CI 全绿，分别评审；全部合完前不发版，发版门槛是满足完整消费闭包，不能通过旧 schema shim 把未完成依赖藏起来。schema 3 的实现切片排在 V4 后段：各层期间继续写 schema 2，schema 3 与新 C ABI、绑定迁移一起交付（§4）。版本排期仍由 ROADMAP 管理，本稿不承诺日历工期。
 
 - #167：schema、传输 replay、child 因果录制、各公开消费方及网络封闭都验收；旧 ProviderRecord/Passthrough 提案的替代决定同步到 issue 后再判断关闭。
 - #179：replay 子项可独立完成；online attach 保留后置状态与重新开启条件，不整项误关。
@@ -350,9 +353,9 @@ G1/G2 可以在集成分支分别评审；主线切换必须满足消费闭包�
 
 ## 13. 参考与证据边界
 
-- [master ROADMAP](https://github.com/arcships/aimux/blob/72a37b5058ecd620d75dfe66bee34ef51f89294a/ROADMAP.md)
-- [#200 固定版本设计](https://github.com/arcships/aimux/blob/d8c3d15a9b84eaa176b64fe9c5f84d678498634d/rfc/0036-aisdk-architecture-alignment.md)：schema 3、replay_fetch、离线 auth、目标引用、无旧录制读取
-- [RFC-0023](0023-runtime-request-recording.md)、[RFC-0024](0024-session-aggregation.md)、[RFC-0025](0025-aimux-cli-cache-probe.md)、[RFC-0015](0015-cache-trace-audit.md)
-- [现有 CLI](https://github.com/arcships/aimux/blob/72a37b5058ecd620d75dfe66bee34ef51f89294a/tools/aimux-cli/src/main.rs)、[strong-prefix 实现](https://github.com/arcships/aimux/blob/72a37b5058ecd620d75dfe66bee34ef51f89294a/aimux-core/src/session.rs)、[现有 cache tests](https://github.com/arcships/aimux/blob/72a37b5058ecd620d75dfe66bee34ef51f89294a/aimux-core/tests/cache_probe_test.rs)
+- [master ROADMAP](https://github.com/arcships/aimux/blob/a8e3a996a9a1085a2153c1c56094594a74815205/ROADMAP.md)
+- [#200 已合并设计](https://github.com/arcships/aimux/blob/d8fb4ac56363cb3ab2faf46a103088afe68703ed/docs/aisdk-architecture-alignment.md)：schema 3、replay_fetch、离线 auth、目标引用、无旧录制读取
+- [RFC-0023](0023-runtime-request-recording.md)、[RFC-0024](0024-session-aggregation.md)、[RFC-0025](0025-aimux-cli-cache-probe.md)、[RFC-0015](0015-cache-trace-audit.md)、[RFC-0037](0037-decision-api.md)、[RFC-0038](0038-decision-provider-expansion.md)
+- [现有 CLI](https://github.com/arcships/aimux/blob/a8e3a996a9a1085a2153c1c56094594a74815205/tools/aimux-cli/src/main.rs)、[strong-prefix 实现](https://github.com/arcships/aimux/blob/a8e3a996a9a1085a2153c1c56094594a74815205/aimux-core/src/session.rs)、[现有 cache tests](https://github.com/arcships/aimux/blob/a8e3a996a9a1085a2153c1c56094594a74815205/aimux-core/tests/cache_probe_test.rs)
 
 本文核对的是以上源码和设计文本；没有运行新实现测试、性能基准、真实 provider 探测或统计当前全供应商覆盖率。
