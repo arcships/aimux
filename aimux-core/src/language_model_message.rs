@@ -31,7 +31,7 @@ pub type LanguageModelPrompt = Vec<LanguageModelMessage>;
 /// mirroring `LanguageModelV4Message.providerOptions`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "role", rename_all = "snake_case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum LanguageModelMessage {
     System {
         content: String,
@@ -53,7 +53,7 @@ pub enum LanguageModelMessage {
 
 /// Text content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TextPart {
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -62,7 +62,7 @@ pub struct TextPart {
 
 /// File content part (the only file part; `data` is a tagged `FileData`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct FilePart {
     pub data: FileData,
     pub media_type: String,
@@ -74,7 +74,7 @@ pub struct FilePart {
 
 /// Reasoning / thinking content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[ts(rename = "LanguageModelReasoningPart")]
 pub struct ReasoningPart {
     pub text: String,
@@ -84,7 +84,7 @@ pub struct ReasoningPart {
 
 /// Tool call content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolCallPart {
     pub tool_call_id: String,
     pub tool_name: String,
@@ -97,7 +97,7 @@ pub struct ToolCallPart {
 
 /// Tool result content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[ts(rename = "LanguageModelToolResultPart")]
 pub struct ToolResultPart {
     pub tool_call_id: String,
@@ -110,7 +110,7 @@ pub struct ToolResultPart {
 /// The provider-facing result of a tool call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[ts(rename = "LanguageModelToolResultOutput")]
 pub enum ToolResultOutput {
     Text {
@@ -147,7 +147,7 @@ pub enum ToolResultOutput {
 /// Content within a tool result.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolResultContent {
     Text(TextPart),
     File(FilePart),
@@ -159,7 +159,7 @@ pub enum ToolResultContent {
 
 /// A file generated as part of reasoning.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ReasoningFilePart {
     pub data: GeneratedFileData,
     pub media_type: String,
@@ -169,7 +169,7 @@ pub struct ReasoningFilePart {
 
 /// Provider-specific content identified by its provider and kind.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct CustomPart {
     pub kind: NamespacedKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -178,7 +178,7 @@ pub struct CustomPart {
 
 /// The user's decision for a provider-executed tool approval request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolApprovalResponsePart {
     pub approval_id: String,
     pub approved: bool,
@@ -191,7 +191,7 @@ pub struct ToolApprovalResponsePart {
 /// Parts allowed in a user message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum UserPart {
     Text(TextPart),
     File(FilePart),
@@ -200,7 +200,7 @@ pub enum UserPart {
 /// Parts allowed in an assistant message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AssistantPart {
     Text(TextPart),
     File(FilePart),
@@ -214,7 +214,7 @@ pub enum AssistantPart {
 /// Parts allowed in a tool message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolPart {
     ToolResult(ToolResultPart),
     ToolApprovalResponse(ToolApprovalResponsePart),

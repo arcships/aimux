@@ -996,6 +996,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider and model no longer match each other's prefix history. The trace
   scope isolates by provider name and model id; `TraceLayer::with_scope_name`
   names a scope for a host that calls one provider at several endpoints.
+- Gated aimux-core's ts-rs exports behind `ts-export`, so plain `cargo test`
+  no longer rewrites tracked TypeScript types. `scripts/gen_ts_types.py`
+  enables exports and rejects ungated export attributes with `--check`.
 
 ### Removed
 

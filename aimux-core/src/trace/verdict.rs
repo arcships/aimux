@@ -7,7 +7,7 @@ use ts_rs::TS;
 
 /// Verdict kinds (RFC-0015 §4.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum VerdictKind {
     Trusted,
     SuspectOverclaim,
@@ -17,7 +17,7 @@ pub enum VerdictKind {
 
 /// Confidence level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum VerdictConfidence {
     High,
     Medium,
@@ -26,7 +26,7 @@ pub enum VerdictConfidence {
 
 /// A verdict for one call.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct Verdict {
     pub kind: VerdictKind,
     pub confidence: VerdictConfidence,
@@ -59,7 +59,7 @@ impl Verdict {
 /// Provider audit parameters (RFC-0015 §7 matrix — the part that lives in
 /// core; display logic belongs to the CLI).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ProviderAuditSpec {
     /// Provider family for family-specific invariants.
     pub family: ProviderFamily,
@@ -80,7 +80,7 @@ pub struct ProviderAuditSpec {
 /// Provider family (only families with distinct invariants need dispatch;
 /// gran/threshold/ttl live in `ProviderAuditSpec`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ProviderFamily {
     OpenAi,
     DeepSeek,

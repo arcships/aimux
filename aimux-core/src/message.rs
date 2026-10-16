@@ -16,7 +16,7 @@ use crate::shared::SharedProviderOptions;
 /// A single user-facing chat message, a union by role.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "role", rename_all = "lowercase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ModelMessage {
     /// Upstream `SystemModelMessage`.
     System {
@@ -47,7 +47,7 @@ pub enum ModelMessage {
 /// The content of a user message: a string or parts (upstream `UserContent`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum UserContent {
     Text(String),
     Parts(Vec<UserContentPart>),
@@ -57,7 +57,7 @@ pub enum UserContent {
 /// `AssistantContent`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AssistantContent {
     Text(String),
     Parts(Vec<AssistantContentPart>),
@@ -154,7 +154,7 @@ impl ModelMessage {
 /// Can be a simple string (converted to a single user message) or a list of messages.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ModelPrompt {
     /// A plain string prompt — equivalent to a single user message.
     Text(String),

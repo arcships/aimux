@@ -31,7 +31,7 @@ use crate::{AbortSignal, retry, timeout};
 /// (`DecisionModelV4Input`: a string, a JSON object or a JSON array).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum DecisionInput {
     Text(String),
     #[ts(type = "Record<string, unknown>")]
@@ -55,7 +55,7 @@ impl From<String> for DecisionInput {
 /// The kind of a question (`DecisionModelV4Question['type']`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum DecisionQuestionType {
     Choice,
     Score,
@@ -83,7 +83,7 @@ impl DecisionQuestionType {
 /// `false` (`ai@7.0.128 src/decide/validate-decision.ts:94-105`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionBooleanCriteria {
     #[serde(
         rename = "true",
@@ -114,7 +114,7 @@ where
 /// A judgment to make about the shared state (`DecisionModelV4Question`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "lowercase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum DecisionQuestion {
     Choice {
         instructions: DecisionInput,
@@ -165,7 +165,7 @@ pub type DecisionQuestions = IndexMap<String, DecisionQuestion>;
 /// (`DecisionModelV4CallOptions`,
 /// `@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4-call-options.ts:7-14`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionCallOptions {
     /// One shared state, even when the value is an array.
     pub state: DecisionInput,
@@ -200,7 +200,7 @@ impl DecisionCallOptions {
 /// The answer to one question (`DecisionModelV4Answer`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "lowercase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum DecisionAnswer {
     Choice {
         /// The selected option, with maximal probability when a distribution
@@ -231,7 +231,7 @@ pub enum DecisionAnswer {
 /// precision. Validation allows half a unit in the last place per rounded
 /// value.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionRounding {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -243,7 +243,7 @@ pub struct DecisionRounding {
 
 /// Token usage reported by a decision model.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionUsage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -256,7 +256,7 @@ pub struct DecisionUsage {
 /// The result of [`DecisionModel::do_decide`] (`DecisionModelV4Result`,
 /// `@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4-result.ts:31-56`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionResult {
     /// Exactly one answer per question, under the original question ids.
     #[ts(as = "std::collections::HashMap<String, DecisionAnswer>")]
@@ -323,7 +323,7 @@ pub fn unsupported_question_type_error(
 
 /// Options of [`decide`]: the call options plus the operation settings.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecideOptions {
     pub state: DecisionInput,
     #[ts(as = "std::collections::HashMap<String, DecisionQuestion>")]
@@ -365,7 +365,7 @@ impl DecideOptions {
 
 /// Token usage of a decision, with the total when both counts are known.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecideUsage {
     pub input_tokens: Option<u32>,
     pub output_tokens: Option<u32>,
@@ -375,7 +375,7 @@ pub struct DecideUsage {
 /// The result of [`decide`] (`DecisionResult` of
 /// `ai@7.0.128 src/decide/decision-result.ts:22-39`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecideResult {
     #[ts(as = "std::collections::HashMap<String, DecisionAnswer>")]
     pub answers: IndexMap<String, DecisionAnswer>,
