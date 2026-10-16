@@ -80,12 +80,13 @@ async fn generate(content: Vec<GenerateContent>) -> aimux_core::generate::Genera
         GenerateTextOptions {
             tools: Some(vec![
                 FunctionTool::new("weather", json!({ "type": "object" })).into(),
-                // The provider tool whose late result `c0` answers
-                // (`convert-language-model-content.ts:87-104`).
+                // The provider tool whose late result `c0` answers; it
+                // accepts deferred results (`convert-language-model-content.ts:87-104`).
                 Tool::Provider(ProviderTool {
                     id: NamespacedKind::new("openai.web_search").unwrap(),
                     name: "web_search".into(),
                     args: serde_json::Map::new(),
+                    supports_deferred_results: Some(true),
                 }),
             ]),
             ..Default::default()

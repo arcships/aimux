@@ -34,7 +34,8 @@ use crate::types::{
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export, concrete(C = RawToolCall, A = RawToolApprovalRequest, R = LanguageModelFile))]
+#[ts(concrete(C = RawToolCall, A = RawToolApprovalRequest, R = LanguageModelFile))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageModelFile> {
     // ── P0: text ──
     /// Start of a text segment.
@@ -198,7 +199,7 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageMod
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum TextStreamPart {
     // ── text ──
     /// Start of a text segment.

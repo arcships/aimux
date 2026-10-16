@@ -8,7 +8,7 @@
 //!
 //! This module holds the pieces both share:
 //! - [`ChildModel`] — the child-handle shape (`Arc<dyn LanguageModel>`).
-//! - `step_options` — the call options of one child step.
+//! - `step_context` — the recording context of one child step.
 //! - `child_max_retries` — the operation's retry count for a child call.
 //! - `add_usage` — per-field `Usage` accumulation.
 //! - `extract_text` — pull text out of a `GenerateContent` list.
@@ -23,7 +23,7 @@ use std::sync::Arc;
 use crate::language_model::LanguageModel;
 use crate::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use crate::operation::OperationSettings;
-use crate::options::CallOptions;
+use crate::recording::RecordingContext;
 use crate::result::GenerateContent;
 use crate::types::{InputTokenUsage, OutputTokenUsage, Usage};
 
@@ -32,18 +32,13 @@ use crate::types::{InputTokenUsage, OutputTokenUsage, Usage};
 /// dropped (shared by registry + composite).
 pub type ChildModel = Arc<dyn LanguageModel>;
 
-/// Clone `options` for one composite child step (Router child, MoA
-/// reference or aggregator): the recording context, when present, is
-/// replaced by a child context labeled `step`, so the child's exchanges and
-/// retry attempts are recorded as their own step instead of blending into the
-/// parent operation's.
-pub(crate) fn step_options(options: &CallOptions, step: impl Into<String>) -> CallOptions {
-    let mut child = options.clone();
-    child.recording_context = options
-        .recording_context
-        .as_ref()
-        .map(|context| context.child(step.into()));
-    child
+/// The recording context of one composite child step (Router child, MoA
+/// reference or aggregator): a child of the current context labeled `step`,
+/// so the child's exchanges and retry attempts are recorded as their own step
+/// instead of blending into the parent operation's. The child call runs in
+/// [`RecordingContext::scope`] of it. `None` when nothing is recorded.
+pub(crate) fn step_context(step: impl Into<String>) -> Option<RecordingContext> {
+    RecordingContext::current().map(|context| context.child(step))
 }
 
 /// The retry count of a child call: the `max_retries` of the operation the
