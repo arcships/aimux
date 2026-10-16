@@ -216,7 +216,7 @@ struct ContractTests {
             try require(error.message == "未来错误 🌍")
             let expected: JSONValue = .object([
                 "name": .string("AI_FutureError"),
-                "opaque": .object(["newField": .array([.bool(true), .null, .number(7)])]),
+                "opaque": .object(["newField": .array([.bool(true), .null, .integer(7)])]),
             ])
             try require(error.error == expected)
             try require(try JSONDecoder().decode(AimuxError.self, from: JSONEncoder().encode(error)) == error)

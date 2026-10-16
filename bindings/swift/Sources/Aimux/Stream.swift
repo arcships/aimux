@@ -20,8 +20,8 @@ public struct StreamLimits: Sendable {
 }
 
 func resourceLimit(_ message: String) -> AimuxError {
-    AimuxError(kind: "protocol", code: 305, message: message,
-               error: .object(["name": .string("ResourceLimit")]), retryAfterMs: nil)
+    AimuxError(ErrorEnvelope(code: 305, error: .object(["name": .string("ResourceLimit")]),
+                            kind: .protocol, message: message))
 }
 
 public struct StreamEvent: Equatable, Sendable {
@@ -158,35 +158,31 @@ private final class StreamBridge {
             let length = strnlen(pointer, limits.eventBytes + 1)
             guard length <= limits.eventBytes else { throw resourceLimit("Event exceeds stream budget") }
             let data = Data(bytes: pointer, count: length)
-            struct Frame: Decodable {
-                let type: String
-                let seq: String
-                let event: JSONValue?
-                let outcome: String?
-                let error: AimuxError?
+            let frame = try JSONDecoder().decode(StreamFrame.self, from: data)
+            let seq: WireUInt64
+            switch frame {
+            case .event(_, let value): seq = value
+            case .end(_, _, let value): seq = value
             }
-            let frame = try JSONDecoder().decode(Frame.self, from: data)
-            guard frame.seq == String(expectedSeq) else { throw invariant("Invalid stream sequence") }
+            guard seq.rawValue == String(expectedSeq) else { throw invariant("Invalid stream sequence") }
             guard expectedSeq < UInt64.max else { throw invariant("Stream sequence exhausted") }
             expectedSeq += 1
-            switch frame.type {
-            case "event":
-                guard let event = frame.event else { throw invariant("Missing event payload") }
+            switch frame {
+            case .event(let event, _):
+                let value = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(event))
                 ready.accept()
-                channel.send(StreamEvent(seq: frame.seq, event: event), size: length)
-            case "end":
-                switch frame.outcome {
-                case "success":
-                    guard frame.error == nil else { throw invariant("Success terminal has an error") }
+                channel.send(StreamEvent(seq: seq.rawValue, event: value), size: length)
+            case .end(let error, let outcome, _):
+                switch outcome {
+                case .success:
+                    guard error == nil else { throw invariant("Success terminal has an error") }
                     completion = .success
-                case "error":
-                    guard let error = frame.error else { throw invariant("Missing terminal error") }
-                    completion = .failure(error)
-                case "cancelled": completion = .failure(CancellationError())
-                default: throw invariant("Unknown terminal outcome")
+                case .error:
+                    guard let error else { throw invariant("Missing terminal error") }
+                    completion = .failure(AimuxError(error))
+                case .cancelled: completion = .failure(CancellationError())
                 }
                 ready.accept()
-            default: throw invariant("Unknown stream frame")
             }
         } catch {
             // First-failure latch. Never throw across the C callback boundary.

@@ -10,6 +10,8 @@
     "bindings/node/generated/ops.ts",
     "bindings/python/generated/ops.py",
     "bindings/swift/generated/AimuxOps.swift",
+    "bindings/swift/generated/DtoVectorTypes.swift",
+    "bindings/swift/generated/Types.swift",
     "schema/ops/error-envelope.json",
     "schema/ops/handle-id.json",
     "schema/ops/request.json",
