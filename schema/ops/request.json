@@ -542,7 +542,13 @@
           "const": "operation.push"
         },
         "params": {
-          "$ref": "../types/_uint8_.json"
+          "items": {
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -796,7 +802,7 @@
           "const": "recorder.attach"
         },
         "params": {
-          "$ref": "../types/EmptyParams2.json"
+          "$ref": "../types/EmptyParams.json"
         }
       },
       "required": [
@@ -846,7 +852,7 @@
           "const": "recorder.export"
         },
         "params": {
-          "$ref": "../types/EmptyParams2.json"
+          "$ref": "../types/EmptyParams.json"
         }
       },
       "required": [
@@ -872,7 +878,7 @@
           "const": "recorder.flush"
         },
         "params": {
-          "$ref": "../types/EmptyParams2.json"
+          "$ref": "../types/EmptyParams.json"
         }
       },
       "required": [
@@ -898,7 +904,7 @@
           "const": "recorder.stats"
         },
         "params": {
-          "$ref": "../types/EmptyParams2.json"
+          "$ref": "../types/EmptyParams.json"
         }
       },
       "required": [
@@ -924,7 +930,7 @@
           "const": "recorder.stop"
         },
         "params": {
-          "$ref": "../types/EmptyParams2.json"
+          "$ref": "../types/EmptyParams.json"
         }
       },
       "required": [

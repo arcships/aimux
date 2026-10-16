@@ -21,7 +21,7 @@ public final class ToolRepairContextSchema {
     @JsonProperty("messages")
     private final List<ModelMessage> messages;
     @JsonProperty("toolCall")
-    private final ToolRepairContextSchemaToolCall toolCall;
+    private final TaggedRawToolCall toolCall;
     @JsonProperty("tools")
     private final List<Tool> tools;
 
@@ -31,7 +31,7 @@ public final class ToolRepairContextSchema {
         @JsonProperty(value = "inputSchema", required = true) JsonNode inputSchema,
         @JsonProperty(value = "instructions", required = true) String instructions,
         @JsonProperty(value = "messages", required = true) List<ModelMessage> messages,
-        @JsonProperty(value = "toolCall", required = true) ToolRepairContextSchemaToolCall toolCall,
+        @JsonProperty(value = "toolCall", required = true) TaggedRawToolCall toolCall,
         @JsonProperty(value = "tools", required = true) List<Tool> tools) {
         this.error = error;
         this.inputSchema = inputSchema == null ? null : inputSchema.deepCopy();
@@ -46,7 +46,7 @@ public final class ToolRepairContextSchema {
     public JsonNode getInputSchema() { return inputSchema == null ? null : inputSchema.deepCopy(); }
     public String getInstructions() { return instructions; }
     public List<ModelMessage> getMessages() { return messages; }
-    public ToolRepairContextSchemaToolCall getToolCall() { return toolCall; }
+    public TaggedRawToolCall getToolCall() { return toolCall; }
     public List<Tool> getTools() { return tools; }
 
     public static final class Builder {
@@ -54,7 +54,7 @@ public final class ToolRepairContextSchema {
         private JsonNode inputSchema;
         private String instructions;
         private List<ModelMessage> messages;
-        private ToolRepairContextSchemaToolCall toolCall;
+        private TaggedRawToolCall toolCall;
         private List<Tool> tools;
 
         public Builder error(AiMuxError value) {
@@ -77,7 +77,7 @@ public final class ToolRepairContextSchema {
             return this;
         }
 
-        public Builder toolCall(ToolRepairContextSchemaToolCall value) {
+        public Builder toolCall(TaggedRawToolCall value) {
             this.toolCall = value;
             return this;
         }

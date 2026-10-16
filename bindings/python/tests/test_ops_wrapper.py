@@ -51,7 +51,7 @@ class TestStandaloneTypeTags(unittest.TestCase):
         and {type: 'source', sourceType} (provider language-model-v4-source.ts:8,
         :36); generate-text-result.ts:73, :78. A repair function's call is a
         tagged LanguageModelV4ToolCall (language-model-v4-tool-call.ts:7)."""
-        from aimux.wrapper import GenerateTextResult, ToolRepairContextSchemaToolCall, TypedToolCall
+        from aimux.wrapper import GenerateTextResult, TaggedRawToolCall, TypedToolCall
 
         call = {"type": "tool-call", "toolCallId": "call-1", "toolName": "weather", "input": {"city": "SG"}}
         url = {"type": "source", "sourceType": "url", "id": "s1", "url": "https://example.com"}
@@ -66,7 +66,7 @@ class TestStandaloneTypeTags(unittest.TestCase):
         dumped = result.model_dump(by_alias=True)
         assert dumped["toolCalls"] == [call]
         assert dumped["sources"] == [url]
-        assert ToolRepairContextSchemaToolCall(type="tool-call", tool_call_id="c", tool_name="t", input="{}").model_dump(by_alias=True) == {
+        assert TaggedRawToolCall(type="tool-call", tool_call_id="c", tool_name="t", input="{}").model_dump(by_alias=True) == {
             "type": "tool-call", "toolCallId": "c", "toolName": "t", "input": "{}",
         }
 

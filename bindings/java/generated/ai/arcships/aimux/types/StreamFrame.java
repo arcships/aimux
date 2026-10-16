@@ -20,7 +20,7 @@ public abstract class StreamFrame {
 
     @JsonProperty("type")
     public abstract String getType();
-    public StreamFrame0Event getEvent() { return null; }
+    public StreamEvent getEvent() { return null; }
     public String getSeq() { return null; }
     public ErrorEnvelope getError() { return null; }
     public Outcome getOutcome() { return null; }
@@ -34,13 +34,13 @@ public abstract class StreamFrame {
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Event extends StreamFrame {
         @JsonProperty("event")
-        private final StreamFrame0Event event;
+        private final StreamEvent event;
         @JsonProperty("seq")
         private final String seq;
 
         @JsonCreator
         public Event(
-            @JsonProperty(value = "event", required = true) StreamFrame0Event event,
+            @JsonProperty(value = "event", required = true) StreamEvent event,
             @JsonProperty(value = "seq", required = true) String seq) {
             this.event = event;
             this.seq = seq;
@@ -51,14 +51,14 @@ public abstract class StreamFrame {
         @Override
         @JsonProperty("type")
         public String getType() { return "event"; }
-        public StreamFrame0Event getEvent() { return event; }
+        public StreamEvent getEvent() { return event; }
         public String getSeq() { return seq; }
 
         public static final class Builder {
-            private StreamFrame0Event event;
+            private StreamEvent event;
             private String seq;
 
-            public Builder event(StreamFrame0Event value) {
+            public Builder event(StreamEvent value) {
                 this.event = value;
                 return this;
             }

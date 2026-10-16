@@ -249,16 +249,42 @@ pub enum ToolChoice {
     Tool { tool_name: String },
 }
 
-fn tool_choice_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-    schemars::json_schema!({ "x-aimux-codec": "ordered-untagged",
-        "anyOf": [
-            { "type": "string", "enum": ["auto", "none", "required"] },
-            { "type": "object", "properties": {
-                "type": { "const": "tool" }, "toolName": { "type": "string" }
-            }, "required": ["type", "toolName"] }
-        ]
-    })
+/// The string form of a user's tool choice.
+#[derive(JsonSchema)]
+#[schemars(rename_all = "lowercase")]
+#[allow(dead_code)]
+pub enum ToolChoiceMode {
+    Auto,
+    None,
+    Required,
 }
+
+/// The named-tool form of a user's tool choice.
+#[derive(JsonSchema)]
+#[schemars(schema_with = "tool_choice_tool_schema")]
+pub struct ToolChoiceTool;
+
+fn tool_choice_tool_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({ "type": "object", "properties": {
+        "type": { "const": "tool" }, "toolName": { "type": "string" }
+    }, "required": ["type", "toolName"] })
+}
+
+fn tool_choice_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let mode = generator.subschema_for::<ToolChoiceMode>();
+    let tool = generator.subschema_for::<ToolChoiceTool>();
+    schemars::json_schema!({ "x-aimux-codec": "ordered-untagged", "anyOf": [mode, tool] })
+}
+
+/// A raw provider call with its required wire tag.
+#[derive(JsonSchema)]
+#[schemars(schema_with = "crate::wire::tagged_schema::<RawToolCall>")]
+pub struct TaggedRawToolCall;
+
+/// A replacement raw call whose tag is optional on input.
+#[derive(JsonSchema)]
+#[schemars(schema_with = "crate::wire::read_tagged_schema::<RawToolCall>")]
+pub struct RepairedToolCall;
 
 fn non_null_json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
     schemars::json_schema!({

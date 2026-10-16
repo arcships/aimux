@@ -411,6 +411,7 @@ fn root_name<'a>(manifest: &'a Manifest, id: &str, direction: &str) -> Result<&'
 fn schemas(manifest: &Manifest) -> Result<BTreeMap<String, Value>> {
     let mut documents = BTreeMap::new();
     let names = model::contract_names(&manifest.type_defs)?;
+    let definitions = model::schema_definitions(&manifest.type_defs, &names)?;
     for (file, direction, control) in [
         ("handle-id", "input", "HandleId"),
         ("error-envelope", "output", "ErrorEnvelope"),
@@ -434,7 +435,7 @@ fn schemas(manifest: &Manifest) -> Result<BTreeMap<String, Value>> {
         }
         let base = root_name(manifest, &op.request_type, "input")?;
         let name = &names[&format!("#/typeDefs/input/{base}")];
-        let params = json!({"$ref": format!("../types/{name}.json")});
+        let params = model::root_schema(&definitions, name)?;
         let mut properties = json!({"handle": handle, "op": {"const": op.name}, "params": params});
         if matches!(op.mode, Mode::Call | Mode::Stream) {
             properties["abort"] = json!({"$ref": "handle-id.json"});

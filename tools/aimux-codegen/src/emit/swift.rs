@@ -129,7 +129,7 @@ fn camel(value: &str) -> String {
 fn ty(value: &Ty) -> String {
     match value {
         Ty::Ref(name) => ident(name),
-        Ty::String => "String".into(),
+        Ty::String | Ty::Literal(_) => "String".into(),
         Ty::Bool => "Bool".into(),
         Ty::Int { unsigned, bits } => format!("{}Int{bits}", if *unsigned { "U" } else { "" }),
         Ty::Float => "Double".into(),
@@ -157,7 +157,7 @@ fn branch_names(branches: &[Ty]) -> Vec<String> {
         .map(|branch| {
             let base = match branch {
                 Ty::Ref(name) => name.as_str(),
-                Ty::String => "string",
+                Ty::String | Ty::Literal(_) => "string",
                 Ty::Bool => "bool",
                 Ty::Int { .. } => "integer",
                 Ty::Float => "number",

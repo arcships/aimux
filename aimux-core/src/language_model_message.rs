@@ -85,6 +85,7 @@ pub struct FilePart {
 /// Reasoning / thinking content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[schemars(rename = "LanguageModelReasoningPart")]
 pub struct ReasoningPart {
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -107,6 +108,7 @@ pub struct ToolCallPart {
 /// Tool result content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[schemars(rename = "LanguageModelToolResultPart")]
 pub struct ToolResultPart {
     pub tool_call_id: String,
     pub tool_name: String,
@@ -122,6 +124,7 @@ pub struct ToolResultPart {
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
+#[schemars(rename = "LanguageModelToolResultOutput")]
 pub enum ToolResultOutput {
     Text {
         value: String,

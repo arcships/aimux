@@ -24,10 +24,6 @@ Object? roundTripDto(String type, Object? value) {
       return AudioData.fromJson(value).toJson();
     case 'AudioInput':
       return AudioInput.fromJson(value).toJson();
-    case 'AuditMode':
-      return AuditMode.fromJson(value).toJson();
-    case 'AuditMode2':
-      return AuditMode2.fromJson(value).toJson();
     case 'BackendConfig':
       return BackendConfig.fromJson(value as Map<String, dynamic>).toJson();
     case 'BreakKind':
@@ -85,16 +81,8 @@ Object? roundTripDto(String type, Object? value) {
           .toJson();
     case 'ContentPart':
       return ContentPart.fromJson(value as Map<String, dynamic>).toJson();
-    case 'ContentPart4SourceType':
-      return ContentPart4SourceType.fromJson(value).toJson();
-    case 'ContentPart5SourceType':
-      return ContentPart5SourceType.fromJson(value).toJson();
     case 'ContentPartInput':
       return ContentPartInput.fromJson(value as Map<String, dynamic>).toJson();
-    case 'ContentPartInput4SourceType':
-      return ContentPartInput4SourceType.fromJson(value).toJson();
-    case 'ContentPartInput5SourceType':
-      return ContentPartInput5SourceType.fromJson(value).toJson();
     case 'CreateRecorderParams':
       return CreateRecorderParams.fromJson(value as Map<String, dynamic>)
           .toJson();
@@ -133,8 +121,6 @@ Object? roundTripDto(String type, Object? value) {
       return EmbeddingUsage.fromJson(value as Map<String, dynamic>).toJson();
     case 'EmptyParams':
       return EmptyParams.fromJson(value as Map<String, dynamic>).toJson();
-    case 'EmptyParams2':
-      return EmptyParams2.fromJson(value as Map<String, dynamic>).toJson();
     case 'ErrorDomain':
       return ErrorDomain.fromJson(value).toJson();
     case 'ErrorEnvelope':
@@ -160,10 +146,6 @@ Object? roundTripDto(String type, Object? value) {
           .toJson();
     case 'GenerateContent':
       return GenerateContent.fromJson(value as Map<String, dynamic>).toJson();
-    case 'GenerateContent2SourceType':
-      return GenerateContent2SourceType.fromJson(value).toJson();
-    case 'GenerateContent3SourceType':
-      return GenerateContent3SourceType.fromJson(value).toJson();
     case 'GenerateObjectResponse':
       return GenerateObjectResponse.fromJson(value as Map<String, dynamic>)
           .toJson();
@@ -194,10 +176,6 @@ Object? roundTripDto(String type, Object? value) {
       return HandleKind.fromJson(value).toJson();
     case 'HandleResult':
       return HandleResult.fromJson(value as Map<String, dynamic>).toJson();
-    case 'HandleResult2':
-      return HandleResult2.fromJson(value as Map<String, dynamic>).toJson();
-    case 'HandleResult3':
-      return HandleResult3.fromJson(value as Map<String, dynamic>).toJson();
     case 'HttpExchange':
       return HttpExchange.fromJson(value as Map<String, dynamic>).toJson();
     case 'HttpRecord':
@@ -227,6 +205,16 @@ Object? roundTripDto(String type, Object? value) {
     case 'LanguageModelMessage':
       return LanguageModelMessage.fromJson(value as Map<String, dynamic>)
           .toJson();
+    case 'LanguageModelReasoningPart':
+      return LanguageModelReasoningPart.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'LanguageModelToolResultOutput':
+      return LanguageModelToolResultOutput.fromJson(
+              value as Map<String, dynamic>)
+          .toJson();
+    case 'LanguageModelToolResultPart':
+      return LanguageModelToolResultPart.fromJson(value as Map<String, dynamic>)
+          .toJson();
     case 'LanguageModelUsage':
       return LanguageModelUsage.fromJson(value as Map<String, dynamic>)
           .toJson();
@@ -242,6 +230,8 @@ Object? roundTripDto(String type, Object? value) {
       return LogLevel.fromJson(value).toJson();
     case 'LoggingConfig':
       return LoggingConfig.fromJson(value as Map<String, dynamic>).toJson();
+    case 'MiddlewareAuditMode':
+      return MiddlewareAuditMode.fromJson(value).toJson();
     case 'MiddlewareParams':
       return MiddlewareParams.fromJson(value as Map<String, dynamic>).toJson();
     case 'MoaFailMode':
@@ -363,8 +353,6 @@ Object? roundTripDto(String type, Object? value) {
       return ReasoningOutput.fromJson(value as Map<String, dynamic>).toJson();
     case 'ReasoningPart':
       return ReasoningPart.fromJson(value as Map<String, dynamic>).toJson();
-    case 'ReasoningPart2':
-      return ReasoningPart2.fromJson(value as Map<String, dynamic>).toJson();
     case 'ReasoningSpec':
       return ReasoningSpec.fromJson(value as Map<String, dynamic>).toJson();
     case 'ReasoningVisibility':
@@ -388,6 +376,8 @@ Object? roundTripDto(String type, Object? value) {
     case 'RegistryProviderParams':
       return RegistryProviderParams.fromJson(value as Map<String, dynamic>)
           .toJson();
+    case 'RepairedToolCall':
+      return RepairedToolCall.fromJson(value as Map<String, dynamic>).toJson();
     case 'ReplayCreateParams':
       return ReplayCreateParams.fromJson(value as Map<String, dynamic>)
           .toJson();
@@ -437,9 +427,6 @@ Object? roundTripDto(String type, Object? value) {
       return RouterParams.fromJson(value as Map<String, dynamic>).toJson();
     case 'RuntimeConfigureParams':
       return RuntimeConfigureParams.fromJson(value as Map<String, dynamic>)
-          .toJson();
-    case 'RuntimeConfigureParamsProxy':
-      return RuntimeConfigureParamsProxy.fromJson(value as Map<String, dynamic>)
           .toJson();
     case 'RuntimeDescribeParams':
       return RuntimeDescribeParams.fromJson(value as Map<String, dynamic>)
@@ -506,16 +493,16 @@ Object? roundTripDto(String type, Object? value) {
           .toJson();
     case 'Strategy':
       return Strategy.fromJson(value as Map<String, dynamic>).toJson();
+    case 'StreamEvent':
+      return StreamEvent.fromJson(value).toJson();
     case 'StreamFrame':
       return StreamFrame.fromJson(value as Map<String, dynamic>).toJson();
-    case 'StreamFrame0Event':
-      return StreamFrame0Event.fromJson(value).toJson();
     case 'StreamOptions':
       return StreamOptions.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TaggedRawToolCall':
+      return TaggedRawToolCall.fromJson(value as Map<String, dynamic>).toJson();
     case 'TaggedToolResult':
       return TaggedToolResult.fromJson(value as Map<String, dynamic>).toJson();
-    case 'TaggedToolResultType':
-      return TaggedToolResultType.fromJson(value).toJson();
     case 'TerminalSummary':
       return TerminalSummary.fromJson(value as Map<String, dynamic>).toJson();
     case 'TextPart':
@@ -524,10 +511,6 @@ Object? roundTripDto(String type, Object? value) {
       return TextRequest.fromJson(value as Map<String, dynamic>).toJson();
     case 'TextStreamPart':
       return TextStreamPart.fromJson(value as Map<String, dynamic>).toJson();
-    case 'TextStreamPart10SourceType':
-      return TextStreamPart10SourceType.fromJson(value).toJson();
-    case 'TextStreamPart11SourceType':
-      return TextStreamPart11SourceType.fromJson(value).toJson();
     case 'TimeoutConfiguration':
       return TimeoutConfiguration.fromJson(value as Map<String, dynamic>)
           .toJson();
@@ -563,20 +546,12 @@ Object? roundTripDto(String type, Object? value) {
     case 'ToolCallRepairReply':
       return ToolCallRepairReply.fromJson(value as Map<String, dynamic>)
           .toJson();
-    case 'ToolCallRepairReply0ToolCall':
-      return ToolCallRepairReply0ToolCall.fromJson(
-              value as Map<String, dynamic>)
-          .toJson();
-    case 'ToolCallRepairReply0ToolCallType':
-      return ToolCallRepairReply0ToolCallType.fromJson(value).toJson();
     case 'ToolChoice':
       return ToolChoice.fromJson(value).toJson();
-    case 'ToolChoice0':
-      return ToolChoice0.fromJson(value).toJson();
-    case 'ToolChoice1':
-      return ToolChoice1.fromJson(value as Map<String, dynamic>).toJson();
-    case 'ToolChoice1Type':
-      return ToolChoice1Type.fromJson(value).toJson();
+    case 'ToolChoiceMode':
+      return ToolChoiceMode.fromJson(value).toJson();
+    case 'ToolChoiceTool':
+      return ToolChoiceTool.fromJson(value as Map<String, dynamic>).toJson();
     case 'ToolChoiceViolationError':
       return ToolChoiceViolationError.fromJson(value as Map<String, dynamic>)
           .toJson();
@@ -601,12 +576,6 @@ Object? roundTripDto(String type, Object? value) {
     case 'ToolRepairContextSchema':
       return ToolRepairContextSchema.fromJson(value as Map<String, dynamic>)
           .toJson();
-    case 'ToolRepairContextSchemaToolCall':
-      return ToolRepairContextSchemaToolCall.fromJson(
-              value as Map<String, dynamic>)
-          .toJson();
-    case 'ToolRepairContextSchemaToolCallType':
-      return ToolRepairContextSchemaToolCallType.fromJson(value).toJson();
     case 'ToolResult':
       return ToolResult.fromJson(value as Map<String, dynamic>).toJson();
     case 'ToolResultContent':
@@ -618,18 +587,16 @@ Object? roundTripDto(String type, Object? value) {
       return ToolResultFileId.fromJson(value).toJson();
     case 'ToolResultOutput':
       return ToolResultOutput.fromJson(value as Map<String, dynamic>).toJson();
-    case 'ToolResultOutput2':
-      return ToolResultOutput2.fromJson(value as Map<String, dynamic>).toJson();
     case 'ToolResultPart':
       return ToolResultPart.fromJson(value as Map<String, dynamic>).toJson();
-    case 'ToolResultPart2':
-      return ToolResultPart2.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TraceAggregateFilter':
+      return TraceAggregateFilter.fromJson(value as Map<String, dynamic>)
+          .toJson();
     case 'TraceAggregateParams':
       return TraceAggregateParams.fromJson(value as Map<String, dynamic>)
           .toJson();
-    case 'TraceAggregateParamsFilter':
-      return TraceAggregateParamsFilter.fromJson(value as Map<String, dynamic>)
-          .toJson();
+    case 'TraceAuditMode':
+      return TraceAuditMode.fromJson(value).toJson();
     case 'TraceCreateParams':
       return TraceCreateParams.fromJson(value as Map<String, dynamic>).toJson();
     case 'TraceRecord':
@@ -662,27 +629,15 @@ Object? roundTripDto(String type, Object? value) {
           .toJson();
     case 'TransportParams':
       return TransportParams.fromJson(value as Map<String, dynamic>).toJson();
-    case 'TransportParams0Proxy':
-      return TransportParams0Proxy.fromJson(value as Map<String, dynamic>)
-          .toJson();
-    case 'TransportParams1Proxy':
-      return TransportParams1Proxy.fromJson(value as Map<String, dynamic>)
-          .toJson();
+    case 'TransportProxy':
+      return TransportProxy.fromJson(value as Map<String, dynamic>).toJson();
     case 'TypedSource':
       return TypedSource.fromJson(value as Map<String, dynamic>).toJson();
-    case 'TypedSource0Type':
-      return TypedSource0Type.fromJson(value).toJson();
-    case 'TypedSource1Type':
-      return TypedSource1Type.fromJson(value).toJson();
     case 'TypedToolCall':
       return TypedToolCall.fromJson(value as Map<String, dynamic>).toJson();
     case 'TypedToolCallInput':
       return TypedToolCallInput.fromJson(value as Map<String, dynamic>)
           .toJson();
-    case 'TypedToolCallInputType':
-      return TypedToolCallInputType.fromJson(value).toJson();
-    case 'TypedToolCallType':
-      return TypedToolCallType.fromJson(value).toJson();
     case 'TypedToolError':
       return TypedToolError.fromJson(value as Map<String, dynamic>).toJson();
     case 'TypedToolResult':
@@ -727,16 +682,6 @@ Object? roundTripDto(String type, Object? value) {
       return VideoResult.fromJson(value as Map<String, dynamic>).toJson();
     case 'Warning':
       return Warning.fromJson(value as Map<String, dynamic>).toJson();
-    case '_aimux_core_model_catalogue_RuntimeModel_':
-      return WireAimuxCoreModelCatalogueRuntimeModel.fromJson(value).toJson();
-    case '_aimux_core_session_SessionCall_':
-      return WireAimuxCoreSessionSessionCall.fromJson(value).toJson();
-    case '_aimux_core_session_SessionView_':
-      return WireAimuxCoreSessionSessionView.fromJson(value).toJson();
-    case '_aimux_core_trace_store_SessionStepStat_':
-      return WireAimuxCoreTraceStoreSessionStepStat.fromJson(value).toJson();
-    case '_aimux_core_trace_store_TraceStats_':
-      return WireAimuxCoreTraceStoreTraceStats.fromJson(value).toJson();
     default:
       throw FormatException('Unknown DTO type: $type');
   }

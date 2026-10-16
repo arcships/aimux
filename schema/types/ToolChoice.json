@@ -4,27 +4,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "anyOf": [
     {
-      "enum": [
-        "auto",
-        "none",
-        "required"
-      ],
-      "type": "string"
+      "$ref": "ToolChoiceMode.json"
     },
     {
-      "properties": {
-        "toolName": {
-          "type": "string"
-        },
-        "type": {
-          "const": "tool"
-        }
-      },
-      "required": [
-        "type",
-        "toolName"
-      ],
-      "type": "object"
+      "$ref": "ToolChoiceTool.json"
     }
   ],
   "description": "How the model should choose tools, as the caller gives it\n(`GenerateTextOptions.tool_choice`).\n\nThe AI SDK's user-level `ToolChoice`\n(`ai@7.0.127 src/types/language-model.ts:102-106`):\n`\"auto\" | \"none\" | \"required\" | { \"type\": \"tool\", \"toolName\": \"...\" }`.\nThis is a mixed tagged/untagged shape (unit variants as bare strings,\n`Tool` variant as a tagged object), so serde is implemented by hand.\n[`prepare_tool_choice`] turns it into the [`LanguageModelV4ToolChoice`]\na model call carries.",

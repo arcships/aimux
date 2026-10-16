@@ -9,58 +9,7 @@
       "description": "Re-validate this replacement call, exactly as the closure path does\nfor a returned `Some(call)`.\n\nThe call may carry its `type` tag, as the AI SDK repair function's\n`LanguageModelV4ToolCall` does.",
       "properties": {
         "toolCall": {
-          "allOf": [
-            {
-              "description": "Provider-facing tool call before Core parses and validates its input.\n\nThe wire shape matches [`ToolCall`] field for field, except that `input`\nis the provider's raw argument *text* rather than a parsed value.",
-              "properties": {
-                "dynamic": {
-                  "type": [
-                    "boolean",
-                    "null"
-                  ]
-                },
-                "input": {
-                  "type": "string"
-                },
-                "providerExecuted": {
-                  "type": [
-                    "boolean",
-                    "null"
-                  ]
-                },
-                "providerMetadata": {
-                  "additionalProperties": {
-                    "additionalProperties": true,
-                    "type": "object"
-                  },
-                  "type": [
-                    "object",
-                    "null"
-                  ]
-                },
-                "toolCallId": {
-                  "type": "string"
-                },
-                "toolName": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "toolCallId",
-                "toolName",
-                "input"
-              ],
-              "type": "object"
-            },
-            {
-              "properties": {
-                "type": {
-                  "const": "tool-call"
-                }
-              },
-              "type": "object"
-            }
-          ],
+          "$ref": "RepairedToolCall.json",
           "x-aimux-codec": "tagged"
         },
         "type": {

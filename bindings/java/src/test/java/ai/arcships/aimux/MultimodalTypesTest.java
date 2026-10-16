@@ -148,8 +148,8 @@ class MultimodalTypesTest {
 
     @Test void standaloneToolCallsAndSourcesAreTagged() throws Exception {
         String call = "{\"type\":\"tool-call\",\"toolCallId\":\"c\",\"toolName\":\"weather\",\"input\":{\"city\":\"SG\"}}";
-        assertThat(roundTrip(call, TypedToolCall.class).getType()).isEqualTo(TypedToolCallType.TOOL_CALL);
-        roundTrip("{\"type\":\"tool-call\",\"toolCallId\":\"c\",\"toolName\":\"t\",\"input\":\"{}\"}", ToolRepairContextSchemaToolCall.class);
+        assertThat(roundTrip(call, TypedToolCall.class).getType()).isEqualTo("tool-call");
+        roundTrip("{\"type\":\"tool-call\",\"toolCallId\":\"c\",\"toolName\":\"t\",\"input\":\"{}\"}", TaggedRawToolCall.class);
         String url = "{\"type\":\"source\",\"sourceType\":\"url\",\"id\":\"s1\",\"url\":\"https://example.com\"}";
         roundTrip(url, TextStreamPart.class);
         roundTrip(url, ContentPart.class);

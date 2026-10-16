@@ -12,7 +12,7 @@ import java.util.*;
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class MiddlewareParams {
     @JsonProperty("auditMode")
-    private final AuditMode auditMode;
+    private final MiddlewareAuditMode auditMode;
     @JsonProperty("kind")
     private final String kind;
     @JsonProperty("scopeName")
@@ -22,7 +22,7 @@ public final class MiddlewareParams {
 
     @JsonCreator
     public MiddlewareParams(
-        @JsonProperty(value = "auditMode") AuditMode auditMode,
+        @JsonProperty(value = "auditMode") MiddlewareAuditMode auditMode,
         @JsonProperty(value = "kind", required = true) String kind,
         @JsonProperty(value = "scopeName") String scopeName,
         @JsonProperty(value = "traceStore") HandleIdInput traceStore) {
@@ -33,18 +33,18 @@ public final class MiddlewareParams {
     }
 
     public static Builder builder() { return new Builder(); }
-    public AuditMode getAuditMode() { return auditMode; }
+    public MiddlewareAuditMode getAuditMode() { return auditMode; }
     public String getKind() { return kind; }
     public String getScopeName() { return scopeName; }
     public HandleIdInput getTraceStore() { return traceStore; }
 
     public static final class Builder {
-        private AuditMode auditMode;
+        private MiddlewareAuditMode auditMode;
         private String kind;
         private String scopeName;
         private HandleIdInput traceStore;
 
-        public Builder auditMode(AuditMode value) {
+        public Builder auditMode(MiddlewareAuditMode value) {
             this.auditMode = value;
             return this;
         }

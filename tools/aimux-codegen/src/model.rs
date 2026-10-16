@@ -48,6 +48,7 @@ pub struct Field {
 pub enum Ty {
     Ref(String),
     String,
+    Literal(String),
     Bool,
     Int { unsigned: bool, bits: u8 },
     Float,
@@ -68,6 +69,35 @@ pub enum Codec {
 
 fn doc(schema: &Value) -> Option<String> {
     schema["description"].as_str().map(str::to_owned)
+}
+
+fn without_descriptions(mut schema: Value) -> Value {
+    if let Value::Object(object) = &mut schema {
+        object.remove("description");
+        for (key, value) in object {
+            match key.as_str() {
+                "properties" | "$defs" => {
+                    if let Some(properties) = value.as_object_mut() {
+                        for property in properties.values_mut() {
+                            *property = without_descriptions(property.take());
+                        }
+                    }
+                }
+                "oneOf" | "anyOf" | "allOf" => {
+                    if let Some(branches) = value.as_array_mut() {
+                        for branch in branches {
+                            *branch = without_descriptions(branch.take());
+                        }
+                    }
+                }
+                "items" | "additionalProperties" | "not" | "if" | "then" | "else" => {
+                    *value = without_descriptions(value.take());
+                }
+                _ => {}
+            }
+        }
+    }
+    schema
 }
 
 fn escape(value: &str) -> String {
@@ -126,6 +156,35 @@ pub(crate) fn contract_names(type_defs: &Value) -> Result<BTreeMap<String, Strin
             );
         }
     }
+    // Schemars numbers distinct Rust identities even when their wire shapes agree.
+    // Merge only numbered siblings, and repeat because their references may merge too.
+    loop {
+        let mut changed = false;
+        for (direction, defs) in [("input", input), ("output", output)] {
+            for (name, schema) in defs {
+                let base = name.trim_end_matches(|c: char| c.is_ascii_digit());
+                if base == name || !defs.contains_key(base) {
+                    continue;
+                }
+                let key = format!("#/typeDefs/{direction}/{}", escape(name));
+                let target = &names[&format!("#/typeDefs/{direction}/{}", escape(base))];
+                if names[&key] == *target {
+                    continue;
+                }
+                let mut schema = schema.clone();
+                let mut other = defs[base].clone();
+                rewrite_refs(&mut schema, &names)?;
+                rewrite_refs(&mut other, &names)?;
+                if without_descriptions(schema) == without_descriptions(other) {
+                    names.insert(key, target.clone());
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
     // A split propagates through references, including recursive definitions.
     loop {
         let mut changed = false;
@@ -138,14 +197,20 @@ pub(crate) fn contract_names(type_defs: &Value) -> Result<BTreeMap<String, Strin
                 rewrite_refs(&mut other, &names)
                     .map_err(|e| format!("{name} #/typeDefs/output: {e}"))?;
                 let key = format!("#/typeDefs/input/{}", escape(name));
-                if schema != other && names[&key] == *name {
+                if without_descriptions(schema) != without_descriptions(other)
+                    && names[&key] == *name
+                {
                     let split = format!("{name}Input");
                     if input.contains_key(&split) || output.contains_key(&split) {
                         return Err(format!(
                             "{name} #/typeDefs/input: split name collides with {split}"
                         ));
                     }
-                    names.insert(key, split);
+                    for (reference, target) in &mut names {
+                        if reference.starts_with("#/typeDefs/input/") && target == name {
+                            *target = split.clone();
+                        }
+                    }
                     changed = true;
                 }
             }
@@ -161,17 +226,8 @@ pub(crate) fn normalize_with_schemas(
     type_defs: &Value,
 ) -> Result<(Model, BTreeMap<String, Value>)> {
     let names = contract_names(type_defs)?;
-    let input = type_defs["input"].as_object().unwrap();
-    let output = type_defs["output"].as_object().unwrap();
-    let mut schemas = BTreeMap::new();
-    for (direction, defs) in [("input", input), ("output", output)] {
-        for (name, schema) in defs {
-            let name = names[&format!("#/typeDefs/{direction}/{}", escape(name))].clone();
-            let mut schema = schema.clone();
-            rewrite_refs(&mut schema, &names).map_err(|e| format!("{name} #: {e}"))?;
-            schemas.insert(name, schema);
-        }
-    }
+    let mut schemas = schema_definitions(type_defs, &names)?;
+    schemas.retain(|name, _| !name.starts_with('_'));
     let mut normalizer = Normalizer {
         schemas,
         types: BTreeMap::new(),
@@ -186,6 +242,83 @@ pub(crate) fn normalize_with_schemas(
         },
         normalizer.schemas,
     ))
+}
+
+fn resolve_aliases(
+    schema: &mut Value,
+    aliases: &BTreeMap<String, Value>,
+    pending: &mut BTreeSet<String>,
+) -> Result<()> {
+    if let Some(reference) = schema["$ref"].as_str().map(str::to_owned)
+        && let Some(target) = aliases.get(&reference)
+    {
+        if !pending.insert(reference.clone()) {
+            return Err(format!("recursive path alias {reference}"));
+        }
+        let mut target = target.clone();
+        resolve_aliases(&mut target, aliases, pending)?;
+        pending.remove(&reference);
+        let overlay = schema.as_object_mut().unwrap();
+        overlay.remove("$ref");
+        for (key, value) in std::mem::take(overlay) {
+            target[&key] = value;
+        }
+        *schema = target;
+    }
+    match schema {
+        Value::Object(object) => {
+            for value in object.values_mut() {
+                resolve_aliases(value, aliases, pending)?;
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                resolve_aliases(value, aliases, pending)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+pub(crate) fn schema_definitions(
+    type_defs: &Value,
+    names: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, Value>> {
+    let input = type_defs["input"].as_object().unwrap();
+    let output = type_defs["output"].as_object().unwrap();
+    let mut schemas = BTreeMap::new();
+    for (direction, defs) in [("input", input), ("output", output)] {
+        for (name, schema) in defs {
+            let name = names[&format!("#/typeDefs/{direction}/{}", escape(name))].clone();
+            let mut schema = schema.clone();
+            rewrite_refs(&mut schema, names).map_err(|e| format!("{name} #: {e}"))?;
+            schemas.entry(name).or_insert(schema);
+        }
+    }
+    let aliases: BTreeMap<_, _> = schemas
+        .iter()
+        .filter(|(name, _)| name.starts_with('_'))
+        .map(|(name, schema)| (format!("{name}.json"), schema.clone()))
+        .collect();
+    for schema in schemas.values_mut() {
+        resolve_aliases(schema, &aliases, &mut BTreeSet::new())?;
+    }
+    Ok(schemas)
+}
+
+pub(crate) fn root_schema(definitions: &BTreeMap<String, Value>, name: &str) -> Result<Value> {
+    if !name.starts_with('_') {
+        return Ok(json!({"$ref": format!("../types/{name}.json")}));
+    }
+    // Primitive and collection operation roots are inline, rather than public aliases.
+    let mut schema = definitions[name].clone();
+    let relative = definitions
+        .keys()
+        .map(|name| (format!("{name}.json"), format!("../types/{name}")))
+        .collect();
+    rewrite_refs(&mut schema, &relative)?;
+    Ok(schema)
 }
 
 impl Model {
@@ -307,13 +440,19 @@ impl Normalizer {
                     continue;
                 }
                 let path = format!("{pointer}/properties/{}", escape(key));
+                let ty = self.ty(value, name, &path)?;
+                let mut doc = doc(value);
+                if let Ty::Literal(literal) = &ty {
+                    let required = format!("Required value: {literal:?}.");
+                    doc = Some(doc.map_or(required.clone(), |doc| format!("{doc}\n{required}")));
+                }
                 fields.push(Field {
                     json_name: key.clone(),
-                    ty: self.ty(value, name, &path)?,
+                    ty,
                     required: schema["required"]
                         .as_array()
                         .is_some_and(|r| r.iter().any(|v| v == key)),
-                    doc: doc(value),
+                    doc,
                 });
             }
         }
@@ -445,7 +584,7 @@ impl Normalizer {
             return Ok(Kind::StringEnum(strings));
         }
         if let Some(value) = schema["const"].as_str() {
-            return Ok(Kind::StringEnum(vec![value.to_owned()]));
+            return Ok(Kind::Alias(Ty::Literal(value.to_owned())));
         }
         if let Some(branches) = schema["oneOf"].as_array() {
             if branches.is_empty() {
@@ -737,6 +876,9 @@ impl Normalizer {
                 &format!("{pointer}/anyOf"),
             )?)));
         }
+        if let Some(value) = schema["const"].as_str() {
+            return Ok(Ty::Literal(value.to_owned()));
+        }
         if schema.get("allOf").is_some()
             || schema.get("oneOf").is_some()
             || schema.get("anyOf").is_some()
@@ -824,6 +966,103 @@ mod tests {
     fn model(schema: Value) -> Model {
         normalize(&json!({"input": {}, "output": {"Example": schema}})).unwrap()
     }
+    #[test]
+    fn literal_fields_stay_inline() {
+        let (model, schemas) = normalize_with_schemas(&json!({"input":{}, "output": {
+            "Call": {"type":"object", "properties": {
+                "type": {"const":"tool-call", "description":"Wire tag."}
+            }, "required":["type"]}
+        }}))
+        .unwrap();
+        assert_eq!(schemas.len(), 1);
+        let Kind::Struct { fields, .. } = &model.types[0].kind else {
+            panic!()
+        };
+        assert_eq!(fields[0].ty, Ty::Literal("tool-call".into()));
+        assert_eq!(
+            fields[0].doc.as_deref(),
+            Some("Wire tag.\nRequired value: \"tool-call\".")
+        );
+    }
+
+    #[test]
+    fn numbered_siblings_merge_transitively_and_keep_the_first_description() {
+        let (_, schemas) = normalize_with_schemas(&json!({"input":{}, "output": {
+            "Child":{"type":"object", "properties":{"description":{"type":"string"}}, "description":"First child"},
+            "Child2":{"type":"object", "properties":{"description":{"type":"string", "description":"Field docs"}}, "description":"Other child"},
+            "Parent":{"type":"object", "properties":{"child":{"$ref":"#/typeDefs/output/Child"}}, "description":"First parent"},
+            "Parent2":{"type":"object", "properties":{"child":{"$ref":"#/typeDefs/output/Child2"}}, "description":"Other parent"},
+            "Child3":{"type":"object", "properties":{"description":{"type":"boolean"}}}
+        }})).unwrap();
+        assert_eq!(schemas.len(), 3);
+        assert_eq!(schemas["Child"]["description"], "First child");
+        assert_eq!(schemas["Parent"]["description"], "First parent");
+        assert_eq!(
+            schemas["Parent"]["properties"]["child"]["$ref"],
+            "Child.json"
+        );
+        assert!(schemas.contains_key("Child3"));
+    }
+
+    #[test]
+    fn merged_siblings_follow_contract_splits() {
+        let (model, schemas) = normalize_with_schemas(&json!({"input": {
+            "Call":{"type":"object", "properties":{"value":{"type":"string"}}},
+            "Call2":{"type":"object", "properties":{"value":{"type":"string"}}},
+            "Request":{"type":"object", "properties":{"call":{"$ref":"#/typeDefs/input/Call2"}}}
+        }, "output": {
+            "Call":{"type":"object", "properties":{"value":{"type":"boolean"}}}
+        }}))
+        .unwrap();
+        assert_eq!(model.types.len(), 3);
+        assert_eq!(
+            schemas["Request"]["properties"]["call"]["$ref"],
+            "CallInput.json"
+        );
+        assert_eq!(schemas["Call"]["properties"]["value"]["type"], "boolean");
+        assert_eq!(
+            schemas["CallInput"]["properties"]["value"]["type"],
+            "string"
+        );
+    }
+
+    #[test]
+    fn path_aliases_resolve_in_fields_and_operation_roots() {
+        let defs = json!({"input": {
+            "Item":{"type":"object"},
+            "_items_":{"type":"array", "items":{"$ref":"#/typeDefs/input/Item"}},
+            "_wrapper_":{"$ref":"#/typeDefs/input/_items_"},
+            "Request":{"type":"object", "properties":{"items":{"$ref":"#/typeDefs/input/_wrapper_"}}}
+        }, "output":{}});
+        let (model, schemas) = normalize_with_schemas(&defs).unwrap();
+        assert_eq!(model.types.len(), 2);
+        assert_eq!(
+            schemas["Request"]["properties"]["items"],
+            json!({"type":"array", "items":{"$ref":"Item.json"}})
+        );
+        let definitions = schema_definitions(&defs, &contract_names(&defs).unwrap()).unwrap();
+        assert_eq!(
+            root_schema(&definitions, "_wrapper_").unwrap(),
+            json!({"type":"array", "items":{"$ref":"../types/Item.json"}})
+        );
+    }
+
+    #[test]
+    fn manifest_types_have_names_from_rust() {
+        let manifest = aimux_ops::manifest::manifest();
+        let defs = &manifest["typeDefs"];
+        let names = contract_names(defs).unwrap();
+        let model = normalize(defs).unwrap();
+        for ty in &model.types {
+            assert!(!ty.name.starts_with('_'), "{}", ty.name);
+            assert!(
+                names.values().any(|name| name == &ty.name),
+                "anonymous shape {} needs a Rust type",
+                ty.name
+            );
+        }
+    }
+
     #[test]
     fn all_kinds_and_codecs() {
         assert!(matches!(

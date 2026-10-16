@@ -37,7 +37,7 @@ public abstract class AssistantPart {
     public Boolean getProviderExecuted() { return null; }
     public String getToolCallId() { return null; }
     public String getToolName() { return null; }
-    public ToolResultOutput2 getOutput() { return null; }
+    public LanguageModelToolResultOutput getOutput() { return null; }
     public final boolean isCustom() { return "custom".equals(getType()); }
     public final boolean isFile() { return "file".equals(getType()); }
     public final boolean isReasoning() { return "reasoning".equals(getType()); }
@@ -389,7 +389,7 @@ public abstract class AssistantPart {
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class ToolResultVariant extends AssistantPart {
         @JsonProperty("output")
-        private final ToolResultOutput2 output;
+        private final LanguageModelToolResultOutput output;
         @JsonProperty("providerOptions")
         private final Map<String, Map<String, JsonNode>> providerOptions;
         @JsonProperty("toolCallId")
@@ -399,7 +399,7 @@ public abstract class AssistantPart {
 
         @JsonCreator
         public ToolResultVariant(
-            @JsonProperty(value = "output", required = true) ToolResultOutput2 output,
+            @JsonProperty(value = "output", required = true) LanguageModelToolResultOutput output,
             @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
             @JsonProperty(value = "toolCallId", required = true) String toolCallId,
             @JsonProperty(value = "toolName", required = true) String toolName) {
@@ -414,18 +414,18 @@ public abstract class AssistantPart {
         @Override
         @JsonProperty("type")
         public String getType() { return "tool-result"; }
-        public ToolResultOutput2 getOutput() { return output; }
+        public LanguageModelToolResultOutput getOutput() { return output; }
         public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
         public String getToolCallId() { return toolCallId; }
         public String getToolName() { return toolName; }
 
         public static final class Builder {
-            private ToolResultOutput2 output;
+            private LanguageModelToolResultOutput output;
             private Map<String, Map<String, JsonNode>> providerOptions;
             private String toolCallId;
             private String toolName;
 
-            public Builder output(ToolResultOutput2 value) {
+            public Builder output(LanguageModelToolResultOutput value) {
                 this.output = value;
                 return this;
             }

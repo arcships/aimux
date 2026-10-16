@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "properties": {
     "auditMode": {
-      "$ref": "AuditMode2.json"
+      "$ref": "TraceAuditMode.json"
     },
     "capacity": {
       "default": 2048,

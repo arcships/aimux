@@ -663,7 +663,7 @@ export type AssistantPart =
   }
   | {
     type: "tool-result"
-    output: ToolResultOutput2
+    output: LanguageModelToolResultOutput
     providerOptions?: Record<string, Record<string, unknown>> | null
     toolCallId: string
     toolName: string
@@ -688,10 +688,6 @@ export type AudioData = string
  * data is read (ai@7.0.127 `prompt/file-part-data.ts:89-141`).
  */
 export type AudioInput = string
-
-export type AuditMode = "disabled" | "shared" | "strict"
-
-export type AuditMode2 = "off" | "shared" | "strict"
 
 export type BackendConfig =
   | {
@@ -889,7 +885,10 @@ export type ContentPart =
     type: "source"
     id: string
     providerMetadata?: Record<string, Record<string, unknown>> | null
-    sourceType: ContentPart4SourceType
+    /**
+     * Required value: "url".
+     */
+    sourceType: "url"
     title?: string | null
     url: string
   }
@@ -899,7 +898,10 @@ export type ContentPart =
     id: string
     mediaType: string
     providerMetadata?: Record<string, Record<string, unknown>> | null
-    sourceType: ContentPart5SourceType
+    /**
+     * Required value: "document".
+     */
+    sourceType: "document"
     title: string
   }
   | {
@@ -997,10 +999,6 @@ export type ContentPart =
     toolCall: TypedToolCall
   }
 
-export type ContentPart4SourceType = "url"
-
-export type ContentPart5SourceType = "document"
-
 /**
  * A part of the content text generation returns: the AI SDK's core
  * `ContentPart` (`ai` `generate-text/content-part.ts:12-33`), eleven kinds,
@@ -1037,7 +1035,10 @@ export type ContentPartInput =
     type: "source"
     id: string
     providerMetadata?: Record<string, Record<string, unknown>> | null
-    sourceType: ContentPartInput4SourceType
+    /**
+     * Required value: "url".
+     */
+    sourceType: "url"
     title?: string | null
     url: string
   }
@@ -1047,7 +1048,10 @@ export type ContentPartInput =
     id: string
     mediaType: string
     providerMetadata?: Record<string, Record<string, unknown>> | null
-    sourceType: ContentPartInput5SourceType
+    /**
+     * Required value: "document".
+     */
+    sourceType: "document"
     title: string
   }
   | {
@@ -1144,10 +1148,6 @@ export type ContentPartInput =
      */
     toolCall: TypedToolCallInput
   }
-
-export type ContentPartInput4SourceType = "url"
-
-export type ContentPartInput5SourceType = "document"
 
 export interface CreateRecorderParams {
   backend: BackendConfig
@@ -1398,9 +1398,6 @@ export interface EmbeddingUsage {
 export interface EmptyParams {
 }
 
-export interface EmptyParams2 {
-}
-
 export type ErrorDomain = "aimux" | "recording" | "binding" | "protocol"
 
 /**
@@ -1566,7 +1563,10 @@ export type GenerateContent =
     type: "source"
     id: string
     providerMetadata?: Record<string, Record<string, unknown>> | null
-    sourceType: GenerateContent2SourceType
+    /**
+     * Required value: "url".
+     */
+    sourceType: "url"
     title?: string | null
     url: string
   }
@@ -1576,7 +1576,10 @@ export type GenerateContent =
     id: string
     mediaType: string
     providerMetadata?: Record<string, Record<string, unknown>> | null
-    sourceType: GenerateContent3SourceType
+    /**
+     * Required value: "document".
+     */
+    sourceType: "document"
     title: string
   }
   | {
@@ -1638,10 +1641,6 @@ export type GenerateContent =
     toolCallId: string
     toolName: string
   }
-
-export type GenerateContent2SourceType = "url"
-
-export type GenerateContent3SourceType = "document"
 
 /**
  * `GenerateObjectResult.response`: the AI SDK's
@@ -1888,16 +1887,6 @@ export type HandleIdInput = string
 export type HandleKind = "Provider" | "Registry" | "Language" | "Embedding" | "Image" | "Speech" | "Transcription" | "Reranking" | "Video" | "Search" | "Decision" | "Files" | "Operation" | "Abort" | "Fetch" | "WebSocket" | "Download" | "CredentialResolver" | "Middleware" | "TraceStore" | "Recorder" | "SessionStore" | "ReplaySession"
 
 export interface HandleResult {
-  handle: HandleId
-  kind: HandleKind
-}
-
-export interface HandleResult2 {
-  handle: HandleId
-  kind: HandleKind
-}
-
-export interface HandleResult3 {
   handle: HandleId
   kind: HandleKind
 }
@@ -2207,6 +2196,58 @@ export type LanguageModelMessage =
   }
 
 /**
+ * Reasoning / thinking content part.
+ */
+export interface LanguageModelReasoningPart {
+  providerOptions?: Record<string, Record<string, unknown>> | null
+  text: string
+}
+
+/**
+ * The provider-facing result of a tool call.
+ */
+export type LanguageModelToolResultOutput =
+  | {
+    type: "text"
+    providerOptions?: Record<string, Record<string, unknown>> | null
+    value: string
+  }
+  | {
+    type: "json"
+    providerOptions?: Record<string, Record<string, unknown>> | null
+    value: unknown
+  }
+  | {
+    type: "execution-denied"
+    providerOptions?: Record<string, Record<string, unknown>> | null
+    reason?: string | null
+  }
+  | {
+    type: "error-text"
+    providerOptions?: Record<string, Record<string, unknown>> | null
+    value: string
+  }
+  | {
+    type: "error-json"
+    providerOptions?: Record<string, Record<string, unknown>> | null
+    value: unknown
+  }
+  | {
+    type: "content"
+    value: Array<ToolResultContent>
+  }
+
+/**
+ * Tool result content part.
+ */
+export interface LanguageModelToolResultPart {
+  output: LanguageModelToolResultOutput
+  providerOptions?: Record<string, Record<string, unknown>> | null
+  toolCallId: string
+  toolName: string
+}
+
+/**
  * Token usage of a generation step or a whole call: the AI SDK's
  * `LanguageModelUsage` (ai@7.0.127 `types/usage.ts:10-68`).
  * 
@@ -2319,8 +2360,10 @@ export interface LoggingConfig {
   level: LogLevel
 }
 
+export type MiddlewareAuditMode = "disabled" | "shared" | "strict"
+
 export interface MiddlewareParams {
-  auditMode?: AuditMode | null
+  auditMode?: MiddlewareAuditMode | null
   kind: string
   scopeName?: string | null
   traceStore?: HandleIdInput | null
@@ -2935,14 +2978,6 @@ export type ReasoningPart =
   }
 
 /**
- * Reasoning / thinking content part.
- */
-export interface ReasoningPart2 {
-  providerOptions?: Record<string, Record<string, unknown>> | null
-  text: string
-}
-
-/**
  * Reasoning / thinking portrait for a model (advisory).
  */
 export interface ReasoningSpec {
@@ -3087,6 +3122,22 @@ export interface RegistryEntry {
 
 export interface RegistryProviderParams {
   key: string
+}
+
+/**
+ * A replacement raw call whose tag is optional on input.
+ */
+export interface RepairedToolCall {
+  dynamic?: boolean | null
+  input: string
+  providerExecuted?: boolean | null
+  providerMetadata?: Record<string, Record<string, unknown>> | null
+  toolCallId: string
+  toolName: string
+  /**
+   * Required value: "tool-call".
+   */
+  type?: "tool-call"
 }
 
 export interface ReplayCreateParams {
@@ -3347,20 +3398,7 @@ export interface RouterParams {
 
 export interface RuntimeConfigureParams {
   logging?: LoggingConfig | null
-  proxy?: RuntimeConfigureParamsProxy | null
-}
-
-/**
- * Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
- * hop, or the WebSocket connector. With every field empty, HTTP follows the
- * `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
- * reqwest does, and the WebSocket connector connects directly.
- */
-export interface RuntimeConfigureParamsProxy {
-  all_url?: string | null
-  http_url?: string | null
-  https_url?: string | null
-  no_proxy?: string | null
+  proxy?: TransportProxy | null
 }
 
 export interface RuntimeDescribeParams {
@@ -4038,10 +4076,15 @@ export type Strategy =
     weights: Array<number>
   }
 
+/**
+ * The two event formats carried by an operation stream.
+ */
+export type StreamEvent = TextStreamPart | ChatCompletionChunk
+
 export type StreamFrame =
   | {
     type: "event"
-    event: StreamFrame0Event
+    event: StreamEvent
     seq: string
   }
   | {
@@ -4051,11 +4094,25 @@ export type StreamFrame =
     seq: string
   }
 
-export type StreamFrame0Event = TextStreamPart | ChatCompletionChunk
-
 export interface StreamOptions {
   includeReasoning?: boolean
   includeUsage?: boolean
+}
+
+/**
+ * A raw provider call with its required wire tag.
+ */
+export interface TaggedRawToolCall {
+  dynamic?: boolean | null
+  input: string
+  providerExecuted?: boolean | null
+  providerMetadata?: Record<string, Record<string, unknown>> | null
+  toolCallId: string
+  toolName: string
+  /**
+   * Required value: "tool-call".
+   */
+  type: "tool-call"
 }
 
 /**
@@ -4078,10 +4135,11 @@ export interface TaggedToolResult {
   providerMetadata?: Record<string, Record<string, unknown>> | null
   toolCallId: string
   toolName: string
-  type: TaggedToolResultType
+  /**
+   * Required value: "tool-result".
+   */
+  type: "tool-result"
 }
-
-export type TaggedToolResultType = "tool-result"
 
 export interface TerminalSummary {
   error?: ErrorEnvelope | null
@@ -4193,7 +4251,10 @@ export type TextStreamPart =
     type: "source"
     id: string
     providerMetadata?: Record<string, Record<string, unknown>> | null
-    sourceType: TextStreamPart10SourceType
+    /**
+     * Required value: "url".
+     */
+    sourceType: "url"
     title?: string | null
     url: string
   }
@@ -4203,7 +4264,10 @@ export type TextStreamPart =
     id: string
     mediaType: string
     providerMetadata?: Record<string, Record<string, unknown>> | null
-    sourceType: TextStreamPart11SourceType
+    /**
+     * Required value: "document".
+     */
+    sourceType: "document"
     title: string
   }
   | {
@@ -4353,10 +4417,6 @@ export type TextStreamPart =
     type: "raw"
     rawValue: unknown
   }
-
-export type TextStreamPart10SourceType = "url"
-
-export type TextStreamPart11SourceType = "document"
 
 /**
  * Per-call timeout configuration.
@@ -4646,7 +4706,7 @@ export interface ToolCallPart {
 export type ToolCallRepairReply =
   | {
     type: "repaired"
-    toolCall: ToolCallRepairReply0ToolCall
+    toolCall: RepairedToolCall
   }
   | {
     type: "unchanged"
@@ -4655,18 +4715,6 @@ export type ToolCallRepairReply =
     type: "failed"
     message: string
   }
-
-export interface ToolCallRepairReply0ToolCall {
-  dynamic?: boolean | null
-  input: string
-  providerExecuted?: boolean | null
-  providerMetadata?: Record<string, Record<string, unknown>> | null
-  toolCallId: string
-  toolName: string
-  type?: ToolCallRepairReply0ToolCallType
-}
-
-export type ToolCallRepairReply0ToolCallType = "tool-call"
 
 /**
  * How the model should choose tools, as the caller gives it
@@ -4680,16 +4728,23 @@ export type ToolCallRepairReply0ToolCallType = "tool-call"
  * [`prepare_tool_choice`] turns it into the [`LanguageModelV4ToolChoice`]
  * a model call carries.
  */
-export type ToolChoice = ToolChoice0 | ToolChoice1
+export type ToolChoice = ToolChoiceMode | ToolChoiceTool
 
-export type ToolChoice0 = "auto" | "none" | "required"
+/**
+ * The string form of a user's tool choice.
+ */
+export type ToolChoiceMode = "auto" | "none" | "required"
 
-export interface ToolChoice1 {
+/**
+ * The named-tool form of a user's tool choice.
+ */
+export interface ToolChoiceTool {
   toolName: string
-  type: ToolChoice1Type
+  /**
+   * Required value: "tool".
+   */
+  type: "tool"
 }
-
-export type ToolChoice1Type = "tool"
 
 /**
  * What [`AiMuxError::ToolChoiceViolation`] carries: the field set of the AI
@@ -4763,7 +4818,7 @@ export interface ToolOutputDenied {
 export type ToolPart =
   | {
     type: "tool-result"
-    output: ToolResultOutput2
+    output: LanguageModelToolResultOutput
     providerOptions?: Record<string, Record<string, unknown>> | null
     toolCallId: string
     toolName: string
@@ -4802,21 +4857,9 @@ export interface ToolRepairContextSchema {
   inputSchema: unknown
   instructions: string | null
   messages: Array<ModelMessage>
-  toolCall: ToolRepairContextSchemaToolCall
+  toolCall: TaggedRawToolCall
   tools: Array<Tool>
 }
-
-export interface ToolRepairContextSchemaToolCall {
-  dynamic?: boolean | null
-  input: string
-  providerExecuted?: boolean | null
-  providerMetadata?: Record<string, Record<string, unknown>> | null
-  toolCallId: string
-  toolName: string
-  type: ToolRepairContextSchemaToolCallType
-}
-
-export type ToolRepairContextSchemaToolCallType = "tool-call"
 
 /**
  * A tool result produced by a provider-executed tool (e.g. xAI `file_search`,
@@ -4987,40 +5030,6 @@ export type ToolResultOutput =
   }
 
 /**
- * The provider-facing result of a tool call.
- */
-export type ToolResultOutput2 =
-  | {
-    type: "text"
-    providerOptions?: Record<string, Record<string, unknown>> | null
-    value: string
-  }
-  | {
-    type: "json"
-    providerOptions?: Record<string, Record<string, unknown>> | null
-    value: unknown
-  }
-  | {
-    type: "execution-denied"
-    providerOptions?: Record<string, Record<string, unknown>> | null
-    reason?: string | null
-  }
-  | {
-    type: "error-text"
-    providerOptions?: Record<string, Record<string, unknown>> | null
-    value: string
-  }
-  | {
-    type: "error-json"
-    providerOptions?: Record<string, Record<string, unknown>> | null
-    value: unknown
-  }
-  | {
-    type: "content"
-    value: Array<ToolResultContent>
-  }
-
-/**
  * The result of a tool call (upstream `ToolResultPart`,
  * `provider-utils` `types/content-part.ts:240-268`).
  */
@@ -5039,34 +5048,23 @@ export interface ToolResultPart {
 }
 
 /**
- * Tool result content part.
- */
-export interface ToolResultPart2 {
-  output: ToolResultOutput2
-  providerOptions?: Record<string, Record<string, unknown>> | null
-  toolCallId: string
-  toolName: string
-}
-
-export interface TraceAggregateParams {
-  /**
-   * Query filter (RFC-0015 §5.3).
-   */
-  filter?: TraceAggregateParamsFilter
-}
-
-/**
  * Query filter (RFC-0015 §5.3).
  */
-export interface TraceAggregateParamsFilter {
+export interface TraceAggregateFilter {
   model?: string | null
   provider?: string | null
   sessionId?: string | null
   sinceUnixMs?: number | null
 }
 
+export interface TraceAggregateParams {
+  filter?: TraceAggregateFilter
+}
+
+export type TraceAuditMode = "off" | "shared" | "strict"
+
 export interface TraceCreateParams {
-  auditMode?: AuditMode2
+  auditMode?: TraceAuditMode
   capacity?: number
   perScopeCapacity?: number
 }
@@ -5339,23 +5337,11 @@ export type TranscriptionStreamPart =
 export type TransportParams =
   | {
     kind: "fetch"
-    /**
-     * Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-     * hop, or the WebSocket connector. With every field empty, HTTP follows the
-     * `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-     * reqwest does, and the WebSocket connector connects directly.
-     */
-    proxy?: TransportParams0Proxy
+    proxy?: TransportProxy
   }
   | {
     kind: "ws"
-    /**
-     * Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-     * hop, or the WebSocket connector. With every field empty, HTTP follows the
-     * `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-     * reqwest does, and the WebSocket connector connects directly.
-     */
-    proxy?: TransportParams1Proxy
+    proxy?: TransportProxy
   }
   | {
     kind: "download"
@@ -5368,20 +5354,7 @@ export type TransportParams =
  * `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
  * reqwest does, and the WebSocket connector connects directly.
  */
-export interface TransportParams0Proxy {
-  all_url?: string | null
-  http_url?: string | null
-  https_url?: string | null
-  no_proxy?: string | null
-}
-
-/**
- * Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
- * hop, or the WebSocket connector. With every field empty, HTTP follows the
- * `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
- * reqwest does, and the WebSocket connector connects directly.
- */
-export interface TransportParams1Proxy {
+export interface TransportProxy {
   all_url?: string | null
   http_url?: string | null
   https_url?: string | null
@@ -5400,7 +5373,10 @@ export type TypedSource =
     id: string
     providerMetadata?: Record<string, Record<string, unknown>> | null
     title?: string | null
-    type: TypedSource0Type
+    /**
+     * Required value: "source".
+     */
+    type: "source"
     url: string
   }
   | {
@@ -5410,12 +5386,11 @@ export type TypedSource =
     mediaType: string
     providerMetadata?: Record<string, Record<string, unknown>> | null
     title: string
-    type: TypedSource1Type
+    /**
+     * Required value: "source".
+     */
+    type: "source"
   }
-
-export type TypedSource0Type = "source"
-
-export type TypedSource1Type = "source"
 
 /**
  * A tool call outside `content` (a text result's `toolCalls`, an approval
@@ -5459,7 +5434,10 @@ export interface TypedToolCall {
    * Tool name.
    */
   toolName: string
-  type: TypedToolCallType
+  /**
+   * Required value: "tool-call".
+   */
+  type: "tool-call"
 }
 
 /**
@@ -5504,12 +5482,11 @@ export interface TypedToolCallInput {
    * Tool name.
    */
   toolName: string
-  type?: TypedToolCallInputType
+  /**
+   * Required value: "tool-call".
+   */
+  type?: "tool-call"
 }
-
-export type TypedToolCallInputType = "tool-call"
-
-export type TypedToolCallType = "tool-call"
 
 /**
  * A tool error (the AI SDK's `TypedToolError`, `ai`
@@ -5960,14 +5937,4 @@ export type Warning =
     type: "other"
     message: string
   }
-
-export type _aimux_core_model_catalogue_RuntimeModel_ = Array<RuntimeModel>
-
-export type _aimux_core_session_SessionCall_ = Array<SessionCall>
-
-export type _aimux_core_session_SessionView_ = Array<SessionView>
-
-export type _aimux_core_trace_store_SessionStepStat_ = Array<SessionStepStat>
-
-export type _aimux_core_trace_store_TraceStats_ = Array<TraceStats>
 

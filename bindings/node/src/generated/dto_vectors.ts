@@ -12,8 +12,6 @@ export interface DtoTypes {
   "AssistantPart": T.AssistantPart
   "AudioData": T.AudioData
   "AudioInput": T.AudioInput
-  "AuditMode": T.AuditMode
-  "AuditMode2": T.AuditMode2
   "BackendConfig": T.BackendConfig
   "BreakKind": T.BreakKind
   "CancelResult": T.CancelResult
@@ -36,11 +34,7 @@ export interface DtoTypes {
   "CodexTokens": T.CodexTokens
   "CompletionTokensDetails": T.CompletionTokensDetails
   "ContentPart": T.ContentPart
-  "ContentPart4SourceType": T.ContentPart4SourceType
-  "ContentPart5SourceType": T.ContentPart5SourceType
   "ContentPartInput": T.ContentPartInput
-  "ContentPartInput4SourceType": T.ContentPartInput4SourceType
-  "ContentPartInput5SourceType": T.ContentPartInput5SourceType
   "CreateRecorderParams": T.CreateRecorderParams
   "CredentialParams": T.CredentialParams
   "CustomPart": T.CustomPart
@@ -58,7 +52,6 @@ export interface DtoTypes {
   "EmbeddingResult": T.EmbeddingResult
   "EmbeddingUsage": T.EmbeddingUsage
   "EmptyParams": T.EmptyParams
-  "EmptyParams2": T.EmptyParams2
   "ErrorDomain": T.ErrorDomain
   "ErrorEnvelope": T.ErrorEnvelope
   "Fallback": T.Fallback
@@ -71,8 +64,6 @@ export interface DtoTypes {
   "FunctionTool": T.FunctionTool
   "FunctionToolInputExample": T.FunctionToolInputExample
   "GenerateContent": T.GenerateContent
-  "GenerateContent2SourceType": T.GenerateContent2SourceType
-  "GenerateContent3SourceType": T.GenerateContent3SourceType
   "GenerateObjectResponse": T.GenerateObjectResponse
   "GenerateObjectResult": T.GenerateObjectResult
   "GenerateTextOptions": T.GenerateTextOptions
@@ -85,8 +76,6 @@ export interface DtoTypes {
   "HandleIdInput": T.HandleIdInput
   "HandleKind": T.HandleKind
   "HandleResult": T.HandleResult
-  "HandleResult2": T.HandleResult2
-  "HandleResult3": T.HandleResult3
   "HttpExchange": T.HttpExchange
   "HttpRecord": T.HttpRecord
   "ImageCallOptions": T.ImageCallOptions
@@ -101,12 +90,16 @@ export interface DtoTypes {
   "InputTokenDetails": T.InputTokenDetails
   "LanguageModelFile": T.LanguageModelFile
   "LanguageModelMessage": T.LanguageModelMessage
+  "LanguageModelReasoningPart": T.LanguageModelReasoningPart
+  "LanguageModelToolResultOutput": T.LanguageModelToolResultOutput
+  "LanguageModelToolResultPart": T.LanguageModelToolResultPart
   "LanguageModelUsage": T.LanguageModelUsage
   "LanguageModelUsageInput": T.LanguageModelUsageInput
   "LanguageModelV4ToolChoice": T.LanguageModelV4ToolChoice
   "LiveTarget": T.LiveTarget
   "LogLevel": T.LogLevel
   "LoggingConfig": T.LoggingConfig
+  "MiddlewareAuditMode": T.MiddlewareAuditMode
   "MiddlewareParams": T.MiddlewareParams
   "MoaFailMode": T.MoaFailMode
   "MoaParams": T.MoaParams
@@ -160,7 +153,6 @@ export interface DtoTypes {
   "ReasoningMode": T.ReasoningMode
   "ReasoningOutput": T.ReasoningOutput
   "ReasoningPart": T.ReasoningPart
-  "ReasoningPart2": T.ReasoningPart2
   "ReasoningSpec": T.ReasoningSpec
   "ReasoningVisibility": T.ReasoningVisibility
   "RecorderExport": T.RecorderExport
@@ -171,6 +163,7 @@ export interface DtoTypes {
   "RegistryCreateParams": T.RegistryCreateParams
   "RegistryEntry": T.RegistryEntry
   "RegistryProviderParams": T.RegistryProviderParams
+  "RepairedToolCall": T.RepairedToolCall
   "ReplayCreateParams": T.ReplayCreateParams
   "ReplayInspection": T.ReplayInspection
   "ReplayLiveParams": T.ReplayLiveParams
@@ -193,7 +186,6 @@ export interface DtoTypes {
   "RetryErrorReason": T.RetryErrorReason
   "RouterParams": T.RouterParams
   "RuntimeConfigureParams": T.RuntimeConfigureParams
-  "RuntimeConfigureParamsProxy": T.RuntimeConfigureParamsProxy
   "RuntimeDescribeParams": T.RuntimeDescribeParams
   "RuntimeModel": T.RuntimeModel
   "SearchCallOptions": T.SearchCallOptions
@@ -223,17 +215,15 @@ export interface DtoTypes {
   "StepResultPerformance": T.StepResultPerformance
   "StepResultPerformanceInput": T.StepResultPerformanceInput
   "Strategy": T.Strategy
+  "StreamEvent": T.StreamEvent
   "StreamFrame": T.StreamFrame
-  "StreamFrame0Event": T.StreamFrame0Event
   "StreamOptions": T.StreamOptions
+  "TaggedRawToolCall": T.TaggedRawToolCall
   "TaggedToolResult": T.TaggedToolResult
-  "TaggedToolResultType": T.TaggedToolResultType
   "TerminalSummary": T.TerminalSummary
   "TextPart": T.TextPart
   "TextRequest": T.TextRequest
   "TextStreamPart": T.TextStreamPart
-  "TextStreamPart10SourceType": T.TextStreamPart10SourceType
-  "TextStreamPart11SourceType": T.TextStreamPart11SourceType
   "TimeoutConfiguration": T.TimeoutConfiguration
   "Timestamp": T.Timestamp
   "TimingRecord": T.TimingRecord
@@ -247,12 +237,9 @@ export interface DtoTypes {
   "ToolCallInput": T.ToolCallInput
   "ToolCallPart": T.ToolCallPart
   "ToolCallRepairReply": T.ToolCallRepairReply
-  "ToolCallRepairReply0ToolCall": T.ToolCallRepairReply0ToolCall
-  "ToolCallRepairReply0ToolCallType": T.ToolCallRepairReply0ToolCallType
   "ToolChoice": T.ToolChoice
-  "ToolChoice0": T.ToolChoice0
-  "ToolChoice1": T.ToolChoice1
-  "ToolChoice1Type": T.ToolChoice1Type
+  "ToolChoiceMode": T.ToolChoiceMode
+  "ToolChoiceTool": T.ToolChoiceTool
   "ToolChoiceViolationError": T.ToolChoiceViolationError
   "ToolContentPart": T.ToolContentPart
   "ToolOutputDenied": T.ToolOutputDenied
@@ -262,18 +249,15 @@ export interface DtoTypes {
   "ToolRepairContextRequest": T.ToolRepairContextRequest
   "ToolRepairContextResult": T.ToolRepairContextResult
   "ToolRepairContextSchema": T.ToolRepairContextSchema
-  "ToolRepairContextSchemaToolCall": T.ToolRepairContextSchemaToolCall
-  "ToolRepairContextSchemaToolCallType": T.ToolRepairContextSchemaToolCallType
   "ToolResult": T.ToolResult
   "ToolResultContent": T.ToolResultContent
   "ToolResultContentPart": T.ToolResultContentPart
   "ToolResultFileId": T.ToolResultFileId
   "ToolResultOutput": T.ToolResultOutput
-  "ToolResultOutput2": T.ToolResultOutput2
   "ToolResultPart": T.ToolResultPart
-  "ToolResultPart2": T.ToolResultPart2
+  "TraceAggregateFilter": T.TraceAggregateFilter
   "TraceAggregateParams": T.TraceAggregateParams
-  "TraceAggregateParamsFilter": T.TraceAggregateParamsFilter
+  "TraceAuditMode": T.TraceAuditMode
   "TraceCreateParams": T.TraceCreateParams
   "TraceRecord": T.TraceRecord
   "TraceSessionParams": T.TraceSessionParams
@@ -286,15 +270,10 @@ export interface DtoTypes {
   "TranscriptionStartParams": T.TranscriptionStartParams
   "TranscriptionStreamPart": T.TranscriptionStreamPart
   "TransportParams": T.TransportParams
-  "TransportParams0Proxy": T.TransportParams0Proxy
-  "TransportParams1Proxy": T.TransportParams1Proxy
+  "TransportProxy": T.TransportProxy
   "TypedSource": T.TypedSource
-  "TypedSource0Type": T.TypedSource0Type
-  "TypedSource1Type": T.TypedSource1Type
   "TypedToolCall": T.TypedToolCall
   "TypedToolCallInput": T.TypedToolCallInput
-  "TypedToolCallInputType": T.TypedToolCallInputType
-  "TypedToolCallType": T.TypedToolCallType
   "TypedToolError": T.TypedToolError
   "TypedToolResult": T.TypedToolResult
   "UploadFileData": T.UploadFileData
@@ -317,11 +296,6 @@ export interface DtoTypes {
   "VideoResponse": T.VideoResponse
   "VideoResult": T.VideoResult
   "Warning": T.Warning
-  "_aimux_core_model_catalogue_RuntimeModel_": T._aimux_core_model_catalogue_RuntimeModel_
-  "_aimux_core_session_SessionCall_": T._aimux_core_session_SessionCall_
-  "_aimux_core_session_SessionView_": T._aimux_core_session_SessionView_
-  "_aimux_core_trace_store_SessionStepStat_": T._aimux_core_trace_store_SessionStepStat_
-  "_aimux_core_trace_store_TraceStats_": T._aimux_core_trace_store_TraceStats_
 }
 
 export const dtoTags: Partial<Record<keyof DtoTypes, { tag: string; values: readonly string[] }>> = {
@@ -339,6 +313,7 @@ export const dtoTags: Partial<Record<keyof DtoTypes, { tag: string; values: read
   "GeneratedFileData": { tag: "type", values: ["data", "url"] },
   "ImageFile": { tag: "type", values: ["file", "url"] },
   "LanguageModelMessage": { tag: "role", values: ["system", "user", "assistant", "tool"] },
+  "LanguageModelToolResultOutput": { tag: "type", values: ["text", "json", "execution-denied", "error-text", "error-json", "content"] },
   "LanguageModelV4ToolChoice": { tag: "type", values: ["auto", "none", "required", "tool"] },
   "LiveTarget": { tag: "kind", values: ["model", "registry"] },
   "ModelMessage": { tag: "role", values: ["system", "user", "assistant", "tool"] },
@@ -358,7 +333,6 @@ export const dtoTags: Partial<Record<keyof DtoTypes, { tag: string; values: read
   "ToolResultContent": { tag: "type", values: ["text", "file", "custom"] },
   "ToolResultContentPart": { tag: "type", values: ["text", "file", "file-data", "file-url", "file-id", "file-reference", "image-data", "image-url", "image-file-id", "image-file-reference", "custom"] },
   "ToolResultOutput": { tag: "type", values: ["text", "json", "execution-denied", "error-text", "error-json", "content"] },
-  "ToolResultOutput2": { tag: "type", values: ["text", "json", "execution-denied", "error-text", "error-json", "content"] },
   "TranscriptionStreamPart": { tag: "type", values: ["stream-start", "transcript-delta", "transcript-partial", "transcript-final", "response-metadata", "finish", "raw", "error"] },
   "TransportParams": { tag: "kind", values: ["fetch", "ws", "download"] },
   "TypedSource": { tag: "sourceType", values: ["url", "document"] },
@@ -381,8 +355,6 @@ export const dtoTypeNames = [
   "AssistantPart",
   "AudioData",
   "AudioInput",
-  "AuditMode",
-  "AuditMode2",
   "BackendConfig",
   "BreakKind",
   "CancelResult",
@@ -405,11 +377,7 @@ export const dtoTypeNames = [
   "CodexTokens",
   "CompletionTokensDetails",
   "ContentPart",
-  "ContentPart4SourceType",
-  "ContentPart5SourceType",
   "ContentPartInput",
-  "ContentPartInput4SourceType",
-  "ContentPartInput5SourceType",
   "CreateRecorderParams",
   "CredentialParams",
   "CustomPart",
@@ -427,7 +395,6 @@ export const dtoTypeNames = [
   "EmbeddingResult",
   "EmbeddingUsage",
   "EmptyParams",
-  "EmptyParams2",
   "ErrorDomain",
   "ErrorEnvelope",
   "Fallback",
@@ -440,8 +407,6 @@ export const dtoTypeNames = [
   "FunctionTool",
   "FunctionToolInputExample",
   "GenerateContent",
-  "GenerateContent2SourceType",
-  "GenerateContent3SourceType",
   "GenerateObjectResponse",
   "GenerateObjectResult",
   "GenerateTextOptions",
@@ -454,8 +419,6 @@ export const dtoTypeNames = [
   "HandleIdInput",
   "HandleKind",
   "HandleResult",
-  "HandleResult2",
-  "HandleResult3",
   "HttpExchange",
   "HttpRecord",
   "ImageCallOptions",
@@ -470,12 +433,16 @@ export const dtoTypeNames = [
   "InputTokenDetails",
   "LanguageModelFile",
   "LanguageModelMessage",
+  "LanguageModelReasoningPart",
+  "LanguageModelToolResultOutput",
+  "LanguageModelToolResultPart",
   "LanguageModelUsage",
   "LanguageModelUsageInput",
   "LanguageModelV4ToolChoice",
   "LiveTarget",
   "LogLevel",
   "LoggingConfig",
+  "MiddlewareAuditMode",
   "MiddlewareParams",
   "MoaFailMode",
   "MoaParams",
@@ -529,7 +496,6 @@ export const dtoTypeNames = [
   "ReasoningMode",
   "ReasoningOutput",
   "ReasoningPart",
-  "ReasoningPart2",
   "ReasoningSpec",
   "ReasoningVisibility",
   "RecorderExport",
@@ -540,6 +506,7 @@ export const dtoTypeNames = [
   "RegistryCreateParams",
   "RegistryEntry",
   "RegistryProviderParams",
+  "RepairedToolCall",
   "ReplayCreateParams",
   "ReplayInspection",
   "ReplayLiveParams",
@@ -562,7 +529,6 @@ export const dtoTypeNames = [
   "RetryErrorReason",
   "RouterParams",
   "RuntimeConfigureParams",
-  "RuntimeConfigureParamsProxy",
   "RuntimeDescribeParams",
   "RuntimeModel",
   "SearchCallOptions",
@@ -592,17 +558,15 @@ export const dtoTypeNames = [
   "StepResultPerformance",
   "StepResultPerformanceInput",
   "Strategy",
+  "StreamEvent",
   "StreamFrame",
-  "StreamFrame0Event",
   "StreamOptions",
+  "TaggedRawToolCall",
   "TaggedToolResult",
-  "TaggedToolResultType",
   "TerminalSummary",
   "TextPart",
   "TextRequest",
   "TextStreamPart",
-  "TextStreamPart10SourceType",
-  "TextStreamPart11SourceType",
   "TimeoutConfiguration",
   "Timestamp",
   "TimingRecord",
@@ -616,12 +580,9 @@ export const dtoTypeNames = [
   "ToolCallInput",
   "ToolCallPart",
   "ToolCallRepairReply",
-  "ToolCallRepairReply0ToolCall",
-  "ToolCallRepairReply0ToolCallType",
   "ToolChoice",
-  "ToolChoice0",
-  "ToolChoice1",
-  "ToolChoice1Type",
+  "ToolChoiceMode",
+  "ToolChoiceTool",
   "ToolChoiceViolationError",
   "ToolContentPart",
   "ToolOutputDenied",
@@ -631,18 +592,15 @@ export const dtoTypeNames = [
   "ToolRepairContextRequest",
   "ToolRepairContextResult",
   "ToolRepairContextSchema",
-  "ToolRepairContextSchemaToolCall",
-  "ToolRepairContextSchemaToolCallType",
   "ToolResult",
   "ToolResultContent",
   "ToolResultContentPart",
   "ToolResultFileId",
   "ToolResultOutput",
-  "ToolResultOutput2",
   "ToolResultPart",
-  "ToolResultPart2",
+  "TraceAggregateFilter",
   "TraceAggregateParams",
-  "TraceAggregateParamsFilter",
+  "TraceAuditMode",
   "TraceCreateParams",
   "TraceRecord",
   "TraceSessionParams",
@@ -655,15 +613,10 @@ export const dtoTypeNames = [
   "TranscriptionStartParams",
   "TranscriptionStreamPart",
   "TransportParams",
-  "TransportParams0Proxy",
-  "TransportParams1Proxy",
+  "TransportProxy",
   "TypedSource",
-  "TypedSource0Type",
-  "TypedSource1Type",
   "TypedToolCall",
   "TypedToolCallInput",
-  "TypedToolCallInputType",
-  "TypedToolCallType",
   "TypedToolError",
   "TypedToolResult",
   "UploadFileData",
@@ -686,9 +639,4 @@ export const dtoTypeNames = [
   "VideoResponse",
   "VideoResult",
   "Warning",
-  "_aimux_core_model_catalogue_RuntimeModel_",
-  "_aimux_core_session_SessionCall_",
-  "_aimux_core_session_SessionView_",
-  "_aimux_core_trace_store_SessionStepStat_",
-  "_aimux_core_trace_store_TraceStats_",
 ] as const satisfies readonly (keyof DtoTypes)[]

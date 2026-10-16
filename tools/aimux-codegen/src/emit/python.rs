@@ -238,6 +238,7 @@ fn ordered_union(branches: Vec<String>) -> String {
 fn ty(value: &Ty) -> String {
     match value {
         Ty::Ref(name) => quote(&format!("_dto.{name}")),
+        Ty::Literal(value) => format!("Literal[{}]", quote(value)),
         Ty::String => "str".into(),
         Ty::Bool => "bool".into(),
         Ty::Int { unsigned, bits } => format!("{}{bits}", if *unsigned { "U" } else { "I" }),

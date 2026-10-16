@@ -87,7 +87,7 @@ func TestStandaloneToolCallsAndSourcesAreTagged(t *testing.T) {
 	roundTripDTO[TypedToolCall](t, `{"type":"tool-call","toolCallId":"call-1","toolName":"weather","input":{"city":"SG"}}`)
 	roundTripDTO[TypedSource](t, `{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"}`)
 	roundTripDTO[TypedSource](t, `{"type":"source","sourceType":"document","id":"s2","mediaType":"application/pdf","title":"Doc"}`)
-	roundTripDTO[ToolRepairContextSchemaToolCall](t, `{"type":"tool-call","toolCallId":"c","toolName":"t","input":"{}"}`)
+	roundTripDTO[TaggedRawToolCall](t, `{"type":"tool-call","toolCallId":"c","toolName":"t","input":"{}"}`)
 }
 
 func TestParseTextDeltaPayload(t *testing.T) {

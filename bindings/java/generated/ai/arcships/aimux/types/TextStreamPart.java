@@ -694,8 +694,11 @@ public abstract class TextStreamPart {
         private final String id;
         @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
+        /**
+         * Required value: "url".
+         */
         @JsonProperty("sourceType")
-        private final TextStreamPart10SourceType sourceType;
+        private final String sourceType;
         @JsonProperty("title")
         private final String title;
         @JsonProperty("url")
@@ -705,7 +708,7 @@ public abstract class TextStreamPart {
         public Source11(
             @JsonProperty(value = "id", required = true) String id,
             @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
-            @JsonProperty(value = "sourceType", required = true) TextStreamPart10SourceType sourceType,
+            @JsonProperty(value = "sourceType", required = true) String sourceType,
             @JsonProperty(value = "title") String title,
             @JsonProperty(value = "url", required = true) String url) {
             this.id = id;
@@ -722,14 +725,14 @@ public abstract class TextStreamPart {
         public String getType() { return "source"; }
         public String getId() { return id; }
         public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
-        public TextStreamPart10SourceType getSourceType() { return sourceType; }
+        public String getSourceType() { return sourceType; }
         public String getTitle() { return title; }
         public String getUrl() { return url; }
 
         public static final class Builder {
             private String id;
             private Map<String, Map<String, JsonNode>> providerMetadata;
-            private TextStreamPart10SourceType sourceType;
+            private String sourceType;
             private String title;
             private String url;
 
@@ -743,7 +746,7 @@ public abstract class TextStreamPart {
                 return this;
             }
 
-            public Builder sourceType(TextStreamPart10SourceType value) {
+            public Builder sourceType(String value) {
                 this.sourceType = value;
                 return this;
             }
@@ -776,8 +779,11 @@ public abstract class TextStreamPart {
         private final String mediaType;
         @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
+        /**
+         * Required value: "document".
+         */
         @JsonProperty("sourceType")
-        private final TextStreamPart11SourceType sourceType;
+        private final String sourceType;
         @JsonProperty("title")
         private final String title;
 
@@ -787,7 +793,7 @@ public abstract class TextStreamPart {
             @JsonProperty(value = "id", required = true) String id,
             @JsonProperty(value = "mediaType", required = true) String mediaType,
             @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
-            @JsonProperty(value = "sourceType", required = true) TextStreamPart11SourceType sourceType,
+            @JsonProperty(value = "sourceType", required = true) String sourceType,
             @JsonProperty(value = "title", required = true) String title) {
             this.filename = filename;
             this.id = id;
@@ -806,7 +812,7 @@ public abstract class TextStreamPart {
         public String getId() { return id; }
         public String getMediaType() { return mediaType; }
         public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
-        public TextStreamPart11SourceType getSourceType() { return sourceType; }
+        public String getSourceType() { return sourceType; }
         public String getTitle() { return title; }
 
         public static final class Builder {
@@ -814,7 +820,7 @@ public abstract class TextStreamPart {
             private String id;
             private String mediaType;
             private Map<String, Map<String, JsonNode>> providerMetadata;
-            private TextStreamPart11SourceType sourceType;
+            private String sourceType;
             private String title;
 
             public Builder filename(String value) {
@@ -837,7 +843,7 @@ public abstract class TextStreamPart {
                 return this;
             }
 
-            public Builder sourceType(TextStreamPart11SourceType value) {
+            public Builder sourceType(String value) {
                 this.sourceType = value;
                 return this;
             }

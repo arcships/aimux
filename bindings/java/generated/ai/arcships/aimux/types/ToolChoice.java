@@ -46,22 +46,22 @@ public abstract class ToolChoice {
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch1 extends ToolChoice {
         @JsonValue
-        private final ToolChoice0 value;
+        private final ToolChoiceMode value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch1(ToolChoice0 value) { this.value = value; }
+        public Branch1(ToolChoiceMode value) { this.value = value; }
 
-        public ToolChoice0 getValue() { return value; }
+        public ToolChoiceMode getValue() { return value; }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch2 extends ToolChoice {
         @JsonValue
-        private final ToolChoice1 value;
+        private final ToolChoiceTool value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch2(ToolChoice1 value) { this.value = value; }
+        public Branch2(ToolChoiceTool value) { this.value = value; }
 
-        public ToolChoice1 getValue() { return value; }
+        public ToolChoiceTool getValue() { return value; }
     }
 }

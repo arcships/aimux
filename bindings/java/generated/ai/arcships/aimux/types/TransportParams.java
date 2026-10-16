@@ -21,6 +21,7 @@ public abstract class TransportParams {
 
     @JsonProperty("kind")
     public abstract String getKind();
+    public TransportProxy getProxy() { return null; }
     public Long getMaxBytes() { return null; }
     public final boolean isDownload() { return "download".equals(getKind()); }
     public final boolean isFetch() { return "fetch".equals(getKind()); }
@@ -32,18 +33,12 @@ public abstract class TransportParams {
     @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Fetch extends TransportParams {
-        /**
-         * Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-         * hop, or the WebSocket connector. With every field empty, HTTP follows the
-         * `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-         * reqwest does, and the WebSocket connector connects directly.
-         */
         @JsonProperty("proxy")
-        private final TransportParams0Proxy proxy;
+        private final TransportProxy proxy;
 
         @JsonCreator
         public Fetch(
-            @JsonProperty(value = "proxy") TransportParams0Proxy proxy) {
+            @JsonProperty(value = "proxy") TransportProxy proxy) {
             this.proxy = proxy;
         }
 
@@ -52,12 +47,12 @@ public abstract class TransportParams {
         @Override
         @JsonProperty("kind")
         public String getKind() { return "fetch"; }
-        public TransportParams0Proxy getProxy() { return proxy; }
+        public TransportProxy getProxy() { return proxy; }
 
         public static final class Builder {
-            private TransportParams0Proxy proxy;
+            private TransportProxy proxy;
 
-            public Builder proxy(TransportParams0Proxy value) {
+            public Builder proxy(TransportProxy value) {
                 this.proxy = value;
                 return this;
             }
@@ -72,18 +67,12 @@ public abstract class TransportParams {
     @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Ws extends TransportParams {
-        /**
-         * Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-         * hop, or the WebSocket connector. With every field empty, HTTP follows the
-         * `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-         * reqwest does, and the WebSocket connector connects directly.
-         */
         @JsonProperty("proxy")
-        private final TransportParams1Proxy proxy;
+        private final TransportProxy proxy;
 
         @JsonCreator
         public Ws(
-            @JsonProperty(value = "proxy") TransportParams1Proxy proxy) {
+            @JsonProperty(value = "proxy") TransportProxy proxy) {
             this.proxy = proxy;
         }
 
@@ -92,12 +81,12 @@ public abstract class TransportParams {
         @Override
         @JsonProperty("kind")
         public String getKind() { return "ws"; }
-        public TransportParams1Proxy getProxy() { return proxy; }
+        public TransportProxy getProxy() { return proxy; }
 
         public static final class Builder {
-            private TransportParams1Proxy proxy;
+            private TransportProxy proxy;
 
-            public Builder proxy(TransportParams1Proxy value) {
+            public Builder proxy(TransportProxy value) {
                 this.proxy = value;
                 return this;
             }

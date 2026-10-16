@@ -7,7 +7,7 @@
     "auditMode": {
       "anyOf": [
         {
-          "$ref": "AuditMode.json"
+          "$ref": "MiddlewareAuditMode.json"
         },
         {
           "type": "null"

@@ -257,7 +257,7 @@ fn docs(out: &mut String, doc: Option<&str>, indent: &str) {
 fn jtype(ty: &Ty) -> String {
     match ty {
         Ty::Ref(n) => name(n),
-        Ty::String => "String".into(),
+        Ty::String | Ty::Literal(_) => "String".into(),
         Ty::Bool => "Boolean".into(),
         Ty::Int { bits, unsigned } if *bits < 32 || (*bits == 32 && !unsigned) => "Integer".into(),
         Ty::Int { .. } => "Long".into(),

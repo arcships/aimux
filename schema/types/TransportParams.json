@@ -11,41 +11,13 @@
           "type": "string"
         },
         "proxy": {
-          "additionalProperties": false,
+          "$ref": "TransportProxy.json",
           "default": {
             "all_url": null,
             "http_url": null,
             "https_url": null,
             "no_proxy": null
-          },
-          "description": "Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]\nhop, or the WebSocket connector. With every field empty, HTTP follows the\n`HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as\nreqwest does, and the WebSocket connector connects directly.",
-          "properties": {
-            "all_url": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "http_url": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "https_url": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "no_proxy": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "type": "object"
+          }
         }
       },
       "required": [
@@ -61,41 +33,13 @@
           "type": "string"
         },
         "proxy": {
-          "additionalProperties": false,
+          "$ref": "TransportProxy.json",
           "default": {
             "all_url": null,
             "http_url": null,
             "https_url": null,
             "no_proxy": null
-          },
-          "description": "Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]\nhop, or the WebSocket connector. With every field empty, HTTP follows the\n`HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as\nreqwest does, and the WebSocket connector connects directly.",
-          "properties": {
-            "all_url": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "http_url": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "https_url": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "no_proxy": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "type": "object"
+          }
         }
       },
       "required": [

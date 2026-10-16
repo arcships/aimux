@@ -56,6 +56,7 @@ impl Emitter for Node {
 }
 
 /// Console wire types, one file per root, sharing core types through `@aimux/types`.
+#[must_use]
 pub fn web_files(model: &Model) -> Vec<(PathBuf, String)> {
     model
         .types
@@ -225,6 +226,7 @@ fn write_fields(out: &mut String, fields: &[Field], indent: &str) {
 fn typescript(ty: &Ty) -> String {
     match ty {
         Ty::Ref(name) => name.clone(),
+        Ty::Literal(value) => serde_json::to_string(value).unwrap(),
         Ty::String => "string".into(),
         Ty::Bool => "boolean".into(),
         Ty::Int { .. } | Ty::Float => "number".into(),

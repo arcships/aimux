@@ -60,8 +60,11 @@ public final class TypedToolCall {
      */
     @JsonProperty("toolName")
     private final String toolName;
+    /**
+     * Required value: "tool-call".
+     */
     @JsonProperty("type")
-    private final TypedToolCallType type;
+    private final String type;
 
     @JsonCreator
     public TypedToolCall(
@@ -73,7 +76,7 @@ public final class TypedToolCall {
         @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
         @JsonProperty(value = "toolCallId", required = true) String toolCallId,
         @JsonProperty(value = "toolName", required = true) String toolName,
-        @JsonProperty(value = "type", required = true) TypedToolCallType type) {
+        @JsonProperty(value = "type", required = true) String type) {
         this.dynamic = dynamic;
         this.error = error;
         this.input = input == null ? null : input.deepCopy();
@@ -94,7 +97,7 @@ public final class TypedToolCall {
     public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
     public String getToolCallId() { return toolCallId; }
     public String getToolName() { return toolName; }
-    public TypedToolCallType getType() { return type; }
+    public String getType() { return type; }
 
     public static final class Builder {
         private Boolean dynamic;
@@ -105,7 +108,7 @@ public final class TypedToolCall {
         private Map<String, Map<String, JsonNode>> providerMetadata;
         private String toolCallId;
         private String toolName;
-        private TypedToolCallType type;
+        private String type;
 
         public Builder dynamic(Boolean value) {
             this.dynamic = value;
@@ -147,7 +150,7 @@ public final class TypedToolCall {
             return this;
         }
 
-        public Builder type(TypedToolCallType value) {
+        public Builder type(String value) {
             this.type = value;
             return this;
         }

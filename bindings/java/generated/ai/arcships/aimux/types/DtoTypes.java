@@ -33,10 +33,6 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AudioData.class));
             case "AudioInput":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AudioInput.class));
-            case "AuditMode":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AuditMode.class));
-            case "AuditMode2":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AuditMode2.class));
             case "BackendConfig":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, BackendConfig.class));
             case "BreakKind":
@@ -81,16 +77,8 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, CompletionTokensDetails.class));
             case "ContentPart":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ContentPart.class));
-            case "ContentPart4SourceType":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ContentPart4SourceType.class));
-            case "ContentPart5SourceType":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ContentPart5SourceType.class));
             case "ContentPartInput":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ContentPartInput.class));
-            case "ContentPartInput4SourceType":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ContentPartInput4SourceType.class));
-            case "ContentPartInput5SourceType":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ContentPartInput5SourceType.class));
             case "CreateRecorderParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, CreateRecorderParams.class));
             case "CredentialParams":
@@ -125,8 +113,6 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, EmbeddingUsage.class));
             case "EmptyParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, EmptyParams.class));
-            case "EmptyParams2":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, EmptyParams2.class));
             case "ErrorDomain":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ErrorDomain.class));
             case "ErrorEnvelope":
@@ -151,10 +137,6 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, FunctionToolInputExample.class));
             case "GenerateContent":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GenerateContent.class));
-            case "GenerateContent2SourceType":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GenerateContent2SourceType.class));
-            case "GenerateContent3SourceType":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GenerateContent3SourceType.class));
             case "GenerateObjectResponse":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GenerateObjectResponse.class));
             case "GenerateObjectResult":
@@ -179,10 +161,6 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, HandleKind.class));
             case "HandleResult":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, HandleResult.class));
-            case "HandleResult2":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, HandleResult2.class));
-            case "HandleResult3":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, HandleResult3.class));
             case "HttpExchange":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, HttpExchange.class));
             case "HttpRecord":
@@ -211,6 +189,12 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LanguageModelFile.class));
             case "LanguageModelMessage":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LanguageModelMessage.class));
+            case "LanguageModelReasoningPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LanguageModelReasoningPart.class));
+            case "LanguageModelToolResultOutput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LanguageModelToolResultOutput.class));
+            case "LanguageModelToolResultPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LanguageModelToolResultPart.class));
             case "LanguageModelUsage":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LanguageModelUsage.class));
             case "LanguageModelUsageInput":
@@ -223,6 +207,8 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LogLevel.class));
             case "LoggingConfig":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LoggingConfig.class));
+            case "MiddlewareAuditMode":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, MiddlewareAuditMode.class));
             case "MiddlewareParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, MiddlewareParams.class));
             case "MoaFailMode":
@@ -329,8 +315,6 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReasoningOutput.class));
             case "ReasoningPart":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReasoningPart.class));
-            case "ReasoningPart2":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReasoningPart2.class));
             case "ReasoningSpec":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReasoningSpec.class));
             case "ReasoningVisibility":
@@ -351,6 +335,8 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RegistryEntry.class));
             case "RegistryProviderParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RegistryProviderParams.class));
+            case "RepairedToolCall":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RepairedToolCall.class));
             case "ReplayCreateParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReplayCreateParams.class));
             case "ReplayInspection":
@@ -395,8 +381,6 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RouterParams.class));
             case "RuntimeConfigureParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RuntimeConfigureParams.class));
-            case "RuntimeConfigureParamsProxy":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RuntimeConfigureParamsProxy.class));
             case "RuntimeDescribeParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RuntimeDescribeParams.class));
             case "RuntimeModel":
@@ -455,16 +439,16 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StepResultPerformanceInput.class));
             case "Strategy":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Strategy.class));
+            case "StreamEvent":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StreamEvent.class));
             case "StreamFrame":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StreamFrame.class));
-            case "StreamFrame0Event":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StreamFrame0Event.class));
             case "StreamOptions":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StreamOptions.class));
+            case "TaggedRawToolCall":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TaggedRawToolCall.class));
             case "TaggedToolResult":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TaggedToolResult.class));
-            case "TaggedToolResultType":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TaggedToolResultType.class));
             case "TerminalSummary":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TerminalSummary.class));
             case "TextPart":
@@ -473,10 +457,6 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TextRequest.class));
             case "TextStreamPart":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TextStreamPart.class));
-            case "TextStreamPart10SourceType":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TextStreamPart10SourceType.class));
-            case "TextStreamPart11SourceType":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TextStreamPart11SourceType.class));
             case "TimeoutConfiguration":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TimeoutConfiguration.class));
             case "Timestamp":
@@ -503,18 +483,12 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolCallPart.class));
             case "ToolCallRepairReply":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolCallRepairReply.class));
-            case "ToolCallRepairReply0ToolCall":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolCallRepairReply0ToolCall.class));
-            case "ToolCallRepairReply0ToolCallType":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolCallRepairReply0ToolCallType.class));
             case "ToolChoice":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolChoice.class));
-            case "ToolChoice0":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolChoice0.class));
-            case "ToolChoice1":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolChoice1.class));
-            case "ToolChoice1Type":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolChoice1Type.class));
+            case "ToolChoiceMode":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolChoiceMode.class));
+            case "ToolChoiceTool":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolChoiceTool.class));
             case "ToolChoiceViolationError":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolChoiceViolationError.class));
             case "ToolContentPart":
@@ -533,10 +507,6 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolRepairContextResult.class));
             case "ToolRepairContextSchema":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolRepairContextSchema.class));
-            case "ToolRepairContextSchemaToolCall":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolRepairContextSchemaToolCall.class));
-            case "ToolRepairContextSchemaToolCallType":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolRepairContextSchemaToolCallType.class));
             case "ToolResult":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolResult.class));
             case "ToolResultContent":
@@ -547,16 +517,14 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolResultFileId.class));
             case "ToolResultOutput":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolResultOutput.class));
-            case "ToolResultOutput2":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolResultOutput2.class));
             case "ToolResultPart":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolResultPart.class));
-            case "ToolResultPart2":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolResultPart2.class));
+            case "TraceAggregateFilter":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TraceAggregateFilter.class));
             case "TraceAggregateParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TraceAggregateParams.class));
-            case "TraceAggregateParamsFilter":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TraceAggregateParamsFilter.class));
+            case "TraceAuditMode":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TraceAuditMode.class));
             case "TraceCreateParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TraceCreateParams.class));
             case "TraceRecord":
@@ -581,24 +549,14 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TranscriptionStreamPart.class));
             case "TransportParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TransportParams.class));
-            case "TransportParams0Proxy":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TransportParams0Proxy.class));
-            case "TransportParams1Proxy":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TransportParams1Proxy.class));
+            case "TransportProxy":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TransportProxy.class));
             case "TypedSource":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedSource.class));
-            case "TypedSource0Type":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedSource0Type.class));
-            case "TypedSource1Type":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedSource1Type.class));
             case "TypedToolCall":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedToolCall.class));
             case "TypedToolCallInput":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedToolCallInput.class));
-            case "TypedToolCallInputType":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedToolCallInputType.class));
-            case "TypedToolCallType":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedToolCallType.class));
             case "TypedToolError":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedToolError.class));
             case "TypedToolResult":
@@ -643,16 +601,6 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, VideoResult.class));
             case "Warning":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Warning.class));
-            case "_aimux_core_model_catalogue_RuntimeModel_":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, WireAimuxCoreModelCatalogueRuntimeModel.class));
-            case "_aimux_core_session_SessionCall_":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, WireAimuxCoreSessionSessionCall.class));
-            case "_aimux_core_session_SessionView_":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, WireAimuxCoreSessionSessionView.class));
-            case "_aimux_core_trace_store_SessionStepStat_":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, WireAimuxCoreTraceStoreSessionStepStat.class));
-            case "_aimux_core_trace_store_TraceStats_":
-                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, WireAimuxCoreTraceStoreTraceStats.class));
             default:
                 throw new IllegalArgumentException("Unknown DTO type: " + type);
         }

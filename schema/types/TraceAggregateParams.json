@@ -5,37 +5,8 @@
   "additionalProperties": false,
   "properties": {
     "filter": {
-      "additionalProperties": false,
-      "default": {},
-      "description": "Query filter (RFC-0015 §5.3).",
-      "properties": {
-        "model": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "provider": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "sessionId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "sinceUnixMs": {
-          "format": "int64",
-          "type": [
-            "integer",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
+      "$ref": "TraceAggregateFilter.json",
+      "default": {}
     }
   },
   "type": "object"

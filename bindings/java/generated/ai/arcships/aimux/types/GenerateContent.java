@@ -227,8 +227,11 @@ public abstract class GenerateContent {
         private final String id;
         @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
+        /**
+         * Required value: "url".
+         */
         @JsonProperty("sourceType")
-        private final GenerateContent2SourceType sourceType;
+        private final String sourceType;
         @JsonProperty("title")
         private final String title;
         @JsonProperty("url")
@@ -238,7 +241,7 @@ public abstract class GenerateContent {
         public Source3(
             @JsonProperty(value = "id", required = true) String id,
             @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
-            @JsonProperty(value = "sourceType", required = true) GenerateContent2SourceType sourceType,
+            @JsonProperty(value = "sourceType", required = true) String sourceType,
             @JsonProperty(value = "title") String title,
             @JsonProperty(value = "url", required = true) String url) {
             this.id = id;
@@ -255,14 +258,14 @@ public abstract class GenerateContent {
         public String getType() { return "source"; }
         public String getId() { return id; }
         public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
-        public GenerateContent2SourceType getSourceType() { return sourceType; }
+        public String getSourceType() { return sourceType; }
         public String getTitle() { return title; }
         public String getUrl() { return url; }
 
         public static final class Builder {
             private String id;
             private Map<String, Map<String, JsonNode>> providerMetadata;
-            private GenerateContent2SourceType sourceType;
+            private String sourceType;
             private String title;
             private String url;
 
@@ -276,7 +279,7 @@ public abstract class GenerateContent {
                 return this;
             }
 
-            public Builder sourceType(GenerateContent2SourceType value) {
+            public Builder sourceType(String value) {
                 this.sourceType = value;
                 return this;
             }
@@ -309,8 +312,11 @@ public abstract class GenerateContent {
         private final String mediaType;
         @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
+        /**
+         * Required value: "document".
+         */
         @JsonProperty("sourceType")
-        private final GenerateContent3SourceType sourceType;
+        private final String sourceType;
         @JsonProperty("title")
         private final String title;
 
@@ -320,7 +326,7 @@ public abstract class GenerateContent {
             @JsonProperty(value = "id", required = true) String id,
             @JsonProperty(value = "mediaType", required = true) String mediaType,
             @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
-            @JsonProperty(value = "sourceType", required = true) GenerateContent3SourceType sourceType,
+            @JsonProperty(value = "sourceType", required = true) String sourceType,
             @JsonProperty(value = "title", required = true) String title) {
             this.filename = filename;
             this.id = id;
@@ -339,7 +345,7 @@ public abstract class GenerateContent {
         public String getId() { return id; }
         public String getMediaType() { return mediaType; }
         public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
-        public GenerateContent3SourceType getSourceType() { return sourceType; }
+        public String getSourceType() { return sourceType; }
         public String getTitle() { return title; }
 
         public static final class Builder {
@@ -347,7 +353,7 @@ public abstract class GenerateContent {
             private String id;
             private String mediaType;
             private Map<String, Map<String, JsonNode>> providerMetadata;
-            private GenerateContent3SourceType sourceType;
+            private String sourceType;
             private String title;
 
             public Builder filename(String value) {
@@ -370,7 +376,7 @@ public abstract class GenerateContent {
                 return this;
             }
 
-            public Builder sourceType(GenerateContent3SourceType value) {
+            public Builder sourceType(String value) {
                 this.sourceType = value;
                 return this;
             }

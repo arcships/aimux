@@ -19,6 +19,7 @@ pub type TraceTrajectoryResult = Vec<aimux_core::trace::SessionStepStat>;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[schemars(rename = "TraceAuditMode")]
 pub enum AuditMode {
     #[default]
     Off,
@@ -49,12 +50,16 @@ fn default_scope_capacity() -> usize {
 #[serde(deny_unknown_fields)]
 pub struct TraceAggregateParams {
     #[serde(default, deserialize_with = "deserialize_filter")]
-    #[schemars(schema_with = "trace_filter_schema")]
+    #[schemars(with = "TraceAggregateFilter")]
     filter: TraceFilter,
 }
 
 // TraceFilter is the canonical core DTO, whose open deserializer is also used
 // elsewhere. Validate its control keys here without duplicating its fields.
+#[derive(schemars::JsonSchema)]
+#[schemars(schema_with = "trace_filter_schema")]
+struct TraceAggregateFilter;
+
 fn trace_filter_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
     let mut schema = <TraceFilter as schemars::JsonSchema>::json_schema(generator);
     schema.insert("additionalProperties".into(), false.into());

@@ -12,7 +12,7 @@ import java.util.*;
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class TraceCreateParams {
     @JsonProperty("auditMode")
-    private final AuditMode2 auditMode;
+    private final TraceAuditMode auditMode;
     @JsonProperty("capacity")
     private final Long capacity;
     @JsonProperty("perScopeCapacity")
@@ -20,7 +20,7 @@ public final class TraceCreateParams {
 
     @JsonCreator
     public TraceCreateParams(
-        @JsonProperty(value = "auditMode") AuditMode2 auditMode,
+        @JsonProperty(value = "auditMode") TraceAuditMode auditMode,
         @JsonProperty(value = "capacity") Long capacity,
         @JsonProperty(value = "perScopeCapacity") Long perScopeCapacity) {
         this.auditMode = auditMode;
@@ -29,16 +29,16 @@ public final class TraceCreateParams {
     }
 
     public static Builder builder() { return new Builder(); }
-    public AuditMode2 getAuditMode() { return auditMode; }
+    public TraceAuditMode getAuditMode() { return auditMode; }
     public Long getCapacity() { return capacity; }
     public Long getPerScopeCapacity() { return perScopeCapacity; }
 
     public static final class Builder {
-        private AuditMode2 auditMode;
+        private TraceAuditMode auditMode;
         private Long capacity;
         private Long perScopeCapacity;
 
-        public Builder auditMode(AuditMode2 value) {
+        public Builder auditMode(TraceAuditMode value) {
             this.auditMode = value;
             return this;
         }

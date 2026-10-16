@@ -7,15 +7,7 @@
       "additionalProperties": false,
       "properties": {
         "event": {
-          "anyOf": [
-            {
-              "$ref": "TextStreamPart.json"
-            },
-            {
-              "$ref": "ChatCompletionChunk.json"
-            }
-          ],
-          "x-aimux-codec": "ordered-untagged"
+          "$ref": "StreamEvent.json"
         },
         "seq": {
           "type": "string",

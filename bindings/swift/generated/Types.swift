@@ -1021,7 +1021,7 @@ public indirect enum AssistantPart: Codable, Equatable, Sendable {
     case reasoningFile(data: GeneratedFileData, mediaType: String, providerOptions: [String: [String: JSONValue]]?)
     case custom(kind: NamespacedKind, providerOptions: [String: [String: JSONValue]]?)
     case toolCall(input: JSONValue, providerExecuted: Bool?, providerOptions: [String: [String: JSONValue]]?, toolCallId: String, toolName: String)
-    case toolResult(output: ToolResultOutput2, providerOptions: [String: [String: JSONValue]]?, toolCallId: String, toolName: String)
+    case toolResult(output: LanguageModelToolResultOutput, providerOptions: [String: [String: JSONValue]]?, toolCallId: String, toolName: String)
     private enum CodingKeys: String, CodingKey {
         case data = "data"
         case filename = "filename"
@@ -1059,7 +1059,7 @@ public indirect enum AssistantPart: Codable, Equatable, Sendable {
             self = .toolCall(input: try c.decode(JSONValue.self, forKey: .input), providerExecuted: try c.decodeIfPresent(Bool.self, forKey: .providerExecuted), providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), toolCallId: try c.decode(String.self, forKey: .toolCallId), toolName: try c.decode(String.self, forKey: .toolName))
             return
         case "tool-result":
-            self = .toolResult(output: try c.decode(ToolResultOutput2.self, forKey: .output), providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), toolCallId: try c.decode(String.self, forKey: .toolCallId), toolName: try c.decode(String.self, forKey: .toolName))
+            self = .toolResult(output: try c.decode(LanguageModelToolResultOutput.self, forKey: .output), providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), toolCallId: try c.decode(String.self, forKey: .toolCallId), toolName: try c.decode(String.self, forKey: .toolName))
             return
         default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown AssistantPart tag \(tag)"))
         }
@@ -1122,18 +1122,6 @@ public typealias AudioData = String
 /// any other string as base64 (base64 has no `:`), as a file part's string
 /// data is read (ai@7.0.127 `prompt/file-part-data.ts:89-141`).
 public typealias AudioInput = String
-
-public enum AuditMode: String, Codable, Equatable, Sendable {
-    case disabled = "disabled"
-    case shared = "shared"
-    case strict = "strict"
-}
-
-public enum AuditMode2: String, Codable, Equatable, Sendable {
-    case off = "off"
-    case shared = "shared"
-    case strict = "strict"
-}
 
 public indirect enum BackendConfig: Codable, Equatable, Sendable {
     case ring(capacity: UInt64?)
@@ -1539,8 +1527,10 @@ public indirect enum ContentPart: Codable, Equatable, Sendable {
     case custom(kind: NamespacedKind, providerMetadata: [String: [String: JSONValue]]?)
     case reasoning(providerMetadata: [String: [String: JSONValue]]?, text: String)
     case reasoningFile(file: GeneratedFile, providerMetadata: [String: [String: JSONValue]]?)
-    case source5(id: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: ContentPart4SourceType, title: String?, url: String)
-    case source6(filename: String?, id: String, mediaType: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: ContentPart5SourceType, title: String)
+    /// sourceType: Required value: "url".
+    case source5(id: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: String, title: String?, url: String)
+    /// sourceType: Required value: "document".
+    case source6(filename: String?, id: String, mediaType: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: String, title: String)
     case file(file: GeneratedFile, providerMetadata: [String: [String: JSONValue]]?)
     /// dynamic: Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
     /// error: Typed failure associated with an invalid tool call.
@@ -1610,11 +1600,11 @@ public indirect enum ContentPart: Codable, Equatable, Sendable {
             return
         case "source":
             do {
-                self = .source5(id: try c.decode(String.self, forKey: .id), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(ContentPart4SourceType.self, forKey: .sourceType), title: try c.decodeIfPresent(String.self, forKey: .title), url: try c.decode(String.self, forKey: .url))
+                self = .source5(id: try c.decode(String.self, forKey: .id), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(String.self, forKey: .sourceType), title: try c.decodeIfPresent(String.self, forKey: .title), url: try c.decode(String.self, forKey: .url))
                 return
             } catch {}
             do {
-                self = .source6(filename: try c.decodeIfPresent(String.self, forKey: .filename), id: try c.decode(String.self, forKey: .id), mediaType: try c.decode(String.self, forKey: .mediaType), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(ContentPart5SourceType.self, forKey: .sourceType), title: try c.decode(String.self, forKey: .title))
+                self = .source6(filename: try c.decodeIfPresent(String.self, forKey: .filename), id: try c.decode(String.self, forKey: .id), mediaType: try c.decode(String.self, forKey: .mediaType), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(String.self, forKey: .sourceType), title: try c.decode(String.self, forKey: .title))
                 return
             } catch { throw error }
         case "text":
@@ -1723,14 +1713,6 @@ public indirect enum ContentPart: Codable, Equatable, Sendable {
     }
 }
 
-public enum ContentPart4SourceType: String, Codable, Equatable, Sendable {
-    case url = "url"
-}
-
-public enum ContentPart5SourceType: String, Codable, Equatable, Sendable {
-    case document = "document"
-}
-
 /// A part of the content text generation returns: the AI SDK's core
 /// `ContentPart` (`ai` `generate-text/content-part.ts:12-33`), eleven kinds,
 /// separate from the provider's [`GenerateContent`].
@@ -1745,8 +1727,10 @@ public indirect enum ContentPartInput: Codable, Equatable, Sendable {
     case custom(kind: NamespacedKind, providerMetadata: [String: [String: JSONValue]]?)
     case reasoning(providerMetadata: [String: [String: JSONValue]]?, text: String)
     case reasoningFile(file: GeneratedFile, providerMetadata: [String: [String: JSONValue]]?)
-    case source5(id: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: ContentPartInput4SourceType, title: String?, url: String)
-    case source6(filename: String?, id: String, mediaType: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: ContentPartInput5SourceType, title: String)
+    /// sourceType: Required value: "url".
+    case source5(id: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: String, title: String?, url: String)
+    /// sourceType: Required value: "document".
+    case source6(filename: String?, id: String, mediaType: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: String, title: String)
     case file(file: GeneratedFile, providerMetadata: [String: [String: JSONValue]]?)
     /// dynamic: Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
     /// error: Typed failure associated with an invalid tool call.
@@ -1816,11 +1800,11 @@ public indirect enum ContentPartInput: Codable, Equatable, Sendable {
             return
         case "source":
             do {
-                self = .source5(id: try c.decode(String.self, forKey: .id), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(ContentPartInput4SourceType.self, forKey: .sourceType), title: try c.decodeIfPresent(String.self, forKey: .title), url: try c.decode(String.self, forKey: .url))
+                self = .source5(id: try c.decode(String.self, forKey: .id), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(String.self, forKey: .sourceType), title: try c.decodeIfPresent(String.self, forKey: .title), url: try c.decode(String.self, forKey: .url))
                 return
             } catch {}
             do {
-                self = .source6(filename: try c.decodeIfPresent(String.self, forKey: .filename), id: try c.decode(String.self, forKey: .id), mediaType: try c.decode(String.self, forKey: .mediaType), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(ContentPartInput5SourceType.self, forKey: .sourceType), title: try c.decode(String.self, forKey: .title))
+                self = .source6(filename: try c.decodeIfPresent(String.self, forKey: .filename), id: try c.decode(String.self, forKey: .id), mediaType: try c.decode(String.self, forKey: .mediaType), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(String.self, forKey: .sourceType), title: try c.decode(String.self, forKey: .title))
                 return
             } catch { throw error }
         case "text":
@@ -1927,14 +1911,6 @@ public indirect enum ContentPartInput: Codable, Equatable, Sendable {
             try c.encode(v4, forKey: .toolCall)
         }
     }
-}
-
-public enum ContentPartInput4SourceType: String, Codable, Equatable, Sendable {
-    case url = "url"
-}
-
-public enum ContentPartInput5SourceType: String, Codable, Equatable, Sendable {
-    case document = "document"
 }
 
 public struct CreateRecorderParams: Codable, Equatable, Sendable {
@@ -2301,18 +2277,6 @@ public struct EmptyParams: Codable, Equatable, Sendable {
     }
 }
 
-public struct EmptyParams2: Codable, Equatable, Sendable {
-
-    public init() {
-    }
-    public init(from decoder: any Decoder) throws {
-        _ = try decoder.container(keyedBy: WireKey.self)
-    }
-    public func encode(to encoder: any Encoder) throws {
-        _ = encoder.container(keyedBy: WireKey.self)
-    }
-}
-
 public enum ErrorDomain: String, Codable, Equatable, Sendable {
     case aimux = "aimux"
     case recording = "recording"
@@ -2526,8 +2490,10 @@ public struct FunctionToolInputExample: Codable, Equatable, Sendable {
 public indirect enum GenerateContent: Codable, Equatable, Sendable {
     case text(providerMetadata: [String: [String: JSONValue]]?, text: String)
     case toolCall(dynamic: Bool?, input: String, providerExecuted: Bool?, providerMetadata: [String: [String: JSONValue]]?, toolCallId: String, toolName: String)
-    case source3(id: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: GenerateContent2SourceType, title: String?, url: String)
-    case source4(filename: String?, id: String, mediaType: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: GenerateContent3SourceType, title: String)
+    /// sourceType: Required value: "url".
+    case source3(id: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: String, title: String?, url: String)
+    /// sourceType: Required value: "document".
+    case source4(filename: String?, id: String, mediaType: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: String, title: String)
     case reasoning(providerMetadata: [String: [String: JSONValue]]?, text: String)
     case file(data: GeneratedFileData, mediaType: String, providerMetadata: [String: [String: JSONValue]]?)
     case reasoningFile(data: GeneratedFileData, mediaType: String, providerMetadata: [String: [String: JSONValue]]?)
@@ -2583,11 +2549,11 @@ public indirect enum GenerateContent: Codable, Equatable, Sendable {
             return
         case "source":
             do {
-                self = .source3(id: try c.decode(String.self, forKey: .id), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(GenerateContent2SourceType.self, forKey: .sourceType), title: try c.decodeIfPresent(String.self, forKey: .title), url: try c.decode(String.self, forKey: .url))
+                self = .source3(id: try c.decode(String.self, forKey: .id), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(String.self, forKey: .sourceType), title: try c.decodeIfPresent(String.self, forKey: .title), url: try c.decode(String.self, forKey: .url))
                 return
             } catch {}
             do {
-                self = .source4(filename: try c.decodeIfPresent(String.self, forKey: .filename), id: try c.decode(String.self, forKey: .id), mediaType: try c.decode(String.self, forKey: .mediaType), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(GenerateContent3SourceType.self, forKey: .sourceType), title: try c.decode(String.self, forKey: .title))
+                self = .source4(filename: try c.decodeIfPresent(String.self, forKey: .filename), id: try c.decode(String.self, forKey: .id), mediaType: try c.decode(String.self, forKey: .mediaType), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(String.self, forKey: .sourceType), title: try c.decode(String.self, forKey: .title))
                 return
             } catch { throw error }
         case "text":
@@ -2669,14 +2635,6 @@ public indirect enum GenerateContent: Codable, Equatable, Sendable {
             try c.encode(v6, forKey: .toolName)
         }
     }
-}
-
-public enum GenerateContent2SourceType: String, Codable, Equatable, Sendable {
-    case url = "url"
-}
-
-public enum GenerateContent3SourceType: String, Codable, Equatable, Sendable {
-    case document = "document"
 }
 
 /// `GenerateObjectResult.response`: the AI SDK's
@@ -3072,26 +3030,6 @@ public struct HandleResult: Codable, Equatable, Sendable {
     }
 }
 
-public struct HandleResult2: Codable, Equatable, Sendable {
-    public var handle: HandleId
-    public var kind: HandleKind
-
-    public init(handle: HandleId, kind: HandleKind) {
-        self.handle = handle
-        self.kind = kind
-    }
-}
-
-public struct HandleResult3: Codable, Equatable, Sendable {
-    public var handle: HandleId
-    public var kind: HandleKind
-
-    public init(handle: HandleId, kind: HandleKind) {
-        self.handle = handle
-        self.kind = kind
-    }
-}
-
 /// ③ HTTP 侧:单次 attempt 的 wire 交换。
 public struct HttpExchange: Codable, Equatable, Sendable {
     /// Core operation attempt, starting at 1. Attempt numbers are unique
@@ -3422,6 +3360,101 @@ public indirect enum LanguageModelMessage: Codable, Equatable, Sendable {
     }
 }
 
+/// Reasoning / thinking content part.
+public struct LanguageModelReasoningPart: Codable, Equatable, Sendable {
+    public var providerOptions: [String: [String: JSONValue]]?
+    public var text: String
+
+    public init(providerOptions: [String: [String: JSONValue]]? = nil, text: String) {
+        self.providerOptions = providerOptions
+        self.text = text
+    }
+}
+
+/// The provider-facing result of a tool call.
+public indirect enum LanguageModelToolResultOutput: Codable, Equatable, Sendable {
+    case text(providerOptions: [String: [String: JSONValue]]?, value: String)
+    case json(providerOptions: [String: [String: JSONValue]]?, value: JSONValue)
+    case executionDenied(providerOptions: [String: [String: JSONValue]]?, reason: String?)
+    case errorText(providerOptions: [String: [String: JSONValue]]?, value: String)
+    case errorJson(providerOptions: [String: [String: JSONValue]]?, value: JSONValue)
+    case content(value: [ToolResultContent])
+    private enum CodingKeys: String, CodingKey {
+        case providerOptions = "providerOptions"
+        case reason = "reason"
+        case type = "type"
+        case value = "value"
+    }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let tag = try c.decode(String.self, forKey: .type)
+        switch tag {
+        case "content":
+            self = .content(value: try c.decode([ToolResultContent].self, forKey: .value))
+            return
+        case "error-json":
+            self = .errorJson(providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), value: try c.decode(JSONValue.self, forKey: .value))
+            return
+        case "error-text":
+            self = .errorText(providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), value: try c.decode(String.self, forKey: .value))
+            return
+        case "execution-denied":
+            self = .executionDenied(providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), reason: try c.decodeIfPresent(String.self, forKey: .reason))
+            return
+        case "json":
+            self = .json(providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), value: try c.decode(JSONValue.self, forKey: .value))
+            return
+        case "text":
+            self = .text(providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), value: try c.decode(String.self, forKey: .value))
+            return
+        default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown LanguageModelToolResultOutput tag \(tag)"))
+        }
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .text(let v0, let v1):
+            try c.encode("text", forKey: .type)
+            try c.encodeIfPresent(v0, forKey: .providerOptions)
+            try c.encode(v1, forKey: .value)
+        case .json(let v0, let v1):
+            try c.encode("json", forKey: .type)
+            try c.encodeIfPresent(v0, forKey: .providerOptions)
+            try c.encode(v1, forKey: .value)
+        case .executionDenied(let v0, let v1):
+            try c.encode("execution-denied", forKey: .type)
+            try c.encodeIfPresent(v0, forKey: .providerOptions)
+            try c.encodeIfPresent(v1, forKey: .reason)
+        case .errorText(let v0, let v1):
+            try c.encode("error-text", forKey: .type)
+            try c.encodeIfPresent(v0, forKey: .providerOptions)
+            try c.encode(v1, forKey: .value)
+        case .errorJson(let v0, let v1):
+            try c.encode("error-json", forKey: .type)
+            try c.encodeIfPresent(v0, forKey: .providerOptions)
+            try c.encode(v1, forKey: .value)
+        case .content(let v0):
+            try c.encode("content", forKey: .type)
+            try c.encode(v0, forKey: .value)
+        }
+    }
+}
+
+/// Tool result content part.
+public struct LanguageModelToolResultPart: Codable, Equatable, Sendable {
+    public var output: LanguageModelToolResultOutput
+    public var providerOptions: [String: [String: JSONValue]]?
+    public var toolCallId: String
+    public var toolName: String
+
+    public init(output: LanguageModelToolResultOutput, providerOptions: [String: [String: JSONValue]]? = nil, toolCallId: String, toolName: String) {
+        self.output = output
+        self.providerOptions = providerOptions
+        self.toolCallId = toolCallId
+        self.toolName = toolName
+    }
+}
+
 /// Token usage of a generation step or a whole call: the AI SDK's
 /// `LanguageModelUsage` (ai@7.0.127 `types/usage.ts:10-68`).
 ///
@@ -3586,13 +3619,19 @@ public struct LoggingConfig: Codable, Equatable, Sendable {
     }
 }
 
+public enum MiddlewareAuditMode: String, Codable, Equatable, Sendable {
+    case disabled = "disabled"
+    case shared = "shared"
+    case strict = "strict"
+}
+
 public struct MiddlewareParams: Codable, Equatable, Sendable {
-    public var auditMode: AuditMode?
+    public var auditMode: MiddlewareAuditMode?
     public var kind: String
     public var scopeName: String?
     public var traceStore: HandleIdInput?
 
-    public init(auditMode: AuditMode? = nil, kind: String, scopeName: String? = nil, traceStore: HandleIdInput? = nil) {
+    public init(auditMode: MiddlewareAuditMode? = nil, kind: String, scopeName: String? = nil, traceStore: HandleIdInput? = nil) {
         self.auditMode = auditMode
         self.kind = kind
         self.scopeName = scopeName
@@ -4573,17 +4612,6 @@ public indirect enum ReasoningPart: Codable, Equatable, Sendable {
     }
 }
 
-/// Reasoning / thinking content part.
-public struct ReasoningPart2: Codable, Equatable, Sendable {
-    public var providerOptions: [String: [String: JSONValue]]?
-    public var text: String
-
-    public init(providerOptions: [String: [String: JSONValue]]? = nil, text: String) {
-        self.providerOptions = providerOptions
-        self.text = text
-    }
-}
-
 /// Reasoning / thinking portrait for a model (advisory).
 public struct ReasoningSpec: Codable, Equatable, Sendable {
     /// Minimum token budget (when `mode` is Budget/Mixed).
@@ -4768,6 +4796,28 @@ public struct RegistryProviderParams: Codable, Equatable, Sendable {
 
     public init(key: String) {
         self.key = key
+    }
+}
+
+/// A replacement raw call whose tag is optional on input.
+public struct RepairedToolCall: Codable, Equatable, Sendable {
+    public var dynamic: Bool?
+    public var input: String
+    public var providerExecuted: Bool?
+    public var providerMetadata: [String: [String: JSONValue]]?
+    public var toolCallId: String
+    public var toolName: String
+    /// Required value: "tool-call".
+    public var type: String?
+
+    public init(dynamic: Bool? = nil, input: String, providerExecuted: Bool? = nil, providerMetadata: [String: [String: JSONValue]]? = nil, toolCallId: String, toolName: String, type: String? = nil) {
+        self.dynamic = dynamic
+        self.input = input
+        self.providerExecuted = providerExecuted
+        self.providerMetadata = providerMetadata
+        self.toolCallId = toolCallId
+        self.toolName = toolName
+        self.type = type
     }
 }
 
@@ -5162,35 +5212,11 @@ public struct RouterParams: Codable, Equatable, Sendable {
 
 public struct RuntimeConfigureParams: Codable, Equatable, Sendable {
     public var logging: LoggingConfig?
-    public var proxy: RuntimeConfigureParamsProxy?
+    public var proxy: TransportProxy?
 
-    public init(logging: LoggingConfig? = nil, proxy: RuntimeConfigureParamsProxy? = nil) {
+    public init(logging: LoggingConfig? = nil, proxy: TransportProxy? = nil) {
         self.logging = logging
         self.proxy = proxy
-    }
-}
-
-/// Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-/// hop, or the WebSocket connector. With every field empty, HTTP follows the
-/// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-/// reqwest does, and the WebSocket connector connects directly.
-public struct RuntimeConfigureParamsProxy: Codable, Equatable, Sendable {
-    public var allUrl: String?
-    public var httpUrl: String?
-    public var httpsUrl: String?
-    public var noProxy: String?
-
-    public init(allUrl: String? = nil, httpUrl: String? = nil, httpsUrl: String? = nil, noProxy: String? = nil) {
-        self.allUrl = allUrl
-        self.httpUrl = httpUrl
-        self.httpsUrl = httpsUrl
-        self.noProxy = noProxy
-    }
-    private enum CodingKeys: String, CodingKey {
-        case allUrl = "all_url"
-        case httpUrl = "http_url"
-        case httpsUrl = "https_url"
-        case noProxy = "no_proxy"
     }
 }
 
@@ -5992,8 +6018,26 @@ public indirect enum Strategy: Codable, Equatable, Sendable {
     }
 }
 
+/// The two event formats carried by an operation stream.
+public indirect enum StreamEvent: Codable, Equatable, Sendable {
+    case textStreamPart(TextStreamPart)
+    case chatCompletionChunk(ChatCompletionChunk)
+
+    public init(from decoder: any Decoder) throws {
+        do { let value = try decoder.singleValueContainer().decode(TextStreamPart.self); self = .textStreamPart(value); return } catch {}
+        do { let value = try decoder.singleValueContainer().decode(ChatCompletionChunk.self); self = .chatCompletionChunk(value); return } catch {}
+        throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "No matching StreamEvent branch"))
+    }
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .textStreamPart(let value): try value.encode(to: encoder)
+        case .chatCompletionChunk(let value): try value.encode(to: encoder)
+        }
+    }
+}
+
 public indirect enum StreamFrame: Codable, Equatable, Sendable {
-    case event(event: StreamFrame0Event, seq: WireUInt64)
+    case event(event: StreamEvent, seq: WireUInt64)
     case end(error: ErrorEnvelope?, outcome: Outcome, seq: WireUInt64)
     private enum CodingKeys: String, CodingKey {
         case error = "error"
@@ -6010,7 +6054,7 @@ public indirect enum StreamFrame: Codable, Equatable, Sendable {
             self = .end(error: try c.decodeIfPresent(ErrorEnvelope.self, forKey: .error), outcome: try c.decode(Outcome.self, forKey: .outcome), seq: try c.decode(WireUInt64.self, forKey: .seq))
             return
         case "event":
-            self = .event(event: try c.decode(StreamFrame0Event.self, forKey: .event), seq: try c.decode(WireUInt64.self, forKey: .seq))
+            self = .event(event: try c.decode(StreamEvent.self, forKey: .event), seq: try c.decode(WireUInt64.self, forKey: .seq))
             return
         default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown StreamFrame tag \(tag)"))
         }
@@ -6031,23 +6075,6 @@ public indirect enum StreamFrame: Codable, Equatable, Sendable {
     }
 }
 
-public indirect enum StreamFrame0Event: Codable, Equatable, Sendable {
-    case textStreamPart(TextStreamPart)
-    case chatCompletionChunk(ChatCompletionChunk)
-
-    public init(from decoder: any Decoder) throws {
-        do { let value = try decoder.singleValueContainer().decode(TextStreamPart.self); self = .textStreamPart(value); return } catch {}
-        do { let value = try decoder.singleValueContainer().decode(ChatCompletionChunk.self); self = .chatCompletionChunk(value); return } catch {}
-        throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "No matching StreamFrame0Event branch"))
-    }
-    public func encode(to encoder: any Encoder) throws {
-        switch self {
-        case .textStreamPart(let value): try value.encode(to: encoder)
-        case .chatCompletionChunk(let value): try value.encode(to: encoder)
-        }
-    }
-}
-
 public struct StreamOptions: Codable, Equatable, Sendable {
     public var includeReasoning: Bool?
     public var includeUsage: Bool?
@@ -6055,6 +6082,28 @@ public struct StreamOptions: Codable, Equatable, Sendable {
     public init(includeReasoning: Bool? = nil, includeUsage: Bool? = nil) {
         self.includeReasoning = includeReasoning
         self.includeUsage = includeUsage
+    }
+}
+
+/// A raw provider call with its required wire tag.
+public struct TaggedRawToolCall: Codable, Equatable, Sendable {
+    public var dynamic: Bool?
+    public var input: String
+    public var providerExecuted: Bool?
+    public var providerMetadata: [String: [String: JSONValue]]?
+    public var toolCallId: String
+    public var toolName: String
+    /// Required value: "tool-call".
+    public var type: String
+
+    public init(dynamic: Bool? = nil, input: String, providerExecuted: Bool? = nil, providerMetadata: [String: [String: JSONValue]]? = nil, toolCallId: String, toolName: String, type: String) {
+        self.dynamic = dynamic
+        self.input = input
+        self.providerExecuted = providerExecuted
+        self.providerMetadata = providerMetadata
+        self.toolCallId = toolCallId
+        self.toolName = toolName
+        self.type = type
     }
 }
 
@@ -6074,9 +6123,10 @@ public struct TaggedToolResult: Codable, Equatable, Sendable {
     public var providerMetadata: [String: [String: JSONValue]]?
     public var toolCallId: String
     public var toolName: String
-    public var type: TaggedToolResultType
+    /// Required value: "tool-result".
+    public var type: String
 
-    public init(dynamic: Bool? = nil, input: JSONValue? = nil, output: JSONValue, preliminary: Bool? = nil, providerExecuted: Bool? = nil, providerMetadata: [String: [String: JSONValue]]? = nil, toolCallId: String, toolName: String, type: TaggedToolResultType) {
+    public init(dynamic: Bool? = nil, input: JSONValue? = nil, output: JSONValue, preliminary: Bool? = nil, providerExecuted: Bool? = nil, providerMetadata: [String: [String: JSONValue]]? = nil, toolCallId: String, toolName: String, type: String) {
         self.dynamic = dynamic
         self.input = input
         self.output = output
@@ -6087,10 +6137,6 @@ public struct TaggedToolResult: Codable, Equatable, Sendable {
         self.toolName = toolName
         self.type = type
     }
-}
-
-public enum TaggedToolResultType: String, Codable, Equatable, Sendable {
-    case toolResult = "tool-result"
 }
 
 public struct TerminalSummary: Codable, Equatable, Sendable {
@@ -6158,8 +6204,10 @@ public indirect enum TextStreamPart: Codable, Equatable, Sendable {
     case toolInputStart(dynamic: Bool?, id: String, providerExecuted: Bool?, providerMetadata: [String: [String: JSONValue]]?, title: String?, toolName: String)
     case toolInputEnd(id: String, providerMetadata: [String: [String: JSONValue]]?)
     case toolInputDelta(delta: String, id: String, providerMetadata: [String: [String: JSONValue]]?)
-    case source11(id: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: TextStreamPart10SourceType, title: String?, url: String)
-    case source12(filename: String?, id: String, mediaType: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: TextStreamPart11SourceType, title: String)
+    /// sourceType: Required value: "url".
+    case source11(id: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: String, title: String?, url: String)
+    /// sourceType: Required value: "document".
+    case source12(filename: String?, id: String, mediaType: String, providerMetadata: [String: [String: JSONValue]]?, sourceType: String, title: String)
     case file(file: GeneratedFile, providerMetadata: [String: [String: JSONValue]]?)
     case reasoningFile(file: GeneratedFile, providerMetadata: [String: [String: JSONValue]]?)
     /// dynamic: Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
@@ -6271,11 +6319,11 @@ public indirect enum TextStreamPart: Codable, Equatable, Sendable {
             return
         case "source":
             do {
-                self = .source11(id: try c.decode(String.self, forKey: .id), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(TextStreamPart10SourceType.self, forKey: .sourceType), title: try c.decodeIfPresent(String.self, forKey: .title), url: try c.decode(String.self, forKey: .url))
+                self = .source11(id: try c.decode(String.self, forKey: .id), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(String.self, forKey: .sourceType), title: try c.decodeIfPresent(String.self, forKey: .title), url: try c.decode(String.self, forKey: .url))
                 return
             } catch {}
             do {
-                self = .source12(filename: try c.decodeIfPresent(String.self, forKey: .filename), id: try c.decode(String.self, forKey: .id), mediaType: try c.decode(String.self, forKey: .mediaType), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(TextStreamPart11SourceType.self, forKey: .sourceType), title: try c.decode(String.self, forKey: .title))
+                self = .source12(filename: try c.decodeIfPresent(String.self, forKey: .filename), id: try c.decode(String.self, forKey: .id), mediaType: try c.decode(String.self, forKey: .mediaType), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), sourceType: try c.decode(String.self, forKey: .sourceType), title: try c.decode(String.self, forKey: .title))
                 return
             } catch { throw error }
         case "start":
@@ -6475,14 +6523,6 @@ public indirect enum TextStreamPart: Codable, Equatable, Sendable {
             try c.encode(v0, forKey: .rawValue)
         }
     }
-}
-
-public enum TextStreamPart10SourceType: String, Codable, Equatable, Sendable {
-    case url = "url"
-}
-
-public enum TextStreamPart11SourceType: String, Codable, Equatable, Sendable {
-    case document = "document"
 }
 
 /// Per-call timeout configuration.
@@ -6790,7 +6830,7 @@ public struct ToolCallPart: Codable, Equatable, Sendable {
 /// `{"type":"repaired","toolCall":{…}}`, `{"type":"unchanged"}`, or
 /// `{"type":"failed","message":"…"}`.
 public indirect enum ToolCallRepairReply: Codable, Equatable, Sendable {
-    case repaired(toolCall: ToolCallRepairReply0ToolCall)
+    case repaired(toolCall: RepairedToolCall)
     case unchanged
     case failed(message: String)
     private enum CodingKeys: String, CodingKey {
@@ -6806,7 +6846,7 @@ public indirect enum ToolCallRepairReply: Codable, Equatable, Sendable {
             self = .failed(message: try c.decode(String.self, forKey: .message))
             return
         case "repaired":
-            self = .repaired(toolCall: try c.decode(ToolCallRepairReply0ToolCall.self, forKey: .toolCall))
+            self = .repaired(toolCall: try c.decode(RepairedToolCall.self, forKey: .toolCall))
             return
         case "unchanged":
             self = .unchanged
@@ -6829,30 +6869,6 @@ public indirect enum ToolCallRepairReply: Codable, Equatable, Sendable {
     }
 }
 
-public struct ToolCallRepairReply0ToolCall: Codable, Equatable, Sendable {
-    public var dynamic: Bool?
-    public var input: String
-    public var providerExecuted: Bool?
-    public var providerMetadata: [String: [String: JSONValue]]?
-    public var toolCallId: String
-    public var toolName: String
-    public var type: ToolCallRepairReply0ToolCallType?
-
-    public init(dynamic: Bool? = nil, input: String, providerExecuted: Bool? = nil, providerMetadata: [String: [String: JSONValue]]? = nil, toolCallId: String, toolName: String, type: ToolCallRepairReply0ToolCallType? = nil) {
-        self.dynamic = dynamic
-        self.input = input
-        self.providerExecuted = providerExecuted
-        self.providerMetadata = providerMetadata
-        self.toolCallId = toolCallId
-        self.toolName = toolName
-        self.type = type
-    }
-}
-
-public enum ToolCallRepairReply0ToolCallType: String, Codable, Equatable, Sendable {
-    case toolCall = "tool-call"
-}
-
 /// How the model should choose tools, as the caller gives it
 /// (`GenerateTextOptions.tool_choice`).
 ///
@@ -6864,40 +6880,39 @@ public enum ToolCallRepairReply0ToolCallType: String, Codable, Equatable, Sendab
 /// [`prepare_tool_choice`] turns it into the [`LanguageModelV4ToolChoice`]
 /// a model call carries.
 public indirect enum ToolChoice: Codable, Equatable, Sendable {
-    case toolChoice0(ToolChoice0)
-    case toolChoice1(ToolChoice1)
+    case toolChoiceMode(ToolChoiceMode)
+    case toolChoiceTool(ToolChoiceTool)
 
     public init(from decoder: any Decoder) throws {
-        do { let value = try decoder.singleValueContainer().decode(ToolChoice0.self); self = .toolChoice0(value); return } catch {}
-        do { let value = try decoder.singleValueContainer().decode(ToolChoice1.self); self = .toolChoice1(value); return } catch {}
+        do { let value = try decoder.singleValueContainer().decode(ToolChoiceMode.self); self = .toolChoiceMode(value); return } catch {}
+        do { let value = try decoder.singleValueContainer().decode(ToolChoiceTool.self); self = .toolChoiceTool(value); return } catch {}
         throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "No matching ToolChoice branch"))
     }
     public func encode(to encoder: any Encoder) throws {
         switch self {
-        case .toolChoice0(let value): try value.encode(to: encoder)
-        case .toolChoice1(let value): try value.encode(to: encoder)
+        case .toolChoiceMode(let value): try value.encode(to: encoder)
+        case .toolChoiceTool(let value): try value.encode(to: encoder)
         }
     }
 }
 
-public enum ToolChoice0: String, Codable, Equatable, Sendable {
+/// The string form of a user's tool choice.
+public enum ToolChoiceMode: String, Codable, Equatable, Sendable {
     case auto = "auto"
     case none = "none"
     case required = "required"
 }
 
-public struct ToolChoice1: Codable, Equatable, Sendable {
+/// The named-tool form of a user's tool choice.
+public struct ToolChoiceTool: Codable, Equatable, Sendable {
     public var toolName: String
-    public var type: ToolChoice1Type
+    /// Required value: "tool".
+    public var type: String
 
-    public init(toolName: String, type: ToolChoice1Type) {
+    public init(toolName: String, type: String) {
         self.toolName = toolName
         self.type = type
     }
-}
-
-public enum ToolChoice1Type: String, Codable, Equatable, Sendable {
-    case tool = "tool"
 }
 
 /// What [`AiMuxError::ToolChoiceViolation`] carries: the field set of the AI
@@ -6993,7 +7008,7 @@ public struct ToolOutputDenied: Codable, Equatable, Sendable {
 
 /// Parts allowed in a tool message.
 public indirect enum ToolPart: Codable, Equatable, Sendable {
-    case toolResult(output: ToolResultOutput2, providerOptions: [String: [String: JSONValue]]?, toolCallId: String, toolName: String)
+    case toolResult(output: LanguageModelToolResultOutput, providerOptions: [String: [String: JSONValue]]?, toolCallId: String, toolName: String)
     case toolApprovalResponse(approvalId: String, approved: Bool, providerOptions: [String: [String: JSONValue]]?, reason: String?)
     private enum CodingKeys: String, CodingKey {
         case approvalId = "approvalId"
@@ -7013,7 +7028,7 @@ public indirect enum ToolPart: Codable, Equatable, Sendable {
             self = .toolApprovalResponse(approvalId: try c.decode(String.self, forKey: .approvalId), approved: try c.decode(Bool.self, forKey: .approved), providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), reason: try c.decodeIfPresent(String.self, forKey: .reason))
             return
         case "tool-result":
-            self = .toolResult(output: try c.decode(ToolResultOutput2.self, forKey: .output), providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), toolCallId: try c.decode(String.self, forKey: .toolCallId), toolName: try c.decode(String.self, forKey: .toolName))
+            self = .toolResult(output: try c.decode(LanguageModelToolResultOutput.self, forKey: .output), providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), toolCallId: try c.decode(String.self, forKey: .toolCallId), toolName: try c.decode(String.self, forKey: .toolName))
             return
         default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown ToolPart tag \(tag)"))
         }
@@ -7082,10 +7097,10 @@ public struct ToolRepairContextSchema: Codable, Equatable, Sendable {
     public var inputSchema: JSONValue
     public var instructions: String?
     public var messages: [ModelMessage]
-    public var toolCall: ToolRepairContextSchemaToolCall
+    public var toolCall: TaggedRawToolCall
     public var tools: [Tool]
 
-    public init(error: AiMuxError, inputSchema: JSONValue, instructions: String?, messages: [ModelMessage], toolCall: ToolRepairContextSchemaToolCall, tools: [Tool]) {
+    public init(error: AiMuxError, inputSchema: JSONValue, instructions: String?, messages: [ModelMessage], toolCall: TaggedRawToolCall, tools: [Tool]) {
         self.error = error
         self.inputSchema = inputSchema
         self.instructions = instructions
@@ -7107,7 +7122,7 @@ public struct ToolRepairContextSchema: Codable, Equatable, Sendable {
         self.inputSchema = try c.decode(JSONValue.self, forKey: .inputSchema)
         self.instructions = try c.decode(String?.self, forKey: .instructions)
         self.messages = try c.decode([ModelMessage].self, forKey: .messages)
-        self.toolCall = try c.decode(ToolRepairContextSchemaToolCall.self, forKey: .toolCall)
+        self.toolCall = try c.decode(TaggedRawToolCall.self, forKey: .toolCall)
         self.tools = try c.decode([Tool].self, forKey: .tools)
     }
     public func encode(to encoder: any Encoder) throws {
@@ -7119,30 +7134,6 @@ public struct ToolRepairContextSchema: Codable, Equatable, Sendable {
         try c.encode(self.toolCall, forKey: .toolCall)
         try c.encode(self.tools, forKey: .tools)
     }
-}
-
-public struct ToolRepairContextSchemaToolCall: Codable, Equatable, Sendable {
-    public var dynamic: Bool?
-    public var input: String
-    public var providerExecuted: Bool?
-    public var providerMetadata: [String: [String: JSONValue]]?
-    public var toolCallId: String
-    public var toolName: String
-    public var type: ToolRepairContextSchemaToolCallType
-
-    public init(dynamic: Bool? = nil, input: String, providerExecuted: Bool? = nil, providerMetadata: [String: [String: JSONValue]]? = nil, toolCallId: String, toolName: String, type: ToolRepairContextSchemaToolCallType) {
-        self.dynamic = dynamic
-        self.input = input
-        self.providerExecuted = providerExecuted
-        self.providerMetadata = providerMetadata
-        self.toolCallId = toolCallId
-        self.toolName = toolName
-        self.type = type
-    }
-}
-
-public enum ToolRepairContextSchemaToolCallType: String, Codable, Equatable, Sendable {
-    case toolCall = "tool-call"
 }
 
 /// A tool result produced by a provider-executed tool (e.g. xAI `file_search`,
@@ -7440,75 +7431,6 @@ public indirect enum ToolResultOutput: Codable, Equatable, Sendable {
     }
 }
 
-/// The provider-facing result of a tool call.
-public indirect enum ToolResultOutput2: Codable, Equatable, Sendable {
-    case text(providerOptions: [String: [String: JSONValue]]?, value: String)
-    case json(providerOptions: [String: [String: JSONValue]]?, value: JSONValue)
-    case executionDenied(providerOptions: [String: [String: JSONValue]]?, reason: String?)
-    case errorText(providerOptions: [String: [String: JSONValue]]?, value: String)
-    case errorJson(providerOptions: [String: [String: JSONValue]]?, value: JSONValue)
-    case content(value: [ToolResultContent])
-    private enum CodingKeys: String, CodingKey {
-        case providerOptions = "providerOptions"
-        case reason = "reason"
-        case type = "type"
-        case value = "value"
-    }
-    public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        let tag = try c.decode(String.self, forKey: .type)
-        switch tag {
-        case "content":
-            self = .content(value: try c.decode([ToolResultContent].self, forKey: .value))
-            return
-        case "error-json":
-            self = .errorJson(providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), value: try c.decode(JSONValue.self, forKey: .value))
-            return
-        case "error-text":
-            self = .errorText(providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), value: try c.decode(String.self, forKey: .value))
-            return
-        case "execution-denied":
-            self = .executionDenied(providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), reason: try c.decodeIfPresent(String.self, forKey: .reason))
-            return
-        case "json":
-            self = .json(providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), value: try c.decode(JSONValue.self, forKey: .value))
-            return
-        case "text":
-            self = .text(providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), value: try c.decode(String.self, forKey: .value))
-            return
-        default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown ToolResultOutput2 tag \(tag)"))
-        }
-    }
-    public func encode(to encoder: any Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        switch self {
-        case .text(let v0, let v1):
-            try c.encode("text", forKey: .type)
-            try c.encodeIfPresent(v0, forKey: .providerOptions)
-            try c.encode(v1, forKey: .value)
-        case .json(let v0, let v1):
-            try c.encode("json", forKey: .type)
-            try c.encodeIfPresent(v0, forKey: .providerOptions)
-            try c.encode(v1, forKey: .value)
-        case .executionDenied(let v0, let v1):
-            try c.encode("execution-denied", forKey: .type)
-            try c.encodeIfPresent(v0, forKey: .providerOptions)
-            try c.encodeIfPresent(v1, forKey: .reason)
-        case .errorText(let v0, let v1):
-            try c.encode("error-text", forKey: .type)
-            try c.encodeIfPresent(v0, forKey: .providerOptions)
-            try c.encode(v1, forKey: .value)
-        case .errorJson(let v0, let v1):
-            try c.encode("error-json", forKey: .type)
-            try c.encodeIfPresent(v0, forKey: .providerOptions)
-            try c.encode(v1, forKey: .value)
-        case .content(let v0):
-            try c.encode("content", forKey: .type)
-            try c.encode(v0, forKey: .value)
-        }
-    }
-}
-
 /// The result of a tool call (upstream `ToolResultPart`,
 /// `provider-utils` `types/content-part.ts:240-268`).
 public struct ToolResultPart: Codable, Equatable, Sendable {
@@ -7528,32 +7450,8 @@ public struct ToolResultPart: Codable, Equatable, Sendable {
     }
 }
 
-/// Tool result content part.
-public struct ToolResultPart2: Codable, Equatable, Sendable {
-    public var output: ToolResultOutput2
-    public var providerOptions: [String: [String: JSONValue]]?
-    public var toolCallId: String
-    public var toolName: String
-
-    public init(output: ToolResultOutput2, providerOptions: [String: [String: JSONValue]]? = nil, toolCallId: String, toolName: String) {
-        self.output = output
-        self.providerOptions = providerOptions
-        self.toolCallId = toolCallId
-        self.toolName = toolName
-    }
-}
-
-public struct TraceAggregateParams: Codable, Equatable, Sendable {
-    /// Query filter (RFC-0015 §5.3).
-    public var filter: TraceAggregateParamsFilter?
-
-    public init(filter: TraceAggregateParamsFilter? = nil) {
-        self.filter = filter
-    }
-}
-
 /// Query filter (RFC-0015 §5.3).
-public struct TraceAggregateParamsFilter: Codable, Equatable, Sendable {
+public struct TraceAggregateFilter: Codable, Equatable, Sendable {
     public var model: String?
     public var provider: String?
     public var sessionId: String?
@@ -7567,12 +7465,26 @@ public struct TraceAggregateParamsFilter: Codable, Equatable, Sendable {
     }
 }
 
+public struct TraceAggregateParams: Codable, Equatable, Sendable {
+    public var filter: TraceAggregateFilter?
+
+    public init(filter: TraceAggregateFilter? = nil) {
+        self.filter = filter
+    }
+}
+
+public enum TraceAuditMode: String, Codable, Equatable, Sendable {
+    case off = "off"
+    case shared = "shared"
+    case strict = "strict"
+}
+
 public struct TraceCreateParams: Codable, Equatable, Sendable {
-    public var auditMode: AuditMode2?
+    public var auditMode: TraceAuditMode?
     public var capacity: UInt64?
     public var perScopeCapacity: UInt64?
 
-    public init(auditMode: AuditMode2? = nil, capacity: UInt64? = nil, perScopeCapacity: UInt64? = nil) {
+    public init(auditMode: TraceAuditMode? = nil, capacity: UInt64? = nil, perScopeCapacity: UInt64? = nil) {
         self.auditMode = auditMode
         self.capacity = capacity
         self.perScopeCapacity = perScopeCapacity
@@ -7928,16 +7840,8 @@ public indirect enum TranscriptionStreamPart: Codable, Equatable, Sendable {
 }
 
 public indirect enum TransportParams: Codable, Equatable, Sendable {
-    /// proxy: Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-    /// hop, or the WebSocket connector. With every field empty, HTTP follows the
-    /// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-    /// reqwest does, and the WebSocket connector connects directly.
-    case fetch(proxy: TransportParams0Proxy?)
-    /// proxy: Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-    /// hop, or the WebSocket connector. With every field empty, HTTP follows the
-    /// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-    /// reqwest does, and the WebSocket connector connects directly.
-    case ws(proxy: TransportParams1Proxy?)
+    case fetch(proxy: TransportProxy?)
+    case ws(proxy: TransportProxy?)
     case download(maxBytes: UInt64?)
     private enum CodingKeys: String, CodingKey {
         case kind = "kind"
@@ -7952,10 +7856,10 @@ public indirect enum TransportParams: Codable, Equatable, Sendable {
             self = .download(maxBytes: try c.decodeIfPresent(UInt64.self, forKey: .maxBytes))
             return
         case "fetch":
-            self = .fetch(proxy: try c.decodeIfPresent(TransportParams0Proxy.self, forKey: .proxy))
+            self = .fetch(proxy: try c.decodeIfPresent(TransportProxy.self, forKey: .proxy))
             return
         case "ws":
-            self = .ws(proxy: try c.decodeIfPresent(TransportParams1Proxy.self, forKey: .proxy))
+            self = .ws(proxy: try c.decodeIfPresent(TransportProxy.self, forKey: .proxy))
             return
         default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown TransportParams tag \(tag)"))
         }
@@ -7980,31 +7884,7 @@ public indirect enum TransportParams: Codable, Equatable, Sendable {
 /// hop, or the WebSocket connector. With every field empty, HTTP follows the
 /// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
 /// reqwest does, and the WebSocket connector connects directly.
-public struct TransportParams0Proxy: Codable, Equatable, Sendable {
-    public var allUrl: String?
-    public var httpUrl: String?
-    public var httpsUrl: String?
-    public var noProxy: String?
-
-    public init(allUrl: String? = nil, httpUrl: String? = nil, httpsUrl: String? = nil, noProxy: String? = nil) {
-        self.allUrl = allUrl
-        self.httpUrl = httpUrl
-        self.httpsUrl = httpsUrl
-        self.noProxy = noProxy
-    }
-    private enum CodingKeys: String, CodingKey {
-        case allUrl = "all_url"
-        case httpUrl = "http_url"
-        case httpsUrl = "https_url"
-        case noProxy = "no_proxy"
-    }
-}
-
-/// Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-/// hop, or the WebSocket connector. With every field empty, HTTP follows the
-/// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-/// reqwest does, and the WebSocket connector connects directly.
-public struct TransportParams1Proxy: Codable, Equatable, Sendable {
+public struct TransportProxy: Codable, Equatable, Sendable {
     public var allUrl: String?
     public var httpUrl: String?
     public var httpsUrl: String?
@@ -8029,8 +7909,10 @@ public struct TransportParams1Proxy: Codable, Equatable, Sendable {
 ///
 /// Schema view of the tag written by [`crate::wire::typed_vec`].
 public indirect enum TypedSource: Codable, Equatable, Sendable {
-    case url(id: String, providerMetadata: [String: [String: JSONValue]]?, title: String?, type: TypedSource0Type, url: String)
-    case document(filename: String?, id: String, mediaType: String, providerMetadata: [String: [String: JSONValue]]?, title: String, type: TypedSource1Type)
+    /// type: Required value: "source".
+    case url(id: String, providerMetadata: [String: [String: JSONValue]]?, title: String?, type: String, url: String)
+    /// type: Required value: "source".
+    case document(filename: String?, id: String, mediaType: String, providerMetadata: [String: [String: JSONValue]]?, title: String, type: String)
     private enum CodingKeys: String, CodingKey {
         case filename = "filename"
         case id = "id"
@@ -8046,10 +7928,10 @@ public indirect enum TypedSource: Codable, Equatable, Sendable {
         let tag = try c.decode(String.self, forKey: .sourceType)
         switch tag {
         case "document":
-            self = .document(filename: try c.decodeIfPresent(String.self, forKey: .filename), id: try c.decode(String.self, forKey: .id), mediaType: try c.decode(String.self, forKey: .mediaType), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), title: try c.decode(String.self, forKey: .title), type: try c.decode(TypedSource1Type.self, forKey: .type))
+            self = .document(filename: try c.decodeIfPresent(String.self, forKey: .filename), id: try c.decode(String.self, forKey: .id), mediaType: try c.decode(String.self, forKey: .mediaType), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), title: try c.decode(String.self, forKey: .title), type: try c.decode(String.self, forKey: .type))
             return
         case "url":
-            self = .url(id: try c.decode(String.self, forKey: .id), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), title: try c.decodeIfPresent(String.self, forKey: .title), type: try c.decode(TypedSource0Type.self, forKey: .type), url: try c.decode(String.self, forKey: .url))
+            self = .url(id: try c.decode(String.self, forKey: .id), providerMetadata: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata), title: try c.decodeIfPresent(String.self, forKey: .title), type: try c.decode(String.self, forKey: .type), url: try c.decode(String.self, forKey: .url))
             return
         default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown TypedSource tag \(tag)"))
         }
@@ -8076,14 +7958,6 @@ public indirect enum TypedSource: Codable, Equatable, Sendable {
     }
 }
 
-public enum TypedSource0Type: String, Codable, Equatable, Sendable {
-    case source = "source"
-}
-
-public enum TypedSource1Type: String, Codable, Equatable, Sendable {
-    case source = "source"
-}
-
 /// A tool call outside `content` (a text result's `toolCalls`, an approval
 /// request's `toolCall`): a [`ToolCall`] with its `type` tag, the AI SDK's
 /// `TypedToolCall` (`ai` `generate-text/tool-call.ts:8-14`).
@@ -8108,9 +7982,10 @@ public struct TypedToolCall: Codable, Equatable, Sendable {
     public var toolCallId: String
     /// Tool name.
     public var toolName: String
-    public var type: TypedToolCallType
+    /// Required value: "tool-call".
+    public var type: String
 
-    public init(dynamic: Bool? = nil, error: AiMuxError? = nil, input: JSONValue, invalid: Bool? = nil, providerExecuted: Bool? = nil, providerMetadata: [String: [String: JSONValue]]? = nil, toolCallId: String, toolName: String, type: TypedToolCallType) {
+    public init(dynamic: Bool? = nil, error: AiMuxError? = nil, input: JSONValue, invalid: Bool? = nil, providerExecuted: Bool? = nil, providerMetadata: [String: [String: JSONValue]]? = nil, toolCallId: String, toolName: String, type: String) {
         self.dynamic = dynamic
         self.error = error
         self.input = input
@@ -8147,9 +8022,10 @@ public struct TypedToolCallInput: Codable, Equatable, Sendable {
     public var toolCallId: String
     /// Tool name.
     public var toolName: String
-    public var type: TypedToolCallInputType?
+    /// Required value: "tool-call".
+    public var type: String?
 
-    public init(dynamic: Bool? = nil, error: AiMuxErrorInput? = nil, input: JSONValue, invalid: Bool? = nil, providerExecuted: Bool? = nil, providerMetadata: [String: [String: JSONValue]]? = nil, toolCallId: String, toolName: String, type: TypedToolCallInputType? = nil) {
+    public init(dynamic: Bool? = nil, error: AiMuxErrorInput? = nil, input: JSONValue, invalid: Bool? = nil, providerExecuted: Bool? = nil, providerMetadata: [String: [String: JSONValue]]? = nil, toolCallId: String, toolName: String, type: String? = nil) {
         self.dynamic = dynamic
         self.error = error
         self.input = input
@@ -8160,14 +8036,6 @@ public struct TypedToolCallInput: Codable, Equatable, Sendable {
         self.toolName = toolName
         self.type = type
     }
-}
-
-public enum TypedToolCallInputType: String, Codable, Equatable, Sendable {
-    case toolCall = "tool-call"
-}
-
-public enum TypedToolCallType: String, Codable, Equatable, Sendable {
-    case toolCall = "tool-call"
 }
 
 /// A tool error (the AI SDK's `TypedToolError`, `ai`
@@ -8775,14 +8643,4 @@ public indirect enum Warning: Codable, Equatable, Sendable {
         }
     }
 }
-
-public typealias _aimux_core_model_catalogue_RuntimeModel_ = [RuntimeModel]
-
-public typealias _aimux_core_session_SessionCall_ = [SessionCall]
-
-public typealias _aimux_core_session_SessionView_ = [SessionView]
-
-public typealias _aimux_core_trace_store_SessionStepStat_ = [SessionStepStat]
-
-public typealias _aimux_core_trace_store_TraceStats_ = [TraceStats]
 

@@ -30,7 +30,7 @@ public abstract class ToolCallRepairReply {
 
     @JsonProperty("type")
     public abstract String getType();
-    public ToolCallRepairReply0ToolCall getToolCall() { return null; }
+    public RepairedToolCall getToolCall() { return null; }
     public String getMessage() { return null; }
     public final boolean isFailed() { return "failed".equals(getType()); }
     public final boolean isRepaired() { return "repaired".equals(getType()); }
@@ -43,11 +43,11 @@ public abstract class ToolCallRepairReply {
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Repaired extends ToolCallRepairReply {
         @JsonProperty("toolCall")
-        private final ToolCallRepairReply0ToolCall toolCall;
+        private final RepairedToolCall toolCall;
 
         @JsonCreator
         public Repaired(
-            @JsonProperty(value = "toolCall", required = true) ToolCallRepairReply0ToolCall toolCall) {
+            @JsonProperty(value = "toolCall", required = true) RepairedToolCall toolCall) {
             this.toolCall = toolCall;
         }
 
@@ -56,12 +56,12 @@ public abstract class ToolCallRepairReply {
         @Override
         @JsonProperty("type")
         public String getType() { return "repaired"; }
-        public ToolCallRepairReply0ToolCall getToolCall() { return toolCall; }
+        public RepairedToolCall getToolCall() { return toolCall; }
 
         public static final class Builder {
-            private ToolCallRepairReply0ToolCall toolCall;
+            private RepairedToolCall toolCall;
 
-            public Builder toolCall(ToolCallRepairReply0ToolCall value) {
+            public Builder toolCall(RepairedToolCall value) {
                 this.toolCall = value;
                 return this;
             }

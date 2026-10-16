@@ -1730,7 +1730,7 @@ func (v AssistantPartVariantToolCall) MarshalJSON() ([]byte, error) {
 }
 
 type AssistantPartVariantToolResult struct {
-	Output          ToolResultOutput2                     `json:"output"`
+	Output          LanguageModelToolResultOutput         `json:"output"`
 	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 	ToolCallID      string                                `json:"toolCallId"`
 	ToolName        string                                `json:"toolName"`
@@ -1761,22 +1761,6 @@ type AudioData = string
 // any other string as base64 (base64 has no `:`), as a file part's string
 // data is read (ai@7.0.127 `prompt/file-part-data.ts:89-141`).
 type AudioInput = string
-
-type AuditMode string
-
-const (
-	AuditModeDisabled AuditMode = "disabled"
-	AuditModeShared   AuditMode = "shared"
-	AuditModeStrict   AuditMode = "strict"
-)
-
-type AuditMode2 string
-
-const (
-	AuditMode2Off    AuditMode2 = "off"
-	AuditMode2Shared AuditMode2 = "shared"
-	AuditMode2Strict AuditMode2 = "strict"
-)
 
 type BackendConfigVariant interface{ isBackendConfig() }
 type BackendConfig struct {
@@ -2183,9 +2167,10 @@ func (v ContentPartVariantReasoningFile) MarshalJSON() ([]byte, error) {
 type ContentPartVariantSource5 struct {
 	ID               string                                `json:"id"`
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
-	SourceType       ContentPart4SourceType                `json:"sourceType"`
-	Title            *string                               `json:"title,omitzero"`
-	URL              string                                `json:"url"`
+	// Required value: "url".
+	SourceType string  `json:"sourceType"`
+	Title      *string `json:"title,omitzero"`
+	URL        string  `json:"url"`
 }
 
 func (ContentPartVariantSource5) isContentPart() {}
@@ -2203,8 +2188,9 @@ type ContentPartVariantSource6 struct {
 	ID               string                                `json:"id"`
 	MediaType        string                                `json:"mediaType"`
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
-	SourceType       ContentPart5SourceType                `json:"sourceType"`
-	Title            string                                `json:"title"`
+	// Required value: "document".
+	SourceType string `json:"sourceType"`
+	Title      string `json:"title"`
 }
 
 func (ContentPartVariantSource6) isContentPart() {}
@@ -2346,18 +2332,6 @@ func (v ContentPartVariantToolApprovalResponse) MarshalJSON() ([]byte, error) {
 		plain
 	}{Type: "tool-approval-response", plain: plain(v)})
 }
-
-type ContentPart4SourceType string
-
-const (
-	ContentPart4SourceTypeURL ContentPart4SourceType = "url"
-)
-
-type ContentPart5SourceType string
-
-const (
-	ContentPart5SourceTypeDocument ContentPart5SourceType = "document"
-)
 
 // A part of the content text generation returns: the AI SDK's core
 // `ContentPart` (`ai` `generate-text/content-part.ts:12-33`), eleven kinds,
@@ -2546,9 +2520,10 @@ func (v ContentPartInputVariantReasoningFile) MarshalJSON() ([]byte, error) {
 type ContentPartInputVariantSource5 struct {
 	ID               string                                `json:"id"`
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
-	SourceType       ContentPartInput4SourceType           `json:"sourceType"`
-	Title            *string                               `json:"title,omitzero"`
-	URL              string                                `json:"url"`
+	// Required value: "url".
+	SourceType string  `json:"sourceType"`
+	Title      *string `json:"title,omitzero"`
+	URL        string  `json:"url"`
 }
 
 func (ContentPartInputVariantSource5) isContentPartInput() {}
@@ -2566,8 +2541,9 @@ type ContentPartInputVariantSource6 struct {
 	ID               string                                `json:"id"`
 	MediaType        string                                `json:"mediaType"`
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
-	SourceType       ContentPartInput5SourceType           `json:"sourceType"`
-	Title            string                                `json:"title"`
+	// Required value: "document".
+	SourceType string `json:"sourceType"`
+	Title      string `json:"title"`
 }
 
 func (ContentPartInputVariantSource6) isContentPartInput() {}
@@ -2709,18 +2685,6 @@ func (v ContentPartInputVariantToolApprovalResponse) MarshalJSON() ([]byte, erro
 		plain
 	}{Type: "tool-approval-response", plain: plain(v)})
 }
-
-type ContentPartInput4SourceType string
-
-const (
-	ContentPartInput4SourceTypeURL ContentPartInput4SourceType = "url"
-)
-
-type ContentPartInput5SourceType string
-
-const (
-	ContentPartInput5SourceTypeDocument ContentPartInput5SourceType = "document"
-)
 
 type CreateRecorderParams struct {
 	Backend       BackendConfig `json:"backend"`
@@ -3092,8 +3056,6 @@ type EmbeddingUsage struct {
 }
 
 type EmptyParams struct{}
-
-type EmptyParams2 struct{}
 
 type ErrorDomain string
 
@@ -3506,9 +3468,10 @@ func (v GenerateContentVariantToolCall) MarshalJSON() ([]byte, error) {
 type GenerateContentVariantSource3 struct {
 	ID               string                                `json:"id"`
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
-	SourceType       GenerateContent2SourceType            `json:"sourceType"`
-	Title            *string                               `json:"title,omitzero"`
-	URL              string                                `json:"url"`
+	// Required value: "url".
+	SourceType string  `json:"sourceType"`
+	Title      *string `json:"title,omitzero"`
+	URL        string  `json:"url"`
 }
 
 func (GenerateContentVariantSource3) isGenerateContent() {}
@@ -3526,8 +3489,9 @@ type GenerateContentVariantSource4 struct {
 	ID               string                                `json:"id"`
 	MediaType        string                                `json:"mediaType"`
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
-	SourceType       GenerateContent3SourceType            `json:"sourceType"`
-	Title            string                                `json:"title"`
+	// Required value: "document".
+	SourceType string `json:"sourceType"`
+	Title      string `json:"title"`
 }
 
 func (GenerateContentVariantSource4) isGenerateContent() {}
@@ -3646,18 +3610,6 @@ func (v GenerateContentVariantToolResult) MarshalJSON() ([]byte, error) {
 		plain
 	}{Type: "tool-result", plain: plain(v)})
 }
-
-type GenerateContent2SourceType string
-
-const (
-	GenerateContent2SourceTypeURL GenerateContent2SourceType = "url"
-)
-
-type GenerateContent3SourceType string
-
-const (
-	GenerateContent3SourceTypeDocument GenerateContent3SourceType = "document"
-)
 
 // `GenerateObjectResult.response`: the AI SDK's
 // `Omit<LanguageModelResponseMetadata, 'messages'>`.
@@ -3911,16 +3863,6 @@ const (
 )
 
 type HandleResult struct {
-	Handle HandleID   `json:"handle"`
-	Kind   HandleKind `json:"kind"`
-}
-
-type HandleResult2 struct {
-	Handle HandleID   `json:"handle"`
-	Kind   HandleKind `json:"kind"`
-}
-
-type HandleResult3 struct {
 	Handle HandleID   `json:"handle"`
 	Kind   HandleKind `json:"kind"`
 }
@@ -4265,6 +4207,173 @@ func (v LanguageModelMessageVariantTool) MarshalJSON() ([]byte, error) {
 	}{Role: "tool", plain: plain(v)})
 }
 
+// Reasoning / thinking content part.
+type LanguageModelReasoningPart struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Text            string                                `json:"text"`
+}
+
+// The provider-facing result of a tool call.
+type LanguageModelToolResultOutputVariant interface{ isLanguageModelToolResultOutput() }
+type LanguageModelToolResultOutput struct {
+	Value LanguageModelToolResultOutputVariant
+}
+
+func (v LanguageModelToolResultOutput) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
+
+func (v *LanguageModelToolResultOutput) UnmarshalJSON(data []byte) error {
+	var tag struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
+	}
+	switch tag.Type {
+	case "content":
+		var next LanguageModelToolResultOutputVariantContent
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "error-json":
+		var next LanguageModelToolResultOutputVariantErrorJSON
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "error-text":
+		var next LanguageModelToolResultOutputVariantErrorText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "execution-denied":
+		var next LanguageModelToolResultOutputVariantExecutionDenied
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "json":
+		var next LanguageModelToolResultOutputVariantJSON
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "text":
+		var next LanguageModelToolResultOutputVariantText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	}
+	return fmt.Errorf("LanguageModelToolResultOutput: unknown type tag %q", tag.Type)
+}
+
+type LanguageModelToolResultOutputVariantText struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Value           string                                `json:"value"`
+}
+
+func (LanguageModelToolResultOutputVariantText) isLanguageModelToolResultOutput() {}
+
+func (v LanguageModelToolResultOutputVariantText) MarshalJSON() ([]byte, error) {
+	type plain LanguageModelToolResultOutputVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
+}
+
+type LanguageModelToolResultOutputVariantJSON struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Value           json.RawMessage                       `json:"value"`
+}
+
+func (LanguageModelToolResultOutputVariantJSON) isLanguageModelToolResultOutput() {}
+
+func (v LanguageModelToolResultOutputVariantJSON) MarshalJSON() ([]byte, error) {
+	type plain LanguageModelToolResultOutputVariantJSON
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "json", plain: plain(v)})
+}
+
+type LanguageModelToolResultOutputVariantExecutionDenied struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Reason          *string                               `json:"reason,omitzero"`
+}
+
+func (LanguageModelToolResultOutputVariantExecutionDenied) isLanguageModelToolResultOutput() {}
+
+func (v LanguageModelToolResultOutputVariantExecutionDenied) MarshalJSON() ([]byte, error) {
+	type plain LanguageModelToolResultOutputVariantExecutionDenied
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "execution-denied", plain: plain(v)})
+}
+
+type LanguageModelToolResultOutputVariantErrorText struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Value           string                                `json:"value"`
+}
+
+func (LanguageModelToolResultOutputVariantErrorText) isLanguageModelToolResultOutput() {}
+
+func (v LanguageModelToolResultOutputVariantErrorText) MarshalJSON() ([]byte, error) {
+	type plain LanguageModelToolResultOutputVariantErrorText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "error-text", plain: plain(v)})
+}
+
+type LanguageModelToolResultOutputVariantErrorJSON struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Value           json.RawMessage                       `json:"value"`
+}
+
+func (LanguageModelToolResultOutputVariantErrorJSON) isLanguageModelToolResultOutput() {}
+
+func (v LanguageModelToolResultOutputVariantErrorJSON) MarshalJSON() ([]byte, error) {
+	type plain LanguageModelToolResultOutputVariantErrorJSON
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "error-json", plain: plain(v)})
+}
+
+type LanguageModelToolResultOutputVariantContent struct {
+	Value []ToolResultContent `json:"value"`
+}
+
+func (LanguageModelToolResultOutputVariantContent) isLanguageModelToolResultOutput() {}
+
+func (v LanguageModelToolResultOutputVariantContent) MarshalJSON() ([]byte, error) {
+	type plain LanguageModelToolResultOutputVariantContent
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "content", plain: plain(v)})
+}
+
+// Tool result content part.
+type LanguageModelToolResultPart struct {
+	Output          LanguageModelToolResultOutput         `json:"output"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	ToolCallID      string                                `json:"toolCallId"`
+	ToolName        string                                `json:"toolName"`
+}
+
 // Token usage of a generation step or a whole call: the AI SDK's
 // `LanguageModelUsage` (ai@7.0.127 `types/usage.ts:10-68`).
 //
@@ -4494,11 +4603,19 @@ type LoggingConfig struct {
 	Level LogLevel `json:"level"`
 }
 
+type MiddlewareAuditMode string
+
+const (
+	MiddlewareAuditModeDisabled MiddlewareAuditMode = "disabled"
+	MiddlewareAuditModeShared   MiddlewareAuditMode = "shared"
+	MiddlewareAuditModeStrict   MiddlewareAuditMode = "strict"
+)
+
 type MiddlewareParams struct {
-	AuditMode  *AuditMode     `json:"auditMode,omitzero"`
-	Kind       string         `json:"kind"`
-	ScopeName  *string        `json:"scopeName,omitzero"`
-	TraceStore *HandleIdInput `json:"traceStore,omitzero"`
+	AuditMode  *MiddlewareAuditMode `json:"auditMode,omitzero"`
+	Kind       string               `json:"kind"`
+	ScopeName  *string              `json:"scopeName,omitzero"`
+	TraceStore *HandleIdInput       `json:"traceStore,omitzero"`
 }
 
 // Reference-failure policy.
@@ -5467,12 +5584,6 @@ func (v ReasoningPartVariantReasoningFile) MarshalJSON() ([]byte, error) {
 	}{Type: "reasoning-file", plain: plain(v)})
 }
 
-// Reasoning / thinking content part.
-type ReasoningPart2 struct {
-	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
-	Text            string                                `json:"text"`
-}
-
 // Reasoning / thinking portrait for a model (advisory).
 type ReasoningSpec struct {
 	// Minimum token budget (when `mode` is Budget/Mixed).
@@ -5639,6 +5750,18 @@ type RegistryEntry struct {
 
 type RegistryProviderParams struct {
 	Key string `json:"key"`
+}
+
+// A replacement raw call whose tag is optional on input.
+type RepairedToolCall struct {
+	Dynamic          *bool                                 `json:"dynamic,omitzero"`
+	Input            string                                `json:"input"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
+	// Required value: "tool-call".
+	Type *string `json:"type,omitzero"`
 }
 
 type ReplayCreateParams struct {
@@ -5922,19 +6045,8 @@ type RouterParams struct {
 }
 
 type RuntimeConfigureParams struct {
-	Logging *LoggingConfig               `json:"logging,omitzero"`
-	Proxy   *RuntimeConfigureParamsProxy `json:"proxy,omitzero"`
-}
-
-// Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-// hop, or the WebSocket connector. With every field empty, HTTP follows the
-// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-// reqwest does, and the WebSocket connector connects directly.
-type RuntimeConfigureParamsProxy struct {
-	AllURL   *string `json:"all_url,omitzero"`
-	HTTPURL  *string `json:"http_url,omitzero"`
-	HttpsURL *string `json:"https_url,omitzero"`
-	NoProxy  *string `json:"no_proxy,omitzero"`
+	Logging *LoggingConfig  `json:"logging,omitzero"`
+	Proxy   *TransportProxy `json:"proxy,omitzero"`
 }
 
 type RuntimeDescribeParams struct{}
@@ -6461,6 +6573,51 @@ func (v StrategyVariantWeighted) MarshalJSON() ([]byte, error) {
 	}{Type: "weighted", plain: plain(v)})
 }
 
+// The two event formats carried by an operation stream.
+type StreamEventVariant interface{ isStreamEvent() }
+type StreamEvent struct {
+	Value StreamEventVariant
+}
+
+func (v StreamEvent) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
+
+func (v *StreamEvent) UnmarshalJSON(data []byte) error {
+	var err error
+	{
+		var next TextStreamPart
+		if err = decodeUnionBranch(data, &next, false); err == nil {
+			v.Value = StreamEventBranch0{Value: next}
+			return nil
+		}
+	}
+	{
+		var next ChatCompletionChunk
+		if err = decodeUnionBranch(data, &next, false, "choices", "created", "id", "model", "object"); err == nil {
+			v.Value = StreamEventBranch1{Value: next}
+			return nil
+		}
+	}
+	return err
+}
+
+type StreamEventBranch0 struct{ Value TextStreamPart }
+
+func (StreamEventBranch0) isStreamEvent() {}
+
+func (v StreamEventBranch0) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
+
+type StreamEventBranch1 struct{ Value ChatCompletionChunk }
+
+func (StreamEventBranch1) isStreamEvent() {}
+
+func (v StreamEventBranch1) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
+
 type StreamFrameVariant interface{ isStreamFrame() }
 type StreamFrame struct {
 	Value StreamFrameVariant
@@ -6497,8 +6654,8 @@ func (v *StreamFrame) UnmarshalJSON(data []byte) error {
 }
 
 type StreamFrameVariantEvent struct {
-	Event StreamFrame0Event `json:"event"`
-	Seq   Uint64String      `json:"seq"`
+	Event StreamEvent  `json:"event"`
+	Seq   Uint64String `json:"seq"`
 }
 
 func (StreamFrameVariantEvent) isStreamFrame() {}
@@ -6527,53 +6684,21 @@ func (v StreamFrameVariantEnd) MarshalJSON() ([]byte, error) {
 	}{Type: "end", plain: plain(v)})
 }
 
-type StreamFrame0EventVariant interface{ isStreamFrame0Event() }
-type StreamFrame0Event struct {
-	Value StreamFrame0EventVariant
-}
-
-func (v StreamFrame0Event) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Value)
-}
-
-func (v *StreamFrame0Event) UnmarshalJSON(data []byte) error {
-	var err error
-	{
-		var next TextStreamPart
-		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = StreamFrame0EventBranch0{Value: next}
-			return nil
-		}
-	}
-	{
-		var next ChatCompletionChunk
-		if err = decodeUnionBranch(data, &next, false, "choices", "created", "id", "model", "object"); err == nil {
-			v.Value = StreamFrame0EventBranch1{Value: next}
-			return nil
-		}
-	}
-	return err
-}
-
-type StreamFrame0EventBranch0 struct{ Value TextStreamPart }
-
-func (StreamFrame0EventBranch0) isStreamFrame0Event() {}
-
-func (v StreamFrame0EventBranch0) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Value)
-}
-
-type StreamFrame0EventBranch1 struct{ Value ChatCompletionChunk }
-
-func (StreamFrame0EventBranch1) isStreamFrame0Event() {}
-
-func (v StreamFrame0EventBranch1) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Value)
-}
-
 type StreamOptions struct {
 	IncludeReasoning *bool `json:"includeReasoning,omitzero"`
 	IncludeUsage     *bool `json:"includeUsage,omitzero"`
+}
+
+// A raw provider call with its required wire tag.
+type TaggedRawToolCall struct {
+	Dynamic          *bool                                 `json:"dynamic,omitzero"`
+	Input            string                                `json:"input"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
+	// Required value: "tool-call".
+	Type string `json:"type"`
 }
 
 // A tool result in a text result's `toolResults`: a [`TypedToolResult`]
@@ -6592,14 +6717,9 @@ type TaggedToolResult struct {
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	ToolCallID       string                                `json:"toolCallId"`
 	ToolName         string                                `json:"toolName"`
-	Type             TaggedToolResultType                  `json:"type"`
+	// Required value: "tool-result".
+	Type string `json:"type"`
 }
-
-type TaggedToolResultType string
-
-const (
-	TaggedToolResultTypeToolResult TaggedToolResultType = "tool-result"
-)
 
 type TerminalSummary struct {
 	Error   *ErrorEnvelope   `json:"error,omitzero"`
@@ -7019,9 +7139,10 @@ func (v TextStreamPartVariantToolInputDelta) MarshalJSON() ([]byte, error) {
 type TextStreamPartVariantSource11 struct {
 	ID               string                                `json:"id"`
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
-	SourceType       TextStreamPart10SourceType            `json:"sourceType"`
-	Title            *string                               `json:"title,omitzero"`
-	URL              string                                `json:"url"`
+	// Required value: "url".
+	SourceType string  `json:"sourceType"`
+	Title      *string `json:"title,omitzero"`
+	URL        string  `json:"url"`
 }
 
 func (TextStreamPartVariantSource11) isTextStreamPart() {}
@@ -7039,8 +7160,9 @@ type TextStreamPartVariantSource12 struct {
 	ID               string                                `json:"id"`
 	MediaType        string                                `json:"mediaType"`
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
-	SourceType       TextStreamPart11SourceType            `json:"sourceType"`
-	Title            string                                `json:"title"`
+	// Required value: "document".
+	SourceType string `json:"sourceType"`
+	Title      string `json:"title"`
 }
 
 func (TextStreamPartVariantSource12) isTextStreamPart() {}
@@ -7320,18 +7442,6 @@ func (v TextStreamPartVariantRaw) MarshalJSON() ([]byte, error) {
 		plain
 	}{Type: "raw", plain: plain(v)})
 }
-
-type TextStreamPart10SourceType string
-
-const (
-	TextStreamPart10SourceTypeURL TextStreamPart10SourceType = "url"
-)
-
-type TextStreamPart11SourceType string
-
-const (
-	TextStreamPart11SourceTypeDocument TextStreamPart11SourceType = "document"
-)
 
 // Per-call timeout configuration.
 //
@@ -7622,7 +7732,7 @@ func (v *ToolCallRepairReply) UnmarshalJSON(data []byte) error {
 }
 
 type ToolCallRepairReplyVariantRepaired struct {
-	ToolCall ToolCallRepairReply0ToolCall `json:"toolCall"`
+	ToolCall RepairedToolCall `json:"toolCall"`
 }
 
 func (ToolCallRepairReplyVariantRepaired) isToolCallRepairReply() {}
@@ -7661,22 +7771,6 @@ func (v ToolCallRepairReplyVariantFailed) MarshalJSON() ([]byte, error) {
 	}{Type: "failed", plain: plain(v)})
 }
 
-type ToolCallRepairReply0ToolCall struct {
-	Dynamic          *bool                                 `json:"dynamic,omitzero"`
-	Input            string                                `json:"input"`
-	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
-	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
-	ToolCallID       string                                `json:"toolCallId"`
-	ToolName         string                                `json:"toolName"`
-	Type             *ToolCallRepairReply0ToolCallType     `json:"type,omitzero"`
-}
-
-type ToolCallRepairReply0ToolCallType string
-
-const (
-	ToolCallRepairReply0ToolCallTypeToolCall ToolCallRepairReply0ToolCallType = "tool-call"
-)
-
 // How the model should choose tools, as the caller gives it
 // (`GenerateTextOptions.tool_choice`).
 //
@@ -7699,14 +7793,14 @@ func (v ToolChoice) MarshalJSON() ([]byte, error) {
 func (v *ToolChoice) UnmarshalJSON(data []byte) error {
 	var err error
 	{
-		var next ToolChoice0
+		var next ToolChoiceMode
 		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = ToolChoiceBranch0{Value: next}
 			return nil
 		}
 	}
 	{
-		var next ToolChoice1
+		var next ToolChoiceTool
 		if err = decodeUnionBranch(data, &next, false, "toolName", "type"); err == nil {
 			v.Value = ToolChoiceBranch1{Value: next}
 			return nil
@@ -7715,7 +7809,7 @@ func (v *ToolChoice) UnmarshalJSON(data []byte) error {
 	return err
 }
 
-type ToolChoiceBranch0 struct{ Value ToolChoice0 }
+type ToolChoiceBranch0 struct{ Value ToolChoiceMode }
 
 func (ToolChoiceBranch0) isToolChoice() {}
 
@@ -7723,7 +7817,7 @@ func (v ToolChoiceBranch0) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-type ToolChoiceBranch1 struct{ Value ToolChoice1 }
+type ToolChoiceBranch1 struct{ Value ToolChoiceTool }
 
 func (ToolChoiceBranch1) isToolChoice() {}
 
@@ -7731,24 +7825,21 @@ func (v ToolChoiceBranch1) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-type ToolChoice0 string
+// The string form of a user's tool choice.
+type ToolChoiceMode string
 
 const (
-	ToolChoice0Auto     ToolChoice0 = "auto"
-	ToolChoice0None     ToolChoice0 = "none"
-	ToolChoice0Required ToolChoice0 = "required"
+	ToolChoiceModeAuto     ToolChoiceMode = "auto"
+	ToolChoiceModeNone     ToolChoiceMode = "none"
+	ToolChoiceModeRequired ToolChoiceMode = "required"
 )
 
-type ToolChoice1 struct {
-	ToolName string          `json:"toolName"`
-	Type     ToolChoice1Type `json:"type"`
+// The named-tool form of a user's tool choice.
+type ToolChoiceTool struct {
+	ToolName string `json:"toolName"`
+	// Required value: "tool".
+	Type string `json:"type"`
 }
-
-type ToolChoice1Type string
-
-const (
-	ToolChoice1TypeTool ToolChoice1Type = "tool"
-)
 
 // What [`AiMuxError::ToolChoiceViolation`] carries: the field set of the AI
 // SDK's `ToolChoiceViolationError` (`ai` `error/tool-choice-violation-error.ts`).
@@ -7886,7 +7977,7 @@ func (v *ToolPart) UnmarshalJSON(data []byte) error {
 }
 
 type ToolPartVariantToolResult struct {
-	Output          ToolResultOutput2                     `json:"output"`
+	Output          LanguageModelToolResultOutput         `json:"output"`
 	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 	ToolCallID      string                                `json:"toolCallId"`
 	ToolName        string                                `json:"toolName"`
@@ -7941,29 +8032,13 @@ type ToolRepairContextRequest struct {
 type ToolRepairContextResult = *ToolRepairContextSchema
 
 type ToolRepairContextSchema struct {
-	Error        AiMuxError                      `json:"error"`
-	InputSchema  json.RawMessage                 `json:"inputSchema"`
-	Instructions *string                         `json:"instructions"`
-	Messages     []ModelMessage                  `json:"messages"`
-	ToolCall     ToolRepairContextSchemaToolCall `json:"toolCall"`
-	Tools        []Tool                          `json:"tools"`
+	Error        AiMuxError        `json:"error"`
+	InputSchema  json.RawMessage   `json:"inputSchema"`
+	Instructions *string           `json:"instructions"`
+	Messages     []ModelMessage    `json:"messages"`
+	ToolCall     TaggedRawToolCall `json:"toolCall"`
+	Tools        []Tool            `json:"tools"`
 }
-
-type ToolRepairContextSchemaToolCall struct {
-	Dynamic          *bool                                 `json:"dynamic,omitzero"`
-	Input            string                                `json:"input"`
-	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
-	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
-	ToolCallID       string                                `json:"toolCallId"`
-	ToolName         string                                `json:"toolName"`
-	Type             ToolRepairContextSchemaToolCallType   `json:"type"`
-}
-
-type ToolRepairContextSchemaToolCallType string
-
-const (
-	ToolRepairContextSchemaToolCallTypeToolCall ToolRepairContextSchemaToolCallType = "tool-call"
-)
 
 // A tool result produced by a provider-executed tool (e.g. xAI `file_search`,
 // web search), carried next to the [`RawToolCall`] it answers.
@@ -8550,159 +8625,6 @@ func (v ToolResultOutputVariantContent) MarshalJSON() ([]byte, error) {
 	}{Type: "content", plain: plain(v)})
 }
 
-// The provider-facing result of a tool call.
-type ToolResultOutput2Variant interface{ isToolResultOutput2() }
-type ToolResultOutput2 struct {
-	Value ToolResultOutput2Variant
-}
-
-func (v ToolResultOutput2) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Value)
-}
-
-func (v *ToolResultOutput2) UnmarshalJSON(data []byte) error {
-	var tag struct {
-		Type string `json:"type"`
-	}
-	if err := json.Unmarshal(data, &tag); err != nil {
-		return err
-	}
-	switch tag.Type {
-	case "content":
-		var next ToolResultOutput2VariantContent
-		if err := json.Unmarshal(data, &next); err != nil {
-			return err
-		}
-		v.Value = next
-		return nil
-	case "error-json":
-		var next ToolResultOutput2VariantErrorJSON
-		if err := json.Unmarshal(data, &next); err != nil {
-			return err
-		}
-		v.Value = next
-		return nil
-	case "error-text":
-		var next ToolResultOutput2VariantErrorText
-		if err := json.Unmarshal(data, &next); err != nil {
-			return err
-		}
-		v.Value = next
-		return nil
-	case "execution-denied":
-		var next ToolResultOutput2VariantExecutionDenied
-		if err := json.Unmarshal(data, &next); err != nil {
-			return err
-		}
-		v.Value = next
-		return nil
-	case "json":
-		var next ToolResultOutput2VariantJSON
-		if err := json.Unmarshal(data, &next); err != nil {
-			return err
-		}
-		v.Value = next
-		return nil
-	case "text":
-		var next ToolResultOutput2VariantText
-		if err := json.Unmarshal(data, &next); err != nil {
-			return err
-		}
-		v.Value = next
-		return nil
-	}
-	return fmt.Errorf("ToolResultOutput2: unknown type tag %q", tag.Type)
-}
-
-type ToolResultOutput2VariantText struct {
-	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
-	Value           string                                `json:"value"`
-}
-
-func (ToolResultOutput2VariantText) isToolResultOutput2() {}
-
-func (v ToolResultOutput2VariantText) MarshalJSON() ([]byte, error) {
-	type plain ToolResultOutput2VariantText
-	return json.Marshal(struct {
-		Type string `json:"type"`
-		plain
-	}{Type: "text", plain: plain(v)})
-}
-
-type ToolResultOutput2VariantJSON struct {
-	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
-	Value           json.RawMessage                       `json:"value"`
-}
-
-func (ToolResultOutput2VariantJSON) isToolResultOutput2() {}
-
-func (v ToolResultOutput2VariantJSON) MarshalJSON() ([]byte, error) {
-	type plain ToolResultOutput2VariantJSON
-	return json.Marshal(struct {
-		Type string `json:"type"`
-		plain
-	}{Type: "json", plain: plain(v)})
-}
-
-type ToolResultOutput2VariantExecutionDenied struct {
-	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
-	Reason          *string                               `json:"reason,omitzero"`
-}
-
-func (ToolResultOutput2VariantExecutionDenied) isToolResultOutput2() {}
-
-func (v ToolResultOutput2VariantExecutionDenied) MarshalJSON() ([]byte, error) {
-	type plain ToolResultOutput2VariantExecutionDenied
-	return json.Marshal(struct {
-		Type string `json:"type"`
-		plain
-	}{Type: "execution-denied", plain: plain(v)})
-}
-
-type ToolResultOutput2VariantErrorText struct {
-	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
-	Value           string                                `json:"value"`
-}
-
-func (ToolResultOutput2VariantErrorText) isToolResultOutput2() {}
-
-func (v ToolResultOutput2VariantErrorText) MarshalJSON() ([]byte, error) {
-	type plain ToolResultOutput2VariantErrorText
-	return json.Marshal(struct {
-		Type string `json:"type"`
-		plain
-	}{Type: "error-text", plain: plain(v)})
-}
-
-type ToolResultOutput2VariantErrorJSON struct {
-	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
-	Value           json.RawMessage                       `json:"value"`
-}
-
-func (ToolResultOutput2VariantErrorJSON) isToolResultOutput2() {}
-
-func (v ToolResultOutput2VariantErrorJSON) MarshalJSON() ([]byte, error) {
-	type plain ToolResultOutput2VariantErrorJSON
-	return json.Marshal(struct {
-		Type string `json:"type"`
-		plain
-	}{Type: "error-json", plain: plain(v)})
-}
-
-type ToolResultOutput2VariantContent struct {
-	Value []ToolResultContent `json:"value"`
-}
-
-func (ToolResultOutput2VariantContent) isToolResultOutput2() {}
-
-func (v ToolResultOutput2VariantContent) MarshalJSON() ([]byte, error) {
-	type plain ToolResultOutput2VariantContent
-	return json.Marshal(struct {
-		Type string `json:"type"`
-		plain
-	}{Type: "content", plain: plain(v)})
-}
-
 // The result of a tool call (upstream `ToolResultPart`,
 // `provider-utils` `types/content-part.ts:240-268`).
 type ToolResultPart struct {
@@ -8715,31 +8637,30 @@ type ToolResultPart struct {
 	ToolName *string `json:"toolName,omitzero"`
 }
 
-// Tool result content part.
-type ToolResultPart2 struct {
-	Output          ToolResultOutput2                     `json:"output"`
-	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
-	ToolCallID      string                                `json:"toolCallId"`
-	ToolName        string                                `json:"toolName"`
-}
-
-type TraceAggregateParams struct {
-	// Query filter (RFC-0015 §5.3).
-	Filter *TraceAggregateParamsFilter `json:"filter,omitzero"`
-}
-
 // Query filter (RFC-0015 §5.3).
-type TraceAggregateParamsFilter struct {
+type TraceAggregateFilter struct {
 	Model       *string `json:"model,omitzero"`
 	Provider    *string `json:"provider,omitzero"`
 	SessionID   *string `json:"sessionId,omitzero"`
 	SinceUnixMs *int64  `json:"sinceUnixMs,omitzero"`
 }
 
+type TraceAggregateParams struct {
+	Filter *TraceAggregateFilter `json:"filter,omitzero"`
+}
+
+type TraceAuditMode string
+
+const (
+	TraceAuditModeOff    TraceAuditMode = "off"
+	TraceAuditModeShared TraceAuditMode = "shared"
+	TraceAuditModeStrict TraceAuditMode = "strict"
+)
+
 type TraceCreateParams struct {
-	AuditMode        *AuditMode2 `json:"auditMode,omitzero"`
-	Capacity         *uint64     `json:"capacity,omitzero"`
-	PerScopeCapacity *uint64     `json:"perScopeCapacity,omitzero"`
+	AuditMode        *TraceAuditMode `json:"auditMode,omitzero"`
+	Capacity         *uint64         `json:"capacity,omitzero"`
+	PerScopeCapacity *uint64         `json:"perScopeCapacity,omitzero"`
 }
 
 // One probed call. Plaintext never persists — fingerprints only.
@@ -9129,11 +9050,7 @@ func (v *TransportParams) UnmarshalJSON(data []byte) error {
 }
 
 type TransportParamsVariantFetch struct {
-	// Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-	// hop, or the WebSocket connector. With every field empty, HTTP follows the
-	// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-	// reqwest does, and the WebSocket connector connects directly.
-	Proxy *TransportParams0Proxy `json:"proxy,omitzero"`
+	Proxy *TransportProxy `json:"proxy,omitzero"`
 }
 
 func (TransportParamsVariantFetch) isTransportParams() {}
@@ -9147,11 +9064,7 @@ func (v TransportParamsVariantFetch) MarshalJSON() ([]byte, error) {
 }
 
 type TransportParamsVariantWs struct {
-	// Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-	// hop, or the WebSocket connector. With every field empty, HTTP follows the
-	// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-	// reqwest does, and the WebSocket connector connects directly.
-	Proxy *TransportParams1Proxy `json:"proxy,omitzero"`
+	Proxy *TransportProxy `json:"proxy,omitzero"`
 }
 
 func (TransportParamsVariantWs) isTransportParams() {}
@@ -9182,18 +9095,7 @@ func (v TransportParamsVariantDownload) MarshalJSON() ([]byte, error) {
 // hop, or the WebSocket connector. With every field empty, HTTP follows the
 // `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
 // reqwest does, and the WebSocket connector connects directly.
-type TransportParams0Proxy struct {
-	AllURL   *string `json:"all_url,omitzero"`
-	HTTPURL  *string `json:"http_url,omitzero"`
-	HttpsURL *string `json:"https_url,omitzero"`
-	NoProxy  *string `json:"no_proxy,omitzero"`
-}
-
-// Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-// hop, or the WebSocket connector. With every field empty, HTTP follows the
-// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-// reqwest does, and the WebSocket connector connects directly.
-type TransportParams1Proxy struct {
+type TransportProxy struct {
 	AllURL   *string `json:"all_url,omitzero"`
 	HTTPURL  *string `json:"http_url,omitzero"`
 	HttpsURL *string `json:"https_url,omitzero"`
@@ -9261,8 +9163,9 @@ type TypedSourceVariantURL struct {
 	ID               string                                `json:"id"`
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	Title            *string                               `json:"title,omitzero"`
-	Type             TypedSource0Type                      `json:"type"`
-	URL              string                                `json:"url"`
+	// Required value: "source".
+	Type string `json:"type"`
+	URL  string `json:"url"`
 }
 
 func (TypedSourceVariantURL) isTypedSource() {}
@@ -9281,7 +9184,8 @@ type TypedSourceVariantDocument struct {
 	MediaType        string                                `json:"mediaType"`
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	Title            string                                `json:"title"`
-	Type             TypedSource1Type                      `json:"type"`
+	// Required value: "source".
+	Type string `json:"type"`
 }
 
 func (TypedSourceVariantDocument) isTypedSource() {}
@@ -9293,18 +9197,6 @@ func (v TypedSourceVariantDocument) MarshalJSON() ([]byte, error) {
 		plain
 	}{SourceType: "document", plain: plain(v)})
 }
-
-type TypedSource0Type string
-
-const (
-	TypedSource0TypeSource TypedSource0Type = "source"
-)
-
-type TypedSource1Type string
-
-const (
-	TypedSource1TypeSource TypedSource1Type = "source"
-)
 
 // A tool call outside `content` (a text result's `toolCalls`, an approval
 // request's `toolCall`): a [`ToolCall`] with its `type` tag, the AI SDK's
@@ -9329,8 +9221,9 @@ type TypedToolCall struct {
 	// Provider-assigned call id.
 	ToolCallID string `json:"toolCallId"`
 	// Tool name.
-	ToolName string            `json:"toolName"`
-	Type     TypedToolCallType `json:"type"`
+	ToolName string `json:"toolName"`
+	// Required value: "tool-call".
+	Type string `json:"type"`
 }
 
 // A tool call outside `content` (a text result's `toolCalls`, an approval
@@ -9356,21 +9249,10 @@ type TypedToolCallInput struct {
 	// Provider-assigned call id.
 	ToolCallID string `json:"toolCallId"`
 	// Tool name.
-	ToolName string                  `json:"toolName"`
-	Type     *TypedToolCallInputType `json:"type,omitzero"`
+	ToolName string `json:"toolName"`
+	// Required value: "tool-call".
+	Type *string `json:"type,omitzero"`
 }
-
-type TypedToolCallInputType string
-
-const (
-	TypedToolCallInputTypeToolCall TypedToolCallInputType = "tool-call"
-)
-
-type TypedToolCallType string
-
-const (
-	TypedToolCallTypeToolCall TypedToolCallType = "tool-call"
-)
 
 // A tool error (the AI SDK's `TypedToolError`, `ai`
 // `generate-text/tool-error.ts:6-36`). `toolMetadata` and `title` are
@@ -10130,16 +10012,6 @@ func (v WarningVariantOther) MarshalJSON() ([]byte, error) {
 	}{Type: "other", plain: plain(v)})
 }
 
-type AimuxCoreModelCatalogueRuntimeModel = []RuntimeModel
-
-type AimuxCoreSessionSessionCall = []SessionCall
-
-type AimuxCoreSessionSessionView = []SessionView
-
-type AimuxCoreTraceStoreSessionStepStat = []SessionStepStat
-
-type AimuxCoreTraceStoreTraceStats = []TraceStats
-
 // NewDTO returns an empty generated DTO for contract-vector decoding.
 func NewDTO(name string) (any, error) {
 	switch name {
@@ -10163,10 +10035,6 @@ func NewDTO(name string) (any, error) {
 		return new(AudioData), nil
 	case "AudioInput":
 		return new(AudioInput), nil
-	case "AuditMode":
-		return new(AuditMode), nil
-	case "AuditMode2":
-		return new(AuditMode2), nil
 	case "BackendConfig":
 		return new(BackendConfig), nil
 	case "BreakKind":
@@ -10211,16 +10079,8 @@ func NewDTO(name string) (any, error) {
 		return new(CompletionTokensDetails), nil
 	case "ContentPart":
 		return new(ContentPart), nil
-	case "ContentPart4SourceType":
-		return new(ContentPart4SourceType), nil
-	case "ContentPart5SourceType":
-		return new(ContentPart5SourceType), nil
 	case "ContentPartInput":
 		return new(ContentPartInput), nil
-	case "ContentPartInput4SourceType":
-		return new(ContentPartInput4SourceType), nil
-	case "ContentPartInput5SourceType":
-		return new(ContentPartInput5SourceType), nil
 	case "CreateRecorderParams":
 		return new(CreateRecorderParams), nil
 	case "CredentialParams":
@@ -10255,8 +10115,6 @@ func NewDTO(name string) (any, error) {
 		return new(EmbeddingUsage), nil
 	case "EmptyParams":
 		return new(EmptyParams), nil
-	case "EmptyParams2":
-		return new(EmptyParams2), nil
 	case "ErrorDomain":
 		return new(ErrorDomain), nil
 	case "ErrorEnvelope":
@@ -10281,10 +10139,6 @@ func NewDTO(name string) (any, error) {
 		return new(FunctionToolInputExample), nil
 	case "GenerateContent":
 		return new(GenerateContent), nil
-	case "GenerateContent2SourceType":
-		return new(GenerateContent2SourceType), nil
-	case "GenerateContent3SourceType":
-		return new(GenerateContent3SourceType), nil
 	case "GenerateObjectResponse":
 		return new(GenerateObjectResponse), nil
 	case "GenerateObjectResult":
@@ -10309,10 +10163,6 @@ func NewDTO(name string) (any, error) {
 		return new(HandleKind), nil
 	case "HandleResult":
 		return new(HandleResult), nil
-	case "HandleResult2":
-		return new(HandleResult2), nil
-	case "HandleResult3":
-		return new(HandleResult3), nil
 	case "HttpExchange":
 		return new(HTTPExchange), nil
 	case "HttpRecord":
@@ -10341,6 +10191,12 @@ func NewDTO(name string) (any, error) {
 		return new(LanguageModelFile), nil
 	case "LanguageModelMessage":
 		return new(LanguageModelMessage), nil
+	case "LanguageModelReasoningPart":
+		return new(LanguageModelReasoningPart), nil
+	case "LanguageModelToolResultOutput":
+		return new(LanguageModelToolResultOutput), nil
+	case "LanguageModelToolResultPart":
+		return new(LanguageModelToolResultPart), nil
 	case "LanguageModelUsage":
 		return new(LanguageModelUsage), nil
 	case "LanguageModelUsageInput":
@@ -10353,6 +10209,8 @@ func NewDTO(name string) (any, error) {
 		return new(LogLevel), nil
 	case "LoggingConfig":
 		return new(LoggingConfig), nil
+	case "MiddlewareAuditMode":
+		return new(MiddlewareAuditMode), nil
 	case "MiddlewareParams":
 		return new(MiddlewareParams), nil
 	case "MoaFailMode":
@@ -10459,8 +10317,6 @@ func NewDTO(name string) (any, error) {
 		return new(ReasoningOutput), nil
 	case "ReasoningPart":
 		return new(ReasoningPart), nil
-	case "ReasoningPart2":
-		return new(ReasoningPart2), nil
 	case "ReasoningSpec":
 		return new(ReasoningSpec), nil
 	case "ReasoningVisibility":
@@ -10481,6 +10337,8 @@ func NewDTO(name string) (any, error) {
 		return new(RegistryEntry), nil
 	case "RegistryProviderParams":
 		return new(RegistryProviderParams), nil
+	case "RepairedToolCall":
+		return new(RepairedToolCall), nil
 	case "ReplayCreateParams":
 		return new(ReplayCreateParams), nil
 	case "ReplayInspection":
@@ -10525,8 +10383,6 @@ func NewDTO(name string) (any, error) {
 		return new(RouterParams), nil
 	case "RuntimeConfigureParams":
 		return new(RuntimeConfigureParams), nil
-	case "RuntimeConfigureParamsProxy":
-		return new(RuntimeConfigureParamsProxy), nil
 	case "RuntimeDescribeParams":
 		return new(RuntimeDescribeParams), nil
 	case "RuntimeModel":
@@ -10585,16 +10441,16 @@ func NewDTO(name string) (any, error) {
 		return new(StepResultPerformanceInput), nil
 	case "Strategy":
 		return new(Strategy), nil
+	case "StreamEvent":
+		return new(StreamEvent), nil
 	case "StreamFrame":
 		return new(StreamFrame), nil
-	case "StreamFrame0Event":
-		return new(StreamFrame0Event), nil
 	case "StreamOptions":
 		return new(StreamOptions), nil
+	case "TaggedRawToolCall":
+		return new(TaggedRawToolCall), nil
 	case "TaggedToolResult":
 		return new(TaggedToolResult), nil
-	case "TaggedToolResultType":
-		return new(TaggedToolResultType), nil
 	case "TerminalSummary":
 		return new(TerminalSummary), nil
 	case "TextPart":
@@ -10603,10 +10459,6 @@ func NewDTO(name string) (any, error) {
 		return new(TextRequest), nil
 	case "TextStreamPart":
 		return new(TextStreamPart), nil
-	case "TextStreamPart10SourceType":
-		return new(TextStreamPart10SourceType), nil
-	case "TextStreamPart11SourceType":
-		return new(TextStreamPart11SourceType), nil
 	case "TimeoutConfiguration":
 		return new(TimeoutConfiguration), nil
 	case "Timestamp":
@@ -10633,18 +10485,12 @@ func NewDTO(name string) (any, error) {
 		return new(ToolCallPart), nil
 	case "ToolCallRepairReply":
 		return new(ToolCallRepairReply), nil
-	case "ToolCallRepairReply0ToolCall":
-		return new(ToolCallRepairReply0ToolCall), nil
-	case "ToolCallRepairReply0ToolCallType":
-		return new(ToolCallRepairReply0ToolCallType), nil
 	case "ToolChoice":
 		return new(ToolChoice), nil
-	case "ToolChoice0":
-		return new(ToolChoice0), nil
-	case "ToolChoice1":
-		return new(ToolChoice1), nil
-	case "ToolChoice1Type":
-		return new(ToolChoice1Type), nil
+	case "ToolChoiceMode":
+		return new(ToolChoiceMode), nil
+	case "ToolChoiceTool":
+		return new(ToolChoiceTool), nil
 	case "ToolChoiceViolationError":
 		return new(ToolChoiceViolationError), nil
 	case "ToolContentPart":
@@ -10663,10 +10509,6 @@ func NewDTO(name string) (any, error) {
 		return new(ToolRepairContextResult), nil
 	case "ToolRepairContextSchema":
 		return new(ToolRepairContextSchema), nil
-	case "ToolRepairContextSchemaToolCall":
-		return new(ToolRepairContextSchemaToolCall), nil
-	case "ToolRepairContextSchemaToolCallType":
-		return new(ToolRepairContextSchemaToolCallType), nil
 	case "ToolResult":
 		return new(ToolResult), nil
 	case "ToolResultContent":
@@ -10677,16 +10519,14 @@ func NewDTO(name string) (any, error) {
 		return new(ToolResultFileID), nil
 	case "ToolResultOutput":
 		return new(ToolResultOutput), nil
-	case "ToolResultOutput2":
-		return new(ToolResultOutput2), nil
 	case "ToolResultPart":
 		return new(ToolResultPart), nil
-	case "ToolResultPart2":
-		return new(ToolResultPart2), nil
+	case "TraceAggregateFilter":
+		return new(TraceAggregateFilter), nil
 	case "TraceAggregateParams":
 		return new(TraceAggregateParams), nil
-	case "TraceAggregateParamsFilter":
-		return new(TraceAggregateParamsFilter), nil
+	case "TraceAuditMode":
+		return new(TraceAuditMode), nil
 	case "TraceCreateParams":
 		return new(TraceCreateParams), nil
 	case "TraceRecord":
@@ -10711,24 +10551,14 @@ func NewDTO(name string) (any, error) {
 		return new(TranscriptionStreamPart), nil
 	case "TransportParams":
 		return new(TransportParams), nil
-	case "TransportParams0Proxy":
-		return new(TransportParams0Proxy), nil
-	case "TransportParams1Proxy":
-		return new(TransportParams1Proxy), nil
+	case "TransportProxy":
+		return new(TransportProxy), nil
 	case "TypedSource":
 		return new(TypedSource), nil
-	case "TypedSource0Type":
-		return new(TypedSource0Type), nil
-	case "TypedSource1Type":
-		return new(TypedSource1Type), nil
 	case "TypedToolCall":
 		return new(TypedToolCall), nil
 	case "TypedToolCallInput":
 		return new(TypedToolCallInput), nil
-	case "TypedToolCallInputType":
-		return new(TypedToolCallInputType), nil
-	case "TypedToolCallType":
-		return new(TypedToolCallType), nil
 	case "TypedToolError":
 		return new(TypedToolError), nil
 	case "TypedToolResult":
@@ -10773,16 +10603,6 @@ func NewDTO(name string) (any, error) {
 		return new(VideoResult), nil
 	case "Warning":
 		return new(Warning), nil
-	case "_aimux_core_model_catalogue_RuntimeModel_":
-		return new(AimuxCoreModelCatalogueRuntimeModel), nil
-	case "_aimux_core_session_SessionCall_":
-		return new(AimuxCoreSessionSessionCall), nil
-	case "_aimux_core_session_SessionView_":
-		return new(AimuxCoreSessionSessionView), nil
-	case "_aimux_core_trace_store_SessionStepStat_":
-		return new(AimuxCoreTraceStoreSessionStepStat), nil
-	case "_aimux_core_trace_store_TraceStats_":
-		return new(AimuxCoreTraceStoreTraceStats), nil
 	}
 	return nil, fmt.Errorf("unknown DTO %q", name)
 }

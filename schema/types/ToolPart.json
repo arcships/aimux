@@ -5,7 +5,7 @@
   "description": "Parts allowed in a tool message.",
   "oneOf": [
     {
-      "$ref": "ToolResultPart2.json",
+      "$ref": "LanguageModelToolResultPart.json",
       "properties": {
         "type": {
           "const": "tool-result",

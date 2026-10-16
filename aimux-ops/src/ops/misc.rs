@@ -257,7 +257,7 @@ struct ToolRepairContextResult(#[schemars(with = "Option<ToolRepairContextSchema
 #[schemars(rename_all = "camelCase")]
 #[allow(dead_code)]
 struct ToolRepairContextSchema {
-    #[schemars(schema_with = "aimux_core::wire::tagged_schema::<aimux_core::tool::RawToolCall>", extend("x-aimux-codec" = "tagged"))]
+    #[schemars(with = "aimux_core::tool::TaggedRawToolCall", extend("x-aimux-codec" = "tagged"))]
     tool_call: aimux_core::tool::RawToolCall,
     error: aimux_core::AiMuxError,
     input_schema: Value,

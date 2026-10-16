@@ -669,7 +669,7 @@ class AssistantPartToolCall(_Wire):
 
 class AssistantPartToolResult(_Wire):
     type: Literal["tool-result"] = Field(default="tool-result", alias="type")
-    output: "_dto.ToolResultOutput2" = Field(alias="output")
+    output: "_dto.LanguageModelToolResultOutput" = Field(alias="output")
     provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
@@ -693,10 +693,6 @@ AudioData = TypeAliasType("AudioData", Annotated[str, BeforeValidator(base64_wir
 #: any other string as base64 (base64 has no `:`), as a file part's string
 #: data is read (ai@7.0.127 `prompt/file-part-data.ts:89-141`).
 AudioInput = TypeAliasType("AudioInput", str)
-
-AuditMode = TypeAliasType("AuditMode", Literal["disabled", "shared", "strict"])
-
-AuditMode2 = TypeAliasType("AuditMode2", Literal["off", "shared", "strict"])
 
 class BackendConfigRing(_Wire):
     model_config = ConfigDict(extra="forbid")
@@ -874,7 +870,8 @@ class ContentPartSource5(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     id: str = Field(alias="id")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
-    source_type: "_dto.ContentPart4SourceType" = Field(alias="sourceType")
+    #: Required value: "url".
+    source_type: Literal["url"] = Field(alias="sourceType")
     title: Optional[str] = Field(default=None, alias="title")
     url: str = Field(alias="url")
 
@@ -885,7 +882,8 @@ class ContentPartSource6(_Wire):
     id: str = Field(alias="id")
     media_type: str = Field(alias="mediaType")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
-    source_type: "_dto.ContentPart5SourceType" = Field(alias="sourceType")
+    #: Required value: "document".
+    source_type: Literal["document"] = Field(alias="sourceType")
     title: str = Field(alias="title")
 
 
@@ -976,10 +974,6 @@ class ContentPartToolApprovalResponse(_Wire):
 #: (`generate-text/convert-language-model-content.ts`).
 ContentPart = TypeAliasType("ContentPart", Annotated[Union[Annotated["ContentPartCustom", Tag("custom")], Annotated["ContentPartFile", Tag("file")], Annotated["ContentPartReasoning", Tag("reasoning")], Annotated["ContentPartReasoningFile", Tag("reasoning-file")], Annotated[Annotated[Union["ContentPartSource5", "ContentPartSource6"], Field(union_mode="left_to_right")], Tag("source")], Annotated["ContentPartText", Tag("text")], Annotated["ContentPartToolApprovalRequest", Tag("tool-approval-request")], Annotated["ContentPartToolApprovalResponse", Tag("tool-approval-response")], Annotated["ContentPartToolCall", Tag("tool-call")], Annotated["ContentPartToolError", Tag("tool-error")], Annotated["ContentPartToolResult", Tag("tool-result")]], Field(discriminator=Discriminator(lambda value: _tag(value, "type", "type")))])
 
-ContentPart4SourceType = TypeAliasType("ContentPart4SourceType", Literal["url"])
-
-ContentPart5SourceType = TypeAliasType("ContentPart5SourceType", Literal["document"])
-
 class ContentPartInputText(_Wire):
     type: Literal["text"] = Field(default="text", alias="type")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
@@ -1008,7 +1002,8 @@ class ContentPartInputSource5(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     id: str = Field(alias="id")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
-    source_type: "_dto.ContentPartInput4SourceType" = Field(alias="sourceType")
+    #: Required value: "url".
+    source_type: Literal["url"] = Field(alias="sourceType")
     title: Optional[str] = Field(default=None, alias="title")
     url: str = Field(alias="url")
 
@@ -1019,7 +1014,8 @@ class ContentPartInputSource6(_Wire):
     id: str = Field(alias="id")
     media_type: str = Field(alias="mediaType")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
-    source_type: "_dto.ContentPartInput5SourceType" = Field(alias="sourceType")
+    #: Required value: "document".
+    source_type: Literal["document"] = Field(alias="sourceType")
     title: str = Field(alias="title")
 
 
@@ -1109,10 +1105,6 @@ class ContentPartInputToolApprovalResponse(_Wire):
 #: `convertLanguageModelContent` builds them
 #: (`generate-text/convert-language-model-content.ts`).
 ContentPartInput = TypeAliasType("ContentPartInput", Annotated[Union[Annotated["ContentPartInputCustom", Tag("custom")], Annotated["ContentPartInputFile", Tag("file")], Annotated["ContentPartInputReasoning", Tag("reasoning")], Annotated["ContentPartInputReasoningFile", Tag("reasoning-file")], Annotated[Annotated[Union["ContentPartInputSource5", "ContentPartInputSource6"], Field(union_mode="left_to_right")], Tag("source")], Annotated["ContentPartInputText", Tag("text")], Annotated["ContentPartInputToolApprovalRequest", Tag("tool-approval-request")], Annotated["ContentPartInputToolApprovalResponse", Tag("tool-approval-response")], Annotated["ContentPartInputToolCall", Tag("tool-call")], Annotated["ContentPartInputToolError", Tag("tool-error")], Annotated["ContentPartInputToolResult", Tag("tool-result")]], Field(discriminator=Discriminator(lambda value: _tag(value, "type", "type")))])
-
-ContentPartInput4SourceType = TypeAliasType("ContentPartInput4SourceType", Literal["url"])
-
-ContentPartInput5SourceType = TypeAliasType("ContentPartInput5SourceType", Literal["document"])
 
 class CreateRecorderParams(_Wire):
     model_config = ConfigDict(extra="forbid")
@@ -1300,10 +1292,6 @@ class EmptyParams(_Wire):
     model_config = ConfigDict(extra="forbid")
 
 
-class EmptyParams2(_Wire):
-    model_config = ConfigDict(extra="forbid")
-
-
 ErrorDomain = TypeAliasType("ErrorDomain", Literal["aimux", "recording", "binding", "protocol"])
 
 #: Keep the payload open so newer error variants, provider data, and explicit
@@ -1435,7 +1423,8 @@ class GenerateContentSource3(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     id: str = Field(alias="id")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
-    source_type: "_dto.GenerateContent2SourceType" = Field(alias="sourceType")
+    #: Required value: "url".
+    source_type: Literal["url"] = Field(alias="sourceType")
     title: Optional[str] = Field(default=None, alias="title")
     url: str = Field(alias="url")
 
@@ -1446,7 +1435,8 @@ class GenerateContentSource4(_Wire):
     id: str = Field(alias="id")
     media_type: str = Field(alias="mediaType")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
-    source_type: "_dto.GenerateContent3SourceType" = Field(alias="sourceType")
+    #: Required value: "document".
+    source_type: Literal["document"] = Field(alias="sourceType")
     title: str = Field(alias="title")
 
 
@@ -1506,10 +1496,6 @@ class GenerateContentToolResult(_Wire):
 #: A content item a provider returns (V4 `LanguageModelV4Content`). Text
 #: generation turns it into the core [`ContentPart`].
 GenerateContent = TypeAliasType("GenerateContent", Annotated[Union[Annotated["GenerateContentCustom", Tag("custom")], Annotated["GenerateContentFile", Tag("file")], Annotated["GenerateContentReasoning", Tag("reasoning")], Annotated["GenerateContentReasoningFile", Tag("reasoning-file")], Annotated[Annotated[Union["GenerateContentSource3", "GenerateContentSource4"], Field(union_mode="left_to_right")], Tag("source")], Annotated["GenerateContentText", Tag("text")], Annotated["GenerateContentToolApprovalRequest", Tag("tool-approval-request")], Annotated["GenerateContentToolCall", Tag("tool-call")], Annotated["GenerateContentToolResult", Tag("tool-result")]], Field(discriminator=Discriminator(lambda value: _tag(value, "type", "type")))])
-
-GenerateContent2SourceType = TypeAliasType("GenerateContent2SourceType", Literal["url"])
-
-GenerateContent3SourceType = TypeAliasType("GenerateContent3SourceType", Literal["document"])
 
 #: `GenerateObjectResult.response`: the AI SDK's
 #: `Omit<LanguageModelResponseMetadata, 'messages'>`.
@@ -1686,16 +1672,6 @@ HandleIdInput = TypeAliasType("HandleIdInput", Annotated[str, BeforeValidator(u6
 HandleKind = TypeAliasType("HandleKind", Literal["Provider", "Registry", "Language", "Embedding", "Image", "Speech", "Transcription", "Reranking", "Video", "Search", "Decision", "Files", "Operation", "Abort", "Fetch", "WebSocket", "Download", "CredentialResolver", "Middleware", "TraceStore", "Recorder", "SessionStore", "ReplaySession"])
 
 class HandleResult(_Wire):
-    handle: "_dto.HandleId" = Field(alias="handle")
-    kind: "_dto.HandleKind" = Field(alias="kind")
-
-
-class HandleResult2(_Wire):
-    handle: "_dto.HandleId" = Field(alias="handle")
-    kind: "_dto.HandleKind" = Field(alias="kind")
-
-
-class HandleResult3(_Wire):
     handle: "_dto.HandleId" = Field(alias="handle")
     kind: "_dto.HandleKind" = Field(alias="kind")
 
@@ -1907,6 +1883,58 @@ class LanguageModelMessageTool(_Wire):
 #: mirroring `LanguageModelV4Message.providerOptions`.
 LanguageModelMessage = TypeAliasType("LanguageModelMessage", Annotated[Union["LanguageModelMessageSystem", "LanguageModelMessageUser", "LanguageModelMessageAssistant", "LanguageModelMessageTool"], Field(discriminator="role")])
 
+#: Reasoning / thinking content part.
+class LanguageModelReasoningPart(_Wire):
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
+    text: str = Field(alias="text")
+
+
+class LanguageModelToolResultOutputText(_Wire):
+    type: Literal["text"] = Field(default="text", alias="type")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
+    value: str = Field(alias="value")
+
+
+class LanguageModelToolResultOutputJson(_Wire):
+    type: Literal["json"] = Field(default="json", alias="type")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
+    value: Any = Field(alias="value")
+
+
+class LanguageModelToolResultOutputExecutionDenied(_Wire):
+    type: Literal["execution-denied"] = Field(default="execution-denied", alias="type")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
+    reason: Optional[str] = Field(default=None, alias="reason")
+
+
+class LanguageModelToolResultOutputErrorText(_Wire):
+    type: Literal["error-text"] = Field(default="error-text", alias="type")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
+    value: str = Field(alias="value")
+
+
+class LanguageModelToolResultOutputErrorJson(_Wire):
+    type: Literal["error-json"] = Field(default="error-json", alias="type")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
+    value: Any = Field(alias="value")
+
+
+class LanguageModelToolResultOutputContent(_Wire):
+    type: Literal["content"] = Field(default="content", alias="type")
+    value: List["_dto.ToolResultContent"] = Field(alias="value")
+
+
+#: The provider-facing result of a tool call.
+LanguageModelToolResultOutput = TypeAliasType("LanguageModelToolResultOutput", Annotated[Union["LanguageModelToolResultOutputText", "LanguageModelToolResultOutputJson", "LanguageModelToolResultOutputExecutionDenied", "LanguageModelToolResultOutputErrorText", "LanguageModelToolResultOutputErrorJson", "LanguageModelToolResultOutputContent"], Field(discriminator="type")])
+
+#: Tool result content part.
+class LanguageModelToolResultPart(_Wire):
+    output: "_dto.LanguageModelToolResultOutput" = Field(alias="output")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
+    tool_call_id: str = Field(alias="toolCallId")
+    tool_name: str = Field(alias="toolName")
+
+
 #: Token usage of a generation step or a whole call: the AI SDK's
 #: `LanguageModelUsage` (ai@7.0.127 `types/usage.ts:10-68`).
 #:
@@ -1999,9 +2027,11 @@ class LoggingConfig(_Wire):
     level: "_dto.LogLevel" = Field(alias="level")
 
 
+MiddlewareAuditMode = TypeAliasType("MiddlewareAuditMode", Literal["disabled", "shared", "strict"])
+
 class MiddlewareParams(_Wire):
     model_config = ConfigDict(extra="forbid")
-    audit_mode: Optional["_dto.AuditMode"] = Field(default=None, alias="auditMode")
+    audit_mode: Optional["_dto.MiddlewareAuditMode"] = Field(default=None, alias="auditMode")
     kind: str = Field(alias="kind")
     scope_name: Optional[str] = Field(default=None, alias="scopeName")
     trace_store: Optional["_dto.HandleIdInput"] = Field(default=None, alias="traceStore")
@@ -2523,12 +2553,6 @@ class ReasoningPartReasoningFile(_Wire):
 #: Text or a generated file produced during reasoning.
 ReasoningPart = TypeAliasType("ReasoningPart", Annotated[Union["ReasoningPartReasoning", "ReasoningPartReasoningFile"], Field(discriminator="type")])
 
-#: Reasoning / thinking content part.
-class ReasoningPart2(_Wire):
-    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
-    text: str = Field(alias="text")
-
-
 #: Reasoning / thinking portrait for a model (advisory).
 class ReasoningSpec(_Wire):
     #: Minimum token budget (when `mode` is Budget/Mixed).
@@ -2633,6 +2657,18 @@ class RegistryEntry(_Wire):
 class RegistryProviderParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     key: str = Field(alias="key")
+
+
+#: A replacement raw call whose tag is optional on input.
+class RepairedToolCall(_Wire):
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
+    input: str = Field(alias="input")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
+    tool_call_id: str = Field(alias="toolCallId")
+    tool_name: str = Field(alias="toolName")
+    #: Required value: "tool-call".
+    type: Optional[Literal["tool-call"]] = Field(default=None, alias="type")
 
 
 class ReplayCreateParams(_Wire):
@@ -2823,19 +2859,7 @@ class RouterParams(_Wire):
 class RuntimeConfigureParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     logging: Optional["_dto.LoggingConfig"] = Field(default=None, alias="logging")
-    proxy: Optional["_dto.RuntimeConfigureParamsProxy"] = Field(default=None, alias="proxy")
-
-
-#: Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-#: hop, or the WebSocket connector. With every field empty, HTTP follows the
-#: `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-#: reqwest does, and the WebSocket connector connects directly.
-class RuntimeConfigureParamsProxy(_Wire):
-    model_config = ConfigDict(extra="forbid")
-    all_url: Optional[str] = Field(default=None, alias="all_url")
-    http_url: Optional[str] = Field(default=None, alias="http_url")
-    https_url: Optional[str] = Field(default=None, alias="https_url")
-    no_proxy: Optional[str] = Field(default=None, alias="no_proxy")
+    proxy: Optional["_dto.TransportProxy"] = Field(default=None, alias="proxy")
 
 
 class RuntimeDescribeParams(_Wire):
@@ -3262,10 +3286,13 @@ class StrategyWeighted(_Wire):
 
 Strategy = TypeAliasType("Strategy", Annotated[Union["StrategyRule", "StrategyWeighted"], Field(discriminator="type")])
 
+#: The two event formats carried by an operation stream.
+StreamEvent = TypeAliasType("StreamEvent", Annotated[Union["_dto.TextStreamPart", "_dto.ChatCompletionChunk"], Field(union_mode="left_to_right")])
+
 class StreamFrameEvent(_Wire):
     model_config = ConfigDict(extra="forbid")
     type: Literal["event"] = Field(default="event", alias="type")
-    event: "_dto.StreamFrame0Event" = Field(alias="event")
+    event: "_dto.StreamEvent" = Field(alias="event")
     seq: Annotated[str, BeforeValidator(u64_string)] = Field(alias="seq")
 
 
@@ -3279,12 +3306,22 @@ class StreamFrameEnd(_Wire):
 
 StreamFrame = TypeAliasType("StreamFrame", Annotated[Union["StreamFrameEvent", "StreamFrameEnd"], Field(discriminator="type")])
 
-StreamFrame0Event = TypeAliasType("StreamFrame0Event", Annotated[Union["_dto.TextStreamPart", "_dto.ChatCompletionChunk"], Field(union_mode="left_to_right")])
-
 class StreamOptions(_Wire):
     model_config = ConfigDict(extra="forbid")
     include_reasoning: Optional[bool] = Field(default=None, alias="includeReasoning")
     include_usage: Optional[bool] = Field(default=None, alias="includeUsage")
+
+
+#: A raw provider call with its required wire tag.
+class TaggedRawToolCall(_Wire):
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
+    input: str = Field(alias="input")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
+    tool_call_id: str = Field(alias="toolCallId")
+    tool_name: str = Field(alias="toolName")
+    #: Required value: "tool-call".
+    type: Literal["tool-call"] = Field(alias="type")
 
 
 #: A tool result in a text result's `toolResults`: a [`TypedToolResult`]
@@ -3303,10 +3340,9 @@ class TaggedToolResult(_Wire):
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
-    type: "_dto.TaggedToolResultType" = Field(alias="type")
+    #: Required value: "tool-result".
+    type: Literal["tool-result"] = Field(alias="type")
 
-
-TaggedToolResultType = TypeAliasType("TaggedToolResultType", Literal["tool-result"])
 
 class TerminalSummary(_Wire):
     error: Optional["_dto.ErrorEnvelope"] = Field(default=None, alias="error")
@@ -3400,7 +3436,8 @@ class TextStreamPartSource11(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     id: str = Field(alias="id")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
-    source_type: "_dto.TextStreamPart10SourceType" = Field(alias="sourceType")
+    #: Required value: "url".
+    source_type: Literal["url"] = Field(alias="sourceType")
     title: Optional[str] = Field(default=None, alias="title")
     url: str = Field(alias="url")
 
@@ -3411,7 +3448,8 @@ class TextStreamPartSource12(_Wire):
     id: str = Field(alias="id")
     media_type: str = Field(alias="mediaType")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
-    source_type: "_dto.TextStreamPart11SourceType" = Field(alias="sourceType")
+    #: Required value: "document".
+    source_type: Literal["document"] = Field(alias="sourceType")
     title: str = Field(alias="title")
 
 
@@ -3568,10 +3606,6 @@ class TextStreamPartRaw(_Wire):
 #: first model call (`stream-text.ts:2030-2090`), which needs the prompt's
 #: approval collection (`collect-tool-approvals.ts`), not ported.
 TextStreamPart = TypeAliasType("TextStreamPart", Annotated[Union[Annotated["TextStreamPartAbort", Tag("abort")], Annotated["TextStreamPartCustom", Tag("custom")], Annotated["TextStreamPartError", Tag("error")], Annotated["TextStreamPartFile", Tag("file")], Annotated["TextStreamPartFinish", Tag("finish")], Annotated["TextStreamPartFinishStep", Tag("finish-step")], Annotated["TextStreamPartRaw", Tag("raw")], Annotated["TextStreamPartReasoningDelta", Tag("reasoning-delta")], Annotated["TextStreamPartReasoningEnd", Tag("reasoning-end")], Annotated["TextStreamPartReasoningFile", Tag("reasoning-file")], Annotated["TextStreamPartReasoningStart", Tag("reasoning-start")], Annotated[Annotated[Union["TextStreamPartSource11", "TextStreamPartSource12"], Field(union_mode="left_to_right")], Tag("source")], Annotated["TextStreamPartStart", Tag("start")], Annotated["TextStreamPartStartStep", Tag("start-step")], Annotated["TextStreamPartTextDelta", Tag("text-delta")], Annotated["TextStreamPartTextEnd", Tag("text-end")], Annotated["TextStreamPartTextStart", Tag("text-start")], Annotated["TextStreamPartToolApprovalRequest", Tag("tool-approval-request")], Annotated["TextStreamPartToolApprovalResponse", Tag("tool-approval-response")], Annotated["TextStreamPartToolCall", Tag("tool-call")], Annotated["TextStreamPartToolError", Tag("tool-error")], Annotated["TextStreamPartToolInputDelta", Tag("tool-input-delta")], Annotated["TextStreamPartToolInputEnd", Tag("tool-input-end")], Annotated["TextStreamPartToolInputStart", Tag("tool-input-start")], Annotated["TextStreamPartToolOutputDenied", Tag("tool-output-denied")], Annotated["TextStreamPartToolResult", Tag("tool-result")]], Field(discriminator=Discriminator(lambda value: _tag(value, "type", "type")))])
-
-TextStreamPart10SourceType = TypeAliasType("TextStreamPart10SourceType", Literal["url"])
-
-TextStreamPart11SourceType = TypeAliasType("TextStreamPart11SourceType", Literal["document"])
 
 #: Per-call timeout configuration.
 #:
@@ -3765,7 +3799,7 @@ class ToolCallPart(_Wire):
 class ToolCallRepairReplyRepaired(_Wire):
     model_config = ConfigDict(extra="forbid")
     type: Literal["repaired"] = Field(default="repaired", alias="type")
-    tool_call: "_dto.ToolCallRepairReply0ToolCall" = Field(alias="toolCall")
+    tool_call: "_dto.RepairedToolCall" = Field(alias="toolCall")
 
 
 class ToolCallRepairReplyUnchanged(_Wire):
@@ -3788,18 +3822,6 @@ class ToolCallRepairReplyFailed(_Wire):
 #: `{"type":"failed","message":"…"}`.
 ToolCallRepairReply = TypeAliasType("ToolCallRepairReply", Annotated[Union["ToolCallRepairReplyRepaired", "ToolCallRepairReplyUnchanged", "ToolCallRepairReplyFailed"], Field(discriminator="type")])
 
-class ToolCallRepairReply0ToolCall(_Wire):
-    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
-    input: str = Field(alias="input")
-    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
-    tool_call_id: str = Field(alias="toolCallId")
-    tool_name: str = Field(alias="toolName")
-    type: Optional["_dto.ToolCallRepairReply0ToolCallType"] = Field(default=None, alias="type")
-
-
-ToolCallRepairReply0ToolCallType = TypeAliasType("ToolCallRepairReply0ToolCallType", Literal["tool-call"])
-
 #: How the model should choose tools, as the caller gives it
 #: (`GenerateTextOptions.tool_choice`).
 #:
@@ -3810,16 +3832,17 @@ ToolCallRepairReply0ToolCallType = TypeAliasType("ToolCallRepairReply0ToolCallTy
 #: `Tool` variant as a tagged object), so serde is implemented by hand.
 #: [`prepare_tool_choice`] turns it into the [`LanguageModelV4ToolChoice`]
 #: a model call carries.
-ToolChoice = TypeAliasType("ToolChoice", Annotated[Union["_dto.ToolChoice0", "_dto.ToolChoice1"], Field(union_mode="left_to_right")])
+ToolChoice = TypeAliasType("ToolChoice", Annotated[Union["_dto.ToolChoiceMode", "_dto.ToolChoiceTool"], Field(union_mode="left_to_right")])
 
-ToolChoice0 = TypeAliasType("ToolChoice0", Literal["auto", "none", "required"])
+#: The string form of a user's tool choice.
+ToolChoiceMode = TypeAliasType("ToolChoiceMode", Literal["auto", "none", "required"])
 
-class ToolChoice1(_Wire):
+#: The named-tool form of a user's tool choice.
+class ToolChoiceTool(_Wire):
     tool_name: str = Field(alias="toolName")
-    type: "_dto.ToolChoice1Type" = Field(alias="type")
+    #: Required value: "tool".
+    type: Literal["tool"] = Field(alias="type")
 
-
-ToolChoice1Type = TypeAliasType("ToolChoice1Type", Literal["tool"])
 
 #: What [`AiMuxError::ToolChoiceViolation`] carries: the field set of the AI
 #: SDK's `ToolChoiceViolationError` (`ai` `error/tool-choice-violation-error.ts`).
@@ -3871,7 +3894,7 @@ class ToolOutputDenied(_Wire):
 
 class ToolPartToolResult(_Wire):
     type: Literal["tool-result"] = Field(default="tool-result", alias="type")
-    output: "_dto.ToolResultOutput2" = Field(alias="output")
+    output: "_dto.LanguageModelToolResultOutput" = Field(alias="output")
     provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
@@ -3917,21 +3940,9 @@ class ToolRepairContextSchema(_Wire):
     input_schema: Any = Field(alias="inputSchema")
     instructions: Optional[str] = Field(alias="instructions")
     messages: List["_dto.ModelMessage"] = Field(alias="messages")
-    tool_call: "_dto.ToolRepairContextSchemaToolCall" = Field(alias="toolCall")
+    tool_call: "_dto.TaggedRawToolCall" = Field(alias="toolCall")
     tools: List["_dto.Tool"] = Field(alias="tools")
 
-
-class ToolRepairContextSchemaToolCall(_Wire):
-    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
-    input: str = Field(alias="input")
-    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
-    tool_call_id: str = Field(alias="toolCallId")
-    tool_name: str = Field(alias="toolName")
-    type: "_dto.ToolRepairContextSchemaToolCallType" = Field(alias="type")
-
-
-ToolRepairContextSchemaToolCallType = TypeAliasType("ToolRepairContextSchemaToolCallType", Literal["tool-call"])
 
 #: A tool result produced by a provider-executed tool (e.g. xAI `file_search`,
 #: web search), carried next to the [`RawToolCall`] it answers.
@@ -4099,44 +4110,6 @@ class ToolResultOutputContent(_Wire):
 #: The output of a tool call (upstream `ToolResultOutput`).
 ToolResultOutput = TypeAliasType("ToolResultOutput", Annotated[Union["ToolResultOutputText", "ToolResultOutputJson", "ToolResultOutputExecutionDenied", "ToolResultOutputErrorText", "ToolResultOutputErrorJson", "ToolResultOutputContent"], Field(discriminator="type")])
 
-class ToolResultOutput2Text(_Wire):
-    type: Literal["text"] = Field(default="text", alias="type")
-    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
-    value: str = Field(alias="value")
-
-
-class ToolResultOutput2Json(_Wire):
-    type: Literal["json"] = Field(default="json", alias="type")
-    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
-    value: Any = Field(alias="value")
-
-
-class ToolResultOutput2ExecutionDenied(_Wire):
-    type: Literal["execution-denied"] = Field(default="execution-denied", alias="type")
-    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
-    reason: Optional[str] = Field(default=None, alias="reason")
-
-
-class ToolResultOutput2ErrorText(_Wire):
-    type: Literal["error-text"] = Field(default="error-text", alias="type")
-    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
-    value: str = Field(alias="value")
-
-
-class ToolResultOutput2ErrorJson(_Wire):
-    type: Literal["error-json"] = Field(default="error-json", alias="type")
-    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
-    value: Any = Field(alias="value")
-
-
-class ToolResultOutput2Content(_Wire):
-    type: Literal["content"] = Field(default="content", alias="type")
-    value: List["_dto.ToolResultContent"] = Field(alias="value")
-
-
-#: The provider-facing result of a tool call.
-ToolResultOutput2 = TypeAliasType("ToolResultOutput2", Annotated[Union["ToolResultOutput2Text", "ToolResultOutput2Json", "ToolResultOutput2ExecutionDenied", "ToolResultOutput2ErrorText", "ToolResultOutput2ErrorJson", "ToolResultOutput2Content"], Field(discriminator="type")])
-
 #: The result of a tool call (upstream `ToolResultPart`,
 #: `provider-utils` `types/content-part.ts:240-268`).
 class ToolResultPart(_Wire):
@@ -4149,22 +4122,8 @@ class ToolResultPart(_Wire):
     tool_name: Optional[str] = Field(default=None, alias="toolName")
 
 
-#: Tool result content part.
-class ToolResultPart2(_Wire):
-    output: "_dto.ToolResultOutput2" = Field(alias="output")
-    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
-    tool_call_id: str = Field(alias="toolCallId")
-    tool_name: str = Field(alias="toolName")
-
-
-class TraceAggregateParams(_Wire):
-    model_config = ConfigDict(extra="forbid")
-    #: Query filter (RFC-0015 §5.3).
-    filter: Optional["_dto.TraceAggregateParamsFilter"] = Field(default=None, alias="filter")
-
-
 #: Query filter (RFC-0015 §5.3).
-class TraceAggregateParamsFilter(_Wire):
+class TraceAggregateFilter(_Wire):
     model_config = ConfigDict(extra="forbid")
     model: Optional[str] = Field(default=None, alias="model")
     provider: Optional[str] = Field(default=None, alias="provider")
@@ -4172,9 +4131,16 @@ class TraceAggregateParamsFilter(_Wire):
     since_unix_ms: Optional[I64] = Field(default=None, alias="sinceUnixMs")
 
 
+class TraceAggregateParams(_Wire):
+    model_config = ConfigDict(extra="forbid")
+    filter: Optional["_dto.TraceAggregateFilter"] = Field(default=None, alias="filter")
+
+
+TraceAuditMode = TypeAliasType("TraceAuditMode", Literal["off", "shared", "strict"])
+
 class TraceCreateParams(_Wire):
     model_config = ConfigDict(extra="forbid")
-    audit_mode: Optional["_dto.AuditMode2"] = Field(default=None, alias="auditMode")
+    audit_mode: Optional["_dto.TraceAuditMode"] = Field(default=None, alias="auditMode")
     capacity: Optional[U64] = Field(default=None, alias="capacity")
     per_scope_capacity: Optional[U64] = Field(default=None, alias="perScopeCapacity")
 
@@ -4381,21 +4347,13 @@ TranscriptionStreamPart = TypeAliasType("TranscriptionStreamPart", Annotated[Uni
 class TransportParamsFetch(_Wire):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["fetch"] = Field(default="fetch", alias="kind")
-    #: Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-    #: hop, or the WebSocket connector. With every field empty, HTTP follows the
-    #: `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-    #: reqwest does, and the WebSocket connector connects directly.
-    proxy: Optional["_dto.TransportParams0Proxy"] = Field(default=None, alias="proxy")
+    proxy: Optional["_dto.TransportProxy"] = Field(default=None, alias="proxy")
 
 
 class TransportParamsWs(_Wire):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["ws"] = Field(default="ws", alias="kind")
-    #: Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-    #: hop, or the WebSocket connector. With every field empty, HTTP follows the
-    #: `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-    #: reqwest does, and the WebSocket connector connects directly.
-    proxy: Optional["_dto.TransportParams1Proxy"] = Field(default=None, alias="proxy")
+    proxy: Optional["_dto.TransportProxy"] = Field(default=None, alias="proxy")
 
 
 class TransportParamsDownload(_Wire):
@@ -4410,19 +4368,7 @@ TransportParams = TypeAliasType("TransportParams", Annotated[Union["TransportPar
 #: hop, or the WebSocket connector. With every field empty, HTTP follows the
 #: `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
 #: reqwest does, and the WebSocket connector connects directly.
-class TransportParams0Proxy(_Wire):
-    model_config = ConfigDict(extra="forbid")
-    all_url: Optional[str] = Field(default=None, alias="all_url")
-    http_url: Optional[str] = Field(default=None, alias="http_url")
-    https_url: Optional[str] = Field(default=None, alias="https_url")
-    no_proxy: Optional[str] = Field(default=None, alias="no_proxy")
-
-
-#: Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-#: hop, or the WebSocket connector. With every field empty, HTTP follows the
-#: `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-#: reqwest does, and the WebSocket connector connects directly.
-class TransportParams1Proxy(_Wire):
+class TransportProxy(_Wire):
     model_config = ConfigDict(extra="forbid")
     all_url: Optional[str] = Field(default=None, alias="all_url")
     http_url: Optional[str] = Field(default=None, alias="http_url")
@@ -4435,7 +4381,8 @@ class TypedSourceUrl(_Wire):
     id: str = Field(alias="id")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     title: Optional[str] = Field(default=None, alias="title")
-    type: "_dto.TypedSource0Type" = Field(alias="type")
+    #: Required value: "source".
+    type: Literal["source"] = Field(alias="type")
     url: str = Field(alias="url")
 
 
@@ -4446,7 +4393,8 @@ class TypedSourceDocument(_Wire):
     media_type: str = Field(alias="mediaType")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     title: str = Field(alias="title")
-    type: "_dto.TypedSource1Type" = Field(alias="type")
+    #: Required value: "source".
+    type: Literal["source"] = Field(alias="type")
 
 
 #: A source in a text result's `sources`: a [`Source`] with its `type` tag,
@@ -4454,10 +4402,6 @@ class TypedSourceDocument(_Wire):
 #:
 #: Schema view of the tag written by [`crate::wire::typed_vec`].
 TypedSource = TypeAliasType("TypedSource", Annotated[Union["TypedSourceUrl", "TypedSourceDocument"], Field(discriminator="source_type")])
-
-TypedSource0Type = TypeAliasType("TypedSource0Type", Literal["source"])
-
-TypedSource1Type = TypeAliasType("TypedSource1Type", Literal["source"])
 
 #: A tool call outside `content` (a text result's `toolCalls`, an approval
 #: request's `toolCall`): a [`ToolCall`] with its `type` tag, the AI SDK's
@@ -4483,7 +4427,8 @@ class TypedToolCall(_Wire):
     tool_call_id: str = Field(alias="toolCallId")
     #: Tool name.
     tool_name: str = Field(alias="toolName")
-    type: "_dto.TypedToolCallType" = Field(alias="type")
+    #: Required value: "tool-call".
+    type: Literal["tool-call"] = Field(alias="type")
 
 
 #: A tool call outside `content` (a text result's `toolCalls`, an approval
@@ -4510,12 +4455,9 @@ class TypedToolCallInput(_Wire):
     tool_call_id: str = Field(alias="toolCallId")
     #: Tool name.
     tool_name: str = Field(alias="toolName")
-    type: Optional["_dto.TypedToolCallInputType"] = Field(default=None, alias="type")
+    #: Required value: "tool-call".
+    type: Optional[Literal["tool-call"]] = Field(default=None, alias="type")
 
-
-TypedToolCallInputType = TypeAliasType("TypedToolCallInputType", Literal["tool-call"])
-
-TypedToolCallType = TypeAliasType("TypedToolCallType", Literal["tool-call"])
 
 #: A tool error (the AI SDK's `TypedToolError`, `ai`
 #: `generate-text/tool-error.ts:6-36`). `toolMetadata` and `title` are
@@ -4848,16 +4790,6 @@ class WarningOther(_Wire):
 #: A warning issued by the provider (e.g. unsupported parameter).
 Warning = TypeAliasType("Warning", Annotated[Union["WarningUnsupported", "WarningCompatibility", "WarningDeprecated", "WarningOther"], Field(discriminator="type")])
 
-_aimux_core_model_catalogue_RuntimeModel_ = TypeAliasType("_aimux_core_model_catalogue_RuntimeModel_", List["_dto.RuntimeModel"])
-
-_aimux_core_session_SessionCall_ = TypeAliasType("_aimux_core_session_SessionCall_", List["_dto.SessionCall"])
-
-_aimux_core_session_SessionView_ = TypeAliasType("_aimux_core_session_SessionView_", List["_dto.SessionView"])
-
-_aimux_core_trace_store_SessionStepStat_ = TypeAliasType("_aimux_core_trace_store_SessionStepStat_", List["_dto.SessionStepStat"])
-
-_aimux_core_trace_store_TraceStats_ = TypeAliasType("_aimux_core_trace_store_TraceStats_", List["_dto.TraceStats"])
-
 # Resolve recursive references after all declarations exist.
 _dto = sys.modules[__name__]
 AiMuxErrorAIAPICallError.model_rebuild(_types_namespace=globals())
@@ -4983,7 +4915,6 @@ EmbeddingResponse.model_rebuild(_types_namespace=globals())
 EmbeddingResult.model_rebuild(_types_namespace=globals())
 EmbeddingUsage.model_rebuild(_types_namespace=globals())
 EmptyParams.model_rebuild(_types_namespace=globals())
-EmptyParams2.model_rebuild(_types_namespace=globals())
 ErrorEnvelope.model_rebuild(_types_namespace=globals())
 FileDataData.model_rebuild(_types_namespace=globals())
 FileDataUrl.model_rebuild(_types_namespace=globals())
@@ -5013,8 +4944,6 @@ GeneratedFileDataData.model_rebuild(_types_namespace=globals())
 GeneratedFileDataUrl.model_rebuild(_types_namespace=globals())
 GeneratedFileOutput.model_rebuild(_types_namespace=globals())
 HandleResult.model_rebuild(_types_namespace=globals())
-HandleResult2.model_rebuild(_types_namespace=globals())
-HandleResult3.model_rebuild(_types_namespace=globals())
 HttpExchange.model_rebuild(_types_namespace=globals())
 HttpRecord.model_rebuild(_types_namespace=globals())
 ImageCallOptions.model_rebuild(_types_namespace=globals())
@@ -5031,6 +4960,14 @@ LanguageModelMessageSystem.model_rebuild(_types_namespace=globals())
 LanguageModelMessageUser.model_rebuild(_types_namespace=globals())
 LanguageModelMessageAssistant.model_rebuild(_types_namespace=globals())
 LanguageModelMessageTool.model_rebuild(_types_namespace=globals())
+LanguageModelReasoningPart.model_rebuild(_types_namespace=globals())
+LanguageModelToolResultOutputText.model_rebuild(_types_namespace=globals())
+LanguageModelToolResultOutputJson.model_rebuild(_types_namespace=globals())
+LanguageModelToolResultOutputExecutionDenied.model_rebuild(_types_namespace=globals())
+LanguageModelToolResultOutputErrorText.model_rebuild(_types_namespace=globals())
+LanguageModelToolResultOutputErrorJson.model_rebuild(_types_namespace=globals())
+LanguageModelToolResultOutputContent.model_rebuild(_types_namespace=globals())
+LanguageModelToolResultPart.model_rebuild(_types_namespace=globals())
 LanguageModelUsage.model_rebuild(_types_namespace=globals())
 LanguageModelUsageInput.model_rebuild(_types_namespace=globals())
 LanguageModelV4ToolChoiceAuto.model_rebuild(_types_namespace=globals())
@@ -5090,7 +5027,6 @@ ReasoningFilePart.model_rebuild(_types_namespace=globals())
 ReasoningOutput.model_rebuild(_types_namespace=globals())
 ReasoningPartReasoning.model_rebuild(_types_namespace=globals())
 ReasoningPartReasoningFile.model_rebuild(_types_namespace=globals())
-ReasoningPart2.model_rebuild(_types_namespace=globals())
 ReasoningSpec.model_rebuild(_types_namespace=globals())
 RecorderExport.model_rebuild(_types_namespace=globals())
 RecorderHandleResult.model_rebuild(_types_namespace=globals())
@@ -5100,6 +5036,7 @@ Recording.model_rebuild(_types_namespace=globals())
 RegistryCreateParams.model_rebuild(_types_namespace=globals())
 RegistryEntry.model_rebuild(_types_namespace=globals())
 RegistryProviderParams.model_rebuild(_types_namespace=globals())
+RepairedToolCall.model_rebuild(_types_namespace=globals())
 ReplayCreateParams.model_rebuild(_types_namespace=globals())
 ReplayInspection.model_rebuild(_types_namespace=globals())
 ReplayLiveParams.model_rebuild(_types_namespace=globals())
@@ -5121,7 +5058,6 @@ RetryError.model_rebuild(_types_namespace=globals())
 RetryErrorInput.model_rebuild(_types_namespace=globals())
 RouterParams.model_rebuild(_types_namespace=globals())
 RuntimeConfigureParams.model_rebuild(_types_namespace=globals())
-RuntimeConfigureParamsProxy.model_rebuild(_types_namespace=globals())
 RuntimeDescribeParams.model_rebuild(_types_namespace=globals())
 RuntimeModel.model_rebuild(_types_namespace=globals())
 SearchCallOptions.model_rebuild(_types_namespace=globals())
@@ -5154,6 +5090,7 @@ StrategyWeighted.model_rebuild(_types_namespace=globals())
 StreamFrameEvent.model_rebuild(_types_namespace=globals())
 StreamFrameEnd.model_rebuild(_types_namespace=globals())
 StreamOptions.model_rebuild(_types_namespace=globals())
+TaggedRawToolCall.model_rebuild(_types_namespace=globals())
 TaggedToolResult.model_rebuild(_types_namespace=globals())
 TerminalSummary.model_rebuild(_types_namespace=globals())
 TextPart.model_rebuild(_types_namespace=globals())
@@ -5200,8 +5137,7 @@ ToolCallPart.model_rebuild(_types_namespace=globals())
 ToolCallRepairReplyRepaired.model_rebuild(_types_namespace=globals())
 ToolCallRepairReplyUnchanged.model_rebuild(_types_namespace=globals())
 ToolCallRepairReplyFailed.model_rebuild(_types_namespace=globals())
-ToolCallRepairReply0ToolCall.model_rebuild(_types_namespace=globals())
-ToolChoice1.model_rebuild(_types_namespace=globals())
+ToolChoiceTool.model_rebuild(_types_namespace=globals())
 ToolChoiceViolationError.model_rebuild(_types_namespace=globals())
 ToolContentPartToolResult.model_rebuild(_types_namespace=globals())
 ToolContentPartToolApprovalResponse.model_rebuild(_types_namespace=globals())
@@ -5212,7 +5148,6 @@ ToolRepairApplyRequest.model_rebuild(_types_namespace=globals())
 ToolRepairApplyResultRequest.model_rebuild(_types_namespace=globals())
 ToolRepairContextRequest.model_rebuild(_types_namespace=globals())
 ToolRepairContextSchema.model_rebuild(_types_namespace=globals())
-ToolRepairContextSchemaToolCall.model_rebuild(_types_namespace=globals())
 ToolResult.model_rebuild(_types_namespace=globals())
 ToolResultContentText.model_rebuild(_types_namespace=globals())
 ToolResultContentFile.model_rebuild(_types_namespace=globals())
@@ -5234,16 +5169,9 @@ ToolResultOutputExecutionDenied.model_rebuild(_types_namespace=globals())
 ToolResultOutputErrorText.model_rebuild(_types_namespace=globals())
 ToolResultOutputErrorJson.model_rebuild(_types_namespace=globals())
 ToolResultOutputContent.model_rebuild(_types_namespace=globals())
-ToolResultOutput2Text.model_rebuild(_types_namespace=globals())
-ToolResultOutput2Json.model_rebuild(_types_namespace=globals())
-ToolResultOutput2ExecutionDenied.model_rebuild(_types_namespace=globals())
-ToolResultOutput2ErrorText.model_rebuild(_types_namespace=globals())
-ToolResultOutput2ErrorJson.model_rebuild(_types_namespace=globals())
-ToolResultOutput2Content.model_rebuild(_types_namespace=globals())
 ToolResultPart.model_rebuild(_types_namespace=globals())
-ToolResultPart2.model_rebuild(_types_namespace=globals())
+TraceAggregateFilter.model_rebuild(_types_namespace=globals())
 TraceAggregateParams.model_rebuild(_types_namespace=globals())
-TraceAggregateParamsFilter.model_rebuild(_types_namespace=globals())
 TraceCreateParams.model_rebuild(_types_namespace=globals())
 TraceRecord.model_rebuild(_types_namespace=globals())
 TraceSessionParams.model_rebuild(_types_namespace=globals())
@@ -5265,8 +5193,7 @@ TranscriptionStreamPartError.model_rebuild(_types_namespace=globals())
 TransportParamsFetch.model_rebuild(_types_namespace=globals())
 TransportParamsWs.model_rebuild(_types_namespace=globals())
 TransportParamsDownload.model_rebuild(_types_namespace=globals())
-TransportParams0Proxy.model_rebuild(_types_namespace=globals())
-TransportParams1Proxy.model_rebuild(_types_namespace=globals())
+TransportProxy.model_rebuild(_types_namespace=globals())
 TypedSourceUrl.model_rebuild(_types_namespace=globals())
 TypedSourceDocument.model_rebuild(_types_namespace=globals())
 TypedToolCall.model_rebuild(_types_namespace=globals())
@@ -5311,8 +5238,6 @@ DTO_TYPES = {
     "AssistantPart": AssistantPart,
     "AudioData": AudioData,
     "AudioInput": AudioInput,
-    "AuditMode": AuditMode,
-    "AuditMode2": AuditMode2,
     "BackendConfig": BackendConfig,
     "BreakKind": BreakKind,
     "CancelResult": CancelResult,
@@ -5335,11 +5260,7 @@ DTO_TYPES = {
     "CodexTokens": CodexTokens,
     "CompletionTokensDetails": CompletionTokensDetails,
     "ContentPart": ContentPart,
-    "ContentPart4SourceType": ContentPart4SourceType,
-    "ContentPart5SourceType": ContentPart5SourceType,
     "ContentPartInput": ContentPartInput,
-    "ContentPartInput4SourceType": ContentPartInput4SourceType,
-    "ContentPartInput5SourceType": ContentPartInput5SourceType,
     "CreateRecorderParams": CreateRecorderParams,
     "CredentialParams": CredentialParams,
     "CustomPart": CustomPart,
@@ -5357,7 +5278,6 @@ DTO_TYPES = {
     "EmbeddingResult": EmbeddingResult,
     "EmbeddingUsage": EmbeddingUsage,
     "EmptyParams": EmptyParams,
-    "EmptyParams2": EmptyParams2,
     "ErrorDomain": ErrorDomain,
     "ErrorEnvelope": ErrorEnvelope,
     "Fallback": Fallback,
@@ -5370,8 +5290,6 @@ DTO_TYPES = {
     "FunctionTool": FunctionTool,
     "FunctionToolInputExample": FunctionToolInputExample,
     "GenerateContent": GenerateContent,
-    "GenerateContent2SourceType": GenerateContent2SourceType,
-    "GenerateContent3SourceType": GenerateContent3SourceType,
     "GenerateObjectResponse": GenerateObjectResponse,
     "GenerateObjectResult": GenerateObjectResult,
     "GenerateTextOptions": GenerateTextOptions,
@@ -5384,8 +5302,6 @@ DTO_TYPES = {
     "HandleIdInput": HandleIdInput,
     "HandleKind": HandleKind,
     "HandleResult": HandleResult,
-    "HandleResult2": HandleResult2,
-    "HandleResult3": HandleResult3,
     "HttpExchange": HttpExchange,
     "HttpRecord": HttpRecord,
     "ImageCallOptions": ImageCallOptions,
@@ -5400,12 +5316,16 @@ DTO_TYPES = {
     "InputTokenDetails": InputTokenDetails,
     "LanguageModelFile": LanguageModelFile,
     "LanguageModelMessage": LanguageModelMessage,
+    "LanguageModelReasoningPart": LanguageModelReasoningPart,
+    "LanguageModelToolResultOutput": LanguageModelToolResultOutput,
+    "LanguageModelToolResultPart": LanguageModelToolResultPart,
     "LanguageModelUsage": LanguageModelUsage,
     "LanguageModelUsageInput": LanguageModelUsageInput,
     "LanguageModelV4ToolChoice": LanguageModelV4ToolChoice,
     "LiveTarget": LiveTarget,
     "LogLevel": LogLevel,
     "LoggingConfig": LoggingConfig,
+    "MiddlewareAuditMode": MiddlewareAuditMode,
     "MiddlewareParams": MiddlewareParams,
     "MoaFailMode": MoaFailMode,
     "MoaParams": MoaParams,
@@ -5459,7 +5379,6 @@ DTO_TYPES = {
     "ReasoningMode": ReasoningMode,
     "ReasoningOutput": ReasoningOutput,
     "ReasoningPart": ReasoningPart,
-    "ReasoningPart2": ReasoningPart2,
     "ReasoningSpec": ReasoningSpec,
     "ReasoningVisibility": ReasoningVisibility,
     "RecorderExport": RecorderExport,
@@ -5470,6 +5389,7 @@ DTO_TYPES = {
     "RegistryCreateParams": RegistryCreateParams,
     "RegistryEntry": RegistryEntry,
     "RegistryProviderParams": RegistryProviderParams,
+    "RepairedToolCall": RepairedToolCall,
     "ReplayCreateParams": ReplayCreateParams,
     "ReplayInspection": ReplayInspection,
     "ReplayLiveParams": ReplayLiveParams,
@@ -5492,7 +5412,6 @@ DTO_TYPES = {
     "RetryErrorReason": RetryErrorReason,
     "RouterParams": RouterParams,
     "RuntimeConfigureParams": RuntimeConfigureParams,
-    "RuntimeConfigureParamsProxy": RuntimeConfigureParamsProxy,
     "RuntimeDescribeParams": RuntimeDescribeParams,
     "RuntimeModel": RuntimeModel,
     "SearchCallOptions": SearchCallOptions,
@@ -5522,17 +5441,15 @@ DTO_TYPES = {
     "StepResultPerformance": StepResultPerformance,
     "StepResultPerformanceInput": StepResultPerformanceInput,
     "Strategy": Strategy,
+    "StreamEvent": StreamEvent,
     "StreamFrame": StreamFrame,
-    "StreamFrame0Event": StreamFrame0Event,
     "StreamOptions": StreamOptions,
+    "TaggedRawToolCall": TaggedRawToolCall,
     "TaggedToolResult": TaggedToolResult,
-    "TaggedToolResultType": TaggedToolResultType,
     "TerminalSummary": TerminalSummary,
     "TextPart": TextPart,
     "TextRequest": TextRequest,
     "TextStreamPart": TextStreamPart,
-    "TextStreamPart10SourceType": TextStreamPart10SourceType,
-    "TextStreamPart11SourceType": TextStreamPart11SourceType,
     "TimeoutConfiguration": TimeoutConfiguration,
     "Timestamp": Timestamp,
     "TimingRecord": TimingRecord,
@@ -5546,12 +5463,9 @@ DTO_TYPES = {
     "ToolCallInput": ToolCallInput,
     "ToolCallPart": ToolCallPart,
     "ToolCallRepairReply": ToolCallRepairReply,
-    "ToolCallRepairReply0ToolCall": ToolCallRepairReply0ToolCall,
-    "ToolCallRepairReply0ToolCallType": ToolCallRepairReply0ToolCallType,
     "ToolChoice": ToolChoice,
-    "ToolChoice0": ToolChoice0,
-    "ToolChoice1": ToolChoice1,
-    "ToolChoice1Type": ToolChoice1Type,
+    "ToolChoiceMode": ToolChoiceMode,
+    "ToolChoiceTool": ToolChoiceTool,
     "ToolChoiceViolationError": ToolChoiceViolationError,
     "ToolContentPart": ToolContentPart,
     "ToolOutputDenied": ToolOutputDenied,
@@ -5561,18 +5475,15 @@ DTO_TYPES = {
     "ToolRepairContextRequest": ToolRepairContextRequest,
     "ToolRepairContextResult": ToolRepairContextResult,
     "ToolRepairContextSchema": ToolRepairContextSchema,
-    "ToolRepairContextSchemaToolCall": ToolRepairContextSchemaToolCall,
-    "ToolRepairContextSchemaToolCallType": ToolRepairContextSchemaToolCallType,
     "ToolResult": ToolResult,
     "ToolResultContent": ToolResultContent,
     "ToolResultContentPart": ToolResultContentPart,
     "ToolResultFileId": ToolResultFileId,
     "ToolResultOutput": ToolResultOutput,
-    "ToolResultOutput2": ToolResultOutput2,
     "ToolResultPart": ToolResultPart,
-    "ToolResultPart2": ToolResultPart2,
+    "TraceAggregateFilter": TraceAggregateFilter,
     "TraceAggregateParams": TraceAggregateParams,
-    "TraceAggregateParamsFilter": TraceAggregateParamsFilter,
+    "TraceAuditMode": TraceAuditMode,
     "TraceCreateParams": TraceCreateParams,
     "TraceRecord": TraceRecord,
     "TraceSessionParams": TraceSessionParams,
@@ -5585,15 +5496,10 @@ DTO_TYPES = {
     "TranscriptionStartParams": TranscriptionStartParams,
     "TranscriptionStreamPart": TranscriptionStreamPart,
     "TransportParams": TransportParams,
-    "TransportParams0Proxy": TransportParams0Proxy,
-    "TransportParams1Proxy": TransportParams1Proxy,
+    "TransportProxy": TransportProxy,
     "TypedSource": TypedSource,
-    "TypedSource0Type": TypedSource0Type,
-    "TypedSource1Type": TypedSource1Type,
     "TypedToolCall": TypedToolCall,
     "TypedToolCallInput": TypedToolCallInput,
-    "TypedToolCallInputType": TypedToolCallInputType,
-    "TypedToolCallType": TypedToolCallType,
     "TypedToolError": TypedToolError,
     "TypedToolResult": TypedToolResult,
     "UploadFileData": UploadFileData,
@@ -5616,11 +5522,6 @@ DTO_TYPES = {
     "VideoResponse": VideoResponse,
     "VideoResult": VideoResult,
     "Warning": Warning,
-    "_aimux_core_model_catalogue_RuntimeModel_": _aimux_core_model_catalogue_RuntimeModel_,
-    "_aimux_core_session_SessionCall_": _aimux_core_session_SessionCall_,
-    "_aimux_core_session_SessionView_": _aimux_core_session_SessionView_,
-    "_aimux_core_trace_store_SessionStepStat_": _aimux_core_trace_store_SessionStepStat_,
-    "_aimux_core_trace_store_TraceStats_": _aimux_core_trace_store_TraceStats_,
 }
 
 __all__ = [
@@ -5696,8 +5597,6 @@ __all__ = [
     "AssistantPartToolResult",
     "AudioData",
     "AudioInput",
-    "AuditMode",
-    "AuditMode2",
     "BackendConfig",
     "BackendConfigRing",
     "BackendConfigJsonl",
@@ -5734,8 +5633,6 @@ __all__ = [
     "ContentPartToolError",
     "ContentPartToolApprovalRequest",
     "ContentPartToolApprovalResponse",
-    "ContentPart4SourceType",
-    "ContentPart5SourceType",
     "ContentPartInput",
     "ContentPartInputText",
     "ContentPartInputCustom",
@@ -5749,8 +5646,6 @@ __all__ = [
     "ContentPartInputToolError",
     "ContentPartInputToolApprovalRequest",
     "ContentPartInputToolApprovalResponse",
-    "ContentPartInput4SourceType",
-    "ContentPartInput5SourceType",
     "CreateRecorderParams",
     "CredentialParams",
     "CustomPart",
@@ -5774,7 +5669,6 @@ __all__ = [
     "EmbeddingResult",
     "EmbeddingUsage",
     "EmptyParams",
-    "EmptyParams2",
     "ErrorDomain",
     "ErrorEnvelope",
     "Fallback",
@@ -5801,8 +5695,6 @@ __all__ = [
     "GenerateContentCustom",
     "GenerateContentToolApprovalRequest",
     "GenerateContentToolResult",
-    "GenerateContent2SourceType",
-    "GenerateContent3SourceType",
     "GenerateObjectResponse",
     "GenerateObjectResult",
     "GenerateTextOptions",
@@ -5817,8 +5709,6 @@ __all__ = [
     "HandleIdInput",
     "HandleKind",
     "HandleResult",
-    "HandleResult2",
-    "HandleResult3",
     "HttpExchange",
     "HttpRecord",
     "ImageCallOptions",
@@ -5839,6 +5729,15 @@ __all__ = [
     "LanguageModelMessageUser",
     "LanguageModelMessageAssistant",
     "LanguageModelMessageTool",
+    "LanguageModelReasoningPart",
+    "LanguageModelToolResultOutput",
+    "LanguageModelToolResultOutputText",
+    "LanguageModelToolResultOutputJson",
+    "LanguageModelToolResultOutputExecutionDenied",
+    "LanguageModelToolResultOutputErrorText",
+    "LanguageModelToolResultOutputErrorJson",
+    "LanguageModelToolResultOutputContent",
+    "LanguageModelToolResultPart",
     "LanguageModelUsage",
     "LanguageModelUsageInput",
     "LanguageModelV4ToolChoice",
@@ -5851,6 +5750,7 @@ __all__ = [
     "LiveTargetRegistry",
     "LogLevel",
     "LoggingConfig",
+    "MiddlewareAuditMode",
     "MiddlewareParams",
     "MoaFailMode",
     "MoaParams",
@@ -5918,7 +5818,6 @@ __all__ = [
     "ReasoningPart",
     "ReasoningPartReasoning",
     "ReasoningPartReasoningFile",
-    "ReasoningPart2",
     "ReasoningSpec",
     "ReasoningVisibility",
     "RecorderExport",
@@ -5931,6 +5830,7 @@ __all__ = [
     "RegistryCreateParams",
     "RegistryEntry",
     "RegistryProviderParams",
+    "RepairedToolCall",
     "ReplayCreateParams",
     "ReplayInspection",
     "ReplayLiveParams",
@@ -5955,7 +5855,6 @@ __all__ = [
     "RetryErrorReason",
     "RouterParams",
     "RuntimeConfigureParams",
-    "RuntimeConfigureParamsProxy",
     "RuntimeDescribeParams",
     "RuntimeModel",
     "SearchCallOptions",
@@ -5989,13 +5888,13 @@ __all__ = [
     "Strategy",
     "StrategyRule",
     "StrategyWeighted",
+    "StreamEvent",
     "StreamFrame",
     "StreamFrameEvent",
     "StreamFrameEnd",
-    "StreamFrame0Event",
     "StreamOptions",
+    "TaggedRawToolCall",
     "TaggedToolResult",
-    "TaggedToolResultType",
     "TerminalSummary",
     "TextPart",
     "TextRequest",
@@ -6027,8 +5926,6 @@ __all__ = [
     "TextStreamPartAbort",
     "TextStreamPartError",
     "TextStreamPartRaw",
-    "TextStreamPart10SourceType",
-    "TextStreamPart11SourceType",
     "TimeoutConfiguration",
     "Timestamp",
     "TimingRecord",
@@ -6047,12 +5944,9 @@ __all__ = [
     "ToolCallRepairReplyRepaired",
     "ToolCallRepairReplyUnchanged",
     "ToolCallRepairReplyFailed",
-    "ToolCallRepairReply0ToolCall",
-    "ToolCallRepairReply0ToolCallType",
     "ToolChoice",
-    "ToolChoice0",
-    "ToolChoice1",
-    "ToolChoice1Type",
+    "ToolChoiceMode",
+    "ToolChoiceTool",
     "ToolChoiceViolationError",
     "ToolContentPart",
     "ToolContentPartToolResult",
@@ -6066,8 +5960,6 @@ __all__ = [
     "ToolRepairContextRequest",
     "ToolRepairContextResult",
     "ToolRepairContextSchema",
-    "ToolRepairContextSchemaToolCall",
-    "ToolRepairContextSchemaToolCallType",
     "ToolResult",
     "ToolResultContent",
     "ToolResultContentText",
@@ -6093,17 +5985,10 @@ __all__ = [
     "ToolResultOutputErrorText",
     "ToolResultOutputErrorJson",
     "ToolResultOutputContent",
-    "ToolResultOutput2",
-    "ToolResultOutput2Text",
-    "ToolResultOutput2Json",
-    "ToolResultOutput2ExecutionDenied",
-    "ToolResultOutput2ErrorText",
-    "ToolResultOutput2ErrorJson",
-    "ToolResultOutput2Content",
     "ToolResultPart",
-    "ToolResultPart2",
+    "TraceAggregateFilter",
     "TraceAggregateParams",
-    "TraceAggregateParamsFilter",
+    "TraceAuditMode",
     "TraceCreateParams",
     "TraceRecord",
     "TraceSessionParams",
@@ -6127,17 +6012,12 @@ __all__ = [
     "TransportParamsFetch",
     "TransportParamsWs",
     "TransportParamsDownload",
-    "TransportParams0Proxy",
-    "TransportParams1Proxy",
+    "TransportProxy",
     "TypedSource",
     "TypedSourceUrl",
     "TypedSourceDocument",
-    "TypedSource0Type",
-    "TypedSource1Type",
     "TypedToolCall",
     "TypedToolCallInput",
-    "TypedToolCallInputType",
-    "TypedToolCallType",
     "TypedToolError",
     "TypedToolResult",
     "UploadFileData",
@@ -6176,9 +6056,4 @@ __all__ = [
     "WarningCompatibility",
     "WarningDeprecated",
     "WarningOther",
-    "_aimux_core_model_catalogue_RuntimeModel_",
-    "_aimux_core_session_SessionCall_",
-    "_aimux_core_session_SessionView_",
-    "_aimux_core_trace_store_SessionStepStat_",
-    "_aimux_core_trace_store_TraceStats_",
 ]

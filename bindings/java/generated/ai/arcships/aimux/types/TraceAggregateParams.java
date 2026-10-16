@@ -11,25 +11,22 @@ import java.util.*;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class TraceAggregateParams {
-    /**
-     * Query filter (RFC-0015 §5.3).
-     */
     @JsonProperty("filter")
-    private final TraceAggregateParamsFilter filter;
+    private final TraceAggregateFilter filter;
 
     @JsonCreator
     public TraceAggregateParams(
-        @JsonProperty(value = "filter") TraceAggregateParamsFilter filter) {
+        @JsonProperty(value = "filter") TraceAggregateFilter filter) {
         this.filter = filter;
     }
 
     public static Builder builder() { return new Builder(); }
-    public TraceAggregateParamsFilter getFilter() { return filter; }
+    public TraceAggregateFilter getFilter() { return filter; }
 
     public static final class Builder {
-        private TraceAggregateParamsFilter filter;
+        private TraceAggregateFilter filter;
 
-        public Builder filter(TraceAggregateParamsFilter value) {
+        public Builder filter(TraceAggregateFilter value) {
             this.filter = value;
             return this;
         }

@@ -36,7 +36,7 @@ fn ident(value: &str) -> String {
 fn ty(value: &Ty) -> String {
     match value {
         Ty::Ref(name) => ident(name),
-        Ty::String => "string".into(),
+        Ty::String | Ty::Literal(_) => "string".into(),
         Ty::Bool => "bool".into(),
         Ty::Int {
             unsigned: true,
@@ -127,18 +127,16 @@ fn kind<'a>(name: &str, model: &'a Model) -> &'a Kind {
     &model.types.iter().find(|t| t.name == name).unwrap().kind
 }
 
-// Singleton string enums are secondary discriminators in flattened tagged unions.
-fn literals<'a>(fields: &'a [Field], model: &'a Model) -> BTreeMap<&'a str, &'a str> {
+// Secondary discriminators select flattened variants that share the outer tag.
+fn literals(fields: &[Field]) -> BTreeMap<&str, &str> {
     fields
         .iter()
-        .filter_map(|field| match &field.ty {
-            Ty::Ref(name) => match kind(name, model) {
-                Kind::StringEnum(values) if values.len() == 1 => {
-                    Some((field.json_name.as_str(), values[0].as_str()))
-                }
-                _ => None,
-            },
-            _ => None,
+        .filter_map(|field| {
+            if let Ty::Literal(value) = &field.ty {
+                Some((field.json_name.as_str(), value.as_str()))
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -179,10 +177,8 @@ impl Emitter for Go {
                     }
                     for (value, variants) in groups {
                         writeln!(out, "\tcase {value:?}:").unwrap();
-                        let keys: BTreeMap<_, _> = variants
-                            .iter()
-                            .flat_map(|v| literals(&v.fields, model))
-                            .collect();
+                        let keys: BTreeMap<_, _> =
+                            variants.iter().flat_map(|v| literals(&v.fields)).collect();
                         if !keys.is_empty() {
                             out.push_str("\t\tvar subtag struct {\n");
                             let width = keys.keys().map(|k| ident(k).len()).max().unwrap();
@@ -194,7 +190,7 @@ impl Emitter for Go {
                         }
                         for variant in variants {
                             let vn = format!("{name}Variant{}", ident(&variant.name));
-                            let condition = literals(&variant.fields, model)
+                            let condition = literals(&variant.fields)
                                 .iter()
                                 .map(|(k, v)| format!("subtag.{} == {v:?}", ident(k)))
                                 .collect::<Vec<_>>()

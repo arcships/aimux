@@ -2106,7 +2106,7 @@ final class AssistantPartToolCall extends AssistantPart {
 }
 
 final class AssistantPartToolResult extends AssistantPart {
-  final ToolResultOutput2 output;
+  final LanguageModelToolResultOutput output;
   final Map<String, Map<String, Object?>>? providerOptions;
   final String toolCallId;
   final String toolName;
@@ -2120,8 +2120,8 @@ final class AssistantPartToolResult extends AssistantPart {
   String get type => 'tool-result';
   factory AssistantPartToolResult.fromJson(Map<String, dynamic> json) {
     return AssistantPartToolResult(
-      output:
-          ToolResultOutput2.fromJson(json['output'] as Map<String, dynamic>),
+      output: LanguageModelToolResultOutput.fromJson(
+          json['output'] as Map<String, dynamic>),
       providerOptions: json['providerOptions'] == null
           ? null
           : (json['providerOptions'] as Map).map((key, item) =>
@@ -2164,30 +2164,6 @@ final class AudioInput {
   const AudioInput(this.value);
   factory AudioInput.fromJson(Object? value) => AudioInput(value as String);
   Object? toJson() => value;
-}
-
-enum AuditMode {
-  disabled('disabled'),
-  shared('shared'),
-  strict('strict');
-
-  const AuditMode(this.wireValue);
-  final String wireValue;
-  static AuditMode fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
-}
-
-enum AuditMode2 {
-  off('off'),
-  shared('shared'),
-  strict('strict');
-
-  const AuditMode2(this.wireValue);
-  final String wireValue;
-  static AuditMode2 fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
 }
 
 sealed class BackendConfig {
@@ -2927,7 +2903,9 @@ final class ContentPartReasoningFile extends ContentPart {
 final class ContentPartSource5 extends ContentPart {
   final String id;
   final Map<String, Map<String, Object?>>? providerMetadata;
-  final ContentPart4SourceType sourceType;
+
+  /// Required value: "url".
+  final String sourceType;
   final String? title;
   final String url;
   const ContentPartSource5({
@@ -2946,7 +2924,7 @@ final class ContentPartSource5 extends ContentPart {
           ? null
           : (json['providerMetadata'] as Map).map((key, item) =>
               MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      sourceType: ContentPart4SourceType.fromJson(json['sourceType']),
+      sourceType: json['sourceType'] as String,
       title: json['title'] as String?,
       url: json['url'] as String,
     );
@@ -2956,7 +2934,7 @@ final class ContentPartSource5 extends ContentPart {
         'type': 'source',
         'id': id,
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
-        'sourceType': sourceType.toJson(),
+        'sourceType': sourceType,
         if (title != null) 'title': title,
         'url': url,
       };
@@ -2967,7 +2945,9 @@ final class ContentPartSource6 extends ContentPart {
   final String id;
   final String mediaType;
   final Map<String, Map<String, Object?>>? providerMetadata;
-  final ContentPart5SourceType sourceType;
+
+  /// Required value: "document".
+  final String sourceType;
   final String title;
   const ContentPartSource6({
     this.filename,
@@ -2988,7 +2968,7 @@ final class ContentPartSource6 extends ContentPart {
           ? null
           : (json['providerMetadata'] as Map).map((key, item) =>
               MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      sourceType: ContentPart5SourceType.fromJson(json['sourceType']),
+      sourceType: json['sourceType'] as String,
       title: json['title'] as String,
     );
   }
@@ -2999,7 +2979,7 @@ final class ContentPartSource6 extends ContentPart {
         'id': id,
         'mediaType': mediaType,
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
-        'sourceType': sourceType.toJson(),
+        'sourceType': sourceType,
         'title': title,
       };
 }
@@ -3278,26 +3258,6 @@ final class ContentPartToolApprovalResponse extends ContentPart {
       };
 }
 
-enum ContentPart4SourceType {
-  url('url');
-
-  const ContentPart4SourceType(this.wireValue);
-  final String wireValue;
-  static ContentPart4SourceType fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
-}
-
-enum ContentPart5SourceType {
-  document('document');
-
-  const ContentPart5SourceType(this.wireValue);
-  final String wireValue;
-  static ContentPart5SourceType fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
-}
-
 /// A part of the content text generation returns: the AI SDK's core
 /// `ContentPart` (`ai` `generate-text/content-part.ts:12-33`), eleven kinds,
 /// separate from the provider's [`GenerateContent`].
@@ -3454,7 +3414,9 @@ final class ContentPartInputReasoningFile extends ContentPartInput {
 final class ContentPartInputSource5 extends ContentPartInput {
   final String id;
   final Map<String, Map<String, Object?>>? providerMetadata;
-  final ContentPartInput4SourceType sourceType;
+
+  /// Required value: "url".
+  final String sourceType;
   final String? title;
   final String url;
   const ContentPartInputSource5({
@@ -3473,7 +3435,7 @@ final class ContentPartInputSource5 extends ContentPartInput {
           ? null
           : (json['providerMetadata'] as Map).map((key, item) =>
               MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      sourceType: ContentPartInput4SourceType.fromJson(json['sourceType']),
+      sourceType: json['sourceType'] as String,
       title: json['title'] as String?,
       url: json['url'] as String,
     );
@@ -3483,7 +3445,7 @@ final class ContentPartInputSource5 extends ContentPartInput {
         'type': 'source',
         'id': id,
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
-        'sourceType': sourceType.toJson(),
+        'sourceType': sourceType,
         if (title != null) 'title': title,
         'url': url,
       };
@@ -3494,7 +3456,9 @@ final class ContentPartInputSource6 extends ContentPartInput {
   final String id;
   final String mediaType;
   final Map<String, Map<String, Object?>>? providerMetadata;
-  final ContentPartInput5SourceType sourceType;
+
+  /// Required value: "document".
+  final String sourceType;
   final String title;
   const ContentPartInputSource6({
     this.filename,
@@ -3515,7 +3479,7 @@ final class ContentPartInputSource6 extends ContentPartInput {
           ? null
           : (json['providerMetadata'] as Map).map((key, item) =>
               MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      sourceType: ContentPartInput5SourceType.fromJson(json['sourceType']),
+      sourceType: json['sourceType'] as String,
       title: json['title'] as String,
     );
   }
@@ -3526,7 +3490,7 @@ final class ContentPartInputSource6 extends ContentPartInput {
         'id': id,
         'mediaType': mediaType,
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
-        'sourceType': sourceType.toJson(),
+        'sourceType': sourceType,
         'title': title,
       };
 }
@@ -3805,26 +3769,6 @@ final class ContentPartInputToolApprovalResponse extends ContentPartInput {
         if (reason != null) 'reason': reason,
         'toolCall': toolCall.toJson(),
       };
-}
-
-enum ContentPartInput4SourceType {
-  url('url');
-
-  const ContentPartInput4SourceType(this.wireValue);
-  final String wireValue;
-  static ContentPartInput4SourceType fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
-}
-
-enum ContentPartInput5SourceType {
-  document('document');
-
-  const ContentPartInput5SourceType(this.wireValue);
-  final String wireValue;
-  static ContentPartInput5SourceType fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
 }
 
 final class CreateRecorderParams {
@@ -4506,15 +4450,6 @@ final class EmptyParams {
   Map<String, dynamic> toJson() => {};
 }
 
-final class EmptyParams2 {
-  const EmptyParams2();
-  factory EmptyParams2.fromJson(Map<String, dynamic> json) {
-    return EmptyParams2();
-  }
-
-  Map<String, dynamic> toJson() => {};
-}
-
 enum ErrorDomain {
   aimux('aimux'),
   recording('recording'),
@@ -5019,7 +4954,9 @@ final class GenerateContentToolCall extends GenerateContent {
 final class GenerateContentSource3 extends GenerateContent {
   final String id;
   final Map<String, Map<String, Object?>>? providerMetadata;
-  final GenerateContent2SourceType sourceType;
+
+  /// Required value: "url".
+  final String sourceType;
   final String? title;
   final String url;
   const GenerateContentSource3({
@@ -5038,7 +4975,7 @@ final class GenerateContentSource3 extends GenerateContent {
           ? null
           : (json['providerMetadata'] as Map).map((key, item) =>
               MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      sourceType: GenerateContent2SourceType.fromJson(json['sourceType']),
+      sourceType: json['sourceType'] as String,
       title: json['title'] as String?,
       url: json['url'] as String,
     );
@@ -5048,7 +4985,7 @@ final class GenerateContentSource3 extends GenerateContent {
         'type': 'source',
         'id': id,
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
-        'sourceType': sourceType.toJson(),
+        'sourceType': sourceType,
         if (title != null) 'title': title,
         'url': url,
       };
@@ -5059,7 +4996,9 @@ final class GenerateContentSource4 extends GenerateContent {
   final String id;
   final String mediaType;
   final Map<String, Map<String, Object?>>? providerMetadata;
-  final GenerateContent3SourceType sourceType;
+
+  /// Required value: "document".
+  final String sourceType;
   final String title;
   const GenerateContentSource4({
     this.filename,
@@ -5080,7 +5019,7 @@ final class GenerateContentSource4 extends GenerateContent {
           ? null
           : (json['providerMetadata'] as Map).map((key, item) =>
               MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      sourceType: GenerateContent3SourceType.fromJson(json['sourceType']),
+      sourceType: json['sourceType'] as String,
       title: json['title'] as String,
     );
   }
@@ -5091,7 +5030,7 @@ final class GenerateContentSource4 extends GenerateContent {
         'id': id,
         'mediaType': mediaType,
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
-        'sourceType': sourceType.toJson(),
+        'sourceType': sourceType,
         'title': title,
       };
 }
@@ -5297,26 +5236,6 @@ final class GenerateContentToolResult extends GenerateContent {
         'toolCallId': toolCallId,
         'toolName': toolName,
       };
-}
-
-enum GenerateContent2SourceType {
-  url('url');
-
-  const GenerateContent2SourceType(this.wireValue);
-  final String wireValue;
-  static GenerateContent2SourceType fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
-}
-
-enum GenerateContent3SourceType {
-  document('document');
-
-  const GenerateContent3SourceType(this.wireValue);
-  final String wireValue;
-  static GenerateContent3SourceType fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
 }
 
 /// `GenerateObjectResult.response`: the AI SDK's
@@ -5926,46 +5845,6 @@ final class HandleResult {
   });
   factory HandleResult.fromJson(Map<String, dynamic> json) {
     return HandleResult(
-      handle: HandleId.fromJson(json['handle']),
-      kind: HandleKind.fromJson(json['kind']),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'handle': handle.toJson(),
-        'kind': kind.toJson(),
-      };
-}
-
-final class HandleResult2 {
-  final HandleId handle;
-  final HandleKind kind;
-  const HandleResult2({
-    required this.handle,
-    required this.kind,
-  });
-  factory HandleResult2.fromJson(Map<String, dynamic> json) {
-    return HandleResult2(
-      handle: HandleId.fromJson(json['handle']),
-      kind: HandleKind.fromJson(json['kind']),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'handle': handle.toJson(),
-        'kind': kind.toJson(),
-      };
-}
-
-final class HandleResult3 {
-  final HandleId handle;
-  final HandleKind kind;
-  const HandleResult3({
-    required this.handle,
-    required this.kind,
-  });
-  factory HandleResult3.fromJson(Map<String, dynamic> json) {
-    return HandleResult3(
       handle: HandleId.fromJson(json['handle']),
       kind: HandleKind.fromJson(json['kind']),
     );
@@ -6641,6 +6520,254 @@ final class LanguageModelMessageTool extends LanguageModelMessage {
       };
 }
 
+/// Reasoning / thinking content part.
+final class LanguageModelReasoningPart {
+  final Map<String, Map<String, Object?>>? providerOptions;
+  final String text;
+  const LanguageModelReasoningPart({
+    this.providerOptions,
+    required this.text,
+  });
+  factory LanguageModelReasoningPart.fromJson(Map<String, dynamic> json) {
+    return LanguageModelReasoningPart(
+      providerOptions: json['providerOptions'] == null
+          ? null
+          : (json['providerOptions'] as Map).map((key, item) =>
+              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
+      text: json['text'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (providerOptions != null) 'providerOptions': providerOptions,
+        'text': text,
+      };
+}
+
+/// The provider-facing result of a tool call.
+sealed class LanguageModelToolResultOutput {
+  const LanguageModelToolResultOutput();
+  String get type;
+  factory LanguageModelToolResultOutput.fromJson(Map<String, dynamic> json) {
+    switch (json['type']) {
+      case 'text':
+        return LanguageModelToolResultOutputText.fromJson(json);
+      case 'json':
+        return LanguageModelToolResultOutputJson.fromJson(json);
+      case 'execution-denied':
+        return LanguageModelToolResultOutputExecutionDenied.fromJson(json);
+      case 'error-text':
+        return LanguageModelToolResultOutputErrorText.fromJson(json);
+      case 'error-json':
+        return LanguageModelToolResultOutputErrorJson.fromJson(json);
+      case 'content':
+        return LanguageModelToolResultOutputContent.fromJson(json);
+      default:
+        throw FormatException(
+            'Unknown LanguageModelToolResultOutput tag: ${json['type']}');
+    }
+  }
+
+  Map<String, dynamic> toJson();
+}
+
+final class LanguageModelToolResultOutputText
+    extends LanguageModelToolResultOutput {
+  final Map<String, Map<String, Object?>>? providerOptions;
+  final String value;
+  const LanguageModelToolResultOutputText({
+    this.providerOptions,
+    required this.value,
+  });
+  @override
+  String get type => 'text';
+  factory LanguageModelToolResultOutputText.fromJson(
+      Map<String, dynamic> json) {
+    return LanguageModelToolResultOutputText(
+      providerOptions: json['providerOptions'] == null
+          ? null
+          : (json['providerOptions'] as Map).map((key, item) =>
+              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
+      value: json['value'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'type': 'text',
+        if (providerOptions != null) 'providerOptions': providerOptions,
+        'value': value,
+      };
+}
+
+final class LanguageModelToolResultOutputJson
+    extends LanguageModelToolResultOutput {
+  final Map<String, Map<String, Object?>>? providerOptions;
+  final Object? value;
+  const LanguageModelToolResultOutputJson({
+    this.providerOptions,
+    required this.value,
+  });
+  @override
+  String get type => 'json';
+  factory LanguageModelToolResultOutputJson.fromJson(
+      Map<String, dynamic> json) {
+    return LanguageModelToolResultOutputJson(
+      providerOptions: json['providerOptions'] == null
+          ? null
+          : (json['providerOptions'] as Map).map((key, item) =>
+              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
+      value: json['value'],
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'type': 'json',
+        if (providerOptions != null) 'providerOptions': providerOptions,
+        'value': value,
+      };
+}
+
+final class LanguageModelToolResultOutputExecutionDenied
+    extends LanguageModelToolResultOutput {
+  final Map<String, Map<String, Object?>>? providerOptions;
+  final String? reason;
+  const LanguageModelToolResultOutputExecutionDenied({
+    this.providerOptions,
+    this.reason,
+  });
+  @override
+  String get type => 'execution-denied';
+  factory LanguageModelToolResultOutputExecutionDenied.fromJson(
+      Map<String, dynamic> json) {
+    return LanguageModelToolResultOutputExecutionDenied(
+      providerOptions: json['providerOptions'] == null
+          ? null
+          : (json['providerOptions'] as Map).map((key, item) =>
+              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
+      reason: json['reason'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'type': 'execution-denied',
+        if (providerOptions != null) 'providerOptions': providerOptions,
+        if (reason != null) 'reason': reason,
+      };
+}
+
+final class LanguageModelToolResultOutputErrorText
+    extends LanguageModelToolResultOutput {
+  final Map<String, Map<String, Object?>>? providerOptions;
+  final String value;
+  const LanguageModelToolResultOutputErrorText({
+    this.providerOptions,
+    required this.value,
+  });
+  @override
+  String get type => 'error-text';
+  factory LanguageModelToolResultOutputErrorText.fromJson(
+      Map<String, dynamic> json) {
+    return LanguageModelToolResultOutputErrorText(
+      providerOptions: json['providerOptions'] == null
+          ? null
+          : (json['providerOptions'] as Map).map((key, item) =>
+              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
+      value: json['value'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'type': 'error-text',
+        if (providerOptions != null) 'providerOptions': providerOptions,
+        'value': value,
+      };
+}
+
+final class LanguageModelToolResultOutputErrorJson
+    extends LanguageModelToolResultOutput {
+  final Map<String, Map<String, Object?>>? providerOptions;
+  final Object? value;
+  const LanguageModelToolResultOutputErrorJson({
+    this.providerOptions,
+    required this.value,
+  });
+  @override
+  String get type => 'error-json';
+  factory LanguageModelToolResultOutputErrorJson.fromJson(
+      Map<String, dynamic> json) {
+    return LanguageModelToolResultOutputErrorJson(
+      providerOptions: json['providerOptions'] == null
+          ? null
+          : (json['providerOptions'] as Map).map((key, item) =>
+              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
+      value: json['value'],
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'type': 'error-json',
+        if (providerOptions != null) 'providerOptions': providerOptions,
+        'value': value,
+      };
+}
+
+final class LanguageModelToolResultOutputContent
+    extends LanguageModelToolResultOutput {
+  final List<ToolResultContent> value;
+  const LanguageModelToolResultOutputContent({
+    required this.value,
+  });
+  @override
+  String get type => 'content';
+  factory LanguageModelToolResultOutputContent.fromJson(
+      Map<String, dynamic> json) {
+    return LanguageModelToolResultOutputContent(
+      value: (json['value'] as List)
+          .map((item) =>
+              ToolResultContent.fromJson(item as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'type': 'content',
+        'value': value.map((item) => item.toJson()).toList(),
+      };
+}
+
+/// Tool result content part.
+final class LanguageModelToolResultPart {
+  final LanguageModelToolResultOutput output;
+  final Map<String, Map<String, Object?>>? providerOptions;
+  final String toolCallId;
+  final String toolName;
+  const LanguageModelToolResultPart({
+    required this.output,
+    this.providerOptions,
+    required this.toolCallId,
+    required this.toolName,
+  });
+  factory LanguageModelToolResultPart.fromJson(Map<String, dynamic> json) {
+    return LanguageModelToolResultPart(
+      output: LanguageModelToolResultOutput.fromJson(
+          json['output'] as Map<String, dynamic>),
+      providerOptions: json['providerOptions'] == null
+          ? null
+          : (json['providerOptions'] as Map).map((key, item) =>
+              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
+      toolCallId: json['toolCallId'] as String,
+      toolName: json['toolName'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'output': output.toJson(),
+        if (providerOptions != null) 'providerOptions': providerOptions,
+        'toolCallId': toolCallId,
+        'toolName': toolName,
+      };
+}
+
 /// Token usage of a generation step or a whole call: the AI SDK's
 /// `LanguageModelUsage` (ai@7.0.127 `types/usage.ts:10-68`).
 ///
@@ -6940,8 +7067,20 @@ final class LoggingConfig {
       };
 }
 
+enum MiddlewareAuditMode {
+  disabled('disabled'),
+  shared('shared'),
+  strict('strict');
+
+  const MiddlewareAuditMode(this.wireValue);
+  final String wireValue;
+  static MiddlewareAuditMode fromJson(Object? value) =>
+      values.firstWhere((item) => item.wireValue == value);
+  String toJson() => wireValue;
+}
+
 final class MiddlewareParams {
-  final AuditMode? auditMode;
+  final MiddlewareAuditMode? auditMode;
   final String kind;
   final String? scopeName;
   final HandleIdInput? traceStore;
@@ -6955,7 +7094,7 @@ final class MiddlewareParams {
     return MiddlewareParams(
       auditMode: json['auditMode'] == null
           ? null
-          : AuditMode.fromJson(json['auditMode']),
+          : MiddlewareAuditMode.fromJson(json['auditMode']),
       kind: json['kind'] as String,
       scopeName: json['scopeName'] as String?,
       traceStore: json['traceStore'] == null
@@ -8955,30 +9094,6 @@ final class ReasoningPartReasoningFile extends ReasoningPart {
       };
 }
 
-/// Reasoning / thinking content part.
-final class ReasoningPart2 {
-  final Map<String, Map<String, Object?>>? providerOptions;
-  final String text;
-  const ReasoningPart2({
-    this.providerOptions,
-    required this.text,
-  });
-  factory ReasoningPart2.fromJson(Map<String, dynamic> json) {
-    return ReasoningPart2(
-      providerOptions: json['providerOptions'] == null
-          ? null
-          : (json['providerOptions'] as Map).map((key, item) =>
-              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      text: json['text'] as String,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        if (providerOptions != null) 'providerOptions': providerOptions,
-        'text': text,
-      };
-}
-
 /// Reasoning / thinking portrait for a model (advisory).
 final class ReasoningSpec {
   /// Minimum token budget (when `mode` is Budget/Mixed).
@@ -9334,6 +9449,52 @@ final class RegistryProviderParams {
 
   Map<String, dynamic> toJson() => {
         'key': key,
+      };
+}
+
+/// A replacement raw call whose tag is optional on input.
+final class RepairedToolCall {
+  final bool? dynamic_;
+  final String input;
+  final bool? providerExecuted;
+  final Map<String, Map<String, Object?>>? providerMetadata;
+  final String toolCallId;
+  final String toolName;
+
+  /// Required value: "tool-call".
+  final String? type;
+  const RepairedToolCall({
+    this.dynamic_,
+    required this.input,
+    this.providerExecuted,
+    this.providerMetadata,
+    required this.toolCallId,
+    required this.toolName,
+    this.type,
+  });
+  factory RepairedToolCall.fromJson(Map<String, dynamic> json) {
+    return RepairedToolCall(
+      dynamic_: json['dynamic'] as bool?,
+      input: json['input'] as String,
+      providerExecuted: json['providerExecuted'] as bool?,
+      providerMetadata: json['providerMetadata'] == null
+          ? null
+          : (json['providerMetadata'] as Map).map((key, item) =>
+              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
+      toolCallId: json['toolCallId'] as String,
+      toolName: json['toolName'] as String,
+      type: json['type'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (dynamic_ != null) 'dynamic': dynamic_,
+        'input': input,
+        if (providerExecuted != null) 'providerExecuted': providerExecuted,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+        'toolCallId': toolCallId,
+        'toolName': toolName,
+        if (type != null) 'type': type,
       };
 }
 
@@ -10008,7 +10169,7 @@ final class RouterParams {
 
 final class RuntimeConfigureParams {
   final LoggingConfig? logging;
-  final RuntimeConfigureParamsProxy? proxy;
+  final TransportProxy? proxy;
   const RuntimeConfigureParams({
     this.logging,
     this.proxy,
@@ -10020,46 +10181,13 @@ final class RuntimeConfigureParams {
           : LoggingConfig.fromJson(json['logging'] as Map<String, dynamic>),
       proxy: json['proxy'] == null
           ? null
-          : RuntimeConfigureParamsProxy.fromJson(
-              json['proxy'] as Map<String, dynamic>),
+          : TransportProxy.fromJson(json['proxy'] as Map<String, dynamic>),
     );
   }
 
   Map<String, dynamic> toJson() => {
         if (logging != null) 'logging': logging!.toJson(),
         if (proxy != null) 'proxy': proxy!.toJson(),
-      };
-}
-
-/// Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-/// hop, or the WebSocket connector. With every field empty, HTTP follows the
-/// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-/// reqwest does, and the WebSocket connector connects directly.
-final class RuntimeConfigureParamsProxy {
-  final String? allUrl;
-  final String? httpUrl;
-  final String? httpsUrl;
-  final String? noProxy;
-  const RuntimeConfigureParamsProxy({
-    this.allUrl,
-    this.httpUrl,
-    this.httpsUrl,
-    this.noProxy,
-  });
-  factory RuntimeConfigureParamsProxy.fromJson(Map<String, dynamic> json) {
-    return RuntimeConfigureParamsProxy(
-      allUrl: json['all_url'] as String?,
-      httpUrl: json['http_url'] as String?,
-      httpsUrl: json['https_url'] as String?,
-      noProxy: json['no_proxy'] as String?,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        if (allUrl != null) 'all_url': allUrl,
-        if (httpUrl != null) 'http_url': httpUrl,
-        if (httpsUrl != null) 'https_url': httpsUrl,
-        if (noProxy != null) 'no_proxy': noProxy,
       };
 }
 
@@ -11431,6 +11559,39 @@ final class StrategyWeighted extends Strategy {
       };
 }
 
+/// The two event formats carried by an operation stream.
+sealed class StreamEvent {
+  const StreamEvent();
+  factory StreamEvent.fromJson(Object? value) {
+    try {
+      return StreamEventBranch1.fromJson(value);
+    } catch (_) {
+      // Try the next branch in declaration order.
+    }
+    return StreamEventBranch2.fromJson(value);
+  }
+
+  Object? toJson();
+}
+
+final class StreamEventBranch1 extends StreamEvent {
+  final TextStreamPart value;
+  const StreamEventBranch1(this.value);
+  factory StreamEventBranch1.fromJson(Object? value) =>
+      StreamEventBranch1(
+          TextStreamPart.fromJson(value as Map<String, dynamic>));
+  Object? toJson() => value.toJson();
+}
+
+final class StreamEventBranch2 extends StreamEvent {
+  final ChatCompletionChunk value;
+  const StreamEventBranch2(this.value);
+  factory StreamEventBranch2.fromJson(Object? value) =>
+      StreamEventBranch2(
+          ChatCompletionChunk.fromJson(value as Map<String, dynamic>));
+  Object? toJson() => value.toJson();
+}
+
 sealed class StreamFrame {
   const StreamFrame();
   String get type;
@@ -11450,7 +11611,7 @@ sealed class StreamFrame {
 }
 
 final class StreamFrameEvent extends StreamFrame {
-  final StreamFrame0Event event;
+  final StreamEvent event;
   final String seq;
   const StreamFrameEvent({
     required this.event,
@@ -11460,7 +11621,7 @@ final class StreamFrameEvent extends StreamFrame {
   String get type => 'event';
   factory StreamFrameEvent.fromJson(Map<String, dynamic> json) {
     return StreamFrameEvent(
-      event: StreamFrame0Event.fromJson(json['event']),
+      event: StreamEvent.fromJson(json['event']),
       seq: _u64String(json['seq'] as String),
     );
   }
@@ -11501,38 +11662,6 @@ final class StreamFrameEnd extends StreamFrame {
       };
 }
 
-sealed class StreamFrame0Event {
-  const StreamFrame0Event();
-  factory StreamFrame0Event.fromJson(Object? value) {
-    try {
-      return StreamFrame0EventBranch1.fromJson(value);
-    } catch (_) {
-      // Try the next branch in declaration order.
-    }
-    return StreamFrame0EventBranch2.fromJson(value);
-  }
-
-  Object? toJson();
-}
-
-final class StreamFrame0EventBranch1 extends StreamFrame0Event {
-  final TextStreamPart value;
-  const StreamFrame0EventBranch1(this.value);
-  factory StreamFrame0EventBranch1.fromJson(Object? value) =>
-      StreamFrame0EventBranch1(
-          TextStreamPart.fromJson(value as Map<String, dynamic>));
-  Object? toJson() => value.toJson();
-}
-
-final class StreamFrame0EventBranch2 extends StreamFrame0Event {
-  final ChatCompletionChunk value;
-  const StreamFrame0EventBranch2(this.value);
-  factory StreamFrame0EventBranch2.fromJson(Object? value) =>
-      StreamFrame0EventBranch2(
-          ChatCompletionChunk.fromJson(value as Map<String, dynamic>));
-  Object? toJson() => value.toJson();
-}
-
 final class StreamOptions {
   final bool? includeReasoning;
   final bool? includeUsage;
@@ -11553,6 +11682,52 @@ final class StreamOptions {
       };
 }
 
+/// A raw provider call with its required wire tag.
+final class TaggedRawToolCall {
+  final bool? dynamic_;
+  final String input;
+  final bool? providerExecuted;
+  final Map<String, Map<String, Object?>>? providerMetadata;
+  final String toolCallId;
+  final String toolName;
+
+  /// Required value: "tool-call".
+  final String type;
+  const TaggedRawToolCall({
+    this.dynamic_,
+    required this.input,
+    this.providerExecuted,
+    this.providerMetadata,
+    required this.toolCallId,
+    required this.toolName,
+    required this.type,
+  });
+  factory TaggedRawToolCall.fromJson(Map<String, dynamic> json) {
+    return TaggedRawToolCall(
+      dynamic_: json['dynamic'] as bool?,
+      input: json['input'] as String,
+      providerExecuted: json['providerExecuted'] as bool?,
+      providerMetadata: json['providerMetadata'] == null
+          ? null
+          : (json['providerMetadata'] as Map).map((key, item) =>
+              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
+      toolCallId: json['toolCallId'] as String,
+      toolName: json['toolName'] as String,
+      type: json['type'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (dynamic_ != null) 'dynamic': dynamic_,
+        'input': input,
+        if (providerExecuted != null) 'providerExecuted': providerExecuted,
+        if (providerMetadata != null) 'providerMetadata': providerMetadata,
+        'toolCallId': toolCallId,
+        'toolName': toolName,
+        'type': type,
+      };
+}
+
 /// A tool result in a text result's `toolResults`: a [`TypedToolResult`]
 /// with its `type` tag, as the AI SDK writes it (`ai`
 /// `generate-text/tool-result.ts:12`, `generate-text-result.ts:93`).
@@ -11570,7 +11745,9 @@ final class TaggedToolResult {
   final Map<String, Map<String, Object?>>? providerMetadata;
   final String toolCallId;
   final String toolName;
-  final TaggedToolResultType type;
+
+  /// Required value: "tool-result".
+  final String type;
   const TaggedToolResult({
     this.dynamic_,
     this.input,
@@ -11595,7 +11772,7 @@ final class TaggedToolResult {
               MapEntry(key as String, Map<String, Object?>.from(item as Map))),
       toolCallId: json['toolCallId'] as String,
       toolName: json['toolName'] as String,
-      type: TaggedToolResultType.fromJson(json['type']),
+      type: json['type'] as String,
     );
   }
 
@@ -11608,18 +11785,8 @@ final class TaggedToolResult {
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
         'toolCallId': toolCallId,
         'toolName': toolName,
-        'type': type.toJson(),
+        'type': type,
       };
-}
-
-enum TaggedToolResultType {
-  toolResult('tool-result');
-
-  const TaggedToolResultType(this.wireValue);
-  final String wireValue;
-  static TaggedToolResultType fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
 }
 
 final class TerminalSummary {
@@ -12079,7 +12246,9 @@ final class TextStreamPartToolInputDelta extends TextStreamPart {
 final class TextStreamPartSource11 extends TextStreamPart {
   final String id;
   final Map<String, Map<String, Object?>>? providerMetadata;
-  final TextStreamPart10SourceType sourceType;
+
+  /// Required value: "url".
+  final String sourceType;
   final String? title;
   final String url;
   const TextStreamPartSource11({
@@ -12098,7 +12267,7 @@ final class TextStreamPartSource11 extends TextStreamPart {
           ? null
           : (json['providerMetadata'] as Map).map((key, item) =>
               MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      sourceType: TextStreamPart10SourceType.fromJson(json['sourceType']),
+      sourceType: json['sourceType'] as String,
       title: json['title'] as String?,
       url: json['url'] as String,
     );
@@ -12108,7 +12277,7 @@ final class TextStreamPartSource11 extends TextStreamPart {
         'type': 'source',
         'id': id,
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
-        'sourceType': sourceType.toJson(),
+        'sourceType': sourceType,
         if (title != null) 'title': title,
         'url': url,
       };
@@ -12119,7 +12288,9 @@ final class TextStreamPartSource12 extends TextStreamPart {
   final String id;
   final String mediaType;
   final Map<String, Map<String, Object?>>? providerMetadata;
-  final TextStreamPart11SourceType sourceType;
+
+  /// Required value: "document".
+  final String sourceType;
   final String title;
   const TextStreamPartSource12({
     this.filename,
@@ -12140,7 +12311,7 @@ final class TextStreamPartSource12 extends TextStreamPart {
           ? null
           : (json['providerMetadata'] as Map).map((key, item) =>
               MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      sourceType: TextStreamPart11SourceType.fromJson(json['sourceType']),
+      sourceType: json['sourceType'] as String,
       title: json['title'] as String,
     );
   }
@@ -12151,7 +12322,7 @@ final class TextStreamPartSource12 extends TextStreamPart {
         'id': id,
         'mediaType': mediaType,
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
-        'sourceType': sourceType.toJson(),
+        'sourceType': sourceType,
         'title': title,
       };
 }
@@ -12658,26 +12829,6 @@ final class TextStreamPartRaw extends TextStreamPart {
         'type': 'raw',
         'rawValue': rawValue,
       };
-}
-
-enum TextStreamPart10SourceType {
-  url('url');
-
-  const TextStreamPart10SourceType(this.wireValue);
-  final String wireValue;
-  static TextStreamPart10SourceType fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
-}
-
-enum TextStreamPart11SourceType {
-  document('document');
-
-  const TextStreamPart11SourceType(this.wireValue);
-  final String wireValue;
-  static TextStreamPart11SourceType fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
 }
 
 /// Per-call timeout configuration.
@@ -13267,7 +13418,7 @@ sealed class ToolCallRepairReply {
 }
 
 final class ToolCallRepairReplyRepaired extends ToolCallRepairReply {
-  final ToolCallRepairReply0ToolCall toolCall;
+  final RepairedToolCall toolCall;
   const ToolCallRepairReplyRepaired({
     required this.toolCall,
   });
@@ -13275,8 +13426,8 @@ final class ToolCallRepairReplyRepaired extends ToolCallRepairReply {
   String get type => 'repaired';
   factory ToolCallRepairReplyRepaired.fromJson(Map<String, dynamic> json) {
     return ToolCallRepairReplyRepaired(
-      toolCall: ToolCallRepairReply0ToolCall.fromJson(
-          json['toolCall'] as Map<String, dynamic>),
+      toolCall:
+          RepairedToolCall.fromJson(json['toolCall'] as Map<String, dynamic>),
     );
   }
 
@@ -13318,61 +13469,6 @@ final class ToolCallRepairReplyFailed extends ToolCallRepairReply {
       };
 }
 
-final class ToolCallRepairReply0ToolCall {
-  final bool? dynamic_;
-  final String input;
-  final bool? providerExecuted;
-  final Map<String, Map<String, Object?>>? providerMetadata;
-  final String toolCallId;
-  final String toolName;
-  final ToolCallRepairReply0ToolCallType? type;
-  const ToolCallRepairReply0ToolCall({
-    this.dynamic_,
-    required this.input,
-    this.providerExecuted,
-    this.providerMetadata,
-    required this.toolCallId,
-    required this.toolName,
-    this.type,
-  });
-  factory ToolCallRepairReply0ToolCall.fromJson(Map<String, dynamic> json) {
-    return ToolCallRepairReply0ToolCall(
-      dynamic_: json['dynamic'] as bool?,
-      input: json['input'] as String,
-      providerExecuted: json['providerExecuted'] as bool?,
-      providerMetadata: json['providerMetadata'] == null
-          ? null
-          : (json['providerMetadata'] as Map).map((key, item) =>
-              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      toolCallId: json['toolCallId'] as String,
-      toolName: json['toolName'] as String,
-      type: json['type'] == null
-          ? null
-          : ToolCallRepairReply0ToolCallType.fromJson(json['type']),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        if (dynamic_ != null) 'dynamic': dynamic_,
-        'input': input,
-        if (providerExecuted != null) 'providerExecuted': providerExecuted,
-        if (providerMetadata != null) 'providerMetadata': providerMetadata,
-        'toolCallId': toolCallId,
-        'toolName': toolName,
-        if (type != null) 'type': type!.toJson(),
-      };
-}
-
-enum ToolCallRepairReply0ToolCallType {
-  toolCall('tool-call');
-
-  const ToolCallRepairReply0ToolCallType(this.wireValue);
-  final String wireValue;
-  static ToolCallRepairReply0ToolCallType fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
-}
-
 /// How the model should choose tools, as the caller gives it
 /// (`GenerateTextOptions.tool_choice`).
 ///
@@ -13398,61 +13494,55 @@ sealed class ToolChoice {
 }
 
 final class ToolChoiceBranch1 extends ToolChoice {
-  final ToolChoice0 value;
+  final ToolChoiceMode value;
   const ToolChoiceBranch1(this.value);
   factory ToolChoiceBranch1.fromJson(Object? value) =>
-      ToolChoiceBranch1(ToolChoice0.fromJson(value));
+      ToolChoiceBranch1(ToolChoiceMode.fromJson(value));
   Object? toJson() => value.toJson();
 }
 
 final class ToolChoiceBranch2 extends ToolChoice {
-  final ToolChoice1 value;
+  final ToolChoiceTool value;
   const ToolChoiceBranch2(this.value);
   factory ToolChoiceBranch2.fromJson(Object? value) =>
-      ToolChoiceBranch2(ToolChoice1.fromJson(value as Map<String, dynamic>));
+      ToolChoiceBranch2(ToolChoiceTool.fromJson(value as Map<String, dynamic>));
   Object? toJson() => value.toJson();
 }
 
-enum ToolChoice0 {
+/// The string form of a user's tool choice.
+enum ToolChoiceMode {
   auto('auto'),
   none('none'),
   required_('required');
 
-  const ToolChoice0(this.wireValue);
+  const ToolChoiceMode(this.wireValue);
   final String wireValue;
-  static ToolChoice0 fromJson(Object? value) =>
+  static ToolChoiceMode fromJson(Object? value) =>
       values.firstWhere((item) => item.wireValue == value);
   String toJson() => wireValue;
 }
 
-final class ToolChoice1 {
+/// The named-tool form of a user's tool choice.
+final class ToolChoiceTool {
   final String toolName;
-  final ToolChoice1Type type;
-  const ToolChoice1({
+
+  /// Required value: "tool".
+  final String type;
+  const ToolChoiceTool({
     required this.toolName,
     required this.type,
   });
-  factory ToolChoice1.fromJson(Map<String, dynamic> json) {
-    return ToolChoice1(
+  factory ToolChoiceTool.fromJson(Map<String, dynamic> json) {
+    return ToolChoiceTool(
       toolName: json['toolName'] as String,
-      type: ToolChoice1Type.fromJson(json['type']),
+      type: json['type'] as String,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'toolName': toolName,
-        'type': type.toJson(),
+        'type': type,
       };
-}
-
-enum ToolChoice1Type {
-  tool('tool');
-
-  const ToolChoice1Type(this.wireValue);
-  final String wireValue;
-  static ToolChoice1Type fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
 }
 
 /// What [`AiMuxError::ToolChoiceViolation`] carries: the field set of the AI
@@ -13642,7 +13732,7 @@ sealed class ToolPart {
 }
 
 final class ToolPartToolResult extends ToolPart {
-  final ToolResultOutput2 output;
+  final LanguageModelToolResultOutput output;
   final Map<String, Map<String, Object?>>? providerOptions;
   final String toolCallId;
   final String toolName;
@@ -13656,8 +13746,8 @@ final class ToolPartToolResult extends ToolPart {
   String get type => 'tool-result';
   factory ToolPartToolResult.fromJson(Map<String, dynamic> json) {
     return ToolPartToolResult(
-      output:
-          ToolResultOutput2.fromJson(json['output'] as Map<String, dynamic>),
+      output: LanguageModelToolResultOutput.fromJson(
+          json['output'] as Map<String, dynamic>),
       providerOptions: json['providerOptions'] == null
           ? null
           : (json['providerOptions'] as Map).map((key, item) =>
@@ -13815,7 +13905,7 @@ final class ToolRepairContextSchema {
   final Object? inputSchema;
   final String? instructions;
   final List<ModelMessage> messages;
-  final ToolRepairContextSchemaToolCall toolCall;
+  final TaggedRawToolCall toolCall;
   final List<Tool> tools;
   const ToolRepairContextSchema({
     required this.error,
@@ -13833,8 +13923,8 @@ final class ToolRepairContextSchema {
       messages: (json['messages'] as List)
           .map((item) => ModelMessage.fromJson(item as Map<String, dynamic>))
           .toList(),
-      toolCall: ToolRepairContextSchemaToolCall.fromJson(
-          json['toolCall'] as Map<String, dynamic>),
+      toolCall:
+          TaggedRawToolCall.fromJson(json['toolCall'] as Map<String, dynamic>),
       tools: (json['tools'] as List)
           .map((item) => Tool.fromJson(item as Map<String, dynamic>))
           .toList(),
@@ -13849,59 +13939,6 @@ final class ToolRepairContextSchema {
         'toolCall': toolCall.toJson(),
         'tools': tools.map((item) => item.toJson()).toList(),
       };
-}
-
-final class ToolRepairContextSchemaToolCall {
-  final bool? dynamic_;
-  final String input;
-  final bool? providerExecuted;
-  final Map<String, Map<String, Object?>>? providerMetadata;
-  final String toolCallId;
-  final String toolName;
-  final ToolRepairContextSchemaToolCallType type;
-  const ToolRepairContextSchemaToolCall({
-    this.dynamic_,
-    required this.input,
-    this.providerExecuted,
-    this.providerMetadata,
-    required this.toolCallId,
-    required this.toolName,
-    required this.type,
-  });
-  factory ToolRepairContextSchemaToolCall.fromJson(Map<String, dynamic> json) {
-    return ToolRepairContextSchemaToolCall(
-      dynamic_: json['dynamic'] as bool?,
-      input: json['input'] as String,
-      providerExecuted: json['providerExecuted'] as bool?,
-      providerMetadata: json['providerMetadata'] == null
-          ? null
-          : (json['providerMetadata'] as Map).map((key, item) =>
-              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      toolCallId: json['toolCallId'] as String,
-      toolName: json['toolName'] as String,
-      type: ToolRepairContextSchemaToolCallType.fromJson(json['type']),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        if (dynamic_ != null) 'dynamic': dynamic_,
-        'input': input,
-        if (providerExecuted != null) 'providerExecuted': providerExecuted,
-        if (providerMetadata != null) 'providerMetadata': providerMetadata,
-        'toolCallId': toolCallId,
-        'toolName': toolName,
-        'type': type.toJson(),
-      };
-}
-
-enum ToolRepairContextSchemaToolCallType {
-  toolCall('tool-call');
-
-  const ToolRepairContextSchemaToolCallType(this.wireValue);
-  final String wireValue;
-  static ToolRepairContextSchemaToolCallType fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
 }
 
 /// A tool result produced by a provider-executed tool (e.g. xAI `file_search`,
@@ -14632,184 +14669,6 @@ final class ToolResultOutputContent extends ToolResultOutput {
       };
 }
 
-/// The provider-facing result of a tool call.
-sealed class ToolResultOutput2 {
-  const ToolResultOutput2();
-  String get type;
-  factory ToolResultOutput2.fromJson(Map<String, dynamic> json) {
-    switch (json['type']) {
-      case 'text':
-        return ToolResultOutput2Text.fromJson(json);
-      case 'json':
-        return ToolResultOutput2Json.fromJson(json);
-      case 'execution-denied':
-        return ToolResultOutput2ExecutionDenied.fromJson(json);
-      case 'error-text':
-        return ToolResultOutput2ErrorText.fromJson(json);
-      case 'error-json':
-        return ToolResultOutput2ErrorJson.fromJson(json);
-      case 'content':
-        return ToolResultOutput2Content.fromJson(json);
-      default:
-        throw FormatException('Unknown ToolResultOutput2 tag: ${json['type']}');
-    }
-  }
-
-  Map<String, dynamic> toJson();
-}
-
-final class ToolResultOutput2Text extends ToolResultOutput2 {
-  final Map<String, Map<String, Object?>>? providerOptions;
-  final String value;
-  const ToolResultOutput2Text({
-    this.providerOptions,
-    required this.value,
-  });
-  @override
-  String get type => 'text';
-  factory ToolResultOutput2Text.fromJson(Map<String, dynamic> json) {
-    return ToolResultOutput2Text(
-      providerOptions: json['providerOptions'] == null
-          ? null
-          : (json['providerOptions'] as Map).map((key, item) =>
-              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      value: json['value'] as String,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'type': 'text',
-        if (providerOptions != null) 'providerOptions': providerOptions,
-        'value': value,
-      };
-}
-
-final class ToolResultOutput2Json extends ToolResultOutput2 {
-  final Map<String, Map<String, Object?>>? providerOptions;
-  final Object? value;
-  const ToolResultOutput2Json({
-    this.providerOptions,
-    required this.value,
-  });
-  @override
-  String get type => 'json';
-  factory ToolResultOutput2Json.fromJson(Map<String, dynamic> json) {
-    return ToolResultOutput2Json(
-      providerOptions: json['providerOptions'] == null
-          ? null
-          : (json['providerOptions'] as Map).map((key, item) =>
-              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      value: json['value'],
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'type': 'json',
-        if (providerOptions != null) 'providerOptions': providerOptions,
-        'value': value,
-      };
-}
-
-final class ToolResultOutput2ExecutionDenied extends ToolResultOutput2 {
-  final Map<String, Map<String, Object?>>? providerOptions;
-  final String? reason;
-  const ToolResultOutput2ExecutionDenied({
-    this.providerOptions,
-    this.reason,
-  });
-  @override
-  String get type => 'execution-denied';
-  factory ToolResultOutput2ExecutionDenied.fromJson(Map<String, dynamic> json) {
-    return ToolResultOutput2ExecutionDenied(
-      providerOptions: json['providerOptions'] == null
-          ? null
-          : (json['providerOptions'] as Map).map((key, item) =>
-              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      reason: json['reason'] as String?,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'type': 'execution-denied',
-        if (providerOptions != null) 'providerOptions': providerOptions,
-        if (reason != null) 'reason': reason,
-      };
-}
-
-final class ToolResultOutput2ErrorText extends ToolResultOutput2 {
-  final Map<String, Map<String, Object?>>? providerOptions;
-  final String value;
-  const ToolResultOutput2ErrorText({
-    this.providerOptions,
-    required this.value,
-  });
-  @override
-  String get type => 'error-text';
-  factory ToolResultOutput2ErrorText.fromJson(Map<String, dynamic> json) {
-    return ToolResultOutput2ErrorText(
-      providerOptions: json['providerOptions'] == null
-          ? null
-          : (json['providerOptions'] as Map).map((key, item) =>
-              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      value: json['value'] as String,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'type': 'error-text',
-        if (providerOptions != null) 'providerOptions': providerOptions,
-        'value': value,
-      };
-}
-
-final class ToolResultOutput2ErrorJson extends ToolResultOutput2 {
-  final Map<String, Map<String, Object?>>? providerOptions;
-  final Object? value;
-  const ToolResultOutput2ErrorJson({
-    this.providerOptions,
-    required this.value,
-  });
-  @override
-  String get type => 'error-json';
-  factory ToolResultOutput2ErrorJson.fromJson(Map<String, dynamic> json) {
-    return ToolResultOutput2ErrorJson(
-      providerOptions: json['providerOptions'] == null
-          ? null
-          : (json['providerOptions'] as Map).map((key, item) =>
-              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      value: json['value'],
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'type': 'error-json',
-        if (providerOptions != null) 'providerOptions': providerOptions,
-        'value': value,
-      };
-}
-
-final class ToolResultOutput2Content extends ToolResultOutput2 {
-  final List<ToolResultContent> value;
-  const ToolResultOutput2Content({
-    required this.value,
-  });
-  @override
-  String get type => 'content';
-  factory ToolResultOutput2Content.fromJson(Map<String, dynamic> json) {
-    return ToolResultOutput2Content(
-      value: (json['value'] as List)
-          .map((item) =>
-              ToolResultContent.fromJson(item as Map<String, dynamic>))
-          .toList(),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'type': 'content',
-        'value': value.map((item) => item.toJson()).toList(),
-      };
-}
-
 /// The result of a tool call (upstream `ToolResultPart`,
 /// `provider-utils` `types/content-part.ts:240-268`).
 final class ToolResultPart {
@@ -14848,73 +14707,20 @@ final class ToolResultPart {
       };
 }
 
-/// Tool result content part.
-final class ToolResultPart2 {
-  final ToolResultOutput2 output;
-  final Map<String, Map<String, Object?>>? providerOptions;
-  final String toolCallId;
-  final String toolName;
-  const ToolResultPart2({
-    required this.output,
-    this.providerOptions,
-    required this.toolCallId,
-    required this.toolName,
-  });
-  factory ToolResultPart2.fromJson(Map<String, dynamic> json) {
-    return ToolResultPart2(
-      output:
-          ToolResultOutput2.fromJson(json['output'] as Map<String, dynamic>),
-      providerOptions: json['providerOptions'] == null
-          ? null
-          : (json['providerOptions'] as Map).map((key, item) =>
-              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      toolCallId: json['toolCallId'] as String,
-      toolName: json['toolName'] as String,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'output': output.toJson(),
-        if (providerOptions != null) 'providerOptions': providerOptions,
-        'toolCallId': toolCallId,
-        'toolName': toolName,
-      };
-}
-
-final class TraceAggregateParams {
-  /// Query filter (RFC-0015 §5.3).
-  final TraceAggregateParamsFilter? filter;
-  const TraceAggregateParams({
-    this.filter,
-  });
-  factory TraceAggregateParams.fromJson(Map<String, dynamic> json) {
-    return TraceAggregateParams(
-      filter: json['filter'] == null
-          ? null
-          : TraceAggregateParamsFilter.fromJson(
-              json['filter'] as Map<String, dynamic>),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        if (filter != null) 'filter': filter!.toJson(),
-      };
-}
-
 /// Query filter (RFC-0015 §5.3).
-final class TraceAggregateParamsFilter {
+final class TraceAggregateFilter {
   final String? model;
   final String? provider;
   final String? sessionId;
   final int? sinceUnixMs;
-  const TraceAggregateParamsFilter({
+  const TraceAggregateFilter({
     this.model,
     this.provider,
     this.sessionId,
     this.sinceUnixMs,
   });
-  factory TraceAggregateParamsFilter.fromJson(Map<String, dynamic> json) {
-    return TraceAggregateParamsFilter(
+  factory TraceAggregateFilter.fromJson(Map<String, dynamic> json) {
+    return TraceAggregateFilter(
       model: json['model'] as String?,
       provider: json['provider'] as String?,
       sessionId: json['sessionId'] as String?,
@@ -14930,8 +14736,39 @@ final class TraceAggregateParamsFilter {
       };
 }
 
+final class TraceAggregateParams {
+  final TraceAggregateFilter? filter;
+  const TraceAggregateParams({
+    this.filter,
+  });
+  factory TraceAggregateParams.fromJson(Map<String, dynamic> json) {
+    return TraceAggregateParams(
+      filter: json['filter'] == null
+          ? null
+          : TraceAggregateFilter.fromJson(
+              json['filter'] as Map<String, dynamic>),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (filter != null) 'filter': filter!.toJson(),
+      };
+}
+
+enum TraceAuditMode {
+  off('off'),
+  shared('shared'),
+  strict('strict');
+
+  const TraceAuditMode(this.wireValue);
+  final String wireValue;
+  static TraceAuditMode fromJson(Object? value) =>
+      values.firstWhere((item) => item.wireValue == value);
+  String toJson() => wireValue;
+}
+
 final class TraceCreateParams {
-  final AuditMode2? auditMode;
+  final TraceAuditMode? auditMode;
   final int? capacity;
   final int? perScopeCapacity;
   const TraceCreateParams({
@@ -14943,7 +14780,7 @@ final class TraceCreateParams {
     return TraceCreateParams(
       auditMode: json['auditMode'] == null
           ? null
-          : AuditMode2.fromJson(json['auditMode']),
+          : TraceAuditMode.fromJson(json['auditMode']),
       capacity: json['capacity'] as int?,
       perScopeCapacity: json['perScopeCapacity'] as int?,
     );
@@ -15738,11 +15575,7 @@ sealed class TransportParams {
 }
 
 final class TransportParamsFetch extends TransportParams {
-  /// Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-  /// hop, or the WebSocket connector. With every field empty, HTTP follows the
-  /// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-  /// reqwest does, and the WebSocket connector connects directly.
-  final TransportParams0Proxy? proxy;
+  final TransportProxy? proxy;
   const TransportParamsFetch({
     this.proxy,
   });
@@ -15752,8 +15585,7 @@ final class TransportParamsFetch extends TransportParams {
     return TransportParamsFetch(
       proxy: json['proxy'] == null
           ? null
-          : TransportParams0Proxy.fromJson(
-              json['proxy'] as Map<String, dynamic>),
+          : TransportProxy.fromJson(json['proxy'] as Map<String, dynamic>),
     );
   }
 
@@ -15764,11 +15596,7 @@ final class TransportParamsFetch extends TransportParams {
 }
 
 final class TransportParamsWs extends TransportParams {
-  /// Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-  /// hop, or the WebSocket connector. With every field empty, HTTP follows the
-  /// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-  /// reqwest does, and the WebSocket connector connects directly.
-  final TransportParams1Proxy? proxy;
+  final TransportProxy? proxy;
   const TransportParamsWs({
     this.proxy,
   });
@@ -15778,8 +15606,7 @@ final class TransportParamsWs extends TransportParams {
     return TransportParamsWs(
       proxy: json['proxy'] == null
           ? null
-          : TransportParams1Proxy.fromJson(
-              json['proxy'] as Map<String, dynamic>),
+          : TransportProxy.fromJson(json['proxy'] as Map<String, dynamic>),
     );
   }
 
@@ -15812,51 +15639,19 @@ final class TransportParamsDownload extends TransportParams {
 /// hop, or the WebSocket connector. With every field empty, HTTP follows the
 /// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
 /// reqwest does, and the WebSocket connector connects directly.
-final class TransportParams0Proxy {
+final class TransportProxy {
   final String? allUrl;
   final String? httpUrl;
   final String? httpsUrl;
   final String? noProxy;
-  const TransportParams0Proxy({
+  const TransportProxy({
     this.allUrl,
     this.httpUrl,
     this.httpsUrl,
     this.noProxy,
   });
-  factory TransportParams0Proxy.fromJson(Map<String, dynamic> json) {
-    return TransportParams0Proxy(
-      allUrl: json['all_url'] as String?,
-      httpUrl: json['http_url'] as String?,
-      httpsUrl: json['https_url'] as String?,
-      noProxy: json['no_proxy'] as String?,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        if (allUrl != null) 'all_url': allUrl,
-        if (httpUrl != null) 'http_url': httpUrl,
-        if (httpsUrl != null) 'https_url': httpsUrl,
-        if (noProxy != null) 'no_proxy': noProxy,
-      };
-}
-
-/// Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
-/// hop, or the WebSocket connector. With every field empty, HTTP follows the
-/// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
-/// reqwest does, and the WebSocket connector connects directly.
-final class TransportParams1Proxy {
-  final String? allUrl;
-  final String? httpUrl;
-  final String? httpsUrl;
-  final String? noProxy;
-  const TransportParams1Proxy({
-    this.allUrl,
-    this.httpUrl,
-    this.httpsUrl,
-    this.noProxy,
-  });
-  factory TransportParams1Proxy.fromJson(Map<String, dynamic> json) {
-    return TransportParams1Proxy(
+  factory TransportProxy.fromJson(Map<String, dynamic> json) {
+    return TransportProxy(
       allUrl: json['all_url'] as String?,
       httpUrl: json['http_url'] as String?,
       httpsUrl: json['https_url'] as String?,
@@ -15881,6 +15676,7 @@ sealed class TypedSource {
   String get sourceType;
   String get id;
   Map<String, Map<String, Object?>>? get providerMetadata;
+  String get type;
   factory TypedSource.fromJson(Map<String, dynamic> json) {
     switch (json['sourceType']) {
       case 'url':
@@ -15899,7 +15695,9 @@ final class TypedSourceUrl extends TypedSource {
   final String id;
   final Map<String, Map<String, Object?>>? providerMetadata;
   final String? title;
-  final TypedSource0Type type;
+
+  /// Required value: "source".
+  final String type;
   final String url;
   const TypedSourceUrl({
     required this.id,
@@ -15918,7 +15716,7 @@ final class TypedSourceUrl extends TypedSource {
           : (json['providerMetadata'] as Map).map((key, item) =>
               MapEntry(key as String, Map<String, Object?>.from(item as Map))),
       title: json['title'] as String?,
-      type: TypedSource0Type.fromJson(json['type']),
+      type: json['type'] as String,
       url: json['url'] as String,
     );
   }
@@ -15928,7 +15726,7 @@ final class TypedSourceUrl extends TypedSource {
         'id': id,
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
         if (title != null) 'title': title,
-        'type': type.toJson(),
+        'type': type,
         'url': url,
       };
 }
@@ -15939,7 +15737,9 @@ final class TypedSourceDocument extends TypedSource {
   final String mediaType;
   final Map<String, Map<String, Object?>>? providerMetadata;
   final String title;
-  final TypedSource1Type type;
+
+  /// Required value: "source".
+  final String type;
   const TypedSourceDocument({
     this.filename,
     required this.id,
@@ -15960,7 +15760,7 @@ final class TypedSourceDocument extends TypedSource {
           : (json['providerMetadata'] as Map).map((key, item) =>
               MapEntry(key as String, Map<String, Object?>.from(item as Map))),
       title: json['title'] as String,
-      type: TypedSource1Type.fromJson(json['type']),
+      type: json['type'] as String,
     );
   }
 
@@ -15971,28 +15771,8 @@ final class TypedSourceDocument extends TypedSource {
         'mediaType': mediaType,
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
         'title': title,
-        'type': type.toJson(),
+        'type': type,
       };
-}
-
-enum TypedSource0Type {
-  source('source');
-
-  const TypedSource0Type(this.wireValue);
-  final String wireValue;
-  static TypedSource0Type fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
-}
-
-enum TypedSource1Type {
-  source('source');
-
-  const TypedSource1Type(this.wireValue);
-  final String wireValue;
-  static TypedSource1Type fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
 }
 
 /// A tool call outside `content` (a text result's `toolCalls`, an approval
@@ -16026,7 +15806,9 @@ final class TypedToolCall {
 
   /// Tool name.
   final String toolName;
-  final TypedToolCallType type;
+
+  /// Required value: "tool-call".
+  final String type;
   const TypedToolCall({
     this.dynamic_,
     this.error,
@@ -16053,7 +15835,7 @@ final class TypedToolCall {
               MapEntry(key as String, Map<String, Object?>.from(item as Map))),
       toolCallId: json['toolCallId'] as String,
       toolName: json['toolName'] as String,
-      type: TypedToolCallType.fromJson(json['type']),
+      type: json['type'] as String,
     );
   }
 
@@ -16066,7 +15848,7 @@ final class TypedToolCall {
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
         'toolCallId': toolCallId,
         'toolName': toolName,
-        'type': type.toJson(),
+        'type': type,
       };
 }
 
@@ -16101,7 +15883,9 @@ final class TypedToolCallInput {
 
   /// Tool name.
   final String toolName;
-  final TypedToolCallInputType? type;
+
+  /// Required value: "tool-call".
+  final String? type;
   const TypedToolCallInput({
     this.dynamic_,
     this.error,
@@ -16128,9 +15912,7 @@ final class TypedToolCallInput {
               MapEntry(key as String, Map<String, Object?>.from(item as Map))),
       toolCallId: json['toolCallId'] as String,
       toolName: json['toolName'] as String,
-      type: json['type'] == null
-          ? null
-          : TypedToolCallInputType.fromJson(json['type']),
+      type: json['type'] as String?,
     );
   }
 
@@ -16143,28 +15925,8 @@ final class TypedToolCallInput {
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
         'toolCallId': toolCallId,
         'toolName': toolName,
-        if (type != null) 'type': type!.toJson(),
+        if (type != null) 'type': type,
       };
-}
-
-enum TypedToolCallInputType {
-  toolCall('tool-call');
-
-  const TypedToolCallInputType(this.wireValue);
-  final String wireValue;
-  static TypedToolCallInputType fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
-}
-
-enum TypedToolCallType {
-  toolCall('tool-call');
-
-  const TypedToolCallType(this.wireValue);
-  final String wireValue;
-  static TypedToolCallType fromJson(Object? value) =>
-      values.firstWhere((item) => item.wireValue == value);
-  String toJson() => wireValue;
 }
 
 /// A tool error (the AI SDK's `TypedToolError`, `ai`
@@ -17346,54 +17108,4 @@ final class WarningOther extends Warning {
         'type': 'other',
         'message': message,
       };
-}
-
-final class WireAimuxCoreModelCatalogueRuntimeModel {
-  final List<RuntimeModel> value;
-  const WireAimuxCoreModelCatalogueRuntimeModel(this.value);
-  factory WireAimuxCoreModelCatalogueRuntimeModel.fromJson(Object? value) =>
-      WireAimuxCoreModelCatalogueRuntimeModel((value as List)
-          .map((item) => RuntimeModel.fromJson(item as Map<String, dynamic>))
-          .toList());
-  Object? toJson() => value.map((item) => item.toJson()).toList();
-}
-
-final class WireAimuxCoreSessionSessionCall {
-  final List<SessionCall> value;
-  const WireAimuxCoreSessionSessionCall(this.value);
-  factory WireAimuxCoreSessionSessionCall.fromJson(Object? value) =>
-      WireAimuxCoreSessionSessionCall((value as List)
-          .map((item) => SessionCall.fromJson(item as Map<String, dynamic>))
-          .toList());
-  Object? toJson() => value.map((item) => item.toJson()).toList();
-}
-
-final class WireAimuxCoreSessionSessionView {
-  final List<SessionView> value;
-  const WireAimuxCoreSessionSessionView(this.value);
-  factory WireAimuxCoreSessionSessionView.fromJson(Object? value) =>
-      WireAimuxCoreSessionSessionView((value as List)
-          .map((item) => SessionView.fromJson(item as Map<String, dynamic>))
-          .toList());
-  Object? toJson() => value.map((item) => item.toJson()).toList();
-}
-
-final class WireAimuxCoreTraceStoreSessionStepStat {
-  final List<SessionStepStat> value;
-  const WireAimuxCoreTraceStoreSessionStepStat(this.value);
-  factory WireAimuxCoreTraceStoreSessionStepStat.fromJson(Object? value) =>
-      WireAimuxCoreTraceStoreSessionStepStat((value as List)
-          .map((item) => SessionStepStat.fromJson(item as Map<String, dynamic>))
-          .toList());
-  Object? toJson() => value.map((item) => item.toJson()).toList();
-}
-
-final class WireAimuxCoreTraceStoreTraceStats {
-  final List<TraceStats> value;
-  const WireAimuxCoreTraceStoreTraceStats(this.value);
-  factory WireAimuxCoreTraceStoreTraceStats.fromJson(Object? value) =>
-      WireAimuxCoreTraceStoreTraceStats((value as List)
-          .map((item) => TraceStats.fromJson(item as Map<String, dynamic>))
-          .toList());
-  Object? toJson() => value.map((item) => item.toJson()).toList();
 }

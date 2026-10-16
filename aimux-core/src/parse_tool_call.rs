@@ -464,7 +464,7 @@ pub enum ToolCallRepairReply {
     /// `LanguageModelV4ToolCall` does.
     Repaired {
         #[serde(deserialize_with = "crate::wire::typed::deserialize")]
-        #[schemars(schema_with = "crate::wire::read_tagged_schema::<RawToolCall>", extend("x-aimux-codec" = "tagged"))]
+        #[schemars(with = "crate::tool::RepairedToolCall", extend("x-aimux-codec" = "tagged"))]
         tool_call: RawToolCall,
     },
     /// Keep the original failure — the closure path's `None`.

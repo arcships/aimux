@@ -71,7 +71,7 @@ struct RuntimeDescribeParams {}
 struct RuntimeConfigureParams {
     logging: Option<LoggingConfig>,
     #[serde(default, deserialize_with = "deserialize_proxy")]
-    #[schemars(schema_with = "runtime_proxy_schema")]
+    #[schemars(with = "Option<super::handles::TransportProxy>")]
     proxy: Option<ProxyConfig>,
 }
 
@@ -103,14 +103,6 @@ impl LogLevel {
             Self::Trace => "trace",
         }
     }
-}
-
-// Reuse the transport's wire type, adding strict control-key validation only
-// at this boundary. ProxyConfig remains open for its existing Rust consumers.
-fn runtime_proxy_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-    let mut schema = <ProxyConfig as schemars::JsonSchema>::json_schema(generator);
-    schema.insert("additionalProperties".into(), false.into());
-    schemars::json_schema!({ "anyOf": [schema, { "type": "null" }] })
 }
 
 fn deserialize_proxy<'de, D>(deserializer: D) -> Result<Option<ProxyConfig>, D::Error>

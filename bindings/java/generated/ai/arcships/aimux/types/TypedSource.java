@@ -28,6 +28,7 @@ public abstract class TypedSource {
     public abstract String getSourceType();
     public String getId() { return null; }
     public Map<String, Map<String, JsonNode>> getProviderMetadata() { return null; }
+    public String getType() { return null; }
     public String getUrl() { return null; }
     public String getFilename() { return null; }
     public String getMediaType() { return null; }
@@ -46,8 +47,11 @@ public abstract class TypedSource {
         private final Map<String, Map<String, JsonNode>> providerMetadata;
         @JsonProperty("title")
         private final String title;
+        /**
+         * Required value: "source".
+         */
         @JsonProperty("type")
-        private final TypedSource0Type type;
+        private final String type;
         @JsonProperty("url")
         private final String url;
 
@@ -56,7 +60,7 @@ public abstract class TypedSource {
             @JsonProperty(value = "id", required = true) String id,
             @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
             @JsonProperty(value = "title") String title,
-            @JsonProperty(value = "type", required = true) TypedSource0Type type,
+            @JsonProperty(value = "type", required = true) String type,
             @JsonProperty(value = "url", required = true) String url) {
             this.id = id;
             this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
@@ -73,14 +77,14 @@ public abstract class TypedSource {
         public String getId() { return id; }
         public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
         public String getTitle() { return title; }
-        public TypedSource0Type getType() { return type; }
+        public String getType() { return type; }
         public String getUrl() { return url; }
 
         public static final class Builder {
             private String id;
             private Map<String, Map<String, JsonNode>> providerMetadata;
             private String title;
-            private TypedSource0Type type;
+            private String type;
             private String url;
 
             public Builder id(String value) {
@@ -98,7 +102,7 @@ public abstract class TypedSource {
                 return this;
             }
 
-            public Builder type(TypedSource0Type value) {
+            public Builder type(String value) {
                 this.type = value;
                 return this;
             }
@@ -128,8 +132,11 @@ public abstract class TypedSource {
         private final Map<String, Map<String, JsonNode>> providerMetadata;
         @JsonProperty("title")
         private final String title;
+        /**
+         * Required value: "source".
+         */
         @JsonProperty("type")
-        private final TypedSource1Type type;
+        private final String type;
 
         @JsonCreator
         public Document(
@@ -138,7 +145,7 @@ public abstract class TypedSource {
             @JsonProperty(value = "mediaType", required = true) String mediaType,
             @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
             @JsonProperty(value = "title", required = true) String title,
-            @JsonProperty(value = "type", required = true) TypedSource1Type type) {
+            @JsonProperty(value = "type", required = true) String type) {
             this.filename = filename;
             this.id = id;
             this.mediaType = mediaType;
@@ -157,7 +164,7 @@ public abstract class TypedSource {
         public String getMediaType() { return mediaType; }
         public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
         public String getTitle() { return title; }
-        public TypedSource1Type getType() { return type; }
+        public String getType() { return type; }
 
         public static final class Builder {
             private String filename;
@@ -165,7 +172,7 @@ public abstract class TypedSource {
             private String mediaType;
             private Map<String, Map<String, JsonNode>> providerMetadata;
             private String title;
-            private TypedSource1Type type;
+            private String type;
 
             public Builder filename(String value) {
                 this.filename = value;
@@ -192,7 +199,7 @@ public abstract class TypedSource {
                 return this;
             }
 
-            public Builder type(TypedSource1Type value) {
+            public Builder type(String value) {
                 this.type = value;
                 return this;
             }

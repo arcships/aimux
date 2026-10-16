@@ -17,6 +17,7 @@ use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, Ty
 
 #[derive(Clone, Copy, Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[schemars(rename = "MiddlewareAuditMode")]
 pub enum AuditMode {
     #[default]
     Disabled,
@@ -38,13 +39,13 @@ enum TransportParams {
     #[serde(rename = "fetch")]
     Fetch {
         #[serde(default, deserialize_with = "deserialize_proxy")]
-        #[schemars(schema_with = "transport_proxy_schema")]
+        #[schemars(with = "TransportProxy")]
         proxy: ProxyConfig,
     },
     #[serde(rename = "ws")]
     WebSocket {
         #[serde(default, deserialize_with = "deserialize_proxy")]
-        #[schemars(schema_with = "transport_proxy_schema")]
+        #[schemars(with = "TransportProxy")]
         proxy: ProxyConfig,
     },
     #[serde(rename = "download")]
@@ -56,6 +57,10 @@ enum TransportParams {
 
 // ProxyConfig is the canonical settings type, but its serde reader is open.
 // Close the control object without defining a second transport settings type.
+#[derive(schemars::JsonSchema)]
+#[schemars(schema_with = "transport_proxy_schema")]
+pub(super) struct TransportProxy;
+
 fn transport_proxy_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
     let mut schema = <ProxyConfig as schemars::JsonSchema>::json_schema(generator);
     schema.insert("additionalProperties".into(), false.into());

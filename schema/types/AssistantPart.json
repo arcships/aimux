@@ -31,7 +31,7 @@
       "type": "object"
     },
     {
-      "$ref": "ReasoningPart2.json",
+      "$ref": "LanguageModelReasoningPart.json",
       "properties": {
         "type": {
           "const": "reasoning",
@@ -83,7 +83,7 @@
       "type": "object"
     },
     {
-      "$ref": "ToolResultPart2.json",
+      "$ref": "LanguageModelToolResultPart.json",
       "properties": {
         "type": {
           "const": "tool-result",

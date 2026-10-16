@@ -236,7 +236,7 @@ fn presence(ty: &Ty) -> bool {
 fn dtype(ty: &Ty) -> String {
     match ty {
         Ty::Ref(name) => type_name(name),
-        Ty::String => "String".into(),
+        Ty::String | Ty::Literal(_) => "String".into(),
         Ty::Bool => "bool".into(),
         Ty::Int { .. } => "int".into(),
         Ty::Float => "double".into(),
@@ -273,7 +273,7 @@ fn decode(ty: &Ty, v: &str, model: &Model) -> String {
             };
             format!("{}.fromJson({input})", type_name(name))
         }
-        Ty::String | Ty::Bool | Ty::Int { .. } => format!("{v} as {}", dtype(ty)),
+        Ty::String | Ty::Literal(_) | Ty::Bool | Ty::Int { .. } => format!("{v} as {}", dtype(ty)),
         Ty::Float => format!("({v} as num).toDouble()"),
         Ty::Array(inner) if plain_scalar(inner) => {
             format!("({v} as List).cast<{}>()", dtype(inner))
@@ -291,7 +291,9 @@ fn decode(ty: &Ty, v: &str, model: &Model) -> String {
         ),
         Ty::Json => v.into(),
         Ty::Nullable(inner) => match **inner {
-            Ty::String | Ty::Bool | Ty::Int { .. } => format!("{v} as {}", dtype(ty)),
+            Ty::String | Ty::Literal(_) | Ty::Bool | Ty::Int { .. } => {
+                format!("{v} as {}", dtype(ty))
+            }
             Ty::Json => v.into(),
             _ => format!("{v} == null ? null : {}", decode(inner, v, model)),
         },
@@ -307,14 +309,18 @@ fn decode_optional(ty: &Ty, v: &str, model: &Model) -> String {
         return decode(ty, v, model);
     }
     match ty {
-        Ty::String | Ty::Bool | Ty::Int { .. } => format!("{v} as {}", optional(dtype(ty))),
+        Ty::String | Ty::Literal(_) | Ty::Bool | Ty::Int { .. } => {
+            format!("{v} as {}", optional(dtype(ty)))
+        }
         _ => format!("{v} == null ? null : {}", decode(ty, v, model)),
     }
 }
 
 fn plain_scalar(ty: &Ty) -> bool {
-    matches!(ty, Ty::String | Ty::Bool | Ty::Int { .. } | Ty::Json)
-        || matches!(ty, Ty::Nullable(inner) if plain_scalar(inner))
+    matches!(
+        ty,
+        Ty::String | Ty::Literal(_) | Ty::Bool | Ty::Int { .. } | Ty::Json
+    ) || matches!(ty, Ty::Nullable(inner) if plain_scalar(inner))
 }
 
 fn needs_encoding(ty: &Ty) -> bool {

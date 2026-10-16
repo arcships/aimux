@@ -289,8 +289,11 @@ public abstract class ContentPartInput {
         private final String id;
         @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
+        /**
+         * Required value: "url".
+         */
         @JsonProperty("sourceType")
-        private final ContentPartInput4SourceType sourceType;
+        private final String sourceType;
         @JsonProperty("title")
         private final String title;
         @JsonProperty("url")
@@ -300,7 +303,7 @@ public abstract class ContentPartInput {
         public Source5(
             @JsonProperty(value = "id", required = true) String id,
             @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
-            @JsonProperty(value = "sourceType", required = true) ContentPartInput4SourceType sourceType,
+            @JsonProperty(value = "sourceType", required = true) String sourceType,
             @JsonProperty(value = "title") String title,
             @JsonProperty(value = "url", required = true) String url) {
             this.id = id;
@@ -317,14 +320,14 @@ public abstract class ContentPartInput {
         public String getType() { return "source"; }
         public String getId() { return id; }
         public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
-        public ContentPartInput4SourceType getSourceType() { return sourceType; }
+        public String getSourceType() { return sourceType; }
         public String getTitle() { return title; }
         public String getUrl() { return url; }
 
         public static final class Builder {
             private String id;
             private Map<String, Map<String, JsonNode>> providerMetadata;
-            private ContentPartInput4SourceType sourceType;
+            private String sourceType;
             private String title;
             private String url;
 
@@ -338,7 +341,7 @@ public abstract class ContentPartInput {
                 return this;
             }
 
-            public Builder sourceType(ContentPartInput4SourceType value) {
+            public Builder sourceType(String value) {
                 this.sourceType = value;
                 return this;
             }
@@ -371,8 +374,11 @@ public abstract class ContentPartInput {
         private final String mediaType;
         @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
+        /**
+         * Required value: "document".
+         */
         @JsonProperty("sourceType")
-        private final ContentPartInput5SourceType sourceType;
+        private final String sourceType;
         @JsonProperty("title")
         private final String title;
 
@@ -382,7 +388,7 @@ public abstract class ContentPartInput {
             @JsonProperty(value = "id", required = true) String id,
             @JsonProperty(value = "mediaType", required = true) String mediaType,
             @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
-            @JsonProperty(value = "sourceType", required = true) ContentPartInput5SourceType sourceType,
+            @JsonProperty(value = "sourceType", required = true) String sourceType,
             @JsonProperty(value = "title", required = true) String title) {
             this.filename = filename;
             this.id = id;
@@ -401,7 +407,7 @@ public abstract class ContentPartInput {
         public String getId() { return id; }
         public String getMediaType() { return mediaType; }
         public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
-        public ContentPartInput5SourceType getSourceType() { return sourceType; }
+        public String getSourceType() { return sourceType; }
         public String getTitle() { return title; }
 
         public static final class Builder {
@@ -409,7 +415,7 @@ public abstract class ContentPartInput {
             private String id;
             private String mediaType;
             private Map<String, Map<String, JsonNode>> providerMetadata;
-            private ContentPartInput5SourceType sourceType;
+            private String sourceType;
             private String title;
 
             public Builder filename(String value) {
@@ -432,7 +438,7 @@ public abstract class ContentPartInput {
                 return this;
             }
 
-            public Builder sourceType(ContentPartInput5SourceType value) {
+            public Builder sourceType(String value) {
                 this.sourceType = value;
                 return this;
             }

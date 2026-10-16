@@ -23,7 +23,7 @@ public abstract class ToolPart {
 
     @JsonProperty("type")
     public abstract String getType();
-    public ToolResultOutput2 getOutput() { return null; }
+    public LanguageModelToolResultOutput getOutput() { return null; }
     public Map<String, Map<String, JsonNode>> getProviderOptions() { return null; }
     public String getToolCallId() { return null; }
     public String getToolName() { return null; }
@@ -40,7 +40,7 @@ public abstract class ToolPart {
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class ToolResultVariant extends ToolPart {
         @JsonProperty("output")
-        private final ToolResultOutput2 output;
+        private final LanguageModelToolResultOutput output;
         @JsonProperty("providerOptions")
         private final Map<String, Map<String, JsonNode>> providerOptions;
         @JsonProperty("toolCallId")
@@ -50,7 +50,7 @@ public abstract class ToolPart {
 
         @JsonCreator
         public ToolResultVariant(
-            @JsonProperty(value = "output", required = true) ToolResultOutput2 output,
+            @JsonProperty(value = "output", required = true) LanguageModelToolResultOutput output,
             @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
             @JsonProperty(value = "toolCallId", required = true) String toolCallId,
             @JsonProperty(value = "toolName", required = true) String toolName) {
@@ -65,18 +65,18 @@ public abstract class ToolPart {
         @Override
         @JsonProperty("type")
         public String getType() { return "tool-result"; }
-        public ToolResultOutput2 getOutput() { return output; }
+        public LanguageModelToolResultOutput getOutput() { return output; }
         public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
         public String getToolCallId() { return toolCallId; }
         public String getToolName() { return toolName; }
 
         public static final class Builder {
-            private ToolResultOutput2 output;
+            private LanguageModelToolResultOutput output;
             private Map<String, Map<String, JsonNode>> providerOptions;
             private String toolCallId;
             private String toolName;
 
-            public Builder output(ToolResultOutput2 value) {
+            public Builder output(LanguageModelToolResultOutput value) {
                 this.output = value;
                 return this;
             }

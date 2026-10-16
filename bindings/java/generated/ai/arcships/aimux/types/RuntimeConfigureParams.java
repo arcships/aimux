@@ -14,30 +14,30 @@ public final class RuntimeConfigureParams {
     @JsonProperty("logging")
     private final LoggingConfig logging;
     @JsonProperty("proxy")
-    private final RuntimeConfigureParamsProxy proxy;
+    private final TransportProxy proxy;
 
     @JsonCreator
     public RuntimeConfigureParams(
         @JsonProperty(value = "logging") LoggingConfig logging,
-        @JsonProperty(value = "proxy") RuntimeConfigureParamsProxy proxy) {
+        @JsonProperty(value = "proxy") TransportProxy proxy) {
         this.logging = logging;
         this.proxy = proxy;
     }
 
     public static Builder builder() { return new Builder(); }
     public LoggingConfig getLogging() { return logging; }
-    public RuntimeConfigureParamsProxy getProxy() { return proxy; }
+    public TransportProxy getProxy() { return proxy; }
 
     public static final class Builder {
         private LoggingConfig logging;
-        private RuntimeConfigureParamsProxy proxy;
+        private TransportProxy proxy;
 
         public Builder logging(LoggingConfig value) {
             this.logging = value;
             return this;
         }
 
-        public Builder proxy(RuntimeConfigureParamsProxy value) {
+        public Builder proxy(TransportProxy value) {
             this.proxy = value;
             return this;
         }

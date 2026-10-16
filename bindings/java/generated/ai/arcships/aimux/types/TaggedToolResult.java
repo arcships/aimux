@@ -38,8 +38,11 @@ public final class TaggedToolResult {
     private final String toolCallId;
     @JsonProperty("toolName")
     private final String toolName;
+    /**
+     * Required value: "tool-result".
+     */
     @JsonProperty("type")
-    private final TaggedToolResultType type;
+    private final String type;
 
     @JsonCreator
     public TaggedToolResult(
@@ -51,7 +54,7 @@ public final class TaggedToolResult {
         @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
         @JsonProperty(value = "toolCallId", required = true) String toolCallId,
         @JsonProperty(value = "toolName", required = true) String toolName,
-        @JsonProperty(value = "type", required = true) TaggedToolResultType type) {
+        @JsonProperty(value = "type", required = true) String type) {
         this.dynamic = dynamic;
         this.input = input == null || input.isNull() ? null : input.deepCopy();
         this.output = output == null ? null : output.deepCopy();
@@ -72,7 +75,7 @@ public final class TaggedToolResult {
     public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
     public String getToolCallId() { return toolCallId; }
     public String getToolName() { return toolName; }
-    public TaggedToolResultType getType() { return type; }
+    public String getType() { return type; }
 
     public static final class Builder {
         private Boolean dynamic;
@@ -83,7 +86,7 @@ public final class TaggedToolResult {
         private Map<String, Map<String, JsonNode>> providerMetadata;
         private String toolCallId;
         private String toolName;
-        private TaggedToolResultType type;
+        private String type;
 
         public Builder dynamic(Boolean value) {
             this.dynamic = value;
@@ -125,7 +128,7 @@ public final class TaggedToolResult {
             return this;
         }
 
-        public Builder type(TaggedToolResultType value) {
+        public Builder type(String value) {
             this.type = value;
             return this;
         }

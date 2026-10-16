@@ -42,11 +42,11 @@ public final class TypedModel implements AutoCloseable {
         Objects.requireNonNull(consumer, "consumer");
         model.stream(paramsJson, frame -> {
             if (frame instanceof StreamFrame.Event) {
-                StreamFrame0Event event = ((StreamFrame.Event) frame).getEvent();
-                if (!(event instanceof StreamFrame0Event.Branch1)) {
+                StreamEvent event = ((StreamFrame.Event) frame).getEvent();
+                if (!(event instanceof StreamEvent.Branch1)) {
                     throw new IllegalStateException("Expected text stream event");
                 }
-                consumer.accept(((StreamFrame0Event.Branch1) event).getValue());
+                consumer.accept(((StreamEvent.Branch1) event).getValue());
             }
         });
     }

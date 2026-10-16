@@ -27,7 +27,7 @@ pub enum StreamFrame {
     Event {
         #[schemars(extend("x-aimux-codec" = "u64-string"))]
         seq: String,
-        #[schemars(schema_with = "frame_event_schema")]
+        #[schemars(with = "StreamEvent")]
         event: serde_json::Value,
     },
     End {
@@ -39,10 +39,13 @@ pub enum StreamFrame {
     },
 }
 
-fn frame_event_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-    let text = generator.subschema_for::<aimux_core::stream_part::TextStreamPart>();
-    let openai = generator.subschema_for::<aimux_core::openai_output::ChatCompletionChunk>();
-    schemars::json_schema!({ "anyOf": [text, openai], "x-aimux-codec": "ordered-untagged" })
+/// The two event formats carried by an operation stream.
+#[derive(schemars::JsonSchema)]
+#[schemars(untagged, extend("x-aimux-codec" = "ordered-untagged"))]
+#[allow(dead_code)]
+enum StreamEvent {
+    Text(Box<aimux_core::stream_part::TextStreamPart>),
+    OpenAi(aimux_core::openai_output::ChatCompletionChunk),
 }
 
 /// Pull-driven framing: at most one upstream item is read for each output item.
