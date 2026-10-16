@@ -619,3 +619,19 @@ fn type_validator(manifest: &Value, id: &str) -> jsonschema::Validator {
     });
     jsonschema::validator_for(&root).unwrap()
 }
+
+#[test]
+fn packages_list_every_provider_create_package_once() {
+    let manifest = manifest();
+    let packages: Vec<&str> = manifest["packages"]
+        .as_array()
+        .expect("manifest.packages")
+        .iter()
+        .map(|name| name.as_str().expect("package name"))
+        .collect();
+    assert!(packages.windows(2).all(|pair| pair[0] < pair[1]));
+    assert!(packages.contains(&"jev"));
+    for name in aimux_providers::provider_names() {
+        assert!(packages.contains(&name), "{name}");
+    }
+}

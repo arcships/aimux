@@ -41,7 +41,14 @@ const addon = resolve(folder, 'contract.node')
 copyFileSync(library!, addon)
 const { Runtime } = createRequire(import.meta.url)(addon)
 const runtime = new Runtime()
-process.on('exit', () => rmSync(folder, { recursive: true, force: true }))
+// Windows keeps a loaded addon's file locked until the process ends.
+process.on('exit', () => {
+  try {
+    rmSync(folder, { recursive: true, force: true })
+  } catch (error) {
+    if (process.platform !== 'win32') throw error
+  }
+})
 
 function normalizeError(error: Record<string, any>): object {
   assert.equal(typeof error.message, 'string')

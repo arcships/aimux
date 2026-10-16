@@ -7,13 +7,15 @@ native=$(cd "$(dirname "$0")/../native" && pwd)
 required=($(sed -n 's/.*\(aimux_[a-z0-9_]*\)(.*/\1/p' "$native/aimux_ops.h"
   sed -n '/^EXPORT/s/.*\(aimux_dart_[a-z0-9_]*\)(.*/\1/p' "$native/aimux_dart.c"))
 symbols=$(mktemp)
-trap 'rm -f "$symbols"' EXIT
+trap 'rm -f "$symbols" "$symbols.names"' EXIT
 while IFS= read -r -d '' file; do
   # Undefined imports do not establish that force_load retained the ABI.
   nm -gU "$file" >> "$symbols" 2>/dev/null || true
 done < <(find "$app" -type f -perm -111 -print0)
+# Keep only the names, so grep -q reads a file and no pipe writer sees SIGPIPE.
+awk '{print $NF}' "$symbols" > "$symbols.names"
 for symbol in "${required[@]}"; do
-  if ! awk '{print $NF}' "$symbols" | grep -qx "_\{0,1\}$symbol"; then
+  if ! grep -qx "_\{0,1\}$symbol" "$symbols.names"; then
     echo "FAIL: defined symbol $symbol missing from $app" >&2
     exit 1
   fi

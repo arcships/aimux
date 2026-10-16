@@ -288,6 +288,17 @@ impl ModelMethod {
     }
 }
 
+/// The Decision-only package provider.create builds itself rather than through the factory.
+const JEV: &str = "jev";
+
+/// Every package name provider.create accepts, sorted.
+pub(crate) fn packages() -> Vec<&'static str> {
+    let mut names = aimux_providers::provider_names();
+    names.push(JEV);
+    names.sort_unstable();
+    names
+}
+
 // Entry::Provider holds the canonical trait object. Keep only weak, per-object
 // descriptor metadata here; package configuration stays in aimux-providers.
 struct ProviderDescriptor {
@@ -402,7 +413,7 @@ fn create_package(
         get(owner, handle, HandleKind::CredentialResolver)?;
         return Err(unsupported("credentialResolver settings"));
     }
-    if package == "jev" {
+    if package == JEV {
         if fetch.is_some()
             || settings.base_url.is_some()
             || settings.organization.is_some()
