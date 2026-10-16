@@ -99,7 +99,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exports only the tracker from its index. The previous `aimux-stream` version was
   a port of an older, index-only tracker. Deltas are correlated by wire
   `id`, `index` and function name (ambiguous deltas are dropped), ids are
-  de-duplicated with `-N` suffixes, blank function names are ignored, and
+  de-duplicated with `-N` suffixes, generated ids come from the new
+  `generate_id` (upstream's default `generateId`; `tool-call` only when a
+  generator returns a blank id), blank function names are ignored, and
   `finish` orders calls by index only when every call has one. It emits
   `aimux_core::StreamPart` tool-input parts directly (`ToolInputStart` /
   `ToolInputDelta` / `ToolInputEnd` / `ToolCall`); there is no separate
@@ -126,10 +128,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of by `index` alone: deltas are matched by wire id, index and
   function name; a continuation without an id follows its call; indices
   reused across parallel calls stay distinct; ambiguous deltas are dropped;
-  a call whose delta carries no id gets a generated `tool-call` /
-  `tool-call-N` id instead of an empty string; a new call without a function
-  name ends the stream with `InvalidResponseData` (previously it started a
-  call with an empty name). `DeltaToolCall.index` is now `Option<usize>`.
+  a call whose delta carries no id gets a generated id, as upstream, instead
+  of an empty string; a new call without a function name ends the stream with
+  `InvalidResponseData` (previously it started a call with an empty name).
+  `DeltaToolCall.index` is now `Option<usize>`.
 
 ### Removed
 

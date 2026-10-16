@@ -10,6 +10,7 @@
 pub mod api_key;
 mod download_guard;
 pub mod extract_response_headers;
+pub mod generate_id;
 pub mod get_from_api;
 pub mod handle_fetch_error;
 pub mod headers;
@@ -30,6 +31,7 @@ pub mod ws;
 
 pub use api_key::load_api_key;
 pub use download_guard::same_origin;
+pub use generate_id::generate_id;
 pub use get_from_api::get_from_api;
 pub use headers::with_user_agent_suffix;
 pub use http::{
