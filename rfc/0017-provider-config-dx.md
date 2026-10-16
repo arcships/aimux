@@ -4,6 +4,7 @@
 > **Date**: 2026-08-01
 > **Scope**: 统一 aimux 的 provider 配置层——把 Rust core 已有但 Node 未透出的能力(headers/org/project/retry)暴露出来,引入通用 `bodyOverrides`(JSON deep merge)替代闭包式 transform,并以**配置数据(而非代码枚举)**驱动 Qwen/Kimi/GLM 等厂商的思考开关翻译
 > **Related**: [RFC-0016](0016-align-with-aisdk.md) 对齐 Vercel AI SDK 能力缺口(本 RFC 补齐 M1/M5 + 思考开关翻译层),[RFC-0009](0009-request-resilience.md) retry(本 RFC 透出 maxRetries)
+> **后续变更**: 2026-10-16(#252)`CallOptions` 不再有 `max_retries`、`timeout`、`session_id`。三者是操作设置:调用方在 `GenerateTextOptions` 上传入,`generate_text` / `stream_text` 把它们放进 `OperationSettings`,模型调用期间下层用 `OperationSettings::current()` 读取。AI SDK 同样把 `maxRetries`、`timeout` 放在 `generateText` 的请求选项上,`LanguageModelV4CallOptions` 里没有它们。录制仍把三者写在 `InputRecord.options` 的原键名下,录制格式不变。§2.4 已按此改写;§3 阶段 1 的改动清单是当时的落点。
 
 ---
 
@@ -179,7 +180,7 @@ await generateText(model, p, {
 
 ### 2.4 maxRetries(per-call)
 
-`GenerateTextOptions` 和 `CallOptions` 新增 `max_retries`:
+`GenerateTextOptions` 新增 `max_retries`(操作设置,模型调用选项 `CallOptions` 不带它):
 
 ```rust
 pub struct GenerateTextOptions {

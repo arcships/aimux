@@ -4,6 +4,7 @@
 > **Date**: 2026-08-14
 > **Scope**: 新增 `tools/aimux-web` —— 本地 Web 服务(axum)+ 浏览器 SPA(Vue 3)。覆盖 Playground / Agent(前端 JS 驱动 loop)/ Traces / Sessions / Replay / Cache probe 六个页面,复用 RFC-0015 trace、RFC-0023 recording/replay、RFC-0024 session、RFC-0027 model catalogue
 > **Related**: [RFC-0015](0015-cache-trace-audit.md)(cache trace)、[RFC-0023](0023-runtime-request-recording.md)(录制/回放)、[RFC-0024](0024-session-aggregation.md)(会话归组)、[RFC-0025](0025-aimux-cli-cache-probe.md)(CLI 三层拆分②)、[RFC-0027](0027-model-catalogue-and-list-api.md)(model catalogue)、[RFC-0014](0014-logging.md)(统一日志)
+> **后续变更**: 2026-10-16(#252)`CallOptions` 不再有 `max_retries`、`timeout`、`session_id`。三者是操作设置:调用方在 `GenerateTextOptions` 上传入,`generate_text` / `stream_text` 把它们放进 `OperationSettings`,模型调用期间下层用 `OperationSettings::current()` 读取。AI SDK 同样把 `maxRetries`、`timeout` 放在 `generateText` 的请求选项上,`LanguageModelV4CallOptions` 里没有它们。录制仍把三者写在 `InputRecord.options` 的原键名下,录制格式不变。§5 的 session 透传已按此改写。
 
 ---
 
@@ -210,7 +211,7 @@ POST /api/calls
 ### 5.4 多步关联(前端 loop 与 trace 的桥梁)
 
 - 前端在 agent 运行时,每次 `POST /api/calls` 都带**同一个** `session_id` + 自增 `step`;
-- 后端 `CallOptions.session_id` 透传(RFC-0024),`SessionStore.append` 归组,`RingRecorder` 落 `Recording`(`session_id`/`step` 字段由 RFC-0023 P1 已实现);
+- 后端把 `session_id` 作为操作设置传入(`GenerateTextOptions.session_id`,RFC-0024),`SessionStore.append` 归组,`RingRecorder` 落 `Recording`(`session_id`/`step` 字段由 RFC-0023 P1 已实现);
 - Traces 页按 `session_id` 过滤即得**整个 agent 运行的调用链**,按 `step` 排序渲染瀑布图;
 - 单条失败/异常调用不影响会话归组(录制在入口发生,失败也在会话内)。
 
