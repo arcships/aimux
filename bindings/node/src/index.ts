@@ -1,34 +1,13 @@
-import { Runtime } from './native.ts'
-import type { Abort as RawAbort, Manifest } from './native.ts'
-import { AimuxError, protocolError } from './error.ts'
-import type { ErrorEnvelope } from './error.ts'
-import type { DecideOptions } from './types/DecideOptions'
-import type { DecideResult } from './types/DecideResult'
-import type { GenerateTextOptions } from './types/GenerateTextOptions'
-import type { GenerateTextResult } from './types/GenerateTextResult'
-import type { GenerateObjectResult } from './types/GenerateObjectResult'
-import type { ModelPrompt } from './types/ModelPrompt'
-import type { TextStreamPart } from './types/TextStreamPart'
-import type { EmbeddingCallOptions } from './types/EmbeddingCallOptions'
-import type { EmbeddingResult } from './types/EmbeddingResult'
-import type { ImageCallOptions } from './types/ImageCallOptions'
-import type { ImageResult } from './types/ImageResult'
-import type { SpeechCallOptions } from './types/SpeechCallOptions'
-import type { SpeechResult } from './types/SpeechResult'
-import type { TranscriptionCallOptions } from './types/TranscriptionCallOptions'
-import type { TranscriptionResult } from './types/TranscriptionResult'
-import type { RerankingCallOptions } from './types/RerankingCallOptions'
-import type { RerankingResult } from './types/RerankingResult'
-import type { VideoCallOptions } from './types/VideoCallOptions'
-import type { VideoResult } from './types/VideoResult'
-import type { TranscriptionStreamPart } from './types/TranscriptionStreamPart'
-import type { SearchCallOptions } from './types/SearchCallOptions'
-import type { SearchResult } from './types/SearchResult'
-import type { UploadFileCallOptions } from './types/UploadFileCallOptions'
-import type { UploadFileResult } from './types/UploadFileResult'
-import type { TraceFilter } from './types/TraceFilter'
-import type { TraceStats } from './types/TraceStats'
-import type { SessionChainView } from './types/SessionChainView'
+import * as ops from './generated/ops.ts'
+import { Runtime, type Abort as RawAbort, type Manifest } from './native.ts'
+import { AimuxError, protocolError, type ErrorEnvelope } from './error.ts'
+import type {
+  DecideOptions, DecideResult, GenerateTextOptions, GenerateTextResult, GenerateObjectResult, ModelPrompt,
+  TextStreamPart, EmbeddingCallOptions, EmbeddingResult, ImageCallOptions, ImageResult, SpeechCallOptions,
+  SpeechResult, TranscriptionCallOptions, TranscriptionResult, RerankingCallOptions, RerankingResult,
+  VideoCallOptions, VideoResult, TranscriptionStreamPart, SearchCallOptions, SearchResult,
+  UploadFileCallOptions, UploadFileResult, TraceFilter, TraceStats, SessionChainView,
+} from './types.ts'
 
 export * from './error.ts'
 export type * from './types.ts'
@@ -89,26 +68,26 @@ export class Client {
     return options.signal ? this.raw.abort(options.signal) : undefined
   }
 
-  async provider(params: ProviderParams): Promise<Provider> { return new Provider(this, await this.call('0', 'provider.create', params)) }
-  async defaultProvider(params: unknown): Promise<Provider> { return new Provider(this, await this.call('0', 'provider.default', params)) }
-  async customProvider(params: unknown): Promise<Provider> { return new Provider(this, await this.call('0', 'provider.custom', params)) }
+  async provider(params: ProviderParams): Promise<Provider> { return new Provider(this, await this.call('0', ops.OP_PROVIDER_CREATE, params)) }
+  async defaultProvider(params: unknown): Promise<Provider> { return new Provider(this, await this.call('0', ops.OP_PROVIDER_DEFAULT, params)) }
+  async customProvider(params: unknown): Promise<Provider> { return new Provider(this, await this.call('0', ops.OP_PROVIDER_CUSTOM, params)) }
   async registry(entries: Record<string, Provider>, namespace = ''): Promise<Registry> {
     const refs = Object.entries(entries).map(([key, provider]) => ({ key, provider: provider.handle }))
-    return new Registry(this, await this.call('0', 'registry.create', { namespace, entries: refs }))
+    return new Registry(this, await this.call('0', ops.OP_REGISTRY_CREATE, { namespace, entries: refs }))
   }
   abort(signal?: AbortSignal): Abort { return new Abort(this, signal) }
-  async configure(params: unknown): Promise<unknown> { return this.call('0', 'runtime.configure', params) }
-  async describe(): Promise<unknown> { return this.call('0', 'runtime.describe') }
-  async trace(params: unknown = {}): Promise<TraceStore> { return new TraceStore(this, handleRef(await this.call('0', 'trace.create', params), 'TraceStore')) }
-  async recorder(params: unknown): Promise<Recorder> { return new Recorder(this, handleRef(await this.call('0', 'recorder.create', params), 'Recorder')) }
-  async sessionStore(params: { infer: boolean }): Promise<SessionStore> { return new SessionStore(this, handleRef(await this.call('0', 'sessionStore.create', params), 'SessionStore')) }
-  async replay(params: unknown): Promise<ReplaySession> { return new ReplaySession(this, handleRef(await this.call('0', 'replay.create', params), 'ReplaySession')) }
-  async middleware(params: unknown): Promise<Middleware> { return new Middleware(this, await this.call('0', 'middleware.create', params)) }
-  async transport(params: unknown): Promise<Resource> { return new Resource(this, await this.call('0', 'transport.create', params)) }
-  async credential(params: unknown): Promise<Resource> { return new Resource(this, await this.call('0', 'credential.create', params)) }
-  async catalogue(params: unknown): Promise<unknown> { return this.call('0', 'catalogue.fetch', params) }
-  async router(params: unknown): Promise<LanguageModel> { return new LanguageModel(this, handleRef(await this.call('0', 'composite.router', params), 'Language')) }
-  async moa(params: unknown): Promise<LanguageModel> { return new LanguageModel(this, handleRef(await this.call('0', 'composite.moa', params), 'Language')) }
+  async configure(params: unknown): Promise<unknown> { return this.call('0', ops.OP_RUNTIME_CONFIGURE, params) }
+  async describe(): Promise<unknown> { return this.call('0', ops.OP_RUNTIME_DESCRIBE) }
+  async trace(params: unknown = {}): Promise<TraceStore> { return new TraceStore(this, handleRef(await this.call('0', ops.OP_TRACE_CREATE, params), 'TraceStore')) }
+  async recorder(params: unknown): Promise<Recorder> { return new Recorder(this, handleRef(await this.call('0', ops.OP_RECORDER_CREATE, params), 'Recorder')) }
+  async sessionStore(params: { infer: boolean }): Promise<SessionStore> { return new SessionStore(this, handleRef(await this.call('0', ops.OP_SESSION_STORE_CREATE, params), 'SessionStore')) }
+  async replay(params: unknown): Promise<ReplaySession> { return new ReplaySession(this, handleRef(await this.call('0', ops.OP_REPLAY_CREATE, params), 'ReplaySession')) }
+  async middleware(params: unknown): Promise<Middleware> { return new Middleware(this, await this.call('0', ops.OP_MIDDLEWARE_CREATE, params)) }
+  async transport(params: unknown): Promise<Resource> { return new Resource(this, await this.call('0', ops.OP_TRANSPORT_CREATE, params)) }
+  async credential(params: unknown): Promise<Resource> { return new Resource(this, await this.call('0', ops.OP_CREDENTIAL_CREATE, params)) }
+  async catalogue(params: unknown): Promise<unknown> { return this.call('0', ops.OP_CATALOGUE_FETCH, params) }
+  async router(params: unknown): Promise<LanguageModel> { return new LanguageModel(this, handleRef(await this.call('0', ops.OP_COMPOSITE_ROUTER, params), 'Language')) }
+  async moa(params: unknown): Promise<LanguageModel> { return new LanguageModel(this, handleRef(await this.call('0', ops.OP_COMPOSITE_MOA, params), 'Language')) }
 }
 
 // Finalization is a fallback. Explicit close/flush remains the normal protocol.
@@ -152,50 +131,50 @@ export class Abort {
 
 export class Provider extends Resource {
   async model(modelId: string, method?: ModelMethod): Promise<Model> {
-    return model(this.client, await this.call('provider.model', { modelId, ...(method ? { method } : {}) }))
+    return model(this.client, await this.call(ops.OP_PROVIDER_MODEL, { modelId, ...(method ? { method } : {}) }))
   }
-  async invoke<T = unknown>(method: string, call?: CallOptions): Promise<T> { return this.call('provider.invoke', { method }, call) }
-  async files(): Promise<Files> { return new Files(this.client, handleRef(await this.call('provider.files'), 'Files')) }
+  async invoke<T = unknown>(method: string, call?: CallOptions): Promise<T> { return this.call(ops.OP_PROVIDER_INVOKE, { method }, call) }
+  async files(): Promise<Files> { return new Files(this.client, handleRef(await this.call(ops.OP_PROVIDER_FILES), 'Files')) }
   async wrap(language: Middleware[] = [], image: Middleware[] = []): Promise<Provider> {
-    return new Provider(this.client, await this.call('provider.wrap', { languageModelMiddleware: language.map(value => value.handle), imageModelMiddleware: image.map(value => value.handle) }))
+    return new Provider(this.client, await this.call(ops.OP_PROVIDER_WRAP, { languageModelMiddleware: language.map(value => value.handle), imageModelMiddleware: image.map(value => value.handle) }))
   }
 }
 export class Registry extends Resource {
-  async provider(key: string): Promise<Provider> { return new Provider(this.client, await this.call('registry.provider', { key })) }
-  async resolve(modelRef: ModelRef): Promise<Model> { return model(this.client, await this.call('model.resolve', { modelRef })) }
+  async provider(key: string): Promise<Provider> { return new Provider(this.client, await this.call(ops.OP_REGISTRY_PROVIDER, { key })) }
+  async resolve(modelRef: ModelRef): Promise<Model> { return model(this.client, await this.call(ops.OP_MODEL_RESOLVE, { modelRef })) }
 }
 export class Model extends Resource {
-  async info(): Promise<ModelInfo> { return this.call('model.info') }
+  async info(): Promise<ModelInfo> { return this.call(ops.OP_MODEL_INFO) }
   async wrap(middleware: Middleware[]): Promise<Model> {
-    return model(this.client, await this.call('model.wrap', { middleware: middleware.map(value => value.handle) }))
+    return model(this.client, await this.call(ops.OP_MODEL_WRAP, { middleware: middleware.map(value => value.handle) }))
   }
 }
 export class LanguageModel extends Model {
-  async generate(prompt: ModelPrompt, options: GenerateTextOptions = {}, call?: CallOptions): Promise<GenerateTextResult> { return this.call('text.generate', { prompt, options }, call) }
-  async generateObject(params: unknown, call?: CallOptions): Promise<GenerateObjectResult> { return this.call('text.generateObject', params, call) }
-  async consume(params: unknown, call?: CallOptions): Promise<GenerateTextResult> { return this.call('text.consume', params, call) }
-  async generateOpenAI(params: unknown, call?: CallOptions): Promise<unknown> { return this.call('text.generateOpenAI', params, call) }
-  async stream(prompt: ModelPrompt, options: GenerateTextOptions = {}, call?: CallOptions): Promise<AsyncIterableIterator<Frame<TextStreamPart>>> { return this.client.stream(this.handle, 'text.stream', { prompt, options }, call) }
-  async streamOpenAI(params: unknown, call?: CallOptions): Promise<AsyncIterableIterator<Frame<unknown>>> { return this.client.stream(this.handle, 'text.streamOpenAI', params, call) }
+  async generate(prompt: ModelPrompt, options: GenerateTextOptions = {}, call?: CallOptions): Promise<GenerateTextResult> { return this.call(ops.OP_TEXT_GENERATE, { prompt, options }, call) }
+  async generateObject(params: unknown, call?: CallOptions): Promise<GenerateObjectResult> { return this.call(ops.OP_TEXT_GENERATE_OBJECT, params, call) }
+  async consume(params: unknown, call?: CallOptions): Promise<GenerateTextResult> { return this.call(ops.OP_TEXT_CONSUME, params, call) }
+  async generateOpenAI(params: unknown, call?: CallOptions): Promise<unknown> { return this.call(ops.OP_TEXT_GENERATE_OPEN_AI, params, call) }
+  async stream(prompt: ModelPrompt, options: GenerateTextOptions = {}, call?: CallOptions): Promise<AsyncIterableIterator<Frame<TextStreamPart>>> { return this.client.stream(this.handle, ops.OP_TEXT_STREAM, { prompt, options }, call) }
+  async streamOpenAI(params: unknown, call?: CallOptions): Promise<AsyncIterableIterator<Frame<unknown>>> { return this.client.stream(this.handle, ops.OP_TEXT_STREAM_OPEN_AI, params, call) }
 }
 export class EmbeddingModel extends Model {
-  async embed(params: unknown, call?: CallOptions): Promise<EmbeddingResult> { return this.call('embedding.embed', params, call) }
-  async embedMany(params: EmbeddingCallOptions, call?: CallOptions): Promise<EmbeddingResult> { return this.call('embedding.embedMany', params, call) }
+  async embed(params: unknown, call?: CallOptions): Promise<EmbeddingResult> { return this.call(ops.OP_EMBEDDING_EMBED, params, call) }
+  async embedMany(params: EmbeddingCallOptions, call?: CallOptions): Promise<EmbeddingResult> { return this.call(ops.OP_EMBEDDING_EMBED_MANY, params, call) }
 }
-export class ImageModel extends Model { async generate(params: ImageCallOptions, call?: CallOptions): Promise<ImageResult> { return this.call('image.generate', params, call) } }
-export class SpeechModel extends Model { async generate(params: SpeechCallOptions, call?: CallOptions): Promise<SpeechResult> { return this.call('speech.generate', params, call) } }
+export class ImageModel extends Model { async generate(params: ImageCallOptions, call?: CallOptions): Promise<ImageResult> { return this.call(ops.OP_IMAGE_GENERATE, params, call) } }
+export class SpeechModel extends Model { async generate(params: SpeechCallOptions, call?: CallOptions): Promise<SpeechResult> { return this.call(ops.OP_SPEECH_GENERATE, params, call) } }
 export class TranscriptionModel extends Model {
-  async generate(params: TranscriptionCallOptions, call?: CallOptions): Promise<TranscriptionResult> { return this.call('transcription.generate', params, call) }
-  async start(params: unknown, call?: CallOptions): Promise<Operation<TranscriptionStreamPart>> { return new Operation(this.client, handleRef(await this.call('transcription.start', params, call), 'Operation')) }
+  async generate(params: TranscriptionCallOptions, call?: CallOptions): Promise<TranscriptionResult> { return this.call(ops.OP_TRANSCRIPTION_GENERATE, params, call) }
+  async start(params: unknown, call?: CallOptions): Promise<Operation<TranscriptionStreamPart>> { return new Operation(this.client, handleRef(await this.call(ops.OP_TRANSCRIPTION_START, params, call), 'Operation')) }
 }
-export class RerankingModel extends Model { async rerank(params: RerankingCallOptions, call?: CallOptions): Promise<RerankingResult> { return this.call('reranking.rerank', params, call) } }
-export class VideoModel extends Model { async generate(params: VideoCallOptions, call?: CallOptions): Promise<VideoResult> { return this.call('video.generate', params, call) } }
-export class SearchModel extends Model { async search(params: SearchCallOptions, call?: CallOptions): Promise<SearchResult> { return this.call('search.search', params, call) } }
+export class RerankingModel extends Model { async rerank(params: RerankingCallOptions, call?: CallOptions): Promise<RerankingResult> { return this.call(ops.OP_RERANKING_RERANK, params, call) } }
+export class VideoModel extends Model { async generate(params: VideoCallOptions, call?: CallOptions): Promise<VideoResult> { return this.call(ops.OP_VIDEO_GENERATE, params, call) } }
+export class SearchModel extends Model { async search(params: SearchCallOptions, call?: CallOptions): Promise<SearchResult> { return this.call(ops.OP_SEARCH_SEARCH, params, call) } }
 export class DecisionModel extends Model {
-  async decide(options: DecideOptions, call?: CallOptions): Promise<DecideResult> { return this.call('decision.decide', { options }, call) }
-  async capabilities(): Promise<unknown> { return this.call('decision.capabilities') }
+  async decide(options: DecideOptions, call?: CallOptions): Promise<DecideResult> { return this.call(ops.OP_DECISION_DECIDE, { options }, call) }
+  async capabilities(): Promise<unknown> { return this.call(ops.OP_DECISION_CAPABILITIES) }
 }
-export class Files extends Resource { async upload(params: UploadFileCallOptions, call?: CallOptions): Promise<UploadFileResult> { return this.call('files.upload', params, call) } }
+export class Files extends Resource { async upload(params: UploadFileCallOptions, call?: CallOptions): Promise<UploadFileResult> { return this.call(ops.OP_FILES_UPLOAD, params, call) } }
 export class Middleware extends Resource {}
 
 function handleRef(value: string | { handle: string }, kind: HandleKind): HandleRef {
@@ -219,10 +198,10 @@ function model(client: Client, ref: HandleRef): Model {
 
 export class Operation<T = unknown> extends Resource {
   async push(data: Uint8Array): Promise<void> { await this.client.raw.operationPush(this.handle, data) }
-  async inputDone(): Promise<void> { await this.call('operation.inputDone') }
-  async next(timeoutMs: number = 1000): Promise<PollResult<T>> { return this.call('operation.next', { timeoutMs }) }
-  async status(): Promise<unknown> { return this.call('operation.status') }
-  async cancel(): Promise<unknown> { return this.call('operation.cancel') }
+  async inputDone(): Promise<void> { await this.call(ops.OP_OPERATION_INPUT_DONE) }
+  async next(timeoutMs: number = 1000): Promise<PollResult<T>> { return this.call(ops.OP_OPERATION_NEXT, { timeoutMs }) }
+  async status(): Promise<unknown> { return this.call(ops.OP_OPERATION_STATUS) }
+  async cancel(): Promise<unknown> { return this.call(ops.OP_OPERATION_CANCEL) }
   events(): AsyncIterableIterator<T> {
     const operation = this
     let ended = false
@@ -246,29 +225,29 @@ export class Operation<T = unknown> extends Resource {
 }
 
 export class TraceStore extends Resource {
-  async aggregate(filter: TraceFilter = {}): Promise<TraceStats[]> { return this.call('trace.aggregate', { filter }) }
-  async sessionChain(sessionId: string): Promise<SessionChainView> { return this.call('trace.sessionChain', { sessionId }) }
-  async sessionTrajectory(sessionId: string): Promise<unknown> { return this.call('trace.sessionTrajectory', { sessionId }) }
-  async export(): Promise<unknown> { return this.call('trace.export') }
-  async clear(): Promise<void> { await this.call('trace.clear') }
+  async aggregate(filter: TraceFilter = {}): Promise<TraceStats[]> { return this.call(ops.OP_TRACE_AGGREGATE, { filter }) }
+  async sessionChain(sessionId: string): Promise<SessionChainView> { return this.call(ops.OP_TRACE_SESSION_CHAIN, { sessionId }) }
+  async sessionTrajectory(sessionId: string): Promise<unknown> { return this.call(ops.OP_TRACE_SESSION_TRAJECTORY, { sessionId }) }
+  async export(): Promise<unknown> { return this.call(ops.OP_TRACE_EXPORT) }
+  async clear(): Promise<void> { await this.call(ops.OP_TRACE_CLEAR) }
 }
 export class Recorder extends Resource {
-  async attach(): Promise<unknown> { return this.call('recorder.attach') }
-  async stop(): Promise<unknown> { return this.call('recorder.stop') }
-  async flush(): Promise<unknown> { return this.call('recorder.flush') }
-  async stats(): Promise<unknown> { return this.call('recorder.stats') }
-  async export(): Promise<unknown> { return this.call('recorder.export') }
+  async attach(): Promise<unknown> { return this.call(ops.OP_RECORDER_ATTACH) }
+  async stop(): Promise<unknown> { return this.call(ops.OP_RECORDER_STOP) }
+  async flush(): Promise<unknown> { return this.call(ops.OP_RECORDER_FLUSH) }
+  async stats(): Promise<unknown> { return this.call(ops.OP_RECORDER_STATS) }
+  async export(): Promise<unknown> { return this.call(ops.OP_RECORDER_EXPORT) }
 }
 export class SessionStore extends Resource {
-  async attach(): Promise<unknown> { return this.call('sessionStore.attach') }
-  async list(params: unknown = {}): Promise<unknown> { return this.call('sessionStore.list', params) }
-  async calls(sessionId: string): Promise<unknown> { return this.call('sessionStore.calls', { sessionId }) }
+  async attach(): Promise<unknown> { return this.call(ops.OP_SESSION_STORE_ATTACH) }
+  async list(params: unknown = {}): Promise<unknown> { return this.call(ops.OP_SESSION_STORE_LIST, params) }
+  async calls(sessionId: string): Promise<unknown> { return this.call(ops.OP_SESSION_STORE_CALLS, { sessionId }) }
 }
 export class ReplaySession extends Resource {
-  async capabilities(): Promise<unknown> { return this.call('replay.capabilities') }
-  async inspect(): Promise<unknown> { return this.call('replay.inspect') }
-  async dryRun(params: unknown = {}): Promise<unknown> { return this.call('replay.dryRun', params) }
-  async live(params: unknown): Promise<unknown> { return this.call('replay.live', params) }
+  async capabilities(): Promise<unknown> { return this.call(ops.OP_REPLAY_CAPABILITIES) }
+  async inspect(): Promise<unknown> { return this.call(ops.OP_REPLAY_INSPECT) }
+  async dryRun(params: unknown = {}): Promise<unknown> { return this.call(ops.OP_REPLAY_DRY_RUN, params) }
+  async live(params: unknown): Promise<unknown> { return this.call(ops.OP_REPLAY_LIVE, params) }
 }
 
 function mapIterator<A, B>(inner: AsyncIterableIterator<A>, map: (value: A) => B, cancel: () => void): AsyncIterableIterator<B> {

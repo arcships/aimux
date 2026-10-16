@@ -8,27 +8,28 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { Worker } from 'node:worker_threads'
 import { spawn } from 'node:child_process'
 import * as native from '../src/native.ts'
+import * as ops from '../src/generated/ops.ts'
 
 // This adapter is also serialized into the worker and shutdown child process.
-function createAdapter(binding: typeof native) {
+function createAdapter(binding: typeof native, ops: typeof import('../src/generated/ops.ts')) {
   const runtime = new binding.Runtime()
   const params = JSON.stringify({ prompt: 'hello', options: { maxRetries: 0 } })
   return {
     async model(url: string) {
-      const provider = JSON.parse(await runtime.call('0', 'provider.create', JSON.stringify({
+      const provider = JSON.parse(await runtime.call('0', ops.OP_PROVIDER_CREATE, JSON.stringify({
         package: 'deepseek', settings: { apiKey: 'local-test-key', baseUrl: url },
       })))
-      const model = JSON.parse(await runtime.call(provider.handle, 'provider.model', JSON.stringify({
+      const model = JSON.parse(await runtime.call(provider.handle, ops.OP_PROVIDER_MODEL, JSON.stringify({
         modelId: 'test-model', method: 'languageModel',
       })))
       runtime.drop(provider.handle)
       return model.handle as string
     },
     async call(handle: string) {
-      return JSON.parse(await runtime.call(handle, 'text.generate', params))
+      return JSON.parse(await runtime.call(handle, ops.OP_TEXT_GENERATE, params))
     },
     stream(handle: string, signal?: AbortSignal) {
-      return runtime.stream(handle, 'text.stream', params, signal ? runtime.abort(signal) : undefined)
+      return runtime.stream(handle, ops.OP_TEXT_STREAM, params, signal ? runtime.abort(signal) : undefined)
     },
     part(value: string) {
       const frame = JSON.parse(value)
@@ -38,8 +39,9 @@ function createAdapter(binding: typeof native) {
     },
   }
 }
-const api = createAdapter(native)
+const api = createAdapter(native, ops)
 const nativeUrl = new URL('../src/native.ts', import.meta.url).href
+const opsUrl = new URL('../src/generated/ops.ts', import.meta.url).href
 const LIMIT_MS = 4_000
 
 async function bounded<T>(promise: PromiseLike<T>, label: string, ms = LIMIT_MS): Promise<T> {
@@ -146,7 +148,7 @@ function worker(body: string, data: unknown) {
   return new Worker(`
     const { parentPort, workerData } = require('node:worker_threads');
     (async () => {
-      const api = (${createAdapter.toString()})(await import(${JSON.stringify(nativeUrl)}));
+      const api = (${createAdapter.toString()})(await import(${JSON.stringify(nativeUrl)}), await import(${JSON.stringify(opsUrl)}));
       ${body}
     })().catch(error => { throw error; });
   `, { eval: true, workerData: data, execArgv: ['--experimental-strip-types'] })
@@ -271,7 +273,7 @@ for (const mode of ['idle', 'flood'] as const) {
     // Use a process boundary: a native cleanup deadlock can also hang
     // Worker.terminate(), whereas the parent can kill this disposable process.
     const source = `
-      const api = (${createAdapter.toString()})(await import(${JSON.stringify(nativeUrl)}));
+      const api = (${createAdapter.toString()})(await import(${JSON.stringify(nativeUrl)}), await import(${JSON.stringify(opsUrl)}));
       const model = await api.model(${JSON.stringify(f.url)});
       globalThis.liveStream = await api.stream(model);
       // Allow transport startup and queue saturation, then let Node exit naturally.

@@ -8,6 +8,7 @@ import { readdirSync, readFileSync, mkdtempSync, copyFileSync, rmSync } from 'no
 import { fileURLToPath } from 'node:url'
 import { basename, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import * as ops from '../src/generated/ops.ts'
 
 const binding = fileURLToPath(new URL('..', import.meta.url))
 const root = process.env.AIMUX_CONTRACT_VECTORS ?? fileURLToPath(new URL('../../../contract-tests/ops', import.meta.url))
@@ -82,7 +83,7 @@ test('binary push rejects a full queue without waiting for capacity', async () =
     })]), (error: any) => error.kind === 'protocol' && error.code === 305)
   } finally {
     clearTimeout(timer!)
-    await runtime.call(handle, 'handle.drop', '{}')
+    await runtime.call(handle, ops.OP_HANDLE_DROP, '{}')
   }
 })
 

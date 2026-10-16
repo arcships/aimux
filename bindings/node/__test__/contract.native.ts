@@ -3,14 +3,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Worker } from 'node:worker_threads'
 import { Runtime, AimuxError } from '../src/native.ts'
+import * as ops from '../src/generated/ops.ts'
 
 const source = new URL('../src/native.ts', import.meta.url).href
 
 test('native errors preserve the shared envelope and reject invalid wire JSON', async () => {
   const runtime = new Runtime()
   await assert.rejects(runtime.call('0', 'unknown.op', '{}'), error => error instanceof AimuxError && error.kind === 'protocol' && error.code === 300 && error.error.name === 'InvalidOp')
-  await assert.rejects(runtime.call('0', 'runtime.describe', '{'), error => error instanceof AimuxError && error.kind === 'binding' && error.code === 202)
-  await assert.rejects(runtime.call('9007199254740993', 'model.info', '{}'), error => error instanceof AimuxError && error.code === 203 && !('actual' in error.error))
+  await assert.rejects(runtime.call('0', ops.OP_RUNTIME_DESCRIBE, '{'), error => error instanceof AimuxError && error.kind === 'binding' && error.code === 202)
+  await assert.rejects(runtime.call('9007199254740993', ops.OP_MODEL_INFO, '{}'), error => error instanceof AimuxError && error.code === 203 && !('actual' in error.error))
 })
 
 test('runtime instances in one Env share ownership and native AbortSignal is immediate', async () => {
@@ -18,7 +19,7 @@ test('runtime instances in one Env share ownership and native AbortSignal is imm
   const second = new Runtime()
   const controller = new AbortController()
   const abort = first.abort(controller.signal)
-  await second.call(abort.handle, 'abort.signal', '{}')
+  await second.call(abort.handle, ops.OP_ABORT_SIGNAL, '{}')
   assert.equal(abort.aborted, true)
   const preaborted = new AbortController()
   preaborted.abort()
@@ -34,13 +35,13 @@ test('worker_threads cannot use a foreign realm handle; environment teardown com
       const { Runtime } = await import(workerData.source)
       const runtime = new Runtime()
       try {
-        await runtime.call(workerData.handle, 'abort.signal', '{}')
+        await runtime.call(workerData.handle, workerData.op, '{}')
         parentPort.postMessage({ unexpectedSuccess: true })
       } catch (error) {
         parentPort.postMessage({ kind: error.kind, code: error.code, error: error.error })
       }
     })().catch(error => { throw error })
-  `, { eval: true, workerData: { source, handle: abort.handle }, execArgv: ['--experimental-strip-types'] })
+  `, { eval: true, workerData: { source, handle: abort.handle, op: ops.OP_ABORT_SIGNAL }, execArgv: ['--experimental-strip-types'] })
   const exit = new Promise(resolve => worker.once('exit', resolve))
   const message = await new Promise<Record<string, unknown>>((resolve, reject) => { worker.once('message', resolve); worker.once('error', reject) })
   assert.equal(message.kind, 'binding')
@@ -58,7 +59,7 @@ test('typed lifecycle uses the real provider, registry, files, composite and dev
   const registry = await client.registry({ main: provider }, 'test')
   const resolved = await registry.resolve({ namespace: 'test', key: 'main', method: 'languageModel', modelId: 'test-model' })
   assert.ok(resolved instanceof LanguageModel)
-  const raw = await client.call(resolved.handle, 'model.info')
+  const raw = await client.call(resolved.handle, ops.OP_MODEL_INFO)
   assert.deepEqual(await resolved.info(), raw)
   const files = await provider.files()
   assert.equal(files.kind, 'Files')
@@ -67,7 +68,7 @@ test('typed lifecycle uses the real provider, registry, files, composite and dev
   assert.equal(router.kind, 'Language')
   const trace = await client.trace({ capacity: 16, perScopeCapacity: 8 })
   assert.equal(trace.kind, 'TraceStore')
-  assert.deepEqual(await trace.aggregate(), await client.call(trace.handle, 'trace.aggregate', { filter: {} }))
+  assert.deepEqual(await trace.aggregate(), await client.call(trace.handle, ops.OP_TRACE_AGGREGATE, { filter: {} }))
   const middleware = await client.middleware({ kind: 'trace', traceStore: trace.handle })
   assert.equal(middleware.kind, 'Middleware')
   assert.match(middleware.handle, /^[1-9][0-9]*$/)
@@ -102,8 +103,8 @@ test('replay inspection and planning preserve the canonical recording DTO', asyn
   const replay = await client.replay({ recordingsJsonl: JSON.stringify(recording) })
   try {
     assert.equal(replay.kind, 'ReplaySession')
-    assert.deepEqual(await replay.inspect(), await client.call(replay.handle, 'replay.inspect'))
-    assert.deepEqual(await replay.dryRun(), await client.call(replay.handle, 'replay.dryRun'))
+    assert.deepEqual(await replay.inspect(), await client.call(replay.handle, ops.OP_REPLAY_INSPECT))
+    assert.deepEqual(await replay.dryRun(), await client.call(replay.handle, ops.OP_REPLAY_DRY_RUN))
     const inspection = await replay.inspect() as { recordings: Array<{ callId: string }> }
     assert.equal(inspection.recordings[0].callId, recording.callId)
     await assert.rejects(replay.capabilities(), error => error instanceof AimuxError && error.code === 8)
@@ -127,7 +128,7 @@ test('accepted native streams preserve one terminal and support return during ne
     assert.equal(terminal.value.outcome, 'cancelled')
     assert.equal(terminal.value.seq, '0')
     assert.equal((await stream.next()).done, true)
-    await assert.rejects(client.stream(model.handle, 'text.stream', { unexpected: true }), error => error instanceof AimuxError && error.code === 301)
+    await assert.rejects(client.stream(model.handle, ops.OP_TEXT_STREAM, { unexpected: true }), error => error instanceof AimuxError && error.code === 301)
     const returned = await model.stream('hello', {}, { signal: controller.signal })
     const pending = returned.next()
     await returned.return!()
