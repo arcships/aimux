@@ -53,7 +53,7 @@ use crate::types::{FinishReasonUnified, LanguageModelUsage, as_language_model_us
 ///
 /// Mirrors the OpenAI `chat.completion` object.
 #[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ChatCompletion {
     pub id: String,
     pub object: String,
@@ -66,7 +66,7 @@ pub struct ChatCompletion {
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ChatCompletionChoice {
     pub index: u32,
     pub message: ChatCompletionMessage,
@@ -76,7 +76,7 @@ pub struct ChatCompletionChoice {
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ChatCompletionMessage {
     pub role: String,
     pub content: Option<String>,
@@ -89,7 +89,7 @@ pub struct ChatCompletionMessage {
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ChatCompletionToolCall {
     pub id: String,
     #[serde(rename = "type")]
@@ -98,7 +98,7 @@ pub struct ChatCompletionToolCall {
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ChatCompletionFunction {
     pub name: String,
     pub arguments: String,
@@ -112,7 +112,7 @@ pub struct ChatCompletionFunction {
 ///
 /// Mirrors the OpenAI `chat.completion.chunk` object.
 #[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ChatCompletionChunk {
     pub id: String,
     pub object: String,
@@ -124,7 +124,7 @@ pub struct ChatCompletionChunk {
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ChatCompletionChunkChoice {
     pub index: u32,
     pub delta: ChatCompletionDelta,
@@ -134,7 +134,7 @@ pub struct ChatCompletionChunkChoice {
 }
 
 #[derive(Debug, Clone, Default, Serialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ChatCompletionDelta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
@@ -147,7 +147,7 @@ pub struct ChatCompletionDelta {
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ChatCompletionChunkToolCall {
     pub index: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -158,7 +158,7 @@ pub struct ChatCompletionChunkToolCall {
 }
 
 #[derive(Debug, Clone, Default, Serialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ChatCompletionChunkFunction {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -171,7 +171,7 @@ pub struct ChatCompletionChunkFunction {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Default, Serialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ChatCompletionUsage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
@@ -183,7 +183,7 @@ pub struct ChatCompletionUsage {
 }
 
 #[derive(Debug, Clone, Default, Serialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct PromptTokensDetails {
     pub cached_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -191,7 +191,7 @@ pub struct PromptTokensDetails {
 }
 
 #[derive(Debug, Clone, Default, Serialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct CompletionTokensDetails {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<u32>,

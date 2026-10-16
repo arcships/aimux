@@ -21,7 +21,7 @@ use crate::options::ResponseFormat;
 
 /// What the final text of a generation is parsed into.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum Output {
     /// The text itself (`Output.text()`).
     Text {},

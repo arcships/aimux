@@ -24,7 +24,7 @@ use ts_rs::TS;
 /// comes from [`ModelSpec`] (community knowledge); the host merges the two as
 /// needed (RFC-0027). aimux itself does not combine them.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RuntimeModel {
     /// Model identifier, e.g. `"gpt-4o"`.
     pub id: String,
@@ -43,7 +43,7 @@ pub struct RuntimeModel {
 
 /// Where a [`ModelSpec`] came from.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq, Eq)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum CatalogueSource {
     /// `models.anya2a.com` (DeepChat PublicProviderConf, aggregates models.dev).
     #[default]
@@ -56,7 +56,7 @@ pub enum CatalogueSource {
 
 /// Coarse model category, used to route to the right modality surface.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq, Eq)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ModelType {
     #[default]
     Chat,
@@ -76,7 +76,7 @@ pub enum ModelType {
 
 /// A single input or output modality.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum Modality {
     Text,
     Image,
@@ -93,7 +93,7 @@ pub enum Modality {
 
 /// Token / request limits for a model.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ModelLimits {
     /// Maximum total context window (input + output), in tokens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -111,7 +111,7 @@ pub struct ModelLimits {
 
 /// Input/output modality sets.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ModelModalities {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input: Vec<Modality>,
@@ -121,7 +121,7 @@ pub struct ModelModalities {
 
 /// Model-level capability flags (more precise than provider-level `supports_*`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ModelCapabilities {
     /// Supports function/tool calling.
     #[serde(default)]
@@ -139,7 +139,7 @@ pub struct ModelCapabilities {
 
 /// How reasoning / thinking is controlled for a model.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ReasoningMode {
     /// Token-budget control (e.g. Anthropic `budget_tokens`).
     Budget,
@@ -159,7 +159,7 @@ pub enum ReasoningMode {
 
 /// Visibility of reasoning output to the caller.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ReasoningVisibility {
     Hidden,
     Summary,
@@ -172,7 +172,7 @@ pub enum ReasoningVisibility {
 
 /// Reasoning / thinking portrait for a model (advisory).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ReasoningSpec {
     /// Whether the model family supports reasoning at all.
     #[serde(default)]
@@ -204,7 +204,7 @@ pub struct ReasoningSpec {
 /// Pricing (advisory, read-only metadata). Units follow the source catalog
 /// (anya2a uses USD per 1M tokens).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ModelCost {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input: Option<f64>,
@@ -221,7 +221,7 @@ pub struct ModelCost {
 /// All fields are advisory — aimux never auto-applies them in the request path.
 /// The caller reads them to decide how to configure `GenerateTextOptions`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ModelSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
