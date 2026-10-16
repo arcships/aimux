@@ -160,7 +160,7 @@ Object? _execute(NativeRequest r) {
         api.ffi.errorJson,
       ];
       final version = api.ffi.abiVersion();
-      if (version >> 16 != 1)
+      if (version >> 16 != ops.ABI_VERSION >> 16)
         throw StateError('Unsupported aimux ABI: $version');
       final manifest = api.output(api.ffi.manifestJson) as Map<String, dynamic>;
       validateManifest(version, manifest);

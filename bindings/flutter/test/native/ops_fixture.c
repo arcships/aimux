@@ -33,17 +33,22 @@ uint32_t aimux_abi_version(void) {
 #ifdef BAD_ABI
     return 2 << 16;
 #else
-    return 1 << 16;
+    return AIMUX_ABI_VERSION;
 #endif
 }
 aimux_error_t *aimux_manifest_json(char **out) {
+    char json[512];
 #ifdef BAD_MANIFEST
-    *out = copy("{\"abiVersion\":65536,\"opsVersion\":\"2.0\"}");
+    snprintf(json, sizeof(json), "{\"abiVersion\":%u,\"opsVersion\":\"2.0\"}",
+             (unsigned)AIMUX_ABI_VERSION);
 #else
-    *out = copy("{\"abiVersion\":65536,\"opsVersion\":\"1.0\",\"digest\":\"" AIMUX_MANIFEST_DIGEST "\",\"manifestRevision\":\"fixture\","
-        "\"ops\":[{\"name\":\"runtime.describe\"},{\"name\":\"text.stream\"}],"
-        "\"handleKinds\":[\"Language\",\"Abort\"],\"errorCodes\":[]}");
+    snprintf(json, sizeof(json),
+        "{\"abiVersion\":%u,\"opsVersion\":\"" AIMUX_OPS_VERSION "\",\"digest\":\"" AIMUX_MANIFEST_DIGEST "\",\"manifestRevision\":\"fixture\","
+        "\"ops\":[{\"name\":\"" AIMUX_OP_RUNTIME_DESCRIBE "\"},{\"name\":\"" AIMUX_OP_TEXT_STREAM "\"}],"
+        "\"handleKinds\":[\"Language\",\"Abort\"],\"errorCodes\":[]}",
+        (unsigned)AIMUX_ABI_VERSION);
 #endif
+    *out = copy(json);
     return NULL;
 }
 aimux_error_t *aimux_call(uint64_t handle, const char *op, const char *params,
@@ -51,7 +56,7 @@ aimux_error_t *aimux_call(uint64_t handle, const char *op, const char *params,
     (void)abort;
     *out = NULL;
     if (!strcmp(op, "test.fail")) return failure();
-    if (!strcmp(op, "abort.create") || !strcmp(op, "test.handle")) {
+    if (!strcmp(op, AIMUX_OP_ABORT_CREATE) || !strcmp(op, "test.handle")) {
         char json[96];
         snprintf(json, sizeof(json), "{\"handle\":\"%llu\"}",
                  (unsigned long long)atomic_fetch_add(&next_handle, 1));

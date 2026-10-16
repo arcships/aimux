@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:aimux/aimux.dart';
 import 'package:aimux/decision.dart';
+import 'package:aimux/generated/ops.dart' as ops;
 import 'package:test/test.dart';
 
 void main() {
@@ -28,12 +29,12 @@ void main() {
           libraryPath: library,
           bridgePath: bridge,
           requiredOps: [
-            'runtime.describe',
-            'provider.create',
-            'provider.model',
-            'decision.decide',
-            'decision.capabilities',
-            'text.stream'
+            ops.OP_RUNTIME_DESCRIBE,
+            ops.OP_PROVIDER_CREATE,
+            ops.OP_PROVIDER_MODEL,
+            ops.OP_DECISION_DECIDE,
+            ops.OP_DECISION_CAPABILITIES,
+            ops.OP_TEXT_STREAM
           ]);
     });
     tearDown(() async {
@@ -45,31 +46,31 @@ void main() {
 
     test('manifest and runtime.describe', () async {
       expect(client.manifest['handleKinds'], contains('Decision'));
-      expect(await client.call('runtime.describe'), isA<Map>());
+      expect(await client.call(ops.OP_RUNTIME_DESCRIBE), isA<Map>());
     });
 
     test('provider/model handles retain children after provider close',
         () async {
-      final provider = await create('provider.create', params: {
+      final provider = await create(ops.OP_PROVIDER_CREATE, params: {
         'package': 'openai',
         'settings': {'apiKey': 'test'}
       });
-      final model = await create('provider.model',
+      final model = await create(ops.OP_PROVIDER_MODEL,
           handle: provider,
           params: {'method': 'languageModel', 'modelId': 'gpt-test'});
       await provider.close();
-      final info = await client.call('model.info', handle: model) as Map;
+      final info = await client.call(ops.OP_MODEL_INFO, handle: model) as Map;
       expect(info['modelId'], 'gpt-test');
       await model.close();
       await model.close();
     });
 
     test('Decision capabilities use existing provider configuration', () async {
-      final provider = await create('provider.create', params: {
+      final provider = await create(ops.OP_PROVIDER_CREATE, params: {
         'package': 'jev',
         'settings': {'apiKey': 'test'}
       });
-      final model = await create('provider.model',
+      final model = await create(ops.OP_PROVIDER_MODEL,
           handle: provider,
           params: {'method': 'decision', 'modelId': 'decision-test'});
       final decision = DecisionModel(client, model);
@@ -81,7 +82,7 @@ void main() {
 
     test('wrong-kind binary/poll and protocol errors preserve envelopes',
         () async {
-      final abort = await create('abort.create');
+      final abort = await create(ops.OP_ABORT_CREATE);
       final wrongKind = isA<OpsException>()
           .having((e) => e.code, 'code', 203)
           .having((e) => e.error['name'], 'name', 'InvalidHandle');
@@ -94,16 +95,16 @@ void main() {
 
     test('accepted cancelled stream has one terminal through native callback',
         () async {
-      final provider = await create('provider.create', params: {
+      final provider = await create(ops.OP_PROVIDER_CREATE, params: {
         'package': 'openai',
         'settings': {'apiKey': 'test'}
       });
-      final model = await create('provider.model',
+      final model = await create(ops.OP_PROVIDER_MODEL,
           handle: provider,
           params: {'method': 'languageModel', 'modelId': 'gpt-test'});
-      final abort = await create('abort.create');
+      final abort = await create(ops.OP_ABORT_CREATE);
       client.abort(abort);
-      final frames = await client.stream('text.stream',
+      final frames = await client.stream(ops.OP_TEXT_STREAM,
           handle: model,
           params: {'prompt': 'hello', 'abort': abort.wireId}).toList();
       expect(frames.whereType<EndFrame>(), hasLength(1));
@@ -112,11 +113,11 @@ void main() {
     });
 
     test('rejected stream returns one error without terminal frames', () async {
-      final abort = await create('abort.create');
+      final abort = await create(ops.OP_ABORT_CREATE);
       final frames = <StreamFrame>[];
       final errors = <Object>[];
       await client
-          .stream('text.stream', handle: abort, params: {'prompt': 'hello'})
+          .stream(ops.OP_TEXT_STREAM, handle: abort, params: {'prompt': 'hello'})
           .handleError((Object e) => errors.add(e))
           .forEach(frames.add);
       expect(frames, isEmpty);

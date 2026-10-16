@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:aimux/aimux.dart';
+import 'package:aimux/generated/ops.dart' as ops;
 
 void main() {
   runApp(const AimuxDemoApp());
@@ -39,8 +40,8 @@ class _HomePageState extends State<HomePage> {
       _output = 'Loading runtime…';
     });
     try {
-      final client = await Aimux.open(requiredOps: ['runtime.describe']);
-      final result = await client.call('runtime.describe');
+      final client = await Aimux.open(requiredOps: [ops.OP_RUNTIME_DESCRIBE]);
+      final result = await client.call(ops.OP_RUNTIME_DESCRIBE);
       if (mounted) setState(() => _output = result.toString());
     } catch (e) {
       if (mounted) setState(() => _output = 'Error: $e');

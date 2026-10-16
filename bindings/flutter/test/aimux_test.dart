@@ -71,7 +71,7 @@ void main() {
   });
 
   test('load validates ABI, manifest and required ops', () async {
-    expect(client.manifest['opsVersion'], '1.0');
+    expect(client.manifest['opsVersion'], ops.OPS_VERSION);
     await expectLater(
       Aimux.open(libraryPath: fixture('missing_symbol'), bridgePath: fixture()),
       throwsArgumentError,
@@ -100,7 +100,7 @@ void main() {
     await Aimux.open(
       libraryPath: fixture(),
       bridgePath: fixture(),
-      requiredOps: ['runtime.describe', 'text.stream'],
+      requiredOps: [ops.OP_RUNTIME_DESCRIBE, ops.OP_TEXT_STREAM],
     );
   });
 
