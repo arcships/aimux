@@ -8,6 +8,9 @@ description = "Node.js binding for aimux (napi-rs, native path — bypasses aimu
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+contract-tests = []
+
 [dependencies]
 aimux-core = { path = "../../aimux-core" }
 aimux-ops = { path = "../../aimux-ops" }

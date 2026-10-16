@@ -1,4 +1,5 @@
 // Test double for the JSON transport only; this does not validate aimux-ops.
+const { ABI_VERSION, OPS_VERSION, MANIFEST_DIGEST } = require('../../src/generated/ops.ts')
 let nextHandle = 9007199254740993n
 const handles = new Map()
 const envelope = (kind, code, name, message, fields = {}) => Object.assign(new Error(message), {
@@ -6,8 +7,8 @@ const envelope = (kind, code, name, message, fields = {}) => Object.assign(new E
 })
 class Runtime {
   constructor() { this.owner = 1 }
-  manifestJson() { return JSON.stringify({ abiVersion: 65536, opsVersion: '1.0', manifestRevision: 'fixture', ops: [], handleKinds: [], errorCodes: [] }) }
-  manifestDigest() { return 'a'.repeat(64) }
+  manifestJson() { return JSON.stringify({ abiVersion: ABI_VERSION, opsVersion: OPS_VERSION, digest: MANIFEST_DIGEST, manifestRevision: 'fixture', ops: [], handleKinds: [], errorCodes: [] }) }
+  manifestDigest() { return MANIFEST_DIGEST }
   create(kind) {
     const handle = String(nextHandle++)
     handles.set(handle, { owner: this.owner, kind })

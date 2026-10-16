@@ -1,5 +1,6 @@
 // Raw JSON entrypoint. The adapter is asynchronous and never calls the C ABI.
 import { Runtime as NativeRuntime, Abort as NativeAbort } from '../index.js'
+import { ABI_VERSION, OPS_VERSION, MANIFEST_DIGEST } from './generated/ops.ts'
 import { rethrow, protocolError } from './error.ts'
 export * from './error.ts'
 export type { FrameIterator } from '../index.js'
@@ -8,6 +9,7 @@ export type { NativeAbort as Abort }
 export interface Manifest {
   abiVersion: number
   opsVersion: string
+  digest: string
   manifestRevision: string | number
   ops: ReadonlyArray<{ name: string; mode: string; [key: string]: unknown }>
   handleKinds: ReadonlyArray<unknown>
@@ -16,8 +18,10 @@ export interface Manifest {
 }
 
 export function verifyManifest(manifest: Manifest): void {
-  if (manifest.abiVersion !== 65536 || manifest.opsVersion !== '1.0') {
-    throw protocolError(302, 'UnsupportedOpsVersion', 'This Node binding requires ABI 1.0 and ops 1.0')
+  for (const [field, expected] of Object.entries({ abiVersion: ABI_VERSION, opsVersion: OPS_VERSION, digest: MANIFEST_DIGEST })) {
+    if (manifest[field] !== expected) {
+      throw protocolError(302, 'UnsupportedOpsVersion', `Incompatible manifest ${field}: expected ${expected}, received ${String(manifest[field])}`)
+    }
   }
 }
 

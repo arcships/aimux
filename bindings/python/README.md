@@ -106,3 +106,16 @@ error double with the real AbortSignal source. `AIMUX_BUILD_COMMAND` can supply
 a build executable, and `AIMUX_CONTRACT_TARGET` can select its target directory.
 Neither mode verifies wheel installation or real provider behavior. All public
 execution APIs are synchronous; use an application executor for asyncio.
+
+Ordinary pytest/unittest discovery also replays all 11 shared JSON scenarios from
+`AIMUX_CONTRACT_VECTORS/scenarios` (default: `contract-tests/ops/scenarios` in the
+repository), without requiring provider integration flags. It builds an isolated
+PyO3 module with `contract-tests`, using the production call boundary, real
+Dispatcher, framing and bounded queue with an injected scripted source. Release
+builds do not expose test operations. Set `AIMUX_BUILD_COMMAND` to a Cargo build
+wrapper when needed. Expected results are kept in Python and never passed into
+the native driver. This complements the adapter-specific bridge lifecycle tests.
+
+The process-wide runtime is stored in a Rust `OnceLock` and is never dropped at
+interpreter shutdown. `InterpreterOwner::drop` queues `release_owner` on that
+still-live runtime, including when the module guard or a late client is collected.

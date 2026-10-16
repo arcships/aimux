@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
+import { ABI_VERSION, OPS_VERSION, MANIFEST_DIGEST } from '../src/generated/ops.ts'
 
 // Install the test transport before loading either public entrypoint.
 const require = createRequire(import.meta.url)
@@ -136,8 +137,18 @@ test('devtools, registry and binary operation use the same raw dispatch', async 
   await events.return!()
 })
 
-test('incompatible manifest is rejected at loading', () => {
-  assert.throws(() => rawApi.verifyManifest({ abiVersion: 0, opsVersion: '1.0' } as never), error => error instanceof AimuxError && error.code === 302)
+test('manifest handshake pins every generated value and reports both sides', () => {
+  const compatible = { abiVersion: ABI_VERSION, opsVersion: OPS_VERSION, digest: MANIFEST_DIGEST } as rawApi.Manifest
+  rawApi.verifyManifest(compatible)
+  for (const [field, received] of [['abiVersion', 0], ['opsVersion', '1.1'], ['digest', 'outdated'], ['digest', undefined]] as const) {
+    assert.throws(() => rawApi.verifyManifest({ ...compatible, [field]: received }), (error: unknown) => {
+      assert.ok(error instanceof AimuxError)
+      assert.equal(error.code, 302)
+      assert.ok(error.message.includes(String(compatible[field])))
+      assert.ok(error.message.includes(String(received)))
+      return true
+    })
+  }
 })
 
 test('typed serialization failures stay in the binding error domain', async () => {

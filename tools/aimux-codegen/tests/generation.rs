@@ -208,13 +208,13 @@ fn check_detects_missing_stale_and_changed_files_without_rewriting() {
     let outputs = artifacts();
     write(dir.path(), &outputs).unwrap();
     check(dir.path(), &outputs).unwrap();
-    fs::remove_file(dir.path().join("bindings/node/generated/ops.ts")).unwrap();
+    fs::remove_file(dir.path().join("bindings/node/src/generated/ops.ts")).unwrap();
     fs::write(dir.path().join("schema/ops/stale.json"), b"{}").unwrap();
     fs::write(dir.path().join("bindings/go/generated/ops.go"), b"changed").unwrap();
     let packaged = dir.path().join("bindings/flutter/native/aimux_ops.h");
     fs::write(&packaged, b"changed").unwrap();
     let error = check(dir.path(), &outputs).unwrap_err().to_string();
-    assert!(error.contains("missing: bindings/node/generated/ops.ts"));
+    assert!(error.contains("missing: bindings/node/src/generated/ops.ts"));
     assert!(error.contains("stale: schema/ops/stale.json"));
     assert!(error.contains("differs: bindings/go/generated/ops.go"));
     assert!(error.contains("differs: bindings/flutter/native/aimux_ops.h"));
@@ -253,7 +253,7 @@ fn writes_preserve_unowned_binding_types_and_reject_path_traversal() {
     let dir = tempfile::tempdir().unwrap();
     let outputs = artifacts();
     write(dir.path(), &outputs).unwrap();
-    let types = dir.path().join("bindings/node/generated/types.ts");
+    let types = dir.path().join("bindings/node/src/generated/types.ts");
     fs::write(&types, b"export type OwnedElsewhere = string;").unwrap();
     let native = dir.path().join("bindings/flutter/native/unowned.h");
     fs::write(&native, b"binding-owned").unwrap();

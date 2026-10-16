@@ -6,7 +6,7 @@
     "bindings/go/generated/ops.go",
     "bindings/java/generated/AimuxOps.java",
     "bindings/kotlin/generated/AimuxOps.kt",
-    "bindings/node/generated/ops.ts",
+    "bindings/node/src/generated/ops.ts",
     "bindings/python/generated/ops.py",
     "bindings/swift/generated/AimuxOps.swift",
     "schema/ops/error-envelope.json",

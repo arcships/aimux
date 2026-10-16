@@ -25,7 +25,7 @@ const LANGUAGES: &[(&str, &str)] = &[
     ("kotlin", "bindings/kotlin/generated/AimuxOps.kt"),
     ("swift", "bindings/swift/generated/AimuxOps.swift"),
     ("flutter", "bindings/flutter/lib/generated/ops.dart"),
-    ("node", "bindings/node/generated/ops.ts"),
+    ("node", "bindings/node/src/generated/ops.ts"),
     ("python", "bindings/python/generated/ops.py"),
 ];
 

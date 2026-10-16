@@ -3,6 +3,10 @@
 mod bridge;
 mod error;
 
+#[cfg(feature = "contract-tests")]
+#[path = "../__test__/native_scenarios.rs"]
+mod native_scenarios;
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -219,6 +223,9 @@ impl Runtime {
             next_request: AtomicU64::new(1),
             resources: Mutex::default(),
         });
+        // napi registers its runtime cleanup during module initialization. Node
+        // runs Env hooks in reverse registration order, so release_owner runs
+        // here before napi shuts its runtime down (and before JS finalizers).
         env.add_env_cleanup_hook(realm.clone(), |realm| realm.cleanup())?;
         env.set_instance_data(realm.clone(), (), |_| {})?;
         Ok(Self { realm })
@@ -265,6 +272,31 @@ impl Runtime {
                 let params = error::parse("params", &params_json)?;
                 let signal = self.signal(abort)?;
                 let request = self.realm.request(signal.clone())?;
+                #[cfg(feature = "contract-tests")]
+                if op == "test.operation" {
+                    return error::serialize(&native_scenarios::operation(self.realm.owner).await);
+                }
+                #[cfg(feature = "contract-tests")]
+                if op == "test.teardown" {
+                    let realm = Realm {
+                        owner: Owner::new_node().map_err(envelope)?,
+                        next_request: AtomicU64::new(1),
+                        resources: Mutex::default(),
+                    };
+                    let id = native_scenarios::operation(realm.owner).await;
+                    realm.cleanup();
+                    let runtime_alive = tokio::spawn(async { true }).await.unwrap();
+                    return error::serialize(&serde_json::json!({
+                        "released": native_scenarios::released(realm.owner, id),
+                        "runtimeAlive": runtime_alive,
+                    }));
+                }
+                #[cfg(feature = "contract-tests")]
+                if op == "test.scenario" {
+                    return error::serialize(
+                        &native_scenarios::replay(params, self.realm.owner).await,
+                    );
+                }
                 let result = dispatch::call(self.realm.context(&signal), id, &op, params)
                     .await
                     .map_err(envelope)?;
@@ -296,22 +328,14 @@ impl Runtime {
                     "audio chunk exceeds 1 MiB".into(),
                 ))));
             }
-            let entry = HandleRegistry::global()
-                .get(self.realm.owner, handle(&id)?, &[HandleKind::Operation])
-                .map_err(envelope)?;
-            match entry {
-                Entry::Operation(operation) => Ok((operation, data.to_vec())),
-                _ => Err(invalid_state("registry returned a non-operation entry")),
-            }
+            dispatch::operation_push(
+                &self.realm.context(&AbortSignal::new()),
+                handle(&id)?,
+                &data,
+            )
+            .map_err(envelope)
         })();
-        env.spawn_future(async move {
-            Ok(WireResult(match prepared {
-                Ok((operation, bytes)) => {
-                    operation.push(&bytes).await.map(|_| ()).map_err(envelope)
-                }
-                Err(error) => Err(error),
-            }))
-        })
+        env.spawn_future(async move { Ok(WireResult(prepared)) })
     }
 
     #[napi(ts_return_type = "Promise<FrameIterator>")]
