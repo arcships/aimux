@@ -23,8 +23,8 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-typed = ["pydantic>=2,<3"]
-test = ["pytest>=7,<9", "pydantic>=2,<3"]
+typed = ["pydantic>=2.5,<3"]
+test = ["pytest>=7,<9", "pydantic>=2.5,<3"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

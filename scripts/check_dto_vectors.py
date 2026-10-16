@@ -10,6 +10,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 # language: command (argv), run from ROOT
 RUNNERS = {
+    "python": [sys.executable, "bindings/python/tests/dto_vectors.py"],
     "java": ["python3", "bindings/java/scripts/dto-vectors.py"],
     "node": ["node", "--experimental-strip-types", "bindings/node/__test__/dto_vectors.ts"],
     "dart": ["dart", "bindings/flutter/tool/dto_vectors.dart"],

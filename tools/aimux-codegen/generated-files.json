@@ -336,6 +336,8 @@
     "bindings/node/src/generated/dto_vectors.ts",
     "bindings/node/src/generated/types.ts",
     "bindings/python/generated/ops.py",
+    "bindings/python/python/aimux/_error_payloads.py",
+    "bindings/python/python/aimux/_types.py",
     "bindings/swift/generated/AimuxOps.swift",
     "bindings/swift/generated/DtoVectorTypes.swift",
     "bindings/swift/generated/Types.swift",
