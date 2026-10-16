@@ -70,22 +70,11 @@ One function in every binding:
 
 ```text
 provider(name, api_key?, model_id, config?)   // all languages
-  name     — provider name; 推荐使用类型化 ProviderName（见下），字符串同样可用
+  name     — registry provider name as a string
   api_key  — optional; omitted/None reads the provider's env var
   config   — optional overrides (base_url / headers / maxRetries / body_overrides)
 ```
 
-- **ProviderName** (Rust enum, TS const object, Go/Java/Kotlin consts, Swift
-  enum, Dart consts) — IDE-completable and typo-proof:
-
-  ```text
-  Rust:   provider(ProviderName::Groq, ...)        TS:     provider(ProviderName.groq, ...)
-  Go:     Provider(string(ProviderName.Groq), ...)  Java:   Model.provider(ProviderName.GROQ, ...)
-  Swift:  Aimux.provider(name: ProviderName.groq.rawValue, ...)
-  Dart:   Model.provider(ProviderName.groq, ...)
-  ```
-
-  字符串形式（`provider("groq", ...)`）在全部语言中同样可用——两种写法等价。
 - Full list (name / env var / base URL): [providers.md](api/providers.md)
 - Custom endpoint: registry name + `base_url` override, or the OpenAI
   constructor with a base URL

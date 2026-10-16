@@ -22,7 +22,8 @@ use crate::types::{
 /// [`StreamPart`] (raw argument text); `stream_text` emits [`TextStreamPart`]
 /// (parsed and validated [`ToolCall`]).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, concrete(C = ToolCall, A = ToolApprovalRequestOutput, R = ReasoningFileOutput))]
+#[ts(concrete(C = ToolCall, A = ToolApprovalRequestOutput, R = ReasoningFileOutput))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = GeneratedFile> {
     // ── P0: text ──
     /// Start of a text segment.

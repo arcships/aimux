@@ -37,14 +37,13 @@ case 1.
    flags rides in per-call `body_overrides` (RFC-0017); if the quirk changes
    auth or error shapes, it is case 2.
 
-2. Run both generators and commit their output:
+2. Regenerate the provider documentation and commit its output:
 
    ```sh
-   python scripts/gen_provider_names.py   # ProviderName in 8 languages
    python scripts/gen_providers_doc.py    # docs/api/providers.md (totals + list)
    ```
 
-   CI runs both with `--check` in the `contract-tests` job and fails if the
+   CI runs it with `--check` in the `contract-tests` job and fails if the
    committed output is stale.
 
 3. Derive replay cassettes: add a tuple to `PROVIDERS` in
@@ -123,8 +122,8 @@ case 1.
 
 - **A generator may stay in `scripts/` only if its output carries a
   "GENERATED — do not edit" header and CI runs it with `--check`.** Today
-  that is `gen_provider_names.py` and `gen_providers_doc.py` (the
-  `contract-tests` job). `gen_ts_types.py` regenerates the ts-rs TypeScript
+  that is `gen_providers_doc.py` (the `contract-tests` job).
+  `gen_ts_types.py` regenerates the ts-rs TypeScript
   types through `cargo test -p aimux-core --lib export` (the export tests
   are the gate).
 - `docs/api/providers.md` is the single source of truth for provider counts

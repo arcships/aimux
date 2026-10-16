@@ -1,5 +1,6 @@
-# ts-rs export target: generate TypeScript bindings directly into the Node
-# binding's types directory (single source of truth = Rust types, no copy step).
+# ts-rs export target for the Node bindings (source of truth = Rust types).
+# Plain cargo test no longer exports: both crates gate exports behind ts-export.
+# Only scripts/gen_ts_types.py enables the feature and writes the types.
 # Overrides ts-rs's default `./bindings` (per-crate), which used to produce a
 # second, drift-prone copy in aimux-core/bindings/.
 # No `force = true`: scripts/gen_ts_types.py overrides this with a temporary

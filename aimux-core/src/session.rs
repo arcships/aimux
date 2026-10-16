@@ -33,7 +33,7 @@ use crate::language_model_message::LanguageModelPrompt;
 
 /// Where a session id came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum SessionSource {
     /// Passed explicitly via `CallOptions.session_id` / `GenerateTextOptions.session_id`.
     Explicit,
@@ -44,7 +44,7 @@ pub enum SessionSource {
 /// A single call within a session (an index entry only — call content lives
 /// in Recording (RFC-0023) / TraceRecord (RFC-0015)).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SessionCall {
     /// Call-level unique id. This is the association key for the future
     /// Recording / TraceRecord `call_id` (RFC-0015/0023): once those land,
@@ -58,7 +58,7 @@ pub struct SessionCall {
 
 /// Aggregated view of one session (session_id → ordered calls).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SessionView {
     pub session_id: String,
     /// Where the session id came from (first call's source).

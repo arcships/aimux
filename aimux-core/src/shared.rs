@@ -146,7 +146,7 @@ pub type SharedProviderReference = IndexMap<String, String>;
 /// the upstream API returns base64, return [`FileBytes::Base64`]; if it
 /// returns binary, return [`FileBytes::Binary`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum FileBytes {
     /// Raw binary bytes.
     Binary(Vec<u8>),
@@ -158,7 +158,7 @@ pub enum FileBytes {
 ///
 /// Aligned with V4 `SharedV4FileData`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum FileData {
     /// Raw bytes (`Uint8Array`) or a base64-encoded string.
     Data { data: FileBytes },
@@ -176,7 +176,7 @@ pub enum FileData {
 
 /// Data or a URL returned for a generated file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum GeneratedFileData {
     Data {
         data: FileBytes,
@@ -194,7 +194,7 @@ pub enum GeneratedFileData {
 /// `resolution` options. Aligned with the TS template-literal type
 /// `` `${number}x${number}` ``.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct Size {
     width: u32,
     height: u32,
@@ -258,7 +258,7 @@ impl std::str::FromStr for Size {
 /// `aspectRatio` options. Aligned with the TS template-literal type
 /// `` `${number}:${number}` ``.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct AspectRatio {
     width: u32,
     height: u32,
@@ -333,7 +333,7 @@ fn parse_pair(s: &str, sep: char) -> Option<(u32, u32)> {
 /// `ResponseInfo` directly, while those that mark it optional use
 /// `Option<ResponseInfo>`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ResponseInfo {
     /// Timestamp for the start of the generated response (ISO 8601 string).
     pub timestamp: Option<String>,
@@ -349,7 +349,7 @@ pub struct ResponseInfo {
 ///
 /// Aligned with the `request?` object that appears on some V4 model results.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RequestInfo {
     /// The request body that was sent (opaque JSON).
     pub body: Option<Value>,

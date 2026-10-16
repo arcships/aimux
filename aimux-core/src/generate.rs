@@ -63,7 +63,7 @@ async fn resolve_file(
 /// Unlike `CallOptions` (provider-facing), this does not include `prompt`
 /// (passed separately) and defaults are more ergonomic.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateTextOptions {
     pub max_output_tokens: Option<u32>,
     pub temperature: Option<f64>,
@@ -155,7 +155,7 @@ impl GenerateTextOptions {
 
 /// Result of `generate_text` (user-facing).
 #[derive(Debug, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateTextResult {
     /// Ordered generated content with parsed tool calls (the core
     /// [`ContentPart`](crate::result::ContentPart)).
@@ -211,7 +211,7 @@ pub struct GenerateTextResult {
 /// Result of `generate_object` (user-facing, M12). The parsed JSON object plus
 /// convenience fields from the underlying `generate_text` call.
 #[derive(Debug, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateObjectResult {
     /// The parsed JSON object returned by the model.
     pub object: Value,

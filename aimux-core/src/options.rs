@@ -19,7 +19,7 @@ use crate::types::ReasoningEffort;
 
 /// How the model should format its response.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ResponseFormat {
     /// Plain text (default).
     Text,
@@ -43,7 +43,7 @@ pub enum ResponseFormat {
 /// All values are milliseconds; `None` disables the corresponding limit. A
 /// `total` timeout also covers retry backoff and the whole streamed response.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TimeoutConfiguration {
     /// Overall timeout for the entire call (including retries and, for
     /// streaming, the whole stream), in milliseconds.
@@ -74,7 +74,7 @@ pub struct TimeoutConfiguration {
 /// `GenerateTextOptions` (user-facing) which is converted to `CallOptions`
 /// by the `generate_text` / `stream_text` functions.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct CallOptions {
     /// The standardized prompt (message array). Required.
     pub prompt: LanguageModelPrompt,

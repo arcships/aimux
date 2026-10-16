@@ -22,7 +22,7 @@ use crate::shared::{
 /// `SharedV4FileData` (URLs and provider references are not valid uploads), so
 /// this is a dedicated two-variant enum rather than the full [`crate::shared::FileData`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum UploadFileData {
     /// Raw bytes (`Uint8Array`) or a base64-encoded string.
     Data { data: FileBytes },
@@ -34,7 +34,7 @@ pub enum UploadFileData {
 ///
 /// Aligned with V4 `FilesV4UploadFileCallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct UploadFileCallOptions {
     /// The file data (raw bytes/base64 or inline text).
     pub data: UploadFileData,
@@ -71,7 +71,7 @@ impl UploadFileCallOptions {
 ///
 /// Aligned with V4 `FilesV4UploadFileResult`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct UploadFileResult {
     /// A provider reference mapping provider names to provider-specific file
     /// identifiers.
