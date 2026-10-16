@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recordings stay schema 2 and still read the snake_case envelope keys
   aimux 0.5 writes (`call_id`, `recorded_at`, `model_id`, ...).
 
+- MoA `failMode` values (`"best-effort"`, `"fail-fast"`) and the recording
+  operation value `"language-model"` use kebab-case.
+
 - Bytes are base64 strings in the public JSON, as the AI SDK writes a
   `Uint8Array`: image part `image`, file part `data`, `FileBytes`, speech
   `audio`, image outputs, video `binary` data and audio/image/video inputs. An

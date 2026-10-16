@@ -70,7 +70,7 @@ where
 
 /// Operation stored in a unified recording. Older recordings are language calls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
 #[ts(export)]
 pub enum RecordingOperation {
     #[default]
@@ -2317,6 +2317,25 @@ mod tests {
         assert_eq!(back.call_id, "call-1");
         assert_eq!(back.schema, RECORDING_SCHEMA);
         assert_eq!(back.provider.provider, "openai");
+    }
+
+    #[test]
+    fn recording_operation_round_trips_kebab_case() {
+        for (operation, wire) in [
+            (RecordingOperation::LanguageModel, "language-model"),
+            (RecordingOperation::Decision, "decision"),
+        ] {
+            let value = serde_json::to_value(operation).unwrap();
+            assert_eq!(value, serde_json::json!(wire));
+            assert_eq!(
+                serde_json::from_value::<RecordingOperation>(value).unwrap(),
+                operation
+            );
+        }
+
+        let input = InputRecord::from_call_options(&sample_options());
+        let value = serde_json::to_value(input).unwrap();
+        assert!(value.get("operation").is_none());
     }
 
     /// Recordings are written as schema 2, as master writes them. Schemas 1

@@ -27,7 +27,7 @@ use crate::types::{Usage, Warning};
 
 /// Reference-failure policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
 pub enum MoaFailMode {
     /// Drop a failed reference + emit a `Warning::Other`; keep going (default).
     #[default]

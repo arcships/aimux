@@ -784,7 +784,7 @@ aimux_error_t *aimux_router_new(const uint64_t *handles, size_t len,
    Any dead reference or aggregator handle is a C ABI failure — nothing is
    silently dropped. config_json is a serialized MoaConfig (all fields
    optional): { "providerName", "modelId", "aggregatorInstructions",
-   "stripReferenceTools", "failMode": "best_effort"|"fail_fast" } (wrong shape →
+   "stripReferenceTools", "failMode": "best-effort"|"fail-fast" } (wrong shape →
    AiMuxError AIMUX_E_INVALID_ARGUMENT). */
 aimux_error_t *aimux_moa_new(const uint64_t *reference_handles, size_t ref_len,
                                  uint64_t aggregator, const char *config_json,

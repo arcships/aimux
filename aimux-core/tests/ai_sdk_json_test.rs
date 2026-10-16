@@ -1007,7 +1007,7 @@ fn request_options_reject_unknown_keys() {
             "max_retries",
         ),
         (
-            decode_error::<MoaConfig>(json!({ "fail_mode": "fail_fast" })),
+            decode_error::<MoaConfig>(json!({ "fail_mode": "fail-fast" })),
             "fail_mode",
         ),
     ] {
@@ -1025,6 +1025,26 @@ fn request_options_reject_unknown_keys() {
     }))
     .unwrap();
     assert_eq!(call.temperature, Some(0.5));
+}
+
+#[test]
+fn moa_fail_mode_uses_kebab_case() {
+    use aimux_core::moa::{MoaConfig, MoaFailMode};
+
+    for (wire, expected) in [
+        ("best-effort", MoaFailMode::BestEffort),
+        ("fail-fast", MoaFailMode::FailFast),
+    ] {
+        let config: MoaConfig = serde_json::from_value(json!({ "failMode": wire })).unwrap();
+        assert_eq!(config.fail_mode, expected);
+    }
+    for wire in ["best_effort", "fail_fast"] {
+        let error = decode_error::<MoaConfig>(json!({ "failMode": wire }));
+        assert!(
+            error.contains(&format!("unknown variant `{wire}`")),
+            "{error}"
+        );
+    }
 }
 
 /// Parse `wire` and check that it serializes back unchanged.
