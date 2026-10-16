@@ -29,7 +29,7 @@ use crate::types::NamespacedKind;
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum UserContentPart {
     /// A text segment.
     Text {
@@ -81,7 +81,7 @@ pub enum UserContentPart {
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AssistantContentPart {
     /// A text segment.
     Text {
@@ -198,7 +198,7 @@ pub enum AssistantContentPart {
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolContentPart {
     /// The result of a tool call.
     ToolResult(ToolResultPart),
@@ -337,7 +337,7 @@ impl ToolContentPart {
 /// `provider-utils` `types/content-part.ts:218-241`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolResultPart {
     pub tool_call_id: String,
     /// The tool name. Required upstream; when absent here, the conversion
@@ -359,7 +359,7 @@ pub struct ToolResultPart {
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolResultOutput {
     /// Text for the model.
     Text {
@@ -449,7 +449,7 @@ impl ToolResultOutput {
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolResultContentPart {
     /// Text.
     Text {
@@ -550,7 +550,7 @@ pub enum ToolResultContentPart {
 /// (`string | Record<string, string>`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolResultFileId {
     Id(String),
     ByProvider(SharedProviderReference),
@@ -565,7 +565,7 @@ pub enum ToolResultFileId {
 /// (a `data:` URL becomes inline data), base64 otherwise.
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum FilePartData {
     /// `{ type: 'data' | 'url' | 'reference' | 'text', ... }`.
     Tagged(FileData),
@@ -580,7 +580,7 @@ pub enum FilePartData {
 /// URL, or a string (base64 or a URL).
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ReasoningFilePartData {
     /// `{ type: 'data' | 'url', ... }`.
     Tagged(GeneratedFileData),

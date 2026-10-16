@@ -1217,6 +1217,7 @@ async fn tool_call_should_warn_about_provider_defined_tools() {
         id: "test.search".parse().unwrap(),
         name: "search".to_string(),
         args: serde_json::Map::new(),
+        supports_deferred_results: None,
     })]);
     let result = generate_result("deepseek-chat", &options).await;
     assert_eq!(

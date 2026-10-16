@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate ts-rs TypeScript bindings from Rust types.
 
-Two crates carry #[derive(TS)] + #[ts(export)]:
+Two crates carry #[derive(TS)] and gate their exports behind ts-export:
 
 - aimux-core -> bindings/node/src/types/ (+ the types.ts aggregate)
 - aimux-web  -> tools/aimux-web/web/src/types/generated/ (the console's wire
@@ -26,6 +26,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -37,11 +38,39 @@ TYPES_TS = ROOT / "bindings" / "node" / "src" / "types.ts"
 WEB_TYPES_DIR = ROOT / "tools" / "aimux-web" / "web" / "src" / "types" / "generated"
 
 # (cargo test args selecting the crate's export tests, output directory,
-#  aggregate re-export file or None)
+#  aggregate re-export file or None, crate source directory)
 TARGETS = [
-    (["-p", "aimux-core", "--lib", "export"], TYPES_DIR, TYPES_TS),
-    (["-p", "aimux-web", "--bins", "--features", "ts-export", "export"], WEB_TYPES_DIR, None),
+    (
+        ["-p", "aimux-core", "--lib", "--features", "ts-export", "export"],
+        TYPES_DIR,
+        TYPES_TS,
+        ROOT / "aimux-core" / "src",
+    ),
+    (
+        ["-p", "aimux-web", "--bins", "--features", "ts-export", "export"],
+        WEB_TYPES_DIR,
+        None,
+        ROOT / "tools" / "aimux-web" / "src",
+    ),
 ]
+
+
+def check_export_gates() -> bool:
+    """Reject export attributes without the ts-export feature gate."""
+    ok = True
+    for _, _, _, source_dir in TARGETS:
+        for path in sorted(source_dir.rglob("*.rs")):
+            content = path.read_text(encoding="utf-8")
+            ungated = content.replace('cfg_attr(feature = "ts-export", ts(export', "")
+            for match in re.finditer(r"ts\(\s*export\b", ungated):
+                number = ungated.count("\n", 0, match.start()) + 1
+                print(
+                    f"UNGATED: {path.relative_to(ROOT)}:{number}: "
+                    "ts-rs export requires the ts-export feature gate",
+                    file=sys.stderr,
+                )
+                ok = False
+    return ok
 
 
 def normalize_generated(content: str) -> str:
@@ -66,12 +95,11 @@ def regenerate(test_args: list[str], export_dir: Path) -> None:
     )
 
 
-def manifest(root: Path, exclude: set[str] = frozenset()) -> dict[str, str]:
+def manifest(root: Path) -> dict[str, str]:
     """Map POSIX-style relative path -> content for every .ts under root."""
     return {
         p.relative_to(root).as_posix(): normalize_generated(p.read_text(encoding="utf-8"))
         for p in root.rglob("*.ts")
-        if p.name not in exclude
     }
 
 
@@ -151,9 +179,11 @@ def check_target(
 
 def main() -> int:
     check = "--check" in sys.argv[1:]
+    if check and not check_export_gates():
+        return 1
     ok = True
 
-    for test_args, types_dir, types_ts in TARGETS:
+    for test_args, types_dir, types_ts, _ in TARGETS:
         expected = export(test_args)
         if not check:
             sync(types_dir, expected)

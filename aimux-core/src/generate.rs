@@ -119,7 +119,7 @@ async fn resolve_file(
 /// naming the key instead of the default it would silently fall back to.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateTextOptions {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -262,7 +262,6 @@ impl GenerateTextOptions {
             provider_options: self.provider_options,
             reasoning: self.reasoning,
             abort_signal: self.abort_signal,
-            recording_context: None,
             include_raw_chunks: self.include_raw_chunks,
         }
     }
@@ -564,7 +563,8 @@ impl GenerateTextResult {
 /// last entry of `steps` and a filter on `dynamic`.
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, rename = "GenerateTextResult")]
+#[ts(rename = "GenerateTextResult")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 struct GenerateTextResultSnapshot<'a> {
     content: Vec<&'a ContentPart>,
     text: String,
@@ -682,7 +682,7 @@ fn stream_output(step: &StepResult, output: Option<&Output>) -> OutputState {
 /// `GenerateObjectResult` (`generate-object/generate-object-result.ts`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateObjectResult {
     /// The generated object, as parsed by the output.
     pub object: Value,
@@ -712,7 +712,7 @@ pub struct GenerateObjectResult {
 /// `Omit<LanguageModelResponseMetadata, 'messages'>`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateObjectResponse {
     pub id: String,
     pub timestamp: crate::timestamp::Timestamp,
@@ -1092,7 +1092,7 @@ async fn generate_in_operation(
     };
 
     // 2. Build CallOptions.
-    let mut call_options = options.into_call_options(lm_prompt);
+    let call_options = options.into_call_options(lm_prompt);
     let retries = retry::prepare_retries(settings.max_retries, abort_signal.clone());
 
     // 2a. RFC-0023: 关闭时零成本(M2 评审)——仅在录制开启时生成 call_id
@@ -1101,7 +1101,6 @@ async fn generate_in_operation(
     let context = crate::recording::recorder().map(|recorder| {
         let ctx =
             crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);
-        call_options.recording_context = Some(ctx.clone());
         ctx.recorder.record_input(
             &ctx.call_id,
             &call_options,
@@ -1151,12 +1150,15 @@ async fn generate_in_operation(
         model = %model.model_id(),
         modality = "text",
     );
-    let operation = retries.retry(|| {
-        if let Some(context) = &context {
-            let _ = context.start_attempt();
-        }
-        do_generate_with_logging(model, &call_options, span.clone(), started)
-    });
+    let operation = crate::recording::RecordingContext::scope(
+        context.clone(),
+        retries.retry(|| {
+            if let Some(context) = &context {
+                let _ = context.start_attempt();
+            }
+            do_generate_with_logging(model, &call_options, span.clone(), started)
+        }),
+    );
     let result = match timeout::run(operation, abort_signal.as_ref(), operation_timeout).await {
         Ok(r) => r,
         Err(e) => {
@@ -1295,11 +1297,9 @@ fn provider_tool_result_part(result: ToolResult, input: Option<Value>) -> TextSt
 /// `generate-text.ts:1437-1455`).
 ///
 /// A provider tool result whose call is not in this response is a deferred
-/// result. Upstream accepts it only for a provider tool whose definition sets
-/// `supportsDeferredResults` and otherwise fails with `Tool call {id} not
-/// found.` (`convert-language-model-content.ts:87-104`). aimux's tool
-/// definitions carry no such flag, so a result for any declared provider tool
-/// of that name is accepted.
+/// result. It is accepted only for a provider tool of that name that sets
+/// `supportsDeferredResults`, and otherwise fails with `Tool call {id} not
+/// found.` (`convert-language-model-content.ts:87-104`).
 async fn convert_generated_content(
     result: &GenerateResult,
     tool_calls: &[ToolCall],
@@ -1366,9 +1366,11 @@ async fn convert_generated_content(
                 let has_call = tool_calls
                     .iter()
                     .any(|call| call.tool_call_id == result.tool_call_id);
-                let deferred_allowed = tools.unwrap_or_default().iter().any(
-                    |tool| matches!(tool, Tool::Provider(tool) if tool.name == result.tool_name),
-                );
+                let deferred_allowed = tools.unwrap_or_default().iter().any(|tool| {
+                    matches!(tool, Tool::Provider(tool)
+                        if tool.name == result.tool_name
+                            && tool.supports_deferred_results == Some(true))
+                });
                 if !has_call && !deferred_allowed {
                     return Err(AiMuxError::Other(format!(
                         "Tool call {} not found.",
@@ -1600,7 +1602,7 @@ async fn stream_in_operation(
     .await?;
 
     // 2. Build CallOptions.
-    let mut call_options = options.into_call_options(lm_prompt);
+    let call_options = options.into_call_options(lm_prompt);
     // Armed before the model call (after the prompt's downloads, which only
     // the total and step deadlines bound): providers await their first SSE
     // event inside do_stream, so the first-chunk budget must already be
@@ -1619,7 +1621,6 @@ async fn stream_in_operation(
     let context = crate::recording::recorder().map(|recorder| {
         let ctx =
             crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);
-        call_options.recording_context = Some(ctx.clone());
         ctx.recorder.record_input(
             &ctx.call_id,
             &call_options,
@@ -1677,18 +1678,21 @@ async fn stream_in_operation(
     );
     let step_started = Instant::now();
     let attempt_started = Mutex::new(step_started);
-    let operation = retries.retry(|| {
-        if let Some(context) = &context {
-            let _ = context.start_attempt();
-        }
-        *attempt_started
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Instant::now();
-        // Call-level retry boundary: once do_stream returns a stream, retry
-        // no longer recreates the provider request; the returned stream is
-        // consumed by the stream-step timeout logic below.
-        model.do_stream(&call_options).instrument(span.clone())
-    });
+    let operation = crate::recording::RecordingContext::scope(
+        context.clone(),
+        retries.retry(|| {
+            if let Some(context) = &context {
+                let _ = context.start_attempt();
+            }
+            *attempt_started
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Instant::now();
+            // Call-level retry boundary: once do_stream returns a stream, retry
+            // no longer recreates the provider request; the returned stream is
+            // consumed by the stream-step timeout logic below.
+            model.do_stream(&call_options).instrument(span.clone())
+        }),
+    );
     let setup_deadline = timeout::min_deadline(operation_timeout.deadline(), first_chunk_deadline);
     let result: StreamResult =
         match timeout::run_until(operation, abort_signal.as_ref(), setup_deadline).await {
@@ -1729,7 +1733,10 @@ async fn stream_in_operation(
     // the stream's terminal fuse — `Finish` and non-recoverable errors must
     // end the stream under every configuration, or a provider that keeps the
     // connection open after `Finish` hangs a consumer reading to end-of-stream.
-    let mut provider_stream = stream;
+    // The pump runs in its own task, which does not inherit the recording
+    // scope; the stream carries it into every poll.
+    let mut provider_stream =
+        crate::recording::RecordingContext::scope_stream(context.clone(), stream);
     let chunk_ms = stream_timeout.chunk_ms;
     let pump_abort = abort_signal.clone();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();

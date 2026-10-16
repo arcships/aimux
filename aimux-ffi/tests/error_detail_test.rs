@@ -465,7 +465,7 @@ fn composite_configs_reject_unknown_keys() {
         ptr::null(),
         0,
         h,
-        c(r#"{"fail_mode":"fail_fast"}"#).as_ptr(),
+        c(r#"{"fail_mode":"fail-fast"}"#).as_ptr(),
         &mut moa,
     );
     let (code, m) = expect_aimux_error(e, "moa_new");

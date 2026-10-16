@@ -17,7 +17,7 @@ use crate::{AbortSignal, retry, timeout};
 /// Options passed to [`SearchModel::do_search`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SearchCallOptions {
     /// The search query string.
     pub query: String,
@@ -100,7 +100,7 @@ impl SearchCallOptions {
 /// A single search result item.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SearchResultItem {
     /// The title of the result (e.g. page title).
     #[ts(optional)]
@@ -137,7 +137,7 @@ pub struct SearchResultItem {
 /// The result of [`SearchModel::do_search`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SearchResult {
     /// Ordered list of search results.
     pub results: Vec<SearchResultItem>,
@@ -165,7 +165,7 @@ pub struct SearchResult {
 /// Optional response information for a search call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SearchResponse {
     /// Response headers.
     #[ts(optional)]
