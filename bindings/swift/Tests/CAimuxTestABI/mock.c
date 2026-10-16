@@ -34,7 +34,7 @@ int aimux_test_main_calls(void) { return atomic_load(&main_calls); }
 void aimux_test_version(uint32_t v) { atomic_store(&version, v); }
 uint32_t aimux_abi_version(void) { return atomic_load(&version); }
 aimux_error_t *aimux_manifest_json(char **out) {
-    background(); *out = owned("{\"abiVersion\":65536,\"opsVersion\":\"1.0\",\"ops\":[]}"); return NULL;
+    background(); *out = owned("{\"abiVersion\":65536,\"opsVersion\":\"1.0\",\"digest\":\"" AIMUX_MANIFEST_DIGEST "\",\"ops\":[]}"); return NULL;
 }
 aimux_error_t *aimux_call(uint64_t id, const char *op, const char *params, uint64_t abort, char **out) {
     background(); *out = NULL;

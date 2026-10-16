@@ -37,6 +37,32 @@ struct ContractTests {
 #if !AIMUX_STANDALONE
     @Test
 #endif
+    static func manifestRequiresExactVersionAndDigest() throws {
+        let valid: [String: JSONValue] = [
+            "abiVersion": .number(Double(AimuxOps.ABI_VERSION)),
+            "opsVersion": .string(AimuxOps.OPS_VERSION),
+            "digest": .string(AimuxOps.MANIFEST_DIGEST),
+        ]
+        try validateManifest(.object(valid), version: AimuxOps.ABI_VERSION)
+        for (field, value) in [("opsVersion", JSONValue.string("1.1")),
+                               ("digest", .string("wrong-digest")), ("digest", .null)] {
+            var invalid = valid
+            invalid[field] = value
+            do {
+                try validateManifest(.object(invalid), version: AimuxOps.ABI_VERSION)
+                throw CheckFailure(description: "Accepted incompatible manifest")
+            } catch let error as AimuxError {
+                try require(error.code == 302)
+                let message = error.message
+                try require(message.contains(AimuxOps.OPS_VERSION))
+                try require(message.contains(AimuxOps.MANIFEST_DIGEST))
+                try require(message.contains(String(describing: value)))
+            }
+        }
+    }
+#if !AIMUX_STANDALONE
+    @Test
+#endif
     static func manifestAndHandles() async throws {
         let manifest = try await AimuxRuntime.manifest()
         guard case .object(let fields) = manifest else { throw CheckFailure(description: "Missing manifest") }

@@ -1,3 +1,4 @@
+import 'generated/ops.dart' as ops;
 import 'aimux.dart';
 
 /// A Decision handle created with provider.model using method `decision`.
@@ -10,13 +11,13 @@ final class DecisionModel {
     Map<String, dynamic> options, {
     OpsHandle? abort,
   }) async =>
-      await client.call('decision.decide',
+      await client.call(ops.OP_DECISION_DECIDE,
           handle: handle,
           params: {'options': options},
           abort: abort) as Map<String, dynamic>;
 
   Future<Map<String, dynamic>> capabilities() async =>
-      await client.call('decision.capabilities', handle: handle)
+      await client.call(ops.OP_DECISION_CAPABILITIES, handle: handle)
           as Map<String, dynamic>;
 
   Future<void> close() => handle.close();

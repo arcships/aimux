@@ -3698,7 +3698,7 @@ public final class Types {
     //
     // `StreamPart` is tagged on `type` (`{"type":"text-delta",...}`,
     // `{"type":"tool-call",...}`, ...). It mirrors the TextStreamPart that
-    // `aimux_stream_text` yields. Unrecognized variants fall back to StreamPart.Unknown for
+    // `text.stream` yields in event frames. Unrecognized variants fall back to StreamPart.Unknown for
     // forward compatibility.
     // ─────────────────────────────────────────────────────────────────────────────
 

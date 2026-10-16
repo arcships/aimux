@@ -43,8 +43,10 @@ Use try-with-resources. `close()` is idempotent and stops new calls immediately.
 Admitted and queued calls retain the resource until their native calls return.
 Closing a model does not signal cancellation; `close()` inside a Consumer never
 waits for that Consumer to finish. A release requested from a callback runs on
-a daemon cleanup thread. Explicit close governs ownership; no Java finalizer
-blocks on native cleanup.
+a daemon cleanup thread. Explicit close governs ownership. A Java 8
+`PhantomReference` safety net drains one `ReferenceQueue` on a daemon thread and
+calls the non-blocking `aimux_handle_finalizer` for unreachable, unclosed handles.
+Explicitly closed handles are removed from that safety net.
 
 Every asynchronous method requires an explicit `Executor`. The internal
 `Cancellation` helper forwards successful `Future.cancel(false)` and

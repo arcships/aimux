@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
+import '../generated/ops.dart' as ops;
 import '../errors.dart';
 import 'ffi.g.dart';
 
@@ -214,13 +215,17 @@ Object? _execute(NativeRequest r) {
 void validateManifest(int version, Map<String, dynamic> manifest) {
   final opsVersion = manifest['opsVersion'];
   if (manifest['abiVersion'] != version ||
-      opsVersion is! String ||
-      !RegExp(r'^1\.[0-9]+$').hasMatch(opsVersion) ||
+      opsVersion != ops.OPS_VERSION ||
+      manifest['digest'] != ops.MANIFEST_DIGEST ||
       manifest['manifestRevision'] == null ||
       manifest['ops'] is! List ||
       manifest['handleKinds'] is! List ||
       manifest['errorCodes'] is! List) {
-    throw StateError('Incompatible aimux manifest');
+    throw StateError(
+      'Incompatible aimux manifest: opsVersion $opsVersion '
+      '(expected ${ops.OPS_VERSION}), digest ${manifest['digest']} '
+      '(expected ${ops.MANIFEST_DIGEST})',
+    );
   }
   final names = <String>{};
   for (final op in manifest['ops'] as List) {

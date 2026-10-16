@@ -43,8 +43,13 @@ public final class Aimux {
         manifest = AimuxResult.result(ffi, ffi.aimux_manifest_json(out), out);
         if (!manifest.path("abiVersion").isIntegralNumber()
             || manifest.path("abiVersion").asLong() != ABI_VERSION
-            || !OPS_VERSION.equals(manifest.path("opsVersion").asText())) {
-            throw new IllegalStateException("Incompatible aimux ABI/ops manifest");
+            || !manifest.path("opsVersion").isTextual()
+            || !manifest.path("digest").isTextual()
+            || !OPS_VERSION.equals(manifest.path("opsVersion").asText())
+            || !AimuxOps.MANIFEST_DIGEST.equals(manifest.path("digest").asText())) {
+            throw new IllegalStateException("Incompatible aimux ABI/ops manifest: opsVersion "
+                + manifest.path("opsVersion") + " (expected " + OPS_VERSION + "), digest "
+                + manifest.path("digest") + " (expected " + AimuxOps.MANIFEST_DIGEST + ")");
         }
     }
 
@@ -114,6 +119,7 @@ public final class Aimux {
             Throwable failure = context.failure.get();
             if (failure != null) {
                 if (error != null) { ffi.aimux_error_free(error); error = null; }
+                if (failure == context.resourceLimit) throw context.resourceLimit;
                 throw AimuxResult.callbackFailure(failure);
             }
             Pointer returnedError = error;
@@ -148,6 +154,7 @@ public final class Aimux {
         private final AtomicReference<Throwable> failure = new AtomicReference<>();
         private BigInteger previous;
         private StreamFrame terminal;
+        private ProtocolException.ResourceLimit resourceLimit;
 
         StreamContext(Aimux aimux, long abort, Consumer<StreamFrame> consumer) {
             this.aimux = aimux; this.abort = abort; this.consumer = consumer;
@@ -158,7 +165,18 @@ public final class Aimux {
             IN_CALLBACK.set(true);
             try {
                 if (failure.get() != null) return;
-                StreamFrame frame = StreamFrame.parse(json.getString(0, "UTF-8"));
+                if (json == null) throw new IllegalStateException("NULL stream frame");
+                final int limit = 1 << 20;
+                int length = 0;
+                while (length <= limit && json.getByte(length) != 0) length++;
+                if (length > limit) {
+                    resourceLimit = new ProtocolException.ResourceLimit(AimuxResult.parse(
+                        "{\"kind\":\"protocol\",\"code\":305,\"message\":\"Event exceeds stream budget\","
+                        + "\"error\":{\"name\":\"ResourceLimit\"}}"));
+                    throw resourceLimit;
+                }
+                StreamFrame frame = StreamFrame.parse(new String(json.getByteArray(0, length),
+                    java.nio.charset.StandardCharsets.UTF_8));
                 if (terminal != null || (previous != null && frame.getSequence().compareTo(previous) <= 0)) {
                     throw new IllegalStateException("Out-of-order frame or frame after End");
                 }

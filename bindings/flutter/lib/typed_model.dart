@@ -1,3 +1,4 @@
+import 'generated/ops.dart' as ops;
 import 'aimux.dart';
 import 'types.dart';
 
@@ -10,7 +11,7 @@ final class TypedModel {
 
   Future<GenerateTextResult> generateText(Map<String, dynamic> params) async =>
       GenerateTextResult.fromJson(
-        await client.call('text.generate', handle: handle, params: params)
+        await client.call(ops.OP_TEXT_GENERATE, handle: handle, params: params)
             as Map<String, dynamic>,
       );
 
@@ -18,7 +19,7 @@ final class TypedModel {
     Map<String, dynamic> params,
   ) async =>
       GenerateObjectResult.fromJson(
-        await client.call('text.generateObject', handle: handle, params: params)
+        await client.call(ops.OP_TEXT_GENERATE_OBJECT, handle: handle, params: params)
             as Map<String, dynamic>,
       );
 
@@ -26,7 +27,7 @@ final class TypedModel {
     Map<String, dynamic> params,
   ) async =>
       GenerateTextResult.fromJson(
-        await client.call('text.consume', handle: handle, params: params)
+        await client.call(ops.OP_TEXT_CONSUME, handle: handle, params: params)
             as Map<String, dynamic>,
       );
 
@@ -34,15 +35,15 @@ final class TypedModel {
     Map<String, dynamic> params,
   ) async =>
       ChatCompletion.fromJson(
-        await client.call('text.generateOpenAI', handle: handle, params: params)
+        await client.call(ops.OP_TEXT_GENERATE_OPEN_AI, handle: handle, params: params)
             as Map<String, dynamic>,
       );
 
   Stream<StreamPart> streamText(Map<String, dynamic> params) =>
-      _events('text.stream', params).map(StreamPart.fromJson);
+      _events(ops.OP_TEXT_STREAM, params).map(StreamPart.fromJson);
 
   Stream<ChatCompletionChunk> streamTextAsOpenAI(Map<String, dynamic> params) =>
-      _events('text.streamOpenAI', params).map(ChatCompletionChunk.fromJson);
+      _events(ops.OP_TEXT_STREAM_OPEN_AI, params).map(ChatCompletionChunk.fromJson);
 
   Stream<Map<String, dynamic>> _events(
     String op,

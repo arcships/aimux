@@ -231,7 +231,7 @@ func startStream(_ state: HandleState, _ op: String, _ params: JSONValue, _ limi
                 defer { retained.release() }
                 do {
                     try verifyRuntime()
-                    let abort = try handleID(nativeCall(0, "abort.create", "{}"))
+                    let abort = try handleID(nativeCall(0, AimuxOps.OP_ABORT_CREATE, "{}"))
                     cancellation.install(abort)
                     let error = aimux_stream(id, op, json, abort, streamCallback, retained.toOpaque())
                     bridge.complete(error.map(takeError))

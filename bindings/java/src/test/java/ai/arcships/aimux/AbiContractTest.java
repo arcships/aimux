@@ -33,6 +33,7 @@ class AbiContractTest {
         int fixture_live_errors();
         int fixture_drop_in_callback();
         int fixture_drops(int id);
+        int fixture_finalizers(int id);
         int fixture_signals(int id);
         int fixture_callbacks();
         long fixture_last_handle();
@@ -41,6 +42,7 @@ class AbiContractTest {
         int fixture_provider_calls();
         void fixture_abi(int version);
         void fixture_ops(int mismatch);
+        void fixture_digest(int mismatch);
         void fixture_poll(int state);
         void fixture_stream(int mode);
         void fixture_reset();
@@ -91,8 +93,51 @@ class AbiContractTest {
         fixture.fixture_abi(Aimux.ABI_VERSION);
         fixture.fixture_ops(1);
         assertThatThrownBy(() -> Aimux.load(System.getProperty("aimux.testLibrary")))
-            .isInstanceOf(IllegalStateException.class).hasMessageContaining("ops");
+            .isInstanceOf(IllegalStateException.class).hasMessageContaining("1.1").hasMessageContaining(Aimux.OPS_VERSION);
+        fixture.fixture_ops(0);
+        fixture.fixture_digest(1);
+        assertThatThrownBy(() -> Aimux.load(System.getProperty("aimux.testLibrary")))
+            .isInstanceOf(IllegalStateException.class).hasMessageContaining("wrong-digest")
+            .hasMessageContaining(ai.arcships.aimux.generated.AimuxOps.MANIFEST_DIGEST);
         assertThat(fixture.fixture_provider_calls()).isZero();
+    }
+
+    private java.lang.ref.WeakReference<Resource> abandon(int id, boolean close) {
+        Resource resource = aimux.own(Integer.toString(id));
+        if (close) { resource.close(); resource.close(); }
+        return new java.lang.ref.WeakReference<>(resource);
+    }
+
+    @Test void unreachableHandlesUseTheNonBlockingNativeFinalizerExactlyOnce() throws Exception {
+        java.lang.ref.WeakReference<Resource> leaked = abandon(4001, false);
+        java.lang.ref.WeakReference<Resource> closed = abandon(4002, true);
+        await(() -> {
+            System.gc();
+            return leaked.get() == null && closed.get() == null && fixture.fixture_finalizers(4001) == 1;
+        });
+        assertThat(fixture.fixture_drops(4001)).isEqualTo(1);
+        assertThat(fixture.fixture_drops(4002)).isEqualTo(1);
+        assertThat(fixture.fixture_finalizers(4002)).isZero();
+    }
+
+    @Test void callbackCopyRejectsOversizedAndNullFramesBeforeDecoding() {
+        try (Resource resource = aimux.own("4003")) {
+            fixture.fixture_stream(6);
+            assertThatThrownBy(() -> resource.stream("text.stream", "{}", f -> fail("Unexpected frame")))
+                .isInstanceOf(ProtocolException.ResourceLimit.class).hasMessageContaining("budget");
+            fixture.fixture_stream(7);
+            assertThatThrownBy(() -> resource.stream("text.stream", "{}", f -> fail("Unexpected frame")))
+                .isInstanceOf(BindingException.CallbackFailure.class).hasRootCauseMessage("NULL stream frame");
+        }
+    }
+
+    @Test void consumerResourceLimitStillReportsCallbackFailure() {
+        try (Resource resource = aimux.own("4004")) {
+            assertThatThrownBy(() -> resource.stream("text.stream", "{}", f -> {
+                throw envelope("protocol", 305, "ResourceLimit");
+            })).isInstanceOf(BindingException.CallbackFailure.class)
+                .hasCauseInstanceOf(ProtocolException.ResourceLimit.class);
+        }
     }
 
     @Test void roundTripsUtf8AndUnsigned64BitHandlesWithoutNumericJson() {

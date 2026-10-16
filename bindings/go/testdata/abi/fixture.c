@@ -55,7 +55,7 @@ static void wait_abort(uint64_t id) {
 uint32_t aimux_abi_version(void) { return 1u << 16; }
 aimux_error_t *aimux_manifest_json(char **out) {
     pthread_mutex_lock(&lock);
-    *out = owned("{\"abiVersion\":65536,\"opsVersion\":\"1.0\",\"fixture\":true}");
+    *out = owned("{\"abiVersion\":65536,\"opsVersion\":\"1.0\",\"digest\":\"" AIMUX_MANIFEST_DIGEST "\",\"fixture\":true}");
     pthread_mutex_unlock(&lock);
     return NULL;
 }

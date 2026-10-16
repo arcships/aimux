@@ -40,7 +40,7 @@ aimux_error_t *aimux_manifest_json(char **out) {
 #ifdef BAD_MANIFEST
     *out = copy("{\"abiVersion\":65536,\"opsVersion\":\"2.0\"}");
 #else
-    *out = copy("{\"abiVersion\":65536,\"opsVersion\":\"1.0\",\"manifestRevision\":\"fixture\","
+    *out = copy("{\"abiVersion\":65536,\"opsVersion\":\"1.0\",\"digest\":\"" AIMUX_MANIFEST_DIGEST "\",\"manifestRevision\":\"fixture\","
         "\"ops\":[{\"name\":\"runtime.describe\"},{\"name\":\"text.stream\"}],"
         "\"handleKinds\":[\"Language\",\"Abort\"],\"errorCodes\":[]}");
 #endif

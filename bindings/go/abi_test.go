@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/arcships/aimux/bindings/go/generated"
 )
 
 func fixture(t *testing.T) {
@@ -65,6 +68,36 @@ func checkCode(t *testing.T, err error, kind string, code int32) *Error {
 		t.Fatalf("unexpected envelope: %+v", native.Envelope)
 	}
 	return native
+}
+
+func TestManifestRequiresExactGeneratedVersionAndDigest(t *testing.T) {
+	for _, tc := range []struct {
+		ops, digest string
+		valid       bool
+	}{
+		{generated.OPS_VERSION, generated.MANIFEST_DIGEST, true},
+		{"1.1", generated.MANIFEST_DIGEST, false},
+		{generated.OPS_VERSION, "wrong-digest", false},
+		{generated.OPS_VERSION, "", false},
+	} {
+		raw, err := json.Marshal(map[string]any{"abiVersion": ABIVersion, "opsVersion": tc.ops, "digest": tc.digest})
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = validateManifest(ABIVersion, raw)
+		if tc.valid {
+			if err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		checkCode(t, err, "protocol", 302)
+		for _, value := range []string{tc.ops, generated.OPS_VERSION, tc.digest, generated.MANIFEST_DIGEST} {
+			if !strings.Contains(err.Error(), value) {
+				t.Fatalf("mismatch omits %q: %v", value, err)
+			}
+		}
+	}
 }
 
 func TestRuntimeManifest(t *testing.T) {
