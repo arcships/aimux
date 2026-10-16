@@ -298,6 +298,8 @@ jobs:
           go test -race ./...
       - name: DTO vector codecs
         if: runner.os == 'Linux'
+        env:
+          CGO_LDFLAGS: -L${{ github.workspace }}/target/${{ matrix.target }}/release
         run: python3 scripts/check_dto_vectors.py go
 
   ffi-sanitizers:
