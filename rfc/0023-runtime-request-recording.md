@@ -5,6 +5,7 @@
 > **Date**: 2026-08-05(重写:从"仅 HTTP 录制"扩展为"三层完整上下文录制 + 两种回放模式")
 > **Scope**: `aimux-core` + `aimux-provider-utils` 新增可选的完整调用上下文录制(输入侧 + 配置侧 + HTTP 侧)与两种回放模式(请求回放 / mock 响应回放),opt-in,默认关闭
 > **Related**: [RFC-0003](0003-test-cassette.md) 测试 cassette(格式与匹配基础)、[RFC-0014](0014-logging.md) 统一日志(零成本门控范本)、[RFC-0015](0015-cache-trace-audit.md) 缓存审计(sink 抽象兄弟)、[RFC-0020](0020-external-provider-config.md) 外部 provider 配置(配置侧录制关联)
+> **后续变更**: 2026-10-16(#252)`CallOptions` 不再有 `max_retries`、`timeout`、`session_id`。三者是操作设置:调用方在 `GenerateTextOptions` 上传入,`generate_text` / `stream_text` 把它们放进 `OperationSettings`,模型调用期间下层用 `OperationSettings::current()` 读取。AI SDK 同样把 `maxRetries`、`timeout` 放在 `generateText` 的请求选项上,`LanguageModelV4CallOptions` 里没有它们。录制仍把三者写在 `InputRecord.options` 的原键名下,录制格式不变。§1 表格的来源列已按此改写。
 
 ---
 
@@ -23,7 +24,7 @@ aimux 当前**完全没有运行时录制与回放能力**。一次调用失败�
 
 | 层 | 内容 | 来源 | 回放用途 |
 |---|---|---|---|
-| **① 输入侧**(调用参数) | `prompt`(消息数组)+ `GenerateTextOptions`(temperature/tools/reasoning/headers/body_overrides/max_retries/timeout/seed/response_format...) | `generate_text` 入口的 `CallOptions` | 请求回放(重建调用)+ mock 匹配键 |
+| **① 输入侧**(调用参数) | `prompt`(消息数组)+ `GenerateTextOptions`(temperature/tools/reasoning/headers/body_overrides/max_retries/timeout/seed/response_format...) | `generate_text` 入口的 `CallOptions`,加上所在操作的 `max_retries` / `timeout` / `session_id` | 请求回放(重建调用)+ mock 匹配键 |
 | **② 配置侧**(provider 身份) | provider name / model_id / base_url / api_key 来源(不存明文 key)/ profile / ProviderOptions(headers/org/project) | `model.provider()`/`model.model_id()` + provider config | 请求回放(重建 provider)+ 审计 |
 | **③ HTTP 侧**(wire) | 实际发出的 request(method/url/headers/body)+ response(status/headers/body/流式每帧)+ timing/attempt | `aimux-provider-utils/src/http.rs` 咽喉点 | mock 响应回放(返回录制响应) |
 
