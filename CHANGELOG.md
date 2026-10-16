@@ -81,6 +81,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   toolset name is read from the call's tools or from
   `providerOptions.anthropic.toolsetName` only.
 
+- Anthropic checks the args of the provider-defined tools that
+  `@ai-sdk/anthropic` 4.0.71 `prepareTools` validates (computer toolset,
+  advisor, `text_editor_20250728`, the three `web_fetch` and three
+  `web_search` versions): args that do not match fail the call with
+  `InvalidArgument` before any request, on Anthropic, Vertex and Bedrock
+  alike. `anthropic::prepare_tools::{prepare_tools,
+  prepare_tools_with_provider}` return a `Result`.
+
 - Public surface (`aimux-core`, `aimux-provider-utils`): removed
   `recording::init_recording_from_env`; made private the retry preparation
   helpers and default constants, `composite::{add_usage,

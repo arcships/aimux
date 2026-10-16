@@ -2543,7 +2543,7 @@ fn apply_anthropic_tools(
     betas: &mut BTreeSet<String>,
     warnings: &mut Vec<Warning>,
     cache_validator: &mut CacheControlValidator,
-) {
+) -> Result<(), AiMuxError> {
     let disable_parallel_tool_use = json_schema.is_some()
         || anthropic_option(&options.provider_options, profile, "disableParallelToolUse")
             .and_then(|v| v.as_bool())
@@ -2612,7 +2612,7 @@ fn apply_anthropic_tools(
         default_eager_input_streaming,
         &profile.options_name,
         cache_validator,
-    );
+    )?;
 
     warnings.extend(prepared.tool_warnings);
     betas.extend(prepared.betas);
@@ -2644,6 +2644,7 @@ fn apply_anthropic_tools(
         }
         body["tool_choice"] = tool_choice;
     }
+    Ok(())
 }
 
 /// `providerOptions.anthropic.mcpServers` → `mcp_servers` + the
@@ -3026,7 +3027,7 @@ pub(crate) fn build_request_body_for(
         &mut betas,
         &mut warnings,
         &mut cache_validator,
-    );
+    )?;
     warnings.extend(cache_validator.take_warnings());
 
     // providerOptions.anthropic.mcpServers → mcp_servers + beta header.

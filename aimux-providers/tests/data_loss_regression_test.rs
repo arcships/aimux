@@ -1025,10 +1025,14 @@ async fn finding_2_anthropic_advisor_result_keeps_text_and_stop_reason() {
     mount(&server, &c).await;
 
     let result = anthropic_at(&server.uri())
-        .do_generate(&opts_with_tools(vec![provider_tool(
-            "anthropic.advisor_20260301",
-            "advisor",
-        )]))
+        .do_generate(&opts_with_tools(vec![Tool::Provider(ProviderTool {
+            id: "anthropic.advisor_20260301".parse().unwrap(),
+            name: "advisor".to_string(),
+            args: json!({ "model": "claude-opus-4-8", "maxTokens": 1024 })
+                .as_object()
+                .cloned()
+                .unwrap(),
+        })]))
         .await
         .expect("do_generate should succeed");
 
