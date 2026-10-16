@@ -8,7 +8,9 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNNERS = {}  # language: command (argv), run from ROOT
+# language: command (argv), run from ROOT
+RUNNERS = {
+}
 
 
 def same(left, right):
