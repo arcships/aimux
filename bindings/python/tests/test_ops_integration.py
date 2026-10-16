@@ -194,9 +194,11 @@ class RealProviderRoundTrips(unittest.TestCase):
                 result = invoke()
                 self.assertIsInstance(result, list if op in (ops.OP_TEXT_STREAM, ops.OP_TEXT_STREAM_OPEN_AI) else dict)
                 if op in (ops.OP_TEXT_STREAM, ops.OP_TEXT_STREAM_OPEN_AI):
-                    self.assertEqual(result[-1]['type'], 'end')
-                    self.assertEqual(result[-1]['outcome'], 'success')
-                    events = [frame['event'] for frame in result if frame['type'] == 'event']
+                    # The Python bridge consumes End: success stops iteration,
+                    # while terminal failures raise typed exceptions.
+                    self.assertTrue(result)
+                    self.assertTrue(all(frame['type'] == 'event' for frame in result))
+                    events = [frame['event'] for frame in result]
                     if op == ops.OP_TEXT_STREAM:
                         text = ''.join(event['text'] for event in events if event['type'] == 'text-delta')
                     else:
