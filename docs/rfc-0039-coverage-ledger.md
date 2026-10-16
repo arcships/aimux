@@ -291,7 +291,7 @@ Writers use schema 2 and readers accept schemas 1 and 2; migration to schema 3
 and removal of old-schema reading are planned as the final step of this series
 under RFC-0041 (G-b). Process-wide capture remains G-a. Generated-output tests
 exist, but this audit does not claim a successful run; per-business-type hash
-checks and uniform loader checks remain G-h. Installed assets, platform
+checks remain G-h. Installed assets, platform
 execution, successful token refresh, exhaustive eight-language wire vectors and
 old-only-test equivalence are not proved by this inventory (G-d/G-e/G-i).
 See the [registered gaps](rfc-0039-implementation.md#registered-gaps) and

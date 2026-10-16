@@ -312,9 +312,8 @@ and tested against the primitive signatures, not emitted by aimux-codegen.
 
 The generated file set is checked against the current manifest by the commands below;
 this documentation audit does not claim a successful generator run.
-Python pins its generated digest at import; Node checks ABI/ops versions and
-exposes the runtime digest without comparing the generated digest (G-h).
-Other adapters have their implemented ABI/ops checks. No adapter can claim per-consumed-business-type hash validation
+Every adapter requires the exact generated ABI version, ops version and manifest
+digest at load. No adapter can claim per-consumed-business-type hash validation
 until that metadata exists. Schema presence does not validate live handles,
 owner isolation, capabilities or state transitions.
 
@@ -373,6 +372,6 @@ inventory; the canonical business error union remains owned by RFC-0042.
 - **G-e — Release installation evidence:** Release publishing orders ops before FFI and packages the header, but installation and execution of every platform asset are not established here because build and packaging definitions alone do not establish release closure.
 - **G-f — Provider metadata:** Complete package provenance, authoritative default methods for every package, general named vendor-method dispatch and registry/string-model lifting in text requests are absent because entries retain canonical Arcs and current factories/control DTOs do not supply all that metadata or lifting; owner-scoped reference metadata exists for registry-resolved models, and `provider.invoke` accepts only `listModels`.
 - **G-g — End-to-end memory bound:** Queue and wire limits do not bound every provider allocation or the existing unbounded core text pump because this layer controls admitted payloads rather than rewriting core streaming internals.
-- **G-h — Generated-product consistency:** Per-business-type revision/hash checks are unavailable and Node currently checks ABI/ops versions without comparing its generated digest because consumed-type metadata and uniform loader consistency enforcement are incomplete.
+- **G-h — Generated-product consistency:** Per-business-type revision/hash checks are unavailable because consumed-type metadata is incomplete; every adapter already pins the exact ABI version, ops version and manifest digest.
 - **G-i — Cross-language and platform conformance:** Exhaustive eight-language business-vector execution, same-source release evidence, installed-wheel checks and all platform sanitizer/link/install results are not established here because narrower local and fixture suites do not prove the full matrix; Dart Windows streaming is explicitly unsupported.
 - **G-k — Offline mock-model migration:** The old MockReplayModel constructor has no exposed replacement for offline text generation because replay.create returns ReplaySession, text operations admit only Language, and replay.live requires a separate caller-supplied target.

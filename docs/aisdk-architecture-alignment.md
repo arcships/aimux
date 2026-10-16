@@ -1535,7 +1535,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - RFC-0039 G-e：发布配置已将 ops 排在 FFI 前并打包头文件，但本文尚未提供所有平台产物的安装和运行验证，因为构建与打包定义不能证明发布验收完成（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-f：完整包来源、所有包的权威默认方法、通用厂商命名方法分发及文本请求的 registry/字符串模型提升仍缺失，已解析模型只有按所有者隔离的引用元数据且 `provider.invoke` 只接受 `listModels`，因为注册项保留的是规范 Arc，现有工厂和控制 DTO 未提供全部元数据或提升逻辑（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-g：队列和线格式限制尚不能约束所有 provider 分配及 core 现有的无界文本转发队列，因为本层只控制已准入的数据，不改写 core 的流式内部实现（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
-- RFC-0039 G-h：尚无逐业务类型的版本或哈希校验，Node 只检查 ABI/ops 版本而不比对生成的摘要，因为消费类型元数据及统一加载校验尚未完整实现（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
+- RFC-0039 G-h：尚无逐业务类型的版本或哈希校验，因为消费类型元数据尚未完整实现；各绑定加载时已精确校验 ABI 版本、ops 版本和 manifest 摘要（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-i：本文尚未建立八种语言的完整业务向量、同源发布、已安装 wheel 及全部平台 sanitizer/链接/安装验证证据，Dart Windows 流式调用也明确不支持，因为局部和替身测试不能证明完整矩阵通过（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-k：旧 MockReplayModel 构造器尚无暴露给离线文本生成的替代入口，因为 `replay.create` 返回 ReplaySession、文本操作只接受 Language，而 `replay.live` 还需要调用者另行提供目标（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 
