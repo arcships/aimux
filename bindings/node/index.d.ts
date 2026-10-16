@@ -557,11 +557,11 @@ export declare function router(models: Array<Model>, configJson?: string | undef
 export declare function sessionCalls(sessionId: string): AimuxResult<string>
 
 /**
- * Start a streaming transcription session. `opts_json` (optional):
- * `{ "input_audio_format": {"format_type","rate"}, "provider_options",
- * "headers", "include_raw_chunks" }`. `bridge` — optional AbortSignal; firing
- * it aborts the session. The returned parts are JSON-serialized
- * `TranscriptionStreamPart`s.
+ * Start a streaming transcription session. `opts_json` (optional, camelCase
+ * as in the C ABI, unknown keys rejected): `{ "inputAudioFormat":
+ * {"formatType","rate"}, "providerOptions", "headers", "includeRawChunks",
+ * "timeout" }`. `bridge` — optional AbortSignal; firing it aborts the
+ * session. The returned parts are JSON-serialized `TranscriptionStreamPart`s.
  */
 export declare function startTranscriptionSession(model: TranscriptionModel, optsJson?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<AimuxResult<TranscriptionSession>>
 

@@ -54,10 +54,19 @@ fn parse_opts_json<T: serde::de::DeserializeOwned>(
     opts_with_args(json, owned_by_args).map_err(|e| crate::error::wire_error(argument, &e))
 }
 
-/// Shape-only stand-in for `TranscriptionCallOptions::audio`, built from the
-/// real enum so a variant rename is a compile error rather than a runtime one.
-fn audio_placeholder() -> serde_json::Value {
-    serde_json::to_value(AudioInput::Base64(String::new())).expect("AudioInput always serializes")
+/// Shape-only stand-ins for the `TranscriptionCallOptions` fields the
+/// explicit arguments own, under their JSON names: `audio`, built from the
+/// real enum so a variant rename is a compile error rather than a runtime one,
+/// and `mediaType`.
+fn transcription_args() -> [(&'static str, serde_json::Value); 2] {
+    [
+        (
+            "audio",
+            serde_json::to_value(AudioInput::Base64(String::new()))
+                .expect("AudioInput always serializes"),
+        ),
+        ("mediaType", serde_json::Value::from("")),
+    ]
 }
 
 /// Shape-only stand-in for `RerankingCallOptions::documents`.
@@ -213,14 +222,8 @@ impl TranscriptionModel {
                     && !s.trim().is_empty()
                     && s.trim() != "null"
                 {
-                    let mut parsed: TranscriptionCallOptions = parse_opts_json(
-                        "opts_json",
-                        s,
-                        &[
-                            ("audio", audio_placeholder()),
-                            ("media_type", serde_json::Value::from("")),
-                        ],
-                    )?;
+                    let mut parsed: TranscriptionCallOptions =
+                        parse_opts_json("opts_json", s, &transcription_args())?;
                     // Required data comes from the explicit arguments; all
                     // operation policy and optional fields come from JSON.
                     parsed.audio = opts.audio;
@@ -717,11 +720,11 @@ pub struct TranscriptionSession {
     token: aimux_core::AbortSignal,
 }
 
-/// Start a streaming transcription session. `opts_json` (optional):
-/// `{ "input_audio_format": {"format_type","rate"}, "provider_options",
-/// "headers", "include_raw_chunks" }`. `bridge` — optional AbortSignal; firing
-/// it aborts the session. The returned parts are JSON-serialized
-/// `TranscriptionStreamPart`s.
+/// Start a streaming transcription session. `opts_json` (optional, camelCase
+/// as in the C ABI, unknown keys rejected): `{ "inputAudioFormat":
+/// {"formatType","rate"}, "providerOptions", "headers", "includeRawChunks",
+/// "timeout" }`. `bridge` — optional AbortSignal; firing it aborts the
+/// session. The returned parts are JSON-serialized `TranscriptionStreamPart`s.
 #[napi]
 pub async fn start_transcription_session(
     model: &TranscriptionModel,
@@ -731,6 +734,7 @@ pub async fn start_transcription_session(
     AimuxResult({
         let __r: crate::error::MResult<TranscriptionSession> = async {
             #[derive(serde::Deserialize, Default)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
             struct SessionOpts {
                 input_audio_format: Option<aimux_core::transcription_model::InputAudioFormat>,
                 provider_options:
@@ -984,17 +988,26 @@ mod tests {
     #[test]
     fn options_parse_without_the_fields_the_explicit_args_own() {
         let transcription: TranscriptionCallOptions = opts_with_args(
-            r#"{"max_retries":3,"timeout":{"total_ms":1000}}"#,
-            &[
-                ("audio", audio_placeholder()),
-                ("media_type", serde_json::Value::from("")),
-            ],
+            r#"{"maxRetries":3,"timeout":{"totalMs":1000}}"#,
+            &transcription_args(),
         )
-        .expect("transcription options with no audio/media_type");
+        .expect("transcription options with no audio/mediaType");
         assert_eq!(transcription.max_retries, Some(3));
+        assert_eq!(transcription.timeout.and_then(|t| t.total_ms), Some(1000));
+        // aimux 0.5's snake_case keys fail naming the key instead of being
+        // dropped.
+        let error = opts_with_args::<TranscriptionCallOptions>(
+            r#"{"max_retries":3}"#,
+            &transcription_args(),
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("unknown field `max_retries`"),
+            "{error}"
+        );
 
         let rerank: RerankingCallOptions = opts_with_args(
-            r#"{"top_n":2,"max_retries":1}"#,
+            r#"{"topN":2,"maxRetries":1}"#,
             &[
                 ("query", serde_json::Value::from("")),
                 ("documents", documents_placeholder()),
@@ -1006,7 +1019,7 @@ mod tests {
         // The placeholder is overwritten by the caller, so it must lose to
         // whatever the explicit argument holds — never to the JSON.
         let mut search: SearchCallOptions = opts_with_args(
-            r#"{"query":"dogs","max_results":5}"#,
+            r#"{"query":"dogs","maxResults":5}"#,
             &[("query", serde_json::Value::from(""))],
         )
         .expect("search options with no query");

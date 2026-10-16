@@ -11,8 +11,12 @@ import type { JsonValue } from "./serde_json/JsonValue";
  *
  * Unlike `CallOptions` (provider-facing), this does not include `prompt`
  * (passed separately) and defaults are more ergonomic.
+ *
+ * Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+ * 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+ * naming the key instead of the default it would silently fall back to.
  */
-export type GenerateTextOptions = { maxOutputTokens?: number, temperature?: number, stopSequences?: Array<string>, topP?: number, topK?: number, presencePenalty?: number, frequencyPenalty?: number, 
+export type GenerateTextOptions = { maxOutputTokens?: number, temperature?: number, stopSequences?: Array<string>, topP?: number, topK?: number, presencePenalty?: number, frequencyPenalty?: number,
 /**
  * The structured output to generate, the AI SDK's `output`
  * (`generate-text/output.ts`). It sets the model call's
@@ -20,31 +24,31 @@ export type GenerateTextOptions = { maxOutputTokens?: number, temperature?: numb
  * [`GenerateTextResult::output`]. `None` sends no response format and
  * takes the text as the output.
  */
-output?: Output, seed?: number, tools?: Array<Tool>, toolChoice?: ToolChoice, headers?: { [key in string]: string }, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, 
+output?: Output, seed?: number, tools?: Array<Tool>, toolChoice?: ToolChoice, headers?: { [key in string]: string }, providerOptions?: { [key in string]: { [key in string]: JsonValue } },
 /**
  * Top-level reasoning effort.
  */
-reasoning?: ReasoningEffort, 
+reasoning?: ReasoningEffort,
 /**
  * System instructions prepended to the prompt.
  */
-instructions?: string, 
+instructions?: string,
 /**
  * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
  * retrying. `None` uses 2, the AI SDK default.
  */
-maxRetries?: number, 
+maxRetries?: number,
 /**
  * Per-call timeout configuration (total / first-chunk / chunk idle).
  */
-timeout?: TimeoutConfiguration, 
+timeout?: TimeoutConfiguration,
 /**
  * Session identifier, for grouping consecutive calls into a session
  * (observability, see RFC-0024). Orthogonal to RFC-0019 session-affinity
  * headers. When `None` and the optional session inferer is enabled, one
  * may be inferred from prompt-prefix continuation.
  */
-sessionId?: string, 
+sessionId?: string,
 /**
  * Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
  */

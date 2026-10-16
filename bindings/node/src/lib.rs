@@ -982,8 +982,10 @@ pub fn moa(
     })())
 }
 
-/// Lenient router config (mirrors the FFI-side shape; all fields optional).
+/// Router config, the C ABI's shape: camelCase, all fields optional,
+/// unknown keys rejected.
 #[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RouterFfiConfig {
     router: Option<String>,
     weights: Option<Vec<f64>>,
@@ -1726,4 +1728,29 @@ pub fn apply_tool_call_repair_to_result(
         .map_err(|e| AiMuxBindingError::from(&e))?;
         serialize_result(&patched)
     })())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RouterFfiConfig;
+
+    /// The router config is the C ABI's: camelCase, unknown keys rejected,
+    /// so the same JSON names the router in every binding.
+    #[test]
+    fn router_config_is_camel_case_and_strict() {
+        let cfg: RouterFfiConfig = serde_json::from_str(
+            r#"{"router":"weighted","weights":[1.0],"fallback":"none","providerName":"r","modelId":"m"}"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.router.as_deref(), Some("weighted"));
+        assert_eq!(cfg.provider_name.as_deref(), Some("r"));
+        assert_eq!(cfg.model_id.as_deref(), Some("m"));
+        let error = serde_json::from_str::<RouterFfiConfig>(r#"{"provider_name":"r"}"#)
+            .err()
+            .expect("a snake_case key is rejected");
+        assert!(
+            error.to_string().contains("unknown field `provider_name`"),
+            "{error}"
+        );
+    }
 }

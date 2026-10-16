@@ -73,8 +73,9 @@ env var。非回环绑定(`--host 0.0.0.0` 等)时网页内 key 管理自动禁�
 
 自填 `base_url`(不是该 provider 的默认地址)时只用请求里直接给的 key(仅回环
 绑定可填明文):Settings 已存 key 和环境变量都不会发往该地址,`env:` 引用被拒绝;
-key 留空则不带 key 调用。还会从环境读取其他凭据的 provider(Bedrock、Vertex、
-Codex 等)不能自填 `base_url`。Replay 总是发往 provider 的默认地址。
+key 留空则以空 key 调用(与 AI SDK 显式传 `apiKey: ''` 相同,不回落到任何已存或环境 key;
+部分 provider 因此发一个空凭据头,如 OpenAI 的 `Authorization: Bearer`)。还会从环境
+读取其他凭据的 provider(Bedrock、Vertex、Codex 等)不能自填 `base_url`。Replay 总是发往 provider 的默认地址。
 
 打开后使用 Playground / Agent 页跑一次调用,Traces 页即可看到完整录制。
 

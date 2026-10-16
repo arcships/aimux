@@ -157,11 +157,8 @@ pub(crate) fn prepare_provider_tools(
         false,
         false,
         false,
-    );
+    )?;
     result.tool_choice = prepared.tool_choice;
-    for tool in &providers {
-        validate_args(tool.id.as_str(), &tool.args)?;
-    }
     result.betas.extend(prepared.betas);
     result.warnings.extend(prepared.tool_warnings);
     if fallback {
@@ -187,99 +184,4 @@ pub(crate) fn prepare_provider_tools(
         }
     }
     Ok(result)
-}
-
-// Upstream validates configuration only for these factories; older tools pass
-// their configuration through unchecked.
-fn validate_args(id: &str, args: &serde_json::Map<String, Value>) -> Result<(), AiMuxError> {
-    let web_fetch = matches!(
-        id,
-        "anthropic.web_fetch_20250910" | "anthropic.web_fetch_20260209"
-    );
-    let web_search = id == "anthropic.web_search_20260209";
-    if !web_fetch
-        && !web_search
-        && !matches!(
-            id,
-            "anthropic.advisor_20260301"
-                | "anthropic.computer_toolset_20260801"
-                | "anthropic.text_editor_20250728"
-        )
-    {
-        return Ok(());
-    }
-    let invalid = || {
-        AiMuxError::InvalidArgument(format!(
-            "Invalid configuration for provider-defined tool {id}"
-        ))
-    };
-    let optional = |name: &str, valid: fn(&Value) -> bool| args.get(name).is_none_or(valid);
-    let valid = if web_fetch || web_search {
-        optional("maxUses", Value::is_number)
-            && optional("allowedDomains", |v| {
-                v.as_array().is_some_and(|a| a.iter().all(Value::is_string))
-            })
-            && optional("blockedDomains", |v| {
-                v.as_array().is_some_and(|a| a.iter().all(Value::is_string))
-            })
-            && if web_fetch {
-                optional("maxContentTokens", Value::is_number)
-                    && optional("citations", |v| {
-                        v.is_object() && v.get("enabled").is_some_and(Value::is_boolean)
-                    })
-            } else {
-                optional("userLocation", |v| {
-                    v.is_object()
-                        && v.get("type").and_then(Value::as_str) == Some("approximate")
-                        && ["city", "region", "country", "timezone"]
-                            .iter()
-                            .all(|key| v.get(*key).is_none_or(Value::is_string))
-                })
-            }
-    } else if id == "anthropic.advisor_20260301" {
-        args.get("model").is_some_and(Value::is_string)
-            && optional("maxUses", Value::is_number)
-            && optional("maxTokens", |v| {
-                v.as_f64()
-                    .is_some_and(|n| (1024.0..=9007199254740991.0).contains(&n) && n.fract() == 0.0)
-            })
-            && optional("caching", |v| {
-                v.is_object()
-                    && v.get("type").and_then(Value::as_str) == Some("ephemeral")
-                    && matches!(v.get("ttl").and_then(Value::as_str), Some("5m" | "1h"))
-            })
-    } else if id == "anthropic.text_editor_20250728" {
-        optional("maxCharacters", Value::is_number)
-    } else {
-        optional("configs", |v| {
-            v.as_object().is_some_and(|configs| {
-                configs.iter().all(|(member, config)| {
-                    matches!(
-                        member.as_str(),
-                        "screenshot"
-                            | "zoom"
-                            | "left_click"
-                            | "right_click"
-                            | "middle_click"
-                            | "double_click"
-                            | "triple_click"
-                            | "left_click_drag"
-                            | "mouse_move"
-                            | "left_mouse_down"
-                            | "left_mouse_up"
-                            | "cursor_position"
-                            | "scroll"
-                            | "type"
-                            | "key"
-                            | "hold_key"
-                            | "wait"
-                    ) && config.is_object()
-                        && ["enabled", "deferLoading"]
-                            .iter()
-                            .all(|key| config.get(*key).is_none_or(Value::is_boolean))
-                })
-            })
-        })
-    };
-    if valid { Ok(()) } else { Err(invalid()) }
 }

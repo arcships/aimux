@@ -7,6 +7,9 @@
 //! `LanguageModelPrompt` (provider-facing) before calling
 //! `LanguageModel::do_generate` / `do_stream`.
 
+use std::fmt;
+
+use serde::de::{self, Deserializer, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -53,7 +56,7 @@ pub enum ModelMessage {
 }
 
 /// The content of a user message: a string or parts (upstream `UserContent`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(untagged)]
 #[ts(export)]
 pub enum UserContent {
@@ -63,7 +66,7 @@ pub enum UserContent {
 
 /// The content of an assistant message: a string or parts (upstream
 /// `AssistantContent`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(untagged)]
 #[ts(export)]
 pub enum AssistantContent {
@@ -160,7 +163,7 @@ impl ModelMessage {
 /// What the user passes as `prompt` to `generate_text` / `stream_text`.
 ///
 /// Can be a simple string (converted to a single user message) or a list of messages.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(untagged)]
 #[ts(export)]
 pub enum ModelPrompt {
@@ -186,5 +189,94 @@ impl From<&str> for ModelPrompt {
 impl From<Vec<ModelMessage>> for ModelPrompt {
     fn from(msgs: Vec<ModelMessage>) -> Self {
         ModelPrompt::Messages(msgs)
+    }
+}
+
+// ── Deserialize by JSON kind ────────────────────────────────────────────────
+//
+// The three types above serialize untagged, but an untagged `Deserialize`
+// tries each variant in turn and, when none fits, reports only "data did not
+// match any variant of untagged enum ...": a prompt part with an unknown
+// `type` would lose the "unknown variant `x`, expected one of ..." error its
+// own union gives (RFC-0042 §7.2, `rfc/0042-v4-type-boundaries.md:211`). They
+// are read by JSON kind instead: a string is the text, an array is read as
+// the parts or messages, with each element's own error.
+
+/// Read a string or an array of `T` by JSON kind: `text` builds the value
+/// from a string, `array` from the array's elements, each decoded with its
+/// own error.
+fn text_or_array<'de, D, T, U>(
+    deserializer: D,
+    expecting: &'static str,
+    text: fn(String) -> U,
+    array: fn(Vec<T>) -> U,
+) -> Result<U, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    struct KindVisitor<T, U> {
+        expecting: &'static str,
+        text: fn(String) -> U,
+        array: fn(Vec<T>) -> U,
+    }
+
+    impl<'de, T: Deserialize<'de>, U> Visitor<'de> for KindVisitor<T, U> {
+        type Value = U;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str(self.expecting)
+        }
+
+        fn visit_str<E: de::Error>(self, value: &str) -> Result<U, E> {
+            Ok((self.text)(value.to_owned()))
+        }
+
+        fn visit_string<E: de::Error>(self, value: String) -> Result<U, E> {
+            Ok((self.text)(value))
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<U, A::Error> {
+            Vec::deserialize(de::value::SeqAccessDeserializer::new(seq)).map(self.array)
+        }
+    }
+
+    deserializer.deserialize_any(KindVisitor {
+        expecting,
+        text,
+        array,
+    })
+}
+
+impl<'de> Deserialize<'de> for UserContent {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        text_or_array(
+            deserializer,
+            "a string or an array of user content parts",
+            Self::Text,
+            Self::Parts,
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for AssistantContent {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        text_or_array(
+            deserializer,
+            "a string or an array of assistant content parts",
+            Self::Text,
+            Self::Parts,
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for ModelPrompt {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        text_or_array(
+            deserializer,
+            "a prompt string or an array of messages",
+            Self::Text,
+            Self::Messages,
+        )
     }
 }
