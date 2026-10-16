@@ -74,6 +74,9 @@ pub(crate) fn registrations() -> &'static [(&'static OpDescriptor, Handler)] {
     })
 }
 
+/// Dispatch routes this op itself, before ordinary handle lookup.
+pub const HANDLE_DROP: &str = "handle.drop";
+
 #[must_use]
 pub fn descriptor(op: &str) -> Option<&'static OpDescriptor> {
     registrations()
@@ -141,7 +144,7 @@ impl<'a> Dispatcher<'a> {
             return Err(invalid_op(descriptor.name));
         };
         validate_object(&params)?;
-        if descriptor.name == "handle.drop" {
+        if descriptor.name == HANDLE_DROP {
             decode::<crate::ops::operation::EmptyParams>(params)?;
             if let Some(Entry::Operation(operation)) = self.registry.remove(ctx.owner, handle) {
                 operation.consumer_close();

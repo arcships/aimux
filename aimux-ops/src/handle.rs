@@ -270,7 +270,11 @@ impl HandleRegistry {
     }
 }
 
-fn allocate(next: &AtomicU64) -> Result<u64, OpsError> {
+/// Take the next nonzero id from a counter that starts at 1, failing once it is exhausted.
+///
+/// # Errors
+/// Returns HandleExhausted after u64::MAX has been allocated.
+pub fn allocate(next: &AtomicU64) -> Result<u64, OpsError> {
     // 0 is an exhausted sentinel, reached after allocating u64::MAX once.
     let mut id = next.load(Ordering::Relaxed);
     loop {

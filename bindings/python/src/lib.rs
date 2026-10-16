@@ -272,7 +272,7 @@ impl Client {
             let _ = dispatch::call(
                 context(owner, AbortSignal::new()),
                 handle,
-                "handle.drop",
+                dispatch::HANDLE_DROP,
                 serde_json::json!({}),
             )
             .await;

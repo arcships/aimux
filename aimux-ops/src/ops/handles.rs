@@ -333,7 +333,7 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         source_symbols: &["aimux_core::trace::TraceLayer::new"],
     },
     OpDescriptor {
-        name: "handle.drop",
+        name: crate::dispatch::HANDLE_DROP,
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[

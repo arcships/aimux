@@ -167,6 +167,8 @@ fn fixture_error(code: i32, kind: &str, error: Value) -> envelope::ErrorEnvelope
     }
 }
 pub mod dispatch {
+    pub const HANDLE_DROP: &str = "handle.drop";
+
     pub fn operation_push(
         _ctx: &Ctx,
         _handle: super::handle::HandleId,
@@ -200,7 +202,7 @@ pub mod dispatch {
         op: &str,
         params: Value,
     ) -> Result<Value, OpsError> {
-        if op == "handle.drop" {
+        if op == HANDLE_DROP {
             let mut handles = handles().lock().unwrap();
             if handles.get(&id.0) == Some(&ctx.owner) {
                 handles.remove(&id.0);
