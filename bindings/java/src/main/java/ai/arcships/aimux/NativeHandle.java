@@ -1,5 +1,7 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.types.*;
+
 /** A short admission lock; no monitor is held across native calls or callbacks. */
 abstract class NativeHandle implements AutoCloseable {
     final Aimux aimux;
@@ -33,6 +35,10 @@ abstract class NativeHandle implements AutoCloseable {
         try (Lease lease = admit(); Abort abort = aimux.createAbort(); Lease signal = abort.admit()) {
             return aimux.call(lease.id, op, params, signal.id);
         }
+    }
+
+    public final <T> T call(String op, WireValue params, Class<T> resultType) {
+        return WireJson.decode(call(op, params.toString()), resultType);
     }
 
     public final com.fasterxml.jackson.databind.JsonNode call(String op, String paramsJson, Abort abort) {

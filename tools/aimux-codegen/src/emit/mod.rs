@@ -1,6 +1,8 @@
 //! Language emitters consume only the normalized wire model.
+
 pub mod dart;
 pub mod go;
+pub mod java;
 pub mod node;
 pub mod swift;
 
@@ -15,7 +17,7 @@ pub trait Emitter: Sync {
 }
 
 /// Every language's DTO emitter; each writes only its own binding's files.
-pub static EMITTERS: &[&dyn Emitter] = &[&dart::Dart, &go::Go, &node::Node, &swift::Swift];
+pub static EMITTERS: &[&dyn Emitter] = &[&dart::Dart, &go::Go, &java::Java, &node::Node, &swift::Swift];
 
 pub(crate) fn owned_paths() -> impl Iterator<Item = &'static str> {
     EMITTERS

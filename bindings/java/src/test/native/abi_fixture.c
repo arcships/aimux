@@ -55,16 +55,16 @@ aimux_error_t *aimux_call(uint64_t handle, const char *op, const char *params,
     if (!strcmp(op, "abort.create")) {
         char result[80];
         uint64_t id = atomic_fetch_add(&next_id, 1);
-        snprintf(result, sizeof result, "{\"handle\":\"%llu\"}", (unsigned long long) id);
+        snprintf(result, sizeof result, "{\"handle\":\"%llu\",\"kind\":\"Abort\"}", (unsigned long long) id);
         *out = owned(result);
     } else if (!strcmp(op, "provider.create")) {
         atomic_fetch_add(&provider_calls, 1);
-        *out = owned("{\"handle\":\"100\"}");
+        *out = owned("{\"handle\":\"100\",\"kind\":\"Provider\"}");
     } else if (!strcmp(op, "provider.model") || !strcmp(op, "provider.files")
                || !strcmp(op, "transcription.start")) {
         char result[80];
         uint64_t id = atomic_fetch_add(&next_id, 1);
-        snprintf(result, sizeof result, "{\"handle\":\"%llu\"}", (unsigned long long) id);
+        snprintf(result, sizeof result, "{\"handle\":\"%llu\",\"kind\":\"Language\"}", (unsigned long long) id);
         *out = owned(result);
     } else if (!strcmp(op, "test.wait")) {
         atomic_fetch_add(&entered, 1);
@@ -77,7 +77,7 @@ aimux_error_t *aimux_call(uint64_t handle, const char *op, const char *params,
     } else if (!strcmp(op, "test.protocol")) {
         return failure(300, "{\"kind\":\"protocol\",\"code\":300,\"message\":\"unknown op\",\"error\":{\"name\":\"InvalidOp\"}}");
     } else if (!strcmp(op, "text.generate") || !strcmp(op, "text.consume")) {
-        *out = owned("{\"text\":\"你好 🌏\"}");
+        *out = owned("{\"text\":\"你好 🌏\",\"content\":[],\"files\":[],\"finishReason\":\"stop\",\"reasoning\":[],\"request\":{},\"response\":{\"id\":\"fixture\",\"timestamp\":\"2025-01-01T00:00:00Z\",\"modelId\":\"fixture\",\"messages\":[]},\"responseMessages\":[],\"sources\":[],\"steps\":[],\"toolCalls\":[],\"toolResults\":[],\"totalUsage\":{\"inputTokenDetails\":{},\"outputTokenDetails\":{}},\"usage\":{\"inputTokenDetails\":{},\"outputTokenDetails\":{}},\"warnings\":[]}");
     } else {
         *out = owned(params);
     }
@@ -98,7 +98,7 @@ aimux_error_t *aimux_stream(uint64_t handle, const char *op, const char *params,
     int mode = atomic_load(&stream_mode);
     if (mode == 1) return failure(300, "{\"kind\":\"protocol\",\"code\":300,\"message\":\"unknown op\",\"error\":{\"name\":\"InvalidOp\"}}");
     atomic_fetch_add(&entered, 1);
-    emit(cb, context, "{\"type\":\"event\",\"seq\":\"1\",\"event\":{\"type\":\"text-delta\",\"id\":\"0\",\"delta\":\"你好 🌏\"}}");
+    emit(cb, context, "{\"type\":\"event\",\"seq\":\"1\",\"event\":{\"type\":\"text-delta\",\"id\":\"0\",\"text\":\"你好 🌏\"}}");
     if (mode == 2) {
         while (!atomic_load(&signals[abort])) pause_millis(1);
     }
@@ -111,7 +111,7 @@ aimux_error_t *aimux_stream(uint64_t handle, const char *op, const char *params,
         emit(cb, context, "{\"type\":\"end\",\"seq\":\"3\",\"outcome\":\"success\"}");
     } else {
         /* Keep emitting after cancellation to test the first-failure latch. */
-        emit(cb, context, "{\"type\":\"event\",\"seq\":\"2\",\"event\":{\"type\":\"text-delta\",\"id\":\"0\",\"delta\":\"second\"}}");
+        emit(cb, context, "{\"type\":\"event\",\"seq\":\"2\",\"event\":{\"type\":\"text-delta\",\"id\":\"0\",\"text\":\"second\"}}");
         emit(cb, context, atomic_load(&signals[abort])
             ? "{\"type\":\"end\",\"seq\":\"3\",\"outcome\":\"cancelled\"}"
             : "{\"type\":\"end\",\"seq\":\"3\",\"outcome\":\"success\"}");

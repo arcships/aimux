@@ -7,7 +7,8 @@ facade in `ai.arcships.aimux.kotlin`.
 
 ```kotlin
 import ai.arcships.aimux.Aimux
-import ai.arcships.aimux.StreamFrame
+import ai.arcships.aimux.types.StreamFrame
+import ai.arcships.aimux.types.Outcome
 import ai.arcships.aimux.kotlin.aimuxCall
 import ai.arcships.aimux.kotlin.aimuxFlow
 import kotlinx.coroutines.flow.collect
@@ -27,7 +28,7 @@ suspend fun generate() {
 }
 ```
 
-Use the Java provider/model, `Types`, and `MultimodalTypes` objects directly.
+Use the Java provider/model and generated `ai.arcships.aimux.types` classes directly.
 They pass unchanged between Java and Kotlin; Java retains ownership and
 `close()` semantics. Generic Java `Resource` operations expose all registered
 ops, including Decision. For example, obtain a Decision resource from a Jev

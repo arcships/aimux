@@ -1,5 +1,8 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.types.StreamFrame;
+import ai.arcships.aimux.types.Outcome;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sun.jna.Library;
 import com.sun.jna.Native;
@@ -211,8 +214,8 @@ class AbiContractTest {
             });
         }
         assertThat(frames).hasSize(3);
-        assertThat(frames.get(0).getEvent().path("delta").asText()).isEqualTo("你好 🌏");
-        assertThat(frames.get(2).getOutcome()).isEqualTo(StreamFrame.Outcome.SUCCESS);
+        assertThat(((StreamFrame.Event) frames.get(0)).getEvent().toJson().path("text").asText()).isEqualTo("你好 🌏");
+        assertThat(((StreamFrame.End) frames.get(2)).getOutcome()).isEqualTo(Outcome.SUCCESS);
     }
 
     @Test void latchesConsumerThrowableSignalsAbortAndThrowsOnceAfterNativeReturns() {
@@ -317,7 +320,7 @@ class AbiContractTest {
         CountDownLatch hold = new CountDownLatch(1);
         CountDownLatch entered = new CountDownLatch(1);
         Future<?> stream = executor.submit(() -> resource.stream("text.stream", "{}", abort, frame -> {
-            if (frame.isEnd()) return;
+            if (frame instanceof StreamFrame.End) return;
             entered.countDown();
             try { if (!hold.await(2, TimeUnit.SECONDS)) throw new AssertionError("deadline"); }
             catch (InterruptedException error) { throw new AssertionError(error); }

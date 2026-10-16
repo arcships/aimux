@@ -3,7 +3,8 @@ package ai.arcships.aimux.kotlin
 import ai.arcships.aimux.Aimux
 import ai.arcships.aimux.AimuxException as JavaAimuxException
 import ai.arcships.aimux.KotlinInteropFixtures
-import ai.arcships.aimux.StreamFrame
+import ai.arcships.aimux.types.StreamFrame
+import ai.arcships.aimux.types.Outcome
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.take
@@ -83,8 +84,8 @@ class NativeIntegrationTest {
                             generateSequence<Throwable>(expected) { it.cause }.last(),
                         )
                         assertTrue(frames.single().isEnd)
-                        assertEquals(StreamFrame.Outcome.CANCELLED, frames.single().outcome)
-                        assertEquals(source.envelope, frames.single().error.envelope)
+                        assertEquals(Outcome.CANCELLED, frames.single().outcome)
+                        assertEquals(source.envelope, frames.single().error.toJson())
                     }
                 }
             }
@@ -154,8 +155,8 @@ class NativeIntegrationTest {
                     fail("expected invalid prompt")
                 } catch (error: InvalidPromptError) {
                     assertTrue(values.last().isEnd)
-                    assertEquals(StreamFrame.Outcome.ERROR, values.last().outcome)
-                    assertEquals(error.envelope, values.last().error.envelope)
+                    assertEquals(Outcome.ERROR, values.last().outcome)
+                    assertEquals(error.envelope, values.last().error.toJson())
                 }
                 val first = withTimeout(5000) {
                     aimuxFlow<StreamFrame>(1) { executor, consumer ->

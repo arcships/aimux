@@ -1,5 +1,7 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.types.*;
+
 import ai.arcships.aimux.internal.Cancellation;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.concurrent.Callable;
@@ -79,7 +81,7 @@ final class NativeFuture implements Future<JsonNode> {
                 long handle = lease == null ? 0 : lease.id;
                 if (consumer == null) return aimux.call(handle, op, params, signal.id);
                 aimux.stream(handle, op, params, signal.id, consumer);
-                return Types.AimuxJson.MAPPER.nullNode();
+                return WireJson.MAPPER.nullNode();
             }
         }
     }

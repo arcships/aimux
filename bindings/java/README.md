@@ -1,7 +1,7 @@
 # Java binding — ABI 1 / ops 1.0
 
-Java 8 is supported. Wire DTOs use ordinary classes; existing `Types` and
-`MultimodalTypes` builders remain available. `AimuxFFI` declares the 14 C
+Java 8 is supported. Wire DTOs are generated from the Rust schemas in
+`ai.arcships.aimux.types`, with immutable classes, builders and getters. `AimuxFFI` declares the 14 C
 primitives once. `size_t` uses the native pointer size, including Windows LLP64.
 Operation names and version constants come from the packaged generated `AimuxOps`.
 
@@ -18,7 +18,9 @@ try (ProviderHandle provider = aimux.createProvider(providerJson);
      Model model = provider.languageModel("gpt-4.1-mini")) {
     System.out.println(model.generate(requestJson));
     model.stream(requestJson, frame -> {
-        if (!frame.isEnd()) System.out.println(frame.getEvent());
+        if (frame instanceof ai.arcships.aimux.types.StreamFrame.Event) {
+            System.out.println(((ai.arcships.aimux.types.StreamFrame.Event) frame).getEvent());
+        }
     });
 }
 ```
@@ -37,7 +39,7 @@ supports `call`, `stream` and `create` with the operations accepted by its nativ
 handle kind. `Aimux.call` uses global handle 0. `Aimux.create` creates resources
 such as registries, recorders, transports, middleware, trace stores and replay
 sessions. `own(id)` transfers ownership; wrap each returned handle once.
-`TypedModel` owns a supplied `Model` and decodes the existing core result classes.
+`TypedModel` owns a supplied `Model` and decodes generated result classes.
 
 Use try-with-resources. `close()` is idempotent and stops new calls immediately.
 Admitted and queued calls retain the resource until their native calls return.
@@ -111,3 +113,15 @@ platform path separator. The fallback requires JDK 9 or newer, compiles all
 sources including generated constants with `javac --release 8`, and discovers
 all binding JUnit tests. Run the JDK 8/11/17/21 runtime matrix and a 32-bit
 JVM/native library separately; a Java 8 bytecode target does not verify them.
+
+DTOs use `ai.arcships.aimux.types.WireJson.MAPPER`, configured to retain arbitrary
+JSON integers and decimals. Tagged unions expose nested variants, and untagged
+unions expose ordered `Branch1`, `Branch2`, and subsequent branches. Byte codecs
+remain strings on the wire; use `WireJson.bytes` for a byte array. `HandleId`
+retains an unsigned decimal string; `WireJson.u64` returns a checked `BigInteger`.
+Presence fields have `hasX()` and builder `omitX()` methods to distinguish an
+absent key from an explicit null.
+
+Run DTO vectors without Gradle downloads using
+`python3 scripts/check_dto_vectors.py java` from the repository root. This uses
+Jackson 2.17.2 jars already present in the Gradle cache.

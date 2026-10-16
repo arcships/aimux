@@ -1,11 +1,10 @@
 package ai.arcships.aimux;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
+import ai.arcships.aimux.types.*;
+
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sun.jna.Pointer;
 import com.sun.jna.ptr.PointerByReference;
-import java.io.IOException;
 import java.util.Objects;
 
 final class AimuxResult {
@@ -13,14 +12,7 @@ final class AimuxResult {
 
     static JsonNode parse(String value) {
         Objects.requireNonNull(value, "JSON");
-        try {
-            JsonNode node = Types.AimuxJson.MAPPER.reader()
-                .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(value);
-            if (node == null || node.isMissingNode()) throw new IllegalArgumentException("Empty JSON");
-            return node;
-        } catch (IOException e) {
-            throw new IllegalArgumentException("Invalid JSON", e);
-        }
+        return WireJson.parse(value);
     }
 
     static String params(String json) {
@@ -51,8 +43,8 @@ final class AimuxResult {
         if (error == null) return;
         try {
             int code = ffi.aimux_error_code(error);
-            JsonNode envelope = parse(takeString(ffi, ffi.aimux_error_json(error)));
-            if (envelope.path("code").asInt() != code) {
+            ErrorEnvelope envelope = ErrorEnvelope.fromJson(parse(takeString(ffi, ffi.aimux_error_json(error))));
+            if (envelope.getCode() != code) {
                 throw new IllegalStateException("Native error code/envelope mismatch");
             }
             throw decode(envelope);
@@ -60,37 +52,39 @@ final class AimuxResult {
     }
 
     static NativeException decode(JsonNode envelope) {
-        if (!envelope.path("code").isInt() || !envelope.path("message").isTextual()
-            || !envelope.path("error").path("name").isTextual()) {
-            throw new IllegalStateException("Malformed native error envelope");
+        try { return decode(ErrorEnvelope.fromJson(envelope)); }
+        catch (IllegalArgumentException error) { throw new IllegalStateException("Malformed native error envelope", error); }
+    }
+
+    static NativeException decode(ErrorEnvelope envelope) {
+        if (!envelope.getError().path("name").isTextual()) {
+            throw new IllegalStateException("Malformed native error payload");
         }
-        switch (envelope.path("kind").asText()) {
-            case "aimux": return AimuxException.decode(envelope);
-            case "recording": return RecordingException.decode(envelope);
-            case "binding": return BindingException.decode(envelope);
-            case "protocol": return ProtocolException.decode(envelope);
+        switch (envelope.getKind()) {
+            case AIMUX: return AimuxException.decode(envelope);
+            case RECORDING: return RecordingException.decode(envelope);
+            case BINDING: return BindingException.decode(envelope);
+            case PROTOCOL: return ProtocolException.decode(envelope);
             default: throw new IllegalStateException("Unknown native error kind");
         }
     }
 
     static BindingException.CallbackFailure callbackFailure(Throwable cause) {
-        ObjectNode envelope = Types.AimuxJson.MAPPER.createObjectNode();
-        envelope.put("kind", "binding");
-        envelope.put("code", 206);
-        envelope.put("message", "Stream consumer failed");
-        envelope.putObject("error").put("name", "CallbackFailure");
+        ErrorEnvelope envelope = ErrorEnvelope.builder().kind(ErrorDomain.BINDING).code(206)
+            .message("Stream consumer failed")
+            .error(WireJson.MAPPER.createObjectNode().put("name", "CallbackFailure")).build();
         BindingException.CallbackFailure failure = new BindingException.CallbackFailure(envelope);
         failure.initCause(cause);
         return failure;
     }
 
     static long handle(JsonNode value) {
-        // Handles are decimal strings, never JSON numbers (including values above 2^53).
-        JsonNode id = value.isObject() ? value.path("handle") : value;
-        if (!id.isTextual() || !id.textValue().matches("[1-9][0-9]*")) {
-            throw new IllegalStateException("Expected a nonzero decimal handle string");
+        try {
+            HandleId id = value.isObject() ? RecorderHandleResult.fromJson(value).getHandle() : HandleId.fromJson(value);
+            if ("0".equals(id.getValue())) throw new IllegalStateException("Expected a nonzero handle");
+            return WireJson.u64(id.getValue()).longValue();
+        } catch (IllegalArgumentException error) {
+            throw new IllegalStateException("Invalid native handle", error);
         }
-        try { return Long.parseUnsignedLong(id.textValue()); }
-        catch (NumberFormatException e) { throw new IllegalStateException("Handle exceeds uint64", e); }
     }
 }

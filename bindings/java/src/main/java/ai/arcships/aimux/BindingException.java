@@ -1,12 +1,14 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.types.ErrorEnvelope;
+
 import com.fasterxml.jackson.databind.JsonNode;
 
 /** Binding domain errors from the RFC-0039 envelope. */
 public abstract class BindingException extends NativeException {
-    BindingException(JsonNode envelope) { super(envelope); }
-    static BindingException decode(JsonNode envelope) {
-        switch (envelope.path("error").path("name").asText()) {
+    BindingException(ErrorEnvelope envelope) { super(envelope); }
+    static BindingException decode(ErrorEnvelope envelope) {
+        switch (envelope.getError().path("name").asText()) {
             case "NullPointer": return new NullPointer(envelope);
             case "InvalidUtf8": return new InvalidUtf8(envelope);
             case "InvalidWireJson": return new InvalidWireJson(envelope);
@@ -19,28 +21,28 @@ public abstract class BindingException extends NativeException {
     }
 
     public static final class NullPointer extends BindingException {
-        NullPointer(JsonNode envelope) { super(envelope); }
+        NullPointer(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class InvalidUtf8 extends BindingException {
-        InvalidUtf8(JsonNode envelope) { super(envelope); }
+        InvalidUtf8(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class InvalidWireJson extends BindingException {
-        InvalidWireJson(JsonNode envelope) { super(envelope); }
+        InvalidWireJson(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class InvalidHandle extends BindingException {
-        InvalidHandle(JsonNode envelope) { super(envelope); }
+        InvalidHandle(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class ReentrantCall extends BindingException {
-        ReentrantCall(JsonNode envelope) { super(envelope); }
+        ReentrantCall(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class ResultSerialization extends BindingException {
-        ResultSerialization(JsonNode envelope) { super(envelope); }
+        ResultSerialization(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class CallbackFailure extends BindingException {
-        CallbackFailure(JsonNode envelope) { super(envelope); }
+        CallbackFailure(ErrorEnvelope envelope) { super(envelope); }
     }
     /** An unrecognized variant, retaining its complete envelope. */
     public static final class Unknown extends BindingException {
-        Unknown(JsonNode envelope) { super(envelope); }
+        Unknown(ErrorEnvelope envelope) { super(envelope); }
     }
 }
