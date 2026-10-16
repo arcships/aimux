@@ -98,6 +98,18 @@ impl DecisionModel for MockDecisionReplayModel {
     fn model_id(&self) -> &str {
         &self.model_id
     }
+    /// Every question type. A recording holds no capability snapshot, so the
+    /// offline model cannot know which types the recorded model supported.
+    ///
+    /// This moves where an unsupported type fails, not what replay returns.
+    /// `decide` rejects an unsupported type before any I/O and before the
+    /// recorder starts, so no recording of such a request exists. Replaying
+    /// it fails the exact-input match with `InvalidArgument("decision replay:
+    /// no exact matching complete recording")` where the live model fails
+    /// with `UnsupportedFunctionality`. Replay therefore never answers a
+    /// question the live model would have refused, and a host that needs the
+    /// live error before replay asks the live model's
+    /// `supported_question_types`.
     fn supported_question_types(&self) -> &[DecisionQuestionType] {
         DecisionQuestionType::ALL
     }

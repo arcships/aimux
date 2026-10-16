@@ -251,3 +251,58 @@ async fn embed_request_vectors_and_usage() {
     assert!(result.provider_metadata.is_none());
     assert!(result.warnings.is_empty());
 }
+
+/// Mistral's `model_length` (the model's context length was reached) is a
+/// length stop, in `doGenerate` and `doStream` alike (`@ai-sdk/mistral@4.0.54`
+/// `src/map-mistral-finish-reason.ts:9-11`, used at
+/// `src/mistral-chat-language-model.ts:316` and `:462`; aimux
+/// `mistral/convert.rs:447-458`, used at `mistral/model.rs:249` and `:446`).
+#[tokio::test]
+async fn model_length_is_a_length_finish() {
+    let mut body = usage_details_response();
+    body["choices"][0]["finish_reason"] = json!("model_length");
+    let fetch = MockFetch::new(vec![Canned::json(&body)]);
+    let result = provider(&fetch)
+        .chat("mistral-small-latest")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Length);
+    assert_eq!(result.finish_reason.raw.as_deref(), Some("model_length"));
+
+    let mut chunks = text_chunks();
+    let last = chunks.as_array_mut().unwrap().last_mut().unwrap();
+    last["choices"][0]["finish_reason"] = json!("model_length");
+    let mut sse: String = chunks
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|chunk| format!("data: {chunk}\n\n"))
+        .collect();
+    sse.push_str("data: [DONE]\n\n");
+    let fetch = MockFetch::new(vec![Canned {
+        status: 200,
+        headers: vec![("content-type".into(), "text/event-stream".into())],
+        body: sse.into_bytes(),
+    }]);
+    let parts = provider(&fetch)
+        .chat("mistral-small-latest")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let finish = parts
+        .iter()
+        .find_map(|part| match part {
+            StreamPart::Finish { finish_reason, .. } => Some(finish_reason),
+            _ => None,
+        })
+        .expect("a finish part");
+    assert_eq!(finish.unified, FinishReasonUnified::Length);
+    assert_eq!(finish.raw.as_deref(), Some("model_length"));
+}

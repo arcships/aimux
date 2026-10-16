@@ -35,6 +35,7 @@ use std::sync::{Arc, OnceLock};
 use futures::future::BoxFuture;
 use serde_json::Value;
 
+use aimux_core::decision_model::DecisionModel;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::files_model::Files;
@@ -42,7 +43,9 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{
+    DecisionLanguageModel, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url,
+};
 
 use crate::shared::{AuthScheme, Credential, credential_headers};
 
@@ -329,6 +332,17 @@ impl Provider for AnthropicProvider {
 
     fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
         Err(AiMuxError::no_such_model(model_id, "imageModel"))
+    }
+
+    /// Decisions from structured Claude output; `provider()` is
+    /// `"{name}.evaluation"` without a `.messages` suffix
+    /// (`@ai-sdk/anthropic@4.0.71 src/anthropic-provider.ts:212-216`,
+    /// `evaluationModel`, which the registry's decision lookup falls back to).
+    fn decision_model(&self, model_id: &str) -> Option<Result<Arc<dyn DecisionModel>, AiMuxError>> {
+        Some(Ok(Arc::new(DecisionLanguageModel::new(
+            Arc::new(self.messages(model_id)),
+            Some(format!("{}.evaluation", self.bare_name())),
+        ))))
     }
 
     fn files(&self) -> Option<Arc<dyn Files>> {

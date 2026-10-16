@@ -559,6 +559,16 @@ fn downloaded_video_media_type(own: &str, downloaded: Option<&str>) -> String {
 ///
 /// Each batch mints its own idempotency key (AI SDK batching semantics): a
 /// batch, not the whole `n`-video request, is the unit of idempotent replay.
+///
+/// The key aimux mints goes on `do_start` only; `do_status` gets the
+/// caller's headers as given. So a caller-supplied `idempotency-key`
+/// reaches the status calls too (as `<key>:batch:<i>` when there are
+/// several batches), while a minted key never does. This follows the AI
+/// SDK, which adds its key to `startCallOptions` alone and passes
+/// `callOptions.headers` to `doStatus` (ai@7.0.127
+/// `generate-video/generate-video.ts:520-536`, `:582`, `:613`). Tests:
+/// `start_retry_reuses_one_idempotency_key`,
+/// `caller_idempotency_key_is_preserved_for_start_and_status`.
 async fn start_and_poll_one_batch(
     model: &dyn VideoModel,
     options: VideoCallOptions,

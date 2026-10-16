@@ -441,14 +441,15 @@ impl RecordCtx {
 /// caller drops the stream before completion (`take(N)` / abort / timeout).
 /// Mirrors `RecordingOutcomeStream`'s Drop pattern (recording.rs): the previous
 /// generator-based record only fired when the stream ran to completion, so
-/// early drops silently lost the call. This wrapper records on natural EOF, on
-/// a terminal part (`Finish` / `Error` / transport `Err`), or — via `Drop` —
-/// when the caller abandons the stream mid-flight.
+/// early drops silently lost the call. This wrapper records when `Finish`
+/// passes (the terminal part: `stream_text` stops polling right after it, so
+/// waiting for EOF would trace every completed call as dropped), on a natural
+/// EOF without `Finish`, or — via `Drop` — when the caller abandons the stream
+/// mid-flight.
 struct TraceRecordingStream<S> {
     inner: S,
     rec_ctx: Option<Arc<RecordCtx>>,
-    /// Accumulated usage (`Finish`) / error (`Error` / `Err`) observed so far.
-    usage: Usage,
+    /// The first error (`Error` part / transport `Err`) observed so far.
     error: Option<String>,
     /// Whether the terminal record has been emitted (idempotent guard).
     recorded: bool,
@@ -478,10 +479,11 @@ where
         let this = self.get_mut();
         match Pin::new(&mut this.inner).poll_next(cx) {
             Poll::Ready(Some(Ok(part))) => {
-                // Accumulate terminal evidence (mirrors the original
-                // end-of-stream record).
                 match &part {
-                    StreamPart::Finish { usage: u, .. } => this.usage = u.clone(),
+                    StreamPart::Finish { usage, .. } => {
+                        let error = this.error.take();
+                        this.record_now(usage.clone(), error);
+                    }
                     StreamPart::Error { error: e } => {
                         this.error.get_or_insert_with(|| e.to_string());
                     }
@@ -494,10 +496,9 @@ where
                 Poll::Ready(Some(Err(e)))
             }
             Poll::Ready(None) => {
-                // Natural end: record accumulated state (matches the original).
-                let usage = std::mem::take(&mut this.usage);
+                // A natural end without `Finish`: no usage was reported.
                 let error = this.error.take();
-                this.record_now(usage, error);
+                this.record_now(Usage::default(), error);
                 Poll::Ready(None)
             }
             Poll::Pending => Poll::Pending,
@@ -510,12 +511,11 @@ impl<S> Drop for TraceRecordingStream<S> {
         if !self.recorded {
             // Caller dropped before completion — record what was observed with
             // a non-success marker so the call is not silently lost (F1).
-            let usage = std::mem::take(&mut self.usage);
             let error = self
                 .error
                 .take()
                 .or_else(|| Some("stream dropped before completion".into()));
-            self.record_now(usage, error);
+            self.record_now(Usage::default(), error);
         }
     }
 }
@@ -612,7 +612,6 @@ impl LanguageModel for TraceLayer {
         let guarded = TraceRecordingStream {
             inner: observed,
             rec_ctx: Some(rec_ctx),
-            usage: Usage::default(),
             error: None,
             recorded: false,
         };
