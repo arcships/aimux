@@ -83,15 +83,20 @@ async function fetchInto(versions, dest = mkdtempSync(join(root, 'dest-'))) {
   const dir = mkdtempSync(join(root, 'run-'));
   const versionsPath = join(dir, 'VERSIONS.json');
   writeFileSync(versionsPath, typeof versions === 'string' ? versions : JSON.stringify(versions, null, 2));
-  writeFileSync(join(dir, 'npmrc'), '');
+  // Two files: npm refuses to load one file as both the user and the global config.
+  writeFileSync(join(dir, 'user-npmrc'), '');
+  writeFileSync(join(dir, 'global-npmrc'), '');
+  // npm reads npm_config_* in any case, so an inherited NPM_CONFIG_USERCONFIG
+  // would win over the settings below.
+  const inherited = Object.entries(process.env).filter(([k]) => !/^npm_config_/i.test(k));
   const env = {
-    ...process.env,
+    ...Object.fromEntries(inherited),
     AISDK_VERSIONS: versionsPath,
     AISDK_DEST: dest,
     npm_config_registry: registryUrl,
     npm_config_cache: join(dir, 'npm-cache'),
-    npm_config_userconfig: join(dir, 'npmrc'),
-    npm_config_globalconfig: join(dir, 'npmrc'),
+    npm_config_userconfig: join(dir, 'user-npmrc'),
+    npm_config_globalconfig: join(dir, 'global-npmrc'),
     npm_config_noproxy: '127.0.0.1,localhost',
     NO_PROXY: '127.0.0.1,localhost',
     no_proxy: '127.0.0.1,localhost',
