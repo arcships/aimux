@@ -47,8 +47,7 @@ model.close();
 
 ## Providers
 
-All 251 registry-backed OpenAI-compatible providers are reachable by name;
-`ProviderName` holds the constants:
+All 251 registry-backed OpenAI-compatible providers are reachable by string name:
 
 > **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed factories
@@ -56,18 +55,16 @@ All 251 registry-backed OpenAI-compatible providers are reachable by name;
 > Full list: [providers.md](providers.md).
 
 ```dart
-// 推荐:ProviderName.groq 常量(补全 + 防拼写错误)
-final model = Model.provider(ProviderName.groq, 'llama-3.3-70b');
+final model = Model.provider('groq', 'llama-3.3-70b');
 final result = model.generateText('Hello');
 model.close();
 
-// 字符串形式同样可用 + 可选 config JSON ({"base_url": "..."}):
+// Optional config JSON ({"base_url": "..."}):
 final model2 = Model.provider('groq', 'llama-3.3-70b', apiKey: 'sk-...');
 model2.close();
 ```
 
-Unknown names throw `NoSuchProviderError` (payload: the provider id); valid
-names come from the generated `ProviderName` constants.
+Unknown names throw `NoSuchProviderError` (payload: the provider id).
 
 ## Errors
 

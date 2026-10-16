@@ -28,7 +28,8 @@ use crate::types::{
 /// [`StreamPart`] (raw argument text); `stream_text` emits [`TextStreamPart`]
 /// (parsed and validated [`ToolCall`]).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, concrete(C = RawToolCall, A = RawToolApprovalRequest, R = GeneratedFile))]
+#[ts(concrete(C = RawToolCall, A = RawToolApprovalRequest, R = GeneratedFile))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = GeneratedFile> {
     // ── P0: text ──
     /// Start of a text segment.
@@ -169,7 +170,7 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = GeneratedFi
 /// first model call (`stream-text.ts:2030-2090`), which needs the prompt's
 /// approval collection (`collect-tool-approvals.ts`), not ported.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum TextStreamPart {
     // ── text ──
     /// Start of a text segment.

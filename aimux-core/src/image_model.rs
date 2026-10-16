@@ -17,7 +17,7 @@ use crate::{AbortSignal, retry, timeout};
 ///
 /// Aligned with V4 `ImageModelV4File`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ImageFile {
     /// Inline file data (base64 or binary) with an explicit media type.
     File {
@@ -35,7 +35,7 @@ pub enum ImageFile {
 
 /// File payload for an [`ImageFile::File`]: base64 string or raw bytes.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ImageFileData {
     /// Base64-encoded string.
     Base64(String),
@@ -51,7 +51,7 @@ pub enum ImageFileData {
 /// upstream API returns base64, return [`ImageOutputs::Base64`]; if binary,
 /// return [`ImageOutputs::Binary`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ImageOutputs {
     /// Images as base64-encoded strings.
     Base64(Vec<String>),
@@ -63,7 +63,7 @@ pub enum ImageOutputs {
 ///
 /// Aligned with V4 `ImageModelV4Usage`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ImageUsage {
     /// Number of input (prompt) tokens used.
     pub input_tokens: Option<u32>,
@@ -77,7 +77,7 @@ pub struct ImageUsage {
 ///
 /// Aligned with V4 `ImageModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ImageCallOptions {
     /// Prompt for the image generation. `None` for operations (e.g. upscaling)
     /// that do not require a prompt.
@@ -149,7 +149,7 @@ impl ImageCallOptions {
 ///
 /// Aligned with V4 `ImageModelV4Result`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ImageResult {
     /// Generated images (base64 strings or binary data).
     pub images: ImageOutputs,
@@ -169,7 +169,7 @@ pub struct ImageResult {
 
 /// Response information for an image generation call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ImageResponse {
     /// Timestamp for the start of the generated response (ISO 8601 string).
     pub timestamp: Option<String>,

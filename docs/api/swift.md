@@ -31,8 +31,7 @@ print(result)
 
 ## Providers
 
-All 251 registry-backed OpenAI-compatible providers are reachable by name;
-`ProviderName` is an enum with one case per provider:
+All 251 registry-backed OpenAI-compatible providers are reachable by string name:
 
 > **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed factories
@@ -40,16 +39,14 @@ All 251 registry-backed OpenAI-compatible providers are reachable by name;
 > Full list: [providers.md](providers.md).
 
 ```swift
-// 推荐:ProviderName enum case(类型检查 + 补全)
-let model = try Model.provider(name: ProviderName.Groq.rawValue, modelId: "llama-3.3-70b")
+let model = try Model.provider(name: "groq", modelId: "llama-3.3-70b")
 let result = try model.generateText(prompt: "\"Hello\"")
 
-// 字符串形式同样可用 + 可选 config JSON ({"base_url": "..."}):
+// Optional config JSON ({"base_url": "..."}):
 let model2 = try Model.provider(name: "groq", apiKey: "sk-...", modelId: "llama-3.3-70b")
 ```
 
-Unknown names throw `.noSuchProvider` (payload: the provider id); valid names
-come from the generated `ProviderName` enum.
+Unknown names throw `.noSuchProvider` (payload: the provider id).
 
 ## Text Generation
 

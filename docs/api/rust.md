@@ -25,7 +25,7 @@ async fn main() -> Result<(), AiMuxError> {
 ## Providers
 
 All 251 built-in OpenAI-compatible providers are registry-backed: no per-provider
-`XxxConfig`/`XxxProvider` types. Look them up by name (or by the `ProviderName` enum):
+`XxxConfig`/`XxxProvider` types. Look them up by string name:
 
 > **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed factories
@@ -34,7 +34,7 @@ All 251 built-in OpenAI-compatible providers are registry-backed: no per-provide
 > Full list: [providers.md](providers.md).
 
 ```rust
-use aimux_providers::{provider, provider_from_env, ProviderName, ProviderOptions};
+use aimux_providers::{provider, provider_from_env, ProviderOptions};
 
 // Key from the provider's env var (GROQ_API_KEY etc.), base URL & profile from
 // the registry — replaces the retired `XxxConfig::from_env()`.
@@ -48,14 +48,11 @@ let model = provider(
     Some(ProviderOptions { base_url: Some("https://relay.example/v1".into()), ..Default::default() }),
 )?;
 
-// Typed name (推荐——IDE-completable, compile-checked):
-let model = provider(ProviderName::Groq, None, "llama-3.3-70b", None)?;
-// 字符串形式同样可用（弱类型兼容）:
-let model = provider_from_env("groq", "llama-3.3-70b", None)?;
 ```
 
-`ProviderName` is generated from `provider_registry.json` (251 variants, `as_str`/
-`from_str`/`ALL`). Unknown names fail with `AiMuxError::NoSuchProvider { provider_id }`.
+Names come from `provider_registry.json`; the current list is in
+[providers.md](providers.md). Unknown names fail with
+`AiMuxError::NoSuchProvider { provider_id }`.
 
 ## Text Generation
 

@@ -19,7 +19,7 @@ use crate::{AbortSignal, retry, timeout};
 ///
 /// Aligned with V4 `VideoModelV4File`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum VideoFile {
     /// Inline file data (base64 or binary) with an explicit media type.
     File {
@@ -39,7 +39,7 @@ pub enum VideoFile {
 
 /// File payload for a [`VideoFile::File`]: base64 string or raw bytes.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum VideoFileData {
     /// Base64-encoded string.
     Base64(String),
@@ -51,7 +51,7 @@ pub enum VideoFileData {
 ///
 /// Aligned with V4 `VideoModelV4FrameType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum VideoFrameType {
     /// The starting frame the model animates from.
     FirstFrame,
@@ -63,7 +63,7 @@ pub enum VideoFrameType {
 ///
 /// Aligned with V4 `VideoModelV4FrameImage`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct VideoFrameImage {
     /// The image file used for this frame.
     pub image: VideoFile,
@@ -76,7 +76,7 @@ pub struct VideoFrameImage {
 /// Aligned with V4 `VideoModelV4VideoData`. Most providers return URLs due to
 /// large file sizes.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum VideoData {
     /// Video available as a URL (most common).
     Url { url: String, media_type: String },
@@ -90,7 +90,7 @@ pub enum VideoData {
 ///
 /// Aligned with V4 `VideoModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct VideoCallOptions {
     /// Text prompt for the video generation. `None` when not required.
     pub prompt: Option<String>,
@@ -190,7 +190,7 @@ impl VideoCallOptions {
 /// ai@7.0.127 `generate-video/generate-video.ts:55-80`). The poll settings
 /// belong to the operation, as upstream: a video model has none of its own.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct VideoPollOptions {
     /// Delay between consecutive status checks, in milliseconds.
     // `number`, not the `bigint` ts-rs infers from u64: the JS bindings pass
@@ -206,7 +206,7 @@ pub struct VideoPollOptions {
 ///
 /// Aligned with V4 `VideoModelV4Result`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct VideoResult {
     /// Generated videos as URLs, base64 strings, or binary data.
     pub videos: Vec<VideoData>,
@@ -223,7 +223,7 @@ pub struct VideoResult {
 
 /// Response information for a video generation call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct VideoResponse {
     /// Timestamp for the start of the generated response (ISO 8601 string).
     pub timestamp: Option<String>,
