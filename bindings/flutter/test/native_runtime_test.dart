@@ -75,8 +75,10 @@ void main() {
       final decision = DecisionModel(client, model);
       final info = await decision.capabilities();
       expect(info['modelId'], 'decision-test');
-      await expectLater(decision.decide({}),
-          throwsA(isA<OpsException>().having((e) => e.code, 'code', 301)));
+      await expectLater(
+          decision.decide(
+              DecideOptions.fromJson({'state': 'test', 'questions': {}})),
+          throwsA(isA<OpsException>().having((e) => e.code, 'code', 5)));
     });
 
     test('wrong-kind binary/poll and protocol errors preserve envelopes',
@@ -84,7 +86,7 @@ void main() {
       final abort = await create('abort.create');
       final wrongKind = isA<OpsException>()
           .having((e) => e.code, 'code', 203)
-          .having((e) => e.error['name'], 'name', 'InvalidHandle');
+          .having((e) => (e.error as Map)['name'], 'name', 'InvalidHandle');
       await expectLater(client.push(abort, Uint8List(0)), throwsA(wrongKind));
       await expectLater(client.next(abort), throwsA(wrongKind));
       expect(() => client.next(abort, timeoutMs: -1), throwsArgumentError);
@@ -106,8 +108,9 @@ void main() {
       final frames = await client.stream('text.stream',
           handle: model,
           params: {'prompt': 'hello', 'abort': abort.wireId}).toList();
-      expect(frames.whereType<EndFrame>(), hasLength(1));
-      expect(frames.whereType<EndFrame>().single.outcome, 'cancelled');
+      expect(frames.whereType<StreamFrameEnd>(), hasLength(1));
+      expect(
+          frames.whereType<StreamFrameEnd>().single.outcome, Outcome.cancelled);
       expect(abort.isClosed, isFalse);
     });
 

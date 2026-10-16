@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:ffi';
 import 'dart:isolate';
 import 'dart:typed_data';
@@ -7,12 +6,14 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import 'errors.dart';
+import 'src/generated/types.dart';
 import 'src/bridge.dart';
 import 'src/native.dart';
 import 'src/stream_bridge.dart';
 
 export 'aimux_plugin.dart';
 export 'errors.dart' show OpsException;
+export 'src/generated/types.dart';
 
 /// One version-checked C ABI library. All blocking work runs in worker isolates.
 final class Aimux {
@@ -88,7 +89,7 @@ final class Aimux {
   }
 
   /// Raw frames include exactly one terminal after acceptance. A rejected start
-  /// is a stream error; terminal failures remain in EndFrame.error, once.
+  /// is a stream error; terminal failures remain in StreamFrameEnd.error, once.
   Stream<StreamFrame> stream(
     String op, {
     required OpsHandle handle,
@@ -116,7 +117,7 @@ final class Aimux {
     ).then((_) {});
   }
 
-  Future<PollResult> next(OpsHandle operation, {int timeoutMs = 0}) {
+  Future<OperationPollResult> next(OpsHandle operation, {int timeoutMs = 0}) {
     if (timeoutMs < 0) throw ArgumentError.value(timeoutMs, 'timeoutMs');
     return execute(
       NativeRequest(
@@ -125,10 +126,7 @@ final class Aimux {
         handle: _id(operation),
         timeout: timeoutMs,
       ),
-    ).then((value) {
-      final json = value as Map<String, dynamic>;
-      return PollResult._(json['state'] as String, json['part']);
-    });
+    ).then(OperationPollResult.fromJson);
   }
 
   int _id(OpsHandle? handle) {
@@ -179,58 +177,6 @@ final class OpsHandle implements Finalizable {
         .then((_) {});
     return _closing!;
   }
-}
-
-final class PollResult {
-  final String state;
-  final Object? part;
-  const PollResult._(this.state, this.part);
-}
-
-sealed class StreamFrame {
-  final String seq;
-  const StreamFrame(this.seq);
-  factory StreamFrame.fromJson(Map<String, dynamic> json) {
-    final seq = json['seq'];
-    if (seq is! String ||
-        seq.length > 20 ||
-        !RegExp(r'^(0|[1-9][0-9]*)$').hasMatch(seq) ||
-        BigInt.parse(seq) > (BigInt.one << 64) - BigInt.one) {
-      throw const FormatException('Invalid stream sequence');
-    }
-    switch (json['type']) {
-      case 'event':
-        if (!json.containsKey('event'))
-          throw const FormatException('Missing event');
-        return EventFrame(seq, json['event']);
-      case 'end':
-        final outcome = json['outcome'];
-        if (!const ['success', 'error', 'cancelled'].contains(outcome)) {
-          throw const FormatException('Invalid stream outcome');
-        }
-        final error = json['error'] == null
-            ? null
-            : OpsException.fromJson(json['error'] as Map<String, dynamic>);
-        if (outcome == 'error' && error == null ||
-            outcome == 'success' && error != null) {
-          throw const FormatException('Invalid terminal error');
-        }
-        return EndFrame(seq, outcome as String, error);
-      default:
-        throw const FormatException('Unknown stream frame');
-    }
-  }
-}
-
-final class EventFrame extends StreamFrame {
-  final Object? event;
-  const EventFrame(super.seq, this.event);
-}
-
-final class EndFrame extends StreamFrame {
-  final String outcome;
-  final OpsException? error;
-  const EndFrame(super.seq, this.outcome, this.error);
 }
 
 final class _StreamRequest {
@@ -295,14 +241,14 @@ final class _NativeStreamProducer implements BlockingStreamProducer {
         if (failure != null || cancelled) return;
         final json = pointer.toDartString();
         final frame = StreamFrame.fromJson(
-          jsonDecode(json) as Map<String, dynamic>,
+          dtoJsonDecode(json) as Map<String, dynamic>,
         );
         final seq = BigInt.parse(frame.seq);
         if (terminal != null || lastSeq != null && seq <= lastSeq!) {
           throw const FormatException('Invalid stream frame order');
         }
         lastSeq = seq;
-        if (frame is EndFrame) {
+        if (frame is StreamFrameEnd) {
           terminal = json;
         } else if (!sink.add(json)) {
           cancelled = true;
@@ -356,7 +302,8 @@ final class _NativeStreamProducer implements BlockingStreamProducer {
   }
 }
 
-Stream<StreamFrame> _stream(Aimux client, int handle, String op, String params) {
+Stream<StreamFrame> _stream(
+    Aimux client, int handle, String op, String params) {
   OpsHandle? abort;
   bool cancelled = false;
   late final StreamController<StreamFrame> controller;
@@ -364,14 +311,13 @@ Stream<StreamFrame> _stream(Aimux client, int handle, String op, String params) 
   final finished = Completer<void>();
   Future<void> start() async {
     try {
-      final requestParams = jsonDecode(params);
+      final requestParams = dtoJsonDecode(params);
       final suppliedAbort =
           requestParams is Map ? requestParams['abort'] : null;
       late final int abortId;
       if (suppliedAbort != null) {
         if (suppliedAbort is! String) {
-          throw const FormatException(
-              'Abort must be a decimal handle string');
+          throw const FormatException('Abort must be a decimal handle string');
         }
         abortId = parseHandle(suppliedAbort);
       } else {
@@ -383,14 +329,14 @@ Stream<StreamFrame> _stream(Aimux client, int handle, String op, String params) 
       if (cancelled) return;
       final bridge = StreamBridge(
         producer: _streamProducer,
-        request: _StreamRequest(client._libraryPath, client._bridgePath,
-            handle, abortId, op, params),
+        request: _StreamRequest(client._libraryPath, client._bridgePath, handle,
+            abortId, op, params),
         abort: () => client._native.ffi.abort(abortId),
         credits: 1,
       );
       subscription = bridge.stream.listen(
         (json) => controller.add(
-            StreamFrame.fromJson(jsonDecode(json) as Map<String, dynamic>)),
+            StreamFrame.fromJson(dtoJsonDecode(json) as Map<String, dynamic>)),
         onError: (Object error, StackTrace stack) =>
             controller.addError(error, stack),
         onDone: () => unawaited(controller.close()),

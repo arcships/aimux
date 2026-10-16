@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
@@ -7,6 +6,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../errors.dart';
+import 'generated/types.dart';
 import 'ffi.g.dart';
 
 DynamicLibrary openLibrary(String? path, {bool bridge = false}) {
@@ -53,7 +53,7 @@ void checkJsonValue(Object? value) {
 
 String encodeParams(Object? value) {
   checkJsonValue(value);
-  return jsonEncode(value);
+  return dtoJsonEncode(value);
 }
 
 int parseHandle(String wire) {
@@ -85,7 +85,7 @@ final class NativeApi {
     if (value == nullptr) return;
     try {
       throw OpsException.fromJson(
-        jsonDecode(takeString(ffi.errorJson(value))) as Map<String, dynamic>,
+        dtoJsonDecode(takeString(ffi.errorJson(value))) as Map<String, dynamic>,
       );
     } finally {
       ffi.errorFree(value);
@@ -98,7 +98,7 @@ final class NativeApi {
       checkError(invoke(out));
       final ptr = out.value;
       out.value = nullptr;
-      return jsonDecode(takeString(ptr));
+      return dtoJsonDecode(takeString(ptr));
     } finally {
       if (out.value != nullptr) ffi.freeString(out.value);
       calloc.free(out);
@@ -171,9 +171,8 @@ Object? _execute(NativeRequest r) {
       return null;
     case 'push':
       final bytes = r.bytes!;
-      final ptr = bytes.isEmpty
-          ? nullptr.cast<Uint8>()
-          : calloc<Uint8>(bytes.length);
+      final ptr =
+          bytes.isEmpty ? nullptr.cast<Uint8>() : calloc<Uint8>(bytes.length);
       try {
         if (bytes.isNotEmpty) ptr.asTypedList(bytes.length).setAll(0, bytes);
         api.checkError(api.ffi.operationPush(r.handle, ptr, bytes.length));
@@ -192,12 +191,17 @@ Object? _execute(NativeRequest r) {
           case 1:
             final ptr = out.value;
             out.value = nullptr;
-            return {'state': 'part', 'part': jsonDecode(api.takeString(ptr))};
+            return OperationPollResultPart(
+                    part_: TranscriptionStreamPart.fromJson(
+                        dtoJsonDecode(api.takeString(ptr))))
+                .toJson();
           case 2:
           case 3:
             if (out.value != nullptr)
               throw const FormatException('JSON on empty poll');
-            return {'state': state.value == 2 ? 'ended' : 'timeout'};
+            return state.value == 2
+                ? OperationPollResultEnded().toJson()
+                : OperationPollResultTimeout().toJson();
           default:
             throw FormatException('Invalid poll state: ${state.value}');
         }

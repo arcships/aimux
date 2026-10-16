@@ -10,6 +10,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 # language: command (argv), run from ROOT
 RUNNERS = {
+    "dart": ["dart", "bindings/flutter/tool/dto_vectors.dart"],
     "swift": ["bash", "bindings/swift/scripts/test-dto-vectors.sh"],
     "go": ["go", "-C", "bindings/go", "run", "./cmd/dtovectors", "../../contract-tests/dto"],
 }

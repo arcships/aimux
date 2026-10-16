@@ -2,6 +2,8 @@
   "files": [
     "aimux-ffi/include/aimux.h",
     "bindings/flutter/generated/ops.dart",
+    "bindings/flutter/lib/src/generated/dto_vectors.dart",
+    "bindings/flutter/lib/src/generated/types.dart",
     "bindings/flutter/native/aimux_ops.h",
     "bindings/go/generated/ops.go",
     "bindings/go/types_gen.go",

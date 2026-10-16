@@ -6,14 +6,14 @@ final class DecisionModel {
   final OpsHandle handle;
   DecisionModel(this.client, this.handle);
 
-  Future<Map<String, dynamic>> decide(
-    Map<String, dynamic> options, {
+  Future<DecideResult> decide(
+    DecideOptions options, {
     OpsHandle? abort,
   }) async =>
-      await client.call('decision.decide',
+      DecideResult.fromJson(await client.call('decision.decide',
           handle: handle,
-          params: {'options': options},
-          abort: abort) as Map<String, dynamic>;
+          params: DecisionDecideRequest(options: options),
+          abort: abort));
 
   Future<Map<String, dynamic>> capabilities() async =>
       await client.call('decision.capabilities', handle: handle)

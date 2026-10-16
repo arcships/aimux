@@ -12,7 +12,7 @@ final class TranscriptionOperation {
   Future<void> push(Uint8List audio) => client.push(handle, audio);
   Future<Object?> inputDone() =>
       client.call('operation.inputDone', handle: handle);
-  Future<PollResult> next({int timeoutMs = 0}) =>
+  Future<OperationPollResult> next({int timeoutMs = 0}) =>
       client.next(handle, timeoutMs: timeoutMs);
   Future<Object?> status() => client.call('operation.status', handle: handle);
   Future<Object?> cancel() => client.call('operation.cancel', handle: handle);

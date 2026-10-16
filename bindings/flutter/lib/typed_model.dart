@@ -1,5 +1,4 @@
 import 'aimux.dart';
-import 'types.dart';
 
 /// Typed results over the shared ops DTOs. Request maps follow the manifest's
 /// request schema; no provider field tables are duplicated in this facade.
@@ -38,8 +37,8 @@ final class TypedModel {
             as Map<String, dynamic>,
       );
 
-  Stream<StreamPart> streamText(Map<String, dynamic> params) =>
-      _events('text.stream', params).map(StreamPart.fromJson);
+  Stream<TextStreamPart> streamText(Map<String, dynamic> params) =>
+      _events('text.stream', params).map(TextStreamPart.fromJson);
 
   Stream<ChatCompletionChunk> streamTextAsOpenAI(Map<String, dynamic> params) =>
       _events('text.streamOpenAI', params).map(ChatCompletionChunk.fromJson);
@@ -53,10 +52,11 @@ final class TypedModel {
       handle: handle,
       params: params,
     )) {
-      if (frame is EventFrame) yield frame.event as Map<String, dynamic>;
-      if (frame is EndFrame) {
-        if (frame.error != null) throw frame.error!;
-        if (frame.outcome == 'cancelled') {
+      if (frame is StreamFrameEvent)
+        yield frame.event.toJson() as Map<String, dynamic>;
+      if (frame is StreamFrameEnd) {
+        if (frame.error != null) throw OpsException(frame.error!);
+        if (frame.outcome == Outcome.cancelled) {
           throw StateError('Operation cancelled');
         }
       }

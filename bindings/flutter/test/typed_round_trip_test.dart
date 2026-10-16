@@ -1,4 +1,4 @@
-// Pure-Dart round trips for the typed `GenerateContent` / `StreamPart` unions,
+// Pure-Dart round trips for the typed `GenerateContent` / `TextStreamPart` unions,
 // tool calls, options and results against the generated wire shapes in
 // `bindings/node/src/types/`: camelCase fields, `type`-tagged unions with
 // kebab-case values, optional fields absent (never null).
@@ -47,7 +47,8 @@ void main() {
       expect(ToolCall.fromJson(json).toJson(), json);
 
       final minimal = ToolCall(toolCallId: 'c', toolName: 't', input: const {});
-      expect(minimal.toJson().keys, ['type', 'toolCallId', 'toolName', 'input']);
+      expect(
+          minimal.toJson(), {'toolCallId': 'c', 'toolName': 't', 'input': {}});
     });
 
     // Provider metadata is a JS object upstream (@ai-sdk/provider
@@ -55,11 +56,12 @@ void main() {
     // (#229 NP2-1); a decoded Dart map keeps them too.
     test('provider namespaces keep insertion order', () {
       const metadata = '{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}}';
-      final text = '{"type":"tool-call","toolCallId":"call-1","toolName":"weather",'
+      final text =
+          '{"type":"tool-call","toolCallId":"call-1","toolName":"weather",'
           '"input":{},"providerMetadata":$metadata}';
       final call = ToolCall.fromJson(jsonDecode(text) as Map<String, dynamic>);
       expect(call.providerMetadata!.keys, ['zeta', 'alpha', 'mid']);
-      expect(jsonEncode(call.toJson()), text);
+      expect(jsonEncode(call.providerMetadata), metadata);
     });
 
     // A result's toolCalls and sources are the AI SDK's TypedToolCall and
@@ -74,22 +76,28 @@ void main() {
         'url': 'https://example.com',
       };
       expect(Source.fromJson(source).toJson(), source);
-      expect(
-          const RawToolCall(toolCallId: 'c', toolName: 't', input: '{}')
-              .toJson(),
-          {'type': 'tool-call', 'toolCallId': 'c', 'toolName': 't', 'input': '{}'});
+      expect(RawToolCall(toolCallId: 'c', toolName: 't', input: '{}').toJson(),
+          {'toolCallId': 'c', 'toolName': 't', 'input': '{}'});
       // JSON written before the tag still reads; another tag is rejected.
       expect(
-          ToolCall.fromJson({'toolCallId': 'c', 'toolName': 't', 'input': {}})
-              .toJson()['type'],
+          TypedToolCall.fromJson({
+            'type': 'tool-call',
+            'toolCallId': 'c',
+            'toolName': 't',
+            'input': {}
+          }).toJson()['type'],
           'tool-call');
       expect(
-          () => ToolCall.fromJson(
-              {'type': 'source', 'toolCallId': 'c', 'toolName': 't', 'input': {}}),
+          () => TypedToolCall.fromJson({
+                'type': 'source',
+                'toolCallId': 'c',
+                'toolName': 't',
+                'input': {}
+              }),
           throwsFormatException);
     });
 
-    test('RawToolCall keeps every provider field through copyWith', () {
+    test('RawToolCall keeps every provider field when replacing input', () {
       final call = RawToolCall.fromJson({
         'toolCallId': 'call-1',
         'toolName': 'weather',
@@ -98,15 +106,17 @@ void main() {
         'dynamic': true,
         'providerMetadata': _meta,
       });
-      expect(call.copyWith(input: '{"city":"Tokyo"}').toJson(), {
-        'type': 'tool-call',
-        'toolCallId': 'call-1',
-        'toolName': 'weather',
-        'input': '{"city":"Tokyo"}',
-        'providerExecuted': true,
-        'dynamic': true,
-        'providerMetadata': _meta,
-      });
+      expect(
+          RawToolCall.fromJson({...call.toJson(), 'input': '{"city":"Tokyo"}'})
+              .toJson(),
+          {
+            'toolCallId': 'call-1',
+            'toolName': 'weather',
+            'input': '{"city":"Tokyo"}',
+            'providerExecuted': true,
+            'dynamic': true,
+            'providerMetadata': _meta,
+          });
     });
   });
 
@@ -147,22 +157,18 @@ void main() {
     for (final json in cases) {
       test(json['type'] as String, () {
         final c = GenerateContent.fromJson(json);
-        expect(c, isNot(isA<GenerateContentUnknown>()));
-        expect(c.tag, json['type']);
+        expect(c.type, json['type']);
         expect(c.toJson(), json);
       });
     }
 
-    test('unknown type passes through verbatim', () {
-      final json = {'type': 'future', 'n': 42};
-      final c = GenerateContent.fromJson(json);
-      expect(c, isA<GenerateContentUnknown>());
-      expect(c.tag, 'future');
-      expect(c.toJson(), json);
+    test('unknown type is rejected', () {
+      expect(() => GenerateContent.fromJson({'type': 'future', 'n': 42}),
+          throwsFormatException);
     });
   });
 
-  group('StreamPart', () {
+  group('TextStreamPart', () {
     final call = {
       'type': 'tool-call',
       'toolCallId': 'c1',
@@ -172,7 +178,12 @@ void main() {
     };
     final cases = <Map<String, dynamic>>[
       {'type': 'text-start', 'id': 't'},
-      {'type': 'text-delta', 'id': 't', 'text': 'hel', 'providerMetadata': _meta},
+      {
+        'type': 'text-delta',
+        'id': 't',
+        'text': 'hel',
+        'providerMetadata': _meta
+      },
       {'type': 'text-end', 'id': 't'},
       {'type': 'start'},
       {
@@ -184,9 +195,19 @@ void main() {
       },
       {
         'type': 'finish-step',
-        'response': {'id': 'r', 'modelId': 'gpt-4o'},
+        'response': {
+          'id': 'r',
+          'modelId': 'gpt-4o',
+          'timestamp': '2026-01-01T00:00:00.000Z'
+        },
         'usage': _lmUsage,
-        'performance': {'stepTimeMs': 1.0},
+        'performance': {
+          'stepTimeMs': 1.0,
+          'responseTimeMs': 1.0,
+          'effectiveOutputTokensPerSecond': 2.0,
+          'effectiveTotalTokensPerSecond': 5.0,
+          'toolExecutionMs': {}
+        },
         'finishReason': 'tool-calls',
         'rawFinishReason': 'tool_calls',
       },
@@ -194,7 +215,13 @@ void main() {
       {'type': 'abort', 'reason': 'stop'},
       {
         'type': 'error',
-        'error': {'name': 'AI_APICallError', 'message': 'boom', 'isRetryable': false},
+        'error': {
+          'name': 'AI_APICallError',
+          'message': 'boom',
+          'url': 'https://example.com',
+          'requestBodyValues': null,
+          'isRetryable': false
+        },
       },
       {
         'type': 'tool-input-start',
@@ -216,7 +243,12 @@ void main() {
         'providerExecuted': true,
       },
       // A deferred result has no input.
-      {'type': 'tool-result', 'toolCallId': 'srv-0', 'toolName': 'code_execution', 'output': 'done'},
+      {
+        'type': 'tool-result',
+        'toolCallId': 'srv-0',
+        'toolName': 'code_execution',
+        'output': 'done'
+      },
       {
         'type': 'tool-error',
         'toolCallId': 'srv-2',
@@ -245,47 +277,51 @@ void main() {
       {'type': 'reasoning-delta', 'id': 'r1', 'text': 'thi'},
       {'type': 'reasoning-end', 'id': 'r1'},
       {'type': 'source', 'sourceType': 'url', 'id': 's', 'url': 'https://x'},
-      {'type': 'raw', 'rawValue': {'raw': 'chunk'}},
+      {
+        'type': 'raw',
+        'rawValue': {'raw': 'chunk'}
+      },
     ];
     for (final json in cases) {
       test(json['type'] as String, () {
-        final p = StreamPart.fromJson(json);
-        expect(p, isNot(isA<StreamPartUnknown>()));
+        final p = TextStreamPart.fromJson(json);
         expect(p.type, json['type']);
         expect(p.toJson(), json);
       });
     }
 
-    test('unknown type passes through verbatim', () {
-      final json = {'type': 'future-part', 'n': 7};
-      final p = StreamPart.fromJson(json);
-      expect(p, isA<StreamPartUnknown>());
-      expect(p.type, 'future-part');
-      expect(p.toJson(), json);
+    test('unknown type is rejected', () {
+      expect(() => TextStreamPart.fromJson({'type': 'future-part', 'n': 7}),
+          throwsFormatException);
     });
   });
 
   test('GeneratedFile is base64 and mediaType', () {
     final file = GeneratedFile.fromJson(_generatedFile);
-    expect(file.bytes, [104, 105]);
+    expect(base64Decode(file.base64.value), [104, 105]);
     expect(file.toJson(), _generatedFile);
-    final part = StreamPart.fromJson({'type': 'file', 'file': _generatedFile});
-    expect((part as StreamPartFile).file.base64, 'aGk=');
+    final part =
+        TextStreamPart.fromJson({'type': 'file', 'file': _generatedFile});
+    expect((part as TextStreamPartFile).file.base64.value, 'aGk=');
   });
 
   group('options and results', () {
     test('GenerateTextOptions uses camelCase keys and omits unset fields', () {
-      final options = GenerateTextOptions(
-        maxOutputTokens: 10,
-        stopSequences: ['x'],
-        toolChoice: ToolChoice.tool('w'),
-        timeout: TimeoutConfiguration(totalMs: 1000),
-        includeRawChunks: true,
-        sessionId: 'sess-1',
-        tools: [
-          Tool.function(FunctionTool(name: 'w', inputSchema: {'type': 'object'})),
+      final options = GenerateTextOptions.fromJson({
+        'maxOutputTokens': 10,
+        'stopSequences': ['x'],
+        'toolChoice': {'type': 'tool', 'toolName': 'w'},
+        'timeout': {'totalMs': 1000},
+        'includeRawChunks': true,
+        'sessionId': 'sess-1',
+        'tools': [
+          {
+            'type': 'function',
+            'name': 'w',
+            'inputSchema': {'type': 'object'}
+          }
         ],
-      );
+      });
       final json = options.toJson();
       expect(json, {
         'maxOutputTokens': 10,
@@ -295,7 +331,11 @@ void main() {
         'includeRawChunks': true,
         'sessionId': 'sess-1',
         'tools': [
-          {'type': 'function', 'name': 'w', 'inputSchema': {'type': 'object'}}
+          {
+            'type': 'function',
+            'name': 'w',
+            'inputSchema': {'type': 'object'}
+          }
         ],
       });
       expect(GenerateTextOptions.fromJson(json).toJson(), json);
@@ -331,31 +371,33 @@ void main() {
         'totalUsage': _lmUsage,
         'warnings': [],
         'request': {},
-        'response': {'id': 'r'},
+        'response': {
+          'id': 'r',
+          'modelId': 'gpt-4o',
+          'timestamp': '2026-01-01T00:00:00.000Z',
+          'messages': []
+        },
         'responseMessages': [
           {'role': 'assistant', 'content': 'hi'}
         ],
-        'steps': [
-          {'callId': 'c1', 'stepNumber': 0}
-        ],
+        'steps': [],
       })) as Map<String, dynamic>;
       final result = GenerateTextResult.fromJson(json);
-      expect(result.finishReason, 'tool-calls');
+      expect(result.finishReason, FinishReasonUnified.toolCalls);
       expect(result.usage.totalTokens, 5);
       expect(result.totalUsage.inputTokenDetails.cacheReadTokens, 1);
       expect(result.reasoningText, isNull);
-      expect(result.output, isNull);
-      expect(result.hasOutput, isFalse);
-      expect(result.steps, hasLength(1));
-      expect(jsonDecode(jsonEncode(result)), json);
+      expect(result.output.isPresent, isFalse);
+      expect(result.steps, isEmpty);
+      expect(dtoJsonDecode(dtoJsonEncode(result)), json);
 
       // A parsed JSON null output is written back as null, apart from no
       // output (the public JSON keeps null apart from undefined).
       final parsedNull = Map<String, dynamic>.of(json)..['output'] = null;
       final withNull = GenerateTextResult.fromJson(parsedNull);
-      expect(withNull.output, isNull);
-      expect(withNull.hasOutput, isTrue);
-      expect(jsonDecode(jsonEncode(withNull)), parsedNull);
+      expect(withNull.output.value, isNull);
+      expect(withNull.output.isPresent, isTrue);
+      expect(dtoJsonDecode(dtoJsonEncode(withNull)), parsedNull);
     });
 
     test('GenerateObjectResult round-trips', () {
@@ -365,12 +407,16 @@ void main() {
         'usage': _lmUsage,
         'warnings': [],
         'request': {},
-        'response': {'id': 'r', 'timestamp': '2026-01-01T00:00:00.000Z', 'modelId': 'gpt-4o'},
+        'response': {
+          'id': 'r',
+          'timestamp': '2026-01-01T00:00:00.000Z',
+          'modelId': 'gpt-4o'
+        },
       })) as Map<String, dynamic>;
       final result = GenerateObjectResult.fromJson(json);
       expect((result.object as Map<String, dynamic>)['answer'], 42);
       expect(result.response.modelId, 'gpt-4o');
-      expect(jsonDecode(jsonEncode(result)), json);
+      expect(dtoJsonDecode(dtoJsonEncode(result)), json);
     });
   });
 }

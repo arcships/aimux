@@ -31,9 +31,9 @@ void main() {
         'responseHeaders': {'retry-after': '2.5'},
       },
     });
-    expect(error.error['isRetryable'], isTrue);
-    expect(error.retryAfterMs, 2500);
-    expect(error.error['statusCode'], 429);
+    expect((error.error as Map)['isRetryable'], isTrue);
+    expect(error.retryAfterMs, BigInt.from(2500));
+    expect((error.error as Map)['statusCode'], 429);
     expect(error.toJson().containsKey('retryable'), isFalse);
   });
   test('malformed envelope is rejected', () {

@@ -82,7 +82,7 @@ void main() {
         client.call('test.fail'),
         throwsA(
           isA<OpsException>().having((e) => e.code, 'code', 203).having(
-            (e) => e.error['futureField'],
+            (e) => (e.error as Map)['futureField'],
             'futureField',
             [1, 2],
           ),
@@ -207,13 +207,14 @@ void main() {
     () async {
       final frames =
           await client.stream('test.stream', handle: handle).toList();
-      final events = frames.whereType<EventFrame>().toList();
+      final events = frames.whereType<StreamFrameEvent>().toList();
       expect(events.length, 1000);
       expect(
-        events.map((f) => (f.event as Map)['text']),
+        events.map((f) => (f.event.toJson() as Map)['text']),
         List.generate(1000, (i) => '$i'),
       );
-      expect(frames.whereType<EndFrame>().single.outcome, 'success');
+      expect(
+          frames.whereType<StreamFrameEnd>().single.outcome, Outcome.success);
       expect((await stats())['completed'], 1);
     },
   );
@@ -243,8 +244,8 @@ void main() {
     expect(before, 2);
     sub.resume();
     await done.future;
-    expect(frames.whereType<EventFrame>().length, 1000);
-    expect(frames.whereType<EndFrame>().length, 1);
+    expect(frames.whereType<StreamFrameEvent>().length, 1000);
+    expect(frames.whereType<StreamFrameEnd>().length, 1);
   });
 
   test('cancel wakes producer while credit is exhausted', () async {
@@ -296,11 +297,12 @@ void main() {
     );
   });
 
-  test('accepted runtime failure is only in the single EndFrame', () async {
+  test('accepted runtime failure is only in the single StreamFrameEnd',
+      () async {
     final frames =
         await client.stream('test.terminalError', handle: handle).toList();
-    final end = frames.whereType<EndFrame>().single;
-    expect(end.outcome, 'error');
+    final end = frames.whereType<StreamFrameEnd>().single;
+    expect(end.outcome, Outcome.error);
     expect(end.error!.code, 11);
     expect(frames.length, 1001);
   });
@@ -326,9 +328,13 @@ void main() {
     final operation = TranscriptionOperation(client, handle);
     await operation.push(Uint8List.fromList([1, 2, 3]));
     await operation.push(Uint8List(0));
-    expect((await operation.next(timeoutMs: 1)).part, {'type': 'transcript'});
-    expect((await operation.next(timeoutMs: 2)).state, 'ended');
-    expect((await operation.next()).state, 'timeout');
+    expect(
+        ((await operation.next(timeoutMs: 1)) as OperationPollResultPart)
+            .part_
+            .toJson(),
+        {'type': 'transcript-final', 'text': 'hello'});
+    expect(await operation.next(timeoutMs: 2), isA<OperationPollResultEnded>());
+    expect(await operation.next(), isA<OperationPollResultTimeout>());
     await expectLater(
       operation.next(timeoutMs: 99),
       throwsA(isA<OpsException>()),
