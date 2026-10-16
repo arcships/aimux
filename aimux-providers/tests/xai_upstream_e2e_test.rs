@@ -175,6 +175,7 @@ async fn tool_results_preserve_actions_and_sources() {
         id: "xai.web_search".parse().unwrap(),
         name: "web_search".into(),
         args: serde_json::Map::new(),
+        supports_deferred_results: None,
     })]);
     let result = model(&fetch).do_generate(&options).await.unwrap();
     assert_request(&fetch, false, true);

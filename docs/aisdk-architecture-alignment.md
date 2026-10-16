@@ -1490,8 +1490,6 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 
 - 拆 crate：`aimux-provider-utils` 不再依赖 `aimux-core`（§2.1、D17）。
 - OperationRuntime、DiagnosticScope、task-local scope 与 seq 分配器（§3.5、D3、D30）。
-- `CallOptions` 仍带 `recording_context`（`aimux-core/src/options.rs`）：录制入口把它写进调用选项，provider 再复制到 `HttpRequest`，与 §3.1“调用选项不含 session、call ID、recording context”不符。随 OperationRuntime 与 attempt 级 task-local scope 一起移出，由运行时把录制上下文交给 provider-utils 的统一诊断（§3.5、§4.3、D3）。`include_raw_chunks` 是上游 V4 的 `includeRawChunks`，按 §3.1 保留，不属差距。
-- provider 的 deferred tool result 按“传入了同名 provider 工具”放行，比上游的 `supportsDeferredResults` 宽（第二部分“工具结果关联”；`aimux-core/src/generate.rs`）。该标记随工具定义补齐；上游带它的是 Anthropic 的 web_search、web_fetch、code_execution、tool_search、advisor 各版本与 `openai.programmatic_tool_calling`。
 - Telemetry 与 tracing 分开，`ModelCallOutput`，op / attempt 事件（§3.5、D27）。
 - ProviderRegistration 与厂商扩展，注册表里的具名方法可达（§3.4、D13、D29）；随绑定迁移那一层做。
 - 用 trace middleware 与宿主 scope 取代 `TraceLayer`（§3.6、§7.3、D6、D7）。
@@ -2296,7 +2294,7 @@ core ToolCall 的 input 是解析后的值；provider raw input String 在解析
 
 core 自己可以用 `ParseOutcome::Invalid { error, ... }` 保证解析失败一定携带错误，但不能把这个内部不变量误称为 SDK DynamicToolCall 的静态类型要求。
 
-provider deferred tool result 可能没有本轮可关联的调用输入，SDK 会设置 `input: undefined`，见 `A/generate-text/convert-language-model-content.ts:87`。只有对应工具是 provider 工具且声明了 `supportsDeferredResults` 时才允许这种结果，否则报 “Tool call … not found”（同文件 `:96-103`）。aimux 的工具定义还没有 `supportsDeferredResults` 标记，暂按“传入了同名 provider 工具”放行（2026-10-13，[4/8]）；标记随工具定义一起补。wire 必须能表示这种缺失，不能凭空填 `{}` 或 null。
+provider deferred tool result 可能没有本轮可关联的调用输入，SDK 会设置 `input: undefined`，见 `A/generate-text/convert-language-model-content.ts:87`。只有对应工具是 provider 工具且声明了 `supportsDeferredResults` 时才允许这种结果，否则报 “Tool call … not found”（同文件 `:96-103`）。aimux 的 `ProviderTool` 带同名可选字段 `supportsDeferredResults`（`aimux-core/src/tool.rs`），规则与上游相同；上游由工具工厂设置它，带它的是 Anthropic 的 web_search、web_fetch、code_execution（20250825、20260120）、tool_search、advisor 和 `openai.programmatic_tool_calling`。wire 必须能表示这种缺失，不能凭空填 `{}` 或 null。
 
 GeneratedFile 使用一个数据来源：
 

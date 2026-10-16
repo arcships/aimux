@@ -752,6 +752,7 @@ mod prepare_tools {
             id: "some.unsupported_tool".parse().unwrap(),
             name: "unsupported_tool".to_string(),
             args: serde_json::Map::new(),
+            supports_deferred_results: None,
         });
         let options = CallOptions {
             tools: Some(vec![tool]),
@@ -936,6 +937,7 @@ mod prepare_tools {
             id: "groq.browser_search".parse().unwrap(),
             name: "browser_search".to_string(),
             args: serde_json::Map::new(),
+            supports_deferred_results: None,
         });
         let options = CallOptions {
             tools: Some(vec![tool]),
@@ -959,6 +961,7 @@ mod prepare_tools {
             id: "groq.browser_search".parse().unwrap(),
             name: "browser_search".to_string(),
             args: serde_json::Map::new(),
+            supports_deferred_results: None,
         });
         let options = CallOptions {
             tools: Some(vec![tool]),
@@ -991,6 +994,7 @@ mod prepare_tools {
             id: "groq.browser_search".parse().unwrap(),
             name: "browser_search".to_string(),
             args: serde_json::Map::new(),
+            supports_deferred_results: None,
         });
         let options = CallOptions {
             tools: Some(vec![Tool::from(func_tool), browser_tool]),
@@ -1019,6 +1023,7 @@ mod prepare_tools {
                 id: "groq.browser_search".parse().unwrap(),
                 name: "browser_search".to_string(),
                 args: serde_json::Map::new(),
+                supports_deferred_results: None,
             });
             let options = CallOptions {
                 tools: Some(vec![tool]),

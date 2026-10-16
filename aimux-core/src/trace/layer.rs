@@ -101,7 +101,7 @@ struct RecordCtx {
     scope_salt: u64,
     session_tracker: Arc<Mutex<HashMap<String, SessionTracker>>>,
     ctx: RequestCtx,
-    /// RFC-0023 关联 ID:取自 `options.recording_context`(缺失时由构造处生成)。
+    /// RFC-0023 关联 ID:取自当前的录制作用域(`RecordingContext::current`;缺失时由构造处生成)。
     call_id: Option<String>,
     request_body: Option<serde_json::Value>,
     response_headers: Option<HashMap<String, String>>,
@@ -170,7 +170,6 @@ impl TraceLayer {
 
     fn make_record_ctx(
         &self,
-        options: &CallOptions,
         request_body: Option<serde_json::Value>,
         response_headers: Option<HashMap<String, String>>,
         ttft_ms: Arc<AtomicU64>,
@@ -209,10 +208,7 @@ impl TraceLayer {
             strict: self.strict,
             scope_salt: self.scope_salt,
             session_tracker: self.session_tracker.clone(),
-            call_id: options
-                .recording_context
-                .as_ref()
-                .map(|context| context.call_id.clone()),
+            call_id: crate::recording::RecordingContext::current().map(|context| context.call_id),
             ctx: RequestCtx {
                 session_id,
                 scope_key,
@@ -535,7 +531,7 @@ impl LanguageModel for TraceLayer {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let ctx = self.make_record_ctx(options, None, None, Arc::new(AtomicU64::new(u64::MAX)));
+        let ctx = self.make_record_ctx(None, None, Arc::new(AtomicU64::new(u64::MAX)));
         match self.inner.do_generate(options).await {
             Ok(result) => {
                 let request_id = result
@@ -564,7 +560,7 @@ impl LanguageModel for TraceLayer {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let ttft = Arc::new(AtomicU64::new(u64::MAX));
-        let ctx = self.make_record_ctx(options, None, None, ttft.clone());
+        let ctx = self.make_record_ctx(None, None, ttft.clone());
         let result = match self.inner.do_stream(options).await {
             Ok(r) => r,
             Err(e) => {
@@ -650,12 +646,7 @@ mod tests {
     }
 
     fn scope_key(layer: &TraceLayer) -> u64 {
-        let ctx = layer.make_record_ctx(
-            &CallOptions::default(),
-            None,
-            None,
-            Arc::new(AtomicU64::new(0)),
-        );
+        let ctx = layer.make_record_ctx(None, None, Arc::new(AtomicU64::new(0)));
         ctx.ctx.scope_key
     }
 
@@ -680,12 +671,7 @@ mod tests {
             scope_key(&layer("openai.chat").with_scope_name("openai.chat @ http://a/v1"))
         );
 
-        let ctx = named.make_record_ctx(
-            &CallOptions::default(),
-            None,
-            None,
-            Arc::new(AtomicU64::new(0)),
-        );
+        let ctx = named.make_record_ctx(None, None, Arc::new(AtomicU64::new(0)));
         assert_eq!(ctx.provider, "openai.chat");
     }
 }
