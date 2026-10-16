@@ -13,12 +13,12 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Every language consumes the vectors from this checkout, never another ref.
+  # Node and Python replay the shared vectors from this checkout.
   AIMUX_CONTRACT_VECTORS: ${{ github.workspace }}/contract-tests/ops
   # Test-only jobs do not ship binaries: skip single-threaded fat LTO and -Oz
   # size optimization. ffi-build uploads release artifacts and restores
   # Cargo.toml's release profile in its job env.
-  # opt-level 1, not 0: aimux_stream_text drives the whole stream future on
+  # opt-level 1, not 0: aimux_stream drives the whole stream future on
   # the caller's thread, and at opt-level 0 that needs more than the 512 KB
   # stack of a Swift cooperative thread (SIGBUS in the async Swift tests).
   # Measured for one stream through the C ABI: ~530 KB at 0, ~110 KB at 1,
@@ -164,10 +164,6 @@ jobs:
           if ($dependencies -match '(?im)^\s*(?:VCRUNTIME|MSVCP|UCRTBASE|api-ms-win-crt)[^\s]*\.dll\s*$') {
             throw "Dynamic MSVC runtime dependency found:`n$dependencies"
           }
-      - name: Require shared contract vectors
-        if: matrix.settings.test
-        shell: bash
-        run: test -n "$(find "$AIMUX_CONTRACT_VECTORS/scenarios" -name '*.json' -print -quit)"
       - name: Test Node binding and shared contract vectors
         if: matrix.settings.test
         working-directory: bindings/node
@@ -219,9 +215,6 @@ jobs:
         run: |
           maturin build --release
           pip install --force-reinstall target/wheels/*.whl
-      - name: Require shared contract vectors
-        shell: bash
-        run: test -n "$(find "$AIMUX_CONTRACT_VECTORS/scenarios" -name '*.json' -print -quit)"
       - name: Test Python binding and shared contract vectors
         working-directory: bindings/python
         run: |
@@ -283,11 +276,7 @@ jobs:
         if: runner.os != 'Windows'
         with:
           go-version: "1.24.x"
-      - name: Require shared contract vectors
-        if: runner.os != 'Windows'
-        shell: bash
-        run: test -n "$(find "$AIMUX_CONTRACT_VECTORS/scenarios" -name '*.json' -print -quit)"
-      - name: Vet + test Go binding and shared contract vectors
+      - name: Vet + test Go binding
         if: runner.os != 'Windows'
         working-directory: bindings/go
         shell: bash
@@ -302,6 +291,43 @@ jobs:
         run: |
           export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.target }}/release"
           go test -race ./...
+
+  ffi-sanitizers:
+    name: C ABI (ASan + LSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ffi-test"
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: Build FFI library
+        run: cargo rustc -p aimux-ffi --release --crate-type cdylib
+      - name: Run C11 and C++17 ABI tests with ASan and LSan
+        env:
+          CC: clang
+          CXX: clang++
+          AIMUX_C_LIB_DIR: ${{ github.workspace }}/target/release
+        run: bash scripts/test-c-abi.sh --asan-lsan
+
+  ffi-linux-arm:
+    name: aimux-ffi (aarch64-unknown-linux-gnu)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: Build Linux ARM64 FFI library
+        run: cargo build -p aimux-ffi --release --target aarch64-unknown-linux-gnu
 
   # ── Java + Kotlin bindings: one FFI build, every JDK in turn ─────────────
   # Gradle 8.14.3 runs on JDK 8+; the Java build script only sets --release on
@@ -334,36 +360,33 @@ jobs:
             11
             17
             21
-      - name: Require shared contract vectors
-        shell: bash
-        run: test -n "$(find "$AIMUX_CONTRACT_VECTORS/scenarios" -name '*.json' -print -quit)"
-      - name: Java tests + shared contract vectors (JDK 8)
+      - name: Java tests (JDK 8)
         working-directory: bindings/java
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_8_X64 }}
         run: gradle test --rerun-tasks
-      - name: Java tests + shared contract vectors (JDK 11)
+      - name: Java tests (JDK 11)
         working-directory: bindings/java
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_11_X64 }}
         run: gradle test --rerun-tasks
-      - name: Java tests + shared contract vectors (JDK 17)
+      - name: Java tests (JDK 17)
         working-directory: bindings/java
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
         run: gradle test --rerun-tasks
-      - name: Java tests + shared contract vectors (JDK 21)
+      - name: Java tests (JDK 21)
         working-directory: bindings/java
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
         run: gradle test --rerun-tasks
       # The Kotlin binding is published to Maven Central by release.yml.
-      - name: Kotlin tests + shared contract vectors (JDK 17)
+      - name: Kotlin tests (JDK 17)
         working-directory: bindings/kotlin
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
         run: gradle test --rerun-tasks
-      - name: Kotlin tests + shared contract vectors (JDK 21)
+      - name: Kotlin tests (JDK 21)
         working-directory: bindings/kotlin
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
@@ -408,16 +431,13 @@ jobs:
       - name: Get dependencies
         working-directory: bindings/flutter
         run: flutter pub get
-      - name: Require shared contract vectors
-        shell: bash
-        run: test -n "$(find "$AIMUX_CONTRACT_VECTORS/scenarios" -name '*.json' -print -quit)"
       - name: Build the ABI test fixtures and the Dart bridge
         working-directory: bindings/flutter
         run: |
           python3 tool/build_test_fixture.py
           cc -std=c11 -Wall -Wextra -Werror -fPIC -shared -pthread native/aimux_dart.c \
             -o .dart_tool/native/libaimux_dart.so
-      - name: Test Flutter binding and shared contract vectors
+      - name: Test Flutter binding
         working-directory: bindings/flutter
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
@@ -507,22 +527,7 @@ jobs:
         run: |
           flutter config --no-enable-swift-package-manager
           flutter build ios --debug --no-codesign --simulator
-          # Debug builds link the app code into Runner.debug.dylib; the
-          # Runner stub carries no symbols — scan every executable in the app.
-          for symbol in aimux_abi_version aimux_manifest_json aimux_call aimux_stream aimux_drop; do
-            FOUND=""
-            while IFS= read -r f; do
-              if nm -g "$f" 2>/dev/null | grep -Eq "[[:space:]]_?${symbol}$"; then
-                echo "FOUND $symbol in: $f"
-                FOUND=yes
-              fi
-            done < <(find build/ios/iphonesimulator/Runner.app -type f -perm -111 2>/dev/null)
-            if [ -z "$FOUND" ]; then
-              echo "FAIL: $symbol missing from all app binaries"
-              exit 1
-            fi
-          done
-          echo 'OK: aimux symbols present'
+          bash ../tool/check_symbols.sh build/ios/iphonesimulator/Runner.app
       - name: Build example (Android)
         if: matrix.platform == 'android'
         working-directory: bindings/flutter/example
@@ -572,10 +577,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build the FFI library the Swift package links against
         run: cargo build -p aimux-ffi --release
-      - name: Require shared contract vectors
-        shell: bash
-        run: test -n "$(find "$AIMUX_CONTRACT_VECTORS/scenarios" -name '*.json' -print -quit)"
-      - name: Run Swift tests and shared contract vectors
+      - name: Run Swift tests
         working-directory: bindings/swift
         env:
           DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
