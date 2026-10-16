@@ -669,7 +669,15 @@
     "schema/types/_uint8_.json",
     "schema/types/null.json",
     "schema/types/string.json",
-    "tools/aimux-codegen/generated-files.json"
+    "tools/aimux-codegen/generated-files.json",
+    "tools/aimux-web/web/src/types/generated/WireCallRequest.ts",
+    "tools/aimux-web/web/src/types/generated/WireCallRequestInput.ts",
+    "tools/aimux-web/web/src/types/generated/WireCallResponse.ts",
+    "tools/aimux-web/web/src/types/generated/WireContentPart.ts",
+    "tools/aimux-web/web/src/types/generated/WireMessage.ts",
+    "tools/aimux-web/web/src/types/generated/WireMeta.ts",
+    "tools/aimux-web/web/src/types/generated/WireOptions.ts",
+    "tools/aimux-web/web/src/types/generated/WireTool.ts"
   ],
   "manifestDigest": "7d34a2b494b6b1bffbe88d56bab1e8ac457d3b254ff8d3603e5d05b3503c70f5"
 }

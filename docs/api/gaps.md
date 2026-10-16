@@ -57,8 +57,8 @@ FFI 调用仅 8 个符号。[Types.swift](../../bindings/swift/Sources/Aimux/Typ
 `TranscriptionCallOptions/Segment/Result`, `VideoCallOptions/Data/Result`,
 `RerankingCallOptions/Rank/Result`, `SearchCallOptions/ResultItem/Result`,
 `UploadFileCallOptions/Result` — 字段以
-[bindings/node/src/types](../../bindings/node/src/types) 的 ts-rs 声明和
-[Go multimodal_types.go](../../bindings/go/multimodal_types.go) 为准。
+[bindings/node/src/generated/types.ts](../../bindings/node/src/generated/types.ts) 的声明和
+[Go generated types](../../bindings/go/types_gen.go) 为准。
 
 ### 实现提示
 

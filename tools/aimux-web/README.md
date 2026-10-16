@@ -132,17 +132,16 @@ tools/aimux-web/
 └── web/          Vue 3 + shadcn 风格 + Tailwind + markstream-vue
     ├── src/agent/engine.ts   前端 agent loop 引擎
     ├── src/api/client.ts     SSE/端点封装
-    └── src/types/generated/  wire 类型(ts-rs 生成,勿手改)
+    └── src/types/generated/  wire 类型(aimux-codegen 生成,勿手改)
 ```
 
 ## 前端类型来源
 
-- **core 类型**(`Recording`/`StreamPart`/`TraceRecord`/`SessionView` 等):ts-rs 从
-  `aimux-core` 生成到 `bindings/node/src/types/`(`scripts/gen_ts_types.py` 管线),
-  前端通过 `tsconfig.json` 的 `@aimux/types/*` 别名(`import type { Recording } from '@aimux/types/Recording'`)
-  直接使用该受 CI 漂移检查保护的生成目录,不拷贝。别名只服务类型导入(构建时擦除),
-  不要用它做值导入。改 core 类型后只需运行 `scripts/gen_ts_types.py`。
-- **wire 类型**(`Wire*.ts`):aimux-web 的 API 契约,由 ts-rs 从 `src/wire.rs` 生成到
-  `web/src/types/generated/`(同样由 `scripts/gen_ts_types.py` 生成、CI `--check` 防漂移)。
-  不导出到 `bindings/node`,因为它们属于前端而非 node 绑定。改 `src/wire.rs` 后运行
-  `scripts/gen_ts_types.py` 并一起提交,**不要手改** `generated/` 下的文件。
+- **core 类型**(`Recording`/`StreamPart`/`TraceRecord`/`SessionView` 等):`aimux-codegen`
+  从 Rust 类型写到 `bindings/node/src/generated/types.ts`。前端通过 `tsconfig.json`
+  的 `@aimux/types` 别名(`import type { Recording } from '@aimux/types'`)直接使用,
+  不拷贝。别名只服务类型导入(构建时擦除),不要用它做值导入。
+- **wire 类型**(`Wire*.ts`):aimux-web 的 API 契约,由同一个 TypeScript emitter 写到
+  `web/src/types/generated/`。改 lib 里的 wire DTO 后运行 `cargo run -p aimux-codegen`
+  并一起提交,**不要手改** `generated/` 下的文件。`cargo run -p aimux-codegen -- --check`
+  防漂移。

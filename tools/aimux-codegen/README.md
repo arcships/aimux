@@ -17,11 +17,12 @@ cargo test -p aimux-codegen --test generation
 manifest. `--check` regenerates into a temporary directory and compares file
 sets and bytes, including the digest inventory. It never rewrites the checked
 tree. Normal generation replaces files and removes obsolete artifacts in its
-owned locations: `schema/ops/*.json`, `aimux-ffi/include/aimux.h`,
-`bindings/flutter/native/aimux_ops.h` (an identical packaged header), and files
-starting with `ops.`, `ops-` or `AimuxOps` with the language's
-source extension beside its constants file. Compiled caches and other generated
-binding types belong to their respective toolchains or owners.
+owned locations: `schema/ops/*.json`, `schema/types/*.json`, language DTO
+files listed by each emitter (including `tools/aimux-web/web/src/types/generated/`),
+`aimux-ffi/include/aimux.h`, `bindings/flutter/native/aimux_ops.h` (an identical
+packaged header), and files starting with `ops.`, `ops-` or `AimuxOps` with the
+language's source extension beside its constants file. Compiled caches and other
+generated binding types belong to their respective toolchains or owners.
 
 Python constants live in `bindings/python/python/aimux/ops.py`; the other bindings use their `generated/` directories.
 Go uses package `generated`; Java/Kotlin use `ai.arcships.aimux.generated`
@@ -45,4 +46,5 @@ u64 strings; handle decoding also accepts leading zeroes up to the exact numeric
 upper bound. The inventory lives at
 `tools/aimux-codegen/generated-files.json` and records the runtime digest.
 
-`scripts/gen_ts_types.py` still owns core and Web DTO outputs.
+The TypeScript emitter also writes the console wire types to
+`tools/aimux-web/web/src/types/generated/`.

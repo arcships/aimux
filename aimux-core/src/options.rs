@@ -55,9 +55,9 @@ pub enum ResponseFormat {
 pub struct TimeoutConfiguration {
     /// Overall timeout for the entire call (including retries and, for
     /// streaming, the whole stream), in milliseconds.
-    // `number`, not the `bigint` ts-rs infers from u64: the JS bindings pass
-    // options through `JSON.stringify`, which throws on BigInt. Milliseconds
-    // cannot reach 2^53 (~285k years), so precision is never at stake.
+    // `number` on the TypeScript side: the JS bindings pass options through
+    // `JSON.stringify`, which throws on BigInt. Milliseconds cannot reach
+    // 2^53 (~285k years), so precision is never at stake.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_ms: Option<u64>,
     /// Timeout for one generation step, including that step's attempts and

@@ -176,6 +176,9 @@ fn deterministic_complete_outputs_cover_every_language_and_abi_primitive() {
         inventory["files"],
         json!(outputs.keys().collect::<Vec<_>>())
     );
+    assert!(outputs.contains_key(Path::new(
+        "tools/aimux-web/web/src/types/generated/WireCallRequest.ts"
+    )));
     let header =
         String::from_utf8(outputs[Path::new("aimux-ffi/include/aimux.h")].clone()).unwrap();
     for primitive in [

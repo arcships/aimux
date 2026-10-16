@@ -224,6 +224,11 @@ pub fn generate(value: &Value, runtime_digest: &str) -> Result<Artifacts> {
             artifacts.insert(path, contents.into_bytes());
         }
     }
+    let (mut web_model, _) = model::normalize_with_schemas(&web_type_defs())?;
+    web_model.drop_builtin_aliases();
+    for (path, contents) in emit::node::web_files(&web_model) {
+        artifacts.insert(path, contents.into_bytes());
+    }
     for (name, schema) in &definitions {
         artifacts.insert(
             format!("schema/types/{name}.json").into(),
@@ -241,6 +246,7 @@ pub fn generate(value: &Value, runtime_digest: &str) -> Result<Artifacts> {
         .map(|path| path.to_string_lossy().into_owned())
         .collect();
     files.push(INDEX.into());
+    files.sort();
     artifacts.insert(
         INDEX.into(),
         pretty_json(&json!({"manifestDigest": digest, "files": files}))?,
@@ -339,6 +345,32 @@ fn constants(manifest: &Manifest, digest: &str, language: &str) -> Result<String
     }
     text.push_str(suffix);
     Ok(text)
+}
+
+fn web_type_defs() -> Value {
+    fn contract(serialize: bool) -> Value {
+        use schemars::generate::{Contract, SchemaSettings};
+        let direction = if serialize { "output" } else { "input" };
+        let mut generator = SchemaSettings::default()
+            .with(|settings| {
+                settings.contract = if serialize {
+                    Contract::Serialize
+                } else {
+                    Contract::Deserialize
+                };
+                settings.definitions_path = format!("#/typeDefs/{direction}/").into();
+            })
+            .into_generator();
+        let _ = generator.subschema_for::<aimux_web::WireCallRequest>();
+        let _ = generator.subschema_for::<aimux_web::WireCallResponse>();
+        let _ = generator.subschema_for::<aimux_web::WireContentPart>();
+        let _ = generator.subschema_for::<aimux_web::WireMessage>();
+        let _ = generator.subschema_for::<aimux_web::WireMeta>();
+        let _ = generator.subschema_for::<aimux_web::WireOptions>();
+        let _ = generator.subschema_for::<aimux_web::WireTool>();
+        json!(generator.definitions())
+    }
+    json!({"input": contract(false), "output": contract(true)})
 }
 
 fn schema_document(name: &str, schema: Value) -> Value {

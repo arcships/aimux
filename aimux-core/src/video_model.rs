@@ -233,8 +233,8 @@ impl VideoCallOptions {
 #[serde(rename_all = "camelCase")]
 pub struct VideoPollOptions {
     /// Delay between consecutive status checks, in milliseconds.
-    // `number`, not the `bigint` ts-rs infers from u64: the JS bindings pass
-    // options through `JSON.stringify`, which throws on BigInt.
+    // `number` on the TypeScript side: the JS bindings pass options through
+    // `JSON.stringify`, which throws on BigInt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interval_ms: Option<u64>,
     /// Maximum total time to wait for completion, in milliseconds.

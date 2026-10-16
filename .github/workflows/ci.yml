@@ -172,6 +172,9 @@ jobs:
         if: matrix.settings.test
         working-directory: bindings/node
         run: npm run build:typed
+      - name: DTO vector codecs
+        if: matrix.settings.test && runner.os == 'Linux'
+        run: python3 scripts/check_dto_vectors.py node
       # index.js / index.d.ts are tracked (they ship to npm) but produced by the
       # napi build above — fail if the committed copies have drifted from it.
       # One leg suffices (both files are platform-independent); the Linux test
@@ -220,6 +223,8 @@ jobs:
         run: |
           pip install pytest pydantic
           python -m pytest tests/ -v
+      - name: DTO vector codecs
+        run: python3 scripts/check_dto_vectors.py python
 
   # ── aimux-ffi: build C ABI library (desktop matrix — source for C/C++ artifacts), test Go on it ──
   ffi-build:
@@ -291,6 +296,9 @@ jobs:
         run: |
           export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.target }}/release"
           go test -race ./...
+      - name: DTO vector codecs
+        if: runner.os == 'Linux'
+        run: python3 scripts/check_dto_vectors.py go
 
   ffi-sanitizers:
     name: C ABI (ASan + LSan)
@@ -380,6 +388,10 @@ jobs:
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
         run: gradle test --rerun-tasks
+      - name: DTO vector codecs
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
+        run: python3 scripts/check_dto_vectors.py java
       # The Kotlin binding is published to Maven Central by release.yml.
       - name: Kotlin tests (JDK 17)
         working-directory: bindings/kotlin
@@ -447,6 +459,8 @@ jobs:
       - name: Analyze
         working-directory: bindings/flutter
         run: flutter analyze
+      - name: DTO vector codecs
+        run: python3 scripts/check_dto_vectors.py dart
       - uses: actions/cache/save@v4
         if: always() && github.ref == 'refs/heads/master' && steps.flutter-cache.outputs.cache-hit != 'true'
         with:
@@ -561,8 +575,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Ops manifest and generated artifact drift
         run: cargo run -p aimux-codegen -- --check
-      - name: ts-rs export drift (checked-in types must match generator output)
-        run: python3 scripts/gen_ts_types.py --check
 
   # Swift tests need macOS (XCTest) and the FFI cdylib, which the Swift package
   # links via the CAimuxFFI system module.
@@ -583,3 +595,5 @@ jobs:
           DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
         run: |
           swift test -Xlinker -L${{ github.workspace }}/target/release
+      - name: DTO vector codecs
+        run: python3 scripts/check_dto_vectors.py swift
