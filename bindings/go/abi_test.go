@@ -95,7 +95,7 @@ func TestNativeErrorEnvelopeDomainsAndOwnership(t *testing.T) {
 	} {
 		_, err := Call(context.Background(), c.op, struct{}{})
 		native := checkCode(t, fmt.Errorf("wrapped: %w", err), c.kind, c.code)
-		if !native.Envelope.RetryAfterMs.Present || native.Envelope.RetryAfterMs.Null || native.Envelope.RetryAfterMs.Value != 0 {
+		if native.Envelope.RetryAfterMs == nil || *native.Envelope.RetryAfterMs != 0 {
 			t.Fatal("lost explicit zero retry hint")
 		}
 		var payload map[string]json.RawMessage

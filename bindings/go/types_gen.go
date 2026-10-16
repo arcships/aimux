@@ -3,9 +3,9 @@ package aimux
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 )
 
@@ -17,21 +17,17 @@ type Field[T any] struct {
 	Null    bool
 }
 
-// Some constructs a present, non-null field.
-func Some[T any](value T) Field[T] { return Field[T]{Value: value, Present: true} }
+func (v Field[T]) IsZero() bool { return !v.Present }
 
 func (v *Field[T]) UnmarshalJSON(data []byte) error {
-	var next Field[T]
-	next.Present = true
-	next.Null = bytes.Equal(bytes.TrimSpace(data), []byte("null"))
-	if !next.Null {
-		if err := json.Unmarshal(data, &next.Value); err != nil {
-			return err
-		}
+	v.Present = true
+	v.Null = bytes.Equal(bytes.TrimSpace(data), []byte("null"))
+	if v.Null {
+		return nil
 	}
-	*v = next
-	return nil
+	return json.Unmarshal(data, &v.Value)
 }
+
 func (v Field[T]) MarshalJSON() ([]byte, error) {
 	if !v.Present || v.Null {
 		return []byte("null"), nil
@@ -39,15 +35,10 @@ func (v Field[T]) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-// DecodeBase64 decodes a base64 wire string.
-func DecodeBase64(value string) ([]byte, error) { return base64.StdEncoding.DecodeString(value) }
-
 // Uint8Number keeps byte arrays as JSON arrays rather than base64 strings.
 type Uint8Number uint8
 
-func (v Uint8Number) MarshalJSON() ([]byte, error) {
-	return []byte(strconv.FormatUint(uint64(v), 10)), nil
-}
+func (v Uint8Number) MarshalJSON() ([]byte, error) { return json.Marshal(uint64(v)) }
 
 // Uint64String is an unsigned integer encoded as a canonical decimal string.
 type Uint64String uint64
@@ -55,68 +46,40 @@ type Uint64String uint64
 func (v Uint64String) MarshalJSON() ([]byte, error) {
 	return json.Marshal(strconv.FormatUint(uint64(v), 10))
 }
+
 func (v *Uint64String) UnmarshalJSON(data []byte) error {
 	var text string
 	if err := json.Unmarshal(data, &text); err != nil {
 		return err
 	}
-	next, err := decimalUint64(text)
+	next, err := strconv.ParseUint(text, 10, 64)
 	if err != nil {
 		return err
+	}
+	if strconv.FormatUint(next, 10) != text {
+		return &strconv.NumError{Func: "ParseUint", Num: text, Err: strconv.ErrSyntax}
 	}
 	*v = Uint64String(next)
 	return nil
 }
-func decimalUint64(text string) (uint64, error) {
-	if text == "" || (len(text) > 1 && text[0] == '0') {
-		return 0, fmt.Errorf("invalid uint64 %q", text)
-	}
-	for _, c := range text {
-		if c < '0' || c > '9' {
-			return 0, fmt.Errorf("invalid uint64 %q", text)
-		}
-	}
-	return strconv.ParseUint(text, 10, 64)
-}
 
-func dtoObject(data []byte) (map[string]json.RawMessage, error) {
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(data, &object); err != nil {
-		return nil, err
-	}
-	if object == nil {
-		return nil, fmt.Errorf("expected object")
-	}
-	return object, nil
-}
-func dtoDecode[T any](data []byte, dst *T, nullable bool) error {
+// decodeUnionBranch checks required keys only while selecting an untagged branch.
+func decodeUnionBranch[T any](data []byte, dst *T, nullable bool, required ...string) error {
 	if !nullable && bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
-		return fmt.Errorf("unexpected null")
+		return &json.UnmarshalTypeError{Value: "null", Type: reflect.TypeFor[T]()}
+	}
+	if len(required) != 0 {
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal(data, &object); err != nil {
+			return err
+		}
+		for _, key := range required {
+			if _, ok := object[key]; !ok {
+				return &json.UnmarshalTypeError{Value: "object", Type: reflect.TypeFor[T]()}
+			}
+		}
 	}
 	return json.Unmarshal(data, dst)
-}
-func dtoRead[T any](object map[string]json.RawMessage, key string, dst *T, required, nullable bool) error {
-	raw, present := object[key]
-	if !present {
-		if required {
-			return fmt.Errorf("missing %s", key)
-		}
-		return nil
-	}
-	if err := dtoDecode(raw, dst, nullable); err != nil {
-		return fmt.Errorf("%s: %w", key, err)
-	}
-	return nil
-}
-func dtoTag(object map[string]json.RawMessage, key, want string) error {
-	var tag string
-	if err := dtoRead(object, key, &tag, true, false); err != nil {
-		return err
-	}
-	if tag != want {
-		return fmt.Errorf("expected %s tag %q, got %q", key, want, tag)
-	}
-	return nil
 }
 
 // Unified error type for all aimux operations.
@@ -125,183 +88,183 @@ func dtoTag(object map[string]json.RawMessage, key, want string) error {
 // failure came from. `ApiCallError` is boxed only to keep the Rust enum
 // compact; serde and every binding still observe the same object shape.
 type AiMuxErrorVariant interface{ isAiMuxError() }
-type AiMuxError struct{ Value AiMuxErrorVariant }
+type AiMuxError struct {
+	Value AiMuxErrorVariant
+}
 
 func (v AiMuxError) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("AiMuxError: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *AiMuxError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxError: %w", err)
+	var tag struct {
+		Name string `json:"name"`
 	}
-	var tag string
-	if err := dtoRead(object, "name", &tag, true, false); err != nil {
-		return fmt.Errorf("AiMuxError: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "AI_APICallError" {
+	switch tag.Name {
+	case "AI_APICallError":
 		var next AiMuxErrorVariantAIAPICallError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "AI_RetryError" {
-		var next AiMuxErrorVariantAIRetryError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_JSONParseError" {
-		var next AiMuxErrorVariantAIJSONParseError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_NoOutputGeneratedError" {
-		var next AiMuxErrorVariantAINoOutputGeneratedError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_InvalidResponseDataError" {
-		var next AiMuxErrorVariantAIInvalidResponseDataError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_ToolCallNotFoundForApprovalError" {
-		var next AiMuxErrorVariantAIToolCallNotFoundForApprovalError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_NoSuchToolError" {
-		var next AiMuxErrorVariantAINoSuchToolError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_InvalidToolInputError" {
-		var next AiMuxErrorVariantAIInvalidToolInputError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_ToolCallRepairError" {
-		var next AiMuxErrorVariantAIToolCallRepairError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_InvalidArgumentError" {
-		var next AiMuxErrorVariantAIInvalidArgumentError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_InvalidPromptError" {
-		var next AiMuxErrorVariantAIInvalidPromptError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_LoadAPIKeyError" {
-		var next AiMuxErrorVariantAILoadAPIKeyError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_LoadSettingError" {
-		var next AiMuxErrorVariantAILoadSettingError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_TokenExpiredError" {
-		var next AiMuxErrorVariantAITokenExpiredError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_UnsupportedFunctionalityError" {
-		var next AiMuxErrorVariantAIUnsupportedFunctionalityError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_NoSuchModelError" {
-		var next AiMuxErrorVariantAINoSuchModelError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_NoSuchProviderError" {
-		var next AiMuxErrorVariantAINoSuchProviderError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_MissingToolResultsError" {
-		var next AiMuxErrorVariantAIMissingToolResultsError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_ToolChoiceViolationError" {
-		var next AiMuxErrorVariantAIToolChoiceViolationError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "TimeoutError" {
-		var next AiMuxErrorVariantTimeoutError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AbortError" {
-		var next AiMuxErrorVariantAbortError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_Error" {
+		v.Value = next
+		return nil
+	case "AI_Error":
 		var next AiMuxErrorVariantAIError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "AI_InvalidArgumentError":
+		var next AiMuxErrorVariantAIInvalidArgumentError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_InvalidPromptError":
+		var next AiMuxErrorVariantAIInvalidPromptError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_InvalidResponseDataError":
+		var next AiMuxErrorVariantAIInvalidResponseDataError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_InvalidToolInputError":
+		var next AiMuxErrorVariantAIInvalidToolInputError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_JSONParseError":
+		var next AiMuxErrorVariantAIJSONParseError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_LoadAPIKeyError":
+		var next AiMuxErrorVariantAILoadAPIKeyError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_LoadSettingError":
+		var next AiMuxErrorVariantAILoadSettingError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_MissingToolResultsError":
+		var next AiMuxErrorVariantAIMissingToolResultsError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_NoOutputGeneratedError":
+		var next AiMuxErrorVariantAINoOutputGeneratedError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_NoSuchModelError":
+		var next AiMuxErrorVariantAINoSuchModelError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_NoSuchProviderError":
+		var next AiMuxErrorVariantAINoSuchProviderError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_NoSuchToolError":
+		var next AiMuxErrorVariantAINoSuchToolError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_RetryError":
+		var next AiMuxErrorVariantAIRetryError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_TokenExpiredError":
+		var next AiMuxErrorVariantAITokenExpiredError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_ToolCallNotFoundForApprovalError":
+		var next AiMuxErrorVariantAIToolCallNotFoundForApprovalError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_ToolCallRepairError":
+		var next AiMuxErrorVariantAIToolCallRepairError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_ToolChoiceViolationError":
+		var next AiMuxErrorVariantAIToolChoiceViolationError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_UnsupportedFunctionalityError":
+		var next AiMuxErrorVariantAIUnsupportedFunctionalityError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AbortError":
+		var next AiMuxErrorVariantAbortError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "TimeoutError":
+		var next AiMuxErrorVariantTimeoutError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("AiMuxError: unknown or invalid name tag %q", tag)
+	return fmt.Errorf("AiMuxError: unknown name tag %q", tag.Name)
 }
 
 type AiMuxErrorVariantAIAPICallError struct {
 	// Parsed provider error data.
-	Data Field[json.RawMessage] `json:"data,omitempty"`
+	Data Field[json.RawMessage] `json:"data,omitzero"`
 	// Whether retrying can help (`APICallError.isRetryable`) — stored at
 	// construction, exactly like the AI SDK: the response path computes it
 	// from the status (408/409/429 or 5xx), and the transport path (no response, so
@@ -314,15 +277,15 @@ type AiMuxErrorVariantAIAPICallError struct {
 	// Provider's machine-readable code (OpenAI's `code`/`type`,
 	// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
 	// status. Our normalized take on `APICallError.data`.
-	ProviderCode Field[string] `json:"providerCode,omitempty"`
+	ProviderCode *string `json:"providerCode,omitzero"`
 	// Sanitized request values used to create the API request.
 	RequestBodyValues json.RawMessage `json:"requestBodyValues"`
 	// The raw response body, verbatim (`APICallError.responseBody`) — the
 	// lossless evidence when `message`/`provider_code` are extractions.
 	// `None` when the error did not come from a response body.
-	ResponseBody Field[string] `json:"responseBody,omitempty"`
+	ResponseBody *string `json:"responseBody,omitzero"`
 	// Sanitized response headers.
-	ResponseHeaders Field[map[string]string] `json:"responseHeaders,omitempty"`
+	ResponseHeaders map[string]string `json:"responseHeaders,omitzero"`
 	// HTTP status of the response, when it came from one
 	// (`APICallError.statusCode`). The HTTP layer fills the observed status
 	// for every response-derived error. An error frame inside a stream
@@ -330,268 +293,108 @@ type AiMuxErrorVariantAIAPICallError struct {
 	// stream errors do (OpenAI infers one from the frame's `code`/`type`,
 	// Anthropic from its error type); errors built without an HTTP exchange
 	// leave it `None`.
-	StatusCode Field[uint16] `json:"statusCode,omitempty"`
+	StatusCode *uint16 `json:"statusCode,omitzero"`
 	// Sanitized request URL. Required for every API-derived failure.
 	URL string `json:"url"`
 }
 
-func (v *AiMuxErrorVariantAIAPICallError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIAPICallError: %w", err)
-	}
-	var next AiMuxErrorVariantAIAPICallError
-	if err := dtoTag(object, "name", "AI_APICallError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, false, true); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "isRetryable", &next.IsRetryable, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "providerCode", &next.ProviderCode, false, true); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "requestBodyValues", &next.RequestBodyValues, true, true); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "responseBody", &next.ResponseBody, false, true); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "responseHeaders", &next.ResponseHeaders, false, true); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "statusCode", &next.StatusCode, false, true); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIAPICallError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAIAPICallError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_APICallError"
-	if v.Data.Present {
-		object["data"] = v.Data
-	}
-	object["isRetryable"] = v.IsRetryable
-	object["message"] = v.Message
-	if v.ProviderCode.Present {
-		object["providerCode"] = v.ProviderCode
-	}
-	object["requestBodyValues"] = v.RequestBodyValues
-	if v.ResponseBody.Present {
-		object["responseBody"] = v.ResponseBody
-	}
-	if v.ResponseHeaders.Present {
-		object["responseHeaders"] = v.ResponseHeaders
-	}
-	if v.StatusCode.Present {
-		object["statusCode"] = v.StatusCode
-	}
-	object["url"] = v.URL
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAIAPICallError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAIAPICallError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAIAPICallError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_APICallError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAIRetryError struct {
 	Errors []AiMuxError     `json:"errors"`
 	Reason RetryErrorReason `json:"reason"`
 }
 
-func (v *AiMuxErrorVariantAIRetryError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIRetryError: %w", err)
-	}
-	var next AiMuxErrorVariantAIRetryError
-	if err := dtoTag(object, "name", "AI_RetryError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIRetryError: %w", err)
-	}
-	if err := dtoRead(object, "errors", &next.Errors, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIRetryError: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIRetryError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAIRetryError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_RetryError"
-	object["errors"] = v.Errors
-	object["reason"] = v.Reason
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAIRetryError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAIRetryError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAIRetryError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_RetryError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAIJSONParseError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorVariantAIJSONParseError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIJSONParseError: %w", err)
-	}
-	var next AiMuxErrorVariantAIJSONParseError
-	if err := dtoTag(object, "name", "AI_JSONParseError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIJSONParseError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIJSONParseError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAIJSONParseError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_JSONParseError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAIJSONParseError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAIJSONParseError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAIJSONParseError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_JSONParseError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAINoOutputGeneratedError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorVariantAINoOutputGeneratedError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoOutputGeneratedError: %w", err)
-	}
-	var next AiMuxErrorVariantAINoOutputGeneratedError
-	if err := dtoTag(object, "name", "AI_NoOutputGeneratedError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoOutputGeneratedError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoOutputGeneratedError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAINoOutputGeneratedError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_NoOutputGeneratedError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAINoOutputGeneratedError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAINoOutputGeneratedError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAINoOutputGeneratedError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_NoOutputGeneratedError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAIInvalidResponseDataError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorVariantAIInvalidResponseDataError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIInvalidResponseDataError: %w", err)
-	}
-	var next AiMuxErrorVariantAIInvalidResponseDataError
-	if err := dtoTag(object, "name", "AI_InvalidResponseDataError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIInvalidResponseDataError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIInvalidResponseDataError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAIInvalidResponseDataError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_InvalidResponseDataError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAIInvalidResponseDataError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAIInvalidResponseDataError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAIInvalidResponseDataError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_InvalidResponseDataError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAIToolCallNotFoundForApprovalError struct {
 	ApprovalID string `json:"approvalId"`
 	ToolCallID string `json:"toolCallId"`
 }
 
-func (v *AiMuxErrorVariantAIToolCallNotFoundForApprovalError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolCallNotFoundForApprovalError: %w", err)
-	}
-	var next AiMuxErrorVariantAIToolCallNotFoundForApprovalError
-	if err := dtoTag(object, "name", "AI_ToolCallNotFoundForApprovalError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolCallNotFoundForApprovalError: %w", err)
-	}
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolCallNotFoundForApprovalError: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolCallNotFoundForApprovalError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAIToolCallNotFoundForApprovalError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_ToolCallNotFoundForApprovalError"
-	object["approvalId"] = v.ApprovalID
-	object["toolCallId"] = v.ToolCallID
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAIToolCallNotFoundForApprovalError) isAiMuxError() {}
 
-type AiMuxErrorVariantAINoSuchToolError struct {
-	AvailableTools Field[[]string] `json:"availableTools,omitempty"`
-	ToolInput      Field[string]   `json:"toolInput,omitempty"`
-	ToolName       string          `json:"toolName"`
+func (v AiMuxErrorVariantAIToolCallNotFoundForApprovalError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAIToolCallNotFoundForApprovalError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_ToolCallNotFoundForApprovalError", plain: plain(v)})
 }
 
-func (v *AiMuxErrorVariantAINoSuchToolError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchToolError: %w", err)
-	}
-	var next AiMuxErrorVariantAINoSuchToolError
-	if err := dtoTag(object, "name", "AI_NoSuchToolError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchToolError: %w", err)
-	}
-	if err := dtoRead(object, "availableTools", &next.AvailableTools, false, true); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchToolError: %w", err)
-	}
-	if err := dtoRead(object, "toolInput", &next.ToolInput, false, true); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchToolError: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchToolError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAINoSuchToolError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_NoSuchToolError"
-	if v.AvailableTools.Present {
-		object["availableTools"] = v.AvailableTools
-	}
-	if v.ToolInput.Present {
-		object["toolInput"] = v.ToolInput
-	}
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+type AiMuxErrorVariantAINoSuchToolError struct {
+	AvailableTools []string `json:"availableTools,omitzero"`
+	ToolInput      *string  `json:"toolInput,omitzero"`
+	ToolName       string   `json:"toolName"`
 }
 
 func (AiMuxErrorVariantAINoSuchToolError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAINoSuchToolError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAINoSuchToolError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_NoSuchToolError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAIInvalidToolInputError struct {
 	Cause     string `json:"cause"`
@@ -599,159 +402,73 @@ type AiMuxErrorVariantAIInvalidToolInputError struct {
 	ToolName  string `json:"toolName"`
 }
 
-func (v *AiMuxErrorVariantAIInvalidToolInputError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIInvalidToolInputError: %w", err)
-	}
-	var next AiMuxErrorVariantAIInvalidToolInputError
-	if err := dtoTag(object, "name", "AI_InvalidToolInputError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIInvalidToolInputError: %w", err)
-	}
-	if err := dtoRead(object, "cause", &next.Cause, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIInvalidToolInputError: %w", err)
-	}
-	if err := dtoRead(object, "toolInput", &next.ToolInput, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIInvalidToolInputError: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIInvalidToolInputError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAIInvalidToolInputError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_InvalidToolInputError"
-	object["cause"] = v.Cause
-	object["toolInput"] = v.ToolInput
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAIInvalidToolInputError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAIInvalidToolInputError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAIInvalidToolInputError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_InvalidToolInputError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAIToolCallRepairError struct {
 	Cause         AiMuxError `json:"cause"`
 	OriginalError AiMuxError `json:"originalError"`
 }
 
-func (v *AiMuxErrorVariantAIToolCallRepairError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolCallRepairError: %w", err)
-	}
-	var next AiMuxErrorVariantAIToolCallRepairError
-	if err := dtoTag(object, "name", "AI_ToolCallRepairError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolCallRepairError: %w", err)
-	}
-	if err := dtoRead(object, "cause", &next.Cause, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolCallRepairError: %w", err)
-	}
-	if err := dtoRead(object, "originalError", &next.OriginalError, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolCallRepairError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAIToolCallRepairError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_ToolCallRepairError"
-	object["cause"] = v.Cause
-	object["originalError"] = v.OriginalError
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAIToolCallRepairError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAIToolCallRepairError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAIToolCallRepairError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_ToolCallRepairError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAIInvalidArgumentError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorVariantAIInvalidArgumentError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIInvalidArgumentError: %w", err)
-	}
-	var next AiMuxErrorVariantAIInvalidArgumentError
-	if err := dtoTag(object, "name", "AI_InvalidArgumentError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIInvalidArgumentError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIInvalidArgumentError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAIInvalidArgumentError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_InvalidArgumentError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAIInvalidArgumentError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAIInvalidArgumentError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAIInvalidArgumentError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_InvalidArgumentError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAIInvalidPromptError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorVariantAIInvalidPromptError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIInvalidPromptError: %w", err)
-	}
-	var next AiMuxErrorVariantAIInvalidPromptError
-	if err := dtoTag(object, "name", "AI_InvalidPromptError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIInvalidPromptError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIInvalidPromptError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAIInvalidPromptError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_InvalidPromptError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAIInvalidPromptError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAIInvalidPromptError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAIInvalidPromptError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_InvalidPromptError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAILoadAPIKeyError struct {
 	Description string `json:"description"`
 	EnvVar      string `json:"envVar"`
 }
 
-func (v *AiMuxErrorVariantAILoadAPIKeyError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAILoadAPIKeyError: %w", err)
-	}
-	var next AiMuxErrorVariantAILoadAPIKeyError
-	if err := dtoTag(object, "name", "AI_LoadAPIKeyError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAILoadAPIKeyError: %w", err)
-	}
-	if err := dtoRead(object, "description", &next.Description, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAILoadAPIKeyError: %w", err)
-	}
-	if err := dtoRead(object, "envVar", &next.EnvVar, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAILoadAPIKeyError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAILoadAPIKeyError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_LoadAPIKeyError"
-	object["description"] = v.Description
-	object["envVar"] = v.EnvVar
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAILoadAPIKeyError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAILoadAPIKeyError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAILoadAPIKeyError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_LoadAPIKeyError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAILoadSettingError struct {
 	EnvVar string `json:"envVar"`
@@ -759,122 +476,58 @@ type AiMuxErrorVariantAILoadSettingError struct {
 	SettingName string `json:"settingName"`
 }
 
-func (v *AiMuxErrorVariantAILoadSettingError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAILoadSettingError: %w", err)
-	}
-	var next AiMuxErrorVariantAILoadSettingError
-	if err := dtoTag(object, "name", "AI_LoadSettingError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAILoadSettingError: %w", err)
-	}
-	if err := dtoRead(object, "envVar", &next.EnvVar, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAILoadSettingError: %w", err)
-	}
-	if err := dtoRead(object, "settingName", &next.SettingName, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAILoadSettingError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAILoadSettingError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_LoadSettingError"
-	object["envVar"] = v.EnvVar
-	object["settingName"] = v.SettingName
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAILoadSettingError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAILoadSettingError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAILoadSettingError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_LoadSettingError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAITokenExpiredError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorVariantAITokenExpiredError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAITokenExpiredError: %w", err)
-	}
-	var next AiMuxErrorVariantAITokenExpiredError
-	if err := dtoTag(object, "name", "AI_TokenExpiredError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAITokenExpiredError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAITokenExpiredError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAITokenExpiredError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_TokenExpiredError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAITokenExpiredError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAITokenExpiredError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAITokenExpiredError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_TokenExpiredError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAIUnsupportedFunctionalityError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorVariantAIUnsupportedFunctionalityError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIUnsupportedFunctionalityError: %w", err)
-	}
-	var next AiMuxErrorVariantAIUnsupportedFunctionalityError
-	if err := dtoTag(object, "name", "AI_UnsupportedFunctionalityError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIUnsupportedFunctionalityError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIUnsupportedFunctionalityError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAIUnsupportedFunctionalityError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_UnsupportedFunctionalityError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAIUnsupportedFunctionalityError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAIUnsupportedFunctionalityError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAIUnsupportedFunctionalityError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_UnsupportedFunctionalityError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAINoSuchModelError struct {
 	ModelID   string `json:"modelId"`
 	ModelType string `json:"modelType"`
 }
 
-func (v *AiMuxErrorVariantAINoSuchModelError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchModelError: %w", err)
-	}
-	var next AiMuxErrorVariantAINoSuchModelError
-	if err := dtoTag(object, "name", "AI_NoSuchModelError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchModelError: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchModelError: %w", err)
-	}
-	if err := dtoRead(object, "modelType", &next.ModelType, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchModelError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAINoSuchModelError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_NoSuchModelError"
-	object["modelId"] = v.ModelID
-	object["modelType"] = v.ModelType
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAINoSuchModelError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAINoSuchModelError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAINoSuchModelError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_NoSuchModelError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAINoSuchProviderError struct {
 	AvailableProviders []string `json:"availableProviders"`
@@ -883,69 +536,29 @@ type AiMuxErrorVariantAINoSuchProviderError struct {
 	ProviderID         string   `json:"providerId"`
 }
 
-func (v *AiMuxErrorVariantAINoSuchProviderError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchProviderError: %w", err)
-	}
-	var next AiMuxErrorVariantAINoSuchProviderError
-	if err := dtoTag(object, "name", "AI_NoSuchProviderError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchProviderError: %w", err)
-	}
-	if err := dtoRead(object, "availableProviders", &next.AvailableProviders, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchProviderError: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchProviderError: %w", err)
-	}
-	if err := dtoRead(object, "modelType", &next.ModelType, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchProviderError: %w", err)
-	}
-	if err := dtoRead(object, "providerId", &next.ProviderID, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAINoSuchProviderError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAINoSuchProviderError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_NoSuchProviderError"
-	object["availableProviders"] = v.AvailableProviders
-	object["modelId"] = v.ModelID
-	object["modelType"] = v.ModelType
-	object["providerId"] = v.ProviderID
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAINoSuchProviderError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAINoSuchProviderError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAINoSuchProviderError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_NoSuchProviderError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAIMissingToolResultsError struct {
 	ToolCallIds []string `json:"toolCallIds"`
 }
 
-func (v *AiMuxErrorVariantAIMissingToolResultsError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIMissingToolResultsError: %w", err)
-	}
-	var next AiMuxErrorVariantAIMissingToolResultsError
-	if err := dtoTag(object, "name", "AI_MissingToolResultsError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIMissingToolResultsError: %w", err)
-	}
-	if err := dtoRead(object, "toolCallIds", &next.ToolCallIds, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIMissingToolResultsError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAIMissingToolResultsError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_MissingToolResultsError"
-	object["toolCallIds"] = v.ToolCallIds
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAIMissingToolResultsError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAIMissingToolResultsError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAIMissingToolResultsError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_MissingToolResultsError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAIToolChoiceViolationError struct {
 	// The content the model returned, before tool-call parsing, so a tool
@@ -962,129 +575,57 @@ type AiMuxErrorVariantAIToolChoiceViolationError struct {
 	ToolChoice LanguageModelV4ToolChoice `json:"toolChoice"`
 }
 
-func (v *AiMuxErrorVariantAIToolChoiceViolationError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolChoiceViolationError: %w", err)
-	}
-	var next AiMuxErrorVariantAIToolChoiceViolationError
-	if err := dtoTag(object, "name", "AI_ToolChoiceViolationError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolChoiceViolationError: %w", err)
-	}
-	if err := dtoRead(object, "content", &next.Content, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolChoiceViolationError: %w", err)
-	}
-	if err := dtoRead(object, "finishReason", &next.FinishReason, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolChoiceViolationError: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolChoiceViolationError: %w", err)
-	}
-	if err := dtoRead(object, "provider", &next.Provider, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolChoiceViolationError: %w", err)
-	}
-	if err := dtoRead(object, "toolChoice", &next.ToolChoice, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIToolChoiceViolationError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAIToolChoiceViolationError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_ToolChoiceViolationError"
-	object["content"] = v.Content
-	object["finishReason"] = v.FinishReason
-	object["modelId"] = v.ModelID
-	object["provider"] = v.Provider
-	object["toolChoice"] = v.ToolChoice
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAIToolChoiceViolationError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAIToolChoiceViolationError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAIToolChoiceViolationError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_ToolChoiceViolationError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantTimeoutError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorVariantTimeoutError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantTimeoutError: %w", err)
-	}
-	var next AiMuxErrorVariantTimeoutError
-	if err := dtoTag(object, "name", "TimeoutError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantTimeoutError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantTimeoutError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantTimeoutError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "TimeoutError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantTimeoutError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantTimeoutError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantTimeoutError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "TimeoutError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAbortError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorVariantAbortError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAbortError: %w", err)
-	}
-	var next AiMuxErrorVariantAbortError
-	if err := dtoTag(object, "name", "AbortError"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAbortError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAbortError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAbortError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AbortError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAbortError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAbortError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAbortError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AbortError", plain: plain(v)})
+}
 
 type AiMuxErrorVariantAIError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorVariantAIError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIError: %w", err)
-	}
-	var next AiMuxErrorVariantAIError
-	if err := dtoTag(object, "name", "AI_Error"); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorVariantAIError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorVariantAIError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_Error"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorVariantAIError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAIError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAIError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_Error", plain: plain(v)})
+}
 
 // Unified error type for all aimux operations.
 //
@@ -1092,188 +633,188 @@ func (AiMuxErrorVariantAIError) isAiMuxError() {}
 // failure came from. `ApiCallError` is boxed only to keep the Rust enum
 // compact; serde and every binding still observe the same object shape.
 type AiMuxErrorInputVariant interface{ isAiMuxErrorInput() }
-type AiMuxErrorInput struct{ Value AiMuxErrorInputVariant }
+type AiMuxErrorInput struct {
+	Value AiMuxErrorInputVariant
+}
 
 func (v AiMuxErrorInput) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("AiMuxErrorInput: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *AiMuxErrorInput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInput: %w", err)
+	var tag struct {
+		Name string `json:"name"`
 	}
-	var tag string
-	if err := dtoRead(object, "name", &tag, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInput: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "AI_APICallError" {
+	switch tag.Name {
+	case "AI_APICallError":
 		var next AiMuxErrorInputVariantAIAPICallError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "AI_RetryError" {
-		var next AiMuxErrorInputVariantAIRetryError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_JSONParseError" {
-		var next AiMuxErrorInputVariantAIJSONParseError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_NoOutputGeneratedError" {
-		var next AiMuxErrorInputVariantAINoOutputGeneratedError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_InvalidResponseDataError" {
-		var next AiMuxErrorInputVariantAIInvalidResponseDataError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_ToolCallNotFoundForApprovalError" {
-		var next AiMuxErrorInputVariantAIToolCallNotFoundForApprovalError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_NoSuchToolError" {
-		var next AiMuxErrorInputVariantAINoSuchToolError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_InvalidToolInputError" {
-		var next AiMuxErrorInputVariantAIInvalidToolInputError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_ToolCallRepairError" {
-		var next AiMuxErrorInputVariantAIToolCallRepairError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_InvalidArgumentError" {
-		var next AiMuxErrorInputVariantAIInvalidArgumentError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_InvalidPromptError" {
-		var next AiMuxErrorInputVariantAIInvalidPromptError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_LoadAPIKeyError" {
-		var next AiMuxErrorInputVariantAILoadAPIKeyError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_LoadSettingError" {
-		var next AiMuxErrorInputVariantAILoadSettingError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_TokenExpiredError" {
-		var next AiMuxErrorInputVariantAITokenExpiredError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_UnsupportedFunctionalityError" {
-		var next AiMuxErrorInputVariantAIUnsupportedFunctionalityError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_NoSuchModelError" {
-		var next AiMuxErrorInputVariantAINoSuchModelError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_NoSuchProviderError" {
-		var next AiMuxErrorInputVariantAINoSuchProviderError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_MissingToolResultsError" {
-		var next AiMuxErrorInputVariantAIMissingToolResultsError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_ToolChoiceViolationError" {
-		var next AiMuxErrorInputVariantAIToolChoiceViolationError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "TimeoutError" {
-		var next AiMuxErrorInputVariantTimeoutError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AbortError" {
-		var next AiMuxErrorInputVariantAbortError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "AI_Error" {
+		v.Value = next
+		return nil
+	case "AI_Error":
 		var next AiMuxErrorInputVariantAIError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "AI_InvalidArgumentError":
+		var next AiMuxErrorInputVariantAIInvalidArgumentError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_InvalidPromptError":
+		var next AiMuxErrorInputVariantAIInvalidPromptError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_InvalidResponseDataError":
+		var next AiMuxErrorInputVariantAIInvalidResponseDataError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_InvalidToolInputError":
+		var next AiMuxErrorInputVariantAIInvalidToolInputError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_JSONParseError":
+		var next AiMuxErrorInputVariantAIJSONParseError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_LoadAPIKeyError":
+		var next AiMuxErrorInputVariantAILoadAPIKeyError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_LoadSettingError":
+		var next AiMuxErrorInputVariantAILoadSettingError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_MissingToolResultsError":
+		var next AiMuxErrorInputVariantAIMissingToolResultsError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_NoOutputGeneratedError":
+		var next AiMuxErrorInputVariantAINoOutputGeneratedError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_NoSuchModelError":
+		var next AiMuxErrorInputVariantAINoSuchModelError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_NoSuchProviderError":
+		var next AiMuxErrorInputVariantAINoSuchProviderError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_NoSuchToolError":
+		var next AiMuxErrorInputVariantAINoSuchToolError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_RetryError":
+		var next AiMuxErrorInputVariantAIRetryError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_TokenExpiredError":
+		var next AiMuxErrorInputVariantAITokenExpiredError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_ToolCallNotFoundForApprovalError":
+		var next AiMuxErrorInputVariantAIToolCallNotFoundForApprovalError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_ToolCallRepairError":
+		var next AiMuxErrorInputVariantAIToolCallRepairError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_ToolChoiceViolationError":
+		var next AiMuxErrorInputVariantAIToolChoiceViolationError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AI_UnsupportedFunctionalityError":
+		var next AiMuxErrorInputVariantAIUnsupportedFunctionalityError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "AbortError":
+		var next AiMuxErrorInputVariantAbortError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "TimeoutError":
+		var next AiMuxErrorInputVariantTimeoutError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("AiMuxErrorInput: unknown or invalid name tag %q", tag)
+	return fmt.Errorf("AiMuxErrorInput: unknown name tag %q", tag.Name)
 }
 
 type AiMuxErrorInputVariantAIAPICallError struct {
 	// Parsed provider error data.
-	Data Field[json.RawMessage] `json:"data,omitempty"`
+	Data Field[json.RawMessage] `json:"data,omitzero"`
 	// Whether retrying can help (`APICallError.isRetryable`) — stored at
 	// construction, exactly like the AI SDK: the response path computes it
 	// from the status (408/409/429 or 5xx), and the transport path (no response, so
 	// no status to compute from) sets it to `true` explicitly.
-	IsRetryable Field[bool] `json:"isRetryable,omitempty"`
+	IsRetryable *bool `json:"isRetryable,omitzero"`
 	// Human-readable failure text. Provider text is verbatim when available;
 	// locally detected transport/parse failures include their source detail.
 	// Never includes an HTTP status prefix.
@@ -1281,15 +822,15 @@ type AiMuxErrorInputVariantAIAPICallError struct {
 	// Provider's machine-readable code (OpenAI's `code`/`type`,
 	// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
 	// status. Our normalized take on `APICallError.data`.
-	ProviderCode Field[string] `json:"providerCode,omitempty"`
+	ProviderCode *string `json:"providerCode,omitzero"`
 	// Sanitized request values used to create the API request.
 	RequestBodyValues json.RawMessage `json:"requestBodyValues"`
 	// The raw response body, verbatim (`APICallError.responseBody`) — the
 	// lossless evidence when `message`/`provider_code` are extractions.
 	// `None` when the error did not come from a response body.
-	ResponseBody Field[string] `json:"responseBody,omitempty"`
+	ResponseBody *string `json:"responseBody,omitzero"`
 	// Sanitized response headers.
-	ResponseHeaders Field[map[string]string] `json:"responseHeaders,omitempty"`
+	ResponseHeaders map[string]string `json:"responseHeaders,omitzero"`
 	// HTTP status of the response, when it came from one
 	// (`APICallError.statusCode`). The HTTP layer fills the observed status
 	// for every response-derived error. An error frame inside a stream
@@ -1297,270 +838,108 @@ type AiMuxErrorInputVariantAIAPICallError struct {
 	// stream errors do (OpenAI infers one from the frame's `code`/`type`,
 	// Anthropic from its error type); errors built without an HTTP exchange
 	// leave it `None`.
-	StatusCode Field[uint16] `json:"statusCode,omitempty"`
+	StatusCode *uint16 `json:"statusCode,omitzero"`
 	// Sanitized request URL. Required for every API-derived failure.
 	URL string `json:"url"`
 }
 
-func (v *AiMuxErrorInputVariantAIAPICallError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIAPICallError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAIAPICallError
-	if err := dtoTag(object, "name", "AI_APICallError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, false, true); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "isRetryable", &next.IsRetryable, false, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "providerCode", &next.ProviderCode, false, true); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "requestBodyValues", &next.RequestBodyValues, true, true); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "responseBody", &next.ResponseBody, false, true); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "responseHeaders", &next.ResponseHeaders, false, true); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "statusCode", &next.StatusCode, false, true); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIAPICallError: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIAPICallError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAIAPICallError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_APICallError"
-	if v.Data.Present {
-		object["data"] = v.Data
-	}
-	if v.IsRetryable.Present {
-		object["isRetryable"] = v.IsRetryable
-	}
-	object["message"] = v.Message
-	if v.ProviderCode.Present {
-		object["providerCode"] = v.ProviderCode
-	}
-	object["requestBodyValues"] = v.RequestBodyValues
-	if v.ResponseBody.Present {
-		object["responseBody"] = v.ResponseBody
-	}
-	if v.ResponseHeaders.Present {
-		object["responseHeaders"] = v.ResponseHeaders
-	}
-	if v.StatusCode.Present {
-		object["statusCode"] = v.StatusCode
-	}
-	object["url"] = v.URL
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAIAPICallError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAIAPICallError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAIAPICallError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_APICallError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAIRetryError struct {
 	Errors []AiMuxErrorInput `json:"errors"`
 	Reason RetryErrorReason  `json:"reason"`
 }
 
-func (v *AiMuxErrorInputVariantAIRetryError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIRetryError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAIRetryError
-	if err := dtoTag(object, "name", "AI_RetryError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIRetryError: %w", err)
-	}
-	if err := dtoRead(object, "errors", &next.Errors, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIRetryError: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIRetryError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAIRetryError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_RetryError"
-	object["errors"] = v.Errors
-	object["reason"] = v.Reason
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAIRetryError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAIRetryError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAIRetryError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_RetryError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAIJSONParseError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorInputVariantAIJSONParseError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIJSONParseError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAIJSONParseError
-	if err := dtoTag(object, "name", "AI_JSONParseError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIJSONParseError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIJSONParseError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAIJSONParseError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_JSONParseError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAIJSONParseError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAIJSONParseError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAIJSONParseError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_JSONParseError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAINoOutputGeneratedError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorInputVariantAINoOutputGeneratedError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoOutputGeneratedError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAINoOutputGeneratedError
-	if err := dtoTag(object, "name", "AI_NoOutputGeneratedError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoOutputGeneratedError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoOutputGeneratedError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAINoOutputGeneratedError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_NoOutputGeneratedError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAINoOutputGeneratedError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAINoOutputGeneratedError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAINoOutputGeneratedError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_NoOutputGeneratedError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAIInvalidResponseDataError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorInputVariantAIInvalidResponseDataError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIInvalidResponseDataError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAIInvalidResponseDataError
-	if err := dtoTag(object, "name", "AI_InvalidResponseDataError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIInvalidResponseDataError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIInvalidResponseDataError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAIInvalidResponseDataError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_InvalidResponseDataError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAIInvalidResponseDataError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAIInvalidResponseDataError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAIInvalidResponseDataError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_InvalidResponseDataError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAIToolCallNotFoundForApprovalError struct {
 	ApprovalID string `json:"approvalId"`
 	ToolCallID string `json:"toolCallId"`
 }
 
-func (v *AiMuxErrorInputVariantAIToolCallNotFoundForApprovalError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolCallNotFoundForApprovalError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAIToolCallNotFoundForApprovalError
-	if err := dtoTag(object, "name", "AI_ToolCallNotFoundForApprovalError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolCallNotFoundForApprovalError: %w", err)
-	}
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolCallNotFoundForApprovalError: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolCallNotFoundForApprovalError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAIToolCallNotFoundForApprovalError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_ToolCallNotFoundForApprovalError"
-	object["approvalId"] = v.ApprovalID
-	object["toolCallId"] = v.ToolCallID
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAIToolCallNotFoundForApprovalError) isAiMuxErrorInput() {}
 
-type AiMuxErrorInputVariantAINoSuchToolError struct {
-	AvailableTools Field[[]string] `json:"availableTools,omitempty"`
-	ToolInput      Field[string]   `json:"toolInput,omitempty"`
-	ToolName       string          `json:"toolName"`
+func (v AiMuxErrorInputVariantAIToolCallNotFoundForApprovalError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAIToolCallNotFoundForApprovalError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_ToolCallNotFoundForApprovalError", plain: plain(v)})
 }
 
-func (v *AiMuxErrorInputVariantAINoSuchToolError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchToolError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAINoSuchToolError
-	if err := dtoTag(object, "name", "AI_NoSuchToolError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchToolError: %w", err)
-	}
-	if err := dtoRead(object, "availableTools", &next.AvailableTools, false, true); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchToolError: %w", err)
-	}
-	if err := dtoRead(object, "toolInput", &next.ToolInput, false, true); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchToolError: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchToolError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAINoSuchToolError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_NoSuchToolError"
-	if v.AvailableTools.Present {
-		object["availableTools"] = v.AvailableTools
-	}
-	if v.ToolInput.Present {
-		object["toolInput"] = v.ToolInput
-	}
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+type AiMuxErrorInputVariantAINoSuchToolError struct {
+	AvailableTools []string `json:"availableTools,omitzero"`
+	ToolInput      *string  `json:"toolInput,omitzero"`
+	ToolName       string   `json:"toolName"`
 }
 
 func (AiMuxErrorInputVariantAINoSuchToolError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAINoSuchToolError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAINoSuchToolError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_NoSuchToolError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAIInvalidToolInputError struct {
 	Cause     string `json:"cause"`
@@ -1568,159 +947,73 @@ type AiMuxErrorInputVariantAIInvalidToolInputError struct {
 	ToolName  string `json:"toolName"`
 }
 
-func (v *AiMuxErrorInputVariantAIInvalidToolInputError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIInvalidToolInputError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAIInvalidToolInputError
-	if err := dtoTag(object, "name", "AI_InvalidToolInputError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIInvalidToolInputError: %w", err)
-	}
-	if err := dtoRead(object, "cause", &next.Cause, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIInvalidToolInputError: %w", err)
-	}
-	if err := dtoRead(object, "toolInput", &next.ToolInput, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIInvalidToolInputError: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIInvalidToolInputError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAIInvalidToolInputError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_InvalidToolInputError"
-	object["cause"] = v.Cause
-	object["toolInput"] = v.ToolInput
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAIInvalidToolInputError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAIInvalidToolInputError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAIInvalidToolInputError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_InvalidToolInputError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAIToolCallRepairError struct {
 	Cause         AiMuxErrorInput `json:"cause"`
 	OriginalError AiMuxErrorInput `json:"originalError"`
 }
 
-func (v *AiMuxErrorInputVariantAIToolCallRepairError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolCallRepairError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAIToolCallRepairError
-	if err := dtoTag(object, "name", "AI_ToolCallRepairError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolCallRepairError: %w", err)
-	}
-	if err := dtoRead(object, "cause", &next.Cause, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolCallRepairError: %w", err)
-	}
-	if err := dtoRead(object, "originalError", &next.OriginalError, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolCallRepairError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAIToolCallRepairError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_ToolCallRepairError"
-	object["cause"] = v.Cause
-	object["originalError"] = v.OriginalError
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAIToolCallRepairError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAIToolCallRepairError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAIToolCallRepairError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_ToolCallRepairError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAIInvalidArgumentError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorInputVariantAIInvalidArgumentError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIInvalidArgumentError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAIInvalidArgumentError
-	if err := dtoTag(object, "name", "AI_InvalidArgumentError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIInvalidArgumentError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIInvalidArgumentError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAIInvalidArgumentError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_InvalidArgumentError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAIInvalidArgumentError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAIInvalidArgumentError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAIInvalidArgumentError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_InvalidArgumentError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAIInvalidPromptError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorInputVariantAIInvalidPromptError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIInvalidPromptError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAIInvalidPromptError
-	if err := dtoTag(object, "name", "AI_InvalidPromptError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIInvalidPromptError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIInvalidPromptError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAIInvalidPromptError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_InvalidPromptError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAIInvalidPromptError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAIInvalidPromptError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAIInvalidPromptError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_InvalidPromptError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAILoadAPIKeyError struct {
 	Description string `json:"description"`
 	EnvVar      string `json:"envVar"`
 }
 
-func (v *AiMuxErrorInputVariantAILoadAPIKeyError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAILoadAPIKeyError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAILoadAPIKeyError
-	if err := dtoTag(object, "name", "AI_LoadAPIKeyError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAILoadAPIKeyError: %w", err)
-	}
-	if err := dtoRead(object, "description", &next.Description, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAILoadAPIKeyError: %w", err)
-	}
-	if err := dtoRead(object, "envVar", &next.EnvVar, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAILoadAPIKeyError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAILoadAPIKeyError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_LoadAPIKeyError"
-	object["description"] = v.Description
-	object["envVar"] = v.EnvVar
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAILoadAPIKeyError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAILoadAPIKeyError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAILoadAPIKeyError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_LoadAPIKeyError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAILoadSettingError struct {
 	EnvVar string `json:"envVar"`
@@ -1728,124 +1021,58 @@ type AiMuxErrorInputVariantAILoadSettingError struct {
 	SettingName string `json:"settingName"`
 }
 
-func (v *AiMuxErrorInputVariantAILoadSettingError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAILoadSettingError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAILoadSettingError
-	if err := dtoTag(object, "name", "AI_LoadSettingError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAILoadSettingError: %w", err)
-	}
-	if err := dtoRead(object, "envVar", &next.EnvVar, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAILoadSettingError: %w", err)
-	}
-	if err := dtoRead(object, "settingName", &next.SettingName, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAILoadSettingError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAILoadSettingError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_LoadSettingError"
-	object["envVar"] = v.EnvVar
-	object["settingName"] = v.SettingName
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAILoadSettingError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAILoadSettingError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAILoadSettingError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_LoadSettingError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAITokenExpiredError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorInputVariantAITokenExpiredError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAITokenExpiredError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAITokenExpiredError
-	if err := dtoTag(object, "name", "AI_TokenExpiredError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAITokenExpiredError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAITokenExpiredError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAITokenExpiredError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_TokenExpiredError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAITokenExpiredError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAITokenExpiredError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAITokenExpiredError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_TokenExpiredError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAIUnsupportedFunctionalityError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorInputVariantAIUnsupportedFunctionalityError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIUnsupportedFunctionalityError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAIUnsupportedFunctionalityError
-	if err := dtoTag(object, "name", "AI_UnsupportedFunctionalityError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIUnsupportedFunctionalityError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIUnsupportedFunctionalityError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAIUnsupportedFunctionalityError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_UnsupportedFunctionalityError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAIUnsupportedFunctionalityError) isAiMuxErrorInput() {}
 
-type AiMuxErrorInputVariantAINoSuchModelError struct {
-	ModelID   string        `json:"modelId"`
-	ModelType Field[string] `json:"modelType,omitempty"`
+func (v AiMuxErrorInputVariantAIUnsupportedFunctionalityError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAIUnsupportedFunctionalityError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_UnsupportedFunctionalityError", plain: plain(v)})
 }
 
-func (v *AiMuxErrorInputVariantAINoSuchModelError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchModelError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAINoSuchModelError
-	if err := dtoTag(object, "name", "AI_NoSuchModelError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchModelError: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchModelError: %w", err)
-	}
-	if err := dtoRead(object, "modelType", &next.ModelType, false, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchModelError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAINoSuchModelError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_NoSuchModelError"
-	object["modelId"] = v.ModelID
-	if v.ModelType.Present {
-		object["modelType"] = v.ModelType
-	}
-	return json.Marshal(object)
+type AiMuxErrorInputVariantAINoSuchModelError struct {
+	ModelID   string  `json:"modelId"`
+	ModelType *string `json:"modelType,omitzero"`
 }
 
 func (AiMuxErrorInputVariantAINoSuchModelError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAINoSuchModelError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAINoSuchModelError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_NoSuchModelError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAINoSuchProviderError struct {
 	AvailableProviders []string `json:"availableProviders"`
@@ -1854,69 +1081,29 @@ type AiMuxErrorInputVariantAINoSuchProviderError struct {
 	ProviderID         string   `json:"providerId"`
 }
 
-func (v *AiMuxErrorInputVariantAINoSuchProviderError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchProviderError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAINoSuchProviderError
-	if err := dtoTag(object, "name", "AI_NoSuchProviderError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchProviderError: %w", err)
-	}
-	if err := dtoRead(object, "availableProviders", &next.AvailableProviders, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchProviderError: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchProviderError: %w", err)
-	}
-	if err := dtoRead(object, "modelType", &next.ModelType, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchProviderError: %w", err)
-	}
-	if err := dtoRead(object, "providerId", &next.ProviderID, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAINoSuchProviderError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAINoSuchProviderError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_NoSuchProviderError"
-	object["availableProviders"] = v.AvailableProviders
-	object["modelId"] = v.ModelID
-	object["modelType"] = v.ModelType
-	object["providerId"] = v.ProviderID
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAINoSuchProviderError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAINoSuchProviderError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAINoSuchProviderError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_NoSuchProviderError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAIMissingToolResultsError struct {
 	ToolCallIds []string `json:"toolCallIds"`
 }
 
-func (v *AiMuxErrorInputVariantAIMissingToolResultsError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIMissingToolResultsError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAIMissingToolResultsError
-	if err := dtoTag(object, "name", "AI_MissingToolResultsError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIMissingToolResultsError: %w", err)
-	}
-	if err := dtoRead(object, "toolCallIds", &next.ToolCallIds, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIMissingToolResultsError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAIMissingToolResultsError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_MissingToolResultsError"
-	object["toolCallIds"] = v.ToolCallIds
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAIMissingToolResultsError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAIMissingToolResultsError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAIMissingToolResultsError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_MissingToolResultsError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAIToolChoiceViolationError struct {
 	// The content the model returned, before tool-call parsing, so a tool
@@ -1933,129 +1120,57 @@ type AiMuxErrorInputVariantAIToolChoiceViolationError struct {
 	ToolChoice LanguageModelV4ToolChoice `json:"toolChoice"`
 }
 
-func (v *AiMuxErrorInputVariantAIToolChoiceViolationError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolChoiceViolationError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAIToolChoiceViolationError
-	if err := dtoTag(object, "name", "AI_ToolChoiceViolationError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolChoiceViolationError: %w", err)
-	}
-	if err := dtoRead(object, "content", &next.Content, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolChoiceViolationError: %w", err)
-	}
-	if err := dtoRead(object, "finishReason", &next.FinishReason, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolChoiceViolationError: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolChoiceViolationError: %w", err)
-	}
-	if err := dtoRead(object, "provider", &next.Provider, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolChoiceViolationError: %w", err)
-	}
-	if err := dtoRead(object, "toolChoice", &next.ToolChoice, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIToolChoiceViolationError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAIToolChoiceViolationError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_ToolChoiceViolationError"
-	object["content"] = v.Content
-	object["finishReason"] = v.FinishReason
-	object["modelId"] = v.ModelID
-	object["provider"] = v.Provider
-	object["toolChoice"] = v.ToolChoice
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAIToolChoiceViolationError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAIToolChoiceViolationError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAIToolChoiceViolationError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_ToolChoiceViolationError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantTimeoutError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorInputVariantTimeoutError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantTimeoutError: %w", err)
-	}
-	var next AiMuxErrorInputVariantTimeoutError
-	if err := dtoTag(object, "name", "TimeoutError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantTimeoutError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantTimeoutError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantTimeoutError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "TimeoutError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantTimeoutError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantTimeoutError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantTimeoutError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "TimeoutError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAbortError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorInputVariantAbortError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAbortError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAbortError
-	if err := dtoTag(object, "name", "AbortError"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAbortError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAbortError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAbortError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AbortError"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAbortError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAbortError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAbortError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AbortError", plain: plain(v)})
+}
 
 type AiMuxErrorInputVariantAIError struct {
 	Message string `json:"message"`
 }
 
-func (v *AiMuxErrorInputVariantAIError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIError: %w", err)
-	}
-	var next AiMuxErrorInputVariantAIError
-	if err := dtoTag(object, "name", "AI_Error"); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("AiMuxErrorInputVariantAIError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AiMuxErrorInputVariantAIError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["name"] = "AI_Error"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (AiMuxErrorInputVariantAIError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAIError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAIError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_Error", plain: plain(v)})
+}
 
 // What a failed API call observed — the field set of the AI SDK's
 // `APICallError` (`statusCode` / `responseBody`), which this project's error
@@ -2079,7 +1194,7 @@ func (AiMuxErrorInputVariantAIError) isAiMuxErrorInput() {}
 // AI SDK's `APICallError` contract.
 type APICallError struct {
 	// Parsed provider error data.
-	Data Field[json.RawMessage] `json:"data,omitempty"`
+	Data Field[json.RawMessage] `json:"data,omitzero"`
 	// Whether retrying can help (`APICallError.isRetryable`) — stored at
 	// construction, exactly like the AI SDK: the response path computes it
 	// from the status (408/409/429 or 5xx), and the transport path (no response, so
@@ -2092,15 +1207,15 @@ type APICallError struct {
 	// Provider's machine-readable code (OpenAI's `code`/`type`,
 	// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
 	// status. Our normalized take on `APICallError.data`.
-	ProviderCode Field[string] `json:"providerCode,omitempty"`
+	ProviderCode *string `json:"providerCode,omitzero"`
 	// Sanitized request values used to create the API request.
 	RequestBodyValues json.RawMessage `json:"requestBodyValues"`
 	// The raw response body, verbatim (`APICallError.responseBody`) — the
 	// lossless evidence when `message`/`provider_code` are extractions.
 	// `None` when the error did not come from a response body.
-	ResponseBody Field[string] `json:"responseBody,omitempty"`
+	ResponseBody *string `json:"responseBody,omitzero"`
 	// Sanitized response headers.
-	ResponseHeaders Field[map[string]string] `json:"responseHeaders,omitempty"`
+	ResponseHeaders map[string]string `json:"responseHeaders,omitzero"`
 	// HTTP status of the response, when it came from one
 	// (`APICallError.statusCode`). The HTTP layer fills the observed status
 	// for every response-derived error. An error frame inside a stream
@@ -2108,69 +1223,9 @@ type APICallError struct {
 	// stream errors do (OpenAI infers one from the frame's `code`/`type`,
 	// Anthropic from its error type); errors built without an HTTP exchange
 	// leave it `None`.
-	StatusCode Field[uint16] `json:"statusCode,omitempty"`
+	StatusCode *uint16 `json:"statusCode,omitzero"`
 	// Sanitized request URL. Required for every API-derived failure.
 	URL string `json:"url"`
-}
-
-func (v *APICallError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("APICallError: %w", err)
-	}
-	var next APICallError
-	if err := dtoRead(object, "data", &next.Data, false, true); err != nil {
-		return fmt.Errorf("APICallError: %w", err)
-	}
-	if err := dtoRead(object, "isRetryable", &next.IsRetryable, true, false); err != nil {
-		return fmt.Errorf("APICallError: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("APICallError: %w", err)
-	}
-	if err := dtoRead(object, "providerCode", &next.ProviderCode, false, true); err != nil {
-		return fmt.Errorf("APICallError: %w", err)
-	}
-	if err := dtoRead(object, "requestBodyValues", &next.RequestBodyValues, true, true); err != nil {
-		return fmt.Errorf("APICallError: %w", err)
-	}
-	if err := dtoRead(object, "responseBody", &next.ResponseBody, false, true); err != nil {
-		return fmt.Errorf("APICallError: %w", err)
-	}
-	if err := dtoRead(object, "responseHeaders", &next.ResponseHeaders, false, true); err != nil {
-		return fmt.Errorf("APICallError: %w", err)
-	}
-	if err := dtoRead(object, "statusCode", &next.StatusCode, false, true); err != nil {
-		return fmt.Errorf("APICallError: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("APICallError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v APICallError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Data.Present {
-		object["data"] = v.Data
-	}
-	object["isRetryable"] = v.IsRetryable
-	object["message"] = v.Message
-	if v.ProviderCode.Present {
-		object["providerCode"] = v.ProviderCode
-	}
-	object["requestBodyValues"] = v.RequestBodyValues
-	if v.ResponseBody.Present {
-		object["responseBody"] = v.ResponseBody
-	}
-	if v.ResponseHeaders.Present {
-		object["responseHeaders"] = v.ResponseHeaders
-	}
-	if v.StatusCode.Present {
-		object["statusCode"] = v.StatusCode
-	}
-	object["url"] = v.URL
-	return json.Marshal(object)
 }
 
 // What a failed API call observed — the field set of the AI SDK's
@@ -2195,12 +1250,12 @@ func (v APICallError) MarshalJSON() ([]byte, error) {
 // AI SDK's `APICallError` contract.
 type APICallErrorInput struct {
 	// Parsed provider error data.
-	Data Field[json.RawMessage] `json:"data,omitempty"`
+	Data Field[json.RawMessage] `json:"data,omitzero"`
 	// Whether retrying can help (`APICallError.isRetryable`) — stored at
 	// construction, exactly like the AI SDK: the response path computes it
 	// from the status (408/409/429 or 5xx), and the transport path (no response, so
 	// no status to compute from) sets it to `true` explicitly.
-	IsRetryable Field[bool] `json:"isRetryable,omitempty"`
+	IsRetryable *bool `json:"isRetryable,omitzero"`
 	// Human-readable failure text. Provider text is verbatim when available;
 	// locally detected transport/parse failures include their source detail.
 	// Never includes an HTTP status prefix.
@@ -2208,15 +1263,15 @@ type APICallErrorInput struct {
 	// Provider's machine-readable code (OpenAI's `code`/`type`,
 	// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
 	// status. Our normalized take on `APICallError.data`.
-	ProviderCode Field[string] `json:"providerCode,omitempty"`
+	ProviderCode *string `json:"providerCode,omitzero"`
 	// Sanitized request values used to create the API request.
 	RequestBodyValues json.RawMessage `json:"requestBodyValues"`
 	// The raw response body, verbatim (`APICallError.responseBody`) — the
 	// lossless evidence when `message`/`provider_code` are extractions.
 	// `None` when the error did not come from a response body.
-	ResponseBody Field[string] `json:"responseBody,omitempty"`
+	ResponseBody *string `json:"responseBody,omitzero"`
 	// Sanitized response headers.
-	ResponseHeaders Field[map[string]string] `json:"responseHeaders,omitempty"`
+	ResponseHeaders map[string]string `json:"responseHeaders,omitzero"`
 	// HTTP status of the response, when it came from one
 	// (`APICallError.statusCode`). The HTTP layer fills the observed status
 	// for every response-derived error. An error frame inside a stream
@@ -2224,71 +1279,9 @@ type APICallErrorInput struct {
 	// stream errors do (OpenAI infers one from the frame's `code`/`type`,
 	// Anthropic from its error type); errors built without an HTTP exchange
 	// leave it `None`.
-	StatusCode Field[uint16] `json:"statusCode,omitempty"`
+	StatusCode *uint16 `json:"statusCode,omitzero"`
 	// Sanitized request URL. Required for every API-derived failure.
 	URL string `json:"url"`
-}
-
-func (v *APICallErrorInput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("APICallErrorInput: %w", err)
-	}
-	var next APICallErrorInput
-	if err := dtoRead(object, "data", &next.Data, false, true); err != nil {
-		return fmt.Errorf("APICallErrorInput: %w", err)
-	}
-	if err := dtoRead(object, "isRetryable", &next.IsRetryable, false, false); err != nil {
-		return fmt.Errorf("APICallErrorInput: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("APICallErrorInput: %w", err)
-	}
-	if err := dtoRead(object, "providerCode", &next.ProviderCode, false, true); err != nil {
-		return fmt.Errorf("APICallErrorInput: %w", err)
-	}
-	if err := dtoRead(object, "requestBodyValues", &next.RequestBodyValues, true, true); err != nil {
-		return fmt.Errorf("APICallErrorInput: %w", err)
-	}
-	if err := dtoRead(object, "responseBody", &next.ResponseBody, false, true); err != nil {
-		return fmt.Errorf("APICallErrorInput: %w", err)
-	}
-	if err := dtoRead(object, "responseHeaders", &next.ResponseHeaders, false, true); err != nil {
-		return fmt.Errorf("APICallErrorInput: %w", err)
-	}
-	if err := dtoRead(object, "statusCode", &next.StatusCode, false, true); err != nil {
-		return fmt.Errorf("APICallErrorInput: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("APICallErrorInput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v APICallErrorInput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Data.Present {
-		object["data"] = v.Data
-	}
-	if v.IsRetryable.Present {
-		object["isRetryable"] = v.IsRetryable
-	}
-	object["message"] = v.Message
-	if v.ProviderCode.Present {
-		object["providerCode"] = v.ProviderCode
-	}
-	object["requestBodyValues"] = v.RequestBodyValues
-	if v.ResponseBody.Present {
-		object["responseBody"] = v.ResponseBody
-	}
-	if v.ResponseHeaders.Present {
-		object["responseHeaders"] = v.ResponseHeaders
-	}
-	if v.StatusCode.Present {
-		object["statusCode"] = v.StatusCode
-	}
-	object["url"] = v.URL
-	return json.Marshal(object)
 }
 
 // Aspect ratio in `{width}:{height}` format (e.g. `"16:9"`).
@@ -2301,317 +1294,210 @@ type AspectRatio = string
 // The content of an assistant message: a string or parts (upstream
 // `AssistantContent`).
 type AssistantContentVariant interface{ isAssistantContent() }
-type AssistantContent struct{ Value AssistantContentVariant }
+type AssistantContent struct {
+	Value AssistantContentVariant
+}
 
 func (v AssistantContent) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("AssistantContent: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *AssistantContent) UnmarshalJSON(data []byte) error {
+	var err error
 	{
 		var next string
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = AssistantContentBranch0{Value: next}
 			return nil
 		}
 	}
 	{
 		var next []AssistantContentPart
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = AssistantContentBranch1{Value: next}
 			return nil
 		}
 	}
-	return fmt.Errorf("AssistantContent: no matching branch")
+	return err
 }
 
 type AssistantContentBranch0 struct{ Value string }
 
-func (AssistantContentBranch0) isAssistantContent()            {}
-func (v AssistantContentBranch0) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (AssistantContentBranch0) isAssistantContent() {}
+
+func (v AssistantContentBranch0) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type AssistantContentBranch1 struct{ Value []AssistantContentPart }
 
-func (AssistantContentBranch1) isAssistantContent()            {}
-func (v AssistantContentBranch1) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (AssistantContentBranch1) isAssistantContent() {}
+
+func (v AssistantContentBranch1) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 // A part of an assistant message: upstream's `TextPart | CustomPart |
 // FilePart | ReasoningPart | ReasoningFilePart | ToolCallPart |
 // ToolResultPart | ToolApprovalRequest`.
 type AssistantContentPartVariant interface{ isAssistantContentPart() }
-type AssistantContentPart struct{ Value AssistantContentPartVariant }
+type AssistantContentPart struct {
+	Value AssistantContentPartVariant
+}
 
 func (v AssistantContentPart) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("AssistantContentPart: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *AssistantContentPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantContentPart: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("AssistantContentPart: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "text" {
-		var next AssistantContentPartVariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "custom" {
+	switch tag.Type {
+	case "custom":
 		var next AssistantContentPartVariantCustom
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "file" {
+		v.Value = next
+		return nil
+	case "file":
 		var next AssistantContentPartVariantFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "reasoning" {
+		v.Value = next
+		return nil
+	case "reasoning":
 		var next AssistantContentPartVariantReasoning
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "reasoning-file" {
+		v.Value = next
+		return nil
+	case "reasoning-file":
 		var next AssistantContentPartVariantReasoningFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "tool-call" {
-		var next AssistantContentPartVariantToolCall
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		v.Value = next
+		return nil
+	case "text":
+		var next AssistantContentPartVariantText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "tool-result" {
-		var next AssistantContentPartVariantToolResult
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-approval-request" {
+		v.Value = next
+		return nil
+	case "tool-approval-request":
 		var next AssistantContentPartVariantToolApprovalRequest
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "tool-call":
+		var next AssistantContentPartVariantToolCall
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-result":
+		var next AssistantContentPartVariantToolResult
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("AssistantContentPart: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("AssistantContentPart: unknown type tag %q", tag.Type)
 }
 
 type AssistantContentPartVariantText struct {
 	// Provider-specific options for this part.
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Text            string                                       `json:"text"`
-}
-
-func (v *AssistantContentPartVariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantContentPartVariantText: %w", err)
-	}
-	var next AssistantContentPartVariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantText: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantText: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantContentPartVariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Text            string                                `json:"text"`
 }
 
 func (AssistantContentPartVariantText) isAssistantContentPart() {}
 
-type AssistantContentPartVariantCustom struct {
-	Kind            NamespacedKind                               `json:"kind"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v AssistantContentPartVariantText) MarshalJSON() ([]byte, error) {
+	type plain AssistantContentPartVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
 }
 
-func (v *AssistantContentPartVariantCustom) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantContentPartVariantCustom: %w", err)
-	}
-	var next AssistantContentPartVariantCustom
-	if err := dtoTag(object, "type", "custom"); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantCustom: %w", err)
-	}
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantCustom: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantCustom: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantContentPartVariantCustom) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "custom"
-	object["kind"] = v.Kind
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type AssistantContentPartVariantCustom struct {
+	Kind            NamespacedKind                        `json:"kind"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (AssistantContentPartVariantCustom) isAssistantContentPart() {}
 
-type AssistantContentPartVariantFile struct {
-	Data            FilePartData                                 `json:"data"`
-	Filename        Field[string]                                `json:"filename,omitempty"`
-	MediaType       string                                       `json:"mediaType"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v AssistantContentPartVariantCustom) MarshalJSON() ([]byte, error) {
+	type plain AssistantContentPartVariantCustom
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "custom", plain: plain(v)})
 }
 
-func (v *AssistantContentPartVariantFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantContentPartVariantFile: %w", err)
-	}
-	var next AssistantContentPartVariantFile
-	if err := dtoTag(object, "type", "file"); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantContentPartVariantFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file"
-	object["data"] = v.Data
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type AssistantContentPartVariantFile struct {
+	Data            FilePartData                          `json:"data"`
+	Filename        *string                               `json:"filename,omitzero"`
+	MediaType       string                                `json:"mediaType"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (AssistantContentPartVariantFile) isAssistantContentPart() {}
+
+func (v AssistantContentPartVariantFile) MarshalJSON() ([]byte, error) {
+	type plain AssistantContentPartVariantFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file", plain: plain(v)})
+}
 
 type AssistantContentPartVariantReasoning struct {
 	// Provider-specific options for this part (e.g.
 	// `anthropic.signature`, `anthropic.redactedData`,
 	// `anthropic.cacheControl`).
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Text            string                                       `json:"text"`
-}
-
-func (v *AssistantContentPartVariantReasoning) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantContentPartVariantReasoning: %w", err)
-	}
-	var next AssistantContentPartVariantReasoning
-	if err := dtoTag(object, "type", "reasoning"); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantReasoning: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantReasoning: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantReasoning: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantContentPartVariantReasoning) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Text            string                                `json:"text"`
 }
 
 func (AssistantContentPartVariantReasoning) isAssistantContentPart() {}
 
-type AssistantContentPartVariantReasoningFile struct {
-	Data            ReasoningFilePartData                        `json:"data"`
-	MediaType       string                                       `json:"mediaType"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v AssistantContentPartVariantReasoning) MarshalJSON() ([]byte, error) {
+	type plain AssistantContentPartVariantReasoning
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning", plain: plain(v)})
 }
 
-func (v *AssistantContentPartVariantReasoningFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantContentPartVariantReasoningFile: %w", err)
-	}
-	var next AssistantContentPartVariantReasoningFile
-	if err := dtoTag(object, "type", "reasoning-file"); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantReasoningFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantContentPartVariantReasoningFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning-file"
-	object["data"] = v.Data
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type AssistantContentPartVariantReasoningFile struct {
+	Data            ReasoningFilePartData                 `json:"data"`
+	MediaType       string                                `json:"mediaType"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (AssistantContentPartVariantReasoningFile) isAssistantContentPart() {}
+
+func (v AssistantContentPartVariantReasoningFile) MarshalJSON() ([]byte, error) {
+	type plain AssistantContentPartVariantReasoningFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning-file", plain: plain(v)})
+}
 
 type AssistantContentPartVariantToolCall struct {
 	// Arguments as a JSON value (usually an object).
@@ -2619,528 +1505,246 @@ type AssistantContentPartVariantToolCall struct {
 	// Whether the tool call is executed by the provider rather than by
 	// the client. Providers need it to replay server tool calls on a
 	// later turn.
-	ProviderExecuted Field[bool] `json:"providerExecuted,omitempty"`
+	ProviderExecuted *bool `json:"providerExecuted,omitzero"`
 	// Provider-specific options for this part (e.g.
 	// `anthropic.cacheControl`).
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	ToolCallID      string                                       `json:"toolCallId"`
-	ToolName        string                                       `json:"toolName"`
-}
-
-func (v *AssistantContentPartVariantToolCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolCall: %w", err)
-	}
-	var next AssistantContentPartVariantToolCall
-	if err := dtoTag(object, "type", "tool-call"); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, true, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantContentPartVariantToolCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-call"
-	object["input"] = v.Input
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	ToolCallID      string                                `json:"toolCallId"`
+	ToolName        string                                `json:"toolName"`
 }
 
 func (AssistantContentPartVariantToolCall) isAssistantContentPart() {}
 
+func (v AssistantContentPartVariantToolCall) MarshalJSON() ([]byte, error) {
+	type plain AssistantContentPartVariantToolCall
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-call", plain: plain(v)})
+}
+
 type AssistantContentPartVariantToolResult struct {
 	Output ToolResultOutput `json:"output"`
 	// Provider-specific options for this part (e.g. `anthropic.cacheControl`).
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	ToolCallID      string                                       `json:"toolCallId"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	ToolCallID      string                                `json:"toolCallId"`
 	// The tool name. Required upstream; when absent here, the conversion
 	// takes it from the preceding tool call with the same id.
-	ToolName Field[string] `json:"toolName,omitempty"`
-}
-
-func (v *AssistantContentPartVariantToolResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolResult: %w", err)
-	}
-	var next AssistantContentPartVariantToolResult
-	if err := dtoTag(object, "type", "tool-result"); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, true, false); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, false, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantContentPartVariantToolResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-result"
-	object["output"] = v.Output
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["toolCallId"] = v.ToolCallID
-	if v.ToolName.Present {
-		object["toolName"] = v.ToolName
-	}
-	return json.Marshal(object)
+	ToolName *string `json:"toolName,omitzero"`
 }
 
 func (AssistantContentPartVariantToolResult) isAssistantContentPart() {}
 
-type AssistantContentPartVariantToolApprovalRequest struct {
-	ApprovalID       string                 `json:"approvalId"`
-	InputSchemaInput Field[json.RawMessage] `json:"inputSchemaInput,omitempty"`
-	IsAutomatic      Field[bool]            `json:"isAutomatic,omitempty"`
-	Reason           Field[string]          `json:"reason,omitempty"`
-	Signature        Field[string]          `json:"signature,omitempty"`
-	ToolCallID       string                 `json:"toolCallId"`
+func (v AssistantContentPartVariantToolResult) MarshalJSON() ([]byte, error) {
+	type plain AssistantContentPartVariantToolResult
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-result", plain: plain(v)})
 }
 
-func (v *AssistantContentPartVariantToolApprovalRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolApprovalRequest: %w", err)
-	}
-	var next AssistantContentPartVariantToolApprovalRequest
-	if err := dtoTag(object, "type", "tool-approval-request"); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "inputSchemaInput", &next.InputSchemaInput, false, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "isAutomatic", &next.IsAutomatic, false, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "signature", &next.Signature, false, true); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("AssistantContentPartVariantToolApprovalRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantContentPartVariantToolApprovalRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-approval-request"
-	object["approvalId"] = v.ApprovalID
-	if v.InputSchemaInput.Present {
-		object["inputSchemaInput"] = v.InputSchemaInput
-	}
-	if v.IsAutomatic.Present {
-		object["isAutomatic"] = v.IsAutomatic
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	if v.Signature.Present {
-		object["signature"] = v.Signature
-	}
-	object["toolCallId"] = v.ToolCallID
-	return json.Marshal(object)
+type AssistantContentPartVariantToolApprovalRequest struct {
+	ApprovalID       string                 `json:"approvalId"`
+	InputSchemaInput Field[json.RawMessage] `json:"inputSchemaInput,omitzero"`
+	IsAutomatic      *bool                  `json:"isAutomatic,omitzero"`
+	Reason           *string                `json:"reason,omitzero"`
+	Signature        *string                `json:"signature,omitzero"`
+	ToolCallID       string                 `json:"toolCallId"`
 }
 
 func (AssistantContentPartVariantToolApprovalRequest) isAssistantContentPart() {}
 
+func (v AssistantContentPartVariantToolApprovalRequest) MarshalJSON() ([]byte, error) {
+	type plain AssistantContentPartVariantToolApprovalRequest
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-approval-request", plain: plain(v)})
+}
+
 // Parts allowed in an assistant message.
 type AssistantPartVariant interface{ isAssistantPart() }
-type AssistantPart struct{ Value AssistantPartVariant }
+type AssistantPart struct {
+	Value AssistantPartVariant
+}
 
 func (v AssistantPart) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("AssistantPart: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *AssistantPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantPart: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("AssistantPart: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "text" {
-		var next AssistantPartVariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "file" {
-		var next AssistantPartVariantFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "reasoning" {
-		var next AssistantPartVariantReasoning
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "reasoning-file" {
-		var next AssistantPartVariantReasoningFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "custom" {
+	switch tag.Type {
+	case "custom":
 		var next AssistantPartVariantCustom
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "tool-call" {
+		v.Value = next
+		return nil
+	case "file":
+		var next AssistantPartVariantFile
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "reasoning":
+		var next AssistantPartVariantReasoning
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "reasoning-file":
+		var next AssistantPartVariantReasoningFile
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "text":
+		var next AssistantPartVariantText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-call":
 		var next AssistantPartVariantToolCall
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "tool-result" {
+		v.Value = next
+		return nil
+	case "tool-result":
 		var next AssistantPartVariantToolResult
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("AssistantPart: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("AssistantPart: unknown type tag %q", tag.Type)
 }
 
 type AssistantPartVariantText struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Text            string                                       `json:"text"`
-}
-
-func (v *AssistantPartVariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantPartVariantText: %w", err)
-	}
-	var next AssistantPartVariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("AssistantPartVariantText: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("AssistantPartVariantText: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("AssistantPartVariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantPartVariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Text            string                                `json:"text"`
 }
 
 func (AssistantPartVariantText) isAssistantPart() {}
 
-type AssistantPartVariantFile struct {
-	Data            FileData                                     `json:"data"`
-	Filename        Field[string]                                `json:"filename,omitempty"`
-	MediaType       string                                       `json:"mediaType"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v AssistantPartVariantText) MarshalJSON() ([]byte, error) {
+	type plain AssistantPartVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
 }
 
-func (v *AssistantPartVariantFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantPartVariantFile: %w", err)
-	}
-	var next AssistantPartVariantFile
-	if err := dtoTag(object, "type", "file"); err != nil {
-		return fmt.Errorf("AssistantPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("AssistantPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("AssistantPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("AssistantPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("AssistantPartVariantFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantPartVariantFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file"
-	object["data"] = v.Data
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type AssistantPartVariantFile struct {
+	Data            FileData                              `json:"data"`
+	Filename        *string                               `json:"filename,omitzero"`
+	MediaType       string                                `json:"mediaType"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (AssistantPartVariantFile) isAssistantPart() {}
 
-type AssistantPartVariantReasoning struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Text            string                                       `json:"text"`
+func (v AssistantPartVariantFile) MarshalJSON() ([]byte, error) {
+	type plain AssistantPartVariantFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file", plain: plain(v)})
 }
 
-func (v *AssistantPartVariantReasoning) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantPartVariantReasoning: %w", err)
-	}
-	var next AssistantPartVariantReasoning
-	if err := dtoTag(object, "type", "reasoning"); err != nil {
-		return fmt.Errorf("AssistantPartVariantReasoning: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("AssistantPartVariantReasoning: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("AssistantPartVariantReasoning: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantPartVariantReasoning) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+type AssistantPartVariantReasoning struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Text            string                                `json:"text"`
 }
 
 func (AssistantPartVariantReasoning) isAssistantPart() {}
 
-type AssistantPartVariantReasoningFile struct {
-	Data            GeneratedFileData                            `json:"data"`
-	MediaType       string                                       `json:"mediaType"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v AssistantPartVariantReasoning) MarshalJSON() ([]byte, error) {
+	type plain AssistantPartVariantReasoning
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning", plain: plain(v)})
 }
 
-func (v *AssistantPartVariantReasoningFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantPartVariantReasoningFile: %w", err)
-	}
-	var next AssistantPartVariantReasoningFile
-	if err := dtoTag(object, "type", "reasoning-file"); err != nil {
-		return fmt.Errorf("AssistantPartVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("AssistantPartVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("AssistantPartVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("AssistantPartVariantReasoningFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantPartVariantReasoningFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning-file"
-	object["data"] = v.Data
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type AssistantPartVariantReasoningFile struct {
+	Data            GeneratedFileData                     `json:"data"`
+	MediaType       string                                `json:"mediaType"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (AssistantPartVariantReasoningFile) isAssistantPart() {}
 
-type AssistantPartVariantCustom struct {
-	Kind            NamespacedKind                               `json:"kind"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v AssistantPartVariantReasoningFile) MarshalJSON() ([]byte, error) {
+	type plain AssistantPartVariantReasoningFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning-file", plain: plain(v)})
 }
 
-func (v *AssistantPartVariantCustom) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantPartVariantCustom: %w", err)
-	}
-	var next AssistantPartVariantCustom
-	if err := dtoTag(object, "type", "custom"); err != nil {
-		return fmt.Errorf("AssistantPartVariantCustom: %w", err)
-	}
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("AssistantPartVariantCustom: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("AssistantPartVariantCustom: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantPartVariantCustom) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "custom"
-	object["kind"] = v.Kind
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type AssistantPartVariantCustom struct {
+	Kind            NamespacedKind                        `json:"kind"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (AssistantPartVariantCustom) isAssistantPart() {}
 
-type AssistantPartVariantToolCall struct {
-	Input            json.RawMessage                              `json:"input"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderOptions  Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
+func (v AssistantPartVariantCustom) MarshalJSON() ([]byte, error) {
+	type plain AssistantPartVariantCustom
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "custom", plain: plain(v)})
 }
 
-func (v *AssistantPartVariantToolCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantPartVariantToolCall: %w", err)
-	}
-	var next AssistantPartVariantToolCall
-	if err := dtoTag(object, "type", "tool-call"); err != nil {
-		return fmt.Errorf("AssistantPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, true, true); err != nil {
-		return fmt.Errorf("AssistantPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("AssistantPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("AssistantPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("AssistantPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("AssistantPartVariantToolCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantPartVariantToolCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-call"
-	object["input"] = v.Input
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+type AssistantPartVariantToolCall struct {
+	Input            json.RawMessage                       `json:"input"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderOptions  map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
 }
 
 func (AssistantPartVariantToolCall) isAssistantPart() {}
 
-type AssistantPartVariantToolResult struct {
-	Output          ToolResultOutput2                            `json:"output"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	ToolCallID      string                                       `json:"toolCallId"`
-	ToolName        string                                       `json:"toolName"`
+func (v AssistantPartVariantToolCall) MarshalJSON() ([]byte, error) {
+	type plain AssistantPartVariantToolCall
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-call", plain: plain(v)})
 }
 
-func (v *AssistantPartVariantToolResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("AssistantPartVariantToolResult: %w", err)
-	}
-	var next AssistantPartVariantToolResult
-	if err := dtoTag(object, "type", "tool-result"); err != nil {
-		return fmt.Errorf("AssistantPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, true, false); err != nil {
-		return fmt.Errorf("AssistantPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("AssistantPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("AssistantPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("AssistantPartVariantToolResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v AssistantPartVariantToolResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-result"
-	object["output"] = v.Output
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+type AssistantPartVariantToolResult struct {
+	Output          ToolResultOutput2                     `json:"output"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	ToolCallID      string                                `json:"toolCallId"`
+	ToolName        string                                `json:"toolName"`
 }
 
 func (AssistantPartVariantToolResult) isAssistantPart() {}
+
+func (v AssistantPartVariantToolResult) MarshalJSON() ([]byte, error) {
+	type plain AssistantPartVariantToolResult
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-result", plain: plain(v)})
+}
 
 // Generated audio: a base64-encoded string or raw binary bytes.
 //
@@ -3166,25 +1770,6 @@ const (
 	AuditModeStrict   AuditMode = "strict"
 )
 
-func (v *AuditMode) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "disabled":
-		*v = AuditMode(next)
-		return nil
-	case "shared":
-		*v = AuditMode(next)
-		return nil
-	case "strict":
-		*v = AuditMode(next)
-		return nil
-	}
-	return fmt.Errorf("AuditMode: unknown value %s", data)
-}
-
 type AuditMode2 string
 
 const (
@@ -3193,117 +1778,68 @@ const (
 	AuditMode2Strict AuditMode2 = "strict"
 )
 
-func (v *AuditMode2) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "off":
-		*v = AuditMode2(next)
-		return nil
-	case "shared":
-		*v = AuditMode2(next)
-		return nil
-	case "strict":
-		*v = AuditMode2(next)
-		return nil
-	}
-	return fmt.Errorf("AuditMode2: unknown value %s", data)
-}
-
 type BackendConfigVariant interface{ isBackendConfig() }
-type BackendConfig struct{ Value BackendConfigVariant }
+type BackendConfig struct {
+	Value BackendConfigVariant
+}
 
 func (v BackendConfig) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("BackendConfig: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *BackendConfig) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("BackendConfig: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("BackendConfig: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "ring" {
-		var next BackendConfigVariantRing
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "jsonl" {
+	switch tag.Type {
+	case "jsonl":
 		var next BackendConfigVariantJsonl
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "ring":
+		var next BackendConfigVariantRing
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("BackendConfig: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("BackendConfig: unknown type tag %q", tag.Type)
 }
 
 type BackendConfigVariantRing struct {
-	Capacity Field[uint64] `json:"capacity,omitempty"`
-}
-
-func (v *BackendConfigVariantRing) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("BackendConfigVariantRing: %w", err)
-	}
-	var next BackendConfigVariantRing
-	if err := dtoTag(object, "type", "ring"); err != nil {
-		return fmt.Errorf("BackendConfigVariantRing: %w", err)
-	}
-	if err := dtoRead(object, "capacity", &next.Capacity, false, true); err != nil {
-		return fmt.Errorf("BackendConfigVariantRing: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v BackendConfigVariantRing) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "ring"
-	if v.Capacity.Present {
-		object["capacity"] = v.Capacity
-	}
-	return json.Marshal(object)
+	Capacity *uint64 `json:"capacity,omitzero"`
 }
 
 func (BackendConfigVariantRing) isBackendConfig() {}
+
+func (v BackendConfigVariantRing) MarshalJSON() ([]byte, error) {
+	type plain BackendConfigVariantRing
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "ring", plain: plain(v)})
+}
 
 type BackendConfigVariantJsonl struct {
 	Directory string `json:"directory"`
 }
 
-func (v *BackendConfigVariantJsonl) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("BackendConfigVariantJsonl: %w", err)
-	}
-	var next BackendConfigVariantJsonl
-	if err := dtoTag(object, "type", "jsonl"); err != nil {
-		return fmt.Errorf("BackendConfigVariantJsonl: %w", err)
-	}
-	if err := dtoRead(object, "directory", &next.Directory, true, false); err != nil {
-		return fmt.Errorf("BackendConfigVariantJsonl: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v BackendConfigVariantJsonl) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "jsonl"
-	object["directory"] = v.Directory
-	return json.Marshal(object)
-}
-
 func (BackendConfigVariantJsonl) isBackendConfig() {}
+
+func (v BackendConfigVariantJsonl) MarshalJSON() ([]byte, error) {
+	type plain BackendConfigVariantJsonl
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "jsonl", plain: plain(v)})
+}
 
 type BreakKind string
 
@@ -3314,28 +1850,6 @@ const (
 	BreakKindUnknown           BreakKind = "Unknown"
 )
 
-func (v *BreakKind) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "SystemChanged":
-		*v = BreakKind(next)
-		return nil
-	case "ToolsChanged":
-		*v = BreakKind(next)
-		return nil
-	case "ConversationReset":
-		*v = BreakKind(next)
-		return nil
-	case "Unknown":
-		*v = BreakKind(next)
-		return nil
-	}
-	return fmt.Errorf("BreakKind: unknown value %s", data)
-}
-
 type CancelResult string
 
 const (
@@ -3344,43 +1858,11 @@ const (
 	CancelResultAlreadyTerminal  CancelResult = "alreadyTerminal"
 )
 
-func (v *CancelResult) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "first":
-		*v = CancelResult(next)
-		return nil
-	case "alreadyRequested":
-		*v = CancelResult(next)
-		return nil
-	case "alreadyTerminal":
-		*v = CancelResult(next)
-		return nil
-	}
-	return fmt.Errorf("CancelResult: unknown value %s", data)
-}
-
 type CapturePolicy string
 
 const (
 	CapturePolicyFull CapturePolicy = "full"
 )
-
-func (v *CapturePolicy) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "full":
-		*v = CapturePolicy(next)
-		return nil
-	}
-	return fmt.Errorf("CapturePolicy: unknown value %s", data)
-}
 
 // In-memory catalogue: per-provider model specs, keyed by aimux provider
 // name then model id.
@@ -3389,57 +1871,9 @@ type Catalogue struct {
 	UpdatedAt uint64                          `json:"updatedAt"`
 }
 
-func (v *Catalogue) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("Catalogue: %w", err)
-	}
-	var next Catalogue
-	if err := dtoRead(object, "specs", &next.Specs, true, false); err != nil {
-		return fmt.Errorf("Catalogue: %w", err)
-	}
-	if err := dtoRead(object, "updatedAt", &next.UpdatedAt, true, false); err != nil {
-		return fmt.Errorf("Catalogue: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v Catalogue) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["specs"] = v.Specs
-	object["updatedAt"] = v.UpdatedAt
-	return json.Marshal(object)
-}
-
 type CatalogueFetchRequest struct {
-	Abort     Field[HandleIdInput] `json:"abort,omitempty"`
-	SourceURL Field[string]        `json:"sourceUrl,omitempty"`
-}
-
-func (v *CatalogueFetchRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("CatalogueFetchRequest: %w", err)
-	}
-	var next CatalogueFetchRequest
-	if err := dtoRead(object, "abort", &next.Abort, false, true); err != nil {
-		return fmt.Errorf("CatalogueFetchRequest: %w", err)
-	}
-	if err := dtoRead(object, "sourceUrl", &next.SourceURL, false, true); err != nil {
-		return fmt.Errorf("CatalogueFetchRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v CatalogueFetchRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Abort.Present {
-		object["abort"] = v.Abort
-	}
-	if v.SourceURL.Present {
-		object["sourceUrl"] = v.SourceURL
-	}
-	return json.Marshal(object)
+	Abort     *HandleIdInput `json:"abort,omitzero"`
+	SourceURL *string        `json:"sourceUrl,omitzero"`
 }
 
 // Where a [`ModelSpec`] came from.
@@ -3451,25 +1885,6 @@ const (
 	CatalogueSourceManual    CatalogueSource = "Manual"
 )
 
-func (v *CatalogueSource) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "Anya2a":
-		*v = CatalogueSource(next)
-		return nil
-	case "ModelsDev":
-		*v = CatalogueSource(next)
-		return nil
-	case "Manual":
-		*v = CatalogueSource(next)
-		return nil
-	}
-	return fmt.Errorf("CatalogueSource: unknown value %s", data)
-}
-
 // A complete Chat Completion response (non-streaming).
 //
 // Mirrors the OpenAI `chat.completion` object.
@@ -3479,52 +1894,8 @@ type ChatCompletion struct {
 	ID                string                 `json:"id"`
 	Model             string                 `json:"model"`
 	Object            string                 `json:"object"`
-	SystemFingerprint Field[string]          `json:"system_fingerprint,omitempty"`
+	SystemFingerprint *string                `json:"system_fingerprint,omitzero"`
 	Usage             ChatCompletionUsage    `json:"usage"`
-}
-
-func (v *ChatCompletion) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ChatCompletion: %w", err)
-	}
-	var next ChatCompletion
-	if err := dtoRead(object, "choices", &next.Choices, true, false); err != nil {
-		return fmt.Errorf("ChatCompletion: %w", err)
-	}
-	if err := dtoRead(object, "created", &next.Created, true, false); err != nil {
-		return fmt.Errorf("ChatCompletion: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("ChatCompletion: %w", err)
-	}
-	if err := dtoRead(object, "model", &next.Model, true, false); err != nil {
-		return fmt.Errorf("ChatCompletion: %w", err)
-	}
-	if err := dtoRead(object, "object", &next.Object, true, false); err != nil {
-		return fmt.Errorf("ChatCompletion: %w", err)
-	}
-	if err := dtoRead(object, "system_fingerprint", &next.SystemFingerprint, false, true); err != nil {
-		return fmt.Errorf("ChatCompletion: %w", err)
-	}
-	if err := dtoRead(object, "usage", &next.Usage, true, false); err != nil {
-		return fmt.Errorf("ChatCompletion: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ChatCompletion) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["choices"] = v.Choices
-	object["created"] = v.Created
-	object["id"] = v.ID
-	object["model"] = v.Model
-	object["object"] = v.Object
-	if v.SystemFingerprint.Present {
-		object["system_fingerprint"] = v.SystemFingerprint
-	}
-	object["usage"] = v.Usage
-	return json.Marshal(object)
 }
 
 type ChatCompletionChoice struct {
@@ -3533,40 +1904,8 @@ type ChatCompletionChoice struct {
 	// The Chat Completions logprobs object, `{ "content": [...], "refusal":
 	// null }`, each entry `{ token, logprob, bytes, top_logprobs }`, when
 	// the calling provider returned logprobs.
-	Logprobs Field[json.RawMessage] `json:"logprobs,omitempty"`
-	Message  ChatCompletionMessage  `json:"message"`
-}
-
-func (v *ChatCompletionChoice) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ChatCompletionChoice: %w", err)
-	}
-	var next ChatCompletionChoice
-	if err := dtoRead(object, "finish_reason", &next.FinishReason, true, true); err != nil {
-		return fmt.Errorf("ChatCompletionChoice: %w", err)
-	}
-	if err := dtoRead(object, "index", &next.Index, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionChoice: %w", err)
-	}
-	if err := dtoRead(object, "logprobs", &next.Logprobs, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionChoice: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionChoice: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ChatCompletionChoice) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["finish_reason"] = v.FinishReason
-	object["index"] = v.Index
-	if v.Logprobs.Present {
-		object["logprobs"] = v.Logprobs
-	}
-	object["message"] = v.Message
-	return json.Marshal(object)
+	Logprobs *json.RawMessage      `json:"logprobs,omitzero"`
+	Message  ChatCompletionMessage `json:"message"`
 }
 
 // A single Chat Completion chunk (streaming).
@@ -3578,203 +1917,33 @@ type ChatCompletionChunk struct {
 	ID      string                      `json:"id"`
 	Model   string                      `json:"model"`
 	Object  string                      `json:"object"`
-	Usage   Field[ChatCompletionUsage]  `json:"usage,omitempty"`
-}
-
-func (v *ChatCompletionChunk) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ChatCompletionChunk: %w", err)
-	}
-	var next ChatCompletionChunk
-	if err := dtoRead(object, "choices", &next.Choices, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionChunk: %w", err)
-	}
-	if err := dtoRead(object, "created", &next.Created, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionChunk: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionChunk: %w", err)
-	}
-	if err := dtoRead(object, "model", &next.Model, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionChunk: %w", err)
-	}
-	if err := dtoRead(object, "object", &next.Object, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionChunk: %w", err)
-	}
-	if err := dtoRead(object, "usage", &next.Usage, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionChunk: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ChatCompletionChunk) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["choices"] = v.Choices
-	object["created"] = v.Created
-	object["id"] = v.ID
-	object["model"] = v.Model
-	object["object"] = v.Object
-	if v.Usage.Present {
-		object["usage"] = v.Usage
-	}
-	return json.Marshal(object)
+	Usage   *ChatCompletionUsage        `json:"usage,omitzero"`
 }
 
 type ChatCompletionChunkChoice struct {
-	Delta        ChatCompletionDelta    `json:"delta"`
-	FinishReason *string                `json:"finish_reason"`
-	Index        uint32                 `json:"index"`
-	Logprobs     Field[json.RawMessage] `json:"logprobs,omitempty"`
-}
-
-func (v *ChatCompletionChunkChoice) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ChatCompletionChunkChoice: %w", err)
-	}
-	var next ChatCompletionChunkChoice
-	if err := dtoRead(object, "delta", &next.Delta, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionChunkChoice: %w", err)
-	}
-	if err := dtoRead(object, "finish_reason", &next.FinishReason, true, true); err != nil {
-		return fmt.Errorf("ChatCompletionChunkChoice: %w", err)
-	}
-	if err := dtoRead(object, "index", &next.Index, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionChunkChoice: %w", err)
-	}
-	if err := dtoRead(object, "logprobs", &next.Logprobs, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionChunkChoice: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ChatCompletionChunkChoice) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["delta"] = v.Delta
-	object["finish_reason"] = v.FinishReason
-	object["index"] = v.Index
-	if v.Logprobs.Present {
-		object["logprobs"] = v.Logprobs
-	}
-	return json.Marshal(object)
+	Delta        ChatCompletionDelta `json:"delta"`
+	FinishReason *string             `json:"finish_reason"`
+	Index        uint32              `json:"index"`
+	Logprobs     *json.RawMessage    `json:"logprobs,omitzero"`
 }
 
 type ChatCompletionChunkFunction struct {
-	Arguments Field[string] `json:"arguments,omitempty"`
-	Name      Field[string] `json:"name,omitempty"`
-}
-
-func (v *ChatCompletionChunkFunction) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ChatCompletionChunkFunction: %w", err)
-	}
-	var next ChatCompletionChunkFunction
-	if err := dtoRead(object, "arguments", &next.Arguments, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionChunkFunction: %w", err)
-	}
-	if err := dtoRead(object, "name", &next.Name, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionChunkFunction: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ChatCompletionChunkFunction) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Arguments.Present {
-		object["arguments"] = v.Arguments
-	}
-	if v.Name.Present {
-		object["name"] = v.Name
-	}
-	return json.Marshal(object)
+	Arguments *string `json:"arguments,omitzero"`
+	Name      *string `json:"name,omitzero"`
 }
 
 type ChatCompletionChunkToolCall struct {
 	Function ChatCompletionChunkFunction `json:"function"`
-	ID       Field[string]               `json:"id,omitempty"`
+	ID       *string                     `json:"id,omitzero"`
 	Index    uint32                      `json:"index"`
-	Type     Field[string]               `json:"type,omitempty"`
-}
-
-func (v *ChatCompletionChunkToolCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ChatCompletionChunkToolCall: %w", err)
-	}
-	var next ChatCompletionChunkToolCall
-	if err := dtoRead(object, "function", &next.Function, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionChunkToolCall: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionChunkToolCall: %w", err)
-	}
-	if err := dtoRead(object, "index", &next.Index, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionChunkToolCall: %w", err)
-	}
-	if err := dtoRead(object, "type", &next.Type, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionChunkToolCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ChatCompletionChunkToolCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["function"] = v.Function
-	if v.ID.Present {
-		object["id"] = v.ID
-	}
-	object["index"] = v.Index
-	if v.Type.Present {
-		object["type"] = v.Type
-	}
-	return json.Marshal(object)
+	Type     *string                     `json:"type,omitzero"`
 }
 
 type ChatCompletionDelta struct {
-	Content          Field[string]                        `json:"content,omitempty"`
-	ReasoningContent Field[string]                        `json:"reasoning_content,omitempty"`
-	Role             Field[string]                        `json:"role,omitempty"`
-	ToolCalls        Field[[]ChatCompletionChunkToolCall] `json:"tool_calls,omitempty"`
-}
-
-func (v *ChatCompletionDelta) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ChatCompletionDelta: %w", err)
-	}
-	var next ChatCompletionDelta
-	if err := dtoRead(object, "content", &next.Content, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionDelta: %w", err)
-	}
-	if err := dtoRead(object, "reasoning_content", &next.ReasoningContent, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionDelta: %w", err)
-	}
-	if err := dtoRead(object, "role", &next.Role, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionDelta: %w", err)
-	}
-	if err := dtoRead(object, "tool_calls", &next.ToolCalls, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionDelta: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ChatCompletionDelta) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Content.Present {
-		object["content"] = v.Content
-	}
-	if v.ReasoningContent.Present {
-		object["reasoning_content"] = v.ReasoningContent
-	}
-	if v.Role.Present {
-		object["role"] = v.Role
-	}
-	if v.ToolCalls.Present {
-		object["tool_calls"] = v.ToolCalls
-	}
-	return json.Marshal(object)
+	Content          *string                       `json:"content,omitzero"`
+	ReasoningContent *string                       `json:"reasoning_content,omitzero"`
+	Role             *string                       `json:"role,omitzero"`
+	ToolCalls        []ChatCompletionChunkToolCall `json:"tool_calls,omitzero"`
 }
 
 type ChatCompletionFunction struct {
@@ -3782,74 +1951,12 @@ type ChatCompletionFunction struct {
 	Name      string `json:"name"`
 }
 
-func (v *ChatCompletionFunction) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ChatCompletionFunction: %w", err)
-	}
-	var next ChatCompletionFunction
-	if err := dtoRead(object, "arguments", &next.Arguments, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionFunction: %w", err)
-	}
-	if err := dtoRead(object, "name", &next.Name, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionFunction: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ChatCompletionFunction) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["arguments"] = v.Arguments
-	object["name"] = v.Name
-	return json.Marshal(object)
-}
-
 type ChatCompletionMessage struct {
-	Annotations      Field[[]json.RawMessage]        `json:"annotations,omitempty"`
-	Content          *string                         `json:"content"`
-	ReasoningContent Field[string]                   `json:"reasoning_content,omitempty"`
-	Role             string                          `json:"role"`
-	ToolCalls        Field[[]ChatCompletionToolCall] `json:"tool_calls,omitempty"`
-}
-
-func (v *ChatCompletionMessage) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ChatCompletionMessage: %w", err)
-	}
-	var next ChatCompletionMessage
-	if err := dtoRead(object, "annotations", &next.Annotations, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionMessage: %w", err)
-	}
-	if err := dtoRead(object, "content", &next.Content, true, true); err != nil {
-		return fmt.Errorf("ChatCompletionMessage: %w", err)
-	}
-	if err := dtoRead(object, "reasoning_content", &next.ReasoningContent, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionMessage: %w", err)
-	}
-	if err := dtoRead(object, "role", &next.Role, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionMessage: %w", err)
-	}
-	if err := dtoRead(object, "tool_calls", &next.ToolCalls, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionMessage: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ChatCompletionMessage) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Annotations.Present {
-		object["annotations"] = v.Annotations
-	}
-	object["content"] = v.Content
-	if v.ReasoningContent.Present {
-		object["reasoning_content"] = v.ReasoningContent
-	}
-	object["role"] = v.Role
-	if v.ToolCalls.Present {
-		object["tool_calls"] = v.ToolCalls
-	}
-	return json.Marshal(object)
+	Annotations      []json.RawMessage        `json:"annotations,omitzero"`
+	Content          *string                  `json:"content"`
+	ReasoningContent *string                  `json:"reasoning_content,omitzero"`
+	Role             string                   `json:"role"`
+	ToolCalls        []ChatCompletionToolCall `json:"tool_calls,omitzero"`
 }
 
 type ChatCompletionToolCall struct {
@@ -3858,103 +1965,17 @@ type ChatCompletionToolCall struct {
 	Type     string                 `json:"type"`
 }
 
-func (v *ChatCompletionToolCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ChatCompletionToolCall: %w", err)
-	}
-	var next ChatCompletionToolCall
-	if err := dtoRead(object, "function", &next.Function, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionToolCall: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionToolCall: %w", err)
-	}
-	if err := dtoRead(object, "type", &next.Type, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionToolCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ChatCompletionToolCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["function"] = v.Function
-	object["id"] = v.ID
-	object["type"] = v.Type
-	return json.Marshal(object)
-}
-
 type ChatCompletionUsage struct {
-	CompletionTokens        uint32                         `json:"completion_tokens"`
-	CompletionTokensDetails Field[CompletionTokensDetails] `json:"completion_tokens_details,omitempty"`
-	PromptTokens            uint32                         `json:"prompt_tokens"`
-	PromptTokensDetails     Field[PromptTokensDetails]     `json:"prompt_tokens_details,omitempty"`
-	TotalTokens             uint32                         `json:"total_tokens"`
-}
-
-func (v *ChatCompletionUsage) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ChatCompletionUsage: %w", err)
-	}
-	var next ChatCompletionUsage
-	if err := dtoRead(object, "completion_tokens", &next.CompletionTokens, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionUsage: %w", err)
-	}
-	if err := dtoRead(object, "completion_tokens_details", &next.CompletionTokensDetails, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionUsage: %w", err)
-	}
-	if err := dtoRead(object, "prompt_tokens", &next.PromptTokens, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionUsage: %w", err)
-	}
-	if err := dtoRead(object, "prompt_tokens_details", &next.PromptTokensDetails, false, true); err != nil {
-		return fmt.Errorf("ChatCompletionUsage: %w", err)
-	}
-	if err := dtoRead(object, "total_tokens", &next.TotalTokens, true, false); err != nil {
-		return fmt.Errorf("ChatCompletionUsage: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ChatCompletionUsage) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["completion_tokens"] = v.CompletionTokens
-	if v.CompletionTokensDetails.Present {
-		object["completion_tokens_details"] = v.CompletionTokensDetails
-	}
-	object["prompt_tokens"] = v.PromptTokens
-	if v.PromptTokensDetails.Present {
-		object["prompt_tokens_details"] = v.PromptTokensDetails
-	}
-	object["total_tokens"] = v.TotalTokens
-	return json.Marshal(object)
+	CompletionTokens        uint32                   `json:"completion_tokens"`
+	CompletionTokensDetails *CompletionTokensDetails `json:"completion_tokens_details,omitzero"`
+	PromptTokens            uint32                   `json:"prompt_tokens"`
+	PromptTokensDetails     *PromptTokensDetails     `json:"prompt_tokens_details,omitzero"`
+	TotalTokens             uint32                   `json:"total_tokens"`
 }
 
 type CodexRefreshRequest struct {
 	ClientID     string `json:"clientId"`
 	RefreshToken string `json:"refreshToken"`
-}
-
-func (v *CodexRefreshRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("CodexRefreshRequest: %w", err)
-	}
-	var next CodexRefreshRequest
-	if err := dtoRead(object, "clientId", &next.ClientID, true, false); err != nil {
-		return fmt.Errorf("CodexRefreshRequest: %w", err)
-	}
-	if err := dtoRead(object, "refreshToken", &next.RefreshToken, true, false); err != nil {
-		return fmt.Errorf("CodexRefreshRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v CodexRefreshRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["clientId"] = v.ClientID
-	object["refreshToken"] = v.RefreshToken
-	return json.Marshal(object)
 }
 
 // Tokens returned by the Codex OAuth token endpoint (RFC-0018 §2 V3).
@@ -3971,54 +1992,8 @@ type CodexTokens struct {
 	RefreshToken *string `json:"refresh_token"`
 }
 
-func (v *CodexTokens) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("CodexTokens: %w", err)
-	}
-	var next CodexTokens
-	if err := dtoRead(object, "access_token", &next.AccessToken, true, false); err != nil {
-		return fmt.Errorf("CodexTokens: %w", err)
-	}
-	if err := dtoRead(object, "expires_in_secs", &next.ExpiresInSecs, true, true); err != nil {
-		return fmt.Errorf("CodexTokens: %w", err)
-	}
-	if err := dtoRead(object, "refresh_token", &next.RefreshToken, true, true); err != nil {
-		return fmt.Errorf("CodexTokens: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v CodexTokens) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["access_token"] = v.AccessToken
-	object["expires_in_secs"] = v.ExpiresInSecs
-	object["refresh_token"] = v.RefreshToken
-	return json.Marshal(object)
-}
-
 type CompletionTokensDetails struct {
-	ReasoningTokens Field[uint32] `json:"reasoning_tokens,omitempty"`
-}
-
-func (v *CompletionTokensDetails) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("CompletionTokensDetails: %w", err)
-	}
-	var next CompletionTokensDetails
-	if err := dtoRead(object, "reasoning_tokens", &next.ReasoningTokens, false, true); err != nil {
-		return fmt.Errorf("CompletionTokensDetails: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v CompletionTokensDetails) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.ReasoningTokens.Present {
-		object["reasoning_tokens"] = v.ReasoningTokens
-	}
-	return json.Marshal(object)
+	ReasoningTokens *uint32 `json:"reasoning_tokens,omitzero"`
 }
 
 // A part of the content text generation returns: the AI SDK's core
@@ -4031,728 +2006,346 @@ func (v CompletionTokensDetails) MarshalJSON() ([]byte, error) {
 // `convertLanguageModelContent` builds them
 // (`generate-text/convert-language-model-content.ts`).
 type ContentPartVariant interface{ isContentPart() }
-type ContentPart struct{ Value ContentPartVariant }
+type ContentPart struct {
+	Value ContentPartVariant
+}
 
 func (v ContentPart) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ContentPart: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ContentPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPart: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("ContentPart: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "text" {
-		var next ContentPartVariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "custom" {
+	switch tag.Type {
+	case "custom":
 		var next ContentPartVariantCustom
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "reasoning" {
-		var next ContentPartVariantReasoning
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "reasoning-file" {
-		var next ContentPartVariantReasoningFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "source" {
-		var next ContentPartVariantSource5
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "source" {
-		var next ContentPartVariantSource6
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "file" {
+		v.Value = next
+		return nil
+	case "file":
 		var next ContentPartVariantFile
-		if err := json.Unmarshal(data, &next); err == nil {
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "reasoning":
+		var next ContentPartVariantReasoning
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "reasoning-file":
+		var next ContentPartVariantReasoningFile
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "source":
+		var subtag struct {
+			SourceType string `json:"sourceType"`
+		}
+		if err := json.Unmarshal(data, &subtag); err != nil {
+			return err
+		}
+		if subtag.SourceType == "url" {
+			var next ContentPartVariantSource5
+			if err := json.Unmarshal(data, &next); err != nil {
+				return err
+			}
 			v.Value = next
 			return nil
 		}
-	}
-	if tag == "tool-call" {
-		var next ContentPartVariantToolCall
-		if err := json.Unmarshal(data, &next); err == nil {
+		if subtag.SourceType == "document" {
+			var next ContentPartVariantSource6
+			if err := json.Unmarshal(data, &next); err != nil {
+				return err
+			}
 			v.Value = next
 			return nil
 		}
-	}
-	if tag == "tool-result" {
-		var next ContentPartVariantToolResult
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		return fmt.Errorf("ContentPart: unknown tag %+v", subtag)
+	case "text":
+		var next ContentPartVariantText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "tool-error" {
-		var next ContentPartVariantToolError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-approval-request" {
+		v.Value = next
+		return nil
+	case "tool-approval-request":
 		var next ContentPartVariantToolApprovalRequest
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "tool-approval-response" {
+		v.Value = next
+		return nil
+	case "tool-approval-response":
 		var next ContentPartVariantToolApprovalResponse
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "tool-call":
+		var next ContentPartVariantToolCall
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-error":
+		var next ContentPartVariantToolError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-result":
+		var next ContentPartVariantToolResult
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("ContentPart: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("ContentPart: unknown type tag %q", tag.Type)
 }
 
 type ContentPartVariantText struct {
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Text             string                                       `json:"text"`
-}
-
-func (v *ContentPartVariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartVariantText: %w", err)
-	}
-	var next ContentPartVariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("ContentPartVariantText: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantText: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartVariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Text             string                                `json:"text"`
 }
 
 func (ContentPartVariantText) isContentPart() {}
 
-type ContentPartVariantCustom struct {
-	Kind             NamespacedKind                               `json:"kind"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v ContentPartVariantText) MarshalJSON() ([]byte, error) {
+	type plain ContentPartVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
 }
 
-func (v *ContentPartVariantCustom) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartVariantCustom: %w", err)
-	}
-	var next ContentPartVariantCustom
-	if err := dtoTag(object, "type", "custom"); err != nil {
-		return fmt.Errorf("ContentPartVariantCustom: %w", err)
-	}
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantCustom: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantCustom: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartVariantCustom) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "custom"
-	object["kind"] = v.Kind
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type ContentPartVariantCustom struct {
+	Kind             NamespacedKind                        `json:"kind"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (ContentPartVariantCustom) isContentPart() {}
 
-type ContentPartVariantReasoning struct {
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Text             string                                       `json:"text"`
+func (v ContentPartVariantCustom) MarshalJSON() ([]byte, error) {
+	type plain ContentPartVariantCustom
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "custom", plain: plain(v)})
 }
 
-func (v *ContentPartVariantReasoning) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartVariantReasoning: %w", err)
-	}
-	var next ContentPartVariantReasoning
-	if err := dtoTag(object, "type", "reasoning"); err != nil {
-		return fmt.Errorf("ContentPartVariantReasoning: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantReasoning: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantReasoning: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartVariantReasoning) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning"
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+type ContentPartVariantReasoning struct {
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Text             string                                `json:"text"`
 }
 
 func (ContentPartVariantReasoning) isContentPart() {}
 
-type ContentPartVariantReasoningFile struct {
-	File             GeneratedFile                                `json:"file"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v ContentPartVariantReasoning) MarshalJSON() ([]byte, error) {
+	type plain ContentPartVariantReasoning
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning", plain: plain(v)})
 }
 
-func (v *ContentPartVariantReasoningFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartVariantReasoningFile: %w", err)
-	}
-	var next ContentPartVariantReasoningFile
-	if err := dtoTag(object, "type", "reasoning-file"); err != nil {
-		return fmt.Errorf("ContentPartVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "file", &next.File, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantReasoningFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartVariantReasoningFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning-file"
-	object["file"] = v.File
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type ContentPartVariantReasoningFile struct {
+	File             GeneratedFile                         `json:"file"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (ContentPartVariantReasoningFile) isContentPart() {}
 
-type ContentPartVariantSource5 struct {
-	ID               string                                       `json:"id"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	SourceType       ContentPart4SourceType                       `json:"sourceType"`
-	Title            Field[string]                                `json:"title,omitempty"`
-	URL              string                                       `json:"url"`
+func (v ContentPartVariantReasoningFile) MarshalJSON() ([]byte, error) {
+	type plain ContentPartVariantReasoningFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning-file", plain: plain(v)})
 }
 
-func (v *ContentPartVariantSource5) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartVariantSource5: %w", err)
-	}
-	var next ContentPartVariantSource5
-	if err := dtoTag(object, "type", "source"); err != nil {
-		return fmt.Errorf("ContentPartVariantSource5: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantSource5: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantSource5: %w", err)
-	}
-	if err := dtoRead(object, "sourceType", &next.SourceType, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantSource5: %w", err)
-	}
-	if err := dtoRead(object, "title", &next.Title, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantSource5: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantSource5: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartVariantSource5) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "source"
-	object["id"] = v.ID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["sourceType"] = v.SourceType
-	if v.Title.Present {
-		object["title"] = v.Title
-	}
-	object["url"] = v.URL
-	return json.Marshal(object)
+type ContentPartVariantSource5 struct {
+	ID               string                                `json:"id"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	SourceType       ContentPart4SourceType                `json:"sourceType"`
+	Title            *string                               `json:"title,omitzero"`
+	URL              string                                `json:"url"`
 }
 
 func (ContentPartVariantSource5) isContentPart() {}
 
-type ContentPartVariantSource6 struct {
-	Filename         Field[string]                                `json:"filename,omitempty"`
-	ID               string                                       `json:"id"`
-	MediaType        string                                       `json:"mediaType"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	SourceType       ContentPart5SourceType                       `json:"sourceType"`
-	Title            string                                       `json:"title"`
+func (v ContentPartVariantSource5) MarshalJSON() ([]byte, error) {
+	type plain ContentPartVariantSource5
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "source", plain: plain(v)})
 }
 
-func (v *ContentPartVariantSource6) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartVariantSource6: %w", err)
-	}
-	var next ContentPartVariantSource6
-	if err := dtoTag(object, "type", "source"); err != nil {
-		return fmt.Errorf("ContentPartVariantSource6: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantSource6: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantSource6: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantSource6: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantSource6: %w", err)
-	}
-	if err := dtoRead(object, "sourceType", &next.SourceType, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantSource6: %w", err)
-	}
-	if err := dtoRead(object, "title", &next.Title, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantSource6: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartVariantSource6) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "source"
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["id"] = v.ID
-	object["mediaType"] = v.MediaType
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["sourceType"] = v.SourceType
-	object["title"] = v.Title
-	return json.Marshal(object)
+type ContentPartVariantSource6 struct {
+	Filename         *string                               `json:"filename,omitzero"`
+	ID               string                                `json:"id"`
+	MediaType        string                                `json:"mediaType"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	SourceType       ContentPart5SourceType                `json:"sourceType"`
+	Title            string                                `json:"title"`
 }
 
 func (ContentPartVariantSource6) isContentPart() {}
 
-type ContentPartVariantFile struct {
-	File             GeneratedFile                                `json:"file"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v ContentPartVariantSource6) MarshalJSON() ([]byte, error) {
+	type plain ContentPartVariantSource6
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "source", plain: plain(v)})
 }
 
-func (v *ContentPartVariantFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartVariantFile: %w", err)
-	}
-	var next ContentPartVariantFile
-	if err := dtoTag(object, "type", "file"); err != nil {
-		return fmt.Errorf("ContentPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "file", &next.File, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartVariantFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file"
-	object["file"] = v.File
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type ContentPartVariantFile struct {
+	File             GeneratedFile                         `json:"file"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (ContentPartVariantFile) isContentPart() {}
 
+func (v ContentPartVariantFile) MarshalJSON() ([]byte, error) {
+	type plain ContentPartVariantFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file", plain: plain(v)})
+}
+
 type ContentPartVariantToolCall struct {
 	// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
+	Dynamic *bool `json:"dynamic,omitzero"`
 	// Typed failure associated with an invalid tool call.
-	Error Field[AiMuxError] `json:"error,omitempty"`
+	Error *AiMuxError `json:"error,omitzero"`
 	// Parsed arguments, or the original string when `invalid` is true and the
 	// provider input was not valid JSON.
 	Input json.RawMessage `json:"input"`
 	// Set when lookup, JSON parsing, or schema validation still failed after
 	// the optional repair attempt.
-	Invalid Field[bool] `json:"invalid,omitempty"`
+	Invalid *bool `json:"invalid,omitzero"`
 	// Whether the tool call will be executed by the provider.
-	ProviderExecuted Field[bool] `json:"providerExecuted,omitempty"`
+	ProviderExecuted *bool `json:"providerExecuted,omitzero"`
 	// Additional provider-specific metadata associated with this call.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Provider-assigned call id.
 	ToolCallID string `json:"toolCallId"`
 	// Tool name.
 	ToolName string `json:"toolName"`
 }
 
-func (v *ContentPartVariantToolCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartVariantToolCall: %w", err)
-	}
-	var next ContentPartVariantToolCall
-	if err := dtoTag(object, "type", "tool-call"); err != nil {
-		return fmt.Errorf("ContentPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, true, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "invalid", &next.Invalid, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantToolCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartVariantToolCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-call"
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.Error.Present {
-		object["error"] = v.Error
-	}
-	object["input"] = v.Input
-	if v.Invalid.Present {
-		object["invalid"] = v.Invalid
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
-}
-
 func (ContentPartVariantToolCall) isContentPart() {}
 
-type ContentPartVariantToolResult struct {
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
-	// The input of the tool call the result answers; absent for a deferred
-	// provider result, whose call is not in this response.
-	Input            Field[json.RawMessage]                       `json:"input,omitempty"`
-	Output           json.RawMessage                              `json:"output"`
-	Preliminary      Field[bool]                                  `json:"preliminary,omitempty"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
+func (v ContentPartVariantToolCall) MarshalJSON() ([]byte, error) {
+	type plain ContentPartVariantToolCall
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-call", plain: plain(v)})
 }
 
-func (v *ContentPartVariantToolResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartVariantToolResult: %w", err)
-	}
-	var next ContentPartVariantToolResult
-	if err := dtoTag(object, "type", "tool-result"); err != nil {
-		return fmt.Errorf("ContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, true, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "preliminary", &next.Preliminary, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantToolResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartVariantToolResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-result"
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.Input.Present {
-		object["input"] = v.Input
-	}
-	object["output"] = v.Output
-	if v.Preliminary.Present {
-		object["preliminary"] = v.Preliminary
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+type ContentPartVariantToolResult struct {
+	Dynamic *bool `json:"dynamic,omitzero"`
+	// The input of the tool call the result answers; absent for a deferred
+	// provider result, whose call is not in this response.
+	Input            *json.RawMessage                      `json:"input,omitzero"`
+	Output           json.RawMessage                       `json:"output"`
+	Preliminary      *bool                                 `json:"preliminary,omitzero"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
 }
 
 func (ContentPartVariantToolResult) isContentPart() {}
 
-type ContentPartVariantToolError struct {
-	Dynamic Field[bool]     `json:"dynamic,omitempty"`
-	Error   json.RawMessage `json:"error"`
-	// The input of the tool call; absent for a deferred provider result.
-	Input            Field[json.RawMessage]                       `json:"input,omitempty"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
+func (v ContentPartVariantToolResult) MarshalJSON() ([]byte, error) {
+	type plain ContentPartVariantToolResult
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-result", plain: plain(v)})
 }
 
-func (v *ContentPartVariantToolError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartVariantToolError: %w", err)
-	}
-	var next ContentPartVariantToolError
-	if err := dtoTag(object, "type", "tool-error"); err != nil {
-		return fmt.Errorf("ContentPartVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, true, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantToolError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartVariantToolError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-error"
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	object["error"] = v.Error
-	if v.Input.Present {
-		object["input"] = v.Input
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+type ContentPartVariantToolError struct {
+	Dynamic *bool           `json:"dynamic,omitzero"`
+	Error   json.RawMessage `json:"error"`
+	// The input of the tool call; absent for a deferred provider result.
+	Input            *json.RawMessage                      `json:"input,omitzero"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
 }
 
 func (ContentPartVariantToolError) isContentPart() {}
 
+func (v ContentPartVariantToolError) MarshalJSON() ([]byte, error) {
+	type plain ContentPartVariantToolError
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-error", plain: plain(v)})
+}
+
 type ContentPartVariantToolApprovalRequest struct {
-	ApprovalID  string        `json:"approvalId"`
-	IsAutomatic Field[bool]   `json:"isAutomatic,omitempty"`
-	Reason      Field[string] `json:"reason,omitempty"`
-	Signature   Field[string] `json:"signature,omitempty"`
+	ApprovalID  string  `json:"approvalId"`
+	IsAutomatic *bool   `json:"isAutomatic,omitzero"`
+	Reason      *string `json:"reason,omitzero"`
+	Signature   *string `json:"signature,omitzero"`
 	// The call to approve, with its `type` tag (`ai`
 	// `generate-text/tool-approval-request-output.ts:20`).
 	ToolCall TypedToolCall `json:"toolCall"`
 }
 
-func (v *ContentPartVariantToolApprovalRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartVariantToolApprovalRequest: %w", err)
-	}
-	var next ContentPartVariantToolApprovalRequest
-	if err := dtoTag(object, "type", "tool-approval-request"); err != nil {
-		return fmt.Errorf("ContentPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "isAutomatic", &next.IsAutomatic, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "signature", &next.Signature, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantToolApprovalRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartVariantToolApprovalRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-approval-request"
-	object["approvalId"] = v.ApprovalID
-	if v.IsAutomatic.Present {
-		object["isAutomatic"] = v.IsAutomatic
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	if v.Signature.Present {
-		object["signature"] = v.Signature
-	}
-	object["toolCall"] = v.ToolCall
-	return json.Marshal(object)
-}
-
 func (ContentPartVariantToolApprovalRequest) isContentPart() {}
 
+func (v ContentPartVariantToolApprovalRequest) MarshalJSON() ([]byte, error) {
+	type plain ContentPartVariantToolApprovalRequest
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-approval-request", plain: plain(v)})
+}
+
 type ContentPartVariantToolApprovalResponse struct {
-	ApprovalID       string        `json:"approvalId"`
-	Approved         bool          `json:"approved"`
-	ProviderExecuted Field[bool]   `json:"providerExecuted,omitempty"`
-	Reason           Field[string] `json:"reason,omitempty"`
+	ApprovalID       string  `json:"approvalId"`
+	Approved         bool    `json:"approved"`
+	ProviderExecuted *bool   `json:"providerExecuted,omitzero"`
+	Reason           *string `json:"reason,omitzero"`
 	// The answered call, with its `type` tag (`TypedToolCall`,
 	// `tool-approval-response-output.ts:18`).
 	ToolCall TypedToolCall `json:"toolCall"`
 }
 
-func (v *ContentPartVariantToolApprovalResponse) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartVariantToolApprovalResponse: %w", err)
-	}
-	var next ContentPartVariantToolApprovalResponse
-	if err := dtoTag(object, "type", "tool-approval-response"); err != nil {
-		return fmt.Errorf("ContentPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "approved", &next.Approved, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("ContentPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("ContentPartVariantToolApprovalResponse: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartVariantToolApprovalResponse) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-approval-response"
-	object["approvalId"] = v.ApprovalID
-	object["approved"] = v.Approved
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	object["toolCall"] = v.ToolCall
-	return json.Marshal(object)
-}
-
 func (ContentPartVariantToolApprovalResponse) isContentPart() {}
+
+func (v ContentPartVariantToolApprovalResponse) MarshalJSON() ([]byte, error) {
+	type plain ContentPartVariantToolApprovalResponse
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-approval-response", plain: plain(v)})
+}
 
 type ContentPart4SourceType string
 
@@ -4760,37 +2353,11 @@ const (
 	ContentPart4SourceTypeURL ContentPart4SourceType = "url"
 )
 
-func (v *ContentPart4SourceType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "url":
-		*v = ContentPart4SourceType(next)
-		return nil
-	}
-	return fmt.Errorf("ContentPart4SourceType: unknown value %s", data)
-}
-
 type ContentPart5SourceType string
 
 const (
 	ContentPart5SourceTypeDocument ContentPart5SourceType = "document"
 )
-
-func (v *ContentPart5SourceType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "document":
-		*v = ContentPart5SourceType(next)
-		return nil
-	}
-	return fmt.Errorf("ContentPart5SourceType: unknown value %s", data)
-}
 
 // A part of the content text generation returns: the AI SDK's core
 // `ContentPart` (`ai` `generate-text/content-part.ts:12-33`), eleven kinds,
@@ -4802,728 +2369,346 @@ func (v *ContentPart5SourceType) UnmarshalJSON(data []byte) error {
 // `convertLanguageModelContent` builds them
 // (`generate-text/convert-language-model-content.ts`).
 type ContentPartInputVariant interface{ isContentPartInput() }
-type ContentPartInput struct{ Value ContentPartInputVariant }
+type ContentPartInput struct {
+	Value ContentPartInputVariant
+}
 
 func (v ContentPartInput) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ContentPartInput: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ContentPartInput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartInput: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("ContentPartInput: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "text" {
-		var next ContentPartInputVariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "custom" {
+	switch tag.Type {
+	case "custom":
 		var next ContentPartInputVariantCustom
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "reasoning" {
-		var next ContentPartInputVariantReasoning
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "reasoning-file" {
-		var next ContentPartInputVariantReasoningFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "source" {
-		var next ContentPartInputVariantSource5
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "source" {
-		var next ContentPartInputVariantSource6
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "file" {
+		v.Value = next
+		return nil
+	case "file":
 		var next ContentPartInputVariantFile
-		if err := json.Unmarshal(data, &next); err == nil {
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "reasoning":
+		var next ContentPartInputVariantReasoning
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "reasoning-file":
+		var next ContentPartInputVariantReasoningFile
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "source":
+		var subtag struct {
+			SourceType string `json:"sourceType"`
+		}
+		if err := json.Unmarshal(data, &subtag); err != nil {
+			return err
+		}
+		if subtag.SourceType == "url" {
+			var next ContentPartInputVariantSource5
+			if err := json.Unmarshal(data, &next); err != nil {
+				return err
+			}
 			v.Value = next
 			return nil
 		}
-	}
-	if tag == "tool-call" {
-		var next ContentPartInputVariantToolCall
-		if err := json.Unmarshal(data, &next); err == nil {
+		if subtag.SourceType == "document" {
+			var next ContentPartInputVariantSource6
+			if err := json.Unmarshal(data, &next); err != nil {
+				return err
+			}
 			v.Value = next
 			return nil
 		}
-	}
-	if tag == "tool-result" {
-		var next ContentPartInputVariantToolResult
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		return fmt.Errorf("ContentPartInput: unknown tag %+v", subtag)
+	case "text":
+		var next ContentPartInputVariantText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "tool-error" {
-		var next ContentPartInputVariantToolError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-approval-request" {
+		v.Value = next
+		return nil
+	case "tool-approval-request":
 		var next ContentPartInputVariantToolApprovalRequest
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "tool-approval-response" {
+		v.Value = next
+		return nil
+	case "tool-approval-response":
 		var next ContentPartInputVariantToolApprovalResponse
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "tool-call":
+		var next ContentPartInputVariantToolCall
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-error":
+		var next ContentPartInputVariantToolError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-result":
+		var next ContentPartInputVariantToolResult
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("ContentPartInput: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("ContentPartInput: unknown type tag %q", tag.Type)
 }
 
 type ContentPartInputVariantText struct {
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Text             string                                       `json:"text"`
-}
-
-func (v *ContentPartInputVariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartInputVariantText: %w", err)
-	}
-	var next ContentPartInputVariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("ContentPartInputVariantText: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantText: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartInputVariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Text             string                                `json:"text"`
 }
 
 func (ContentPartInputVariantText) isContentPartInput() {}
 
-type ContentPartInputVariantCustom struct {
-	Kind             NamespacedKind                               `json:"kind"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v ContentPartInputVariantText) MarshalJSON() ([]byte, error) {
+	type plain ContentPartInputVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
 }
 
-func (v *ContentPartInputVariantCustom) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartInputVariantCustom: %w", err)
-	}
-	var next ContentPartInputVariantCustom
-	if err := dtoTag(object, "type", "custom"); err != nil {
-		return fmt.Errorf("ContentPartInputVariantCustom: %w", err)
-	}
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantCustom: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantCustom: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartInputVariantCustom) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "custom"
-	object["kind"] = v.Kind
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type ContentPartInputVariantCustom struct {
+	Kind             NamespacedKind                        `json:"kind"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (ContentPartInputVariantCustom) isContentPartInput() {}
 
-type ContentPartInputVariantReasoning struct {
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Text             string                                       `json:"text"`
+func (v ContentPartInputVariantCustom) MarshalJSON() ([]byte, error) {
+	type plain ContentPartInputVariantCustom
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "custom", plain: plain(v)})
 }
 
-func (v *ContentPartInputVariantReasoning) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartInputVariantReasoning: %w", err)
-	}
-	var next ContentPartInputVariantReasoning
-	if err := dtoTag(object, "type", "reasoning"); err != nil {
-		return fmt.Errorf("ContentPartInputVariantReasoning: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantReasoning: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantReasoning: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartInputVariantReasoning) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning"
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+type ContentPartInputVariantReasoning struct {
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Text             string                                `json:"text"`
 }
 
 func (ContentPartInputVariantReasoning) isContentPartInput() {}
 
-type ContentPartInputVariantReasoningFile struct {
-	File             GeneratedFile                                `json:"file"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v ContentPartInputVariantReasoning) MarshalJSON() ([]byte, error) {
+	type plain ContentPartInputVariantReasoning
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning", plain: plain(v)})
 }
 
-func (v *ContentPartInputVariantReasoningFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartInputVariantReasoningFile: %w", err)
-	}
-	var next ContentPartInputVariantReasoningFile
-	if err := dtoTag(object, "type", "reasoning-file"); err != nil {
-		return fmt.Errorf("ContentPartInputVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "file", &next.File, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantReasoningFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartInputVariantReasoningFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning-file"
-	object["file"] = v.File
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type ContentPartInputVariantReasoningFile struct {
+	File             GeneratedFile                         `json:"file"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (ContentPartInputVariantReasoningFile) isContentPartInput() {}
 
-type ContentPartInputVariantSource5 struct {
-	ID               string                                       `json:"id"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	SourceType       ContentPartInput4SourceType                  `json:"sourceType"`
-	Title            Field[string]                                `json:"title,omitempty"`
-	URL              string                                       `json:"url"`
+func (v ContentPartInputVariantReasoningFile) MarshalJSON() ([]byte, error) {
+	type plain ContentPartInputVariantReasoningFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning-file", plain: plain(v)})
 }
 
-func (v *ContentPartInputVariantSource5) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource5: %w", err)
-	}
-	var next ContentPartInputVariantSource5
-	if err := dtoTag(object, "type", "source"); err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource5: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource5: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource5: %w", err)
-	}
-	if err := dtoRead(object, "sourceType", &next.SourceType, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource5: %w", err)
-	}
-	if err := dtoRead(object, "title", &next.Title, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource5: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource5: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartInputVariantSource5) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "source"
-	object["id"] = v.ID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["sourceType"] = v.SourceType
-	if v.Title.Present {
-		object["title"] = v.Title
-	}
-	object["url"] = v.URL
-	return json.Marshal(object)
+type ContentPartInputVariantSource5 struct {
+	ID               string                                `json:"id"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	SourceType       ContentPartInput4SourceType           `json:"sourceType"`
+	Title            *string                               `json:"title,omitzero"`
+	URL              string                                `json:"url"`
 }
 
 func (ContentPartInputVariantSource5) isContentPartInput() {}
 
-type ContentPartInputVariantSource6 struct {
-	Filename         Field[string]                                `json:"filename,omitempty"`
-	ID               string                                       `json:"id"`
-	MediaType        string                                       `json:"mediaType"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	SourceType       ContentPartInput5SourceType                  `json:"sourceType"`
-	Title            string                                       `json:"title"`
+func (v ContentPartInputVariantSource5) MarshalJSON() ([]byte, error) {
+	type plain ContentPartInputVariantSource5
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "source", plain: plain(v)})
 }
 
-func (v *ContentPartInputVariantSource6) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource6: %w", err)
-	}
-	var next ContentPartInputVariantSource6
-	if err := dtoTag(object, "type", "source"); err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource6: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource6: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource6: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource6: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource6: %w", err)
-	}
-	if err := dtoRead(object, "sourceType", &next.SourceType, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource6: %w", err)
-	}
-	if err := dtoRead(object, "title", &next.Title, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantSource6: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartInputVariantSource6) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "source"
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["id"] = v.ID
-	object["mediaType"] = v.MediaType
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["sourceType"] = v.SourceType
-	object["title"] = v.Title
-	return json.Marshal(object)
+type ContentPartInputVariantSource6 struct {
+	Filename         *string                               `json:"filename,omitzero"`
+	ID               string                                `json:"id"`
+	MediaType        string                                `json:"mediaType"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	SourceType       ContentPartInput5SourceType           `json:"sourceType"`
+	Title            string                                `json:"title"`
 }
 
 func (ContentPartInputVariantSource6) isContentPartInput() {}
 
-type ContentPartInputVariantFile struct {
-	File             GeneratedFile                                `json:"file"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v ContentPartInputVariantSource6) MarshalJSON() ([]byte, error) {
+	type plain ContentPartInputVariantSource6
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "source", plain: plain(v)})
 }
 
-func (v *ContentPartInputVariantFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartInputVariantFile: %w", err)
-	}
-	var next ContentPartInputVariantFile
-	if err := dtoTag(object, "type", "file"); err != nil {
-		return fmt.Errorf("ContentPartInputVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "file", &next.File, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartInputVariantFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file"
-	object["file"] = v.File
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type ContentPartInputVariantFile struct {
+	File             GeneratedFile                         `json:"file"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (ContentPartInputVariantFile) isContentPartInput() {}
 
+func (v ContentPartInputVariantFile) MarshalJSON() ([]byte, error) {
+	type plain ContentPartInputVariantFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file", plain: plain(v)})
+}
+
 type ContentPartInputVariantToolCall struct {
 	// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
+	Dynamic *bool `json:"dynamic,omitzero"`
 	// Typed failure associated with an invalid tool call.
-	Error Field[AiMuxErrorInput] `json:"error,omitempty"`
+	Error *AiMuxErrorInput `json:"error,omitzero"`
 	// Parsed arguments, or the original string when `invalid` is true and the
 	// provider input was not valid JSON.
 	Input json.RawMessage `json:"input"`
 	// Set when lookup, JSON parsing, or schema validation still failed after
 	// the optional repair attempt.
-	Invalid Field[bool] `json:"invalid,omitempty"`
+	Invalid *bool `json:"invalid,omitzero"`
 	// Whether the tool call will be executed by the provider.
-	ProviderExecuted Field[bool] `json:"providerExecuted,omitempty"`
+	ProviderExecuted *bool `json:"providerExecuted,omitzero"`
 	// Additional provider-specific metadata associated with this call.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Provider-assigned call id.
 	ToolCallID string `json:"toolCallId"`
 	// Tool name.
 	ToolName string `json:"toolName"`
 }
 
-func (v *ContentPartInputVariantToolCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolCall: %w", err)
-	}
-	var next ContentPartInputVariantToolCall
-	if err := dtoTag(object, "type", "tool-call"); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, true, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "invalid", &next.Invalid, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartInputVariantToolCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-call"
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.Error.Present {
-		object["error"] = v.Error
-	}
-	object["input"] = v.Input
-	if v.Invalid.Present {
-		object["invalid"] = v.Invalid
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
-}
-
 func (ContentPartInputVariantToolCall) isContentPartInput() {}
 
-type ContentPartInputVariantToolResult struct {
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
-	// The input of the tool call the result answers; absent for a deferred
-	// provider result, whose call is not in this response.
-	Input            Field[json.RawMessage]                       `json:"input,omitempty"`
-	Output           json.RawMessage                              `json:"output"`
-	Preliminary      Field[bool]                                  `json:"preliminary,omitempty"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
+func (v ContentPartInputVariantToolCall) MarshalJSON() ([]byte, error) {
+	type plain ContentPartInputVariantToolCall
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-call", plain: plain(v)})
 }
 
-func (v *ContentPartInputVariantToolResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolResult: %w", err)
-	}
-	var next ContentPartInputVariantToolResult
-	if err := dtoTag(object, "type", "tool-result"); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, true, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "preliminary", &next.Preliminary, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartInputVariantToolResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-result"
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.Input.Present {
-		object["input"] = v.Input
-	}
-	object["output"] = v.Output
-	if v.Preliminary.Present {
-		object["preliminary"] = v.Preliminary
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+type ContentPartInputVariantToolResult struct {
+	Dynamic *bool `json:"dynamic,omitzero"`
+	// The input of the tool call the result answers; absent for a deferred
+	// provider result, whose call is not in this response.
+	Input            *json.RawMessage                      `json:"input,omitzero"`
+	Output           json.RawMessage                       `json:"output"`
+	Preliminary      *bool                                 `json:"preliminary,omitzero"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
 }
 
 func (ContentPartInputVariantToolResult) isContentPartInput() {}
 
-type ContentPartInputVariantToolError struct {
-	Dynamic Field[bool]     `json:"dynamic,omitempty"`
-	Error   json.RawMessage `json:"error"`
-	// The input of the tool call; absent for a deferred provider result.
-	Input            Field[json.RawMessage]                       `json:"input,omitempty"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
+func (v ContentPartInputVariantToolResult) MarshalJSON() ([]byte, error) {
+	type plain ContentPartInputVariantToolResult
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-result", plain: plain(v)})
 }
 
-func (v *ContentPartInputVariantToolError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolError: %w", err)
-	}
-	var next ContentPartInputVariantToolError
-	if err := dtoTag(object, "type", "tool-error"); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, true, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartInputVariantToolError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-error"
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	object["error"] = v.Error
-	if v.Input.Present {
-		object["input"] = v.Input
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+type ContentPartInputVariantToolError struct {
+	Dynamic *bool           `json:"dynamic,omitzero"`
+	Error   json.RawMessage `json:"error"`
+	// The input of the tool call; absent for a deferred provider result.
+	Input            *json.RawMessage                      `json:"input,omitzero"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
 }
 
 func (ContentPartInputVariantToolError) isContentPartInput() {}
 
+func (v ContentPartInputVariantToolError) MarshalJSON() ([]byte, error) {
+	type plain ContentPartInputVariantToolError
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-error", plain: plain(v)})
+}
+
 type ContentPartInputVariantToolApprovalRequest struct {
-	ApprovalID  string        `json:"approvalId"`
-	IsAutomatic Field[bool]   `json:"isAutomatic,omitempty"`
-	Reason      Field[string] `json:"reason,omitempty"`
-	Signature   Field[string] `json:"signature,omitempty"`
+	ApprovalID  string  `json:"approvalId"`
+	IsAutomatic *bool   `json:"isAutomatic,omitzero"`
+	Reason      *string `json:"reason,omitzero"`
+	Signature   *string `json:"signature,omitzero"`
 	// The call to approve, with its `type` tag (`ai`
 	// `generate-text/tool-approval-request-output.ts:20`).
 	ToolCall TypedToolCallInput `json:"toolCall"`
 }
 
-func (v *ContentPartInputVariantToolApprovalRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolApprovalRequest: %w", err)
-	}
-	var next ContentPartInputVariantToolApprovalRequest
-	if err := dtoTag(object, "type", "tool-approval-request"); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "isAutomatic", &next.IsAutomatic, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "signature", &next.Signature, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolApprovalRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartInputVariantToolApprovalRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-approval-request"
-	object["approvalId"] = v.ApprovalID
-	if v.IsAutomatic.Present {
-		object["isAutomatic"] = v.IsAutomatic
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	if v.Signature.Present {
-		object["signature"] = v.Signature
-	}
-	object["toolCall"] = v.ToolCall
-	return json.Marshal(object)
-}
-
 func (ContentPartInputVariantToolApprovalRequest) isContentPartInput() {}
 
+func (v ContentPartInputVariantToolApprovalRequest) MarshalJSON() ([]byte, error) {
+	type plain ContentPartInputVariantToolApprovalRequest
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-approval-request", plain: plain(v)})
+}
+
 type ContentPartInputVariantToolApprovalResponse struct {
-	ApprovalID       string        `json:"approvalId"`
-	Approved         bool          `json:"approved"`
-	ProviderExecuted Field[bool]   `json:"providerExecuted,omitempty"`
-	Reason           Field[string] `json:"reason,omitempty"`
+	ApprovalID       string  `json:"approvalId"`
+	Approved         bool    `json:"approved"`
+	ProviderExecuted *bool   `json:"providerExecuted,omitzero"`
+	Reason           *string `json:"reason,omitzero"`
 	// The answered call, with its `type` tag (`TypedToolCall`,
 	// `tool-approval-response-output.ts:18`).
 	ToolCall TypedToolCallInput `json:"toolCall"`
 }
 
-func (v *ContentPartInputVariantToolApprovalResponse) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolApprovalResponse: %w", err)
-	}
-	var next ContentPartInputVariantToolApprovalResponse
-	if err := dtoTag(object, "type", "tool-approval-response"); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "approved", &next.Approved, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("ContentPartInputVariantToolApprovalResponse: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ContentPartInputVariantToolApprovalResponse) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-approval-response"
-	object["approvalId"] = v.ApprovalID
-	object["approved"] = v.Approved
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	object["toolCall"] = v.ToolCall
-	return json.Marshal(object)
-}
-
 func (ContentPartInputVariantToolApprovalResponse) isContentPartInput() {}
+
+func (v ContentPartInputVariantToolApprovalResponse) MarshalJSON() ([]byte, error) {
+	type plain ContentPartInputVariantToolApprovalResponse
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-approval-response", plain: plain(v)})
+}
 
 type ContentPartInput4SourceType string
 
@@ -5531,313 +2716,103 @@ const (
 	ContentPartInput4SourceTypeURL ContentPartInput4SourceType = "url"
 )
 
-func (v *ContentPartInput4SourceType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "url":
-		*v = ContentPartInput4SourceType(next)
-		return nil
-	}
-	return fmt.Errorf("ContentPartInput4SourceType: unknown value %s", data)
-}
-
 type ContentPartInput5SourceType string
 
 const (
 	ContentPartInput5SourceTypeDocument ContentPartInput5SourceType = "document"
 )
 
-func (v *ContentPartInput5SourceType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "document":
-		*v = ContentPartInput5SourceType(next)
-		return nil
-	}
-	return fmt.Errorf("ContentPartInput5SourceType: unknown value %s", data)
-}
-
 type CreateRecorderParams struct {
 	Backend       BackendConfig `json:"backend"`
 	CapturePolicy CapturePolicy `json:"capturePolicy"`
-}
-
-func (v *CreateRecorderParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("CreateRecorderParams: %w", err)
-	}
-	var next CreateRecorderParams
-	if err := dtoRead(object, "backend", &next.Backend, true, false); err != nil {
-		return fmt.Errorf("CreateRecorderParams: %w", err)
-	}
-	if err := dtoRead(object, "capturePolicy", &next.CapturePolicy, true, false); err != nil {
-		return fmt.Errorf("CreateRecorderParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v CreateRecorderParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["backend"] = v.Backend
-	object["capturePolicy"] = v.CapturePolicy
-	return json.Marshal(object)
 }
 
 type CredentialParams struct {
 	Kind string `json:"kind"`
 }
 
-func (v *CredentialParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("CredentialParams: %w", err)
-	}
-	var next CredentialParams
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("CredentialParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v CredentialParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["kind"] = v.Kind
-	return json.Marshal(object)
-}
-
 // Provider-specific content identified by its provider and kind.
 type CustomPart struct {
-	Kind            NamespacedKind                               `json:"kind"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-}
-
-func (v *CustomPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("CustomPart: %w", err)
-	}
-	var next CustomPart
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("CustomPart: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("CustomPart: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v CustomPart) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["kind"] = v.Kind
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+	Kind            NamespacedKind                        `json:"kind"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 // Options of [`decide`]: the call options plus the operation settings
 // (`ai@7.0.128 src/decide/decide.ts:53-61`).
 type DecideOptions struct {
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// Maximum retries for transient provider failures. Defaults to 2.
-	MaxRetries      Field[uint32]                                `json:"maxRetries,omitempty"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Questions       map[string]DecisionQuestion                  `json:"questions"`
-	State           DecisionInput                                `json:"state"`
+	MaxRetries      *uint32                               `json:"maxRetries,omitzero"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Questions       map[string]DecisionQuestion           `json:"questions"`
+	State           DecisionInput                         `json:"state"`
 	// Operation deadline (aimux extension).
-	Timeout Field[TimeoutConfiguration] `json:"timeout,omitempty"`
-}
-
-func (v *DecideOptions) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("DecideOptions: %w", err)
-	}
-	var next DecideOptions
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("DecideOptions: %w", err)
-	}
-	if err := dtoRead(object, "maxRetries", &next.MaxRetries, false, true); err != nil {
-		return fmt.Errorf("DecideOptions: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("DecideOptions: %w", err)
-	}
-	if err := dtoRead(object, "questions", &next.Questions, true, false); err != nil {
-		return fmt.Errorf("DecideOptions: %w", err)
-	}
-	if err := dtoRead(object, "state", &next.State, true, false); err != nil {
-		return fmt.Errorf("DecideOptions: %w", err)
-	}
-	if err := dtoRead(object, "timeout", &next.Timeout, false, true); err != nil {
-		return fmt.Errorf("DecideOptions: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v DecideOptions) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.MaxRetries.Present {
-		object["maxRetries"] = v.MaxRetries
-	}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["questions"] = v.Questions
-	object["state"] = v.State
-	if v.Timeout.Present {
-		object["timeout"] = v.Timeout
-	}
-	return json.Marshal(object)
+	Timeout *TimeoutConfiguration `json:"timeout,omitzero"`
 }
 
 // The result of [`decide`] (`DecisionResult` of
 // `ai@7.0.128 src/decide/decision-result.ts:22-39`).
 type DecideResult struct {
-	Answers          map[string]DecisionAnswer                    `json:"answers"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	Answers          map[string]DecisionAnswer             `json:"answers"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// The model's response information; the timestamp defaults to the end of
 	// the call and the model id to the model's.
-	Response ResponseInfo            `json:"response"`
-	Rounding Field[DecisionRounding] `json:"rounding,omitempty"`
-	Usage    DecideUsage             `json:"usage"`
-	Warnings []Warning               `json:"warnings"`
-}
-
-func (v *DecideResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("DecideResult: %w", err)
-	}
-	var next DecideResult
-	if err := dtoRead(object, "answers", &next.Answers, true, false); err != nil {
-		return fmt.Errorf("DecideResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("DecideResult: %w", err)
-	}
-	if err := dtoRead(object, "response", &next.Response, true, false); err != nil {
-		return fmt.Errorf("DecideResult: %w", err)
-	}
-	if err := dtoRead(object, "rounding", &next.Rounding, false, true); err != nil {
-		return fmt.Errorf("DecideResult: %w", err)
-	}
-	if err := dtoRead(object, "usage", &next.Usage, true, false); err != nil {
-		return fmt.Errorf("DecideResult: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, true, false); err != nil {
-		return fmt.Errorf("DecideResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v DecideResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["answers"] = v.Answers
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["response"] = v.Response
-	if v.Rounding.Present {
-		object["rounding"] = v.Rounding
-	}
-	object["usage"] = v.Usage
-	object["warnings"] = v.Warnings
-	return json.Marshal(object)
+	Response ResponseInfo      `json:"response"`
+	Rounding *DecisionRounding `json:"rounding,omitzero"`
+	Usage    DecideUsage       `json:"usage"`
+	Warnings []Warning         `json:"warnings"`
 }
 
 // Token usage of a decision, with the total when both counts are known
 // (`ai@7.0.128 src/decide/decision-result.ts:27-31`): an unknown count is
 // `undefined` there, so it is omitted.
 type DecideUsage struct {
-	InputTokens  Field[uint32] `json:"inputTokens,omitempty"`
-	OutputTokens Field[uint32] `json:"outputTokens,omitempty"`
-	TotalTokens  Field[uint32] `json:"totalTokens,omitempty"`
-}
-
-func (v *DecideUsage) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("DecideUsage: %w", err)
-	}
-	var next DecideUsage
-	if err := dtoRead(object, "inputTokens", &next.InputTokens, false, true); err != nil {
-		return fmt.Errorf("DecideUsage: %w", err)
-	}
-	if err := dtoRead(object, "outputTokens", &next.OutputTokens, false, true); err != nil {
-		return fmt.Errorf("DecideUsage: %w", err)
-	}
-	if err := dtoRead(object, "totalTokens", &next.TotalTokens, false, true); err != nil {
-		return fmt.Errorf("DecideUsage: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v DecideUsage) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.InputTokens.Present {
-		object["inputTokens"] = v.InputTokens
-	}
-	if v.OutputTokens.Present {
-		object["outputTokens"] = v.OutputTokens
-	}
-	if v.TotalTokens.Present {
-		object["totalTokens"] = v.TotalTokens
-	}
-	return json.Marshal(object)
+	InputTokens  *uint32 `json:"inputTokens,omitzero"`
+	OutputTokens *uint32 `json:"outputTokens,omitzero"`
+	TotalTokens  *uint32 `json:"totalTokens,omitzero"`
 }
 
 // The answer to one question (`DecisionModelV4Answer`).
 type DecisionAnswerVariant interface{ isDecisionAnswer() }
-type DecisionAnswer struct{ Value DecisionAnswerVariant }
+type DecisionAnswer struct {
+	Value DecisionAnswerVariant
+}
 
 func (v DecisionAnswer) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("DecisionAnswer: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *DecisionAnswer) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("DecisionAnswer: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("DecisionAnswer: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "choice" {
-		var next DecisionAnswerVariantChoice
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "score" {
-		var next DecisionAnswerVariantScore
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "boolean" {
+	switch tag.Type {
+	case "boolean":
 		var next DecisionAnswerVariantBoolean
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "choice":
+		var next DecisionAnswerVariantChoice
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "score":
+		var next DecisionAnswerVariantScore
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("DecisionAnswer: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("DecisionAnswer: unknown type tag %q", tag.Type)
 }
 
 type DecisionAnswerVariantChoice struct {
@@ -5845,76 +2820,36 @@ type DecisionAnswerVariantChoice struct {
 	// exists.
 	Choice string `json:"choice"`
 	// Complete distribution over the question's options, when available.
-	Probabilities Field[map[string]float64] `json:"probabilities,omitempty"`
-}
-
-func (v *DecisionAnswerVariantChoice) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("DecisionAnswerVariantChoice: %w", err)
-	}
-	var next DecisionAnswerVariantChoice
-	if err := dtoTag(object, "type", "choice"); err != nil {
-		return fmt.Errorf("DecisionAnswerVariantChoice: %w", err)
-	}
-	if err := dtoRead(object, "choice", &next.Choice, true, false); err != nil {
-		return fmt.Errorf("DecisionAnswerVariantChoice: %w", err)
-	}
-	if err := dtoRead(object, "probabilities", &next.Probabilities, false, true); err != nil {
-		return fmt.Errorf("DecisionAnswerVariantChoice: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v DecisionAnswerVariantChoice) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "choice"
-	object["choice"] = v.Choice
-	if v.Probabilities.Present {
-		object["probabilities"] = v.Probabilities
-	}
-	return json.Marshal(object)
+	Probabilities map[string]float64 `json:"probabilities,omitzero"`
 }
 
 func (DecisionAnswerVariantChoice) isDecisionAnswer() {}
 
+func (v DecisionAnswerVariantChoice) MarshalJSON() ([]byte, error) {
+	type plain DecisionAnswerVariantChoice
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "choice", plain: plain(v)})
+}
+
 type DecisionAnswerVariantScore struct {
 	// Complete distribution keyed by zero-based level indices as
 	// strings; when supplied, `score` is its probability-weighted mean.
-	Probabilities Field[map[string]float64] `json:"probabilities,omitempty"`
+	Probabilities map[string]float64 `json:"probabilities,omitzero"`
 	// Fractional position in `[0, levels - 1]`.
 	Score float64 `json:"score"`
 }
 
-func (v *DecisionAnswerVariantScore) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("DecisionAnswerVariantScore: %w", err)
-	}
-	var next DecisionAnswerVariantScore
-	if err := dtoTag(object, "type", "score"); err != nil {
-		return fmt.Errorf("DecisionAnswerVariantScore: %w", err)
-	}
-	if err := dtoRead(object, "probabilities", &next.Probabilities, false, true); err != nil {
-		return fmt.Errorf("DecisionAnswerVariantScore: %w", err)
-	}
-	if err := dtoRead(object, "score", &next.Score, true, false); err != nil {
-		return fmt.Errorf("DecisionAnswerVariantScore: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v DecisionAnswerVariantScore) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "score"
-	if v.Probabilities.Present {
-		object["probabilities"] = v.Probabilities
-	}
-	object["score"] = v.Score
-	return json.Marshal(object)
-}
-
 func (DecisionAnswerVariantScore) isDecisionAnswer() {}
+
+func (v DecisionAnswerVariantScore) MarshalJSON() ([]byte, error) {
+	type plain DecisionAnswerVariantScore
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "score", plain: plain(v)})
+}
 
 type DecisionAnswerVariantBoolean struct {
 	// Model-estimated P(true), in `[0, 1]`. Not confidence in either
@@ -5922,189 +2857,135 @@ type DecisionAnswerVariantBoolean struct {
 	Probability float64 `json:"probability"`
 }
 
-func (v *DecisionAnswerVariantBoolean) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("DecisionAnswerVariantBoolean: %w", err)
-	}
-	var next DecisionAnswerVariantBoolean
-	if err := dtoTag(object, "type", "boolean"); err != nil {
-		return fmt.Errorf("DecisionAnswerVariantBoolean: %w", err)
-	}
-	if err := dtoRead(object, "probability", &next.Probability, true, false); err != nil {
-		return fmt.Errorf("DecisionAnswerVariantBoolean: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v DecisionAnswerVariantBoolean) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "boolean"
-	object["probability"] = v.Probability
-	return json.Marshal(object)
-}
-
 func (DecisionAnswerVariantBoolean) isDecisionAnswer() {}
+
+func (v DecisionAnswerVariantBoolean) MarshalJSON() ([]byte, error) {
+	type plain DecisionAnswerVariantBoolean
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "boolean", plain: plain(v)})
+}
 
 // The optional descriptions of a Boolean question's outcomes. An absent key
 // and an explicit `null` differ: `Some(None)` is `null` (no description).
 // Other keys are rejected: Boolean criteria may only describe `true` and
 // `false` (`ai@7.0.128 src/decide/validate-decision.ts:94-105`).
 type DecisionBooleanCriteria struct {
-	False Field[DecisionInput] `json:"false,omitempty"`
-	True  Field[DecisionInput] `json:"true,omitempty"`
-}
-
-func (v *DecisionBooleanCriteria) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("DecisionBooleanCriteria: %w", err)
-	}
-	var next DecisionBooleanCriteria
-	if err := dtoRead(object, "false", &next.False, false, true); err != nil {
-		return fmt.Errorf("DecisionBooleanCriteria: %w", err)
-	}
-	if err := dtoRead(object, "true", &next.True, false, true); err != nil {
-		return fmt.Errorf("DecisionBooleanCriteria: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v DecisionBooleanCriteria) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.False.Present {
-		object["false"] = v.False
-	}
-	if v.True.Present {
-		object["true"] = v.True
-	}
-	return json.Marshal(object)
+	False Field[*DecisionInput] `json:"false,omitzero"`
+	True  Field[*DecisionInput] `json:"true,omitzero"`
 }
 
 // Runtime controls surround the canonical business options; only the control
 // object rejects unknown fields. Dispatch resolves `abort` with the caller's
 // owner before entering the handler and supplies its signal in `Ctx`.
 type DecisionDecideRequest struct {
-	Abort   Field[HandleIdInput] `json:"abort,omitempty"`
-	Options DecideOptions        `json:"options"`
-}
-
-func (v *DecisionDecideRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("DecisionDecideRequest: %w", err)
-	}
-	var next DecisionDecideRequest
-	if err := dtoRead(object, "abort", &next.Abort, false, true); err != nil {
-		return fmt.Errorf("DecisionDecideRequest: %w", err)
-	}
-	if err := dtoRead(object, "options", &next.Options, true, false); err != nil {
-		return fmt.Errorf("DecisionDecideRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v DecisionDecideRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Abort.Present {
-		object["abort"] = v.Abort
-	}
-	object["options"] = v.Options
-	return json.Marshal(object)
+	Abort   *HandleIdInput `json:"abort,omitzero"`
+	Options DecideOptions  `json:"options"`
 }
 
 // Shared state or structured instructions for a decision
 // (`DecisionModelV4Input`: a string, a JSON object or a JSON array).
 type DecisionInputVariant interface{ isDecisionInput() }
-type DecisionInput struct{ Value DecisionInputVariant }
+type DecisionInput struct {
+	Value DecisionInputVariant
+}
 
 func (v DecisionInput) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("DecisionInput: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *DecisionInput) UnmarshalJSON(data []byte) error {
+	var err error
 	{
 		var next string
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = DecisionInputBranch0{Value: next}
 			return nil
 		}
 	}
 	{
 		var next map[string]json.RawMessage
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = DecisionInputBranch1{Value: next}
 			return nil
 		}
 	}
 	{
 		var next []json.RawMessage
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = DecisionInputBranch2{Value: next}
 			return nil
 		}
 	}
-	return fmt.Errorf("DecisionInput: no matching branch")
+	return err
 }
 
 type DecisionInputBranch0 struct{ Value string }
 
-func (DecisionInputBranch0) isDecisionInput()               {}
-func (v DecisionInputBranch0) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (DecisionInputBranch0) isDecisionInput() {}
+
+func (v DecisionInputBranch0) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type DecisionInputBranch1 struct{ Value map[string]json.RawMessage }
 
-func (DecisionInputBranch1) isDecisionInput()               {}
-func (v DecisionInputBranch1) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (DecisionInputBranch1) isDecisionInput() {}
+
+func (v DecisionInputBranch1) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type DecisionInputBranch2 struct{ Value []json.RawMessage }
 
-func (DecisionInputBranch2) isDecisionInput()               {}
-func (v DecisionInputBranch2) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (DecisionInputBranch2) isDecisionInput() {}
+
+func (v DecisionInputBranch2) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 // A judgment to make about the shared state (`DecisionModelV4Question`).
 type DecisionQuestionVariant interface{ isDecisionQuestion() }
-type DecisionQuestion struct{ Value DecisionQuestionVariant }
+type DecisionQuestion struct {
+	Value DecisionQuestionVariant
+}
 
 func (v DecisionQuestion) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("DecisionQuestion: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *DecisionQuestion) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("DecisionQuestion: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("DecisionQuestion: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "choice" {
-		var next DecisionQuestionVariantChoice
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "score" {
-		var next DecisionQuestionVariantScore
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "boolean" {
+	switch tag.Type {
+	case "boolean":
 		var next DecisionQuestionVariantBoolean
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "choice":
+		var next DecisionQuestionVariantChoice
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "score":
+		var next DecisionQuestionVariantScore
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("DecisionQuestion: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("DecisionQuestion: unknown type tag %q", tag.Type)
 }
 
 type DecisionQuestionVariantChoice struct {
@@ -6114,33 +2995,15 @@ type DecisionQuestionVariantChoice struct {
 	Instructions DecisionInput             `json:"instructions"`
 }
 
-func (v *DecisionQuestionVariantChoice) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("DecisionQuestionVariantChoice: %w", err)
-	}
-	var next DecisionQuestionVariantChoice
-	if err := dtoTag(object, "type", "choice"); err != nil {
-		return fmt.Errorf("DecisionQuestionVariantChoice: %w", err)
-	}
-	if err := dtoRead(object, "criteria", &next.Criteria, true, false); err != nil {
-		return fmt.Errorf("DecisionQuestionVariantChoice: %w", err)
-	}
-	if err := dtoRead(object, "instructions", &next.Instructions, true, false); err != nil {
-		return fmt.Errorf("DecisionQuestionVariantChoice: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v DecisionQuestionVariantChoice) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "choice"
-	object["criteria"] = v.Criteria
-	object["instructions"] = v.Instructions
-	return json.Marshal(object)
-}
-
 func (DecisionQuestionVariantChoice) isDecisionQuestion() {}
+
+func (v DecisionQuestionVariantChoice) MarshalJSON() ([]byte, error) {
+	type plain DecisionQuestionVariantChoice
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "choice", plain: plain(v)})
+}
 
 type DecisionQuestionVariantScore struct {
 	// At least two ordered levels, indexed from zero.
@@ -6148,101 +3011,37 @@ type DecisionQuestionVariantScore struct {
 	Instructions DecisionInput    `json:"instructions"`
 }
 
-func (v *DecisionQuestionVariantScore) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("DecisionQuestionVariantScore: %w", err)
-	}
-	var next DecisionQuestionVariantScore
-	if err := dtoTag(object, "type", "score"); err != nil {
-		return fmt.Errorf("DecisionQuestionVariantScore: %w", err)
-	}
-	if err := dtoRead(object, "criteria", &next.Criteria, true, false); err != nil {
-		return fmt.Errorf("DecisionQuestionVariantScore: %w", err)
-	}
-	if err := dtoRead(object, "instructions", &next.Instructions, true, false); err != nil {
-		return fmt.Errorf("DecisionQuestionVariantScore: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v DecisionQuestionVariantScore) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "score"
-	object["criteria"] = v.Criteria
-	object["instructions"] = v.Instructions
-	return json.Marshal(object)
-}
-
 func (DecisionQuestionVariantScore) isDecisionQuestion() {}
 
-type DecisionQuestionVariantBoolean struct {
-	Criteria     Field[DecisionBooleanCriteria] `json:"criteria,omitempty"`
-	Instructions DecisionInput                  `json:"instructions"`
+func (v DecisionQuestionVariantScore) MarshalJSON() ([]byte, error) {
+	type plain DecisionQuestionVariantScore
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "score", plain: plain(v)})
 }
 
-func (v *DecisionQuestionVariantBoolean) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("DecisionQuestionVariantBoolean: %w", err)
-	}
-	var next DecisionQuestionVariantBoolean
-	if err := dtoTag(object, "type", "boolean"); err != nil {
-		return fmt.Errorf("DecisionQuestionVariantBoolean: %w", err)
-	}
-	if err := dtoRead(object, "criteria", &next.Criteria, false, true); err != nil {
-		return fmt.Errorf("DecisionQuestionVariantBoolean: %w", err)
-	}
-	if err := dtoRead(object, "instructions", &next.Instructions, true, false); err != nil {
-		return fmt.Errorf("DecisionQuestionVariantBoolean: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v DecisionQuestionVariantBoolean) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "boolean"
-	if v.Criteria.Present {
-		object["criteria"] = v.Criteria
-	}
-	object["instructions"] = v.Instructions
-	return json.Marshal(object)
+type DecisionQuestionVariantBoolean struct {
+	Criteria     *DecisionBooleanCriteria `json:"criteria,omitzero"`
+	Instructions DecisionInput            `json:"instructions"`
 }
 
 func (DecisionQuestionVariantBoolean) isDecisionQuestion() {}
+
+func (v DecisionQuestionVariantBoolean) MarshalJSON() ([]byte, error) {
+	type plain DecisionQuestionVariantBoolean
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "boolean", plain: plain(v)})
+}
 
 // Decimal places the provider rounded its output to; omit for full
 // precision. Validation allows half a unit in the last place per rounded
 // value (`decision-model-v4-result.ts:39-42`).
 type DecisionRounding struct {
-	ProbabilityDecimals Field[uint32] `json:"probabilityDecimals,omitempty"`
-	ScoreDecimals       Field[uint32] `json:"scoreDecimals,omitempty"`
-}
-
-func (v *DecisionRounding) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("DecisionRounding: %w", err)
-	}
-	var next DecisionRounding
-	if err := dtoRead(object, "probabilityDecimals", &next.ProbabilityDecimals, false, true); err != nil {
-		return fmt.Errorf("DecisionRounding: %w", err)
-	}
-	if err := dtoRead(object, "scoreDecimals", &next.ScoreDecimals, false, true); err != nil {
-		return fmt.Errorf("DecisionRounding: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v DecisionRounding) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.ProbabilityDecimals.Present {
-		object["probabilityDecimals"] = v.ProbabilityDecimals
-	}
-	if v.ScoreDecimals.Present {
-		object["scoreDecimals"] = v.ScoreDecimals
-	}
-	return json.Marshal(object)
+	ProbabilityDecimals *uint32 `json:"probabilityDecimals,omitzero"`
+	ScoreDecimals       *uint32 `json:"scoreDecimals,omitzero"`
 }
 
 // Options passed to [`EmbeddingModel::do_embed`].
@@ -6250,92 +3049,24 @@ func (v DecisionRounding) MarshalJSON() ([]byte, error) {
 // Aligned with V4 `EmbeddingModelV4CallOptions`.
 type EmbeddingCallOptions struct {
 	// Additional HTTP headers to send with the request.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
 	// retrying. `None` uses 2, the AI SDK default.
-	MaxRetries Field[uint32] `json:"maxRetries,omitempty"`
+	MaxRetries *uint32 `json:"maxRetries,omitzero"`
 	// Additional provider-specific options, keyed by provider name.
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 	// Per-call operation timeout.
-	Timeout Field[TimeoutConfiguration] `json:"timeout,omitempty"`
+	Timeout *TimeoutConfiguration `json:"timeout,omitzero"`
 	// List of text values to generate embeddings for.
 	Values []string `json:"values"`
-}
-
-func (v *EmbeddingCallOptions) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("EmbeddingCallOptions: %w", err)
-	}
-	var next EmbeddingCallOptions
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("EmbeddingCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "maxRetries", &next.MaxRetries, false, true); err != nil {
-		return fmt.Errorf("EmbeddingCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("EmbeddingCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "timeout", &next.Timeout, false, true); err != nil {
-		return fmt.Errorf("EmbeddingCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "values", &next.Values, true, false); err != nil {
-		return fmt.Errorf("EmbeddingCallOptions: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v EmbeddingCallOptions) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.MaxRetries.Present {
-		object["maxRetries"] = v.MaxRetries
-	}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	if v.Timeout.Present {
-		object["timeout"] = v.Timeout
-	}
-	object["values"] = v.Values
-	return json.Marshal(object)
 }
 
 // Debugging response info specific to embedding calls.
 type EmbeddingResponse struct {
 	// The response body (opaque JSON).
-	Body Field[json.RawMessage] `json:"body,omitempty"`
+	Body Field[json.RawMessage] `json:"body,omitzero"`
 	// Response headers.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
-}
-
-func (v *EmbeddingResponse) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("EmbeddingResponse: %w", err)
-	}
-	var next EmbeddingResponse
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("EmbeddingResponse: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("EmbeddingResponse: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v EmbeddingResponse) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	return json.Marshal(object)
+	Headers map[string]string `json:"headers,omitzero"`
 }
 
 // The result of [`EmbeddingModel::do_embed`].
@@ -6345,53 +3076,13 @@ type EmbeddingResult struct {
 	// Generated embeddings, in the same order as the input `values`.
 	Embeddings [][]float64 `json:"embeddings"`
 	// Additional provider-specific metadata.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Optional response information for debugging.
-	Response Field[EmbeddingResponse] `json:"response,omitempty"`
+	Response *EmbeddingResponse `json:"response,omitzero"`
 	// Token usage (input tokens only).
-	Usage Field[EmbeddingUsage] `json:"usage,omitempty"`
+	Usage *EmbeddingUsage `json:"usage,omitzero"`
 	// Warnings for the call, e.g. unsupported settings.
 	Warnings []Warning `json:"warnings"`
-}
-
-func (v *EmbeddingResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("EmbeddingResult: %w", err)
-	}
-	var next EmbeddingResult
-	if err := dtoRead(object, "embeddings", &next.Embeddings, true, false); err != nil {
-		return fmt.Errorf("EmbeddingResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("EmbeddingResult: %w", err)
-	}
-	if err := dtoRead(object, "response", &next.Response, false, true); err != nil {
-		return fmt.Errorf("EmbeddingResult: %w", err)
-	}
-	if err := dtoRead(object, "usage", &next.Usage, false, true); err != nil {
-		return fmt.Errorf("EmbeddingResult: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, true, false); err != nil {
-		return fmt.Errorf("EmbeddingResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v EmbeddingResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["embeddings"] = v.Embeddings
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.Response.Present {
-		object["response"] = v.Response
-	}
-	if v.Usage.Present {
-		object["usage"] = v.Usage
-	}
-	object["warnings"] = v.Warnings
-	return json.Marshal(object)
 }
 
 // Token usage for an embedding call. Embeddings only report input tokens.
@@ -6400,57 +3091,9 @@ type EmbeddingUsage struct {
 	Tokens uint32 `json:"tokens"`
 }
 
-func (v *EmbeddingUsage) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("EmbeddingUsage: %w", err)
-	}
-	var next EmbeddingUsage
-	if err := dtoRead(object, "tokens", &next.Tokens, true, false); err != nil {
-		return fmt.Errorf("EmbeddingUsage: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v EmbeddingUsage) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["tokens"] = v.Tokens
-	return json.Marshal(object)
-}
+type EmptyParams struct{}
 
-type EmptyParams struct {
-}
-
-func (v *EmptyParams) UnmarshalJSON(data []byte) error {
-	_, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("EmptyParams: %w", err)
-	}
-	var next EmptyParams
-	*v = next
-	return nil
-}
-func (v EmptyParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	return json.Marshal(object)
-}
-
-type EmptyParams2 struct {
-}
-
-func (v *EmptyParams2) UnmarshalJSON(data []byte) error {
-	_, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("EmptyParams2: %w", err)
-	}
-	var next EmptyParams2
-	*v = next
-	return nil
-}
-func (v EmptyParams2) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	return json.Marshal(object)
-}
+type EmptyParams2 struct{}
 
 type ErrorDomain string
 
@@ -6461,28 +3104,6 @@ const (
 	ErrorDomainProtocol  ErrorDomain = "protocol"
 )
 
-func (v *ErrorDomain) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "aimux":
-		*v = ErrorDomain(next)
-		return nil
-	case "recording":
-		*v = ErrorDomain(next)
-		return nil
-	case "binding":
-		*v = ErrorDomain(next)
-		return nil
-	case "protocol":
-		*v = ErrorDomain(next)
-		return nil
-	}
-	return fmt.Errorf("ErrorDomain: unknown value %s", data)
-}
-
 // Keep the payload open so newer error variants, provider data, and explicit
 // JSON nulls survive decoding and re-encoding by an older adapter.
 type ErrorEnvelope struct {
@@ -6490,43 +3111,7 @@ type ErrorEnvelope struct {
 	Error        json.RawMessage `json:"error"`
 	Kind         ErrorDomain     `json:"kind"`
 	Message      string          `json:"message"`
-	RetryAfterMs Field[uint64]   `json:"retryAfterMs,omitempty"`
-}
-
-func (v *ErrorEnvelope) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ErrorEnvelope: %w", err)
-	}
-	var next ErrorEnvelope
-	if err := dtoRead(object, "code", &next.Code, true, false); err != nil {
-		return fmt.Errorf("ErrorEnvelope: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, true, true); err != nil {
-		return fmt.Errorf("ErrorEnvelope: %w", err)
-	}
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("ErrorEnvelope: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("ErrorEnvelope: %w", err)
-	}
-	if err := dtoRead(object, "retryAfterMs", &next.RetryAfterMs, false, false); err != nil {
-		return fmt.Errorf("ErrorEnvelope: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ErrorEnvelope) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["code"] = v.Code
-	object["error"] = v.Error
-	object["kind"] = v.Kind
-	object["message"] = v.Message
-	if v.RetryAfterMs.Present {
-		object["retryAfterMs"] = v.RetryAfterMs
-	}
-	return json.Marshal(object)
+	RetryAfterMs *uint64         `json:"retryAfterMs,omitzero"`
 }
 
 type Fallback string
@@ -6535,22 +3120,6 @@ const (
 	FallbackOnError Fallback = "on_error"
 	FallbackNone    Fallback = "none"
 )
-
-func (v *Fallback) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "on_error":
-		*v = Fallback(next)
-		return nil
-	case "none":
-		*v = Fallback(next)
-		return nil
-	}
-	return fmt.Errorf("Fallback: unknown value %s", data)
-}
 
 // Either raw bytes or a base64-encoded string (the AI SDK's
 // `Uint8Array | string`).
@@ -6568,213 +3137,117 @@ type FileBytes = string
 //
 // Aligned with V4 `SharedV4FileData`.
 type FileDataVariant interface{ isFileData() }
-type FileData struct{ Value FileDataVariant }
+type FileData struct {
+	Value FileDataVariant
+}
 
 func (v FileData) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("FileData: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *FileData) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("FileData: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("FileData: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "data" {
+	switch tag.Type {
+	case "data":
 		var next FileDataVariantData
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "url" {
-		var next FileDataVariantURL
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "reference" {
+		v.Value = next
+		return nil
+	case "reference":
 		var next FileDataVariantReference
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "text" {
+		v.Value = next
+		return nil
+	case "text":
 		var next FileDataVariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "url":
+		var next FileDataVariantURL
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("FileData: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("FileData: unknown type tag %q", tag.Type)
 }
 
 type FileDataVariantData struct {
 	Data FileBytes `json:"data"`
 }
 
-func (v *FileDataVariantData) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("FileDataVariantData: %w", err)
-	}
-	var next FileDataVariantData
-	if err := dtoTag(object, "type", "data"); err != nil {
-		return fmt.Errorf("FileDataVariantData: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("FileDataVariantData: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v FileDataVariantData) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "data"
-	object["data"] = v.Data
-	return json.Marshal(object)
-}
-
 func (FileDataVariantData) isFileData() {}
 
-type FileDataVariantURL struct {
-	OriginalURL Field[string] `json:"originalUrl,omitempty"`
-	URL         string        `json:"url"`
+func (v FileDataVariantData) MarshalJSON() ([]byte, error) {
+	type plain FileDataVariantData
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "data", plain: plain(v)})
 }
 
-func (v *FileDataVariantURL) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("FileDataVariantURL: %w", err)
-	}
-	var next FileDataVariantURL
-	if err := dtoTag(object, "type", "url"); err != nil {
-		return fmt.Errorf("FileDataVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "originalUrl", &next.OriginalURL, false, true); err != nil {
-		return fmt.Errorf("FileDataVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("FileDataVariantURL: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v FileDataVariantURL) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "url"
-	if v.OriginalURL.Present {
-		object["originalUrl"] = v.OriginalURL
-	}
-	object["url"] = v.URL
-	return json.Marshal(object)
+type FileDataVariantURL struct {
+	OriginalURL *string `json:"originalUrl,omitzero"`
+	URL         string  `json:"url"`
 }
 
 func (FileDataVariantURL) isFileData() {}
+
+func (v FileDataVariantURL) MarshalJSON() ([]byte, error) {
+	type plain FileDataVariantURL
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "url", plain: plain(v)})
+}
 
 type FileDataVariantReference struct {
 	Reference map[string]string `json:"reference"`
 }
 
-func (v *FileDataVariantReference) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("FileDataVariantReference: %w", err)
-	}
-	var next FileDataVariantReference
-	if err := dtoTag(object, "type", "reference"); err != nil {
-		return fmt.Errorf("FileDataVariantReference: %w", err)
-	}
-	if err := dtoRead(object, "reference", &next.Reference, true, false); err != nil {
-		return fmt.Errorf("FileDataVariantReference: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v FileDataVariantReference) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reference"
-	object["reference"] = v.Reference
-	return json.Marshal(object)
-}
-
 func (FileDataVariantReference) isFileData() {}
+
+func (v FileDataVariantReference) MarshalJSON() ([]byte, error) {
+	type plain FileDataVariantReference
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reference", plain: plain(v)})
+}
 
 type FileDataVariantText struct {
 	Text string `json:"text"`
 }
 
-func (v *FileDataVariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("FileDataVariantText: %w", err)
-	}
-	var next FileDataVariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("FileDataVariantText: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("FileDataVariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v FileDataVariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	object["text"] = v.Text
-	return json.Marshal(object)
-}
-
 func (FileDataVariantText) isFileData() {}
+
+func (v FileDataVariantText) MarshalJSON() ([]byte, error) {
+	type plain FileDataVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
+}
 
 // File content part (the only file part; `data` is a tagged `FileData`).
 type FilePart struct {
-	Data            FileData                                     `json:"data"`
-	Filename        Field[string]                                `json:"filename,omitempty"`
-	MediaType       string                                       `json:"mediaType"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-}
-
-func (v *FilePart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("FilePart: %w", err)
-	}
-	var next FilePart
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("FilePart: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("FilePart: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("FilePart: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("FilePart: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v FilePart) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["data"] = v.Data
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+	Data            FileData                              `json:"data"`
+	Filename        *string                               `json:"filename,omitzero"`
+	MediaType       string                                `json:"mediaType"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 // `FilePart.data` (`provider-utils` `types/content-part.ts:75`):
@@ -6785,53 +3258,63 @@ func (v FilePart) MarshalJSON() ([]byte, error) {
 // (`ai` `prompt/file-part-data.ts:125-131`): a URL when it parses as one
 // (a `data:` URL becomes inline data), base64 otherwise.
 type FilePartDataVariant interface{ isFilePartData() }
-type FilePartData struct{ Value FilePartDataVariant }
+type FilePartData struct {
+	Value FilePartDataVariant
+}
 
 func (v FilePartData) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("FilePartData: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *FilePartData) UnmarshalJSON(data []byte) error {
+	var err error
 	{
 		var next FileData
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = FilePartDataBranch0{Value: next}
 			return nil
 		}
 	}
 	{
 		var next string
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = FilePartDataBranch1{Value: next}
 			return nil
 		}
 	}
 	{
 		var next map[string]string
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = FilePartDataBranch2{Value: next}
 			return nil
 		}
 	}
-	return fmt.Errorf("FilePartData: no matching branch")
+	return err
 }
 
 type FilePartDataBranch0 struct{ Value FileData }
 
-func (FilePartDataBranch0) isFilePartData()                {}
-func (v FilePartDataBranch0) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (FilePartDataBranch0) isFilePartData() {}
+
+func (v FilePartDataBranch0) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type FilePartDataBranch1 struct{ Value string }
 
-func (FilePartDataBranch1) isFilePartData()                {}
-func (v FilePartDataBranch1) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (FilePartDataBranch1) isFilePartData() {}
+
+func (v FilePartDataBranch1) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type FilePartDataBranch2 struct{ Value map[string]string }
 
-func (FilePartDataBranch2) isFilePartData()                {}
-func (v FilePartDataBranch2) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (FilePartDataBranch2) isFilePartData() {}
+
+func (v FilePartDataBranch2) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 // Serialized-wire fingerprint stored in a `TraceRecord` (hex strings —
 // `u128` is not JSON-serializable).
@@ -6847,40 +3330,6 @@ type Fingerprint struct {
 	TokenEstimate uint64 `json:"tokenEstimate"`
 }
 
-func (v *Fingerprint) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("Fingerprint: %w", err)
-	}
-	var next Fingerprint
-	if err := dtoRead(object, "blockHashes", &next.BlockHashes, true, false); err != nil {
-		return fmt.Errorf("Fingerprint: %w", err)
-	}
-	if err := dtoRead(object, "blockSize", &next.BlockSize, true, false); err != nil {
-		return fmt.Errorf("Fingerprint: %w", err)
-	}
-	if err := dtoRead(object, "bodyHash", &next.BodyHash, true, false); err != nil {
-		return fmt.Errorf("Fingerprint: %w", err)
-	}
-	if err := dtoRead(object, "lenBytes", &next.LenBytes, true, false); err != nil {
-		return fmt.Errorf("Fingerprint: %w", err)
-	}
-	if err := dtoRead(object, "tokenEstimate", &next.TokenEstimate, true, false); err != nil {
-		return fmt.Errorf("Fingerprint: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v Fingerprint) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["blockHashes"] = v.BlockHashes
-	object["blockSize"] = v.BlockSize
-	object["bodyHash"] = v.BodyHash
-	object["lenBytes"] = v.LenBytes
-	object["tokenEstimate"] = v.TokenEstimate
-	return json.Marshal(object)
-}
-
 // Unified finish reason enum (aligned with V4 `LanguageModelV4FinishReason`).
 type FinishReasonUnified string
 
@@ -6893,41 +3342,13 @@ const (
 	FinishReasonUnifiedOther         FinishReasonUnified = "other"
 )
 
-func (v *FinishReasonUnified) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "stop":
-		*v = FinishReasonUnified(next)
-		return nil
-	case "length":
-		*v = FinishReasonUnified(next)
-		return nil
-	case "content-filter":
-		*v = FinishReasonUnified(next)
-		return nil
-	case "tool-calls":
-		*v = FinishReasonUnified(next)
-		return nil
-	case "error":
-		*v = FinishReasonUnified(next)
-		return nil
-	case "other":
-		*v = FinishReasonUnified(next)
-		return nil
-	}
-	return fmt.Errorf("FinishReasonUnified: unknown value %s", data)
-}
-
 // A tool definition passed to the model in `CallOptions.tools`.
 type FunctionTool struct {
 	// Human-readable description.
-	Description Field[string] `json:"description,omitempty"`
+	Description *string `json:"description,omitzero"`
 	// Example inputs for the tool (V4 `inputExamples`), used by some providers
 	// to emit `input_examples` in the request body.
-	InputExamples Field[[]FunctionToolInputExample] `json:"inputExamples,omitempty"`
+	InputExamples []FunctionToolInputExample `json:"inputExamples,omitzero"`
 	// JSON Schema describing the tool's parameters.
 	InputSchema json.RawMessage `json:"inputSchema"`
 	// Unique tool name.
@@ -6935,55 +3356,9 @@ type FunctionTool struct {
 	// Provider-specific options, keyed by provider name
 	// (e.g. `{"anthropic": {"eagerInputStreaming": true}}`). Aligned with the
 	// V4 `providerOptions` field on function tools.
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 	// Whether the tool supports strict schema enforcement (OpenAI strict mode).
-	Strict Field[bool] `json:"strict,omitempty"`
-}
-
-func (v *FunctionTool) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("FunctionTool: %w", err)
-	}
-	var next FunctionTool
-	if err := dtoRead(object, "description", &next.Description, false, true); err != nil {
-		return fmt.Errorf("FunctionTool: %w", err)
-	}
-	if err := dtoRead(object, "inputExamples", &next.InputExamples, false, true); err != nil {
-		return fmt.Errorf("FunctionTool: %w", err)
-	}
-	if err := dtoRead(object, "inputSchema", &next.InputSchema, true, true); err != nil {
-		return fmt.Errorf("FunctionTool: %w", err)
-	}
-	if err := dtoRead(object, "name", &next.Name, true, false); err != nil {
-		return fmt.Errorf("FunctionTool: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("FunctionTool: %w", err)
-	}
-	if err := dtoRead(object, "strict", &next.Strict, false, true); err != nil {
-		return fmt.Errorf("FunctionTool: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v FunctionTool) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Description.Present {
-		object["description"] = v.Description
-	}
-	if v.InputExamples.Present {
-		object["inputExamples"] = v.InputExamples
-	}
-	object["inputSchema"] = v.InputSchema
-	object["name"] = v.Name
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	if v.Strict.Present {
-		object["strict"] = v.Strict
-	}
-	return json.Marshal(object)
+	Strict *bool `json:"strict,omitzero"`
 }
 
 // An example input for a function tool.
@@ -6991,519 +3366,267 @@ type FunctionToolInputExample struct {
 	Input map[string]json.RawMessage `json:"input"`
 }
 
-func (v *FunctionToolInputExample) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("FunctionToolInputExample: %w", err)
-	}
-	var next FunctionToolInputExample
-	if err := dtoRead(object, "input", &next.Input, true, false); err != nil {
-		return fmt.Errorf("FunctionToolInputExample: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v FunctionToolInputExample) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["input"] = v.Input
-	return json.Marshal(object)
-}
-
 // A content item a provider returns (V4 `LanguageModelV4Content`). Text
 // generation turns it into the core [`ContentPart`].
 type GenerateContentVariant interface{ isGenerateContent() }
-type GenerateContent struct{ Value GenerateContentVariant }
+type GenerateContent struct {
+	Value GenerateContentVariant
+}
 
 func (v GenerateContent) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("GenerateContent: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *GenerateContent) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateContent: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("GenerateContent: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "text" {
-		var next GenerateContentVariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-call" {
-		var next GenerateContentVariantToolCall
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "source" {
-		var next GenerateContentVariantSource3
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "source" {
-		var next GenerateContentVariantSource4
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "reasoning" {
-		var next GenerateContentVariantReasoning
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "file" {
-		var next GenerateContentVariantFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "reasoning-file" {
-		var next GenerateContentVariantReasoningFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "custom" {
+	switch tag.Type {
+	case "custom":
 		var next GenerateContentVariantCustom
-		if err := json.Unmarshal(data, &next); err == nil {
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "file":
+		var next GenerateContentVariantFile
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "reasoning":
+		var next GenerateContentVariantReasoning
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "reasoning-file":
+		var next GenerateContentVariantReasoningFile
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "source":
+		var subtag struct {
+			SourceType string `json:"sourceType"`
+		}
+		if err := json.Unmarshal(data, &subtag); err != nil {
+			return err
+		}
+		if subtag.SourceType == "url" {
+			var next GenerateContentVariantSource3
+			if err := json.Unmarshal(data, &next); err != nil {
+				return err
+			}
 			v.Value = next
 			return nil
 		}
-	}
-	if tag == "tool-approval-request" {
+		if subtag.SourceType == "document" {
+			var next GenerateContentVariantSource4
+			if err := json.Unmarshal(data, &next); err != nil {
+				return err
+			}
+			v.Value = next
+			return nil
+		}
+		return fmt.Errorf("GenerateContent: unknown tag %+v", subtag)
+	case "text":
+		var next GenerateContentVariantText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-approval-request":
 		var next GenerateContentVariantToolApprovalRequest
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "tool-result" {
+		v.Value = next
+		return nil
+	case "tool-call":
+		var next GenerateContentVariantToolCall
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-result":
 		var next GenerateContentVariantToolResult
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("GenerateContent: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("GenerateContent: unknown type tag %q", tag.Type)
 }
 
 type GenerateContentVariantText struct {
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Text             string                                       `json:"text"`
-}
-
-func (v *GenerateContentVariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateContentVariantText: %w", err)
-	}
-	var next GenerateContentVariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("GenerateContentVariantText: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantText: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateContentVariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Text             string                                `json:"text"`
 }
 
 func (GenerateContentVariantText) isGenerateContent() {}
 
-type GenerateContentVariantToolCall struct {
-	Dynamic          Field[bool]                                  `json:"dynamic,omitempty"`
-	Input            string                                       `json:"input"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
+func (v GenerateContentVariantText) MarshalJSON() ([]byte, error) {
+	type plain GenerateContentVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
 }
 
-func (v *GenerateContentVariantToolCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateContentVariantToolCall: %w", err)
-	}
-	var next GenerateContentVariantToolCall
-	if err := dtoTag(object, "type", "tool-call"); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateContentVariantToolCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-call"
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	object["input"] = v.Input
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+type GenerateContentVariantToolCall struct {
+	Dynamic          *bool                                 `json:"dynamic,omitzero"`
+	Input            string                                `json:"input"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
 }
 
 func (GenerateContentVariantToolCall) isGenerateContent() {}
 
-type GenerateContentVariantSource3 struct {
-	ID               string                                       `json:"id"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	SourceType       GenerateContent2SourceType                   `json:"sourceType"`
-	Title            Field[string]                                `json:"title,omitempty"`
-	URL              string                                       `json:"url"`
+func (v GenerateContentVariantToolCall) MarshalJSON() ([]byte, error) {
+	type plain GenerateContentVariantToolCall
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-call", plain: plain(v)})
 }
 
-func (v *GenerateContentVariantSource3) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateContentVariantSource3: %w", err)
-	}
-	var next GenerateContentVariantSource3
-	if err := dtoTag(object, "type", "source"); err != nil {
-		return fmt.Errorf("GenerateContentVariantSource3: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantSource3: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantSource3: %w", err)
-	}
-	if err := dtoRead(object, "sourceType", &next.SourceType, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantSource3: %w", err)
-	}
-	if err := dtoRead(object, "title", &next.Title, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantSource3: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantSource3: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateContentVariantSource3) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "source"
-	object["id"] = v.ID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["sourceType"] = v.SourceType
-	if v.Title.Present {
-		object["title"] = v.Title
-	}
-	object["url"] = v.URL
-	return json.Marshal(object)
+type GenerateContentVariantSource3 struct {
+	ID               string                                `json:"id"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	SourceType       GenerateContent2SourceType            `json:"sourceType"`
+	Title            *string                               `json:"title,omitzero"`
+	URL              string                                `json:"url"`
 }
 
 func (GenerateContentVariantSource3) isGenerateContent() {}
 
-type GenerateContentVariantSource4 struct {
-	Filename         Field[string]                                `json:"filename,omitempty"`
-	ID               string                                       `json:"id"`
-	MediaType        string                                       `json:"mediaType"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	SourceType       GenerateContent3SourceType                   `json:"sourceType"`
-	Title            string                                       `json:"title"`
+func (v GenerateContentVariantSource3) MarshalJSON() ([]byte, error) {
+	type plain GenerateContentVariantSource3
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "source", plain: plain(v)})
 }
 
-func (v *GenerateContentVariantSource4) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateContentVariantSource4: %w", err)
-	}
-	var next GenerateContentVariantSource4
-	if err := dtoTag(object, "type", "source"); err != nil {
-		return fmt.Errorf("GenerateContentVariantSource4: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantSource4: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantSource4: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantSource4: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantSource4: %w", err)
-	}
-	if err := dtoRead(object, "sourceType", &next.SourceType, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantSource4: %w", err)
-	}
-	if err := dtoRead(object, "title", &next.Title, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantSource4: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateContentVariantSource4) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "source"
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["id"] = v.ID
-	object["mediaType"] = v.MediaType
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["sourceType"] = v.SourceType
-	object["title"] = v.Title
-	return json.Marshal(object)
+type GenerateContentVariantSource4 struct {
+	Filename         *string                               `json:"filename,omitzero"`
+	ID               string                                `json:"id"`
+	MediaType        string                                `json:"mediaType"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	SourceType       GenerateContent3SourceType            `json:"sourceType"`
+	Title            string                                `json:"title"`
 }
 
 func (GenerateContentVariantSource4) isGenerateContent() {}
 
-type GenerateContentVariantReasoning struct {
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Text             string                                       `json:"text"`
+func (v GenerateContentVariantSource4) MarshalJSON() ([]byte, error) {
+	type plain GenerateContentVariantSource4
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "source", plain: plain(v)})
 }
 
-func (v *GenerateContentVariantReasoning) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateContentVariantReasoning: %w", err)
-	}
-	var next GenerateContentVariantReasoning
-	if err := dtoTag(object, "type", "reasoning"); err != nil {
-		return fmt.Errorf("GenerateContentVariantReasoning: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantReasoning: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantReasoning: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateContentVariantReasoning) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning"
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+type GenerateContentVariantReasoning struct {
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Text             string                                `json:"text"`
 }
 
 func (GenerateContentVariantReasoning) isGenerateContent() {}
 
-type GenerateContentVariantFile struct {
-	Data             GeneratedFileData                            `json:"data"`
-	MediaType        string                                       `json:"mediaType"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v GenerateContentVariantReasoning) MarshalJSON() ([]byte, error) {
+	type plain GenerateContentVariantReasoning
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning", plain: plain(v)})
 }
 
-func (v *GenerateContentVariantFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateContentVariantFile: %w", err)
-	}
-	var next GenerateContentVariantFile
-	if err := dtoTag(object, "type", "file"); err != nil {
-		return fmt.Errorf("GenerateContentVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateContentVariantFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file"
-	object["data"] = v.Data
-	object["mediaType"] = v.MediaType
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type GenerateContentVariantFile struct {
+	Data             GeneratedFileData                     `json:"data"`
+	MediaType        string                                `json:"mediaType"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (GenerateContentVariantFile) isGenerateContent() {}
 
-type GenerateContentVariantReasoningFile struct {
-	Data             GeneratedFileData                            `json:"data"`
-	MediaType        string                                       `json:"mediaType"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v GenerateContentVariantFile) MarshalJSON() ([]byte, error) {
+	type plain GenerateContentVariantFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file", plain: plain(v)})
 }
 
-func (v *GenerateContentVariantReasoningFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateContentVariantReasoningFile: %w", err)
-	}
-	var next GenerateContentVariantReasoningFile
-	if err := dtoTag(object, "type", "reasoning-file"); err != nil {
-		return fmt.Errorf("GenerateContentVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantReasoningFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateContentVariantReasoningFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning-file"
-	object["data"] = v.Data
-	object["mediaType"] = v.MediaType
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type GenerateContentVariantReasoningFile struct {
+	Data             GeneratedFileData                     `json:"data"`
+	MediaType        string                                `json:"mediaType"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (GenerateContentVariantReasoningFile) isGenerateContent() {}
 
-type GenerateContentVariantCustom struct {
-	Kind             NamespacedKind                               `json:"kind"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v GenerateContentVariantReasoningFile) MarshalJSON() ([]byte, error) {
+	type plain GenerateContentVariantReasoningFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning-file", plain: plain(v)})
 }
 
-func (v *GenerateContentVariantCustom) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateContentVariantCustom: %w", err)
-	}
-	var next GenerateContentVariantCustom
-	if err := dtoTag(object, "type", "custom"); err != nil {
-		return fmt.Errorf("GenerateContentVariantCustom: %w", err)
-	}
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantCustom: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantCustom: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateContentVariantCustom) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "custom"
-	object["kind"] = v.Kind
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type GenerateContentVariantCustom struct {
+	Kind             NamespacedKind                        `json:"kind"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (GenerateContentVariantCustom) isGenerateContent() {}
 
-type GenerateContentVariantToolApprovalRequest struct {
-	ApprovalID       string                                       `json:"approvalId"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
+func (v GenerateContentVariantCustom) MarshalJSON() ([]byte, error) {
+	type plain GenerateContentVariantCustom
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "custom", plain: plain(v)})
 }
 
-func (v *GenerateContentVariantToolApprovalRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateContentVariantToolApprovalRequest: %w", err)
-	}
-	var next GenerateContentVariantToolApprovalRequest
-	if err := dtoTag(object, "type", "tool-approval-request"); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolApprovalRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateContentVariantToolApprovalRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-approval-request"
-	object["approvalId"] = v.ApprovalID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	return json.Marshal(object)
+type GenerateContentVariantToolApprovalRequest struct {
+	ApprovalID       string                                `json:"approvalId"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
 }
 
 func (GenerateContentVariantToolApprovalRequest) isGenerateContent() {}
 
+func (v GenerateContentVariantToolApprovalRequest) MarshalJSON() ([]byte, error) {
+	type plain GenerateContentVariantToolApprovalRequest
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-approval-request", plain: plain(v)})
+}
+
 type GenerateContentVariantToolResult struct {
 	// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
+	Dynamic *bool `json:"dynamic,omitzero"`
 	// Whether the result is an error or error message.
-	IsError Field[bool] `json:"isError,omitempty"`
+	IsError *bool `json:"isError,omitzero"`
 	// Whether the result is preliminary (replaces prior, e.g. image previews).
-	Preliminary Field[bool] `json:"preliminary,omitempty"`
+	Preliminary *bool `json:"preliminary,omitzero"`
 	// Additional provider-specific metadata for the tool result.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// The tool's output: any JSON value but `null`, as the V4
 	// `result: NonNullable<JSONValue>` (`@ai-sdk/provider@4.0.21
 	// src/language-model/v4/language-model-v4-tool-result.ts:23`); a `null`
@@ -7514,61 +3637,15 @@ type GenerateContentVariantToolResult struct {
 	ToolName   string `json:"toolName"`
 }
 
-func (v *GenerateContentVariantToolResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateContentVariantToolResult: %w", err)
-	}
-	var next GenerateContentVariantToolResult
-	if err := dtoTag(object, "type", "tool-result"); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "isError", &next.IsError, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "preliminary", &next.Preliminary, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "result", &next.Result, true, true); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("GenerateContentVariantToolResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateContentVariantToolResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-result"
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.IsError.Present {
-		object["isError"] = v.IsError
-	}
-	if v.Preliminary.Present {
-		object["preliminary"] = v.Preliminary
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["result"] = v.Result
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
-}
-
 func (GenerateContentVariantToolResult) isGenerateContent() {}
+
+func (v GenerateContentVariantToolResult) MarshalJSON() ([]byte, error) {
+	type plain GenerateContentVariantToolResult
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-result", plain: plain(v)})
+}
 
 type GenerateContent2SourceType string
 
@@ -7576,84 +3653,20 @@ const (
 	GenerateContent2SourceTypeURL GenerateContent2SourceType = "url"
 )
 
-func (v *GenerateContent2SourceType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "url":
-		*v = GenerateContent2SourceType(next)
-		return nil
-	}
-	return fmt.Errorf("GenerateContent2SourceType: unknown value %s", data)
-}
-
 type GenerateContent3SourceType string
 
 const (
 	GenerateContent3SourceTypeDocument GenerateContent3SourceType = "document"
 )
 
-func (v *GenerateContent3SourceType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "document":
-		*v = GenerateContent3SourceType(next)
-		return nil
-	}
-	return fmt.Errorf("GenerateContent3SourceType: unknown value %s", data)
-}
-
 // `GenerateObjectResult.response`: the AI SDK's
 // `Omit<LanguageModelResponseMetadata, 'messages'>`.
 type GenerateObjectResponse struct {
-	Body      Field[json.RawMessage]   `json:"body,omitempty"`
-	Headers   Field[map[string]string] `json:"headers,omitempty"`
-	ID        string                   `json:"id"`
-	ModelID   string                   `json:"modelId"`
-	Timestamp Timestamp                `json:"timestamp"`
-}
-
-func (v *GenerateObjectResponse) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateObjectResponse: %w", err)
-	}
-	var next GenerateObjectResponse
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("GenerateObjectResponse: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("GenerateObjectResponse: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("GenerateObjectResponse: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("GenerateObjectResponse: %w", err)
-	}
-	if err := dtoRead(object, "timestamp", &next.Timestamp, true, false); err != nil {
-		return fmt.Errorf("GenerateObjectResponse: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateObjectResponse) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	object["id"] = v.ID
-	object["modelId"] = v.ModelID
-	object["timestamp"] = v.Timestamp
-	return json.Marshal(object)
+	Body      *json.RawMessage  `json:"body,omitzero"`
+	Headers   map[string]string `json:"headers,omitzero"`
+	ID        string            `json:"id"`
+	ModelID   string            `json:"modelId"`
+	Timestamp Timestamp         `json:"timestamp"`
 }
 
 // Result of the deprecated [`generate_object`]: the AI SDK's
@@ -7664,9 +3677,9 @@ type GenerateObjectResult struct {
 	// The generated object, as parsed by the output.
 	Object json.RawMessage `json:"object"`
 	// Provider metadata of the model call.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// The reasoning text, `None` when there is none.
-	Reasoning Field[string] `json:"reasoning,omitempty"`
+	Reasoning *string `json:"reasoning,omitzero"`
 	// The request of the model call.
 	Request RequestInfo `json:"request"`
 	// The response of the model call, without messages.
@@ -7677,223 +3690,45 @@ type GenerateObjectResult struct {
 	Warnings []Warning `json:"warnings"`
 }
 
-func (v *GenerateObjectResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateObjectResult: %w", err)
-	}
-	var next GenerateObjectResult
-	if err := dtoRead(object, "finishReason", &next.FinishReason, true, false); err != nil {
-		return fmt.Errorf("GenerateObjectResult: %w", err)
-	}
-	if err := dtoRead(object, "object", &next.Object, true, true); err != nil {
-		return fmt.Errorf("GenerateObjectResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("GenerateObjectResult: %w", err)
-	}
-	if err := dtoRead(object, "reasoning", &next.Reasoning, false, true); err != nil {
-		return fmt.Errorf("GenerateObjectResult: %w", err)
-	}
-	if err := dtoRead(object, "request", &next.Request, true, false); err != nil {
-		return fmt.Errorf("GenerateObjectResult: %w", err)
-	}
-	if err := dtoRead(object, "response", &next.Response, true, false); err != nil {
-		return fmt.Errorf("GenerateObjectResult: %w", err)
-	}
-	if err := dtoRead(object, "usage", &next.Usage, true, false); err != nil {
-		return fmt.Errorf("GenerateObjectResult: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, true, false); err != nil {
-		return fmt.Errorf("GenerateObjectResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateObjectResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["finishReason"] = v.FinishReason
-	object["object"] = v.Object
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.Reasoning.Present {
-		object["reasoning"] = v.Reasoning
-	}
-	object["request"] = v.Request
-	object["response"] = v.Response
-	object["usage"] = v.Usage
-	object["warnings"] = v.Warnings
-	return json.Marshal(object)
-}
-
 // User-facing options for `generate_text` and `stream_text`.
 //
 // Unlike `CallOptions` (provider-facing), this does not include `prompt`
 // (passed separately) and defaults are more ergonomic.
 type GenerateTextOptions struct {
-	FrequencyPenalty Field[float64]           `json:"frequencyPenalty,omitempty"`
-	Headers          Field[map[string]string] `json:"headers,omitempty"`
+	FrequencyPenalty *float64          `json:"frequencyPenalty,omitzero"`
+	Headers          map[string]string `json:"headers,omitzero"`
 	// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
-	IncludeRawChunks Field[bool] `json:"includeRawChunks,omitempty"`
+	IncludeRawChunks *bool `json:"includeRawChunks,omitzero"`
 	// System instructions prepended to the prompt.
-	Instructions    Field[string] `json:"instructions,omitempty"`
-	MaxOutputTokens Field[uint32] `json:"maxOutputTokens,omitempty"`
+	Instructions    *string `json:"instructions,omitzero"`
+	MaxOutputTokens *uint32 `json:"maxOutputTokens,omitzero"`
 	// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
 	// retrying. `None` uses 2, the AI SDK default.
-	MaxRetries Field[uint32] `json:"maxRetries,omitempty"`
+	MaxRetries *uint32 `json:"maxRetries,omitzero"`
 	// The structured output to generate, the AI SDK's `output`
 	// (`generate-text/output.ts`). It sets the model call's
 	// `response_format` and parses the final text into
 	// [`GenerateTextResult::output`]. `None` sends no response format and
 	// takes the text as the output.
-	Output          Field[Output]                                `json:"output,omitempty"`
-	PresencePenalty Field[float64]                               `json:"presencePenalty,omitempty"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+	Output          *Output                               `json:"output,omitzero"`
+	PresencePenalty *float64                              `json:"presencePenalty,omitzero"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 	// Top-level reasoning effort.
-	Reasoning Field[ReasoningEffort] `json:"reasoning,omitempty"`
-	Seed      Field[uint64]          `json:"seed,omitempty"`
+	Reasoning *ReasoningEffort `json:"reasoning,omitzero"`
+	Seed      *uint64          `json:"seed,omitzero"`
 	// Session identifier, for grouping consecutive calls into a session
 	// (observability, see RFC-0024). Orthogonal to RFC-0019 session-affinity
 	// headers. When `None` and the optional session inferer is enabled, one
 	// may be inferred from prompt-prefix continuation.
-	SessionID     Field[string]   `json:"sessionId,omitempty"`
-	StopSequences Field[[]string] `json:"stopSequences,omitempty"`
-	Temperature   Field[float64]  `json:"temperature,omitempty"`
+	SessionID     *string  `json:"sessionId,omitzero"`
+	StopSequences []string `json:"stopSequences,omitzero"`
+	Temperature   *float64 `json:"temperature,omitzero"`
 	// Per-call timeout configuration (total / first-chunk / chunk idle).
-	Timeout    Field[TimeoutConfiguration] `json:"timeout,omitempty"`
-	ToolChoice Field[ToolChoice]           `json:"toolChoice,omitempty"`
-	Tools      Field[[]Tool]               `json:"tools,omitempty"`
-	TopK       Field[float64]              `json:"topK,omitempty"`
-	TopP       Field[float64]              `json:"topP,omitempty"`
-}
-
-func (v *GenerateTextOptions) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	var next GenerateTextOptions
-	if err := dtoRead(object, "frequencyPenalty", &next.FrequencyPenalty, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "includeRawChunks", &next.IncludeRawChunks, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "instructions", &next.Instructions, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "maxOutputTokens", &next.MaxOutputTokens, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "maxRetries", &next.MaxRetries, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "presencePenalty", &next.PresencePenalty, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "reasoning", &next.Reasoning, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "seed", &next.Seed, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "sessionId", &next.SessionID, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "stopSequences", &next.StopSequences, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "temperature", &next.Temperature, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "timeout", &next.Timeout, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "toolChoice", &next.ToolChoice, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "tools", &next.Tools, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "topK", &next.TopK, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	if err := dtoRead(object, "topP", &next.TopP, false, true); err != nil {
-		return fmt.Errorf("GenerateTextOptions: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateTextOptions) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.FrequencyPenalty.Present {
-		object["frequencyPenalty"] = v.FrequencyPenalty
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.IncludeRawChunks.Present {
-		object["includeRawChunks"] = v.IncludeRawChunks
-	}
-	if v.Instructions.Present {
-		object["instructions"] = v.Instructions
-	}
-	if v.MaxOutputTokens.Present {
-		object["maxOutputTokens"] = v.MaxOutputTokens
-	}
-	if v.MaxRetries.Present {
-		object["maxRetries"] = v.MaxRetries
-	}
-	if v.Output.Present {
-		object["output"] = v.Output
-	}
-	if v.PresencePenalty.Present {
-		object["presencePenalty"] = v.PresencePenalty
-	}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	if v.Reasoning.Present {
-		object["reasoning"] = v.Reasoning
-	}
-	if v.Seed.Present {
-		object["seed"] = v.Seed
-	}
-	if v.SessionID.Present {
-		object["sessionId"] = v.SessionID
-	}
-	if v.StopSequences.Present {
-		object["stopSequences"] = v.StopSequences
-	}
-	if v.Temperature.Present {
-		object["temperature"] = v.Temperature
-	}
-	if v.Timeout.Present {
-		object["timeout"] = v.Timeout
-	}
-	if v.ToolChoice.Present {
-		object["toolChoice"] = v.ToolChoice
-	}
-	if v.Tools.Present {
-		object["tools"] = v.Tools
-	}
-	if v.TopK.Present {
-		object["topK"] = v.TopK
-	}
-	if v.TopP.Present {
-		object["topP"] = v.TopP
-	}
-	return json.Marshal(object)
+	Timeout    *TimeoutConfiguration `json:"timeout,omitzero"`
+	ToolChoice *ToolChoice           `json:"toolChoice,omitzero"`
+	Tools      []Tool                `json:"tools,omitzero"`
+	TopK       *float64              `json:"topK,omitzero"`
+	TopP       *float64              `json:"topP,omitzero"`
 }
 
 // Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
@@ -7910,14 +3745,14 @@ type GenerateTextResult struct {
 	Files        []GeneratedFile     `json:"files"`
 	FinishReason FinishReasonUnified `json:"finishReason"`
 	// Absent when the output was not parsed.
-	Output Field[json.RawMessage] `json:"output,omitempty"`
+	Output Field[json.RawMessage] `json:"output,omitzero"`
 	// Deprecated upstream: the last step's provider metadata.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	RawFinishReason  Field[string]                                `json:"rawFinishReason,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	RawFinishReason  *string                               `json:"rawFinishReason,omitzero"`
 	// Deprecated upstream: the last step's reasoning.
 	Reasoning []ReasoningPart `json:"reasoning"`
 	// Deprecated upstream: the last step's reasoning text.
-	ReasoningText Field[string] `json:"reasoningText,omitempty"`
+	ReasoningText *string `json:"reasoningText,omitzero"`
 	// Deprecated upstream: the last step's request.
 	Request RequestInfo `json:"request"`
 	// Deprecated upstream: the last step's response.
@@ -7937,104 +3772,6 @@ type GenerateTextResult struct {
 	Warnings   []Warning          `json:"warnings"`
 }
 
-func (v *GenerateTextResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	var next GenerateTextResult
-	if err := dtoRead(object, "content", &next.Content, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "files", &next.Files, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "finishReason", &next.FinishReason, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, false, true); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "rawFinishReason", &next.RawFinishReason, false, true); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "reasoning", &next.Reasoning, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "reasoningText", &next.ReasoningText, false, true); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "request", &next.Request, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "response", &next.Response, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "responseMessages", &next.ResponseMessages, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "sources", &next.Sources, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "steps", &next.Steps, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "toolCalls", &next.ToolCalls, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "toolResults", &next.ToolResults, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "totalUsage", &next.TotalUsage, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "usage", &next.Usage, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateTextResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["content"] = v.Content
-	object["files"] = v.Files
-	object["finishReason"] = v.FinishReason
-	if v.Output.Present {
-		object["output"] = v.Output
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.RawFinishReason.Present {
-		object["rawFinishReason"] = v.RawFinishReason
-	}
-	object["reasoning"] = v.Reasoning
-	if v.ReasoningText.Present {
-		object["reasoningText"] = v.ReasoningText
-	}
-	object["request"] = v.Request
-	object["response"] = v.Response
-	object["responseMessages"] = v.ResponseMessages
-	object["sources"] = v.Sources
-	object["steps"] = v.Steps
-	object["text"] = v.Text
-	object["toolCalls"] = v.ToolCalls
-	object["toolResults"] = v.ToolResults
-	object["totalUsage"] = v.TotalUsage
-	object["usage"] = v.Usage
-	object["warnings"] = v.Warnings
-	return json.Marshal(object)
-}
-
 // Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
 // `GenerateTextResult` (ai@7.0.127 `generate-text/generate-text-result.ts`).
 //
@@ -8045,37 +3782,9 @@ func (v GenerateTextResult) MarshalJSON() ([]byte, error) {
 // a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
 // `steps`, `total_usage` and `output` are read back.
 type GenerateTextResultInput struct {
-	Output     Field[json.RawMessage]  `json:"output,omitempty"`
+	Output     Field[json.RawMessage]  `json:"output,omitzero"`
 	Steps      []StepResultInput       `json:"steps"`
 	TotalUsage LanguageModelUsageInput `json:"totalUsage"`
-}
-
-func (v *GenerateTextResultInput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GenerateTextResultInput: %w", err)
-	}
-	var next GenerateTextResultInput
-	if err := dtoRead(object, "output", &next.Output, false, true); err != nil {
-		return fmt.Errorf("GenerateTextResultInput: %w", err)
-	}
-	if err := dtoRead(object, "steps", &next.Steps, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResultInput: %w", err)
-	}
-	if err := dtoRead(object, "totalUsage", &next.TotalUsage, true, false); err != nil {
-		return fmt.Errorf("GenerateTextResultInput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GenerateTextResultInput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Output.Present {
-		object["output"] = v.Output
-	}
-	object["steps"] = v.Steps
-	object["totalUsage"] = v.TotalUsage
-	return json.Marshal(object)
 }
 
 // A generated file (`ai` `generate-text/generated-file.ts:10-32`), the
@@ -8087,137 +3796,75 @@ func (v GenerateTextResultInput) MarshalJSON() ([]byte, error) {
 // provider's URL file before it builds one (`resolve-generated-file-data.ts`).
 type GeneratedFile struct {
 	// The file's bytes, `base64` in the JSON.
-	Base64           FileBytes                                    `json:"base64"`
-	MediaType        string                                       `json:"mediaType"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-}
-
-func (v *GeneratedFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GeneratedFile: %w", err)
-	}
-	var next GeneratedFile
-	if err := dtoRead(object, "base64", &next.Base64, true, false); err != nil {
-		return fmt.Errorf("GeneratedFile: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("GeneratedFile: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("GeneratedFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GeneratedFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["base64"] = v.Base64
-	object["mediaType"] = v.MediaType
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+	Base64           FileBytes                             `json:"base64"`
+	MediaType        string                                `json:"mediaType"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 // Data or a URL returned for a generated file.
 type GeneratedFileDataVariant interface{ isGeneratedFileData() }
-type GeneratedFileData struct{ Value GeneratedFileDataVariant }
+type GeneratedFileData struct {
+	Value GeneratedFileDataVariant
+}
 
 func (v GeneratedFileData) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("GeneratedFileData: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *GeneratedFileData) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GeneratedFileData: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("GeneratedFileData: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "data" {
+	switch tag.Type {
+	case "data":
 		var next GeneratedFileDataVariantData
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "url" {
+		v.Value = next
+		return nil
+	case "url":
 		var next GeneratedFileDataVariantURL
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("GeneratedFileData: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("GeneratedFileData: unknown type tag %q", tag.Type)
 }
 
 type GeneratedFileDataVariantData struct {
 	Data FileBytes `json:"data"`
 }
 
-func (v *GeneratedFileDataVariantData) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GeneratedFileDataVariantData: %w", err)
-	}
-	var next GeneratedFileDataVariantData
-	if err := dtoTag(object, "type", "data"); err != nil {
-		return fmt.Errorf("GeneratedFileDataVariantData: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("GeneratedFileDataVariantData: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GeneratedFileDataVariantData) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "data"
-	object["data"] = v.Data
-	return json.Marshal(object)
-}
-
 func (GeneratedFileDataVariantData) isGeneratedFileData() {}
 
-type GeneratedFileDataVariantURL struct {
-	OriginalURL Field[string] `json:"originalUrl,omitempty"`
-	URL         string        `json:"url"`
+func (v GeneratedFileDataVariantData) MarshalJSON() ([]byte, error) {
+	type plain GeneratedFileDataVariantData
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "data", plain: plain(v)})
 }
 
-func (v *GeneratedFileDataVariantURL) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GeneratedFileDataVariantURL: %w", err)
-	}
-	var next GeneratedFileDataVariantURL
-	if err := dtoTag(object, "type", "url"); err != nil {
-		return fmt.Errorf("GeneratedFileDataVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "originalUrl", &next.OriginalURL, false, true); err != nil {
-		return fmt.Errorf("GeneratedFileDataVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("GeneratedFileDataVariantURL: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GeneratedFileDataVariantURL) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "url"
-	if v.OriginalURL.Present {
-		object["originalUrl"] = v.OriginalURL
-	}
-	object["url"] = v.URL
-	return json.Marshal(object)
+type GeneratedFileDataVariantURL struct {
+	OriginalURL *string `json:"originalUrl,omitzero"`
+	URL         string  `json:"url"`
 }
 
 func (GeneratedFileDataVariantURL) isGeneratedFileData() {}
+
+func (v GeneratedFileDataVariantURL) MarshalJSON() ([]byte, error) {
+	type plain GeneratedFileDataVariantURL
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "url", plain: plain(v)})
+}
 
 // A file part of text generation, `{ file, providerMetadata? }` under the
 // `file` or `reasoning-file` tag (`ai`
@@ -8225,32 +3872,8 @@ func (GeneratedFileDataVariantURL) isGeneratedFileData() {}
 // `stream-language-model-call.ts:569-590`). The part carries the provider
 // metadata; the file itself has none.
 type GeneratedFileOutput struct {
-	File             GeneratedFile                                `json:"file"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-}
-
-func (v *GeneratedFileOutput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("GeneratedFileOutput: %w", err)
-	}
-	var next GeneratedFileOutput
-	if err := dtoRead(object, "file", &next.File, true, false); err != nil {
-		return fmt.Errorf("GeneratedFileOutput: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("GeneratedFileOutput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v GeneratedFileOutput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["file"] = v.File
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+	File             GeneratedFile                         `json:"file"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 // Global scope is 0; live resource identifiers are never reused.
@@ -8287,110 +3910,9 @@ const (
 	HandleKindReplaySession      HandleKind = "ReplaySession"
 )
 
-func (v *HandleKind) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "Provider":
-		*v = HandleKind(next)
-		return nil
-	case "Registry":
-		*v = HandleKind(next)
-		return nil
-	case "Language":
-		*v = HandleKind(next)
-		return nil
-	case "Embedding":
-		*v = HandleKind(next)
-		return nil
-	case "Image":
-		*v = HandleKind(next)
-		return nil
-	case "Speech":
-		*v = HandleKind(next)
-		return nil
-	case "Transcription":
-		*v = HandleKind(next)
-		return nil
-	case "Reranking":
-		*v = HandleKind(next)
-		return nil
-	case "Video":
-		*v = HandleKind(next)
-		return nil
-	case "Search":
-		*v = HandleKind(next)
-		return nil
-	case "Decision":
-		*v = HandleKind(next)
-		return nil
-	case "Files":
-		*v = HandleKind(next)
-		return nil
-	case "Operation":
-		*v = HandleKind(next)
-		return nil
-	case "Abort":
-		*v = HandleKind(next)
-		return nil
-	case "Fetch":
-		*v = HandleKind(next)
-		return nil
-	case "WebSocket":
-		*v = HandleKind(next)
-		return nil
-	case "Download":
-		*v = HandleKind(next)
-		return nil
-	case "CredentialResolver":
-		*v = HandleKind(next)
-		return nil
-	case "Middleware":
-		*v = HandleKind(next)
-		return nil
-	case "TraceStore":
-		*v = HandleKind(next)
-		return nil
-	case "Recorder":
-		*v = HandleKind(next)
-		return nil
-	case "SessionStore":
-		*v = HandleKind(next)
-		return nil
-	case "ReplaySession":
-		*v = HandleKind(next)
-		return nil
-	}
-	return fmt.Errorf("HandleKind: unknown value %s", data)
-}
-
 type HandleResult struct {
 	Handle HandleID   `json:"handle"`
 	Kind   HandleKind `json:"kind"`
-}
-
-func (v *HandleResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("HandleResult: %w", err)
-	}
-	var next HandleResult
-	if err := dtoRead(object, "handle", &next.Handle, true, false); err != nil {
-		return fmt.Errorf("HandleResult: %w", err)
-	}
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("HandleResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v HandleResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["handle"] = v.Handle
-	object["kind"] = v.Kind
-	return json.Marshal(object)
 }
 
 type HandleResult2 struct {
@@ -8398,53 +3920,9 @@ type HandleResult2 struct {
 	Kind   HandleKind `json:"kind"`
 }
 
-func (v *HandleResult2) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("HandleResult2: %w", err)
-	}
-	var next HandleResult2
-	if err := dtoRead(object, "handle", &next.Handle, true, false); err != nil {
-		return fmt.Errorf("HandleResult2: %w", err)
-	}
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("HandleResult2: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v HandleResult2) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["handle"] = v.Handle
-	object["kind"] = v.Kind
-	return json.Marshal(object)
-}
-
 type HandleResult3 struct {
 	Handle HandleID   `json:"handle"`
 	Kind   HandleKind `json:"kind"`
-}
-
-func (v *HandleResult3) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("HandleResult3: %w", err)
-	}
-	var next HandleResult3
-	if err := dtoRead(object, "handle", &next.Handle, true, false); err != nil {
-		return fmt.Errorf("HandleResult3: %w", err)
-	}
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("HandleResult3: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v HandleResult3) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["handle"] = v.Handle
-	object["kind"] = v.Kind
-	return json.Marshal(object)
 }
 
 // ③ HTTP 侧:单次 attempt 的 wire 交换。
@@ -8452,112 +3930,28 @@ type HTTPExchange struct {
 	// Core operation attempt, starting at 1. Attempt numbers are unique
 	// across the whole call, including composite child steps, so
 	// `(attempt, exchange_index)` alone still identifies an exchange.
-	Attempt uint32        `json:"attempt"`
-	Error   Field[string] `json:"error,omitempty"`
+	Attempt uint32  `json:"attempt"`
+	Error   *string `json:"error,omitzero"`
 	// HTTP exchange within the operation attempt, starting at 1.
 	ExchangeIndex uint32 `json:"exchangeIndex"`
 	// 流式:该 exchange 是否已终结(收到 response 补全)。非流式恒 true。
 	Finalized bool       `json:"finalized"`
 	Request   HTTPRecord `json:"request"`
 	// None = 请求失败未获响应。
-	Response Field[ResponseRecord] `json:"response,omitempty"`
+	Response *ResponseRecord `json:"response,omitzero"`
 	// Composite step this exchange belongs to (e.g. `router[0]:openai/gpt-4o`
 	// or `moa.ref[1]:...`). `None` for a plain, non-composite operation.
-	Step   Field[string] `json:"step,omitempty"`
-	Timing TimingRecord  `json:"timing"`
-}
-
-func (v *HTTPExchange) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("HTTPExchange: %w", err)
-	}
-	var next HTTPExchange
-	if err := dtoRead(object, "attempt", &next.Attempt, true, false); err != nil {
-		return fmt.Errorf("HTTPExchange: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, false, true); err != nil {
-		return fmt.Errorf("HTTPExchange: %w", err)
-	}
-	if err := dtoRead(object, "exchangeIndex", &next.ExchangeIndex, true, false); err != nil {
-		return fmt.Errorf("HTTPExchange: %w", err)
-	}
-	if err := dtoRead(object, "finalized", &next.Finalized, true, false); err != nil {
-		return fmt.Errorf("HTTPExchange: %w", err)
-	}
-	if err := dtoRead(object, "request", &next.Request, true, false); err != nil {
-		return fmt.Errorf("HTTPExchange: %w", err)
-	}
-	if err := dtoRead(object, "response", &next.Response, false, true); err != nil {
-		return fmt.Errorf("HTTPExchange: %w", err)
-	}
-	if err := dtoRead(object, "step", &next.Step, false, true); err != nil {
-		return fmt.Errorf("HTTPExchange: %w", err)
-	}
-	if err := dtoRead(object, "timing", &next.Timing, true, false); err != nil {
-		return fmt.Errorf("HTTPExchange: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v HTTPExchange) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["attempt"] = v.Attempt
-	if v.Error.Present {
-		object["error"] = v.Error
-	}
-	object["exchangeIndex"] = v.ExchangeIndex
-	object["finalized"] = v.Finalized
-	object["request"] = v.Request
-	if v.Response.Present {
-		object["response"] = v.Response
-	}
-	if v.Step.Present {
-		object["step"] = v.Step
-	}
-	object["timing"] = v.Timing
-	return json.Marshal(object)
+	Step   *string      `json:"step,omitzero"`
+	Timing TimingRecord `json:"timing"`
 }
 
 type HTTPRecord struct {
 	// 明文(脱敏后);None = 无 body。
-	Body Field[string] `json:"body,omitempty"`
+	Body *string `json:"body,omitzero"`
 	// 敏感头(authorization/cookie/含 api-key/key/x-amz-security-token 等)已脱敏为 "\[REDACTED\]"。
 	Headers [][]string `json:"headers"`
 	Method  string     `json:"method"`
 	URL     string     `json:"url"`
-}
-
-func (v *HTTPRecord) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("HTTPRecord: %w", err)
-	}
-	var next HTTPRecord
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("HTTPRecord: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, true, false); err != nil {
-		return fmt.Errorf("HTTPRecord: %w", err)
-	}
-	if err := dtoRead(object, "method", &next.Method, true, false); err != nil {
-		return fmt.Errorf("HTTPRecord: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("HTTPRecord: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v HTTPRecord) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	object["headers"] = v.Headers
-	object["method"] = v.Method
-	object["url"] = v.URL
-	return json.Marshal(object)
 }
 
 // Options passed to [`ImageModel::do_generate`].
@@ -8566,144 +3960,68 @@ func (v HTTPRecord) MarshalJSON() ([]byte, error) {
 type ImageCallOptions struct {
 	// Aspect ratio of the images, in `{width}:{height}` format.
 	// `None` uses the provider's default aspect ratio.
-	AspectRatio Field[AspectRatio] `json:"aspectRatio,omitempty"`
+	AspectRatio *AspectRatio `json:"aspectRatio,omitzero"`
 	// Images for image editing or variation generation.
-	Files Field[[]ImageFile] `json:"files,omitempty"`
+	Files []ImageFile `json:"files,omitzero"`
 	// Additional HTTP headers to send with the request.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// Mask image for inpainting operations.
-	Mask Field[ImageFile] `json:"mask,omitempty"`
+	Mask *ImageFile `json:"mask,omitzero"`
 	// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
 	// retrying. `None` uses 2, the AI SDK default.
-	MaxRetries Field[uint32] `json:"maxRetries,omitempty"`
+	MaxRetries *uint32 `json:"maxRetries,omitzero"`
 	// Number of images to generate.
 	N uint32 `json:"n"`
 	// Prompt for the image generation. `None` for operations (e.g. upscaling)
 	// that do not require a prompt.
-	Prompt Field[string] `json:"prompt,omitempty"`
+	Prompt *string `json:"prompt,omitzero"`
 	// Additional provider-specific options, keyed by provider name.
 	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions"`
 	// Seed for deterministic generation. `None` uses the provider's default.
-	Seed Field[uint64] `json:"seed,omitempty"`
+	Seed *uint64 `json:"seed,omitzero"`
 	// Size of the images, in `{width}x{height}` format.
 	// `None` uses the provider's default size.
-	Size Field[Size] `json:"size,omitempty"`
+	Size *Size `json:"size,omitzero"`
 	// Per-call operation timeout.
-	Timeout Field[TimeoutConfiguration] `json:"timeout,omitempty"`
-}
-
-func (v *ImageCallOptions) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ImageCallOptions: %w", err)
-	}
-	var next ImageCallOptions
-	if err := dtoRead(object, "aspectRatio", &next.AspectRatio, false, true); err != nil {
-		return fmt.Errorf("ImageCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "files", &next.Files, false, true); err != nil {
-		return fmt.Errorf("ImageCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("ImageCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "mask", &next.Mask, false, true); err != nil {
-		return fmt.Errorf("ImageCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "maxRetries", &next.MaxRetries, false, true); err != nil {
-		return fmt.Errorf("ImageCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "n", &next.N, true, false); err != nil {
-		return fmt.Errorf("ImageCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "prompt", &next.Prompt, false, true); err != nil {
-		return fmt.Errorf("ImageCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, true, false); err != nil {
-		return fmt.Errorf("ImageCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "seed", &next.Seed, false, true); err != nil {
-		return fmt.Errorf("ImageCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "size", &next.Size, false, true); err != nil {
-		return fmt.Errorf("ImageCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "timeout", &next.Timeout, false, true); err != nil {
-		return fmt.Errorf("ImageCallOptions: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ImageCallOptions) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.AspectRatio.Present {
-		object["aspectRatio"] = v.AspectRatio
-	}
-	if v.Files.Present {
-		object["files"] = v.Files
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.Mask.Present {
-		object["mask"] = v.Mask
-	}
-	if v.MaxRetries.Present {
-		object["maxRetries"] = v.MaxRetries
-	}
-	object["n"] = v.N
-	if v.Prompt.Present {
-		object["prompt"] = v.Prompt
-	}
-	object["providerOptions"] = v.ProviderOptions
-	if v.Seed.Present {
-		object["seed"] = v.Seed
-	}
-	if v.Size.Present {
-		object["size"] = v.Size
-	}
-	if v.Timeout.Present {
-		object["timeout"] = v.Timeout
-	}
-	return json.Marshal(object)
+	Timeout *TimeoutConfiguration `json:"timeout,omitzero"`
 }
 
 // An image file used for image editing or variation generation.
 //
 // Aligned with V4 `ImageModelV4File`.
 type ImageFileVariant interface{ isImageFile() }
-type ImageFile struct{ Value ImageFileVariant }
+type ImageFile struct {
+	Value ImageFileVariant
+}
 
 func (v ImageFile) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ImageFile: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ImageFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ImageFile: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("ImageFile: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "file" {
+	switch tag.Type {
+	case "file":
 		var next ImageFileVariantFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "url" {
+		v.Value = next
+		return nil
+	case "url":
 		var next ImageFileVariantURL
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("ImageFile: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("ImageFile: unknown type tag %q", tag.Type)
 }
 
 type ImageFileVariantFile struct {
@@ -8713,62 +4031,30 @@ type ImageFileVariantFile struct {
 	MediaType string `json:"mediaType"`
 }
 
-func (v *ImageFileVariantFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ImageFileVariantFile: %w", err)
-	}
-	var next ImageFileVariantFile
-	if err := dtoTag(object, "type", "file"); err != nil {
-		return fmt.Errorf("ImageFileVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("ImageFileVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("ImageFileVariantFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ImageFileVariantFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file"
-	object["data"] = v.Data
-	object["mediaType"] = v.MediaType
-	return json.Marshal(object)
-}
-
 func (ImageFileVariantFile) isImageFile() {}
+
+func (v ImageFileVariantFile) MarshalJSON() ([]byte, error) {
+	type plain ImageFileVariantFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file", plain: plain(v)})
+}
 
 type ImageFileVariantURL struct {
 	// The URL of the image file.
 	URL string `json:"url"`
 }
 
-func (v *ImageFileVariantURL) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ImageFileVariantURL: %w", err)
-	}
-	var next ImageFileVariantURL
-	if err := dtoTag(object, "type", "url"); err != nil {
-		return fmt.Errorf("ImageFileVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("ImageFileVariantURL: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ImageFileVariantURL) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "url"
-	object["url"] = v.URL
-	return json.Marshal(object)
-}
-
 func (ImageFileVariantURL) isImageFile() {}
+
+func (v ImageFileVariantURL) MarshalJSON() ([]byte, error) {
+	type plain ImageFileVariantURL
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "url", plain: plain(v)})
+}
 
 // File payload for an [`ImageFile::File`]: base64 string or raw bytes.
 //
@@ -8790,43 +4076,11 @@ type ImageOutputs = []string
 // Response information for an image generation call.
 type ImageResponse struct {
 	// Response headers.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// The ID of the model that was used to generate the response.
-	ModelID Field[string] `json:"modelId,omitempty"`
+	ModelID *string `json:"modelId,omitzero"`
 	// Timestamp for the start of the generated response (`toISOString()` in the JSON).
-	Timestamp Field[Timestamp] `json:"timestamp,omitempty"`
-}
-
-func (v *ImageResponse) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ImageResponse: %w", err)
-	}
-	var next ImageResponse
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("ImageResponse: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, false, true); err != nil {
-		return fmt.Errorf("ImageResponse: %w", err)
-	}
-	if err := dtoRead(object, "timestamp", &next.Timestamp, false, true); err != nil {
-		return fmt.Errorf("ImageResponse: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ImageResponse) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.ModelID.Present {
-		object["modelId"] = v.ModelID
-	}
-	if v.Timestamp.Present {
-		object["timestamp"] = v.Timestamp
-	}
-	return json.Marshal(object)
+	Timestamp *Timestamp `json:"timestamp,omitzero"`
 }
 
 // The result of [`ImageModel::do_generate`].
@@ -8836,51 +4090,13 @@ type ImageResult struct {
 	// Generated images (base64 strings or binary data).
 	Images ImageOutputs `json:"images"`
 	// Additional provider-specific metadata, keyed by provider name.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Response information for telemetry and debugging.
 	Response ImageResponse `json:"response"`
 	// Optional token usage for the call (if the provider reports it).
-	Usage Field[ImageUsage] `json:"usage,omitempty"`
+	Usage *ImageUsage `json:"usage,omitzero"`
 	// Warnings for the call, e.g. unsupported features.
 	Warnings []Warning `json:"warnings"`
-}
-
-func (v *ImageResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ImageResult: %w", err)
-	}
-	var next ImageResult
-	if err := dtoRead(object, "images", &next.Images, true, false); err != nil {
-		return fmt.Errorf("ImageResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ImageResult: %w", err)
-	}
-	if err := dtoRead(object, "response", &next.Response, true, false); err != nil {
-		return fmt.Errorf("ImageResult: %w", err)
-	}
-	if err := dtoRead(object, "usage", &next.Usage, false, true); err != nil {
-		return fmt.Errorf("ImageResult: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, true, false); err != nil {
-		return fmt.Errorf("ImageResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ImageResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["images"] = v.Images
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["response"] = v.Response
-	if v.Usage.Present {
-		object["usage"] = v.Usage
-	}
-	object["warnings"] = v.Warnings
-	return json.Marshal(object)
 }
 
 // Token usage for an image generation call (if the provider reports it).
@@ -8888,43 +4104,11 @@ func (v ImageResult) MarshalJSON() ([]byte, error) {
 // Aligned with V4 `ImageModelV4Usage`.
 type ImageUsage struct {
 	// Number of input (prompt) tokens used.
-	InputTokens Field[uint32] `json:"inputTokens,omitempty"`
+	InputTokens *uint32 `json:"inputTokens,omitzero"`
 	// Number of output tokens used, if reported.
-	OutputTokens Field[uint32] `json:"outputTokens,omitempty"`
+	OutputTokens *uint32 `json:"outputTokens,omitzero"`
 	// Total tokens as reported by the provider.
-	TotalTokens Field[uint32] `json:"totalTokens,omitempty"`
-}
-
-func (v *ImageUsage) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ImageUsage: %w", err)
-	}
-	var next ImageUsage
-	if err := dtoRead(object, "inputTokens", &next.InputTokens, false, true); err != nil {
-		return fmt.Errorf("ImageUsage: %w", err)
-	}
-	if err := dtoRead(object, "outputTokens", &next.OutputTokens, false, true); err != nil {
-		return fmt.Errorf("ImageUsage: %w", err)
-	}
-	if err := dtoRead(object, "totalTokens", &next.TotalTokens, false, true); err != nil {
-		return fmt.Errorf("ImageUsage: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ImageUsage) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.InputTokens.Present {
-		object["inputTokens"] = v.InputTokens
-	}
-	if v.OutputTokens.Present {
-		object["outputTokens"] = v.OutputTokens
-	}
-	if v.TotalTokens.Present {
-		object["totalTokens"] = v.TotalTokens
-	}
-	return json.Marshal(object)
+	TotalTokens *uint32 `json:"totalTokens,omitzero"`
 }
 
 // The input audio format for a streaming transcription request.
@@ -8932,36 +4116,12 @@ type InputAudioFormat struct {
 	// Audio format type, e.g. `"audio/pcm"`, `"audio/pcmu"`, `"audio/pcma"`.
 	FormatType string `json:"formatType"`
 	// Sample rate in Hz. Only applicable for formats that require a rate.
-	Rate Field[uint32] `json:"rate,omitempty"`
-}
-
-func (v *InputAudioFormat) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("InputAudioFormat: %w", err)
-	}
-	var next InputAudioFormat
-	if err := dtoRead(object, "formatType", &next.FormatType, true, false); err != nil {
-		return fmt.Errorf("InputAudioFormat: %w", err)
-	}
-	if err := dtoRead(object, "rate", &next.Rate, false, true); err != nil {
-		return fmt.Errorf("InputAudioFormat: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v InputAudioFormat) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["formatType"] = v.FormatType
-	if v.Rate.Present {
-		object["rate"] = v.Rate
-	}
-	return json.Marshal(object)
+	Rate *uint32 `json:"rate,omitzero"`
 }
 
 // ① 输入侧:完整调用参数,足以重建 generate_text 调用。
 type InputRecord struct {
-	Operation Field[RecordingOperation] `json:"operation,omitempty"`
+	Operation *RecordingOperation `json:"operation,omitzero"`
 	// 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
 	// 加上所在操作的 `max_retries` / `timeout` / `session_id`
 	// (`OperationSettings`);headers/provider_options 已递归脱敏。
@@ -8971,74 +4131,14 @@ type InputRecord struct {
 	Prompt []LanguageModelMessage `json:"prompt"`
 }
 
-func (v *InputRecord) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("InputRecord: %w", err)
-	}
-	var next InputRecord
-	if err := dtoRead(object, "operation", &next.Operation, false, false); err != nil {
-		return fmt.Errorf("InputRecord: %w", err)
-	}
-	if err := dtoRead(object, "options", &next.Options, true, true); err != nil {
-		return fmt.Errorf("InputRecord: %w", err)
-	}
-	if err := dtoRead(object, "prompt", &next.Prompt, true, false); err != nil {
-		return fmt.Errorf("InputRecord: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v InputRecord) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Operation.Present {
-		object["operation"] = v.Operation
-	}
-	object["options"] = v.Options
-	object["prompt"] = v.Prompt
-	return json.Marshal(object)
-}
-
 // `LanguageModelUsage.inputTokenDetails`.
 type InputTokenDetails struct {
 	// Input tokens read from a cache.
-	CacheReadTokens Field[uint32] `json:"cacheReadTokens,omitempty"`
+	CacheReadTokens *uint32 `json:"cacheReadTokens,omitzero"`
 	// Input tokens written to a cache.
-	CacheWriteTokens Field[uint32] `json:"cacheWriteTokens,omitempty"`
+	CacheWriteTokens *uint32 `json:"cacheWriteTokens,omitzero"`
 	// Input tokens that were not read from or written to a cache.
-	NoCacheTokens Field[uint32] `json:"noCacheTokens,omitempty"`
-}
-
-func (v *InputTokenDetails) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("InputTokenDetails: %w", err)
-	}
-	var next InputTokenDetails
-	if err := dtoRead(object, "cacheReadTokens", &next.CacheReadTokens, false, true); err != nil {
-		return fmt.Errorf("InputTokenDetails: %w", err)
-	}
-	if err := dtoRead(object, "cacheWriteTokens", &next.CacheWriteTokens, false, true); err != nil {
-		return fmt.Errorf("InputTokenDetails: %w", err)
-	}
-	if err := dtoRead(object, "noCacheTokens", &next.NoCacheTokens, false, true); err != nil {
-		return fmt.Errorf("InputTokenDetails: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v InputTokenDetails) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.CacheReadTokens.Present {
-		object["cacheReadTokens"] = v.CacheReadTokens
-	}
-	if v.CacheWriteTokens.Present {
-		object["cacheWriteTokens"] = v.CacheWriteTokens
-	}
-	if v.NoCacheTokens.Present {
-		object["noCacheTokens"] = v.NoCacheTokens
-	}
-	return json.Marshal(object)
+	NoCacheTokens *uint32 `json:"noCacheTokens,omitzero"`
 }
 
 // A file in a provider's output: `LanguageModelV4File` /
@@ -9047,37 +4147,9 @@ func (v InputTokenDetails) MarshalJSON() ([]byte, error) {
 // data or a URL. The payload of the provider-level `GenerateContent::File` /
 // `ReasoningFile` and `StreamPart::File` / `ReasoningFile`.
 type LanguageModelFile struct {
-	Data             GeneratedFileData                            `json:"data"`
-	MediaType        string                                       `json:"mediaType"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-}
-
-func (v *LanguageModelFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LanguageModelFile: %w", err)
-	}
-	var next LanguageModelFile
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("LanguageModelFile: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("LanguageModelFile: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("LanguageModelFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v LanguageModelFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["data"] = v.Data
-	object["mediaType"] = v.MediaType
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+	Data             GeneratedFileData                     `json:"data"`
+	MediaType        string                                `json:"mediaType"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 // A single provider-facing message, a union by role.
@@ -9085,193 +4157,113 @@ func (v LanguageModelFile) MarshalJSON() ([]byte, error) {
 // `provider_options` is message-level (e.g. `anthropic.cacheControl`),
 // mirroring `LanguageModelV4Message.providerOptions`.
 type LanguageModelMessageVariant interface{ isLanguageModelMessage() }
-type LanguageModelMessage struct{ Value LanguageModelMessageVariant }
+type LanguageModelMessage struct {
+	Value LanguageModelMessageVariant
+}
 
 func (v LanguageModelMessage) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("LanguageModelMessage: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *LanguageModelMessage) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LanguageModelMessage: %w", err)
+	var tag struct {
+		Role string `json:"role"`
 	}
-	var tag string
-	if err := dtoRead(object, "role", &tag, true, false); err != nil {
-		return fmt.Errorf("LanguageModelMessage: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "system" {
-		var next LanguageModelMessageVariantSystem
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "user" {
-		var next LanguageModelMessageVariantUser
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "assistant" {
+	switch tag.Role {
+	case "assistant":
 		var next LanguageModelMessageVariantAssistant
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "tool" {
+		v.Value = next
+		return nil
+	case "system":
+		var next LanguageModelMessageVariantSystem
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool":
 		var next LanguageModelMessageVariantTool
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "user":
+		var next LanguageModelMessageVariantUser
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("LanguageModelMessage: unknown or invalid role tag %q", tag)
+	return fmt.Errorf("LanguageModelMessage: unknown role tag %q", tag.Role)
 }
 
 type LanguageModelMessageVariantSystem struct {
-	Content         string                                       `json:"content"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-}
-
-func (v *LanguageModelMessageVariantSystem) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantSystem: %w", err)
-	}
-	var next LanguageModelMessageVariantSystem
-	if err := dtoTag(object, "role", "system"); err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantSystem: %w", err)
-	}
-	if err := dtoRead(object, "content", &next.Content, true, false); err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantSystem: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantSystem: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v LanguageModelMessageVariantSystem) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["role"] = "system"
-	object["content"] = v.Content
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+	Content         string                                `json:"content"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (LanguageModelMessageVariantSystem) isLanguageModelMessage() {}
 
-type LanguageModelMessageVariantUser struct {
-	Content         []UserPart                                   `json:"content"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v LanguageModelMessageVariantSystem) MarshalJSON() ([]byte, error) {
+	type plain LanguageModelMessageVariantSystem
+	return json.Marshal(struct {
+		Role string `json:"role"`
+		plain
+	}{Role: "system", plain: plain(v)})
 }
 
-func (v *LanguageModelMessageVariantUser) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantUser: %w", err)
-	}
-	var next LanguageModelMessageVariantUser
-	if err := dtoTag(object, "role", "user"); err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantUser: %w", err)
-	}
-	if err := dtoRead(object, "content", &next.Content, true, false); err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantUser: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantUser: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v LanguageModelMessageVariantUser) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["role"] = "user"
-	object["content"] = v.Content
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type LanguageModelMessageVariantUser struct {
+	Content         []UserPart                            `json:"content"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (LanguageModelMessageVariantUser) isLanguageModelMessage() {}
 
-type LanguageModelMessageVariantAssistant struct {
-	Content         []AssistantPart                              `json:"content"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v LanguageModelMessageVariantUser) MarshalJSON() ([]byte, error) {
+	type plain LanguageModelMessageVariantUser
+	return json.Marshal(struct {
+		Role string `json:"role"`
+		plain
+	}{Role: "user", plain: plain(v)})
 }
 
-func (v *LanguageModelMessageVariantAssistant) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantAssistant: %w", err)
-	}
-	var next LanguageModelMessageVariantAssistant
-	if err := dtoTag(object, "role", "assistant"); err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantAssistant: %w", err)
-	}
-	if err := dtoRead(object, "content", &next.Content, true, false); err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantAssistant: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantAssistant: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v LanguageModelMessageVariantAssistant) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["role"] = "assistant"
-	object["content"] = v.Content
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type LanguageModelMessageVariantAssistant struct {
+	Content         []AssistantPart                       `json:"content"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (LanguageModelMessageVariantAssistant) isLanguageModelMessage() {}
 
-type LanguageModelMessageVariantTool struct {
-	Content         []ToolPart                                   `json:"content"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v LanguageModelMessageVariantAssistant) MarshalJSON() ([]byte, error) {
+	type plain LanguageModelMessageVariantAssistant
+	return json.Marshal(struct {
+		Role string `json:"role"`
+		plain
+	}{Role: "assistant", plain: plain(v)})
 }
 
-func (v *LanguageModelMessageVariantTool) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantTool: %w", err)
-	}
-	var next LanguageModelMessageVariantTool
-	if err := dtoTag(object, "role", "tool"); err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantTool: %w", err)
-	}
-	if err := dtoRead(object, "content", &next.Content, true, false); err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantTool: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("LanguageModelMessageVariantTool: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v LanguageModelMessageVariantTool) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["role"] = "tool"
-	object["content"] = v.Content
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type LanguageModelMessageVariantTool struct {
+	Content         []ToolPart                            `json:"content"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (LanguageModelMessageVariantTool) isLanguageModelMessage() {}
+
+func (v LanguageModelMessageVariantTool) MarshalJSON() ([]byte, error) {
+	type plain LanguageModelMessageVariantTool
+	return json.Marshal(struct {
+		Role string `json:"role"`
+		plain
+	}{Role: "tool", plain: plain(v)})
+}
 
 // Token usage of a generation step or a whole call: the AI SDK's
 // `LanguageModelUsage` (ai@7.0.127 `types/usage.ts:10-68`).
@@ -9285,61 +4277,15 @@ type LanguageModelUsage struct {
 	// Breakdown of the input tokens.
 	InputTokenDetails InputTokenDetails `json:"inputTokenDetails"`
 	// Total input (prompt) tokens.
-	InputTokens Field[uint32] `json:"inputTokens,omitempty"`
+	InputTokens *uint32 `json:"inputTokens,omitzero"`
 	// Breakdown of the output tokens.
 	OutputTokenDetails OutputTokenDetails `json:"outputTokenDetails"`
 	// Total output (completion) tokens.
-	OutputTokens Field[uint32] `json:"outputTokens,omitempty"`
+	OutputTokens *uint32 `json:"outputTokens,omitzero"`
 	// The provider's raw usage object, passed through unchanged.
-	Raw Field[map[string]json.RawMessage] `json:"raw,omitempty"`
+	Raw map[string]json.RawMessage `json:"raw,omitzero"`
 	// Input plus output tokens, when either is known.
-	TotalTokens Field[uint32] `json:"totalTokens,omitempty"`
-}
-
-func (v *LanguageModelUsage) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LanguageModelUsage: %w", err)
-	}
-	var next LanguageModelUsage
-	if err := dtoRead(object, "inputTokenDetails", &next.InputTokenDetails, true, false); err != nil {
-		return fmt.Errorf("LanguageModelUsage: %w", err)
-	}
-	if err := dtoRead(object, "inputTokens", &next.InputTokens, false, true); err != nil {
-		return fmt.Errorf("LanguageModelUsage: %w", err)
-	}
-	if err := dtoRead(object, "outputTokenDetails", &next.OutputTokenDetails, true, false); err != nil {
-		return fmt.Errorf("LanguageModelUsage: %w", err)
-	}
-	if err := dtoRead(object, "outputTokens", &next.OutputTokens, false, true); err != nil {
-		return fmt.Errorf("LanguageModelUsage: %w", err)
-	}
-	if err := dtoRead(object, "raw", &next.Raw, false, true); err != nil {
-		return fmt.Errorf("LanguageModelUsage: %w", err)
-	}
-	if err := dtoRead(object, "totalTokens", &next.TotalTokens, false, true); err != nil {
-		return fmt.Errorf("LanguageModelUsage: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v LanguageModelUsage) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["inputTokenDetails"] = v.InputTokenDetails
-	if v.InputTokens.Present {
-		object["inputTokens"] = v.InputTokens
-	}
-	object["outputTokenDetails"] = v.OutputTokenDetails
-	if v.OutputTokens.Present {
-		object["outputTokens"] = v.OutputTokens
-	}
-	if v.Raw.Present {
-		object["raw"] = v.Raw
-	}
-	if v.TotalTokens.Present {
-		object["totalTokens"] = v.TotalTokens
-	}
-	return json.Marshal(object)
+	TotalTokens *uint32 `json:"totalTokens,omitzero"`
 }
 
 // Token usage of a generation step or a whole call: the AI SDK's
@@ -9352,67 +4298,17 @@ func (v LanguageModelUsage) MarshalJSON() ([]byte, error) {
 // `undefined` count; the detail objects are always present.
 type LanguageModelUsageInput struct {
 	// Breakdown of the input tokens.
-	InputTokenDetails Field[InputTokenDetails] `json:"inputTokenDetails,omitempty"`
+	InputTokenDetails *InputTokenDetails `json:"inputTokenDetails,omitzero"`
 	// Total input (prompt) tokens.
-	InputTokens Field[uint32] `json:"inputTokens,omitempty"`
+	InputTokens *uint32 `json:"inputTokens,omitzero"`
 	// Breakdown of the output tokens.
-	OutputTokenDetails Field[OutputTokenDetails] `json:"outputTokenDetails,omitempty"`
+	OutputTokenDetails *OutputTokenDetails `json:"outputTokenDetails,omitzero"`
 	// Total output (completion) tokens.
-	OutputTokens Field[uint32] `json:"outputTokens,omitempty"`
+	OutputTokens *uint32 `json:"outputTokens,omitzero"`
 	// The provider's raw usage object, passed through unchanged.
-	Raw Field[map[string]json.RawMessage] `json:"raw,omitempty"`
+	Raw map[string]json.RawMessage `json:"raw,omitzero"`
 	// Input plus output tokens, when either is known.
-	TotalTokens Field[uint32] `json:"totalTokens,omitempty"`
-}
-
-func (v *LanguageModelUsageInput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LanguageModelUsageInput: %w", err)
-	}
-	var next LanguageModelUsageInput
-	if err := dtoRead(object, "inputTokenDetails", &next.InputTokenDetails, false, false); err != nil {
-		return fmt.Errorf("LanguageModelUsageInput: %w", err)
-	}
-	if err := dtoRead(object, "inputTokens", &next.InputTokens, false, true); err != nil {
-		return fmt.Errorf("LanguageModelUsageInput: %w", err)
-	}
-	if err := dtoRead(object, "outputTokenDetails", &next.OutputTokenDetails, false, false); err != nil {
-		return fmt.Errorf("LanguageModelUsageInput: %w", err)
-	}
-	if err := dtoRead(object, "outputTokens", &next.OutputTokens, false, true); err != nil {
-		return fmt.Errorf("LanguageModelUsageInput: %w", err)
-	}
-	if err := dtoRead(object, "raw", &next.Raw, false, true); err != nil {
-		return fmt.Errorf("LanguageModelUsageInput: %w", err)
-	}
-	if err := dtoRead(object, "totalTokens", &next.TotalTokens, false, true); err != nil {
-		return fmt.Errorf("LanguageModelUsageInput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v LanguageModelUsageInput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.InputTokenDetails.Present {
-		object["inputTokenDetails"] = v.InputTokenDetails
-	}
-	if v.InputTokens.Present {
-		object["inputTokens"] = v.InputTokens
-	}
-	if v.OutputTokenDetails.Present {
-		object["outputTokenDetails"] = v.OutputTokenDetails
-	}
-	if v.OutputTokens.Present {
-		object["outputTokens"] = v.OutputTokens
-	}
-	if v.Raw.Present {
-		object["raw"] = v.Raw
-	}
-	if v.TotalTokens.Present {
-		object["totalTokens"] = v.TotalTokens
-	}
-	return json.Marshal(object)
+	TotalTokens *uint32 `json:"totalTokens,omitzero"`
 }
 
 // How a model call should choose tools: the V4 `LanguageModelV4ToolChoice`
@@ -9427,238 +4323,161 @@ type LanguageModelV4ToolChoice struct {
 }
 
 func (v LanguageModelV4ToolChoice) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("LanguageModelV4ToolChoice: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *LanguageModelV4ToolChoice) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LanguageModelV4ToolChoice: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("LanguageModelV4ToolChoice: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "auto" {
+	switch tag.Type {
+	case "auto":
 		var next LanguageModelV4ToolChoiceVariantAuto
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "none" {
+		v.Value = next
+		return nil
+	case "none":
 		var next LanguageModelV4ToolChoiceVariantNone
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "required" {
+		v.Value = next
+		return nil
+	case "required":
 		var next LanguageModelV4ToolChoiceVariantRequired
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "tool" {
+		v.Value = next
+		return nil
+	case "tool":
 		var next LanguageModelV4ToolChoiceVariantTool
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("LanguageModelV4ToolChoice: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("LanguageModelV4ToolChoice: unknown type tag %q", tag.Type)
 }
 
-type LanguageModelV4ToolChoiceVariantAuto struct {
-}
-
-func (v *LanguageModelV4ToolChoiceVariantAuto) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LanguageModelV4ToolChoiceVariantAuto: %w", err)
-	}
-	var next LanguageModelV4ToolChoiceVariantAuto
-	if err := dtoTag(object, "type", "auto"); err != nil {
-		return fmt.Errorf("LanguageModelV4ToolChoiceVariantAuto: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v LanguageModelV4ToolChoiceVariantAuto) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "auto"
-	return json.Marshal(object)
-}
+type LanguageModelV4ToolChoiceVariantAuto struct{}
 
 func (LanguageModelV4ToolChoiceVariantAuto) isLanguageModelV4ToolChoice() {}
 
-type LanguageModelV4ToolChoiceVariantNone struct {
+func (v LanguageModelV4ToolChoiceVariantAuto) MarshalJSON() ([]byte, error) {
+	type plain LanguageModelV4ToolChoiceVariantAuto
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "auto", plain: plain(v)})
 }
 
-func (v *LanguageModelV4ToolChoiceVariantNone) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LanguageModelV4ToolChoiceVariantNone: %w", err)
-	}
-	var next LanguageModelV4ToolChoiceVariantNone
-	if err := dtoTag(object, "type", "none"); err != nil {
-		return fmt.Errorf("LanguageModelV4ToolChoiceVariantNone: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v LanguageModelV4ToolChoiceVariantNone) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "none"
-	return json.Marshal(object)
-}
+type LanguageModelV4ToolChoiceVariantNone struct{}
 
 func (LanguageModelV4ToolChoiceVariantNone) isLanguageModelV4ToolChoice() {}
 
-type LanguageModelV4ToolChoiceVariantRequired struct {
+func (v LanguageModelV4ToolChoiceVariantNone) MarshalJSON() ([]byte, error) {
+	type plain LanguageModelV4ToolChoiceVariantNone
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "none", plain: plain(v)})
 }
 
-func (v *LanguageModelV4ToolChoiceVariantRequired) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LanguageModelV4ToolChoiceVariantRequired: %w", err)
-	}
-	var next LanguageModelV4ToolChoiceVariantRequired
-	if err := dtoTag(object, "type", "required"); err != nil {
-		return fmt.Errorf("LanguageModelV4ToolChoiceVariantRequired: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v LanguageModelV4ToolChoiceVariantRequired) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "required"
-	return json.Marshal(object)
-}
+type LanguageModelV4ToolChoiceVariantRequired struct{}
 
 func (LanguageModelV4ToolChoiceVariantRequired) isLanguageModelV4ToolChoice() {}
+
+func (v LanguageModelV4ToolChoiceVariantRequired) MarshalJSON() ([]byte, error) {
+	type plain LanguageModelV4ToolChoiceVariantRequired
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "required", plain: plain(v)})
+}
 
 type LanguageModelV4ToolChoiceVariantTool struct {
 	ToolName string `json:"toolName"`
 }
 
-func (v *LanguageModelV4ToolChoiceVariantTool) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LanguageModelV4ToolChoiceVariantTool: %w", err)
-	}
-	var next LanguageModelV4ToolChoiceVariantTool
-	if err := dtoTag(object, "type", "tool"); err != nil {
-		return fmt.Errorf("LanguageModelV4ToolChoiceVariantTool: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("LanguageModelV4ToolChoiceVariantTool: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v LanguageModelV4ToolChoiceVariantTool) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool"
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
-}
-
 func (LanguageModelV4ToolChoiceVariantTool) isLanguageModelV4ToolChoice() {}
 
+func (v LanguageModelV4ToolChoiceVariantTool) MarshalJSON() ([]byte, error) {
+	type plain LanguageModelV4ToolChoiceVariantTool
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool", plain: plain(v)})
+}
+
 type LiveTargetVariant interface{ isLiveTarget() }
-type LiveTarget struct{ Value LiveTargetVariant }
+type LiveTarget struct {
+	Value LiveTargetVariant
+}
 
 func (v LiveTarget) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("LiveTarget: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *LiveTarget) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LiveTarget: %w", err)
+	var tag struct {
+		Kind string `json:"kind"`
 	}
-	var tag string
-	if err := dtoRead(object, "kind", &tag, true, false); err != nil {
-		return fmt.Errorf("LiveTarget: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "model" {
+	switch tag.Kind {
+	case "model":
 		var next LiveTargetVariantModel
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "registry" {
+		v.Value = next
+		return nil
+	case "registry":
 		var next LiveTargetVariantRegistry
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("LiveTarget: unknown or invalid kind tag %q", tag)
+	return fmt.Errorf("LiveTarget: unknown kind tag %q", tag.Kind)
 }
 
 type LiveTargetVariantModel struct {
 	Handle HandleIdInput `json:"handle"`
 }
 
-func (v *LiveTargetVariantModel) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LiveTargetVariantModel: %w", err)
-	}
-	var next LiveTargetVariantModel
-	if err := dtoTag(object, "kind", "model"); err != nil {
-		return fmt.Errorf("LiveTargetVariantModel: %w", err)
-	}
-	if err := dtoRead(object, "handle", &next.Handle, true, false); err != nil {
-		return fmt.Errorf("LiveTargetVariantModel: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v LiveTargetVariantModel) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["kind"] = "model"
-	object["handle"] = v.Handle
-	return json.Marshal(object)
-}
-
 func (LiveTargetVariantModel) isLiveTarget() {}
+
+func (v LiveTargetVariantModel) MarshalJSON() ([]byte, error) {
+	type plain LiveTargetVariantModel
+	return json.Marshal(struct {
+		Kind string `json:"kind"`
+		plain
+	}{Kind: "model", plain: plain(v)})
+}
 
 type LiveTargetVariantRegistry struct {
 	Handle HandleIdInput `json:"handle"`
 }
 
-func (v *LiveTargetVariantRegistry) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LiveTargetVariantRegistry: %w", err)
-	}
-	var next LiveTargetVariantRegistry
-	if err := dtoTag(object, "kind", "registry"); err != nil {
-		return fmt.Errorf("LiveTargetVariantRegistry: %w", err)
-	}
-	if err := dtoRead(object, "handle", &next.Handle, true, false); err != nil {
-		return fmt.Errorf("LiveTargetVariantRegistry: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v LiveTargetVariantRegistry) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["kind"] = "registry"
-	object["handle"] = v.Handle
-	return json.Marshal(object)
-}
-
 func (LiveTargetVariantRegistry) isLiveTarget() {}
+
+func (v LiveTargetVariantRegistry) MarshalJSON() ([]byte, error) {
+	type plain LiveTargetVariantRegistry
+	return json.Marshal(struct {
+		Kind string `json:"kind"`
+		plain
+	}{Kind: "registry", plain: plain(v)})
+}
 
 type LogLevel string
 
@@ -9671,97 +4490,15 @@ const (
 	LogLevelTrace LogLevel = "trace"
 )
 
-func (v *LogLevel) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "off":
-		*v = LogLevel(next)
-		return nil
-	case "error":
-		*v = LogLevel(next)
-		return nil
-	case "warn":
-		*v = LogLevel(next)
-		return nil
-	case "info":
-		*v = LogLevel(next)
-		return nil
-	case "debug":
-		*v = LogLevel(next)
-		return nil
-	case "trace":
-		*v = LogLevel(next)
-		return nil
-	}
-	return fmt.Errorf("LogLevel: unknown value %s", data)
-}
-
 type LoggingConfig struct {
 	Level LogLevel `json:"level"`
 }
 
-func (v *LoggingConfig) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("LoggingConfig: %w", err)
-	}
-	var next LoggingConfig
-	if err := dtoRead(object, "level", &next.Level, true, false); err != nil {
-		return fmt.Errorf("LoggingConfig: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v LoggingConfig) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["level"] = v.Level
-	return json.Marshal(object)
-}
-
 type MiddlewareParams struct {
-	AuditMode  Field[AuditMode]     `json:"auditMode,omitempty"`
-	Kind       string               `json:"kind"`
-	ScopeName  Field[string]        `json:"scopeName,omitempty"`
-	TraceStore Field[HandleIdInput] `json:"traceStore,omitempty"`
-}
-
-func (v *MiddlewareParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("MiddlewareParams: %w", err)
-	}
-	var next MiddlewareParams
-	if err := dtoRead(object, "auditMode", &next.AuditMode, false, true); err != nil {
-		return fmt.Errorf("MiddlewareParams: %w", err)
-	}
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("MiddlewareParams: %w", err)
-	}
-	if err := dtoRead(object, "scopeName", &next.ScopeName, false, true); err != nil {
-		return fmt.Errorf("MiddlewareParams: %w", err)
-	}
-	if err := dtoRead(object, "traceStore", &next.TraceStore, false, true); err != nil {
-		return fmt.Errorf("MiddlewareParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v MiddlewareParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.AuditMode.Present {
-		object["auditMode"] = v.AuditMode
-	}
-	object["kind"] = v.Kind
-	if v.ScopeName.Present {
-		object["scopeName"] = v.ScopeName
-	}
-	if v.TraceStore.Present {
-		object["traceStore"] = v.TraceStore
-	}
-	return json.Marshal(object)
+	AuditMode  *AuditMode     `json:"auditMode,omitzero"`
+	Kind       string         `json:"kind"`
+	ScopeName  *string        `json:"scopeName,omitzero"`
+	TraceStore *HandleIdInput `json:"traceStore,omitzero"`
 }
 
 // Reference-failure policy.
@@ -9772,89 +4509,21 @@ const (
 	MoaFailModeFailFast   MoaFailMode = "fail_fast"
 )
 
-func (v *MoaFailMode) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "best_effort":
-		*v = MoaFailMode(next)
-		return nil
-	case "fail_fast":
-		*v = MoaFailMode(next)
-		return nil
-	}
-	return fmt.Errorf("MoaFailMode: unknown value %s", data)
-}
-
 type MoaParams struct {
 	Aggregator string `json:"aggregator"`
 	// Optional aggregator system instruction prepended to the reference user
 	// message. `None` uses a built-in default.
-	AggregatorInstructions Field[string] `json:"aggregatorInstructions,omitempty"`
+	AggregatorInstructions *string `json:"aggregatorInstructions,omitzero"`
 	// Reference-failure policy.
-	FailMode Field[MoaFailMode] `json:"failMode,omitempty"`
+	FailMode *MoaFailMode `json:"failMode,omitzero"`
 	// `model_id()` value (default `"moa"`).
-	ModelID Field[string] `json:"modelId,omitempty"`
+	ModelID *string `json:"modelId,omitzero"`
 	// `provider()` value (default `"moa"`).
-	ProviderName Field[string] `json:"providerName,omitempty"`
-	References   []string      `json:"references"`
+	ProviderName *string  `json:"providerName,omitzero"`
+	References   []string `json:"references"`
 	// Strip `tools` / `tool_choice` from reference calls so references stay
 	// cheap (Hermes: references don't carry tool schemas). Default `true`.
-	StripReferenceTools Field[bool] `json:"stripReferenceTools,omitempty"`
-}
-
-func (v *MoaParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("MoaParams: %w", err)
-	}
-	var next MoaParams
-	if err := dtoRead(object, "aggregator", &next.Aggregator, true, false); err != nil {
-		return fmt.Errorf("MoaParams: %w", err)
-	}
-	if err := dtoRead(object, "aggregatorInstructions", &next.AggregatorInstructions, false, true); err != nil {
-		return fmt.Errorf("MoaParams: %w", err)
-	}
-	if err := dtoRead(object, "failMode", &next.FailMode, false, false); err != nil {
-		return fmt.Errorf("MoaParams: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, false, false); err != nil {
-		return fmt.Errorf("MoaParams: %w", err)
-	}
-	if err := dtoRead(object, "providerName", &next.ProviderName, false, false); err != nil {
-		return fmt.Errorf("MoaParams: %w", err)
-	}
-	if err := dtoRead(object, "references", &next.References, true, false); err != nil {
-		return fmt.Errorf("MoaParams: %w", err)
-	}
-	if err := dtoRead(object, "stripReferenceTools", &next.StripReferenceTools, false, false); err != nil {
-		return fmt.Errorf("MoaParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v MoaParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["aggregator"] = v.Aggregator
-	if v.AggregatorInstructions.Present {
-		object["aggregatorInstructions"] = v.AggregatorInstructions
-	}
-	if v.FailMode.Present {
-		object["failMode"] = v.FailMode
-	}
-	if v.ModelID.Present {
-		object["modelId"] = v.ModelID
-	}
-	if v.ProviderName.Present {
-		object["providerName"] = v.ProviderName
-	}
-	object["references"] = v.References
-	if v.StripReferenceTools.Present {
-		object["stripReferenceTools"] = v.StripReferenceTools
-	}
-	return json.Marshal(object)
+	StripReferenceTools *bool `json:"stripReferenceTools,omitzero"`
 }
 
 // A single input or output modality.
@@ -9871,40 +4540,6 @@ const (
 	ModalityScore     Modality = "Score"
 )
 
-func (v *Modality) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "Text":
-		*v = Modality(next)
-		return nil
-	case "Image":
-		*v = Modality(next)
-		return nil
-	case "Audio":
-		*v = Modality(next)
-		return nil
-	case "Video":
-		*v = Modality(next)
-		return nil
-	case "Pdf":
-		*v = Modality(next)
-		return nil
-	case "Other":
-		*v = Modality(next)
-		return nil
-	case "Embedding":
-		*v = Modality(next)
-		return nil
-	case "Score":
-		*v = Modality(next)
-		return nil
-	}
-	return fmt.Errorf("Modality: unknown value %s", data)
-}
-
 // Model-level capability flags (more precise than provider-level `supports_*`).
 type ModelCapabilities struct {
 	// Accepts multimodal attachments (image/audio/pdf input).
@@ -9917,81 +4552,13 @@ type ModelCapabilities struct {
 	ToolCall bool `json:"toolCall"`
 }
 
-func (v *ModelCapabilities) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelCapabilities: %w", err)
-	}
-	var next ModelCapabilities
-	if err := dtoRead(object, "attachment", &next.Attachment, true, false); err != nil {
-		return fmt.Errorf("ModelCapabilities: %w", err)
-	}
-	if err := dtoRead(object, "structuredOutput", &next.StructuredOutput, true, false); err != nil {
-		return fmt.Errorf("ModelCapabilities: %w", err)
-	}
-	if err := dtoRead(object, "temperature", &next.Temperature, true, false); err != nil {
-		return fmt.Errorf("ModelCapabilities: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("ModelCapabilities: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ModelCapabilities) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["attachment"] = v.Attachment
-	object["structuredOutput"] = v.StructuredOutput
-	object["temperature"] = v.Temperature
-	object["toolCall"] = v.ToolCall
-	return json.Marshal(object)
-}
-
 // Pricing (advisory, read-only metadata). Units follow the source catalog
 // (anya2a uses USD per 1M tokens).
 type ModelCost struct {
-	CacheRead  Field[float64] `json:"cacheRead,omitempty"`
-	CacheWrite Field[float64] `json:"cacheWrite,omitempty"`
-	Input      Field[float64] `json:"input,omitempty"`
-	Output     Field[float64] `json:"output,omitempty"`
-}
-
-func (v *ModelCost) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelCost: %w", err)
-	}
-	var next ModelCost
-	if err := dtoRead(object, "cacheRead", &next.CacheRead, false, true); err != nil {
-		return fmt.Errorf("ModelCost: %w", err)
-	}
-	if err := dtoRead(object, "cacheWrite", &next.CacheWrite, false, true); err != nil {
-		return fmt.Errorf("ModelCost: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, false, true); err != nil {
-		return fmt.Errorf("ModelCost: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, false, true); err != nil {
-		return fmt.Errorf("ModelCost: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ModelCost) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.CacheRead.Present {
-		object["cacheRead"] = v.CacheRead
-	}
-	if v.CacheWrite.Present {
-		object["cacheWrite"] = v.CacheWrite
-	}
-	if v.Input.Present {
-		object["input"] = v.Input
-	}
-	if v.Output.Present {
-		object["output"] = v.Output
-	}
-	return json.Marshal(object)
+	CacheRead  *float64 `json:"cacheRead,omitzero"`
+	CacheWrite *float64 `json:"cacheWrite,omitzero"`
+	Input      *float64 `json:"input,omitzero"`
+	Output     *float64 `json:"output,omitzero"`
 }
 
 type ModelInfo struct {
@@ -10002,288 +4569,127 @@ type ModelInfo struct {
 	Source       json.RawMessage `json:"source"`
 }
 
-func (v *ModelInfo) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelInfo: %w", err)
-	}
-	var next ModelInfo
-	if err := dtoRead(object, "capabilities", &next.Capabilities, true, true); err != nil {
-		return fmt.Errorf("ModelInfo: %w", err)
-	}
-	if err := dtoRead(object, "modality", &next.Modality, true, false); err != nil {
-		return fmt.Errorf("ModelInfo: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("ModelInfo: %w", err)
-	}
-	if err := dtoRead(object, "provider", &next.Provider, true, false); err != nil {
-		return fmt.Errorf("ModelInfo: %w", err)
-	}
-	if err := dtoRead(object, "source", &next.Source, true, true); err != nil {
-		return fmt.Errorf("ModelInfo: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ModelInfo) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["capabilities"] = v.Capabilities
-	object["modality"] = v.Modality
-	object["modelId"] = v.ModelID
-	object["provider"] = v.Provider
-	object["source"] = v.Source
-	return json.Marshal(object)
-}
-
-type ModelInfoParams struct {
-}
-
-func (v *ModelInfoParams) UnmarshalJSON(data []byte) error {
-	_, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelInfoParams: %w", err)
-	}
-	var next ModelInfoParams
-	*v = next
-	return nil
-}
-func (v ModelInfoParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	return json.Marshal(object)
-}
+type ModelInfoParams struct{}
 
 // Token / request limits for a model.
 type ModelLimits struct {
 	// Maximum total context window (input + output), in tokens.
-	Context Field[uint64] `json:"context,omitempty"`
+	Context *uint64 `json:"context,omitzero"`
 	// Maximum input tokens (when distinct from `context`).
-	Input Field[uint64] `json:"input,omitempty"`
+	Input *uint64 `json:"input,omitzero"`
 	// Maximum output tokens.
-	Output Field[uint64] `json:"output,omitempty"`
-}
-
-func (v *ModelLimits) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelLimits: %w", err)
-	}
-	var next ModelLimits
-	if err := dtoRead(object, "context", &next.Context, false, true); err != nil {
-		return fmt.Errorf("ModelLimits: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, false, true); err != nil {
-		return fmt.Errorf("ModelLimits: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, false, true); err != nil {
-		return fmt.Errorf("ModelLimits: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ModelLimits) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Context.Present {
-		object["context"] = v.Context
-	}
-	if v.Input.Present {
-		object["input"] = v.Input
-	}
-	if v.Output.Present {
-		object["output"] = v.Output
-	}
-	return json.Marshal(object)
+	Output *uint64 `json:"output,omitzero"`
 }
 
 // A single user-facing chat message, a union by role.
 type ModelMessageVariant interface{ isModelMessage() }
-type ModelMessage struct{ Value ModelMessageVariant }
+type ModelMessage struct {
+	Value ModelMessageVariant
+}
 
 func (v ModelMessage) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ModelMessage: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ModelMessage) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelMessage: %w", err)
+	var tag struct {
+		Role string `json:"role"`
 	}
-	var tag string
-	if err := dtoRead(object, "role", &tag, true, false); err != nil {
-		return fmt.Errorf("ModelMessage: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "system" {
-		var next ModelMessageVariantSystem
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "user" {
-		var next ModelMessageVariantUser
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "assistant" {
+	switch tag.Role {
+	case "assistant":
 		var next ModelMessageVariantAssistant
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "tool" {
+		v.Value = next
+		return nil
+	case "system":
+		var next ModelMessageVariantSystem
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool":
 		var next ModelMessageVariantTool
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "user":
+		var next ModelMessageVariantUser
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("ModelMessage: unknown or invalid role tag %q", tag)
+	return fmt.Errorf("ModelMessage: unknown role tag %q", tag.Role)
 }
 
 type ModelMessageVariantSystem struct {
-	Content         string                                       `json:"content"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-}
-
-func (v *ModelMessageVariantSystem) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelMessageVariantSystem: %w", err)
-	}
-	var next ModelMessageVariantSystem
-	if err := dtoTag(object, "role", "system"); err != nil {
-		return fmt.Errorf("ModelMessageVariantSystem: %w", err)
-	}
-	if err := dtoRead(object, "content", &next.Content, true, false); err != nil {
-		return fmt.Errorf("ModelMessageVariantSystem: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ModelMessageVariantSystem: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ModelMessageVariantSystem) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["role"] = "system"
-	object["content"] = v.Content
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+	Content         string                                `json:"content"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (ModelMessageVariantSystem) isModelMessage() {}
 
-type ModelMessageVariantUser struct {
-	Content         UserContent                                  `json:"content"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v ModelMessageVariantSystem) MarshalJSON() ([]byte, error) {
+	type plain ModelMessageVariantSystem
+	return json.Marshal(struct {
+		Role string `json:"role"`
+		plain
+	}{Role: "system", plain: plain(v)})
 }
 
-func (v *ModelMessageVariantUser) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelMessageVariantUser: %w", err)
-	}
-	var next ModelMessageVariantUser
-	if err := dtoTag(object, "role", "user"); err != nil {
-		return fmt.Errorf("ModelMessageVariantUser: %w", err)
-	}
-	if err := dtoRead(object, "content", &next.Content, true, false); err != nil {
-		return fmt.Errorf("ModelMessageVariantUser: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ModelMessageVariantUser: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ModelMessageVariantUser) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["role"] = "user"
-	object["content"] = v.Content
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type ModelMessageVariantUser struct {
+	Content         UserContent                           `json:"content"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (ModelMessageVariantUser) isModelMessage() {}
 
-type ModelMessageVariantAssistant struct {
-	Content         AssistantContent                             `json:"content"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v ModelMessageVariantUser) MarshalJSON() ([]byte, error) {
+	type plain ModelMessageVariantUser
+	return json.Marshal(struct {
+		Role string `json:"role"`
+		plain
+	}{Role: "user", plain: plain(v)})
 }
 
-func (v *ModelMessageVariantAssistant) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelMessageVariantAssistant: %w", err)
-	}
-	var next ModelMessageVariantAssistant
-	if err := dtoTag(object, "role", "assistant"); err != nil {
-		return fmt.Errorf("ModelMessageVariantAssistant: %w", err)
-	}
-	if err := dtoRead(object, "content", &next.Content, true, false); err != nil {
-		return fmt.Errorf("ModelMessageVariantAssistant: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ModelMessageVariantAssistant: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ModelMessageVariantAssistant) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["role"] = "assistant"
-	object["content"] = v.Content
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type ModelMessageVariantAssistant struct {
+	Content         AssistantContent                      `json:"content"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (ModelMessageVariantAssistant) isModelMessage() {}
 
-type ModelMessageVariantTool struct {
-	Content         []ToolContentPart                            `json:"content"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v ModelMessageVariantAssistant) MarshalJSON() ([]byte, error) {
+	type plain ModelMessageVariantAssistant
+	return json.Marshal(struct {
+		Role string `json:"role"`
+		plain
+	}{Role: "assistant", plain: plain(v)})
 }
 
-func (v *ModelMessageVariantTool) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelMessageVariantTool: %w", err)
-	}
-	var next ModelMessageVariantTool
-	if err := dtoTag(object, "role", "tool"); err != nil {
-		return fmt.Errorf("ModelMessageVariantTool: %w", err)
-	}
-	if err := dtoRead(object, "content", &next.Content, true, false); err != nil {
-		return fmt.Errorf("ModelMessageVariantTool: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ModelMessageVariantTool: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ModelMessageVariantTool) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["role"] = "tool"
-	object["content"] = v.Content
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type ModelMessageVariantTool struct {
+	Content         []ToolContentPart                     `json:"content"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (ModelMessageVariantTool) isModelMessage() {}
+
+func (v ModelMessageVariantTool) MarshalJSON() ([]byte, error) {
+	type plain ModelMessageVariantTool
+	return json.Marshal(struct {
+		Role string `json:"role"`
+		plain
+	}{Role: "tool", plain: plain(v)})
+}
 
 type ModelMethod string
 
@@ -10299,114 +4705,58 @@ const (
 	ModelMethodDecision           ModelMethod = "decision"
 )
 
-func (v *ModelMethod) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "languageModel":
-		*v = ModelMethod(next)
-		return nil
-	case "embeddingModel":
-		*v = ModelMethod(next)
-		return nil
-	case "imageModel":
-		*v = ModelMethod(next)
-		return nil
-	case "speechModel":
-		*v = ModelMethod(next)
-		return nil
-	case "transcriptionModel":
-		*v = ModelMethod(next)
-		return nil
-	case "rerankingModel":
-		*v = ModelMethod(next)
-		return nil
-	case "videoModel":
-		*v = ModelMethod(next)
-		return nil
-	case "searchModel":
-		*v = ModelMethod(next)
-		return nil
-	case "decision":
-		*v = ModelMethod(next)
-		return nil
-	}
-	return fmt.Errorf("ModelMethod: unknown value %s", data)
-}
-
 // Input/output modality sets.
 type ModelModalities struct {
-	Input  Field[[]Modality] `json:"input,omitempty"`
-	Output Field[[]Modality] `json:"output,omitempty"`
-}
-
-func (v *ModelModalities) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelModalities: %w", err)
-	}
-	var next ModelModalities
-	if err := dtoRead(object, "input", &next.Input, false, false); err != nil {
-		return fmt.Errorf("ModelModalities: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, false, false); err != nil {
-		return fmt.Errorf("ModelModalities: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ModelModalities) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Input.Present {
-		object["input"] = v.Input
-	}
-	if v.Output.Present {
-		object["output"] = v.Output
-	}
-	return json.Marshal(object)
+	Input  []Modality `json:"input,omitzero"`
+	Output []Modality `json:"output,omitzero"`
 }
 
 // What the user passes as `prompt` to `generate_text` / `stream_text`.
 //
 // Can be a simple string (converted to a single user message) or a list of messages.
 type ModelPromptVariant interface{ isModelPrompt() }
-type ModelPrompt struct{ Value ModelPromptVariant }
+type ModelPrompt struct {
+	Value ModelPromptVariant
+}
 
 func (v ModelPrompt) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ModelPrompt: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ModelPrompt) UnmarshalJSON(data []byte) error {
+	var err error
 	{
 		var next string
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = ModelPromptBranch0{Value: next}
 			return nil
 		}
 	}
 	{
 		var next []ModelMessage
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = ModelPromptBranch1{Value: next}
 			return nil
 		}
 	}
-	return fmt.Errorf("ModelPrompt: no matching branch")
+	return err
 }
 
 type ModelPromptBranch0 struct{ Value string }
 
-func (ModelPromptBranch0) isModelPrompt()                 {}
-func (v ModelPromptBranch0) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (ModelPromptBranch0) isModelPrompt() {}
+
+func (v ModelPromptBranch0) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type ModelPromptBranch1 struct{ Value []ModelMessage }
 
-func (ModelPromptBranch1) isModelPrompt()                 {}
-func (v ModelPromptBranch1) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (ModelPromptBranch1) isModelPrompt() {}
+
+func (v ModelPromptBranch1) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type ModelRef struct {
 	Key       string      `json:"key"`
@@ -10415,56 +4765,8 @@ type ModelRef struct {
 	Namespace string      `json:"namespace"`
 }
 
-func (v *ModelRef) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelRef: %w", err)
-	}
-	var next ModelRef
-	if err := dtoRead(object, "key", &next.Key, true, false); err != nil {
-		return fmt.Errorf("ModelRef: %w", err)
-	}
-	if err := dtoRead(object, "method", &next.Method, true, false); err != nil {
-		return fmt.Errorf("ModelRef: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("ModelRef: %w", err)
-	}
-	if err := dtoRead(object, "namespace", &next.Namespace, true, false); err != nil {
-		return fmt.Errorf("ModelRef: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ModelRef) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["key"] = v.Key
-	object["method"] = v.Method
-	object["modelId"] = v.ModelID
-	object["namespace"] = v.Namespace
-	return json.Marshal(object)
-}
-
 type ModelResolveParams struct {
 	ModelRef ModelRef `json:"modelRef"`
-}
-
-func (v *ModelResolveParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelResolveParams: %w", err)
-	}
-	var next ModelResolveParams
-	if err := dtoRead(object, "modelRef", &next.ModelRef, true, false); err != nil {
-		return fmt.Errorf("ModelResolveParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ModelResolveParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["modelRef"] = v.ModelRef
-	return json.Marshal(object)
 }
 
 // The full static portrait for a model, supplemented from community knowledge.
@@ -10473,81 +4775,17 @@ func (v ModelResolveParams) MarshalJSON() ([]byte, error) {
 // The caller reads them to decide how to configure `GenerateTextOptions`.
 type ModelSpec struct {
 	Capabilities ModelCapabilities `json:"capabilities"`
-	Cost         Field[ModelCost]  `json:"cost,omitempty"`
-	DisplayName  Field[string]     `json:"displayName,omitempty"`
+	Cost         *ModelCost        `json:"cost,omitzero"`
+	DisplayName  *string           `json:"displayName,omitzero"`
 	Limits       ModelLimits       `json:"limits"`
 	Modalities   ModelModalities   `json:"modalities"`
 	// Provider name (normalized to aimux registry spelling).
-	Provider Field[string] `json:"provider,omitempty"`
+	Provider *string `json:"provider,omitzero"`
 	// Verbatim source entry, preserved for forward compatibility / debugging.
-	Raw       Field[json.RawMessage] `json:"raw,omitempty"`
-	Reasoning Field[ReasoningSpec]   `json:"reasoning,omitempty"`
-	Source    CatalogueSource        `json:"source"`
-	Type      ModelType              `json:"type"`
-}
-
-func (v *ModelSpec) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelSpec: %w", err)
-	}
-	var next ModelSpec
-	if err := dtoRead(object, "capabilities", &next.Capabilities, true, false); err != nil {
-		return fmt.Errorf("ModelSpec: %w", err)
-	}
-	if err := dtoRead(object, "cost", &next.Cost, false, true); err != nil {
-		return fmt.Errorf("ModelSpec: %w", err)
-	}
-	if err := dtoRead(object, "displayName", &next.DisplayName, false, true); err != nil {
-		return fmt.Errorf("ModelSpec: %w", err)
-	}
-	if err := dtoRead(object, "limits", &next.Limits, true, false); err != nil {
-		return fmt.Errorf("ModelSpec: %w", err)
-	}
-	if err := dtoRead(object, "modalities", &next.Modalities, true, false); err != nil {
-		return fmt.Errorf("ModelSpec: %w", err)
-	}
-	if err := dtoRead(object, "provider", &next.Provider, false, true); err != nil {
-		return fmt.Errorf("ModelSpec: %w", err)
-	}
-	if err := dtoRead(object, "raw", &next.Raw, false, true); err != nil {
-		return fmt.Errorf("ModelSpec: %w", err)
-	}
-	if err := dtoRead(object, "reasoning", &next.Reasoning, false, true); err != nil {
-		return fmt.Errorf("ModelSpec: %w", err)
-	}
-	if err := dtoRead(object, "source", &next.Source, true, false); err != nil {
-		return fmt.Errorf("ModelSpec: %w", err)
-	}
-	if err := dtoRead(object, "type", &next.Type, true, false); err != nil {
-		return fmt.Errorf("ModelSpec: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ModelSpec) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["capabilities"] = v.Capabilities
-	if v.Cost.Present {
-		object["cost"] = v.Cost
-	}
-	if v.DisplayName.Present {
-		object["displayName"] = v.DisplayName
-	}
-	object["limits"] = v.Limits
-	object["modalities"] = v.Modalities
-	if v.Provider.Present {
-		object["provider"] = v.Provider
-	}
-	if v.Raw.Present {
-		object["raw"] = v.Raw
-	}
-	if v.Reasoning.Present {
-		object["reasoning"] = v.Reasoning
-	}
-	object["source"] = v.Source
-	object["type"] = v.Type
-	return json.Marshal(object)
+	Raw       *json.RawMessage `json:"raw,omitzero"`
+	Reasoning *ReasoningSpec   `json:"reasoning,omitzero"`
+	Source    CatalogueSource  `json:"source"`
+	Type      ModelType        `json:"type"`
 }
 
 // Coarse model category, used to route to the right modality surface.
@@ -10565,63 +4803,8 @@ const (
 	ModelTypeOther      ModelType = "Other"
 )
 
-func (v *ModelType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "Chat":
-		*v = ModelType(next)
-		return nil
-	case "Completion":
-		*v = ModelType(next)
-		return nil
-	case "Embedding":
-		*v = ModelType(next)
-		return nil
-	case "Rerank":
-		*v = ModelType(next)
-		return nil
-	case "ImageGen":
-		*v = ModelType(next)
-		return nil
-	case "ImageEdit":
-		*v = ModelType(next)
-		return nil
-	case "Video":
-		*v = ModelType(next)
-		return nil
-	case "Audio":
-		*v = ModelType(next)
-		return nil
-	case "Other":
-		*v = ModelType(next)
-		return nil
-	}
-	return fmt.Errorf("ModelType: unknown value %s", data)
-}
-
 type ModelWrapParams struct {
 	Middleware []string `json:"middleware"`
-}
-
-func (v *ModelWrapParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ModelWrapParams: %w", err)
-	}
-	var next ModelWrapParams
-	if err := dtoRead(object, "middleware", &next.Middleware, true, false); err != nil {
-		return fmt.Errorf("ModelWrapParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ModelWrapParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["middleware"] = v.Middleware
-	return json.Marshal(object)
 }
 
 // A `${string}.${string}` identifier, `<provider-id>.<name>`: the V4
@@ -10639,69 +4822,11 @@ type OpenAiOutputRequest struct {
 	Result            GenerateTextResultInput `json:"result"`
 }
 
-func (v *OpenAiOutputRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OpenAiOutputRequest: %w", err)
-	}
-	var next OpenAiOutputRequest
-	if err := dtoRead(object, "metadataNamespace", &next.MetadataNamespace, true, false); err != nil {
-		return fmt.Errorf("OpenAiOutputRequest: %w", err)
-	}
-	if err := dtoRead(object, "result", &next.Result, true, false); err != nil {
-		return fmt.Errorf("OpenAiOutputRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OpenAiOutputRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["metadataNamespace"] = v.MetadataNamespace
-	object["result"] = v.Result
-	return json.Marshal(object)
-}
-
 type OpenAiTextRequest struct {
-	Abort         Field[HandleIdInput] `json:"abort,omitempty"`
-	Options       Field[Options]       `json:"options,omitempty"`
-	Prompt        ModelPrompt          `json:"prompt"`
-	StreamOptions Field[StreamOptions] `json:"streamOptions,omitempty"`
-}
-
-func (v *OpenAiTextRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OpenAiTextRequest: %w", err)
-	}
-	var next OpenAiTextRequest
-	if err := dtoRead(object, "abort", &next.Abort, false, true); err != nil {
-		return fmt.Errorf("OpenAiTextRequest: %w", err)
-	}
-	if err := dtoRead(object, "options", &next.Options, false, false); err != nil {
-		return fmt.Errorf("OpenAiTextRequest: %w", err)
-	}
-	if err := dtoRead(object, "prompt", &next.Prompt, true, false); err != nil {
-		return fmt.Errorf("OpenAiTextRequest: %w", err)
-	}
-	if err := dtoRead(object, "streamOptions", &next.StreamOptions, false, false); err != nil {
-		return fmt.Errorf("OpenAiTextRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OpenAiTextRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Abort.Present {
-		object["abort"] = v.Abort
-	}
-	if v.Options.Present {
-		object["options"] = v.Options
-	}
-	object["prompt"] = v.Prompt
-	if v.StreamOptions.Present {
-		object["streamOptions"] = v.StreamOptions
-	}
-	return json.Marshal(object)
+	Abort         *HandleIdInput `json:"abort,omitzero"`
+	Options       *Options       `json:"options,omitzero"`
+	Prompt        ModelPrompt    `json:"prompt"`
+	StreamOptions *StreamOptions `json:"streamOptions,omitzero"`
 }
 
 type OperationCapabilities struct {
@@ -10711,58 +4836,8 @@ type OperationCapabilities struct {
 	Push      bool `json:"push"`
 }
 
-func (v *OperationCapabilities) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OperationCapabilities: %w", err)
-	}
-	var next OperationCapabilities
-	if err := dtoRead(object, "cancel", &next.Cancel, true, false); err != nil {
-		return fmt.Errorf("OperationCapabilities: %w", err)
-	}
-	if err := dtoRead(object, "inputDone", &next.InputDone, true, false); err != nil {
-		return fmt.Errorf("OperationCapabilities: %w", err)
-	}
-	if err := dtoRead(object, "next", &next.Next, true, false); err != nil {
-		return fmt.Errorf("OperationCapabilities: %w", err)
-	}
-	if err := dtoRead(object, "push", &next.Push, true, false); err != nil {
-		return fmt.Errorf("OperationCapabilities: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OperationCapabilities) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["cancel"] = v.Cancel
-	object["inputDone"] = v.InputDone
-	object["next"] = v.Next
-	object["push"] = v.Push
-	return json.Marshal(object)
-}
-
 type OperationNextParams struct {
-	TimeoutMs Field[uint64] `json:"timeoutMs,omitempty"`
-}
-
-func (v *OperationNextParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OperationNextParams: %w", err)
-	}
-	var next OperationNextParams
-	if err := dtoRead(object, "timeoutMs", &next.TimeoutMs, false, false); err != nil {
-		return fmt.Errorf("OperationNextParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OperationNextParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.TimeoutMs.Present {
-		object["timeoutMs"] = v.TimeoutMs
-	}
-	return json.Marshal(object)
+	TimeoutMs *uint64 `json:"timeoutMs,omitzero"`
 }
 
 type OperationOutcome string
@@ -10773,140 +4848,85 @@ const (
 	OperationOutcomeCancelled OperationOutcome = "cancelled"
 )
 
-func (v *OperationOutcome) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "success":
-		*v = OperationOutcome(next)
-		return nil
-	case "error":
-		*v = OperationOutcome(next)
-		return nil
-	case "cancelled":
-		*v = OperationOutcome(next)
-		return nil
-	}
-	return fmt.Errorf("OperationOutcome: unknown value %s", data)
-}
-
 type OperationPollResultVariant interface{ isOperationPollResult() }
-type OperationPollResult struct{ Value OperationPollResultVariant }
+type OperationPollResult struct {
+	Value OperationPollResultVariant
+}
 
 func (v OperationPollResult) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("OperationPollResult: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *OperationPollResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OperationPollResult: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("OperationPollResult: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "part" {
-		var next OperationPollResultVariantPart
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "ended" {
+	switch tag.Type {
+	case "ended":
 		var next OperationPollResultVariantEnded
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "timeout" {
+		v.Value = next
+		return nil
+	case "part":
+		var next OperationPollResultVariantPart
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "timeout":
 		var next OperationPollResultVariantTimeout
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("OperationPollResult: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("OperationPollResult: unknown type tag %q", tag.Type)
 }
 
 type OperationPollResultVariantPart struct {
 	Part TranscriptionStreamPart `json:"part"`
 }
 
-func (v *OperationPollResultVariantPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OperationPollResultVariantPart: %w", err)
-	}
-	var next OperationPollResultVariantPart
-	if err := dtoTag(object, "type", "part"); err != nil {
-		return fmt.Errorf("OperationPollResultVariantPart: %w", err)
-	}
-	if err := dtoRead(object, "part", &next.Part, true, false); err != nil {
-		return fmt.Errorf("OperationPollResultVariantPart: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OperationPollResultVariantPart) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "part"
-	object["part"] = v.Part
-	return json.Marshal(object)
-}
-
 func (OperationPollResultVariantPart) isOperationPollResult() {}
 
-type OperationPollResultVariantEnded struct {
+func (v OperationPollResultVariantPart) MarshalJSON() ([]byte, error) {
+	type plain OperationPollResultVariantPart
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "part", plain: plain(v)})
 }
 
-func (v *OperationPollResultVariantEnded) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OperationPollResultVariantEnded: %w", err)
-	}
-	var next OperationPollResultVariantEnded
-	if err := dtoTag(object, "type", "ended"); err != nil {
-		return fmt.Errorf("OperationPollResultVariantEnded: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OperationPollResultVariantEnded) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "ended"
-	return json.Marshal(object)
-}
+type OperationPollResultVariantEnded struct{}
 
 func (OperationPollResultVariantEnded) isOperationPollResult() {}
 
-type OperationPollResultVariantTimeout struct {
+func (v OperationPollResultVariantEnded) MarshalJSON() ([]byte, error) {
+	type plain OperationPollResultVariantEnded
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "ended", plain: plain(v)})
 }
 
-func (v *OperationPollResultVariantTimeout) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OperationPollResultVariantTimeout: %w", err)
-	}
-	var next OperationPollResultVariantTimeout
-	if err := dtoTag(object, "type", "timeout"); err != nil {
-		return fmt.Errorf("OperationPollResultVariantTimeout: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OperationPollResultVariantTimeout) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "timeout"
-	return json.Marshal(object)
-}
+type OperationPollResultVariantTimeout struct{}
 
 func (OperationPollResultVariantTimeout) isOperationPollResult() {}
+
+func (v OperationPollResultVariantTimeout) MarshalJSON() ([]byte, error) {
+	type plain OperationPollResultVariantTimeout
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "timeout", plain: plain(v)})
+}
 
 type OperationState string
 
@@ -10916,102 +4936,19 @@ const (
 	OperationStateTerminal    OperationState = "terminal"
 )
 
-func (v *OperationState) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "running":
-		*v = OperationState(next)
-		return nil
-	case "inputClosed":
-		*v = OperationState(next)
-		return nil
-	case "terminal":
-		*v = OperationState(next)
-		return nil
-	}
-	return fmt.Errorf("OperationState: unknown value %s", data)
-}
-
 type OperationStatus struct {
 	Capabilities   OperationCapabilities `json:"capabilities"`
-	CleanupFailure Field[string]         `json:"cleanupFailure,omitempty"`
+	CleanupFailure *string               `json:"cleanupFailure,omitzero"`
 	ConsumerClosed bool                  `json:"consumerClosed"`
 	// The close boundary in the same admission sequence as pushes.
-	InputDoneSequence Field[string]          `json:"inputDoneSequence,omitempty"`
-	QueuedInputBytes  uint64                 `json:"queuedInputBytes"`
-	QueuedInputItems  uint64                 `json:"queuedInputItems"`
-	QueuedOutputBytes uint64                 `json:"queuedOutputBytes"`
-	QueuedOutputItems uint64                 `json:"queuedOutputItems"`
-	State             OperationState         `json:"state"`
-	Subkind           string                 `json:"subkind"`
-	Terminal          Field[TerminalSummary] `json:"terminal,omitempty"`
-}
-
-func (v *OperationStatus) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OperationStatus: %w", err)
-	}
-	var next OperationStatus
-	if err := dtoRead(object, "capabilities", &next.Capabilities, true, false); err != nil {
-		return fmt.Errorf("OperationStatus: %w", err)
-	}
-	if err := dtoRead(object, "cleanupFailure", &next.CleanupFailure, false, true); err != nil {
-		return fmt.Errorf("OperationStatus: %w", err)
-	}
-	if err := dtoRead(object, "consumerClosed", &next.ConsumerClosed, true, false); err != nil {
-		return fmt.Errorf("OperationStatus: %w", err)
-	}
-	if err := dtoRead(object, "inputDoneSequence", &next.InputDoneSequence, false, true); err != nil {
-		return fmt.Errorf("OperationStatus: %w", err)
-	}
-	if err := dtoRead(object, "queuedInputBytes", &next.QueuedInputBytes, true, false); err != nil {
-		return fmt.Errorf("OperationStatus: %w", err)
-	}
-	if err := dtoRead(object, "queuedInputItems", &next.QueuedInputItems, true, false); err != nil {
-		return fmt.Errorf("OperationStatus: %w", err)
-	}
-	if err := dtoRead(object, "queuedOutputBytes", &next.QueuedOutputBytes, true, false); err != nil {
-		return fmt.Errorf("OperationStatus: %w", err)
-	}
-	if err := dtoRead(object, "queuedOutputItems", &next.QueuedOutputItems, true, false); err != nil {
-		return fmt.Errorf("OperationStatus: %w", err)
-	}
-	if err := dtoRead(object, "state", &next.State, true, false); err != nil {
-		return fmt.Errorf("OperationStatus: %w", err)
-	}
-	if err := dtoRead(object, "subkind", &next.Subkind, true, false); err != nil {
-		return fmt.Errorf("OperationStatus: %w", err)
-	}
-	if err := dtoRead(object, "terminal", &next.Terminal, false, true); err != nil {
-		return fmt.Errorf("OperationStatus: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OperationStatus) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["capabilities"] = v.Capabilities
-	if v.CleanupFailure.Present {
-		object["cleanupFailure"] = v.CleanupFailure
-	}
-	object["consumerClosed"] = v.ConsumerClosed
-	if v.InputDoneSequence.Present {
-		object["inputDoneSequence"] = v.InputDoneSequence
-	}
-	object["queuedInputBytes"] = v.QueuedInputBytes
-	object["queuedInputItems"] = v.QueuedInputItems
-	object["queuedOutputBytes"] = v.QueuedOutputBytes
-	object["queuedOutputItems"] = v.QueuedOutputItems
-	object["state"] = v.State
-	object["subkind"] = v.Subkind
-	if v.Terminal.Present {
-		object["terminal"] = v.Terminal
-	}
-	return json.Marshal(object)
+	InputDoneSequence *string          `json:"inputDoneSequence,omitzero"`
+	QueuedInputBytes  uint64           `json:"queuedInputBytes"`
+	QueuedInputItems  uint64           `json:"queuedInputItems"`
+	QueuedOutputBytes uint64           `json:"queuedOutputBytes"`
+	QueuedOutputItems uint64           `json:"queuedOutputItems"`
+	State             OperationState   `json:"state"`
+	Subkind           string           `json:"subkind"`
+	Terminal          *TerminalSummary `json:"terminal,omitzero"`
 }
 
 // User-facing options for `generate_text` and `stream_text`.
@@ -11019,168 +4956,40 @@ func (v OperationStatus) MarshalJSON() ([]byte, error) {
 // Unlike `CallOptions` (provider-facing), this does not include `prompt`
 // (passed separately) and defaults are more ergonomic.
 type Options struct {
-	FrequencyPenalty Field[float64]           `json:"frequencyPenalty,omitempty"`
-	Headers          Field[map[string]string] `json:"headers,omitempty"`
+	FrequencyPenalty *float64          `json:"frequencyPenalty,omitzero"`
+	Headers          map[string]string `json:"headers,omitzero"`
 	// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
-	IncludeRawChunks Field[bool] `json:"includeRawChunks,omitempty"`
+	IncludeRawChunks *bool `json:"includeRawChunks,omitzero"`
 	// System instructions prepended to the prompt.
-	Instructions    Field[string] `json:"instructions,omitempty"`
-	MaxOutputTokens Field[uint32] `json:"maxOutputTokens,omitempty"`
+	Instructions    *string `json:"instructions,omitzero"`
+	MaxOutputTokens *uint32 `json:"maxOutputTokens,omitzero"`
 	// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
 	// retrying. `None` uses 2, the AI SDK default.
-	MaxRetries Field[uint32] `json:"maxRetries,omitempty"`
+	MaxRetries *uint32 `json:"maxRetries,omitzero"`
 	// The structured output to generate, the AI SDK's `output`
 	// (`generate-text/output.ts`). It sets the model call's
 	// `response_format` and parses the final text into
 	// [`GenerateTextResult::output`]. `None` sends no response format and
 	// takes the text as the output.
-	Output          Field[Output]                                `json:"output,omitempty"`
-	PresencePenalty Field[float64]                               `json:"presencePenalty,omitempty"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+	Output          *Output                               `json:"output,omitzero"`
+	PresencePenalty *float64                              `json:"presencePenalty,omitzero"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 	// Top-level reasoning effort.
-	Reasoning Field[ReasoningEffort] `json:"reasoning,omitempty"`
-	Seed      Field[uint64]          `json:"seed,omitempty"`
+	Reasoning *ReasoningEffort `json:"reasoning,omitzero"`
+	Seed      *uint64          `json:"seed,omitzero"`
 	// Session identifier, for grouping consecutive calls into a session
 	// (observability, see RFC-0024). Orthogonal to RFC-0019 session-affinity
 	// headers. When `None` and the optional session inferer is enabled, one
 	// may be inferred from prompt-prefix continuation.
-	SessionID     Field[string]   `json:"sessionId,omitempty"`
-	StopSequences Field[[]string] `json:"stopSequences,omitempty"`
-	Temperature   Field[float64]  `json:"temperature,omitempty"`
+	SessionID     *string  `json:"sessionId,omitzero"`
+	StopSequences []string `json:"stopSequences,omitzero"`
+	Temperature   *float64 `json:"temperature,omitzero"`
 	// Per-call timeout configuration (total / first-chunk / chunk idle).
-	Timeout    Field[TimeoutConfiguration] `json:"timeout,omitempty"`
-	ToolChoice Field[ToolChoice]           `json:"toolChoice,omitempty"`
-	Tools      Field[[]Tool]               `json:"tools,omitempty"`
-	TopK       Field[float64]              `json:"topK,omitempty"`
-	TopP       Field[float64]              `json:"topP,omitempty"`
-}
-
-func (v *Options) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	var next Options
-	if err := dtoRead(object, "frequencyPenalty", &next.FrequencyPenalty, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "includeRawChunks", &next.IncludeRawChunks, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "instructions", &next.Instructions, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "maxOutputTokens", &next.MaxOutputTokens, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "maxRetries", &next.MaxRetries, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "presencePenalty", &next.PresencePenalty, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "reasoning", &next.Reasoning, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "seed", &next.Seed, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "sessionId", &next.SessionID, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "stopSequences", &next.StopSequences, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "temperature", &next.Temperature, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "timeout", &next.Timeout, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "toolChoice", &next.ToolChoice, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "tools", &next.Tools, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "topK", &next.TopK, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	if err := dtoRead(object, "topP", &next.TopP, false, true); err != nil {
-		return fmt.Errorf("Options: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v Options) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.FrequencyPenalty.Present {
-		object["frequencyPenalty"] = v.FrequencyPenalty
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.IncludeRawChunks.Present {
-		object["includeRawChunks"] = v.IncludeRawChunks
-	}
-	if v.Instructions.Present {
-		object["instructions"] = v.Instructions
-	}
-	if v.MaxOutputTokens.Present {
-		object["maxOutputTokens"] = v.MaxOutputTokens
-	}
-	if v.MaxRetries.Present {
-		object["maxRetries"] = v.MaxRetries
-	}
-	if v.Output.Present {
-		object["output"] = v.Output
-	}
-	if v.PresencePenalty.Present {
-		object["presencePenalty"] = v.PresencePenalty
-	}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	if v.Reasoning.Present {
-		object["reasoning"] = v.Reasoning
-	}
-	if v.Seed.Present {
-		object["seed"] = v.Seed
-	}
-	if v.SessionID.Present {
-		object["sessionId"] = v.SessionID
-	}
-	if v.StopSequences.Present {
-		object["stopSequences"] = v.StopSequences
-	}
-	if v.Temperature.Present {
-		object["temperature"] = v.Temperature
-	}
-	if v.Timeout.Present {
-		object["timeout"] = v.Timeout
-	}
-	if v.ToolChoice.Present {
-		object["toolChoice"] = v.ToolChoice
-	}
-	if v.Tools.Present {
-		object["tools"] = v.Tools
-	}
-	if v.TopK.Present {
-		object["topK"] = v.TopK
-	}
-	if v.TopP.Present {
-		object["topP"] = v.TopP
-	}
-	return json.Marshal(object)
+	Timeout    *TimeoutConfiguration `json:"timeout,omitzero"`
+	ToolChoice *ToolChoice           `json:"toolChoice,omitzero"`
+	Tools      []Tool                `json:"tools,omitzero"`
+	TopK       *float64              `json:"topK,omitzero"`
+	TopP       *float64              `json:"topP,omitzero"`
 }
 
 type Outcome string
@@ -11191,86 +5000,19 @@ const (
 	OutcomeCancelled Outcome = "cancelled"
 )
 
-func (v *Outcome) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "success":
-		*v = Outcome(next)
-		return nil
-	case "error":
-		*v = Outcome(next)
-		return nil
-	case "cancelled":
-		*v = Outcome(next)
-		return nil
-	}
-	return fmt.Errorf("Outcome: unknown value %s", data)
-}
-
 // 最终结果摘要。
 type OutcomeRecord struct {
 	// The result `decide` returned (`DecideResult`), independent of a
 	// provider's wire format.
-	DecisionResult Field[json.RawMessage] `json:"decisionResult,omitempty"`
-	Error          Field[string]          `json:"error,omitempty"`
+	DecisionResult *json.RawMessage `json:"decisionResult,omitzero"`
+	Error          *string          `json:"error,omitzero"`
 	// Lossless structured domain error. In particular, `RetryError.errors`
 	// keeps the complete attempt history rather than only its display text.
-	ErrorValue   Field[json.RawMessage] `json:"errorValue,omitempty"`
-	FinishReason Field[string]          `json:"finishReason,omitempty"`
-	Status       OutcomeStatus          `json:"status"`
+	ErrorValue   *json.RawMessage `json:"errorValue,omitzero"`
+	FinishReason *string          `json:"finishReason,omitzero"`
+	Status       OutcomeStatus    `json:"status"`
 	// 序列化的 Usage。
-	Usage Field[json.RawMessage] `json:"usage,omitempty"`
-}
-
-func (v *OutcomeRecord) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OutcomeRecord: %w", err)
-	}
-	var next OutcomeRecord
-	if err := dtoRead(object, "decisionResult", &next.DecisionResult, false, true); err != nil {
-		return fmt.Errorf("OutcomeRecord: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, false, true); err != nil {
-		return fmt.Errorf("OutcomeRecord: %w", err)
-	}
-	if err := dtoRead(object, "errorValue", &next.ErrorValue, false, true); err != nil {
-		return fmt.Errorf("OutcomeRecord: %w", err)
-	}
-	if err := dtoRead(object, "finishReason", &next.FinishReason, false, true); err != nil {
-		return fmt.Errorf("OutcomeRecord: %w", err)
-	}
-	if err := dtoRead(object, "status", &next.Status, true, false); err != nil {
-		return fmt.Errorf("OutcomeRecord: %w", err)
-	}
-	if err := dtoRead(object, "usage", &next.Usage, false, true); err != nil {
-		return fmt.Errorf("OutcomeRecord: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OutcomeRecord) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.DecisionResult.Present {
-		object["decisionResult"] = v.DecisionResult
-	}
-	if v.Error.Present {
-		object["error"] = v.Error
-	}
-	if v.ErrorValue.Present {
-		object["errorValue"] = v.ErrorValue
-	}
-	if v.FinishReason.Present {
-		object["finishReason"] = v.FinishReason
-	}
-	object["status"] = v.Status
-	if v.Usage.Present {
-		object["usage"] = v.Usage
-	}
-	return json.Marshal(object)
+	Usage *json.RawMessage `json:"usage,omitzero"`
 }
 
 // 调用终结状态。
@@ -11284,31 +5026,6 @@ const (
 	OutcomeStatusCancelled  OutcomeStatus = "cancelled"
 )
 
-func (v *OutcomeStatus) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "success":
-		*v = OutcomeStatus(next)
-		return nil
-	case "pending":
-		*v = OutcomeStatus(next)
-		return nil
-	case "error":
-		*v = OutcomeStatus(next)
-		return nil
-	case "incomplete":
-		*v = OutcomeStatus(next)
-		return nil
-	case "cancelled":
-		*v = OutcomeStatus(next)
-		return nil
-	}
-	return fmt.Errorf("OutcomeStatus: unknown value %s", data)
-}
-
 // What the final text of a generation is parsed into.
 //
 // Upstream's `Output` is a JavaScript object with functions and has no JSON
@@ -11318,260 +5035,137 @@ func (v *OutcomeStatus) UnmarshalJSON(data []byte) error {
 // `Output.object()` / `array()` / `choice()` / `json()` camelCase
 // (`{"type":"array","element":{...},"minItems":1}`).
 type OutputVariant interface{ isOutput() }
-type Output struct{ Value OutputVariant }
+type Output struct {
+	Value OutputVariant
+}
 
 func (v Output) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("Output: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *Output) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("Output: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("Output: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "text" {
-		var next OutputVariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "object" {
-		var next OutputVariantObject
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "array" {
+	switch tag.Type {
+	case "array":
 		var next OutputVariantArray
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "choice" {
+		v.Value = next
+		return nil
+	case "choice":
 		var next OutputVariantChoice
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "json" {
+		v.Value = next
+		return nil
+	case "json":
 		var next OutputVariantJSON
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "object":
+		var next OutputVariantObject
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "text":
+		var next OutputVariantText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("Output: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("Output: unknown type tag %q", tag.Type)
 }
 
-type OutputVariantText struct {
-}
-
-func (v *OutputVariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OutputVariantText: %w", err)
-	}
-	var next OutputVariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("OutputVariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OutputVariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	return json.Marshal(object)
-}
+type OutputVariantText struct{}
 
 func (OutputVariantText) isOutput() {}
 
-type OutputVariantObject struct {
-	Description Field[string]   `json:"description,omitempty"`
-	Name        Field[string]   `json:"name,omitempty"`
-	Schema      json.RawMessage `json:"schema"`
+func (v OutputVariantText) MarshalJSON() ([]byte, error) {
+	type plain OutputVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
 }
 
-func (v *OutputVariantObject) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OutputVariantObject: %w", err)
-	}
-	var next OutputVariantObject
-	if err := dtoTag(object, "type", "object"); err != nil {
-		return fmt.Errorf("OutputVariantObject: %w", err)
-	}
-	if err := dtoRead(object, "description", &next.Description, false, true); err != nil {
-		return fmt.Errorf("OutputVariantObject: %w", err)
-	}
-	if err := dtoRead(object, "name", &next.Name, false, true); err != nil {
-		return fmt.Errorf("OutputVariantObject: %w", err)
-	}
-	if err := dtoRead(object, "schema", &next.Schema, true, true); err != nil {
-		return fmt.Errorf("OutputVariantObject: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OutputVariantObject) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "object"
-	if v.Description.Present {
-		object["description"] = v.Description
-	}
-	if v.Name.Present {
-		object["name"] = v.Name
-	}
-	object["schema"] = v.Schema
-	return json.Marshal(object)
+type OutputVariantObject struct {
+	Description *string         `json:"description,omitzero"`
+	Name        *string         `json:"name,omitzero"`
+	Schema      json.RawMessage `json:"schema"`
 }
 
 func (OutputVariantObject) isOutput() {}
 
-type OutputVariantArray struct {
-	Description Field[string]   `json:"description,omitempty"`
-	Element     json.RawMessage `json:"element"`
-	MaxItems    Field[uint32]   `json:"maxItems,omitempty"`
-	MinItems    Field[uint32]   `json:"minItems,omitempty"`
-	Name        Field[string]   `json:"name,omitempty"`
+func (v OutputVariantObject) MarshalJSON() ([]byte, error) {
+	type plain OutputVariantObject
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "object", plain: plain(v)})
 }
 
-func (v *OutputVariantArray) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OutputVariantArray: %w", err)
-	}
-	var next OutputVariantArray
-	if err := dtoTag(object, "type", "array"); err != nil {
-		return fmt.Errorf("OutputVariantArray: %w", err)
-	}
-	if err := dtoRead(object, "description", &next.Description, false, true); err != nil {
-		return fmt.Errorf("OutputVariantArray: %w", err)
-	}
-	if err := dtoRead(object, "element", &next.Element, true, true); err != nil {
-		return fmt.Errorf("OutputVariantArray: %w", err)
-	}
-	if err := dtoRead(object, "maxItems", &next.MaxItems, false, true); err != nil {
-		return fmt.Errorf("OutputVariantArray: %w", err)
-	}
-	if err := dtoRead(object, "minItems", &next.MinItems, false, true); err != nil {
-		return fmt.Errorf("OutputVariantArray: %w", err)
-	}
-	if err := dtoRead(object, "name", &next.Name, false, true); err != nil {
-		return fmt.Errorf("OutputVariantArray: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OutputVariantArray) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "array"
-	if v.Description.Present {
-		object["description"] = v.Description
-	}
-	object["element"] = v.Element
-	if v.MaxItems.Present {
-		object["maxItems"] = v.MaxItems
-	}
-	if v.MinItems.Present {
-		object["minItems"] = v.MinItems
-	}
-	if v.Name.Present {
-		object["name"] = v.Name
-	}
-	return json.Marshal(object)
+type OutputVariantArray struct {
+	Description *string         `json:"description,omitzero"`
+	Element     json.RawMessage `json:"element"`
+	MaxItems    *uint32         `json:"maxItems,omitzero"`
+	MinItems    *uint32         `json:"minItems,omitzero"`
+	Name        *string         `json:"name,omitzero"`
 }
 
 func (OutputVariantArray) isOutput() {}
 
-type OutputVariantChoice struct {
-	Description Field[string] `json:"description,omitempty"`
-	Name        Field[string] `json:"name,omitempty"`
-	Options     []string      `json:"options"`
+func (v OutputVariantArray) MarshalJSON() ([]byte, error) {
+	type plain OutputVariantArray
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "array", plain: plain(v)})
 }
 
-func (v *OutputVariantChoice) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OutputVariantChoice: %w", err)
-	}
-	var next OutputVariantChoice
-	if err := dtoTag(object, "type", "choice"); err != nil {
-		return fmt.Errorf("OutputVariantChoice: %w", err)
-	}
-	if err := dtoRead(object, "description", &next.Description, false, true); err != nil {
-		return fmt.Errorf("OutputVariantChoice: %w", err)
-	}
-	if err := dtoRead(object, "name", &next.Name, false, true); err != nil {
-		return fmt.Errorf("OutputVariantChoice: %w", err)
-	}
-	if err := dtoRead(object, "options", &next.Options, true, false); err != nil {
-		return fmt.Errorf("OutputVariantChoice: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OutputVariantChoice) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "choice"
-	if v.Description.Present {
-		object["description"] = v.Description
-	}
-	if v.Name.Present {
-		object["name"] = v.Name
-	}
-	object["options"] = v.Options
-	return json.Marshal(object)
+type OutputVariantChoice struct {
+	Description *string  `json:"description,omitzero"`
+	Name        *string  `json:"name,omitzero"`
+	Options     []string `json:"options"`
 }
 
 func (OutputVariantChoice) isOutput() {}
 
-type OutputVariantJSON struct {
-	Description Field[string] `json:"description,omitempty"`
-	Name        Field[string] `json:"name,omitempty"`
+func (v OutputVariantChoice) MarshalJSON() ([]byte, error) {
+	type plain OutputVariantChoice
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "choice", plain: plain(v)})
 }
 
-func (v *OutputVariantJSON) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OutputVariantJSON: %w", err)
-	}
-	var next OutputVariantJSON
-	if err := dtoTag(object, "type", "json"); err != nil {
-		return fmt.Errorf("OutputVariantJSON: %w", err)
-	}
-	if err := dtoRead(object, "description", &next.Description, false, true); err != nil {
-		return fmt.Errorf("OutputVariantJSON: %w", err)
-	}
-	if err := dtoRead(object, "name", &next.Name, false, true); err != nil {
-		return fmt.Errorf("OutputVariantJSON: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OutputVariantJSON) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "json"
-	if v.Description.Present {
-		object["description"] = v.Description
-	}
-	if v.Name.Present {
-		object["name"] = v.Name
-	}
-	return json.Marshal(object)
+type OutputVariantJSON struct {
+	Description *string `json:"description,omitzero"`
+	Name        *string `json:"name,omitzero"`
 }
 
 func (OutputVariantJSON) isOutput() {}
+
+func (v OutputVariantJSON) MarshalJSON() ([]byte, error) {
+	type plain OutputVariantJSON
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "json", plain: plain(v)})
+}
 
 // Distribution of the gaps between output chunks of a streamed step
 // (`OutputChunkTimingStats`, `step-result.ts:39-57`).
@@ -11584,76 +5178,12 @@ type OutputChunkTimingStats struct {
 	P90    float64 `json:"p90"`
 }
 
-func (v *OutputChunkTimingStats) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OutputChunkTimingStats: %w", err)
-	}
-	var next OutputChunkTimingStats
-	if err := dtoRead(object, "avg", &next.Avg, true, false); err != nil {
-		return fmt.Errorf("OutputChunkTimingStats: %w", err)
-	}
-	if err := dtoRead(object, "max", &next.Max, true, false); err != nil {
-		return fmt.Errorf("OutputChunkTimingStats: %w", err)
-	}
-	if err := dtoRead(object, "median", &next.Median, true, false); err != nil {
-		return fmt.Errorf("OutputChunkTimingStats: %w", err)
-	}
-	if err := dtoRead(object, "min", &next.Min, true, false); err != nil {
-		return fmt.Errorf("OutputChunkTimingStats: %w", err)
-	}
-	if err := dtoRead(object, "p10", &next.P10, true, false); err != nil {
-		return fmt.Errorf("OutputChunkTimingStats: %w", err)
-	}
-	if err := dtoRead(object, "p90", &next.P90, true, false); err != nil {
-		return fmt.Errorf("OutputChunkTimingStats: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OutputChunkTimingStats) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["avg"] = v.Avg
-	object["max"] = v.Max
-	object["median"] = v.Median
-	object["min"] = v.Min
-	object["p10"] = v.P10
-	object["p90"] = v.P90
-	return json.Marshal(object)
-}
-
 // `LanguageModelUsage.outputTokenDetails`.
 type OutputTokenDetails struct {
 	// Output tokens spent on reasoning.
-	ReasoningTokens Field[uint32] `json:"reasoningTokens,omitempty"`
+	ReasoningTokens *uint32 `json:"reasoningTokens,omitzero"`
 	// Output tokens of text.
-	TextTokens Field[uint32] `json:"textTokens,omitempty"`
-}
-
-func (v *OutputTokenDetails) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("OutputTokenDetails: %w", err)
-	}
-	var next OutputTokenDetails
-	if err := dtoRead(object, "reasoningTokens", &next.ReasoningTokens, false, true); err != nil {
-		return fmt.Errorf("OutputTokenDetails: %w", err)
-	}
-	if err := dtoRead(object, "textTokens", &next.TextTokens, false, true); err != nil {
-		return fmt.Errorf("OutputTokenDetails: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v OutputTokenDetails) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.ReasoningTokens.Present {
-		object["reasoningTokens"] = v.ReasoningTokens
-	}
-	if v.TextTokens.Present {
-		object["textTokens"] = v.TextTokens
-	}
-	return json.Marshal(object)
+	TextTokens *uint32 `json:"textTokens,omitzero"`
 }
 
 // A prefix break between two consecutive records of a session.
@@ -11665,291 +5195,45 @@ type PrefixBreak struct {
 	PrevRecordID  string    `json:"prevRecordId"`
 }
 
-func (v *PrefixBreak) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("PrefixBreak: %w", err)
-	}
-	var next PrefixBreak
-	if err := dtoRead(object, "atRecordId", &next.AtRecordID, true, false); err != nil {
-		return fmt.Errorf("PrefixBreak: %w", err)
-	}
-	if err := dtoRead(object, "expectedBreak", &next.ExpectedBreak, true, false); err != nil {
-		return fmt.Errorf("PrefixBreak: %w", err)
-	}
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("PrefixBreak: %w", err)
-	}
-	if err := dtoRead(object, "lcpBytes", &next.LcpBytes, true, false); err != nil {
-		return fmt.Errorf("PrefixBreak: %w", err)
-	}
-	if err := dtoRead(object, "prevRecordId", &next.PrevRecordID, true, false); err != nil {
-		return fmt.Errorf("PrefixBreak: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v PrefixBreak) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["atRecordId"] = v.AtRecordID
-	object["expectedBreak"] = v.ExpectedBreak
-	object["kind"] = v.Kind
-	object["lcpBytes"] = v.LcpBytes
-	object["prevRecordId"] = v.PrevRecordID
-	return json.Marshal(object)
-}
-
 type PromptTokensDetails struct {
-	CacheWriteTokens Field[uint32] `json:"cache_write_tokens,omitempty"`
-	CachedTokens     uint32        `json:"cached_tokens"`
-}
-
-func (v *PromptTokensDetails) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("PromptTokensDetails: %w", err)
-	}
-	var next PromptTokensDetails
-	if err := dtoRead(object, "cache_write_tokens", &next.CacheWriteTokens, false, true); err != nil {
-		return fmt.Errorf("PromptTokensDetails: %w", err)
-	}
-	if err := dtoRead(object, "cached_tokens", &next.CachedTokens, true, false); err != nil {
-		return fmt.Errorf("PromptTokensDetails: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v PromptTokensDetails) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.CacheWriteTokens.Present {
-		object["cache_write_tokens"] = v.CacheWriteTokens
-	}
-	object["cached_tokens"] = v.CachedTokens
-	return json.Marshal(object)
+	CacheWriteTokens *uint32 `json:"cache_write_tokens,omitzero"`
+	CachedTokens     uint32  `json:"cached_tokens"`
 }
 
 type ProviderCreateParams struct {
-	Package  string                  `json:"package"`
-	Settings Field[ProviderSettings] `json:"settings,omitempty"`
-}
-
-func (v *ProviderCreateParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ProviderCreateParams: %w", err)
-	}
-	var next ProviderCreateParams
-	if err := dtoRead(object, "package", &next.Package, true, false); err != nil {
-		return fmt.Errorf("ProviderCreateParams: %w", err)
-	}
-	if err := dtoRead(object, "settings", &next.Settings, false, false); err != nil {
-		return fmt.Errorf("ProviderCreateParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ProviderCreateParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["package"] = v.Package
-	if v.Settings.Present {
-		object["settings"] = v.Settings
-	}
-	return json.Marshal(object)
+	Package  string            `json:"package"`
+	Settings *ProviderSettings `json:"settings,omitzero"`
 }
 
 type ProviderCustomParams struct {
-	DecisionModels          Field[map[string]HandleIdInput] `json:"decisionModels,omitempty"`
-	DefaultMethod           Field[string]                   `json:"defaultMethod,omitempty"`
-	EmbeddingModels         Field[map[string]HandleIdInput] `json:"embeddingModels,omitempty"`
-	FallbackProvider        Field[HandleIdInput]            `json:"fallbackProvider,omitempty"`
-	Files                   Field[HandleIdInput]            `json:"files,omitempty"`
-	ImageModelMiddleware    Field[[]HandleIdInput]          `json:"imageModelMiddleware,omitempty"`
-	ImageModels             Field[map[string]HandleIdInput] `json:"imageModels,omitempty"`
-	LanguageModelMiddleware Field[[]HandleIdInput]          `json:"languageModelMiddleware,omitempty"`
-	LanguageModels          Field[map[string]HandleIdInput] `json:"languageModels,omitempty"`
-	RerankingModels         Field[map[string]HandleIdInput] `json:"rerankingModels,omitempty"`
-	SearchModels            Field[map[string]HandleIdInput] `json:"searchModels,omitempty"`
-	SpeechModels            Field[map[string]HandleIdInput] `json:"speechModels,omitempty"`
-	TranscriptionModels     Field[map[string]HandleIdInput] `json:"transcriptionModels,omitempty"`
-	VideoModels             Field[map[string]HandleIdInput] `json:"videoModels,omitempty"`
-}
-
-func (v *ProviderCustomParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	var next ProviderCustomParams
-	if err := dtoRead(object, "decisionModels", &next.DecisionModels, false, false); err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	if err := dtoRead(object, "defaultMethod", &next.DefaultMethod, false, true); err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	if err := dtoRead(object, "embeddingModels", &next.EmbeddingModels, false, false); err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	if err := dtoRead(object, "fallbackProvider", &next.FallbackProvider, false, true); err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	if err := dtoRead(object, "files", &next.Files, false, true); err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	if err := dtoRead(object, "imageModelMiddleware", &next.ImageModelMiddleware, false, false); err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	if err := dtoRead(object, "imageModels", &next.ImageModels, false, false); err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	if err := dtoRead(object, "languageModelMiddleware", &next.LanguageModelMiddleware, false, false); err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	if err := dtoRead(object, "languageModels", &next.LanguageModels, false, false); err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	if err := dtoRead(object, "rerankingModels", &next.RerankingModels, false, false); err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	if err := dtoRead(object, "searchModels", &next.SearchModels, false, false); err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	if err := dtoRead(object, "speechModels", &next.SpeechModels, false, false); err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	if err := dtoRead(object, "transcriptionModels", &next.TranscriptionModels, false, false); err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	if err := dtoRead(object, "videoModels", &next.VideoModels, false, false); err != nil {
-		return fmt.Errorf("ProviderCustomParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ProviderCustomParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.DecisionModels.Present {
-		object["decisionModels"] = v.DecisionModels
-	}
-	if v.DefaultMethod.Present {
-		object["defaultMethod"] = v.DefaultMethod
-	}
-	if v.EmbeddingModels.Present {
-		object["embeddingModels"] = v.EmbeddingModels
-	}
-	if v.FallbackProvider.Present {
-		object["fallbackProvider"] = v.FallbackProvider
-	}
-	if v.Files.Present {
-		object["files"] = v.Files
-	}
-	if v.ImageModelMiddleware.Present {
-		object["imageModelMiddleware"] = v.ImageModelMiddleware
-	}
-	if v.ImageModels.Present {
-		object["imageModels"] = v.ImageModels
-	}
-	if v.LanguageModelMiddleware.Present {
-		object["languageModelMiddleware"] = v.LanguageModelMiddleware
-	}
-	if v.LanguageModels.Present {
-		object["languageModels"] = v.LanguageModels
-	}
-	if v.RerankingModels.Present {
-		object["rerankingModels"] = v.RerankingModels
-	}
-	if v.SearchModels.Present {
-		object["searchModels"] = v.SearchModels
-	}
-	if v.SpeechModels.Present {
-		object["speechModels"] = v.SpeechModels
-	}
-	if v.TranscriptionModels.Present {
-		object["transcriptionModels"] = v.TranscriptionModels
-	}
-	if v.VideoModels.Present {
-		object["videoModels"] = v.VideoModels
-	}
-	return json.Marshal(object)
+	DecisionModels          map[string]HandleIdInput `json:"decisionModels,omitzero"`
+	DefaultMethod           *string                  `json:"defaultMethod,omitzero"`
+	EmbeddingModels         map[string]HandleIdInput `json:"embeddingModels,omitzero"`
+	FallbackProvider        *HandleIdInput           `json:"fallbackProvider,omitzero"`
+	Files                   *HandleIdInput           `json:"files,omitzero"`
+	ImageModelMiddleware    []HandleIdInput          `json:"imageModelMiddleware,omitzero"`
+	ImageModels             map[string]HandleIdInput `json:"imageModels,omitzero"`
+	LanguageModelMiddleware []HandleIdInput          `json:"languageModelMiddleware,omitzero"`
+	LanguageModels          map[string]HandleIdInput `json:"languageModels,omitzero"`
+	RerankingModels         map[string]HandleIdInput `json:"rerankingModels,omitzero"`
+	SearchModels            map[string]HandleIdInput `json:"searchModels,omitzero"`
+	SpeechModels            map[string]HandleIdInput `json:"speechModels,omitzero"`
+	TranscriptionModels     map[string]HandleIdInput `json:"transcriptionModels,omitzero"`
+	VideoModels             map[string]HandleIdInput `json:"videoModels,omitzero"`
 }
 
 type ProviderDefaultParams struct {
 	Package string `json:"package"`
 }
 
-func (v *ProviderDefaultParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ProviderDefaultParams: %w", err)
-	}
-	var next ProviderDefaultParams
-	if err := dtoRead(object, "package", &next.Package, true, false); err != nil {
-		return fmt.Errorf("ProviderDefaultParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ProviderDefaultParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["package"] = v.Package
-	return json.Marshal(object)
-}
-
 type ProviderInvokeParams struct {
-	Abort  Field[HandleIdInput] `json:"abort,omitempty"`
-	Method string               `json:"method"`
-}
-
-func (v *ProviderInvokeParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ProviderInvokeParams: %w", err)
-	}
-	var next ProviderInvokeParams
-	if err := dtoRead(object, "abort", &next.Abort, false, true); err != nil {
-		return fmt.Errorf("ProviderInvokeParams: %w", err)
-	}
-	if err := dtoRead(object, "method", &next.Method, true, false); err != nil {
-		return fmt.Errorf("ProviderInvokeParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ProviderInvokeParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Abort.Present {
-		object["abort"] = v.Abort
-	}
-	object["method"] = v.Method
-	return json.Marshal(object)
+	Abort  *HandleIdInput `json:"abort,omitzero"`
+	Method string         `json:"method"`
 }
 
 type ProviderModelParams struct {
-	Method  Field[string] `json:"method,omitempty"`
-	ModelID string        `json:"modelId"`
-}
-
-func (v *ProviderModelParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ProviderModelParams: %w", err)
-	}
-	var next ProviderModelParams
-	if err := dtoRead(object, "method", &next.Method, false, true); err != nil {
-		return fmt.Errorf("ProviderModelParams: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("ProviderModelParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ProviderModelParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Method.Present {
-		object["method"] = v.Method
-	}
-	object["modelId"] = v.ModelID
-	return json.Marshal(object)
+	Method  *string `json:"method,omitzero"`
+	ModelID string  `json:"modelId"`
 }
 
 // ② 配置侧:provider 身份(请求回放重建用)。
@@ -11967,124 +5251,18 @@ type ProviderRecord struct {
 	ProviderID string `json:"providerId"`
 }
 
-func (v *ProviderRecord) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ProviderRecord: %w", err)
-	}
-	var next ProviderRecord
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("ProviderRecord: %w", err)
-	}
-	if err := dtoRead(object, "provider", &next.Provider, true, false); err != nil {
-		return fmt.Errorf("ProviderRecord: %w", err)
-	}
-	if err := dtoRead(object, "providerId", &next.ProviderID, true, false); err != nil {
-		return fmt.Errorf("ProviderRecord: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ProviderRecord) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["modelId"] = v.ModelID
-	object["provider"] = v.Provider
-	object["providerId"] = v.ProviderID
-	return json.Marshal(object)
-}
-
 type ProviderSettings struct {
-	APIKey             Field[string]             `json:"apiKey,omitempty"`
-	BaseURL            Field[string]             `json:"baseUrl,omitempty"`
-	CredentialResolver Field[HandleIdInput]      `json:"credentialResolver,omitempty"`
-	Endpoint           Field[string]             `json:"endpoint,omitempty"`
-	Fetch              Field[HandleIdInput]      `json:"fetch,omitempty"`
-	Headers            Field[map[string]*string] `json:"headers,omitempty"`
-	Organization       Field[string]             `json:"organization,omitempty"`
-	Params             Field[map[string]string]  `json:"params,omitempty"`
-	ProbabilitySource  Field[string]             `json:"probabilitySource,omitempty"`
-	Project            Field[string]             `json:"project,omitempty"`
-	WebSocket          Field[HandleIdInput]      `json:"webSocket,omitempty"`
-}
-
-func (v *ProviderSettings) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ProviderSettings: %w", err)
-	}
-	var next ProviderSettings
-	if err := dtoRead(object, "apiKey", &next.APIKey, false, true); err != nil {
-		return fmt.Errorf("ProviderSettings: %w", err)
-	}
-	if err := dtoRead(object, "baseUrl", &next.BaseURL, false, true); err != nil {
-		return fmt.Errorf("ProviderSettings: %w", err)
-	}
-	if err := dtoRead(object, "credentialResolver", &next.CredentialResolver, false, true); err != nil {
-		return fmt.Errorf("ProviderSettings: %w", err)
-	}
-	if err := dtoRead(object, "endpoint", &next.Endpoint, false, true); err != nil {
-		return fmt.Errorf("ProviderSettings: %w", err)
-	}
-	if err := dtoRead(object, "fetch", &next.Fetch, false, true); err != nil {
-		return fmt.Errorf("ProviderSettings: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, false); err != nil {
-		return fmt.Errorf("ProviderSettings: %w", err)
-	}
-	if err := dtoRead(object, "organization", &next.Organization, false, true); err != nil {
-		return fmt.Errorf("ProviderSettings: %w", err)
-	}
-	if err := dtoRead(object, "params", &next.Params, false, false); err != nil {
-		return fmt.Errorf("ProviderSettings: %w", err)
-	}
-	if err := dtoRead(object, "probabilitySource", &next.ProbabilitySource, false, true); err != nil {
-		return fmt.Errorf("ProviderSettings: %w", err)
-	}
-	if err := dtoRead(object, "project", &next.Project, false, true); err != nil {
-		return fmt.Errorf("ProviderSettings: %w", err)
-	}
-	if err := dtoRead(object, "webSocket", &next.WebSocket, false, true); err != nil {
-		return fmt.Errorf("ProviderSettings: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ProviderSettings) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.APIKey.Present {
-		object["apiKey"] = v.APIKey
-	}
-	if v.BaseURL.Present {
-		object["baseUrl"] = v.BaseURL
-	}
-	if v.CredentialResolver.Present {
-		object["credentialResolver"] = v.CredentialResolver
-	}
-	if v.Endpoint.Present {
-		object["endpoint"] = v.Endpoint
-	}
-	if v.Fetch.Present {
-		object["fetch"] = v.Fetch
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.Organization.Present {
-		object["organization"] = v.Organization
-	}
-	if v.Params.Present {
-		object["params"] = v.Params
-	}
-	if v.ProbabilitySource.Present {
-		object["probabilitySource"] = v.ProbabilitySource
-	}
-	if v.Project.Present {
-		object["project"] = v.Project
-	}
-	if v.WebSocket.Present {
-		object["webSocket"] = v.WebSocket
-	}
-	return json.Marshal(object)
+	APIKey             *string            `json:"apiKey,omitzero"`
+	BaseURL            *string            `json:"baseUrl,omitzero"`
+	CredentialResolver *HandleIdInput     `json:"credentialResolver,omitzero"`
+	Endpoint           *string            `json:"endpoint,omitzero"`
+	Fetch              *HandleIdInput     `json:"fetch,omitzero"`
+	Headers            map[string]*string `json:"headers,omitzero"`
+	Organization       *string            `json:"organization,omitzero"`
+	Params             map[string]string  `json:"params,omitzero"`
+	ProbabilitySource  *string            `json:"probabilitySource,omitzero"`
+	Project            *string            `json:"project,omitzero"`
+	WebSocket          *HandleIdInput     `json:"webSocket,omitzero"`
 }
 
 // A provider-defined tool (e.g. `anthropic.web_search_20250305`,
@@ -12105,96 +5283,16 @@ type ProviderTool struct {
 	Name string `json:"name"`
 }
 
-func (v *ProviderTool) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ProviderTool: %w", err)
-	}
-	var next ProviderTool
-	if err := dtoRead(object, "args", &next.Args, true, false); err != nil {
-		return fmt.Errorf("ProviderTool: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("ProviderTool: %w", err)
-	}
-	if err := dtoRead(object, "name", &next.Name, true, false); err != nil {
-		return fmt.Errorf("ProviderTool: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ProviderTool) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["args"] = v.Args
-	object["id"] = v.ID
-	object["name"] = v.Name
-	return json.Marshal(object)
-}
-
 type ProviderWrapParams struct {
-	ImageModelMiddleware    Field[[]HandleIdInput] `json:"imageModelMiddleware,omitempty"`
-	LanguageModelMiddleware Field[[]HandleIdInput] `json:"languageModelMiddleware,omitempty"`
-}
-
-func (v *ProviderWrapParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ProviderWrapParams: %w", err)
-	}
-	var next ProviderWrapParams
-	if err := dtoRead(object, "imageModelMiddleware", &next.ImageModelMiddleware, false, false); err != nil {
-		return fmt.Errorf("ProviderWrapParams: %w", err)
-	}
-	if err := dtoRead(object, "languageModelMiddleware", &next.LanguageModelMiddleware, false, false); err != nil {
-		return fmt.Errorf("ProviderWrapParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ProviderWrapParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.ImageModelMiddleware.Present {
-		object["imageModelMiddleware"] = v.ImageModelMiddleware
-	}
-	if v.LanguageModelMiddleware.Present {
-		object["languageModelMiddleware"] = v.LanguageModelMiddleware
-	}
-	return json.Marshal(object)
+	ImageModelMiddleware    []HandleIdInput `json:"imageModelMiddleware,omitzero"`
+	LanguageModelMiddleware []HandleIdInput `json:"languageModelMiddleware,omitzero"`
 }
 
 // Provider approval request for a provider-executed call.
 type RawToolApprovalRequest struct {
-	ApprovalID       string                                       `json:"approvalId"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-}
-
-func (v *RawToolApprovalRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RawToolApprovalRequest: %w", err)
-	}
-	var next RawToolApprovalRequest
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("RawToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("RawToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("RawToolApprovalRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RawToolApprovalRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["approvalId"] = v.ApprovalID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	return json.Marshal(object)
+	ApprovalID       string                                `json:"approvalId"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
 }
 
 // Provider-facing tool call before Core parses and validates its input.
@@ -12202,56 +5300,12 @@ func (v RawToolApprovalRequest) MarshalJSON() ([]byte, error) {
 // The wire shape matches [`ToolCall`] field for field, except that `input`
 // is the provider's raw argument *text* rather than a parsed value.
 type RawToolCall struct {
-	Dynamic          Field[bool]                                  `json:"dynamic,omitempty"`
-	Input            string                                       `json:"input"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
-}
-
-func (v *RawToolCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RawToolCall: %w", err)
-	}
-	var next RawToolCall
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("RawToolCall: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, true, false); err != nil {
-		return fmt.Errorf("RawToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("RawToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("RawToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("RawToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("RawToolCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RawToolCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	object["input"] = v.Input
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+	Dynamic          *bool                                 `json:"dynamic,omitzero"`
+	Input            string                                `json:"input"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
 }
 
 // Reasoning effort level (aligned with V4 `reasoning` option).
@@ -12270,111 +5324,59 @@ const (
 	ReasoningEffortXhigh           ReasoningEffort = "xhigh"
 )
 
-func (v *ReasoningEffort) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "provider-default":
-		*v = ReasoningEffort(next)
-		return nil
-	case "none":
-		*v = ReasoningEffort(next)
-		return nil
-	case "minimal":
-		*v = ReasoningEffort(next)
-		return nil
-	case "low":
-		*v = ReasoningEffort(next)
-		return nil
-	case "medium":
-		*v = ReasoningEffort(next)
-		return nil
-	case "high":
-		*v = ReasoningEffort(next)
-		return nil
-	case "xhigh":
-		*v = ReasoningEffort(next)
-		return nil
-	}
-	return fmt.Errorf("ReasoningEffort: unknown value %s", data)
-}
-
 // A file generated as part of reasoning.
 type ReasoningFilePart struct {
-	Data            GeneratedFileData                            `json:"data"`
-	MediaType       string                                       `json:"mediaType"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-}
-
-func (v *ReasoningFilePart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ReasoningFilePart: %w", err)
-	}
-	var next ReasoningFilePart
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("ReasoningFilePart: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("ReasoningFilePart: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ReasoningFilePart: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ReasoningFilePart) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["data"] = v.Data
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+	Data            GeneratedFileData                     `json:"data"`
+	MediaType       string                                `json:"mediaType"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 // `ReasoningFilePart.data` (`types/content-part.ts:164`):
 // `FileDataData | FileDataUrl | DataContent | URL`, in JSON tagged data or a
 // URL, or a string (base64 or a URL).
 type ReasoningFilePartDataVariant interface{ isReasoningFilePartData() }
-type ReasoningFilePartData struct{ Value ReasoningFilePartDataVariant }
+type ReasoningFilePartData struct {
+	Value ReasoningFilePartDataVariant
+}
 
 func (v ReasoningFilePartData) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ReasoningFilePartData: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ReasoningFilePartData) UnmarshalJSON(data []byte) error {
+	var err error
 	{
 		var next GeneratedFileData
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = ReasoningFilePartDataBranch0{Value: next}
 			return nil
 		}
 	}
 	{
 		var next string
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = ReasoningFilePartDataBranch1{Value: next}
 			return nil
 		}
 	}
-	return fmt.Errorf("ReasoningFilePartData: no matching branch")
+	return err
 }
 
 type ReasoningFilePartDataBranch0 struct{ Value GeneratedFileData }
 
-func (ReasoningFilePartDataBranch0) isReasoningFilePartData()       {}
-func (v ReasoningFilePartDataBranch0) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (ReasoningFilePartDataBranch0) isReasoningFilePartData() {}
+
+func (v ReasoningFilePartDataBranch0) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type ReasoningFilePartDataBranch1 struct{ Value string }
 
-func (ReasoningFilePartDataBranch1) isReasoningFilePartData()       {}
-func (v ReasoningFilePartDataBranch1) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (ReasoningFilePartDataBranch1) isReasoningFilePartData() {}
+
+func (v ReasoningFilePartDataBranch1) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 // How reasoning / thinking is controlled for a model.
 type ReasoningMode string
@@ -12389,281 +5391,106 @@ const (
 	ReasoningModeToggle ReasoningMode = "Toggle"
 )
 
-func (v *ReasoningMode) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "Other":
-		*v = ReasoningMode(next)
-		return nil
-	case "Budget":
-		*v = ReasoningMode(next)
-		return nil
-	case "Effort":
-		*v = ReasoningMode(next)
-		return nil
-	case "Level":
-		*v = ReasoningMode(next)
-		return nil
-	case "Fixed":
-		*v = ReasoningMode(next)
-		return nil
-	case "Mixed":
-		*v = ReasoningMode(next)
-		return nil
-	case "Toggle":
-		*v = ReasoningMode(next)
-		return nil
-	}
-	return fmt.Errorf("ReasoningMode: unknown value %s", data)
-}
-
 // A reasoning / thinking segment produced by the model. Mirrors the Vercel AI
 // SDK `reasoning` content type; `provider_metadata` carries provider-specific
 // data such as the Anthropic thinking-block signature
 // (`providerMetadata.anthropic.signature`). The payload of
 // `GenerateContent::Reasoning` and the element of the text results' `reasoning`.
 type ReasoningOutput struct {
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Text             string                                       `json:"text"`
-}
-
-func (v *ReasoningOutput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ReasoningOutput: %w", err)
-	}
-	var next ReasoningOutput
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ReasoningOutput: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("ReasoningOutput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ReasoningOutput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Text             string                                `json:"text"`
 }
 
 // Text or a generated file produced during reasoning.
 type ReasoningPartVariant interface{ isReasoningPart() }
-type ReasoningPart struct{ Value ReasoningPartVariant }
+type ReasoningPart struct {
+	Value ReasoningPartVariant
+}
 
 func (v ReasoningPart) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ReasoningPart: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ReasoningPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ReasoningPart: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("ReasoningPart: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "reasoning" {
+	switch tag.Type {
+	case "reasoning":
 		var next ReasoningPartVariantReasoning
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "reasoning-file" {
+		v.Value = next
+		return nil
+	case "reasoning-file":
 		var next ReasoningPartVariantReasoningFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("ReasoningPart: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("ReasoningPart: unknown type tag %q", tag.Type)
 }
 
 type ReasoningPartVariantReasoning struct {
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Text             string                                       `json:"text"`
-}
-
-func (v *ReasoningPartVariantReasoning) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ReasoningPartVariantReasoning: %w", err)
-	}
-	var next ReasoningPartVariantReasoning
-	if err := dtoTag(object, "type", "reasoning"); err != nil {
-		return fmt.Errorf("ReasoningPartVariantReasoning: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ReasoningPartVariantReasoning: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("ReasoningPartVariantReasoning: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ReasoningPartVariantReasoning) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning"
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Text             string                                `json:"text"`
 }
 
 func (ReasoningPartVariantReasoning) isReasoningPart() {}
 
-type ReasoningPartVariantReasoningFile struct {
-	File             GeneratedFile                                `json:"file"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v ReasoningPartVariantReasoning) MarshalJSON() ([]byte, error) {
+	type plain ReasoningPartVariantReasoning
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning", plain: plain(v)})
 }
 
-func (v *ReasoningPartVariantReasoningFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ReasoningPartVariantReasoningFile: %w", err)
-	}
-	var next ReasoningPartVariantReasoningFile
-	if err := dtoTag(object, "type", "reasoning-file"); err != nil {
-		return fmt.Errorf("ReasoningPartVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "file", &next.File, true, false); err != nil {
-		return fmt.Errorf("ReasoningPartVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ReasoningPartVariantReasoningFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ReasoningPartVariantReasoningFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning-file"
-	object["file"] = v.File
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type ReasoningPartVariantReasoningFile struct {
+	File             GeneratedFile                         `json:"file"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (ReasoningPartVariantReasoningFile) isReasoningPart() {}
 
-// Reasoning / thinking content part.
-type ReasoningPart2 struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Text            string                                       `json:"text"`
+func (v ReasoningPartVariantReasoningFile) MarshalJSON() ([]byte, error) {
+	type plain ReasoningPartVariantReasoningFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning-file", plain: plain(v)})
 }
 
-func (v *ReasoningPart2) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ReasoningPart2: %w", err)
-	}
-	var next ReasoningPart2
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ReasoningPart2: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("ReasoningPart2: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ReasoningPart2) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+// Reasoning / thinking content part.
+type ReasoningPart2 struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Text            string                                `json:"text"`
 }
 
 // Reasoning / thinking portrait for a model (advisory).
 type ReasoningSpec struct {
 	// Minimum token budget (when `mode` is Budget/Mixed).
-	BudgetMin Field[uint64] `json:"budgetMin,omitempty"`
+	BudgetMin *uint64 `json:"budgetMin,omitzero"`
 	// Whether reasoning should be on by default.
 	DefaultEnabled bool `json:"defaultEnabled"`
 	// Default effort level (when `mode` is Effort/Mixed).
-	EffortDefault Field[string] `json:"effortDefault,omitempty"`
+	EffortDefault *string `json:"effortDefault,omitzero"`
 	// Supported effort levels.
-	EffortOptions Field[[]string] `json:"effortOptions,omitempty"`
+	EffortOptions []string `json:"effortOptions,omitzero"`
 	// Interleaved reasoning (thinking blocks between tool calls).
 	Interleaved bool `json:"interleaved"`
 	// Primary control mode.
-	Mode Field[ReasoningMode] `json:"mode,omitempty"`
+	Mode *ReasoningMode `json:"mode,omitzero"`
 	// Whether the model family supports reasoning at all.
 	Supported bool `json:"supported"`
 	// Output visibility.
-	Visibility Field[ReasoningVisibility] `json:"visibility,omitempty"`
-}
-
-func (v *ReasoningSpec) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ReasoningSpec: %w", err)
-	}
-	var next ReasoningSpec
-	if err := dtoRead(object, "budgetMin", &next.BudgetMin, false, true); err != nil {
-		return fmt.Errorf("ReasoningSpec: %w", err)
-	}
-	if err := dtoRead(object, "defaultEnabled", &next.DefaultEnabled, true, false); err != nil {
-		return fmt.Errorf("ReasoningSpec: %w", err)
-	}
-	if err := dtoRead(object, "effortDefault", &next.EffortDefault, false, true); err != nil {
-		return fmt.Errorf("ReasoningSpec: %w", err)
-	}
-	if err := dtoRead(object, "effortOptions", &next.EffortOptions, false, false); err != nil {
-		return fmt.Errorf("ReasoningSpec: %w", err)
-	}
-	if err := dtoRead(object, "interleaved", &next.Interleaved, true, false); err != nil {
-		return fmt.Errorf("ReasoningSpec: %w", err)
-	}
-	if err := dtoRead(object, "mode", &next.Mode, false, true); err != nil {
-		return fmt.Errorf("ReasoningSpec: %w", err)
-	}
-	if err := dtoRead(object, "supported", &next.Supported, true, false); err != nil {
-		return fmt.Errorf("ReasoningSpec: %w", err)
-	}
-	if err := dtoRead(object, "visibility", &next.Visibility, false, true); err != nil {
-		return fmt.Errorf("ReasoningSpec: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ReasoningSpec) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.BudgetMin.Present {
-		object["budgetMin"] = v.BudgetMin
-	}
-	object["defaultEnabled"] = v.DefaultEnabled
-	if v.EffortDefault.Present {
-		object["effortDefault"] = v.EffortDefault
-	}
-	if v.EffortOptions.Present {
-		object["effortOptions"] = v.EffortOptions
-	}
-	object["interleaved"] = v.Interleaved
-	if v.Mode.Present {
-		object["mode"] = v.Mode
-	}
-	object["supported"] = v.Supported
-	if v.Visibility.Present {
-		object["visibility"] = v.Visibility
-	}
-	return json.Marshal(object)
+	Visibility *ReasoningVisibility `json:"visibility,omitzero"`
 }
 
 // Visibility of reasoning output to the caller.
@@ -12678,111 +5505,47 @@ const (
 	ReasoningVisibilityOther   ReasoningVisibility = "Other"
 )
 
-func (v *ReasoningVisibility) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "Hidden":
-		*v = ReasoningVisibility(next)
-		return nil
-	case "Summary":
-		*v = ReasoningVisibility(next)
-		return nil
-	case "Full":
-		*v = ReasoningVisibility(next)
-		return nil
-	case "Mixed":
-		*v = ReasoningVisibility(next)
-		return nil
-	case "Omitted":
-		*v = ReasoningVisibility(next)
-		return nil
-	case "Other":
-		*v = ReasoningVisibility(next)
-		return nil
-	}
-	return fmt.Errorf("ReasoningVisibility: unknown value %s", data)
-}
-
 type RecorderExport struct {
 	Jsonl string `json:"jsonl"`
-}
-
-func (v *RecorderExport) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RecorderExport: %w", err)
-	}
-	var next RecorderExport
-	if err := dtoRead(object, "jsonl", &next.Jsonl, true, false); err != nil {
-		return fmt.Errorf("RecorderExport: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RecorderExport) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["jsonl"] = v.Jsonl
-	return json.Marshal(object)
 }
 
 type RecorderHandleResult struct {
 	Handle HandleID `json:"handle"`
 }
 
-func (v *RecorderHandleResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RecorderHandleResult: %w", err)
-	}
-	var next RecorderHandleResult
-	if err := dtoRead(object, "handle", &next.Handle, true, false); err != nil {
-		return fmt.Errorf("RecorderHandleResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RecorderHandleResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["handle"] = v.Handle
-	return json.Marshal(object)
-}
-
 type RecorderStatsVariant interface{ isRecorderStats() }
-type RecorderStats struct{ Value RecorderStatsVariant }
+type RecorderStats struct {
+	Value RecorderStatsVariant
+}
 
 func (v RecorderStats) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("RecorderStats: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *RecorderStats) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RecorderStats: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("RecorderStats: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "ring" {
-		var next RecorderStatsVariantRing
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "jsonl" {
+	switch tag.Type {
+	case "jsonl":
 		var next RecorderStatsVariantJsonl
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "ring":
+		var next RecorderStatsVariantRing
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("RecorderStats: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("RecorderStats: unknown type tag %q", tag.Type)
 }
 
 type RecorderStatsVariantRing struct {
@@ -12793,45 +5556,15 @@ type RecorderStatsVariantRing struct {
 	PendingEvicted      uint64   `json:"pendingEvicted"`
 }
 
-func (v *RecorderStatsVariantRing) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RecorderStatsVariantRing: %w", err)
-	}
-	var next RecorderStatsVariantRing
-	if err := dtoTag(object, "type", "ring"); err != nil {
-		return fmt.Errorf("RecorderStatsVariantRing: %w", err)
-	}
-	if err := dtoRead(object, "completed", &next.Completed, true, false); err != nil {
-		return fmt.Errorf("RecorderStatsVariantRing: %w", err)
-	}
-	if err := dtoRead(object, "dropped", &next.Dropped, true, false); err != nil {
-		return fmt.Errorf("RecorderStatsVariantRing: %w", err)
-	}
-	if err := dtoRead(object, "inconsistentCallIds", &next.InconsistentCallIds, true, false); err != nil {
-		return fmt.Errorf("RecorderStatsVariantRing: %w", err)
-	}
-	if err := dtoRead(object, "pending", &next.Pending, true, false); err != nil {
-		return fmt.Errorf("RecorderStatsVariantRing: %w", err)
-	}
-	if err := dtoRead(object, "pendingEvicted", &next.PendingEvicted, true, false); err != nil {
-		return fmt.Errorf("RecorderStatsVariantRing: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RecorderStatsVariantRing) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "ring"
-	object["completed"] = v.Completed
-	object["dropped"] = v.Dropped
-	object["inconsistentCallIds"] = v.InconsistentCallIds
-	object["pending"] = v.Pending
-	object["pendingEvicted"] = v.PendingEvicted
-	return json.Marshal(object)
-}
-
 func (RecorderStatsVariantRing) isRecorderStats() {}
+
+func (v RecorderStatsVariantRing) MarshalJSON() ([]byte, error) {
+	type plain RecorderStatsVariantRing
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "ring", plain: plain(v)})
+}
 
 type RecorderStatsVariantJsonl struct {
 	Dropped             uint64   `json:"dropped"`
@@ -12840,41 +5573,15 @@ type RecorderStatsVariantJsonl struct {
 	Path                string   `json:"path"`
 }
 
-func (v *RecorderStatsVariantJsonl) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RecorderStatsVariantJsonl: %w", err)
-	}
-	var next RecorderStatsVariantJsonl
-	if err := dtoTag(object, "type", "jsonl"); err != nil {
-		return fmt.Errorf("RecorderStatsVariantJsonl: %w", err)
-	}
-	if err := dtoRead(object, "dropped", &next.Dropped, true, false); err != nil {
-		return fmt.Errorf("RecorderStatsVariantJsonl: %w", err)
-	}
-	if err := dtoRead(object, "inconsistentCallIds", &next.InconsistentCallIds, true, false); err != nil {
-		return fmt.Errorf("RecorderStatsVariantJsonl: %w", err)
-	}
-	if err := dtoRead(object, "lastWriteError", &next.LastWriteError, true, true); err != nil {
-		return fmt.Errorf("RecorderStatsVariantJsonl: %w", err)
-	}
-	if err := dtoRead(object, "path", &next.Path, true, false); err != nil {
-		return fmt.Errorf("RecorderStatsVariantJsonl: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RecorderStatsVariantJsonl) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "jsonl"
-	object["dropped"] = v.Dropped
-	object["inconsistentCallIds"] = v.InconsistentCallIds
-	object["lastWriteError"] = v.LastWriteError
-	object["path"] = v.Path
-	return json.Marshal(object)
-}
-
 func (RecorderStatsVariantJsonl) isRecorderStats() {}
+
+func (v RecorderStatsVariantJsonl) MarshalJSON() ([]byte, error) {
+	type plain RecorderStatsVariantJsonl
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "jsonl", plain: plain(v)})
+}
 
 // 一次完整调用的录制记录(三层 + call_id 关联)。
 type Recording struct {
@@ -12904,74 +5611,12 @@ type Recording struct {
 	// 会话归组(RFC-0024 P3):所在会话 id。None = 未归组(无 session_id 且
 	// 推断关闭)。由 `Recorder::record_session` 填充,写入 InputRecord 之前
 	// 或之后均可(writer 端按 call_id 合并)。
-	SessionID Field[string] `json:"sessionId,omitempty"`
+	SessionID *string `json:"sessionId,omitzero"`
 	// 会话内步号(0 起,由 SessionStore 分配)。与 `session_id` 同生命周期。
-	Step Field[uint32] `json:"step,omitempty"`
+	Step *uint32 `json:"step,omitzero"`
 	// 传输层封闭信号:层 B 声明"不再有 exchange"(P1:层 A 收尾自动发;
 	// P2:由层 B 发送)。false = 仍可能来 exchange(记录暂不可定稿)。
 	TransportClosed bool `json:"transportClosed"`
-}
-
-func (v *Recording) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("Recording: %w", err)
-	}
-	var next Recording
-	if err := dtoRead(object, "callId", &next.CallID, true, false); err != nil {
-		return fmt.Errorf("Recording: %w", err)
-	}
-	if err := dtoRead(object, "complete", &next.Complete, true, false); err != nil {
-		return fmt.Errorf("Recording: %w", err)
-	}
-	if err := dtoRead(object, "exchanges", &next.Exchanges, true, false); err != nil {
-		return fmt.Errorf("Recording: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, true, false); err != nil {
-		return fmt.Errorf("Recording: %w", err)
-	}
-	if err := dtoRead(object, "outcome", &next.Outcome, true, false); err != nil {
-		return fmt.Errorf("Recording: %w", err)
-	}
-	if err := dtoRead(object, "provider", &next.Provider, true, false); err != nil {
-		return fmt.Errorf("Recording: %w", err)
-	}
-	if err := dtoRead(object, "recordedAt", &next.RecordedAt, true, false); err != nil {
-		return fmt.Errorf("Recording: %w", err)
-	}
-	if err := dtoRead(object, "schema", &next.Schema, true, false); err != nil {
-		return fmt.Errorf("Recording: %w", err)
-	}
-	if err := dtoRead(object, "sessionId", &next.SessionID, false, true); err != nil {
-		return fmt.Errorf("Recording: %w", err)
-	}
-	if err := dtoRead(object, "step", &next.Step, false, true); err != nil {
-		return fmt.Errorf("Recording: %w", err)
-	}
-	if err := dtoRead(object, "transportClosed", &next.TransportClosed, true, false); err != nil {
-		return fmt.Errorf("Recording: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v Recording) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["callId"] = v.CallID
-	object["complete"] = v.Complete
-	object["exchanges"] = v.Exchanges
-	object["input"] = v.Input
-	object["outcome"] = v.Outcome
-	object["provider"] = v.Provider
-	object["recordedAt"] = v.RecordedAt
-	object["schema"] = v.Schema
-	if v.SessionID.Present {
-		object["sessionId"] = v.SessionID
-	}
-	if v.Step.Present {
-		object["step"] = v.Step
-	}
-	object["transportClosed"] = v.TransportClosed
-	return json.Marshal(object)
 }
 
 // Operation stored in a unified recording. Older recordings are language calls.
@@ -12982,49 +5627,9 @@ const (
 	RecordingOperationDecision      RecordingOperation = "decision"
 )
 
-func (v *RecordingOperation) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "language_model":
-		*v = RecordingOperation(next)
-		return nil
-	case "decision":
-		*v = RecordingOperation(next)
-		return nil
-	}
-	return fmt.Errorf("RecordingOperation: unknown value %s", data)
-}
-
 type RegistryCreateParams struct {
 	Entries   []RegistryEntry `json:"entries"`
-	Namespace Field[string]   `json:"namespace,omitempty"`
-}
-
-func (v *RegistryCreateParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RegistryCreateParams: %w", err)
-	}
-	var next RegistryCreateParams
-	if err := dtoRead(object, "entries", &next.Entries, true, false); err != nil {
-		return fmt.Errorf("RegistryCreateParams: %w", err)
-	}
-	if err := dtoRead(object, "namespace", &next.Namespace, false, false); err != nil {
-		return fmt.Errorf("RegistryCreateParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RegistryCreateParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["entries"] = v.Entries
-	if v.Namespace.Present {
-		object["namespace"] = v.Namespace
-	}
-	return json.Marshal(object)
+	Namespace *string         `json:"namespace,omitzero"`
 }
 
 type RegistryEntry struct {
@@ -13032,185 +5637,70 @@ type RegistryEntry struct {
 	Provider string `json:"provider"`
 }
 
-func (v *RegistryEntry) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RegistryEntry: %w", err)
-	}
-	var next RegistryEntry
-	if err := dtoRead(object, "key", &next.Key, true, false); err != nil {
-		return fmt.Errorf("RegistryEntry: %w", err)
-	}
-	if err := dtoRead(object, "provider", &next.Provider, true, false); err != nil {
-		return fmt.Errorf("RegistryEntry: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RegistryEntry) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["key"] = v.Key
-	object["provider"] = v.Provider
-	return json.Marshal(object)
-}
-
 type RegistryProviderParams struct {
 	Key string `json:"key"`
-}
-
-func (v *RegistryProviderParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RegistryProviderParams: %w", err)
-	}
-	var next RegistryProviderParams
-	if err := dtoRead(object, "key", &next.Key, true, false); err != nil {
-		return fmt.Errorf("RegistryProviderParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RegistryProviderParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["key"] = v.Key
-	return json.Marshal(object)
 }
 
 type ReplayCreateParams struct {
 	RecordingsJsonl string `json:"recordingsJsonl"`
 }
 
-func (v *ReplayCreateParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ReplayCreateParams: %w", err)
-	}
-	var next ReplayCreateParams
-	if err := dtoRead(object, "recordingsJsonl", &next.RecordingsJsonl, true, false); err != nil {
-		return fmt.Errorf("ReplayCreateParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ReplayCreateParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["recordingsJsonl"] = v.RecordingsJsonl
-	return json.Marshal(object)
-}
-
 type ReplayInspection struct {
 	Recordings []ReplayRecordingInfo `json:"recordings"`
 }
 
-func (v *ReplayInspection) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ReplayInspection: %w", err)
-	}
-	var next ReplayInspection
-	if err := dtoRead(object, "recordings", &next.Recordings, true, false); err != nil {
-		return fmt.Errorf("ReplayInspection: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ReplayInspection) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["recordings"] = v.Recordings
-	return json.Marshal(object)
-}
-
 type ReplayLiveParams struct {
-	Abort  Field[HandleIdInput] `json:"abort,omitempty"`
-	CallID string               `json:"callId"`
-	Target LiveTarget           `json:"target"`
-}
-
-func (v *ReplayLiveParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ReplayLiveParams: %w", err)
-	}
-	var next ReplayLiveParams
-	if err := dtoRead(object, "abort", &next.Abort, false, true); err != nil {
-		return fmt.Errorf("ReplayLiveParams: %w", err)
-	}
-	if err := dtoRead(object, "callId", &next.CallID, true, false); err != nil {
-		return fmt.Errorf("ReplayLiveParams: %w", err)
-	}
-	if err := dtoRead(object, "target", &next.Target, true, false); err != nil {
-		return fmt.Errorf("ReplayLiveParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ReplayLiveParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Abort.Present {
-		object["abort"] = v.Abort
-	}
-	object["callId"] = v.CallID
-	object["target"] = v.Target
-	return json.Marshal(object)
+	Abort  *HandleIdInput `json:"abort,omitzero"`
+	CallID string         `json:"callId"`
+	Target LiveTarget     `json:"target"`
 }
 
 type ReplayLiveResultVariant interface{ isReplayLiveResult() }
-type ReplayLiveResult struct{ Value ReplayLiveResultVariant }
+type ReplayLiveResult struct {
+	Value ReplayLiveResultVariant
+}
 
 func (v ReplayLiveResult) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ReplayLiveResult: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ReplayLiveResult) UnmarshalJSON(data []byte) error {
+	var err error
 	{
 		var next GenerateTextResult
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false, "content", "files", "finishReason", "reasoning", "request", "response", "responseMessages", "sources", "steps", "text", "toolCalls", "toolResults", "totalUsage", "usage", "warnings"); err == nil {
 			v.Value = ReplayLiveResultBranch0{Value: next}
 			return nil
 		}
 	}
 	{
 		var next DecideResult
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false, "answers", "response", "usage", "warnings"); err == nil {
 			v.Value = ReplayLiveResultBranch1{Value: next}
 			return nil
 		}
 	}
-	return fmt.Errorf("ReplayLiveResult: no matching branch")
+	return err
 }
 
 type ReplayLiveResultBranch0 struct{ Value GenerateTextResult }
 
-func (ReplayLiveResultBranch0) isReplayLiveResult()            {}
-func (v ReplayLiveResultBranch0) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (ReplayLiveResultBranch0) isReplayLiveResult() {}
+
+func (v ReplayLiveResultBranch0) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type ReplayLiveResultBranch1 struct{ Value DecideResult }
 
-func (ReplayLiveResultBranch1) isReplayLiveResult()            {}
-func (v ReplayLiveResultBranch1) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (ReplayLiveResultBranch1) isReplayLiveResult() {}
+
+func (v ReplayLiveResultBranch1) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type ReplayPlan struct {
 	Calls []ReplayPlannedCall `json:"calls"`
-}
-
-func (v *ReplayPlan) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ReplayPlan: %w", err)
-	}
-	var next ReplayPlan
-	if err := dtoRead(object, "calls", &next.Calls, true, false); err != nil {
-		return fmt.Errorf("ReplayPlan: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ReplayPlan) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["calls"] = v.Calls
-	return json.Marshal(object)
 }
 
 type ReplayPlannedCall struct {
@@ -13219,40 +5709,6 @@ type ReplayPlannedCall struct {
 	Operation      RecordingOperation `json:"operation"`
 	Provider       ProviderRecord     `json:"provider"`
 	RequiresTarget bool               `json:"requiresTarget"`
-}
-
-func (v *ReplayPlannedCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ReplayPlannedCall: %w", err)
-	}
-	var next ReplayPlannedCall
-	if err := dtoRead(object, "callId", &next.CallID, true, false); err != nil {
-		return fmt.Errorf("ReplayPlannedCall: %w", err)
-	}
-	if err := dtoRead(object, "liveSupported", &next.LiveSupported, true, false); err != nil {
-		return fmt.Errorf("ReplayPlannedCall: %w", err)
-	}
-	if err := dtoRead(object, "operation", &next.Operation, true, false); err != nil {
-		return fmt.Errorf("ReplayPlannedCall: %w", err)
-	}
-	if err := dtoRead(object, "provider", &next.Provider, true, false); err != nil {
-		return fmt.Errorf("ReplayPlannedCall: %w", err)
-	}
-	if err := dtoRead(object, "requiresTarget", &next.RequiresTarget, true, false); err != nil {
-		return fmt.Errorf("ReplayPlannedCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ReplayPlannedCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["callId"] = v.CallID
-	object["liveSupported"] = v.LiveSupported
-	object["operation"] = v.Operation
-	object["provider"] = v.Provider
-	object["requiresTarget"] = v.RequiresTarget
-	return json.Marshal(object)
 }
 
 type ReplayRecordingInfo struct {
@@ -13264,64 +5720,8 @@ type ReplayRecordingInfo struct {
 	TransportClosed bool               `json:"transportClosed"`
 }
 
-func (v *ReplayRecordingInfo) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ReplayRecordingInfo: %w", err)
-	}
-	var next ReplayRecordingInfo
-	if err := dtoRead(object, "callId", &next.CallID, true, false); err != nil {
-		return fmt.Errorf("ReplayRecordingInfo: %w", err)
-	}
-	if err := dtoRead(object, "complete", &next.Complete, true, false); err != nil {
-		return fmt.Errorf("ReplayRecordingInfo: %w", err)
-	}
-	if err := dtoRead(object, "exchangeCount", &next.ExchangeCount, true, false); err != nil {
-		return fmt.Errorf("ReplayRecordingInfo: %w", err)
-	}
-	if err := dtoRead(object, "operation", &next.Operation, true, false); err != nil {
-		return fmt.Errorf("ReplayRecordingInfo: %w", err)
-	}
-	if err := dtoRead(object, "provider", &next.Provider, true, false); err != nil {
-		return fmt.Errorf("ReplayRecordingInfo: %w", err)
-	}
-	if err := dtoRead(object, "transportClosed", &next.TransportClosed, true, false); err != nil {
-		return fmt.Errorf("ReplayRecordingInfo: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ReplayRecordingInfo) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["callId"] = v.CallID
-	object["complete"] = v.Complete
-	object["exchangeCount"] = v.ExchangeCount
-	object["operation"] = v.Operation
-	object["provider"] = v.Provider
-	object["transportClosed"] = v.TransportClosed
-	return json.Marshal(object)
-}
-
 type ReplaySessionHandle struct {
 	Handle HandleID `json:"handle"`
-}
-
-func (v *ReplaySessionHandle) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ReplaySessionHandle: %w", err)
-	}
-	var next ReplaySessionHandle
-	if err := dtoRead(object, "handle", &next.Handle, true, false); err != nil {
-		return fmt.Errorf("ReplaySessionHandle: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ReplaySessionHandle) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["handle"] = v.Handle
-	return json.Marshal(object)
 }
 
 // Request-side cache hints (best-effort, e.g. Anthropic `cache_control`).
@@ -13330,50 +5730,12 @@ type RequestCacheHints struct {
 	RequestedWrite bool `json:"requestedWrite"`
 }
 
-func (v *RequestCacheHints) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RequestCacheHints: %w", err)
-	}
-	var next RequestCacheHints
-	if err := dtoRead(object, "requestedWrite", &next.RequestedWrite, true, false); err != nil {
-		return fmt.Errorf("RequestCacheHints: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RequestCacheHints) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["requestedWrite"] = v.RequestedWrite
-	return json.Marshal(object)
-}
-
 // Optional request information for telemetry and debugging.
 //
 // Aligned with the `request?` object that appears on some V4 model results.
 type RequestInfo struct {
 	// The request body that was sent (opaque JSON).
-	Body Field[json.RawMessage] `json:"body,omitempty"`
-}
-
-func (v *RequestInfo) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RequestInfo: %w", err)
-	}
-	var next RequestInfo
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("RequestInfo: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RequestInfo) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	return json.Marshal(object)
+	Body Field[json.RawMessage] `json:"body,omitzero"`
 }
 
 // Options passed to [`RerankingModel::do_rerank`].
@@ -13383,165 +5745,85 @@ type RerankingCallOptions struct {
 	// Documents to rerank.
 	Documents RerankingDocuments `json:"documents"`
 	// Additional HTTP headers to send with the request.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
 	// retrying. `None` uses 2, the AI SDK default.
-	MaxRetries Field[uint32] `json:"maxRetries,omitempty"`
+	MaxRetries *uint32 `json:"maxRetries,omitzero"`
 	// Additional provider-specific options, keyed by provider name.
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 	// The query to rerank the documents against.
 	Query string `json:"query"`
 	// Per-call operation timeout.
-	Timeout Field[TimeoutConfiguration] `json:"timeout,omitempty"`
+	Timeout *TimeoutConfiguration `json:"timeout,omitzero"`
 	// Optional limit: return only the top `n` documents.
-	TopN Field[uint32] `json:"topN,omitempty"`
-}
-
-func (v *RerankingCallOptions) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RerankingCallOptions: %w", err)
-	}
-	var next RerankingCallOptions
-	if err := dtoRead(object, "documents", &next.Documents, true, false); err != nil {
-		return fmt.Errorf("RerankingCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("RerankingCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "maxRetries", &next.MaxRetries, false, true); err != nil {
-		return fmt.Errorf("RerankingCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("RerankingCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "query", &next.Query, true, false); err != nil {
-		return fmt.Errorf("RerankingCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "timeout", &next.Timeout, false, true); err != nil {
-		return fmt.Errorf("RerankingCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "topN", &next.TopN, false, true); err != nil {
-		return fmt.Errorf("RerankingCallOptions: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RerankingCallOptions) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["documents"] = v.Documents
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.MaxRetries.Present {
-		object["maxRetries"] = v.MaxRetries
-	}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["query"] = v.Query
-	if v.Timeout.Present {
-		object["timeout"] = v.Timeout
-	}
-	if v.TopN.Present {
-		object["topN"] = v.TopN
-	}
-	return json.Marshal(object)
+	TopN *uint32 `json:"topN,omitzero"`
 }
 
 // Documents to rerank: either a list of texts or a list of JSON objects.
 //
 // Aligned with V4 `RerankingModelV4CallOptions.documents`.
 type RerankingDocumentsVariant interface{ isRerankingDocuments() }
-type RerankingDocuments struct{ Value RerankingDocumentsVariant }
+type RerankingDocuments struct {
+	Value RerankingDocumentsVariant
+}
 
 func (v RerankingDocuments) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("RerankingDocuments: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *RerankingDocuments) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RerankingDocuments: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("RerankingDocuments: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "text" {
-		var next RerankingDocumentsVariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "object" {
+	switch tag.Type {
+	case "object":
 		var next RerankingDocumentsVariantObject
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "text":
+		var next RerankingDocumentsVariantText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("RerankingDocuments: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("RerankingDocuments: unknown type tag %q", tag.Type)
 }
 
 type RerankingDocumentsVariantText struct {
 	Values []string `json:"values"`
 }
 
-func (v *RerankingDocumentsVariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RerankingDocumentsVariantText: %w", err)
-	}
-	var next RerankingDocumentsVariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("RerankingDocumentsVariantText: %w", err)
-	}
-	if err := dtoRead(object, "values", &next.Values, true, false); err != nil {
-		return fmt.Errorf("RerankingDocumentsVariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RerankingDocumentsVariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	object["values"] = v.Values
-	return json.Marshal(object)
-}
-
 func (RerankingDocumentsVariantText) isRerankingDocuments() {}
+
+func (v RerankingDocumentsVariantText) MarshalJSON() ([]byte, error) {
+	type plain RerankingDocumentsVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
+}
 
 type RerankingDocumentsVariantObject struct {
 	Values []json.RawMessage `json:"values"`
 }
 
-func (v *RerankingDocumentsVariantObject) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RerankingDocumentsVariantObject: %w", err)
-	}
-	var next RerankingDocumentsVariantObject
-	if err := dtoTag(object, "type", "object"); err != nil {
-		return fmt.Errorf("RerankingDocumentsVariantObject: %w", err)
-	}
-	if err := dtoRead(object, "values", &next.Values, true, false); err != nil {
-		return fmt.Errorf("RerankingDocumentsVariantObject: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RerankingDocumentsVariantObject) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "object"
-	object["values"] = v.Values
-	return json.Marshal(object)
-}
-
 func (RerankingDocumentsVariantObject) isRerankingDocuments() {}
+
+func (v RerankingDocumentsVariantObject) MarshalJSON() ([]byte, error) {
+	type plain RerankingDocumentsVariantObject
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "object", plain: plain(v)})
+}
 
 // A single reranked entry: the original index and its relevance score.
 type RerankingRank struct {
@@ -13551,84 +5833,18 @@ type RerankingRank struct {
 	RelevanceScore float64 `json:"relevanceScore"`
 }
 
-func (v *RerankingRank) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RerankingRank: %w", err)
-	}
-	var next RerankingRank
-	if err := dtoRead(object, "index", &next.Index, true, false); err != nil {
-		return fmt.Errorf("RerankingRank: %w", err)
-	}
-	if err := dtoRead(object, "relevanceScore", &next.RelevanceScore, true, false); err != nil {
-		return fmt.Errorf("RerankingRank: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RerankingRank) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["index"] = v.Index
-	object["relevanceScore"] = v.RelevanceScore
-	return json.Marshal(object)
-}
-
 // Optional response information for a reranking call.
 type RerankingResponse struct {
 	// Response body (opaque JSON).
-	Body Field[json.RawMessage] `json:"body,omitempty"`
+	Body Field[json.RawMessage] `json:"body,omitzero"`
 	// Response headers.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// ID for the generated response, if the provider sends one.
-	ID Field[string] `json:"id,omitempty"`
+	ID *string `json:"id,omitzero"`
 	// The ID of the model that was used to generate the response.
-	ModelID Field[string] `json:"modelId,omitempty"`
+	ModelID *string `json:"modelId,omitzero"`
 	// Timestamp for the start of the generated response (`toISOString()` in the JSON).
-	Timestamp Field[Timestamp] `json:"timestamp,omitempty"`
-}
-
-func (v *RerankingResponse) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RerankingResponse: %w", err)
-	}
-	var next RerankingResponse
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("RerankingResponse: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("RerankingResponse: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, false, true); err != nil {
-		return fmt.Errorf("RerankingResponse: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, false, true); err != nil {
-		return fmt.Errorf("RerankingResponse: %w", err)
-	}
-	if err := dtoRead(object, "timestamp", &next.Timestamp, false, true); err != nil {
-		return fmt.Errorf("RerankingResponse: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RerankingResponse) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.ID.Present {
-		object["id"] = v.ID
-	}
-	if v.ModelID.Present {
-		object["modelId"] = v.ModelID
-	}
-	if v.Timestamp.Present {
-		object["timestamp"] = v.Timestamp
-	}
-	return json.Marshal(object)
+	Timestamp *Timestamp `json:"timestamp,omitzero"`
 }
 
 // The result of [`RerankingModel::do_rerank`].
@@ -13636,51 +5852,15 @@ func (v RerankingResponse) MarshalJSON() ([]byte, error) {
 // Aligned with V4 `RerankingModelV4Result`.
 type RerankingResult struct {
 	// Additional provider-specific metadata, keyed by provider name.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Ordered list of reranked documents, sorted by descending relevance
 	// score. Each entry's `index` refers to the position in the original
 	// `documents` list.
 	Ranking []RerankingRank `json:"ranking"`
 	// Optional response information for debugging.
-	Response Field[RerankingResponse] `json:"response,omitempty"`
+	Response *RerankingResponse `json:"response,omitzero"`
 	// Warnings for the call, e.g. unsupported settings.
-	Warnings Field[[]Warning] `json:"warnings,omitempty"`
-}
-
-func (v *RerankingResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RerankingResult: %w", err)
-	}
-	var next RerankingResult
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("RerankingResult: %w", err)
-	}
-	if err := dtoRead(object, "ranking", &next.Ranking, true, false); err != nil {
-		return fmt.Errorf("RerankingResult: %w", err)
-	}
-	if err := dtoRead(object, "response", &next.Response, false, true); err != nil {
-		return fmt.Errorf("RerankingResult: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, false, true); err != nil {
-		return fmt.Errorf("RerankingResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RerankingResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["ranking"] = v.Ranking
-	if v.Response.Present {
-		object["response"] = v.Response
-	}
-	if v.Warnings.Present {
-		object["warnings"] = v.Warnings
-	}
-	return json.Marshal(object)
+	Warnings []Warning `json:"warnings,omitzero"`
 }
 
 // Response information for telemetry and debugging.
@@ -13692,109 +5872,25 @@ func (v RerankingResult) MarshalJSON() ([]byte, error) {
 // `Option<ResponseInfo>`.
 type ResponseInfo struct {
 	// The response body (opaque JSON).
-	Body Field[json.RawMessage] `json:"body,omitempty"`
+	Body Field[json.RawMessage] `json:"body,omitzero"`
 	// Response headers.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// ID of the generated response, when supplied by the provider.
-	ID Field[string] `json:"id,omitempty"`
+	ID *string `json:"id,omitzero"`
 	// The ID of the model that was used to generate the response.
-	ModelID Field[string] `json:"modelId,omitempty"`
+	ModelID *string `json:"modelId,omitzero"`
 	// Timestamp for the start of the generated response (`toISOString()` in the JSON).
-	Timestamp Field[Timestamp] `json:"timestamp,omitempty"`
-}
-
-func (v *ResponseInfo) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ResponseInfo: %w", err)
-	}
-	var next ResponseInfo
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("ResponseInfo: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("ResponseInfo: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, false, true); err != nil {
-		return fmt.Errorf("ResponseInfo: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, false, true); err != nil {
-		return fmt.Errorf("ResponseInfo: %w", err)
-	}
-	if err := dtoRead(object, "timestamp", &next.Timestamp, false, true); err != nil {
-		return fmt.Errorf("ResponseInfo: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ResponseInfo) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.ID.Present {
-		object["id"] = v.ID
-	}
-	if v.ModelID.Present {
-		object["modelId"] = v.ModelID
-	}
-	if v.Timestamp.Present {
-		object["timestamp"] = v.Timestamp
-	}
-	return json.Marshal(object)
+	Timestamp *Timestamp `json:"timestamp,omitzero"`
 }
 
 type ResponseRecord struct {
 	// 非流式:完整 JSON;流式:原始 SSE 拼接文本(上限截断)。
-	Body         Field[string] `json:"body,omitempty"`
-	Headers      [][]string    `json:"headers"`
-	Status       uint16        `json:"status"`
-	StreamChunks Field[uint64] `json:"streamChunks,omitempty"`
+	Body         *string    `json:"body,omitzero"`
+	Headers      [][]string `json:"headers"`
+	Status       uint16     `json:"status"`
+	StreamChunks *uint64    `json:"streamChunks,omitzero"`
 	// 首字节延迟(流式)。
-	TtfbMs Field[uint64] `json:"ttfbMs,omitempty"`
-}
-
-func (v *ResponseRecord) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ResponseRecord: %w", err)
-	}
-	var next ResponseRecord
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("ResponseRecord: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, true, false); err != nil {
-		return fmt.Errorf("ResponseRecord: %w", err)
-	}
-	if err := dtoRead(object, "status", &next.Status, true, false); err != nil {
-		return fmt.Errorf("ResponseRecord: %w", err)
-	}
-	if err := dtoRead(object, "streamChunks", &next.StreamChunks, false, true); err != nil {
-		return fmt.Errorf("ResponseRecord: %w", err)
-	}
-	if err := dtoRead(object, "ttfbMs", &next.TtfbMs, false, true); err != nil {
-		return fmt.Errorf("ResponseRecord: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ResponseRecord) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	object["headers"] = v.Headers
-	object["status"] = v.Status
-	if v.StreamChunks.Present {
-		object["streamChunks"] = v.StreamChunks
-	}
-	if v.TtfbMs.Present {
-		object["ttfbMs"] = v.TtfbMs
-	}
-	return json.Marshal(object)
+	TtfbMs *uint64 `json:"ttfbMs,omitzero"`
 }
 
 // Complete error history for a retried model operation.
@@ -13803,54 +5899,10 @@ type RetryError struct {
 	Reason RetryErrorReason `json:"reason"`
 }
 
-func (v *RetryError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RetryError: %w", err)
-	}
-	var next RetryError
-	if err := dtoRead(object, "errors", &next.Errors, true, false); err != nil {
-		return fmt.Errorf("RetryError: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, true, false); err != nil {
-		return fmt.Errorf("RetryError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RetryError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["errors"] = v.Errors
-	object["reason"] = v.Reason
-	return json.Marshal(object)
-}
-
 // Complete error history for a retried model operation.
 type RetryErrorInput struct {
 	Errors []AiMuxErrorInput `json:"errors"`
 	Reason RetryErrorReason  `json:"reason"`
-}
-
-func (v *RetryErrorInput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RetryErrorInput: %w", err)
-	}
-	var next RetryErrorInput
-	if err := dtoRead(object, "errors", &next.Errors, true, false); err != nil {
-		return fmt.Errorf("RetryErrorInput: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, true, false); err != nil {
-		return fmt.Errorf("RetryErrorInput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RetryErrorInput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["errors"] = v.Errors
-	object["reason"] = v.Reason
-	return json.Marshal(object)
 }
 
 // Why the retry wrapper stopped retrying.
@@ -13861,99 +5913,17 @@ const (
 	RetryErrorReasonErrorNotRetryable  RetryErrorReason = "errorNotRetryable"
 )
 
-func (v *RetryErrorReason) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "maxRetriesExceeded":
-		*v = RetryErrorReason(next)
-		return nil
-	case "errorNotRetryable":
-		*v = RetryErrorReason(next)
-		return nil
-	}
-	return fmt.Errorf("RetryErrorReason: unknown value %s", data)
-}
-
 type RouterParams struct {
-	Children     []string        `json:"children"`
-	Fallback     Field[Fallback] `json:"fallback,omitempty"`
-	ModelID      Field[string]   `json:"modelId,omitempty"`
-	ProviderName Field[string]   `json:"providerName,omitempty"`
-	Strategy     Strategy        `json:"strategy"`
-}
-
-func (v *RouterParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RouterParams: %w", err)
-	}
-	var next RouterParams
-	if err := dtoRead(object, "children", &next.Children, true, false); err != nil {
-		return fmt.Errorf("RouterParams: %w", err)
-	}
-	if err := dtoRead(object, "fallback", &next.Fallback, false, false); err != nil {
-		return fmt.Errorf("RouterParams: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, false, true); err != nil {
-		return fmt.Errorf("RouterParams: %w", err)
-	}
-	if err := dtoRead(object, "providerName", &next.ProviderName, false, true); err != nil {
-		return fmt.Errorf("RouterParams: %w", err)
-	}
-	if err := dtoRead(object, "strategy", &next.Strategy, true, false); err != nil {
-		return fmt.Errorf("RouterParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RouterParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["children"] = v.Children
-	if v.Fallback.Present {
-		object["fallback"] = v.Fallback
-	}
-	if v.ModelID.Present {
-		object["modelId"] = v.ModelID
-	}
-	if v.ProviderName.Present {
-		object["providerName"] = v.ProviderName
-	}
-	object["strategy"] = v.Strategy
-	return json.Marshal(object)
+	Children     []string  `json:"children"`
+	Fallback     *Fallback `json:"fallback,omitzero"`
+	ModelID      *string   `json:"modelId,omitzero"`
+	ProviderName *string   `json:"providerName,omitzero"`
+	Strategy     Strategy  `json:"strategy"`
 }
 
 type RuntimeConfigureParams struct {
-	Logging Field[LoggingConfig]               `json:"logging,omitempty"`
-	Proxy   Field[RuntimeConfigureParamsProxy] `json:"proxy,omitempty"`
-}
-
-func (v *RuntimeConfigureParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RuntimeConfigureParams: %w", err)
-	}
-	var next RuntimeConfigureParams
-	if err := dtoRead(object, "logging", &next.Logging, false, true); err != nil {
-		return fmt.Errorf("RuntimeConfigureParams: %w", err)
-	}
-	if err := dtoRead(object, "proxy", &next.Proxy, false, true); err != nil {
-		return fmt.Errorf("RuntimeConfigureParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RuntimeConfigureParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Logging.Present {
-		object["logging"] = v.Logging
-	}
-	if v.Proxy.Present {
-		object["proxy"] = v.Proxy
-	}
-	return json.Marshal(object)
+	Logging *LoggingConfig               `json:"logging,omitzero"`
+	Proxy   *RuntimeConfigureParamsProxy `json:"proxy,omitzero"`
 }
 
 // Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
@@ -13961,66 +5931,13 @@ func (v RuntimeConfigureParams) MarshalJSON() ([]byte, error) {
 // `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
 // reqwest does, and the WebSocket connector connects directly.
 type RuntimeConfigureParamsProxy struct {
-	AllURL   Field[string] `json:"all_url,omitempty"`
-	HTTPURL  Field[string] `json:"http_url,omitempty"`
-	HttpsURL Field[string] `json:"https_url,omitempty"`
-	NoProxy  Field[string] `json:"no_proxy,omitempty"`
+	AllURL   *string `json:"all_url,omitzero"`
+	HTTPURL  *string `json:"http_url,omitzero"`
+	HttpsURL *string `json:"https_url,omitzero"`
+	NoProxy  *string `json:"no_proxy,omitzero"`
 }
 
-func (v *RuntimeConfigureParamsProxy) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RuntimeConfigureParamsProxy: %w", err)
-	}
-	var next RuntimeConfigureParamsProxy
-	if err := dtoRead(object, "all_url", &next.AllURL, false, true); err != nil {
-		return fmt.Errorf("RuntimeConfigureParamsProxy: %w", err)
-	}
-	if err := dtoRead(object, "http_url", &next.HTTPURL, false, true); err != nil {
-		return fmt.Errorf("RuntimeConfigureParamsProxy: %w", err)
-	}
-	if err := dtoRead(object, "https_url", &next.HttpsURL, false, true); err != nil {
-		return fmt.Errorf("RuntimeConfigureParamsProxy: %w", err)
-	}
-	if err := dtoRead(object, "no_proxy", &next.NoProxy, false, true); err != nil {
-		return fmt.Errorf("RuntimeConfigureParamsProxy: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RuntimeConfigureParamsProxy) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.AllURL.Present {
-		object["all_url"] = v.AllURL
-	}
-	if v.HTTPURL.Present {
-		object["http_url"] = v.HTTPURL
-	}
-	if v.HttpsURL.Present {
-		object["https_url"] = v.HttpsURL
-	}
-	if v.NoProxy.Present {
-		object["no_proxy"] = v.NoProxy
-	}
-	return json.Marshal(object)
-}
-
-type RuntimeDescribeParams struct {
-}
-
-func (v *RuntimeDescribeParams) UnmarshalJSON(data []byte) error {
-	_, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RuntimeDescribeParams: %w", err)
-	}
-	var next RuntimeDescribeParams
-	*v = next
-	return nil
-}
-func (v RuntimeDescribeParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	return json.Marshal(object)
-}
+type RuntimeDescribeParams struct{}
 
 // A model entry returned by a provider's `/models` endpoint (the sparse,
 // account-level truth of "what this key can call").
@@ -14030,298 +5947,80 @@ func (v RuntimeDescribeParams) MarshalJSON() ([]byte, error) {
 // needed (RFC-0027). aimux itself does not combine them.
 type RuntimeModel struct {
 	// `created` unix timestamp from OpenAI-compatible `/models` responses.
-	Created Field[uint64] `json:"created,omitempty"`
+	Created *uint64 `json:"created,omitzero"`
 	// Model identifier, e.g. `"gpt-4o"`.
 	ID string `json:"id"`
 	// `owned_by` field from OpenAI-compatible `/models` responses.
-	OwnedBy Field[string] `json:"ownedBy,omitempty"`
-}
-
-func (v *RuntimeModel) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("RuntimeModel: %w", err)
-	}
-	var next RuntimeModel
-	if err := dtoRead(object, "created", &next.Created, false, true); err != nil {
-		return fmt.Errorf("RuntimeModel: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("RuntimeModel: %w", err)
-	}
-	if err := dtoRead(object, "ownedBy", &next.OwnedBy, false, true); err != nil {
-		return fmt.Errorf("RuntimeModel: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v RuntimeModel) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Created.Present {
-		object["created"] = v.Created
-	}
-	object["id"] = v.ID
-	if v.OwnedBy.Present {
-		object["ownedBy"] = v.OwnedBy
-	}
-	return json.Marshal(object)
+	OwnedBy *string `json:"ownedBy,omitzero"`
 }
 
 // Options passed to [`SearchModel::do_search`].
 type SearchCallOptions struct {
 	// Optional list of domains to exclude from results.
-	ExcludeDomains Field[[]string] `json:"excludeDomains,omitempty"`
+	ExcludeDomains []string `json:"excludeDomains,omitzero"`
 	// Additional HTTP headers to send with the request.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// Optional list of domains to include in results.
-	IncludeDomains Field[[]string] `json:"includeDomains,omitempty"`
+	IncludeDomains []string `json:"includeDomains,omitzero"`
 	// Whether to include raw page content in results.
 	//
 	// Provider support varies; providers that cannot honor this should
 	// issue a warning rather than erroring.
-	IncludeRawContent Field[bool] `json:"includeRawContent,omitempty"`
+	IncludeRawContent *bool `json:"includeRawContent,omitzero"`
 	// Maximum number of results to return.
-	MaxResults Field[uint32] `json:"maxResults,omitempty"`
+	MaxResults *uint32 `json:"maxResults,omitzero"`
 	// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
 	// retrying. `None` uses 2, the AI SDK default.
-	MaxRetries Field[uint32] `json:"maxRetries,omitempty"`
+	MaxRetries *uint32 `json:"maxRetries,omitzero"`
 	// Additional provider-specific options, keyed by provider name.
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 	// The search query string.
 	Query string `json:"query"`
 	// Optional time range filter (e.g. `"day"`, `"week"`, `"month"`,
 	// `"year"`). Provider support varies.
-	TimeRange Field[string] `json:"timeRange,omitempty"`
+	TimeRange *string `json:"timeRange,omitzero"`
 	// Per-call operation timeout.
-	Timeout Field[TimeoutConfiguration] `json:"timeout,omitempty"`
-}
-
-func (v *SearchCallOptions) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SearchCallOptions: %w", err)
-	}
-	var next SearchCallOptions
-	if err := dtoRead(object, "excludeDomains", &next.ExcludeDomains, false, true); err != nil {
-		return fmt.Errorf("SearchCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("SearchCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "includeDomains", &next.IncludeDomains, false, true); err != nil {
-		return fmt.Errorf("SearchCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "includeRawContent", &next.IncludeRawContent, false, true); err != nil {
-		return fmt.Errorf("SearchCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "maxResults", &next.MaxResults, false, true); err != nil {
-		return fmt.Errorf("SearchCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "maxRetries", &next.MaxRetries, false, true); err != nil {
-		return fmt.Errorf("SearchCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("SearchCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "query", &next.Query, true, false); err != nil {
-		return fmt.Errorf("SearchCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "timeRange", &next.TimeRange, false, true); err != nil {
-		return fmt.Errorf("SearchCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "timeout", &next.Timeout, false, true); err != nil {
-		return fmt.Errorf("SearchCallOptions: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SearchCallOptions) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.ExcludeDomains.Present {
-		object["excludeDomains"] = v.ExcludeDomains
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.IncludeDomains.Present {
-		object["includeDomains"] = v.IncludeDomains
-	}
-	if v.IncludeRawContent.Present {
-		object["includeRawContent"] = v.IncludeRawContent
-	}
-	if v.MaxResults.Present {
-		object["maxResults"] = v.MaxResults
-	}
-	if v.MaxRetries.Present {
-		object["maxRetries"] = v.MaxRetries
-	}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["query"] = v.Query
-	if v.TimeRange.Present {
-		object["timeRange"] = v.TimeRange
-	}
-	if v.Timeout.Present {
-		object["timeout"] = v.Timeout
-	}
-	return json.Marshal(object)
+	Timeout *TimeoutConfiguration `json:"timeout,omitzero"`
 }
 
 // Optional response information for a search call.
 type SearchResponse struct {
 	// The response body (opaque JSON).
-	Body Field[json.RawMessage] `json:"body,omitempty"`
+	Body Field[json.RawMessage] `json:"body,omitzero"`
 	// Response headers.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
-}
-
-func (v *SearchResponse) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SearchResponse: %w", err)
-	}
-	var next SearchResponse
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("SearchResponse: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("SearchResponse: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SearchResponse) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	return json.Marshal(object)
+	Headers map[string]string `json:"headers,omitzero"`
 }
 
 // The result of [`SearchModel::do_search`].
 type SearchResult struct {
 	// An optional direct answer / summary (some providers return
 	// an AI-generated answer alongside results).
-	Answer Field[string] `json:"answer,omitempty"`
+	Answer *string `json:"answer,omitzero"`
 	// Additional provider-specific metadata.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Optional response information for debugging.
-	Response Field[SearchResponse] `json:"response,omitempty"`
+	Response *SearchResponse `json:"response,omitzero"`
 	// Ordered list of search results.
 	Results []SearchResultItem `json:"results"`
 	// Warnings for the call.
 	Warnings []Warning `json:"warnings"`
 }
 
-func (v *SearchResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SearchResult: %w", err)
-	}
-	var next SearchResult
-	if err := dtoRead(object, "answer", &next.Answer, false, true); err != nil {
-		return fmt.Errorf("SearchResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("SearchResult: %w", err)
-	}
-	if err := dtoRead(object, "response", &next.Response, false, true); err != nil {
-		return fmt.Errorf("SearchResult: %w", err)
-	}
-	if err := dtoRead(object, "results", &next.Results, true, false); err != nil {
-		return fmt.Errorf("SearchResult: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, true, false); err != nil {
-		return fmt.Errorf("SearchResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SearchResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Answer.Present {
-		object["answer"] = v.Answer
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.Response.Present {
-		object["response"] = v.Response
-	}
-	object["results"] = v.Results
-	object["warnings"] = v.Warnings
-	return json.Marshal(object)
-}
-
 // A single search result item.
 type SearchResultItem struct {
 	// A snippet/summary of the result content.
-	Content Field[string] `json:"content,omitempty"`
+	Content *string `json:"content,omitzero"`
 	// Provider-specific metadata for this result.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Raw page content (when `include_raw_content` is requested and
 	// supported by the provider).
-	RawContent Field[string] `json:"rawContent,omitempty"`
+	RawContent *string `json:"rawContent,omitzero"`
 	// A relevance score (0.0–1.0) if the provider returns one.
-	Score Field[float64] `json:"score,omitempty"`
+	Score *float64 `json:"score,omitzero"`
 	// The title of the result (e.g. page title).
-	Title Field[string] `json:"title,omitempty"`
+	Title *string `json:"title,omitzero"`
 	// The URL of the result.
-	URL Field[string] `json:"url,omitempty"`
-}
-
-func (v *SearchResultItem) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SearchResultItem: %w", err)
-	}
-	var next SearchResultItem
-	if err := dtoRead(object, "content", &next.Content, false, true); err != nil {
-		return fmt.Errorf("SearchResultItem: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("SearchResultItem: %w", err)
-	}
-	if err := dtoRead(object, "rawContent", &next.RawContent, false, true); err != nil {
-		return fmt.Errorf("SearchResultItem: %w", err)
-	}
-	if err := dtoRead(object, "score", &next.Score, false, true); err != nil {
-		return fmt.Errorf("SearchResultItem: %w", err)
-	}
-	if err := dtoRead(object, "title", &next.Title, false, true); err != nil {
-		return fmt.Errorf("SearchResultItem: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, false, true); err != nil {
-		return fmt.Errorf("SearchResultItem: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SearchResultItem) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Content.Present {
-		object["content"] = v.Content
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.RawContent.Present {
-		object["rawContent"] = v.RawContent
-	}
-	if v.Score.Present {
-		object["score"] = v.Score
-	}
-	if v.Title.Present {
-		object["title"] = v.Title
-	}
-	if v.URL.Present {
-		object["url"] = v.URL
-	}
-	return json.Marshal(object)
+	URL *string `json:"url,omitzero"`
 }
 
 // A single call within a session (an index entry only — call content lives
@@ -14337,68 +6036,12 @@ type SessionCall struct {
 	Step uint32 `json:"step"`
 }
 
-func (v *SessionCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SessionCall: %w", err)
-	}
-	var next SessionCall
-	if err := dtoRead(object, "callId", &next.CallID, true, false); err != nil {
-		return fmt.Errorf("SessionCall: %w", err)
-	}
-	if err := dtoRead(object, "recordedAt", &next.RecordedAt, true, false); err != nil {
-		return fmt.Errorf("SessionCall: %w", err)
-	}
-	if err := dtoRead(object, "step", &next.Step, true, false); err != nil {
-		return fmt.Errorf("SessionCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SessionCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["callId"] = v.CallID
-	object["recordedAt"] = v.RecordedAt
-	object["step"] = v.Step
-	return json.Marshal(object)
-}
-
 // Session chain view (append-only order + prefix stability, RFC-0015 §5.3).
 type SessionChainView struct {
 	Breaks          []PrefixBreak `json:"breaks"`
 	PrefixStability float64       `json:"prefixStability"`
 	RecordIds       []string      `json:"recordIds"`
 	SessionID       string        `json:"sessionId"`
-}
-
-func (v *SessionChainView) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SessionChainView: %w", err)
-	}
-	var next SessionChainView
-	if err := dtoRead(object, "breaks", &next.Breaks, true, false); err != nil {
-		return fmt.Errorf("SessionChainView: %w", err)
-	}
-	if err := dtoRead(object, "prefixStability", &next.PrefixStability, true, false); err != nil {
-		return fmt.Errorf("SessionChainView: %w", err)
-	}
-	if err := dtoRead(object, "recordIds", &next.RecordIds, true, false); err != nil {
-		return fmt.Errorf("SessionChainView: %w", err)
-	}
-	if err := dtoRead(object, "sessionId", &next.SessionID, true, false); err != nil {
-		return fmt.Errorf("SessionChainView: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SessionChainView) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["breaks"] = v.Breaks
-	object["prefixStability"] = v.PrefixStability
-	object["recordIds"] = v.RecordIds
-	object["sessionId"] = v.SessionID
-	return json.Marshal(object)
 }
 
 // Where a session id came from.
@@ -14409,141 +6052,31 @@ const (
 	SessionSourceInferred SessionSource = "Inferred"
 )
 
-func (v *SessionSource) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "Explicit":
-		*v = SessionSource(next)
-		return nil
-	case "Inferred":
-		*v = SessionSource(next)
-		return nil
-	}
-	return fmt.Errorf("SessionSource: unknown value %s", data)
-}
-
 // One step of a session's cache-hit trajectory (RFC-0024 §4.3).
 type SessionStepStat struct {
 	// The call's id (association key into Recording / replay, RFC-0023).
 	CallID string `json:"callId"`
 	// Error string for failed calls (failures are part of the session).
-	Error Field[string] `json:"error,omitempty"`
+	Error *string `json:"error,omitzero"`
 	// Reported hit rate for this step (`cache_read / input_total`); `None`
 	// when the call carried no input/cache-read usage.
-	HitRate Field[float64] `json:"hitRate,omitempty"`
+	HitRate *float64 `json:"hitRate,omitzero"`
 	// Step within the session (0-based, session order).
 	Step uint32 `json:"step"`
 	// Audit verdict (present only when an auditor is attached).
-	Verdict Field[Verdict] `json:"verdict,omitempty"`
-}
-
-func (v *SessionStepStat) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SessionStepStat: %w", err)
-	}
-	var next SessionStepStat
-	if err := dtoRead(object, "callId", &next.CallID, true, false); err != nil {
-		return fmt.Errorf("SessionStepStat: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, false, true); err != nil {
-		return fmt.Errorf("SessionStepStat: %w", err)
-	}
-	if err := dtoRead(object, "hitRate", &next.HitRate, false, true); err != nil {
-		return fmt.Errorf("SessionStepStat: %w", err)
-	}
-	if err := dtoRead(object, "step", &next.Step, true, false); err != nil {
-		return fmt.Errorf("SessionStepStat: %w", err)
-	}
-	if err := dtoRead(object, "verdict", &next.Verdict, false, true); err != nil {
-		return fmt.Errorf("SessionStepStat: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SessionStepStat) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["callId"] = v.CallID
-	if v.Error.Present {
-		object["error"] = v.Error
-	}
-	if v.HitRate.Present {
-		object["hitRate"] = v.HitRate
-	}
-	object["step"] = v.Step
-	if v.Verdict.Present {
-		object["verdict"] = v.Verdict
-	}
-	return json.Marshal(object)
+	Verdict *Verdict `json:"verdict,omitzero"`
 }
 
 type SessionStoreCallsParams struct {
 	SessionID string `json:"sessionId"`
 }
 
-func (v *SessionStoreCallsParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SessionStoreCallsParams: %w", err)
-	}
-	var next SessionStoreCallsParams
-	if err := dtoRead(object, "sessionId", &next.SessionID, true, false); err != nil {
-		return fmt.Errorf("SessionStoreCallsParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SessionStoreCallsParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["sessionId"] = v.SessionID
-	return json.Marshal(object)
-}
-
 type SessionStoreCreateParams struct {
 	Infer bool `json:"infer"`
 }
 
-func (v *SessionStoreCreateParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SessionStoreCreateParams: %w", err)
-	}
-	var next SessionStoreCreateParams
-	if err := dtoRead(object, "infer", &next.Infer, true, false); err != nil {
-		return fmt.Errorf("SessionStoreCreateParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SessionStoreCreateParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["infer"] = v.Infer
-	return json.Marshal(object)
-}
-
 type SessionStoreHandle struct {
 	Handle HandleID `json:"handle"`
-}
-
-func (v *SessionStoreHandle) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SessionStoreHandle: %w", err)
-	}
-	var next SessionStoreHandle
-	if err := dtoRead(object, "handle", &next.Handle, true, false); err != nil {
-		return fmt.Errorf("SessionStoreHandle: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SessionStoreHandle) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["handle"] = v.Handle
-	return json.Marshal(object)
 }
 
 // Aggregated view of one session (session_id → ordered calls).
@@ -14553,32 +6086,6 @@ type SessionView struct {
 	SessionID string        `json:"sessionId"`
 	// Where the session id came from (first call's source).
 	Source SessionSource `json:"source"`
-}
-
-func (v *SessionView) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SessionView: %w", err)
-	}
-	var next SessionView
-	if err := dtoRead(object, "calls", &next.Calls, true, false); err != nil {
-		return fmt.Errorf("SessionView: %w", err)
-	}
-	if err := dtoRead(object, "sessionId", &next.SessionID, true, false); err != nil {
-		return fmt.Errorf("SessionView: %w", err)
-	}
-	if err := dtoRead(object, "source", &next.Source, true, false); err != nil {
-		return fmt.Errorf("SessionView: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SessionView) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["calls"] = v.Calls
-	object["sessionId"] = v.SessionID
-	object["source"] = v.Source
-	return json.Marshal(object)
 }
 
 // Image/video size in `{width}x{height}` format (e.g. `"1024x1024"`).
@@ -14592,315 +6099,121 @@ type Size = string
 // payload of both `GenerateContent::Source` and `StreamPart::Source`, and the
 // element of the text results' `sources`.
 type SourceVariant interface{ isSource() }
-type Source struct{ Value SourceVariant }
+type Source struct {
+	Value SourceVariant
+}
 
 func (v Source) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("Source: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *Source) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("Source: %w", err)
+	var tag struct {
+		SourceType string `json:"sourceType"`
 	}
-	var tag string
-	if err := dtoRead(object, "sourceType", &tag, true, false); err != nil {
-		return fmt.Errorf("Source: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "url" {
-		var next SourceVariantURL
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "document" {
+	switch tag.SourceType {
+	case "document":
 		var next SourceVariantDocument
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "url":
+		var next SourceVariantURL
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("Source: unknown or invalid sourceType tag %q", tag)
+	return fmt.Errorf("Source: unknown sourceType tag %q", tag.SourceType)
 }
 
 type SourceVariantURL struct {
-	ID               string                                       `json:"id"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Title            Field[string]                                `json:"title,omitempty"`
-	URL              string                                       `json:"url"`
-}
-
-func (v *SourceVariantURL) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SourceVariantURL: %w", err)
-	}
-	var next SourceVariantURL
-	if err := dtoTag(object, "sourceType", "url"); err != nil {
-		return fmt.Errorf("SourceVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("SourceVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("SourceVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "title", &next.Title, false, true); err != nil {
-		return fmt.Errorf("SourceVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("SourceVariantURL: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SourceVariantURL) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["sourceType"] = "url"
-	object["id"] = v.ID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.Title.Present {
-		object["title"] = v.Title
-	}
-	object["url"] = v.URL
-	return json.Marshal(object)
+	ID               string                                `json:"id"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Title            *string                               `json:"title,omitzero"`
+	URL              string                                `json:"url"`
 }
 
 func (SourceVariantURL) isSource() {}
 
-type SourceVariantDocument struct {
-	Filename         Field[string]                                `json:"filename,omitempty"`
-	ID               string                                       `json:"id"`
-	MediaType        string                                       `json:"mediaType"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Title            string                                       `json:"title"`
+func (v SourceVariantURL) MarshalJSON() ([]byte, error) {
+	type plain SourceVariantURL
+	return json.Marshal(struct {
+		SourceType string `json:"sourceType"`
+		plain
+	}{SourceType: "url", plain: plain(v)})
 }
 
-func (v *SourceVariantDocument) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SourceVariantDocument: %w", err)
-	}
-	var next SourceVariantDocument
-	if err := dtoTag(object, "sourceType", "document"); err != nil {
-		return fmt.Errorf("SourceVariantDocument: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("SourceVariantDocument: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("SourceVariantDocument: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("SourceVariantDocument: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("SourceVariantDocument: %w", err)
-	}
-	if err := dtoRead(object, "title", &next.Title, true, false); err != nil {
-		return fmt.Errorf("SourceVariantDocument: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SourceVariantDocument) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["sourceType"] = "document"
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["id"] = v.ID
-	object["mediaType"] = v.MediaType
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["title"] = v.Title
-	return json.Marshal(object)
+type SourceVariantDocument struct {
+	Filename         *string                               `json:"filename,omitzero"`
+	ID               string                                `json:"id"`
+	MediaType        string                                `json:"mediaType"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Title            string                                `json:"title"`
 }
 
 func (SourceVariantDocument) isSource() {}
+
+func (v SourceVariantDocument) MarshalJSON() ([]byte, error) {
+	type plain SourceVariantDocument
+	return json.Marshal(struct {
+		SourceType string `json:"sourceType"`
+		plain
+	}{SourceType: "document", plain: plain(v)})
+}
 
 // Options passed to [`SpeechModel::do_generate`].
 //
 // Aligned with V4 `SpeechModelV4CallOptions`.
 type SpeechCallOptions struct {
 	// Additional HTTP headers to send with the request.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// Instructions for the speech generation, e.g.
 	// `"Speak in a slow and steady tone"`.
-	Instructions Field[string] `json:"instructions,omitempty"`
+	Instructions *string `json:"instructions,omitzero"`
 	// The language for speech generation (ISO 639-1 code, e.g. `"en"`, or
 	// `"auto"` for automatic detection). Provider support varies.
-	Language Field[string] `json:"language,omitempty"`
+	Language *string `json:"language,omitzero"`
 	// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
 	// retrying. `None` uses 2, the AI SDK default.
-	MaxRetries Field[uint32] `json:"maxRetries,omitempty"`
+	MaxRetries *uint32 `json:"maxRetries,omitzero"`
 	// The desired output format for the audio, e.g. `"mp3"`, `"wav"`.
-	OutputFormat Field[string] `json:"outputFormat,omitempty"`
+	OutputFormat *string `json:"outputFormat,omitzero"`
 	// Additional provider-specific options, keyed by provider name.
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 	// The speed of the speech generation.
-	Speed Field[float64] `json:"speed,omitempty"`
+	Speed *float64 `json:"speed,omitzero"`
 	// Text to convert to speech.
 	Text string `json:"text"`
 	// Per-call operation timeout.
-	Timeout Field[TimeoutConfiguration] `json:"timeout,omitempty"`
+	Timeout *TimeoutConfiguration `json:"timeout,omitzero"`
 	// The voice to use (provider-specific voice ID, name, or other
 	// identifier).
-	Voice Field[string] `json:"voice,omitempty"`
-}
-
-func (v *SpeechCallOptions) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SpeechCallOptions: %w", err)
-	}
-	var next SpeechCallOptions
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("SpeechCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "instructions", &next.Instructions, false, true); err != nil {
-		return fmt.Errorf("SpeechCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "language", &next.Language, false, true); err != nil {
-		return fmt.Errorf("SpeechCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "maxRetries", &next.MaxRetries, false, true); err != nil {
-		return fmt.Errorf("SpeechCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "outputFormat", &next.OutputFormat, false, true); err != nil {
-		return fmt.Errorf("SpeechCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("SpeechCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "speed", &next.Speed, false, true); err != nil {
-		return fmt.Errorf("SpeechCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("SpeechCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "timeout", &next.Timeout, false, true); err != nil {
-		return fmt.Errorf("SpeechCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "voice", &next.Voice, false, true); err != nil {
-		return fmt.Errorf("SpeechCallOptions: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SpeechCallOptions) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.Instructions.Present {
-		object["instructions"] = v.Instructions
-	}
-	if v.Language.Present {
-		object["language"] = v.Language
-	}
-	if v.MaxRetries.Present {
-		object["maxRetries"] = v.MaxRetries
-	}
-	if v.OutputFormat.Present {
-		object["outputFormat"] = v.OutputFormat
-	}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	if v.Speed.Present {
-		object["speed"] = v.Speed
-	}
-	object["text"] = v.Text
-	if v.Timeout.Present {
-		object["timeout"] = v.Timeout
-	}
-	if v.Voice.Present {
-		object["voice"] = v.Voice
-	}
-	return json.Marshal(object)
+	Voice *string `json:"voice,omitzero"`
 }
 
 // Optional request information for a speech call.
 type SpeechRequest struct {
 	// Response body (HTTP providers only).
-	Body Field[json.RawMessage] `json:"body,omitempty"`
-}
-
-func (v *SpeechRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SpeechRequest: %w", err)
-	}
-	var next SpeechRequest
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("SpeechRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SpeechRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	return json.Marshal(object)
+	Body Field[json.RawMessage] `json:"body,omitzero"`
 }
 
 // Response information for a speech call.
 type SpeechResponse struct {
 	// Response body (opaque JSON).
-	Body Field[json.RawMessage] `json:"body,omitempty"`
+	Body Field[json.RawMessage] `json:"body,omitzero"`
 	// Response headers.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// The ID of the model that was used to generate the response.
-	ModelID Field[string] `json:"modelId,omitempty"`
+	ModelID *string `json:"modelId,omitzero"`
 	// Timestamp for the start of the generated response (`toISOString()` in the JSON).
-	Timestamp Field[Timestamp] `json:"timestamp,omitempty"`
-}
-
-func (v *SpeechResponse) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SpeechResponse: %w", err)
-	}
-	var next SpeechResponse
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("SpeechResponse: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("SpeechResponse: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, false, true); err != nil {
-		return fmt.Errorf("SpeechResponse: %w", err)
-	}
-	if err := dtoRead(object, "timestamp", &next.Timestamp, false, true); err != nil {
-		return fmt.Errorf("SpeechResponse: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SpeechResponse) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.ModelID.Present {
-		object["modelId"] = v.ModelID
-	}
-	if v.Timestamp.Present {
-		object["timestamp"] = v.Timestamp
-	}
-	return json.Marshal(object)
+	Timestamp *Timestamp `json:"timestamp,omitzero"`
 }
 
 // The result of [`SpeechModel::do_generate`].
@@ -14910,9 +6223,9 @@ type SpeechResult struct {
 	// Generated audio (base64 string or binary data).
 	Audio AudioData `json:"audio"`
 	// Additional provider-specific metadata, keyed by provider name.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Optional request information for telemetry and debugging.
-	Request Field[SpeechRequest] `json:"request,omitempty"`
+	Request *SpeechRequest `json:"request,omitzero"`
 	// Response information for telemetry and debugging.
 	Response SpeechResponse `json:"response"`
 	// Usage information reported by the provider, in the provider's native
@@ -14923,74 +6236,10 @@ type SpeechResult struct {
 	Warnings []Warning `json:"warnings"`
 }
 
-func (v *SpeechResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("SpeechResult: %w", err)
-	}
-	var next SpeechResult
-	if err := dtoRead(object, "audio", &next.Audio, true, false); err != nil {
-		return fmt.Errorf("SpeechResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("SpeechResult: %w", err)
-	}
-	if err := dtoRead(object, "request", &next.Request, false, true); err != nil {
-		return fmt.Errorf("SpeechResult: %w", err)
-	}
-	if err := dtoRead(object, "response", &next.Response, true, false); err != nil {
-		return fmt.Errorf("SpeechResult: %w", err)
-	}
-	if err := dtoRead(object, "usage", &next.Usage, true, true); err != nil {
-		return fmt.Errorf("SpeechResult: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, true, false); err != nil {
-		return fmt.Errorf("SpeechResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v SpeechResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["audio"] = v.Audio
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.Request.Present {
-		object["request"] = v.Request
-	}
-	object["response"] = v.Response
-	object["usage"] = v.Usage
-	object["warnings"] = v.Warnings
-	return json.Marshal(object)
-}
-
 // The model that ran a step (`StepResult.model`, `step-result.ts:155-161`).
 type StepModel struct {
 	ModelID  string `json:"modelId"`
 	Provider string `json:"provider"`
-}
-
-func (v *StepModel) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("StepModel: %w", err)
-	}
-	var next StepModel
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("StepModel: %w", err)
-	}
-	if err := dtoRead(object, "provider", &next.Provider, true, false); err != nil {
-		return fmt.Errorf("StepModel: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v StepModel) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["modelId"] = v.ModelID
-	object["provider"] = v.Provider
-	return json.Marshal(object)
 }
 
 // The response of a step (`LanguageModelResponseMetadata`,
@@ -14999,56 +6248,14 @@ func (v StepModel) MarshalJSON() ([]byte, error) {
 type StepResponse struct {
 	// The raw response body (non-streaming calls): `unknown`, so a JSON
 	// `null` is kept apart from a missing body.
-	Body    Field[json.RawMessage]   `json:"body,omitempty"`
-	Headers Field[map[string]string] `json:"headers,omitempty"`
-	ID      string                   `json:"id"`
+	Body    Field[json.RawMessage] `json:"body,omitzero"`
+	Headers map[string]string      `json:"headers,omitzero"`
+	ID      string                 `json:"id"`
 	// The assistant and tool messages of this step, ready to append to the
 	// prompt of the next call.
 	Messages  []ModelMessage `json:"messages"`
 	ModelID   string         `json:"modelId"`
 	Timestamp Timestamp      `json:"timestamp"`
-}
-
-func (v *StepResponse) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("StepResponse: %w", err)
-	}
-	var next StepResponse
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("StepResponse: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("StepResponse: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("StepResponse: %w", err)
-	}
-	if err := dtoRead(object, "messages", &next.Messages, true, false); err != nil {
-		return fmt.Errorf("StepResponse: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("StepResponse: %w", err)
-	}
-	if err := dtoRead(object, "timestamp", &next.Timestamp, true, false); err != nil {
-		return fmt.Errorf("StepResponse: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v StepResponse) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	object["id"] = v.ID
-	object["messages"] = v.Messages
-	object["modelId"] = v.ModelID
-	object["timestamp"] = v.Timestamp
-	return json.Marshal(object)
 }
 
 // The response of a step (`LanguageModelResponseMetadata`,
@@ -15057,65 +6264,21 @@ func (v StepResponse) MarshalJSON() ([]byte, error) {
 type StepResponseInput struct {
 	// The raw response body (non-streaming calls): `unknown`, so a JSON
 	// `null` is kept apart from a missing body.
-	Body    Field[json.RawMessage]   `json:"body,omitempty"`
-	Headers Field[map[string]string] `json:"headers,omitempty"`
-	ID      string                   `json:"id"`
+	Body    Field[json.RawMessage] `json:"body,omitzero"`
+	Headers map[string]string      `json:"headers,omitzero"`
+	ID      string                 `json:"id"`
 	// The assistant and tool messages of this step, ready to append to the
 	// prompt of the next call.
-	Messages  Field[[]ModelMessage] `json:"messages,omitempty"`
-	ModelID   string                `json:"modelId"`
-	Timestamp Timestamp             `json:"timestamp"`
-}
-
-func (v *StepResponseInput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("StepResponseInput: %w", err)
-	}
-	var next StepResponseInput
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("StepResponseInput: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("StepResponseInput: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("StepResponseInput: %w", err)
-	}
-	if err := dtoRead(object, "messages", &next.Messages, false, false); err != nil {
-		return fmt.Errorf("StepResponseInput: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("StepResponseInput: %w", err)
-	}
-	if err := dtoRead(object, "timestamp", &next.Timestamp, true, false); err != nil {
-		return fmt.Errorf("StepResponseInput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v StepResponseInput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	object["id"] = v.ID
-	if v.Messages.Present {
-		object["messages"] = v.Messages
-	}
-	object["modelId"] = v.ModelID
-	object["timestamp"] = v.Timestamp
-	return json.Marshal(object)
+	Messages  []ModelMessage `json:"messages,omitzero"`
+	ModelID   string         `json:"modelId"`
+	Timestamp Timestamp      `json:"timestamp"`
 }
 
 // The response of a step without its messages and body: the AI SDK's
 // `Omit<LanguageModelResponseMetadata, 'messages' | 'body'>`, carried by the
 // `finish-step` stream part.
 type StepResponseMetadata struct {
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// Response id; the call layer generates one when the provider sent none.
 	ID string `json:"id"`
 	// The model that produced the response.
@@ -15123,38 +6286,6 @@ type StepResponseMetadata struct {
 	// Start of the response; the call layer uses the current time when the
 	// provider sent none.
 	Timestamp Timestamp `json:"timestamp"`
-}
-
-func (v *StepResponseMetadata) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("StepResponseMetadata: %w", err)
-	}
-	var next StepResponseMetadata
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("StepResponseMetadata: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("StepResponseMetadata: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("StepResponseMetadata: %w", err)
-	}
-	if err := dtoRead(object, "timestamp", &next.Timestamp, true, false); err != nil {
-		return fmt.Errorf("StepResponseMetadata: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v StepResponseMetadata) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	object["id"] = v.ID
-	object["modelId"] = v.ModelID
-	object["timestamp"] = v.Timestamp
-	return json.Marshal(object)
 }
 
 // One model call of a text generation (`StepResult`, `step-result.ts:138-278`).
@@ -15174,9 +6305,9 @@ type StepResult struct {
 	// Timing of this step.
 	Performance StepResultPerformance `json:"performance"`
 	// Provider metadata of the model call.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// The provider's own finish reason.
-	RawFinishReason Field[string] `json:"rawFinishReason,omitempty"`
+	RawFinishReason *string `json:"rawFinishReason,omitzero"`
 	// The request of the model call.
 	Request RequestInfo `json:"request"`
 	// The response of the model call, with the step's response messages.
@@ -15187,72 +6318,6 @@ type StepResult struct {
 	Usage LanguageModelUsage `json:"usage"`
 	// Warnings of the model call.
 	Warnings []Warning `json:"warnings"`
-}
-
-func (v *StepResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("StepResult: %w", err)
-	}
-	var next StepResult
-	if err := dtoRead(object, "callId", &next.CallID, true, false); err != nil {
-		return fmt.Errorf("StepResult: %w", err)
-	}
-	if err := dtoRead(object, "content", &next.Content, true, false); err != nil {
-		return fmt.Errorf("StepResult: %w", err)
-	}
-	if err := dtoRead(object, "finishReason", &next.FinishReason, true, false); err != nil {
-		return fmt.Errorf("StepResult: %w", err)
-	}
-	if err := dtoRead(object, "model", &next.Model, true, false); err != nil {
-		return fmt.Errorf("StepResult: %w", err)
-	}
-	if err := dtoRead(object, "performance", &next.Performance, true, false); err != nil {
-		return fmt.Errorf("StepResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("StepResult: %w", err)
-	}
-	if err := dtoRead(object, "rawFinishReason", &next.RawFinishReason, false, true); err != nil {
-		return fmt.Errorf("StepResult: %w", err)
-	}
-	if err := dtoRead(object, "request", &next.Request, true, false); err != nil {
-		return fmt.Errorf("StepResult: %w", err)
-	}
-	if err := dtoRead(object, "response", &next.Response, true, false); err != nil {
-		return fmt.Errorf("StepResult: %w", err)
-	}
-	if err := dtoRead(object, "stepNumber", &next.StepNumber, true, false); err != nil {
-		return fmt.Errorf("StepResult: %w", err)
-	}
-	if err := dtoRead(object, "usage", &next.Usage, true, false); err != nil {
-		return fmt.Errorf("StepResult: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, true, false); err != nil {
-		return fmt.Errorf("StepResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v StepResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["callId"] = v.CallID
-	object["content"] = v.Content
-	object["finishReason"] = v.FinishReason
-	object["model"] = v.Model
-	object["performance"] = v.Performance
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.RawFinishReason.Present {
-		object["rawFinishReason"] = v.RawFinishReason
-	}
-	object["request"] = v.Request
-	object["response"] = v.Response
-	object["stepNumber"] = v.StepNumber
-	object["usage"] = v.Usage
-	object["warnings"] = v.Warnings
-	return json.Marshal(object)
 }
 
 // One model call of a text generation (`StepResult`, `step-result.ts:138-278`).
@@ -15272,11 +6337,11 @@ type StepResultInput struct {
 	// Timing of this step.
 	Performance StepResultPerformanceInput `json:"performance"`
 	// Provider metadata of the model call.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// The provider's own finish reason.
-	RawFinishReason Field[string] `json:"rawFinishReason,omitempty"`
+	RawFinishReason *string `json:"rawFinishReason,omitzero"`
 	// The request of the model call.
-	Request Field[RequestInfo] `json:"request,omitempty"`
+	Request *RequestInfo `json:"request,omitzero"`
 	// The response of the model call, with the step's response messages.
 	Response StepResponseInput `json:"response"`
 	// Zero-based step index.
@@ -15284,77 +6349,7 @@ type StepResultInput struct {
 	// Token usage of this step.
 	Usage LanguageModelUsageInput `json:"usage"`
 	// Warnings of the model call.
-	Warnings Field[[]Warning] `json:"warnings,omitempty"`
-}
-
-func (v *StepResultInput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("StepResultInput: %w", err)
-	}
-	var next StepResultInput
-	if err := dtoRead(object, "callId", &next.CallID, true, false); err != nil {
-		return fmt.Errorf("StepResultInput: %w", err)
-	}
-	if err := dtoRead(object, "content", &next.Content, true, false); err != nil {
-		return fmt.Errorf("StepResultInput: %w", err)
-	}
-	if err := dtoRead(object, "finishReason", &next.FinishReason, true, false); err != nil {
-		return fmt.Errorf("StepResultInput: %w", err)
-	}
-	if err := dtoRead(object, "model", &next.Model, true, false); err != nil {
-		return fmt.Errorf("StepResultInput: %w", err)
-	}
-	if err := dtoRead(object, "performance", &next.Performance, true, false); err != nil {
-		return fmt.Errorf("StepResultInput: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("StepResultInput: %w", err)
-	}
-	if err := dtoRead(object, "rawFinishReason", &next.RawFinishReason, false, true); err != nil {
-		return fmt.Errorf("StepResultInput: %w", err)
-	}
-	if err := dtoRead(object, "request", &next.Request, false, false); err != nil {
-		return fmt.Errorf("StepResultInput: %w", err)
-	}
-	if err := dtoRead(object, "response", &next.Response, true, false); err != nil {
-		return fmt.Errorf("StepResultInput: %w", err)
-	}
-	if err := dtoRead(object, "stepNumber", &next.StepNumber, true, false); err != nil {
-		return fmt.Errorf("StepResultInput: %w", err)
-	}
-	if err := dtoRead(object, "usage", &next.Usage, true, false); err != nil {
-		return fmt.Errorf("StepResultInput: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, false, false); err != nil {
-		return fmt.Errorf("StepResultInput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v StepResultInput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["callId"] = v.CallID
-	object["content"] = v.Content
-	object["finishReason"] = v.FinishReason
-	object["model"] = v.Model
-	object["performance"] = v.Performance
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.RawFinishReason.Present {
-		object["rawFinishReason"] = v.RawFinishReason
-	}
-	if v.Request.Present {
-		object["request"] = v.Request
-	}
-	object["response"] = v.Response
-	object["stepNumber"] = v.StepNumber
-	object["usage"] = v.Usage
-	if v.Warnings.Present {
-		object["warnings"] = v.Warnings
-	}
-	return json.Marshal(object)
+	Warnings []Warning `json:"warnings,omitzero"`
 }
 
 // Timing of a step (`StepResultPerformance`, `step-result.ts:62-133`).
@@ -15365,78 +6360,20 @@ type StepResultPerformance struct {
 	// Input plus output tokens per second over the whole response time.
 	EffectiveTotalTokensPerSecond float64 `json:"effectiveTotalTokensPerSecond"`
 	// Input tokens per second until the first output chunk (streaming only).
-	InputTokensPerSecond Field[float64] `json:"inputTokensPerSecond,omitempty"`
+	InputTokensPerSecond *float64 `json:"inputTokensPerSecond,omitzero"`
 	// Output tokens per second after the first output chunk (streaming only).
-	OutputTokensPerSecond Field[float64] `json:"outputTokensPerSecond,omitempty"`
+	OutputTokensPerSecond *float64 `json:"outputTokensPerSecond,omitzero"`
 	// From the model call to its finish, including retries.
 	ResponseTimeMs float64 `json:"responseTimeMs"`
 	// The whole step, including retries and tool execution.
 	StepTimeMs float64 `json:"stepTimeMs"`
 	// Gaps between output chunks (streaming only, two or more chunks).
-	TimeBetweenOutputChunksMs Field[OutputChunkTimingStats] `json:"timeBetweenOutputChunksMs,omitempty"`
+	TimeBetweenOutputChunksMs *OutputChunkTimingStats `json:"timeBetweenOutputChunksMs,omitzero"`
 	// From the model call to its first output chunk (streaming only).
-	TimeToFirstOutputMs Field[float64] `json:"timeToFirstOutputMs,omitempty"`
+	TimeToFirstOutputMs *float64 `json:"timeToFirstOutputMs,omitzero"`
 	// Execution time of each host-executed tool, by tool call id. Aimux does
 	// not execute tools, so this is empty.
 	ToolExecutionMs map[string]float64 `json:"toolExecutionMs"`
-}
-
-func (v *StepResultPerformance) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("StepResultPerformance: %w", err)
-	}
-	var next StepResultPerformance
-	if err := dtoRead(object, "effectiveOutputTokensPerSecond", &next.EffectiveOutputTokensPerSecond, true, false); err != nil {
-		return fmt.Errorf("StepResultPerformance: %w", err)
-	}
-	if err := dtoRead(object, "effectiveTotalTokensPerSecond", &next.EffectiveTotalTokensPerSecond, true, false); err != nil {
-		return fmt.Errorf("StepResultPerformance: %w", err)
-	}
-	if err := dtoRead(object, "inputTokensPerSecond", &next.InputTokensPerSecond, false, true); err != nil {
-		return fmt.Errorf("StepResultPerformance: %w", err)
-	}
-	if err := dtoRead(object, "outputTokensPerSecond", &next.OutputTokensPerSecond, false, true); err != nil {
-		return fmt.Errorf("StepResultPerformance: %w", err)
-	}
-	if err := dtoRead(object, "responseTimeMs", &next.ResponseTimeMs, true, false); err != nil {
-		return fmt.Errorf("StepResultPerformance: %w", err)
-	}
-	if err := dtoRead(object, "stepTimeMs", &next.StepTimeMs, true, false); err != nil {
-		return fmt.Errorf("StepResultPerformance: %w", err)
-	}
-	if err := dtoRead(object, "timeBetweenOutputChunksMs", &next.TimeBetweenOutputChunksMs, false, true); err != nil {
-		return fmt.Errorf("StepResultPerformance: %w", err)
-	}
-	if err := dtoRead(object, "timeToFirstOutputMs", &next.TimeToFirstOutputMs, false, true); err != nil {
-		return fmt.Errorf("StepResultPerformance: %w", err)
-	}
-	if err := dtoRead(object, "toolExecutionMs", &next.ToolExecutionMs, true, false); err != nil {
-		return fmt.Errorf("StepResultPerformance: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v StepResultPerformance) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["effectiveOutputTokensPerSecond"] = v.EffectiveOutputTokensPerSecond
-	object["effectiveTotalTokensPerSecond"] = v.EffectiveTotalTokensPerSecond
-	if v.InputTokensPerSecond.Present {
-		object["inputTokensPerSecond"] = v.InputTokensPerSecond
-	}
-	if v.OutputTokensPerSecond.Present {
-		object["outputTokensPerSecond"] = v.OutputTokensPerSecond
-	}
-	object["responseTimeMs"] = v.ResponseTimeMs
-	object["stepTimeMs"] = v.StepTimeMs
-	if v.TimeBetweenOutputChunksMs.Present {
-		object["timeBetweenOutputChunksMs"] = v.TimeBetweenOutputChunksMs
-	}
-	if v.TimeToFirstOutputMs.Present {
-		object["timeToFirstOutputMs"] = v.TimeToFirstOutputMs
-	}
-	object["toolExecutionMs"] = v.ToolExecutionMs
-	return json.Marshal(object)
 }
 
 // Timing of a step (`StepResultPerformance`, `step-result.ts:62-133`).
@@ -15447,201 +6384,116 @@ type StepResultPerformanceInput struct {
 	// Input plus output tokens per second over the whole response time.
 	EffectiveTotalTokensPerSecond float64 `json:"effectiveTotalTokensPerSecond"`
 	// Input tokens per second until the first output chunk (streaming only).
-	InputTokensPerSecond Field[float64] `json:"inputTokensPerSecond,omitempty"`
+	InputTokensPerSecond *float64 `json:"inputTokensPerSecond,omitzero"`
 	// Output tokens per second after the first output chunk (streaming only).
-	OutputTokensPerSecond Field[float64] `json:"outputTokensPerSecond,omitempty"`
+	OutputTokensPerSecond *float64 `json:"outputTokensPerSecond,omitzero"`
 	// From the model call to its finish, including retries.
 	ResponseTimeMs float64 `json:"responseTimeMs"`
 	// The whole step, including retries and tool execution.
 	StepTimeMs float64 `json:"stepTimeMs"`
 	// Gaps between output chunks (streaming only, two or more chunks).
-	TimeBetweenOutputChunksMs Field[OutputChunkTimingStats] `json:"timeBetweenOutputChunksMs,omitempty"`
+	TimeBetweenOutputChunksMs *OutputChunkTimingStats `json:"timeBetweenOutputChunksMs,omitzero"`
 	// From the model call to its first output chunk (streaming only).
-	TimeToFirstOutputMs Field[float64] `json:"timeToFirstOutputMs,omitempty"`
+	TimeToFirstOutputMs *float64 `json:"timeToFirstOutputMs,omitzero"`
 	// Execution time of each host-executed tool, by tool call id. Aimux does
 	// not execute tools, so this is empty.
-	ToolExecutionMs Field[map[string]float64] `json:"toolExecutionMs,omitempty"`
-}
-
-func (v *StepResultPerformanceInput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("StepResultPerformanceInput: %w", err)
-	}
-	var next StepResultPerformanceInput
-	if err := dtoRead(object, "effectiveOutputTokensPerSecond", &next.EffectiveOutputTokensPerSecond, true, false); err != nil {
-		return fmt.Errorf("StepResultPerformanceInput: %w", err)
-	}
-	if err := dtoRead(object, "effectiveTotalTokensPerSecond", &next.EffectiveTotalTokensPerSecond, true, false); err != nil {
-		return fmt.Errorf("StepResultPerformanceInput: %w", err)
-	}
-	if err := dtoRead(object, "inputTokensPerSecond", &next.InputTokensPerSecond, false, true); err != nil {
-		return fmt.Errorf("StepResultPerformanceInput: %w", err)
-	}
-	if err := dtoRead(object, "outputTokensPerSecond", &next.OutputTokensPerSecond, false, true); err != nil {
-		return fmt.Errorf("StepResultPerformanceInput: %w", err)
-	}
-	if err := dtoRead(object, "responseTimeMs", &next.ResponseTimeMs, true, false); err != nil {
-		return fmt.Errorf("StepResultPerformanceInput: %w", err)
-	}
-	if err := dtoRead(object, "stepTimeMs", &next.StepTimeMs, true, false); err != nil {
-		return fmt.Errorf("StepResultPerformanceInput: %w", err)
-	}
-	if err := dtoRead(object, "timeBetweenOutputChunksMs", &next.TimeBetweenOutputChunksMs, false, true); err != nil {
-		return fmt.Errorf("StepResultPerformanceInput: %w", err)
-	}
-	if err := dtoRead(object, "timeToFirstOutputMs", &next.TimeToFirstOutputMs, false, true); err != nil {
-		return fmt.Errorf("StepResultPerformanceInput: %w", err)
-	}
-	if err := dtoRead(object, "toolExecutionMs", &next.ToolExecutionMs, false, false); err != nil {
-		return fmt.Errorf("StepResultPerformanceInput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v StepResultPerformanceInput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["effectiveOutputTokensPerSecond"] = v.EffectiveOutputTokensPerSecond
-	object["effectiveTotalTokensPerSecond"] = v.EffectiveTotalTokensPerSecond
-	if v.InputTokensPerSecond.Present {
-		object["inputTokensPerSecond"] = v.InputTokensPerSecond
-	}
-	if v.OutputTokensPerSecond.Present {
-		object["outputTokensPerSecond"] = v.OutputTokensPerSecond
-	}
-	object["responseTimeMs"] = v.ResponseTimeMs
-	object["stepTimeMs"] = v.StepTimeMs
-	if v.TimeBetweenOutputChunksMs.Present {
-		object["timeBetweenOutputChunksMs"] = v.TimeBetweenOutputChunksMs
-	}
-	if v.TimeToFirstOutputMs.Present {
-		object["timeToFirstOutputMs"] = v.TimeToFirstOutputMs
-	}
-	if v.ToolExecutionMs.Present {
-		object["toolExecutionMs"] = v.ToolExecutionMs
-	}
-	return json.Marshal(object)
+	ToolExecutionMs map[string]float64 `json:"toolExecutionMs,omitzero"`
 }
 
 type StrategyVariant interface{ isStrategy() }
-type Strategy struct{ Value StrategyVariant }
+type Strategy struct {
+	Value StrategyVariant
+}
 
 func (v Strategy) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("Strategy: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *Strategy) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("Strategy: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("Strategy: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "rule" {
+	switch tag.Type {
+	case "rule":
 		var next StrategyVariantRule
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "weighted" {
+		v.Value = next
+		return nil
+	case "weighted":
 		var next StrategyVariantWeighted
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("Strategy: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("Strategy: unknown type tag %q", tag.Type)
 }
 
-type StrategyVariantRule struct {
-}
-
-func (v *StrategyVariantRule) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("StrategyVariantRule: %w", err)
-	}
-	var next StrategyVariantRule
-	if err := dtoTag(object, "type", "rule"); err != nil {
-		return fmt.Errorf("StrategyVariantRule: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v StrategyVariantRule) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "rule"
-	return json.Marshal(object)
-}
+type StrategyVariantRule struct{}
 
 func (StrategyVariantRule) isStrategy() {}
+
+func (v StrategyVariantRule) MarshalJSON() ([]byte, error) {
+	type plain StrategyVariantRule
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "rule", plain: plain(v)})
+}
 
 type StrategyVariantWeighted struct {
 	Weights []float64 `json:"weights"`
 }
 
-func (v *StrategyVariantWeighted) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("StrategyVariantWeighted: %w", err)
-	}
-	var next StrategyVariantWeighted
-	if err := dtoTag(object, "type", "weighted"); err != nil {
-		return fmt.Errorf("StrategyVariantWeighted: %w", err)
-	}
-	if err := dtoRead(object, "weights", &next.Weights, true, false); err != nil {
-		return fmt.Errorf("StrategyVariantWeighted: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v StrategyVariantWeighted) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "weighted"
-	object["weights"] = v.Weights
-	return json.Marshal(object)
-}
-
 func (StrategyVariantWeighted) isStrategy() {}
 
+func (v StrategyVariantWeighted) MarshalJSON() ([]byte, error) {
+	type plain StrategyVariantWeighted
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "weighted", plain: plain(v)})
+}
+
 type StreamFrameVariant interface{ isStreamFrame() }
-type StreamFrame struct{ Value StreamFrameVariant }
+type StreamFrame struct {
+	Value StreamFrameVariant
+}
 
 func (v StreamFrame) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("StreamFrame: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *StreamFrame) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("StreamFrame: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("StreamFrame: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "event" {
-		var next StreamFrameVariantEvent
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "end" {
+	switch tag.Type {
+	case "end":
 		var next StreamFrameVariantEnd
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "event":
+		var next StreamFrameVariantEvent
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("StreamFrame: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("StreamFrame: unknown type tag %q", tag.Type)
 }
 
 type StreamFrameVariantEvent struct {
@@ -15649,140 +6501,79 @@ type StreamFrameVariantEvent struct {
 	Seq   Uint64String      `json:"seq"`
 }
 
-func (v *StreamFrameVariantEvent) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("StreamFrameVariantEvent: %w", err)
-	}
-	var next StreamFrameVariantEvent
-	if err := dtoTag(object, "type", "event"); err != nil {
-		return fmt.Errorf("StreamFrameVariantEvent: %w", err)
-	}
-	if err := dtoRead(object, "event", &next.Event, true, false); err != nil {
-		return fmt.Errorf("StreamFrameVariantEvent: %w", err)
-	}
-	if err := dtoRead(object, "seq", &next.Seq, true, false); err != nil {
-		return fmt.Errorf("StreamFrameVariantEvent: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v StreamFrameVariantEvent) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "event"
-	object["event"] = v.Event
-	object["seq"] = v.Seq
-	return json.Marshal(object)
-}
-
 func (StreamFrameVariantEvent) isStreamFrame() {}
 
-type StreamFrameVariantEnd struct {
-	Error   Field[ErrorEnvelope] `json:"error,omitempty"`
-	Outcome Outcome              `json:"outcome"`
-	Seq     Uint64String         `json:"seq"`
+func (v StreamFrameVariantEvent) MarshalJSON() ([]byte, error) {
+	type plain StreamFrameVariantEvent
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "event", plain: plain(v)})
 }
 
-func (v *StreamFrameVariantEnd) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("StreamFrameVariantEnd: %w", err)
-	}
-	var next StreamFrameVariantEnd
-	if err := dtoTag(object, "type", "end"); err != nil {
-		return fmt.Errorf("StreamFrameVariantEnd: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, false, true); err != nil {
-		return fmt.Errorf("StreamFrameVariantEnd: %w", err)
-	}
-	if err := dtoRead(object, "outcome", &next.Outcome, true, false); err != nil {
-		return fmt.Errorf("StreamFrameVariantEnd: %w", err)
-	}
-	if err := dtoRead(object, "seq", &next.Seq, true, false); err != nil {
-		return fmt.Errorf("StreamFrameVariantEnd: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v StreamFrameVariantEnd) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "end"
-	if v.Error.Present {
-		object["error"] = v.Error
-	}
-	object["outcome"] = v.Outcome
-	object["seq"] = v.Seq
-	return json.Marshal(object)
+type StreamFrameVariantEnd struct {
+	Error   *ErrorEnvelope `json:"error,omitzero"`
+	Outcome Outcome        `json:"outcome"`
+	Seq     Uint64String   `json:"seq"`
 }
 
 func (StreamFrameVariantEnd) isStreamFrame() {}
 
+func (v StreamFrameVariantEnd) MarshalJSON() ([]byte, error) {
+	type plain StreamFrameVariantEnd
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "end", plain: plain(v)})
+}
+
 type StreamFrame0EventVariant interface{ isStreamFrame0Event() }
-type StreamFrame0Event struct{ Value StreamFrame0EventVariant }
+type StreamFrame0Event struct {
+	Value StreamFrame0EventVariant
+}
 
 func (v StreamFrame0Event) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("StreamFrame0Event: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *StreamFrame0Event) UnmarshalJSON(data []byte) error {
+	var err error
 	{
 		var next TextStreamPart
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = StreamFrame0EventBranch0{Value: next}
 			return nil
 		}
 	}
 	{
 		var next ChatCompletionChunk
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false, "choices", "created", "id", "model", "object"); err == nil {
 			v.Value = StreamFrame0EventBranch1{Value: next}
 			return nil
 		}
 	}
-	return fmt.Errorf("StreamFrame0Event: no matching branch")
+	return err
 }
 
 type StreamFrame0EventBranch0 struct{ Value TextStreamPart }
 
-func (StreamFrame0EventBranch0) isStreamFrame0Event()           {}
-func (v StreamFrame0EventBranch0) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (StreamFrame0EventBranch0) isStreamFrame0Event() {}
+
+func (v StreamFrame0EventBranch0) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type StreamFrame0EventBranch1 struct{ Value ChatCompletionChunk }
 
-func (StreamFrame0EventBranch1) isStreamFrame0Event()           {}
-func (v StreamFrame0EventBranch1) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (StreamFrame0EventBranch1) isStreamFrame0Event() {}
+
+func (v StreamFrame0EventBranch1) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type StreamOptions struct {
-	IncludeReasoning Field[bool] `json:"includeReasoning,omitempty"`
-	IncludeUsage     Field[bool] `json:"includeUsage,omitempty"`
-}
-
-func (v *StreamOptions) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("StreamOptions: %w", err)
-	}
-	var next StreamOptions
-	if err := dtoRead(object, "includeReasoning", &next.IncludeReasoning, false, false); err != nil {
-		return fmt.Errorf("StreamOptions: %w", err)
-	}
-	if err := dtoRead(object, "includeUsage", &next.IncludeUsage, false, false); err != nil {
-		return fmt.Errorf("StreamOptions: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v StreamOptions) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.IncludeReasoning.Present {
-		object["includeReasoning"] = v.IncludeReasoning
-	}
-	if v.IncludeUsage.Present {
-		object["includeUsage"] = v.IncludeUsage
-	}
-	return json.Marshal(object)
+	IncludeReasoning *bool `json:"includeReasoning,omitzero"`
+	IncludeUsage     *bool `json:"includeUsage,omitzero"`
 }
 
 // A tool result in a text result's `toolResults`: a [`TypedToolResult`]
@@ -15791,77 +6582,17 @@ func (v StreamOptions) MarshalJSON() ([]byte, error) {
 //
 // Schema view of the tag written by [`crate::wire::typed_vec`].
 type TaggedToolResult struct {
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
+	Dynamic *bool `json:"dynamic,omitzero"`
 	// The input of the tool call the result answers; absent for a deferred
 	// provider result, whose call is not in this response.
-	Input            Field[json.RawMessage]                       `json:"input,omitempty"`
-	Output           json.RawMessage                              `json:"output"`
-	Preliminary      Field[bool]                                  `json:"preliminary,omitempty"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
-	Type             TaggedToolResultType                         `json:"type"`
-}
-
-func (v *TaggedToolResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TaggedToolResult: %w", err)
-	}
-	var next TaggedToolResult
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("TaggedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, false, true); err != nil {
-		return fmt.Errorf("TaggedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, true, true); err != nil {
-		return fmt.Errorf("TaggedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "preliminary", &next.Preliminary, false, true); err != nil {
-		return fmt.Errorf("TaggedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("TaggedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TaggedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("TaggedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("TaggedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "type", &next.Type, true, false); err != nil {
-		return fmt.Errorf("TaggedToolResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TaggedToolResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.Input.Present {
-		object["input"] = v.Input
-	}
-	object["output"] = v.Output
-	if v.Preliminary.Present {
-		object["preliminary"] = v.Preliminary
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	object["type"] = v.Type
-	return json.Marshal(object)
+	Input            *json.RawMessage                      `json:"input,omitzero"`
+	Output           json.RawMessage                       `json:"output"`
+	Preliminary      *bool                                 `json:"preliminary,omitzero"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
+	Type             TaggedToolResultType                  `json:"type"`
 }
 
 type TaggedToolResultType string
@@ -15870,112 +6601,21 @@ const (
 	TaggedToolResultTypeToolResult TaggedToolResultType = "tool-result"
 )
 
-func (v *TaggedToolResultType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "tool-result":
-		*v = TaggedToolResultType(next)
-		return nil
-	}
-	return fmt.Errorf("TaggedToolResultType: unknown value %s", data)
-}
-
 type TerminalSummary struct {
-	Error   Field[ErrorEnvelope] `json:"error,omitempty"`
-	Outcome OperationOutcome     `json:"outcome"`
-}
-
-func (v *TerminalSummary) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TerminalSummary: %w", err)
-	}
-	var next TerminalSummary
-	if err := dtoRead(object, "error", &next.Error, false, true); err != nil {
-		return fmt.Errorf("TerminalSummary: %w", err)
-	}
-	if err := dtoRead(object, "outcome", &next.Outcome, true, false); err != nil {
-		return fmt.Errorf("TerminalSummary: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TerminalSummary) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Error.Present {
-		object["error"] = v.Error
-	}
-	object["outcome"] = v.Outcome
-	return json.Marshal(object)
+	Error   *ErrorEnvelope   `json:"error,omitzero"`
+	Outcome OperationOutcome `json:"outcome"`
 }
 
 // Text content part.
 type TextPart struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Text            string                                       `json:"text"`
-}
-
-func (v *TextPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextPart: %w", err)
-	}
-	var next TextPart
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("TextPart: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("TextPart: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextPart) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Text            string                                `json:"text"`
 }
 
 type TextRequest struct {
-	Abort   Field[HandleIdInput] `json:"abort,omitempty"`
-	Options Field[Options]       `json:"options,omitempty"`
-	Prompt  ModelPrompt          `json:"prompt"`
-}
-
-func (v *TextRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextRequest: %w", err)
-	}
-	var next TextRequest
-	if err := dtoRead(object, "abort", &next.Abort, false, true); err != nil {
-		return fmt.Errorf("TextRequest: %w", err)
-	}
-	if err := dtoRead(object, "options", &next.Options, false, false); err != nil {
-		return fmt.Errorf("TextRequest: %w", err)
-	}
-	if err := dtoRead(object, "prompt", &next.Prompt, true, false); err != nil {
-		return fmt.Errorf("TextRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Abort.Present {
-		object["abort"] = v.Abort
-	}
-	if v.Options.Present {
-		object["options"] = v.Options
-	}
-	object["prompt"] = v.Prompt
-	return json.Marshal(object)
+	Abort   *HandleIdInput `json:"abort,omitzero"`
+	Options *Options       `json:"options,omitzero"`
+	Prompt  ModelPrompt    `json:"prompt"`
 }
 
 // A public call-layer stream chunk: the AI SDK's `TextStreamPart`
@@ -15997,1410 +6637,689 @@ func (v TextRequest) MarshalJSON() ([]byte, error) {
 // first model call (`stream-text.ts:2030-2090`), which needs the prompt's
 // approval collection (`collect-tool-approvals.ts`), not ported.
 type TextStreamPartVariant interface{ isTextStreamPart() }
-type TextStreamPart struct{ Value TextStreamPartVariant }
+type TextStreamPart struct {
+	Value TextStreamPartVariant
+}
 
 func (v TextStreamPart) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("TextStreamPart: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *TextStreamPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPart: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("TextStreamPart: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "text-start" {
-		var next TextStreamPartVariantTextStart
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "text-end" {
-		var next TextStreamPartVariantTextEnd
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "text-delta" {
-		var next TextStreamPartVariantTextDelta
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "reasoning-start" {
-		var next TextStreamPartVariantReasoningStart
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "reasoning-end" {
-		var next TextStreamPartVariantReasoningEnd
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "reasoning-delta" {
-		var next TextStreamPartVariantReasoningDelta
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "custom" {
-		var next TextStreamPartVariantCustom
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-input-start" {
-		var next TextStreamPartVariantToolInputStart
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-input-end" {
-		var next TextStreamPartVariantToolInputEnd
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-input-delta" {
-		var next TextStreamPartVariantToolInputDelta
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "source" {
-		var next TextStreamPartVariantSource11
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "source" {
-		var next TextStreamPartVariantSource12
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "file" {
-		var next TextStreamPartVariantFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "reasoning-file" {
-		var next TextStreamPartVariantReasoningFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-call" {
-		var next TextStreamPartVariantToolCall
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-result" {
-		var next TextStreamPartVariantToolResult
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-error" {
-		var next TextStreamPartVariantToolError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-output-denied" {
-		var next TextStreamPartVariantToolOutputDenied
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-approval-request" {
-		var next TextStreamPartVariantToolApprovalRequest
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-approval-response" {
-		var next TextStreamPartVariantToolApprovalResponse
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "start-step" {
-		var next TextStreamPartVariantStartStep
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "finish-step" {
-		var next TextStreamPartVariantFinishStep
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "start" {
-		var next TextStreamPartVariantStart
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "finish" {
-		var next TextStreamPartVariantFinish
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "abort" {
+	switch tag.Type {
+	case "abort":
 		var next TextStreamPartVariantAbort
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "error" {
+		v.Value = next
+		return nil
+	case "custom":
+		var next TextStreamPartVariantCustom
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "error":
 		var next TextStreamPartVariantError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "raw" {
+		v.Value = next
+		return nil
+	case "file":
+		var next TextStreamPartVariantFile
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "finish":
+		var next TextStreamPartVariantFinish
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "finish-step":
+		var next TextStreamPartVariantFinishStep
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "raw":
 		var next TextStreamPartVariantRaw
-		if err := json.Unmarshal(data, &next); err == nil {
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "reasoning-delta":
+		var next TextStreamPartVariantReasoningDelta
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "reasoning-end":
+		var next TextStreamPartVariantReasoningEnd
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "reasoning-file":
+		var next TextStreamPartVariantReasoningFile
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "reasoning-start":
+		var next TextStreamPartVariantReasoningStart
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "source":
+		var subtag struct {
+			SourceType string `json:"sourceType"`
+		}
+		if err := json.Unmarshal(data, &subtag); err != nil {
+			return err
+		}
+		if subtag.SourceType == "url" {
+			var next TextStreamPartVariantSource11
+			if err := json.Unmarshal(data, &next); err != nil {
+				return err
+			}
 			v.Value = next
 			return nil
 		}
+		if subtag.SourceType == "document" {
+			var next TextStreamPartVariantSource12
+			if err := json.Unmarshal(data, &next); err != nil {
+				return err
+			}
+			v.Value = next
+			return nil
+		}
+		return fmt.Errorf("TextStreamPart: unknown tag %+v", subtag)
+	case "start":
+		var next TextStreamPartVariantStart
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "start-step":
+		var next TextStreamPartVariantStartStep
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "text-delta":
+		var next TextStreamPartVariantTextDelta
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "text-end":
+		var next TextStreamPartVariantTextEnd
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "text-start":
+		var next TextStreamPartVariantTextStart
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-approval-request":
+		var next TextStreamPartVariantToolApprovalRequest
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-approval-response":
+		var next TextStreamPartVariantToolApprovalResponse
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-call":
+		var next TextStreamPartVariantToolCall
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-error":
+		var next TextStreamPartVariantToolError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-input-delta":
+		var next TextStreamPartVariantToolInputDelta
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-input-end":
+		var next TextStreamPartVariantToolInputEnd
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-input-start":
+		var next TextStreamPartVariantToolInputStart
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-output-denied":
+		var next TextStreamPartVariantToolOutputDenied
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "tool-result":
+		var next TextStreamPartVariantToolResult
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("TextStreamPart: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("TextStreamPart: unknown type tag %q", tag.Type)
 }
 
 type TextStreamPartVariantTextStart struct {
-	ID               string                                       `json:"id"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-}
-
-func (v *TextStreamPartVariantTextStart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantTextStart: %w", err)
-	}
-	var next TextStreamPartVariantTextStart
-	if err := dtoTag(object, "type", "text-start"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantTextStart: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantTextStart: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantTextStart: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantTextStart) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text-start"
-	object["id"] = v.ID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+	ID               string                                `json:"id"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (TextStreamPartVariantTextStart) isTextStreamPart() {}
 
-type TextStreamPartVariantTextEnd struct {
-	ID               string                                       `json:"id"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v TextStreamPartVariantTextStart) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantTextStart
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text-start", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantTextEnd) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantTextEnd: %w", err)
-	}
-	var next TextStreamPartVariantTextEnd
-	if err := dtoTag(object, "type", "text-end"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantTextEnd: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantTextEnd: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantTextEnd: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantTextEnd) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text-end"
-	object["id"] = v.ID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type TextStreamPartVariantTextEnd struct {
+	ID               string                                `json:"id"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (TextStreamPartVariantTextEnd) isTextStreamPart() {}
 
-type TextStreamPartVariantTextDelta struct {
-	ID               string                                       `json:"id"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Text             string                                       `json:"text"`
+func (v TextStreamPartVariantTextEnd) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantTextEnd
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text-end", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantTextDelta) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantTextDelta: %w", err)
-	}
-	var next TextStreamPartVariantTextDelta
-	if err := dtoTag(object, "type", "text-delta"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantTextDelta: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantTextDelta: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantTextDelta: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantTextDelta: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantTextDelta) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text-delta"
-	object["id"] = v.ID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+type TextStreamPartVariantTextDelta struct {
+	ID               string                                `json:"id"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Text             string                                `json:"text"`
 }
 
 func (TextStreamPartVariantTextDelta) isTextStreamPart() {}
 
-type TextStreamPartVariantReasoningStart struct {
-	ID               string                                       `json:"id"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v TextStreamPartVariantTextDelta) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantTextDelta
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text-delta", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantReasoningStart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningStart: %w", err)
-	}
-	var next TextStreamPartVariantReasoningStart
-	if err := dtoTag(object, "type", "reasoning-start"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningStart: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningStart: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningStart: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantReasoningStart) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning-start"
-	object["id"] = v.ID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type TextStreamPartVariantReasoningStart struct {
+	ID               string                                `json:"id"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (TextStreamPartVariantReasoningStart) isTextStreamPart() {}
 
-type TextStreamPartVariantReasoningEnd struct {
-	ID               string                                       `json:"id"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v TextStreamPartVariantReasoningStart) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantReasoningStart
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning-start", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantReasoningEnd) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningEnd: %w", err)
-	}
-	var next TextStreamPartVariantReasoningEnd
-	if err := dtoTag(object, "type", "reasoning-end"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningEnd: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningEnd: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningEnd: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantReasoningEnd) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning-end"
-	object["id"] = v.ID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type TextStreamPartVariantReasoningEnd struct {
+	ID               string                                `json:"id"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (TextStreamPartVariantReasoningEnd) isTextStreamPart() {}
 
-type TextStreamPartVariantReasoningDelta struct {
-	ID               string                                       `json:"id"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Text             string                                       `json:"text"`
+func (v TextStreamPartVariantReasoningEnd) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantReasoningEnd
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning-end", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantReasoningDelta) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningDelta: %w", err)
-	}
-	var next TextStreamPartVariantReasoningDelta
-	if err := dtoTag(object, "type", "reasoning-delta"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningDelta: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningDelta: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningDelta: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningDelta: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantReasoningDelta) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning-delta"
-	object["id"] = v.ID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+type TextStreamPartVariantReasoningDelta struct {
+	ID               string                                `json:"id"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Text             string                                `json:"text"`
 }
 
 func (TextStreamPartVariantReasoningDelta) isTextStreamPart() {}
 
-type TextStreamPartVariantCustom struct {
-	Kind             NamespacedKind                               `json:"kind"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v TextStreamPartVariantReasoningDelta) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantReasoningDelta
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning-delta", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantCustom) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantCustom: %w", err)
-	}
-	var next TextStreamPartVariantCustom
-	if err := dtoTag(object, "type", "custom"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantCustom: %w", err)
-	}
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantCustom: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantCustom: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantCustom) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "custom"
-	object["kind"] = v.Kind
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type TextStreamPartVariantCustom struct {
+	Kind             NamespacedKind                        `json:"kind"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (TextStreamPartVariantCustom) isTextStreamPart() {}
 
-type TextStreamPartVariantToolInputStart struct {
-	// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
-	ID      string      `json:"id"`
-	// Whether the tool call will be executed by the provider.
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	// Optional title for the tool call.
-	Title    Field[string] `json:"title,omitempty"`
-	ToolName string        `json:"toolName"`
+func (v TextStreamPartVariantCustom) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantCustom
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "custom", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantToolInputStart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputStart: %w", err)
-	}
-	var next TextStreamPartVariantToolInputStart
-	if err := dtoTag(object, "type", "tool-input-start"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputStart: %w", err)
-	}
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputStart: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputStart: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputStart: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputStart: %w", err)
-	}
-	if err := dtoRead(object, "title", &next.Title, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputStart: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputStart: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantToolInputStart) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-input-start"
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	object["id"] = v.ID
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.Title.Present {
-		object["title"] = v.Title
-	}
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+type TextStreamPartVariantToolInputStart struct {
+	// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+	Dynamic *bool  `json:"dynamic,omitzero"`
+	ID      string `json:"id"`
+	// Whether the tool call will be executed by the provider.
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	// Optional title for the tool call.
+	Title    *string `json:"title,omitzero"`
+	ToolName string  `json:"toolName"`
 }
 
 func (TextStreamPartVariantToolInputStart) isTextStreamPart() {}
 
-type TextStreamPartVariantToolInputEnd struct {
-	ID               string                                       `json:"id"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v TextStreamPartVariantToolInputStart) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantToolInputStart
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-input-start", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantToolInputEnd) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputEnd: %w", err)
-	}
-	var next TextStreamPartVariantToolInputEnd
-	if err := dtoTag(object, "type", "tool-input-end"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputEnd: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputEnd: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputEnd: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantToolInputEnd) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-input-end"
-	object["id"] = v.ID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type TextStreamPartVariantToolInputEnd struct {
+	ID               string                                `json:"id"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (TextStreamPartVariantToolInputEnd) isTextStreamPart() {}
 
-type TextStreamPartVariantToolInputDelta struct {
-	Delta            string                                       `json:"delta"`
-	ID               string                                       `json:"id"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v TextStreamPartVariantToolInputEnd) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantToolInputEnd
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-input-end", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantToolInputDelta) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputDelta: %w", err)
-	}
-	var next TextStreamPartVariantToolInputDelta
-	if err := dtoTag(object, "type", "tool-input-delta"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputDelta: %w", err)
-	}
-	if err := dtoRead(object, "delta", &next.Delta, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputDelta: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputDelta: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolInputDelta: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantToolInputDelta) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-input-delta"
-	object["delta"] = v.Delta
-	object["id"] = v.ID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type TextStreamPartVariantToolInputDelta struct {
+	Delta            string                                `json:"delta"`
+	ID               string                                `json:"id"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (TextStreamPartVariantToolInputDelta) isTextStreamPart() {}
 
-type TextStreamPartVariantSource11 struct {
-	ID               string                                       `json:"id"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	SourceType       TextStreamPart10SourceType                   `json:"sourceType"`
-	Title            Field[string]                                `json:"title,omitempty"`
-	URL              string                                       `json:"url"`
+func (v TextStreamPartVariantToolInputDelta) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantToolInputDelta
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-input-delta", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantSource11) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource11: %w", err)
-	}
-	var next TextStreamPartVariantSource11
-	if err := dtoTag(object, "type", "source"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource11: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource11: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource11: %w", err)
-	}
-	if err := dtoRead(object, "sourceType", &next.SourceType, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource11: %w", err)
-	}
-	if err := dtoRead(object, "title", &next.Title, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource11: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource11: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantSource11) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "source"
-	object["id"] = v.ID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["sourceType"] = v.SourceType
-	if v.Title.Present {
-		object["title"] = v.Title
-	}
-	object["url"] = v.URL
-	return json.Marshal(object)
+type TextStreamPartVariantSource11 struct {
+	ID               string                                `json:"id"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	SourceType       TextStreamPart10SourceType            `json:"sourceType"`
+	Title            *string                               `json:"title,omitzero"`
+	URL              string                                `json:"url"`
 }
 
 func (TextStreamPartVariantSource11) isTextStreamPart() {}
 
-type TextStreamPartVariantSource12 struct {
-	Filename         Field[string]                                `json:"filename,omitempty"`
-	ID               string                                       `json:"id"`
-	MediaType        string                                       `json:"mediaType"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	SourceType       TextStreamPart11SourceType                   `json:"sourceType"`
-	Title            string                                       `json:"title"`
+func (v TextStreamPartVariantSource11) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantSource11
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "source", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantSource12) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource12: %w", err)
-	}
-	var next TextStreamPartVariantSource12
-	if err := dtoTag(object, "type", "source"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource12: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource12: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource12: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource12: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource12: %w", err)
-	}
-	if err := dtoRead(object, "sourceType", &next.SourceType, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource12: %w", err)
-	}
-	if err := dtoRead(object, "title", &next.Title, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantSource12: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantSource12) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "source"
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["id"] = v.ID
-	object["mediaType"] = v.MediaType
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["sourceType"] = v.SourceType
-	object["title"] = v.Title
-	return json.Marshal(object)
+type TextStreamPartVariantSource12 struct {
+	Filename         *string                               `json:"filename,omitzero"`
+	ID               string                                `json:"id"`
+	MediaType        string                                `json:"mediaType"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	SourceType       TextStreamPart11SourceType            `json:"sourceType"`
+	Title            string                                `json:"title"`
 }
 
 func (TextStreamPartVariantSource12) isTextStreamPart() {}
 
-type TextStreamPartVariantFile struct {
-	File             GeneratedFile                                `json:"file"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v TextStreamPartVariantSource12) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantSource12
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "source", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantFile: %w", err)
-	}
-	var next TextStreamPartVariantFile
-	if err := dtoTag(object, "type", "file"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "file", &next.File, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file"
-	object["file"] = v.File
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type TextStreamPartVariantFile struct {
+	File             GeneratedFile                         `json:"file"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (TextStreamPartVariantFile) isTextStreamPart() {}
 
-type TextStreamPartVariantReasoningFile struct {
-	File             GeneratedFile                                `json:"file"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v TextStreamPartVariantFile) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantReasoningFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningFile: %w", err)
-	}
-	var next TextStreamPartVariantReasoningFile
-	if err := dtoTag(object, "type", "reasoning-file"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "file", &next.File, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningFile: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantReasoningFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantReasoningFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "reasoning-file"
-	object["file"] = v.File
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type TextStreamPartVariantReasoningFile struct {
+	File             GeneratedFile                         `json:"file"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (TextStreamPartVariantReasoningFile) isTextStreamPart() {}
 
+func (v TextStreamPartVariantReasoningFile) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantReasoningFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "reasoning-file", plain: plain(v)})
+}
+
 type TextStreamPartVariantToolCall struct {
 	// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
+	Dynamic *bool `json:"dynamic,omitzero"`
 	// Typed failure associated with an invalid tool call.
-	Error Field[AiMuxError] `json:"error,omitempty"`
+	Error *AiMuxError `json:"error,omitzero"`
 	// Parsed arguments, or the original string when `invalid` is true and the
 	// provider input was not valid JSON.
 	Input json.RawMessage `json:"input"`
 	// Set when lookup, JSON parsing, or schema validation still failed after
 	// the optional repair attempt.
-	Invalid Field[bool] `json:"invalid,omitempty"`
+	Invalid *bool `json:"invalid,omitzero"`
 	// Whether the tool call will be executed by the provider.
-	ProviderExecuted Field[bool] `json:"providerExecuted,omitempty"`
+	ProviderExecuted *bool `json:"providerExecuted,omitzero"`
 	// Additional provider-specific metadata associated with this call.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Provider-assigned call id.
 	ToolCallID string `json:"toolCallId"`
 	// Tool name.
 	ToolName string `json:"toolName"`
 }
 
-func (v *TextStreamPartVariantToolCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolCall: %w", err)
-	}
-	var next TextStreamPartVariantToolCall
-	if err := dtoTag(object, "type", "tool-call"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, true, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "invalid", &next.Invalid, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantToolCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-call"
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.Error.Present {
-		object["error"] = v.Error
-	}
-	object["input"] = v.Input
-	if v.Invalid.Present {
-		object["invalid"] = v.Invalid
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
-}
-
 func (TextStreamPartVariantToolCall) isTextStreamPart() {}
 
-type TextStreamPartVariantToolResult struct {
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
-	// The input of the tool call the result answers; absent for a deferred
-	// provider result, whose call is not in this response.
-	Input            Field[json.RawMessage]                       `json:"input,omitempty"`
-	Output           json.RawMessage                              `json:"output"`
-	Preliminary      Field[bool]                                  `json:"preliminary,omitempty"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
+func (v TextStreamPartVariantToolCall) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantToolCall
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-call", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantToolResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolResult: %w", err)
-	}
-	var next TextStreamPartVariantToolResult
-	if err := dtoTag(object, "type", "tool-result"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, true, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "preliminary", &next.Preliminary, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantToolResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-result"
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.Input.Present {
-		object["input"] = v.Input
-	}
-	object["output"] = v.Output
-	if v.Preliminary.Present {
-		object["preliminary"] = v.Preliminary
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+type TextStreamPartVariantToolResult struct {
+	Dynamic *bool `json:"dynamic,omitzero"`
+	// The input of the tool call the result answers; absent for a deferred
+	// provider result, whose call is not in this response.
+	Input            *json.RawMessage                      `json:"input,omitzero"`
+	Output           json.RawMessage                       `json:"output"`
+	Preliminary      *bool                                 `json:"preliminary,omitzero"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
 }
 
 func (TextStreamPartVariantToolResult) isTextStreamPart() {}
 
-type TextStreamPartVariantToolError struct {
-	Dynamic Field[bool]     `json:"dynamic,omitempty"`
-	Error   json.RawMessage `json:"error"`
-	// The input of the tool call; absent for a deferred provider result.
-	Input            Field[json.RawMessage]                       `json:"input,omitempty"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
+func (v TextStreamPartVariantToolResult) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantToolResult
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-result", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantToolError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolError: %w", err)
-	}
-	var next TextStreamPartVariantToolError
-	if err := dtoTag(object, "type", "tool-error"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, true, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolError: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantToolError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-error"
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	object["error"] = v.Error
-	if v.Input.Present {
-		object["input"] = v.Input
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+type TextStreamPartVariantToolError struct {
+	Dynamic *bool           `json:"dynamic,omitzero"`
+	Error   json.RawMessage `json:"error"`
+	// The input of the tool call; absent for a deferred provider result.
+	Input            *json.RawMessage                      `json:"input,omitzero"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
 }
 
 func (TextStreamPartVariantToolError) isTextStreamPart() {}
 
-type TextStreamPartVariantToolOutputDenied struct {
-	Dynamic          Field[bool] `json:"dynamic,omitempty"`
-	ProviderExecuted Field[bool] `json:"providerExecuted,omitempty"`
-	ToolCallID       string      `json:"toolCallId"`
-	ToolName         string      `json:"toolName"`
+func (v TextStreamPartVariantToolError) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantToolError
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-error", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantToolOutputDenied) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolOutputDenied: %w", err)
-	}
-	var next TextStreamPartVariantToolOutputDenied
-	if err := dtoTag(object, "type", "tool-output-denied"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolOutputDenied: %w", err)
-	}
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolOutputDenied: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolOutputDenied: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolOutputDenied: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolOutputDenied: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantToolOutputDenied) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-output-denied"
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+type TextStreamPartVariantToolOutputDenied struct {
+	Dynamic          *bool  `json:"dynamic,omitzero"`
+	ProviderExecuted *bool  `json:"providerExecuted,omitzero"`
+	ToolCallID       string `json:"toolCallId"`
+	ToolName         string `json:"toolName"`
 }
 
 func (TextStreamPartVariantToolOutputDenied) isTextStreamPart() {}
 
+func (v TextStreamPartVariantToolOutputDenied) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantToolOutputDenied
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-output-denied", plain: plain(v)})
+}
+
 type TextStreamPartVariantToolApprovalRequest struct {
-	ApprovalID  string        `json:"approvalId"`
-	IsAutomatic Field[bool]   `json:"isAutomatic,omitempty"`
-	Reason      Field[string] `json:"reason,omitempty"`
-	Signature   Field[string] `json:"signature,omitempty"`
+	ApprovalID  string  `json:"approvalId"`
+	IsAutomatic *bool   `json:"isAutomatic,omitzero"`
+	Reason      *string `json:"reason,omitzero"`
+	Signature   *string `json:"signature,omitzero"`
 	// The call to approve, with its `type` tag (`ai`
 	// `generate-text/tool-approval-request-output.ts:20`).
 	ToolCall TypedToolCall `json:"toolCall"`
 }
 
-func (v *TextStreamPartVariantToolApprovalRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolApprovalRequest: %w", err)
-	}
-	var next TextStreamPartVariantToolApprovalRequest
-	if err := dtoTag(object, "type", "tool-approval-request"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "isAutomatic", &next.IsAutomatic, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "signature", &next.Signature, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolApprovalRequest: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolApprovalRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantToolApprovalRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-approval-request"
-	object["approvalId"] = v.ApprovalID
-	if v.IsAutomatic.Present {
-		object["isAutomatic"] = v.IsAutomatic
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	if v.Signature.Present {
-		object["signature"] = v.Signature
-	}
-	object["toolCall"] = v.ToolCall
-	return json.Marshal(object)
-}
-
 func (TextStreamPartVariantToolApprovalRequest) isTextStreamPart() {}
 
+func (v TextStreamPartVariantToolApprovalRequest) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantToolApprovalRequest
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-approval-request", plain: plain(v)})
+}
+
 type TextStreamPartVariantToolApprovalResponse struct {
-	ApprovalID       string        `json:"approvalId"`
-	Approved         bool          `json:"approved"`
-	ProviderExecuted Field[bool]   `json:"providerExecuted,omitempty"`
-	Reason           Field[string] `json:"reason,omitempty"`
+	ApprovalID       string  `json:"approvalId"`
+	Approved         bool    `json:"approved"`
+	ProviderExecuted *bool   `json:"providerExecuted,omitzero"`
+	Reason           *string `json:"reason,omitzero"`
 	// The answered call, with its `type` tag (`TypedToolCall`,
 	// `tool-approval-response-output.ts:18`).
 	ToolCall TypedToolCall `json:"toolCall"`
 }
 
-func (v *TextStreamPartVariantToolApprovalResponse) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolApprovalResponse: %w", err)
-	}
-	var next TextStreamPartVariantToolApprovalResponse
-	if err := dtoTag(object, "type", "tool-approval-response"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "approved", &next.Approved, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantToolApprovalResponse: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantToolApprovalResponse) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-approval-response"
-	object["approvalId"] = v.ApprovalID
-	object["approved"] = v.Approved
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	object["toolCall"] = v.ToolCall
-	return json.Marshal(object)
-}
-
 func (TextStreamPartVariantToolApprovalResponse) isTextStreamPart() {}
+
+func (v TextStreamPartVariantToolApprovalResponse) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantToolApprovalResponse
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-approval-response", plain: plain(v)})
+}
 
 type TextStreamPartVariantStartStep struct {
 	Request  RequestInfo `json:"request"`
 	Warnings []Warning   `json:"warnings"`
 }
 
-func (v *TextStreamPartVariantStartStep) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantStartStep: %w", err)
-	}
-	var next TextStreamPartVariantStartStep
-	if err := dtoTag(object, "type", "start-step"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantStartStep: %w", err)
-	}
-	if err := dtoRead(object, "request", &next.Request, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantStartStep: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantStartStep: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantStartStep) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "start-step"
-	object["request"] = v.Request
-	object["warnings"] = v.Warnings
-	return json.Marshal(object)
-}
-
 func (TextStreamPartVariantStartStep) isTextStreamPart() {}
 
+func (v TextStreamPartVariantStartStep) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantStartStep
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "start-step", plain: plain(v)})
+}
+
 type TextStreamPartVariantFinishStep struct {
-	FinishReason     FinishReasonUnified                          `json:"finishReason"`
-	Performance      StepResultPerformance                        `json:"performance"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	RawFinishReason  Field[string]                                `json:"rawFinishReason,omitempty"`
+	FinishReason     FinishReasonUnified                   `json:"finishReason"`
+	Performance      StepResultPerformance                 `json:"performance"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	RawFinishReason  *string                               `json:"rawFinishReason,omitzero"`
 	// Response metadata without the messages and the body.
 	Response StepResponseMetadata `json:"response"`
 	Usage    LanguageModelUsage   `json:"usage"`
 }
 
-func (v *TextStreamPartVariantFinishStep) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantFinishStep: %w", err)
-	}
-	var next TextStreamPartVariantFinishStep
-	if err := dtoTag(object, "type", "finish-step"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantFinishStep: %w", err)
-	}
-	if err := dtoRead(object, "finishReason", &next.FinishReason, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantFinishStep: %w", err)
-	}
-	if err := dtoRead(object, "performance", &next.Performance, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantFinishStep: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantFinishStep: %w", err)
-	}
-	if err := dtoRead(object, "rawFinishReason", &next.RawFinishReason, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantFinishStep: %w", err)
-	}
-	if err := dtoRead(object, "response", &next.Response, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantFinishStep: %w", err)
-	}
-	if err := dtoRead(object, "usage", &next.Usage, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantFinishStep: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantFinishStep) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "finish-step"
-	object["finishReason"] = v.FinishReason
-	object["performance"] = v.Performance
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.RawFinishReason.Present {
-		object["rawFinishReason"] = v.RawFinishReason
-	}
-	object["response"] = v.Response
-	object["usage"] = v.Usage
-	return json.Marshal(object)
-}
-
 func (TextStreamPartVariantFinishStep) isTextStreamPart() {}
 
-type TextStreamPartVariantStart struct {
+func (v TextStreamPartVariantFinishStep) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantFinishStep
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "finish-step", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantStart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantStart: %w", err)
-	}
-	var next TextStreamPartVariantStart
-	if err := dtoTag(object, "type", "start"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantStart: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantStart) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "start"
-	return json.Marshal(object)
-}
+type TextStreamPartVariantStart struct{}
 
 func (TextStreamPartVariantStart) isTextStreamPart() {}
 
+func (v TextStreamPartVariantStart) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantStart
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "start", plain: plain(v)})
+}
+
 type TextStreamPartVariantFinish struct {
 	FinishReason    FinishReasonUnified `json:"finishReason"`
-	RawFinishReason Field[string]       `json:"rawFinishReason,omitempty"`
+	RawFinishReason *string             `json:"rawFinishReason,omitzero"`
 	// Usage summed over every step.
 	TotalUsage LanguageModelUsage `json:"totalUsage"`
 }
 
-func (v *TextStreamPartVariantFinish) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantFinish: %w", err)
-	}
-	var next TextStreamPartVariantFinish
-	if err := dtoTag(object, "type", "finish"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantFinish: %w", err)
-	}
-	if err := dtoRead(object, "finishReason", &next.FinishReason, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantFinish: %w", err)
-	}
-	if err := dtoRead(object, "rawFinishReason", &next.RawFinishReason, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantFinish: %w", err)
-	}
-	if err := dtoRead(object, "totalUsage", &next.TotalUsage, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantFinish: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantFinish) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "finish"
-	object["finishReason"] = v.FinishReason
-	if v.RawFinishReason.Present {
-		object["rawFinishReason"] = v.RawFinishReason
-	}
-	object["totalUsage"] = v.TotalUsage
-	return json.Marshal(object)
-}
-
 func (TextStreamPartVariantFinish) isTextStreamPart() {}
 
-type TextStreamPartVariantAbort struct {
-	Reason Field[string] `json:"reason,omitempty"`
+func (v TextStreamPartVariantFinish) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantFinish
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "finish", plain: plain(v)})
 }
 
-func (v *TextStreamPartVariantAbort) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantAbort: %w", err)
-	}
-	var next TextStreamPartVariantAbort
-	if err := dtoTag(object, "type", "abort"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantAbort: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantAbort: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantAbort) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "abort"
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	return json.Marshal(object)
+type TextStreamPartVariantAbort struct {
+	Reason *string `json:"reason,omitzero"`
 }
 
 func (TextStreamPartVariantAbort) isTextStreamPart() {}
+
+func (v TextStreamPartVariantAbort) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantAbort
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "abort", plain: plain(v)})
+}
 
 type TextStreamPartVariantError struct {
 	Error AiMuxError `json:"error"`
 }
 
-func (v *TextStreamPartVariantError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantError: %w", err)
-	}
-	var next TextStreamPartVariantError
-	if err := dtoTag(object, "type", "error"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantError: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, true, false); err != nil {
-		return fmt.Errorf("TextStreamPartVariantError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "error"
-	object["error"] = v.Error
-	return json.Marshal(object)
-}
-
 func (TextStreamPartVariantError) isTextStreamPart() {}
+
+func (v TextStreamPartVariantError) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantError
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "error", plain: plain(v)})
+}
 
 type TextStreamPartVariantRaw struct {
 	RawValue json.RawMessage `json:"rawValue"`
 }
 
-func (v *TextStreamPartVariantRaw) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TextStreamPartVariantRaw: %w", err)
-	}
-	var next TextStreamPartVariantRaw
-	if err := dtoTag(object, "type", "raw"); err != nil {
-		return fmt.Errorf("TextStreamPartVariantRaw: %w", err)
-	}
-	if err := dtoRead(object, "rawValue", &next.RawValue, true, true); err != nil {
-		return fmt.Errorf("TextStreamPartVariantRaw: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TextStreamPartVariantRaw) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "raw"
-	object["rawValue"] = v.RawValue
-	return json.Marshal(object)
-}
-
 func (TextStreamPartVariantRaw) isTextStreamPart() {}
+
+func (v TextStreamPartVariantRaw) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantRaw
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "raw", plain: plain(v)})
+}
 
 type TextStreamPart10SourceType string
 
@@ -17408,37 +7327,11 @@ const (
 	TextStreamPart10SourceTypeURL TextStreamPart10SourceType = "url"
 )
 
-func (v *TextStreamPart10SourceType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "url":
-		*v = TextStreamPart10SourceType(next)
-		return nil
-	}
-	return fmt.Errorf("TextStreamPart10SourceType: unknown value %s", data)
-}
-
 type TextStreamPart11SourceType string
 
 const (
 	TextStreamPart11SourceTypeDocument TextStreamPart11SourceType = "document"
 )
-
-func (v *TextStreamPart11SourceType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "document":
-		*v = TextStreamPart11SourceType(next)
-		return nil
-	}
-	return fmt.Errorf("TextStreamPart11SourceType: unknown value %s", data)
-}
 
 // Per-call timeout configuration.
 //
@@ -17453,57 +7346,19 @@ func (v *TextStreamPart11SourceType) UnmarshalJSON(data []byte) error {
 // `total` timeout also covers retry backoff and the whole streamed response.
 type TimeoutConfiguration struct {
 	// Maximum idle time between consecutive stream chunks (streaming only).
-	ChunkMs Field[uint64] `json:"chunkMs,omitempty"`
+	ChunkMs *uint64 `json:"chunkMs,omitzero"`
 	// Timeout waiting for the first stream chunk (streaming only).
 	//
 	// Counted from operation start, so it also bounds stream establishment
 	// and any retries before the first semantic output: it is the
 	// user-perceived time-to-first-output budget, not a per-attempt timer.
-	FirstChunkMs Field[uint64] `json:"firstChunkMs,omitempty"`
+	FirstChunkMs *uint64 `json:"firstChunkMs,omitzero"`
 	// Timeout for one generation step, including that step's attempts and
 	// retry backoff, in milliseconds. Aimux currently has one step.
-	StepMs Field[uint64] `json:"stepMs,omitempty"`
+	StepMs *uint64 `json:"stepMs,omitzero"`
 	// Overall timeout for the entire call (including retries and, for
 	// streaming, the whole stream), in milliseconds.
-	TotalMs Field[uint64] `json:"totalMs,omitempty"`
-}
-
-func (v *TimeoutConfiguration) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TimeoutConfiguration: %w", err)
-	}
-	var next TimeoutConfiguration
-	if err := dtoRead(object, "chunkMs", &next.ChunkMs, false, true); err != nil {
-		return fmt.Errorf("TimeoutConfiguration: %w", err)
-	}
-	if err := dtoRead(object, "firstChunkMs", &next.FirstChunkMs, false, true); err != nil {
-		return fmt.Errorf("TimeoutConfiguration: %w", err)
-	}
-	if err := dtoRead(object, "stepMs", &next.StepMs, false, true); err != nil {
-		return fmt.Errorf("TimeoutConfiguration: %w", err)
-	}
-	if err := dtoRead(object, "totalMs", &next.TotalMs, false, true); err != nil {
-		return fmt.Errorf("TimeoutConfiguration: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TimeoutConfiguration) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.ChunkMs.Present {
-		object["chunkMs"] = v.ChunkMs
-	}
-	if v.FirstChunkMs.Present {
-		object["firstChunkMs"] = v.FirstChunkMs
-	}
-	if v.StepMs.Present {
-		object["stepMs"] = v.StepMs
-	}
-	if v.TotalMs.Present {
-		object["totalMs"] = v.TotalMs
-	}
-	return json.Marshal(object)
+	TotalMs *uint64 `json:"totalMs,omitzero"`
 }
 
 // A point in time: a `Date` in the AI SDK, whose JSON is
@@ -17518,78 +7373,54 @@ type Timestamp = string
 
 type TimingRecord struct {
 	// ms 级延迟,TS 用 number(远小于 2^53,避免 bigint)。
-	LatencyMs uint64        `json:"latencyMs"`
-	TtfbMs    Field[uint64] `json:"ttfbMs,omitempty"`
-}
-
-func (v *TimingRecord) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TimingRecord: %w", err)
-	}
-	var next TimingRecord
-	if err := dtoRead(object, "latencyMs", &next.LatencyMs, true, false); err != nil {
-		return fmt.Errorf("TimingRecord: %w", err)
-	}
-	if err := dtoRead(object, "ttfbMs", &next.TtfbMs, false, true); err != nil {
-		return fmt.Errorf("TimingRecord: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TimingRecord) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["latencyMs"] = v.LatencyMs
-	if v.TtfbMs.Present {
-		object["ttfbMs"] = v.TtfbMs
-	}
-	return json.Marshal(object)
+	LatencyMs uint64  `json:"latencyMs"`
+	TtfbMs    *uint64 `json:"ttfbMs,omitzero"`
 }
 
 // A tool that can be either a user-defined function tool or a
 // provider-defined tool. Mirrors the V4
 // `Array<LanguageModelV4FunctionTool | LanguageModelV4ProviderTool>`.
 type ToolVariant interface{ isTool() }
-type Tool struct{ Value ToolVariant }
+type Tool struct {
+	Value ToolVariant
+}
 
 func (v Tool) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("Tool: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *Tool) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("Tool: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("Tool: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "function" {
+	switch tag.Type {
+	case "function":
 		var next ToolVariantFunction
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "provider" {
+		v.Value = next
+		return nil
+	case "provider":
 		var next ToolVariantProvider
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("Tool: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("Tool: unknown type tag %q", tag.Type)
 }
 
 type ToolVariantFunction struct {
 	// Human-readable description.
-	Description Field[string] `json:"description,omitempty"`
+	Description *string `json:"description,omitzero"`
 	// Example inputs for the tool (V4 `inputExamples`), used by some providers
 	// to emit `input_examples` in the request body.
-	InputExamples Field[[]FunctionToolInputExample] `json:"inputExamples,omitempty"`
+	InputExamples []FunctionToolInputExample `json:"inputExamples,omitzero"`
 	// JSON Schema describing the tool's parameters.
 	InputSchema json.RawMessage `json:"inputSchema"`
 	// Unique tool name.
@@ -17597,62 +7428,20 @@ type ToolVariantFunction struct {
 	// Provider-specific options, keyed by provider name
 	// (e.g. `{"anthropic": {"eagerInputStreaming": true}}`). Aligned with the
 	// V4 `providerOptions` field on function tools.
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 	// Whether the tool supports strict schema enforcement (OpenAI strict mode).
-	Strict Field[bool] `json:"strict,omitempty"`
-}
-
-func (v *ToolVariantFunction) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolVariantFunction: %w", err)
-	}
-	var next ToolVariantFunction
-	if err := dtoTag(object, "type", "function"); err != nil {
-		return fmt.Errorf("ToolVariantFunction: %w", err)
-	}
-	if err := dtoRead(object, "description", &next.Description, false, true); err != nil {
-		return fmt.Errorf("ToolVariantFunction: %w", err)
-	}
-	if err := dtoRead(object, "inputExamples", &next.InputExamples, false, true); err != nil {
-		return fmt.Errorf("ToolVariantFunction: %w", err)
-	}
-	if err := dtoRead(object, "inputSchema", &next.InputSchema, true, true); err != nil {
-		return fmt.Errorf("ToolVariantFunction: %w", err)
-	}
-	if err := dtoRead(object, "name", &next.Name, true, false); err != nil {
-		return fmt.Errorf("ToolVariantFunction: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolVariantFunction: %w", err)
-	}
-	if err := dtoRead(object, "strict", &next.Strict, false, true); err != nil {
-		return fmt.Errorf("ToolVariantFunction: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolVariantFunction) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "function"
-	if v.Description.Present {
-		object["description"] = v.Description
-	}
-	if v.InputExamples.Present {
-		object["inputExamples"] = v.InputExamples
-	}
-	object["inputSchema"] = v.InputSchema
-	object["name"] = v.Name
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	if v.Strict.Present {
-		object["strict"] = v.Strict
-	}
-	return json.Marshal(object)
+	Strict *bool `json:"strict,omitzero"`
 }
 
 func (ToolVariantFunction) isTool() {}
+
+func (v ToolVariantFunction) MarshalJSON() ([]byte, error) {
+	type plain ToolVariantFunction
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "function", plain: plain(v)})
+}
 
 type ToolVariantProvider struct {
 	// The arguments for configuring the tool. Must match the expected
@@ -17664,485 +7453,123 @@ type ToolVariantProvider struct {
 	Name string `json:"name"`
 }
 
-func (v *ToolVariantProvider) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolVariantProvider: %w", err)
-	}
-	var next ToolVariantProvider
-	if err := dtoTag(object, "type", "provider"); err != nil {
-		return fmt.Errorf("ToolVariantProvider: %w", err)
-	}
-	if err := dtoRead(object, "args", &next.Args, true, false); err != nil {
-		return fmt.Errorf("ToolVariantProvider: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("ToolVariantProvider: %w", err)
-	}
-	if err := dtoRead(object, "name", &next.Name, true, false); err != nil {
-		return fmt.Errorf("ToolVariantProvider: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolVariantProvider) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "provider"
-	object["args"] = v.Args
-	object["id"] = v.ID
-	object["name"] = v.Name
-	return json.Marshal(object)
-}
-
 func (ToolVariantProvider) isTool() {}
+
+func (v ToolVariantProvider) MarshalJSON() ([]byte, error) {
+	type plain ToolVariantProvider
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "provider", plain: plain(v)})
+}
 
 // Approval request exposed by text generation.
 type ToolApprovalRequestOutput struct {
-	ApprovalID  string        `json:"approvalId"`
-	IsAutomatic Field[bool]   `json:"isAutomatic,omitempty"`
-	Reason      Field[string] `json:"reason,omitempty"`
-	Signature   Field[string] `json:"signature,omitempty"`
+	ApprovalID  string  `json:"approvalId"`
+	IsAutomatic *bool   `json:"isAutomatic,omitzero"`
+	Reason      *string `json:"reason,omitzero"`
+	Signature   *string `json:"signature,omitzero"`
 	// The call to approve, with its `type` tag (`ai`
 	// `generate-text/tool-approval-request-output.ts:20`).
 	ToolCall TypedToolCall `json:"toolCall"`
 }
 
-func (v *ToolApprovalRequestOutput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolApprovalRequestOutput: %w", err)
-	}
-	var next ToolApprovalRequestOutput
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("ToolApprovalRequestOutput: %w", err)
-	}
-	if err := dtoRead(object, "isAutomatic", &next.IsAutomatic, false, true); err != nil {
-		return fmt.Errorf("ToolApprovalRequestOutput: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("ToolApprovalRequestOutput: %w", err)
-	}
-	if err := dtoRead(object, "signature", &next.Signature, false, true); err != nil {
-		return fmt.Errorf("ToolApprovalRequestOutput: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("ToolApprovalRequestOutput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolApprovalRequestOutput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["approvalId"] = v.ApprovalID
-	if v.IsAutomatic.Present {
-		object["isAutomatic"] = v.IsAutomatic
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	if v.Signature.Present {
-		object["signature"] = v.Signature
-	}
-	object["toolCall"] = v.ToolCall
-	return json.Marshal(object)
-}
-
 // Approval request exposed by text generation.
 type ToolApprovalRequestOutputInput struct {
-	ApprovalID  string        `json:"approvalId"`
-	IsAutomatic Field[bool]   `json:"isAutomatic,omitempty"`
-	Reason      Field[string] `json:"reason,omitempty"`
-	Signature   Field[string] `json:"signature,omitempty"`
+	ApprovalID  string  `json:"approvalId"`
+	IsAutomatic *bool   `json:"isAutomatic,omitzero"`
+	Reason      *string `json:"reason,omitzero"`
+	Signature   *string `json:"signature,omitzero"`
 	// The call to approve, with its `type` tag (`ai`
 	// `generate-text/tool-approval-request-output.ts:20`).
 	ToolCall TypedToolCallInput `json:"toolCall"`
-}
-
-func (v *ToolApprovalRequestOutputInput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolApprovalRequestOutputInput: %w", err)
-	}
-	var next ToolApprovalRequestOutputInput
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("ToolApprovalRequestOutputInput: %w", err)
-	}
-	if err := dtoRead(object, "isAutomatic", &next.IsAutomatic, false, true); err != nil {
-		return fmt.Errorf("ToolApprovalRequestOutputInput: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("ToolApprovalRequestOutputInput: %w", err)
-	}
-	if err := dtoRead(object, "signature", &next.Signature, false, true); err != nil {
-		return fmt.Errorf("ToolApprovalRequestOutputInput: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("ToolApprovalRequestOutputInput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolApprovalRequestOutputInput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["approvalId"] = v.ApprovalID
-	if v.IsAutomatic.Present {
-		object["isAutomatic"] = v.IsAutomatic
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	if v.Signature.Present {
-		object["signature"] = v.Signature
-	}
-	object["toolCall"] = v.ToolCall
-	return json.Marshal(object)
 }
 
 // The answer to a tool approval request (the AI SDK's
 // `ToolApprovalResponseOutput`, `ai`
 // `generate-text/tool-approval-response-output.ts:7-35`).
 type ToolApprovalResponseOutput struct {
-	ApprovalID       string        `json:"approvalId"`
-	Approved         bool          `json:"approved"`
-	ProviderExecuted Field[bool]   `json:"providerExecuted,omitempty"`
-	Reason           Field[string] `json:"reason,omitempty"`
+	ApprovalID       string  `json:"approvalId"`
+	Approved         bool    `json:"approved"`
+	ProviderExecuted *bool   `json:"providerExecuted,omitzero"`
+	Reason           *string `json:"reason,omitzero"`
 	// The answered call, with its `type` tag (`TypedToolCall`,
 	// `tool-approval-response-output.ts:18`).
 	ToolCall TypedToolCall `json:"toolCall"`
-}
-
-func (v *ToolApprovalResponseOutput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolApprovalResponseOutput: %w", err)
-	}
-	var next ToolApprovalResponseOutput
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("ToolApprovalResponseOutput: %w", err)
-	}
-	if err := dtoRead(object, "approved", &next.Approved, true, false); err != nil {
-		return fmt.Errorf("ToolApprovalResponseOutput: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ToolApprovalResponseOutput: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("ToolApprovalResponseOutput: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("ToolApprovalResponseOutput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolApprovalResponseOutput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["approvalId"] = v.ApprovalID
-	object["approved"] = v.Approved
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	object["toolCall"] = v.ToolCall
-	return json.Marshal(object)
 }
 
 // The answer to a tool approval request (the AI SDK's
 // `ToolApprovalResponseOutput`, `ai`
 // `generate-text/tool-approval-response-output.ts:7-35`).
 type ToolApprovalResponseOutputInput struct {
-	ApprovalID       string        `json:"approvalId"`
-	Approved         bool          `json:"approved"`
-	ProviderExecuted Field[bool]   `json:"providerExecuted,omitempty"`
-	Reason           Field[string] `json:"reason,omitempty"`
+	ApprovalID       string  `json:"approvalId"`
+	Approved         bool    `json:"approved"`
+	ProviderExecuted *bool   `json:"providerExecuted,omitzero"`
+	Reason           *string `json:"reason,omitzero"`
 	// The answered call, with its `type` tag (`TypedToolCall`,
 	// `tool-approval-response-output.ts:18`).
 	ToolCall TypedToolCallInput `json:"toolCall"`
 }
 
-func (v *ToolApprovalResponseOutputInput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolApprovalResponseOutputInput: %w", err)
-	}
-	var next ToolApprovalResponseOutputInput
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("ToolApprovalResponseOutputInput: %w", err)
-	}
-	if err := dtoRead(object, "approved", &next.Approved, true, false); err != nil {
-		return fmt.Errorf("ToolApprovalResponseOutputInput: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ToolApprovalResponseOutputInput: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("ToolApprovalResponseOutputInput: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("ToolApprovalResponseOutputInput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolApprovalResponseOutputInput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["approvalId"] = v.ApprovalID
-	object["approved"] = v.Approved
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	object["toolCall"] = v.ToolCall
-	return json.Marshal(object)
-}
-
 // The user's decision for a provider-executed tool approval request.
 type ToolApprovalResponsePart struct {
-	ApprovalID      string                                       `json:"approvalId"`
-	Approved        bool                                         `json:"approved"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Reason          Field[string]                                `json:"reason,omitempty"`
-}
-
-func (v *ToolApprovalResponsePart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolApprovalResponsePart: %w", err)
-	}
-	var next ToolApprovalResponsePart
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("ToolApprovalResponsePart: %w", err)
-	}
-	if err := dtoRead(object, "approved", &next.Approved, true, false); err != nil {
-		return fmt.Errorf("ToolApprovalResponsePart: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolApprovalResponsePart: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("ToolApprovalResponsePart: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolApprovalResponsePart) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["approvalId"] = v.ApprovalID
-	object["approved"] = v.Approved
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	return json.Marshal(object)
+	ApprovalID      string                                `json:"approvalId"`
+	Approved        bool                                  `json:"approved"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Reason          *string                               `json:"reason,omitzero"`
 }
 
 // A tool call requested by the model.
 type ToolCall struct {
 	// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
+	Dynamic *bool `json:"dynamic,omitzero"`
 	// Typed failure associated with an invalid tool call.
-	Error Field[AiMuxError] `json:"error,omitempty"`
+	Error *AiMuxError `json:"error,omitzero"`
 	// Parsed arguments, or the original string when `invalid` is true and the
 	// provider input was not valid JSON.
 	Input json.RawMessage `json:"input"`
 	// Set when lookup, JSON parsing, or schema validation still failed after
 	// the optional repair attempt.
-	Invalid Field[bool] `json:"invalid,omitempty"`
+	Invalid *bool `json:"invalid,omitzero"`
 	// Whether the tool call will be executed by the provider.
-	ProviderExecuted Field[bool] `json:"providerExecuted,omitempty"`
+	ProviderExecuted *bool `json:"providerExecuted,omitzero"`
 	// Additional provider-specific metadata associated with this call.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Provider-assigned call id.
 	ToolCallID string `json:"toolCallId"`
 	// Tool name.
 	ToolName string `json:"toolName"`
-}
-
-func (v *ToolCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolCall: %w", err)
-	}
-	var next ToolCall
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("ToolCall: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, false, true); err != nil {
-		return fmt.Errorf("ToolCall: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, true, true); err != nil {
-		return fmt.Errorf("ToolCall: %w", err)
-	}
-	if err := dtoRead(object, "invalid", &next.Invalid, false, true); err != nil {
-		return fmt.Errorf("ToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ToolCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.Error.Present {
-		object["error"] = v.Error
-	}
-	object["input"] = v.Input
-	if v.Invalid.Present {
-		object["invalid"] = v.Invalid
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
 }
 
 // A tool call requested by the model.
 type ToolCallInput struct {
 	// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
+	Dynamic *bool `json:"dynamic,omitzero"`
 	// Typed failure associated with an invalid tool call.
-	Error Field[AiMuxErrorInput] `json:"error,omitempty"`
+	Error *AiMuxErrorInput `json:"error,omitzero"`
 	// Parsed arguments, or the original string when `invalid` is true and the
 	// provider input was not valid JSON.
 	Input json.RawMessage `json:"input"`
 	// Set when lookup, JSON parsing, or schema validation still failed after
 	// the optional repair attempt.
-	Invalid Field[bool] `json:"invalid,omitempty"`
+	Invalid *bool `json:"invalid,omitzero"`
 	// Whether the tool call will be executed by the provider.
-	ProviderExecuted Field[bool] `json:"providerExecuted,omitempty"`
+	ProviderExecuted *bool `json:"providerExecuted,omitzero"`
 	// Additional provider-specific metadata associated with this call.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Provider-assigned call id.
 	ToolCallID string `json:"toolCallId"`
 	// Tool name.
 	ToolName string `json:"toolName"`
 }
 
-func (v *ToolCallInput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolCallInput: %w", err)
-	}
-	var next ToolCallInput
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("ToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, false, true); err != nil {
-		return fmt.Errorf("ToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, true, true); err != nil {
-		return fmt.Errorf("ToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "invalid", &next.Invalid, false, true); err != nil {
-		return fmt.Errorf("ToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ToolCallInput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolCallInput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.Error.Present {
-		object["error"] = v.Error
-	}
-	object["input"] = v.Input
-	if v.Invalid.Present {
-		object["invalid"] = v.Invalid
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
-}
-
 // Tool call content part.
 type ToolCallPart struct {
-	Input            json.RawMessage                              `json:"input"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderOptions  Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
-}
-
-func (v *ToolCallPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolCallPart: %w", err)
-	}
-	var next ToolCallPart
-	if err := dtoRead(object, "input", &next.Input, true, true); err != nil {
-		return fmt.Errorf("ToolCallPart: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ToolCallPart: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolCallPart: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ToolCallPart: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ToolCallPart: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolCallPart) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["input"] = v.Input
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+	Input            json.RawMessage                       `json:"input"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderOptions  map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
 }
 
 // A host's answer to one tool-call repair request.
@@ -18153,184 +7580,95 @@ func (v ToolCallPart) MarshalJSON() ([]byte, error) {
 // `{"type":"repaired","toolCall":{…}}`, `{"type":"unchanged"}`, or
 // `{"type":"failed","message":"…"}`.
 type ToolCallRepairReplyVariant interface{ isToolCallRepairReply() }
-type ToolCallRepairReply struct{ Value ToolCallRepairReplyVariant }
+type ToolCallRepairReply struct {
+	Value ToolCallRepairReplyVariant
+}
 
 func (v ToolCallRepairReply) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ToolCallRepairReply: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ToolCallRepairReply) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolCallRepairReply: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("ToolCallRepairReply: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "repaired" {
-		var next ToolCallRepairReplyVariantRepaired
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "unchanged" {
-		var next ToolCallRepairReplyVariantUnchanged
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "failed" {
+	switch tag.Type {
+	case "failed":
 		var next ToolCallRepairReplyVariantFailed
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "repaired":
+		var next ToolCallRepairReplyVariantRepaired
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "unchanged":
+		var next ToolCallRepairReplyVariantUnchanged
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("ToolCallRepairReply: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("ToolCallRepairReply: unknown type tag %q", tag.Type)
 }
 
 type ToolCallRepairReplyVariantRepaired struct {
 	ToolCall ToolCallRepairReply0ToolCall `json:"toolCall"`
 }
 
-func (v *ToolCallRepairReplyVariantRepaired) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolCallRepairReplyVariantRepaired: %w", err)
-	}
-	var next ToolCallRepairReplyVariantRepaired
-	if err := dtoTag(object, "type", "repaired"); err != nil {
-		return fmt.Errorf("ToolCallRepairReplyVariantRepaired: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("ToolCallRepairReplyVariantRepaired: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolCallRepairReplyVariantRepaired) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "repaired"
-	object["toolCall"] = v.ToolCall
-	return json.Marshal(object)
-}
-
 func (ToolCallRepairReplyVariantRepaired) isToolCallRepairReply() {}
 
-type ToolCallRepairReplyVariantUnchanged struct {
+func (v ToolCallRepairReplyVariantRepaired) MarshalJSON() ([]byte, error) {
+	type plain ToolCallRepairReplyVariantRepaired
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "repaired", plain: plain(v)})
 }
 
-func (v *ToolCallRepairReplyVariantUnchanged) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolCallRepairReplyVariantUnchanged: %w", err)
-	}
-	var next ToolCallRepairReplyVariantUnchanged
-	if err := dtoTag(object, "type", "unchanged"); err != nil {
-		return fmt.Errorf("ToolCallRepairReplyVariantUnchanged: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolCallRepairReplyVariantUnchanged) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "unchanged"
-	return json.Marshal(object)
-}
+type ToolCallRepairReplyVariantUnchanged struct{}
 
 func (ToolCallRepairReplyVariantUnchanged) isToolCallRepairReply() {}
+
+func (v ToolCallRepairReplyVariantUnchanged) MarshalJSON() ([]byte, error) {
+	type plain ToolCallRepairReplyVariantUnchanged
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "unchanged", plain: plain(v)})
+}
 
 type ToolCallRepairReplyVariantFailed struct {
 	Message string `json:"message"`
 }
 
-func (v *ToolCallRepairReplyVariantFailed) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolCallRepairReplyVariantFailed: %w", err)
-	}
-	var next ToolCallRepairReplyVariantFailed
-	if err := dtoTag(object, "type", "failed"); err != nil {
-		return fmt.Errorf("ToolCallRepairReplyVariantFailed: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("ToolCallRepairReplyVariantFailed: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolCallRepairReplyVariantFailed) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "failed"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (ToolCallRepairReplyVariantFailed) isToolCallRepairReply() {}
 
-type ToolCallRepairReply0ToolCall struct {
-	Dynamic          Field[bool]                                  `json:"dynamic,omitempty"`
-	Input            string                                       `json:"input"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
-	Type             Field[ToolCallRepairReply0ToolCallType]      `json:"type,omitempty"`
+func (v ToolCallRepairReplyVariantFailed) MarshalJSON() ([]byte, error) {
+	type plain ToolCallRepairReplyVariantFailed
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "failed", plain: plain(v)})
 }
 
-func (v *ToolCallRepairReply0ToolCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolCallRepairReply0ToolCall: %w", err)
-	}
-	var next ToolCallRepairReply0ToolCall
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("ToolCallRepairReply0ToolCall: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, true, false); err != nil {
-		return fmt.Errorf("ToolCallRepairReply0ToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ToolCallRepairReply0ToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ToolCallRepairReply0ToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ToolCallRepairReply0ToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ToolCallRepairReply0ToolCall: %w", err)
-	}
-	if err := dtoRead(object, "type", &next.Type, false, false); err != nil {
-		return fmt.Errorf("ToolCallRepairReply0ToolCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolCallRepairReply0ToolCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	object["input"] = v.Input
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	if v.Type.Present {
-		object["type"] = v.Type
-	}
-	return json.Marshal(object)
+type ToolCallRepairReply0ToolCall struct {
+	Dynamic          *bool                                 `json:"dynamic,omitzero"`
+	Input            string                                `json:"input"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
+	Type             *ToolCallRepairReply0ToolCallType     `json:"type,omitzero"`
 }
 
 type ToolCallRepairReply0ToolCallType string
@@ -18338,19 +7676,6 @@ type ToolCallRepairReply0ToolCallType string
 const (
 	ToolCallRepairReply0ToolCallTypeToolCall ToolCallRepairReply0ToolCallType = "tool-call"
 )
-
-func (v *ToolCallRepairReply0ToolCallType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "tool-call":
-		*v = ToolCallRepairReply0ToolCallType(next)
-		return nil
-	}
-	return fmt.Errorf("ToolCallRepairReply0ToolCallType: unknown value %s", data)
-}
 
 // How the model should choose tools, as the caller gives it
 // (`GenerateTextOptions.tool_choice`).
@@ -18363,41 +7688,48 @@ func (v *ToolCallRepairReply0ToolCallType) UnmarshalJSON(data []byte) error {
 // [`prepare_tool_choice`] turns it into the [`LanguageModelV4ToolChoice`]
 // a model call carries.
 type ToolChoiceVariant interface{ isToolChoice() }
-type ToolChoice struct{ Value ToolChoiceVariant }
+type ToolChoice struct {
+	Value ToolChoiceVariant
+}
 
 func (v ToolChoice) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ToolChoice: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ToolChoice) UnmarshalJSON(data []byte) error {
+	var err error
 	{
 		var next ToolChoice0
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = ToolChoiceBranch0{Value: next}
 			return nil
 		}
 	}
 	{
 		var next ToolChoice1
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false, "toolName", "type"); err == nil {
 			v.Value = ToolChoiceBranch1{Value: next}
 			return nil
 		}
 	}
-	return fmt.Errorf("ToolChoice: no matching branch")
+	return err
 }
 
 type ToolChoiceBranch0 struct{ Value ToolChoice0 }
 
-func (ToolChoiceBranch0) isToolChoice()                  {}
-func (v ToolChoiceBranch0) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (ToolChoiceBranch0) isToolChoice() {}
+
+func (v ToolChoiceBranch0) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type ToolChoiceBranch1 struct{ Value ToolChoice1 }
 
-func (ToolChoiceBranch1) isToolChoice()                  {}
-func (v ToolChoiceBranch1) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (ToolChoiceBranch1) isToolChoice() {}
+
+func (v ToolChoiceBranch1) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type ToolChoice0 string
 
@@ -18407,50 +7739,9 @@ const (
 	ToolChoice0Required ToolChoice0 = "required"
 )
 
-func (v *ToolChoice0) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "auto":
-		*v = ToolChoice0(next)
-		return nil
-	case "none":
-		*v = ToolChoice0(next)
-		return nil
-	case "required":
-		*v = ToolChoice0(next)
-		return nil
-	}
-	return fmt.Errorf("ToolChoice0: unknown value %s", data)
-}
-
 type ToolChoice1 struct {
 	ToolName string          `json:"toolName"`
 	Type     ToolChoice1Type `json:"type"`
-}
-
-func (v *ToolChoice1) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolChoice1: %w", err)
-	}
-	var next ToolChoice1
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ToolChoice1: %w", err)
-	}
-	if err := dtoRead(object, "type", &next.Type, true, false); err != nil {
-		return fmt.Errorf("ToolChoice1: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolChoice1) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["toolName"] = v.ToolName
-	object["type"] = v.Type
-	return json.Marshal(object)
 }
 
 type ToolChoice1Type string
@@ -18458,19 +7749,6 @@ type ToolChoice1Type string
 const (
 	ToolChoice1TypeTool ToolChoice1Type = "tool"
 )
-
-func (v *ToolChoice1Type) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "tool":
-		*v = ToolChoice1Type(next)
-		return nil
-	}
-	return fmt.Errorf("ToolChoice1Type: unknown value %s", data)
-}
 
 // What [`AiMuxError::ToolChoiceViolation`] carries: the field set of the AI
 // SDK's `ToolChoiceViolationError` (`ai` `error/tool-choice-violation-error.ts`).
@@ -18489,449 +7767,175 @@ type ToolChoiceViolationError struct {
 	ToolChoice LanguageModelV4ToolChoice `json:"toolChoice"`
 }
 
-func (v *ToolChoiceViolationError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolChoiceViolationError: %w", err)
-	}
-	var next ToolChoiceViolationError
-	if err := dtoRead(object, "content", &next.Content, true, false); err != nil {
-		return fmt.Errorf("ToolChoiceViolationError: %w", err)
-	}
-	if err := dtoRead(object, "finishReason", &next.FinishReason, true, false); err != nil {
-		return fmt.Errorf("ToolChoiceViolationError: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, true, false); err != nil {
-		return fmt.Errorf("ToolChoiceViolationError: %w", err)
-	}
-	if err := dtoRead(object, "provider", &next.Provider, true, false); err != nil {
-		return fmt.Errorf("ToolChoiceViolationError: %w", err)
-	}
-	if err := dtoRead(object, "toolChoice", &next.ToolChoice, true, false); err != nil {
-		return fmt.Errorf("ToolChoiceViolationError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolChoiceViolationError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["content"] = v.Content
-	object["finishReason"] = v.FinishReason
-	object["modelId"] = v.ModelID
-	object["provider"] = v.Provider
-	object["toolChoice"] = v.ToolChoice
-	return json.Marshal(object)
-}
-
 // A part of a tool message: upstream's `ToolResultPart | ToolApprovalResponse`.
 type ToolContentPartVariant interface{ isToolContentPart() }
-type ToolContentPart struct{ Value ToolContentPartVariant }
+type ToolContentPart struct {
+	Value ToolContentPartVariant
+}
 
 func (v ToolContentPart) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ToolContentPart: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ToolContentPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolContentPart: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("ToolContentPart: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "tool-result" {
-		var next ToolContentPartVariantToolResult
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-approval-response" {
+	switch tag.Type {
+	case "tool-approval-response":
 		var next ToolContentPartVariantToolApprovalResponse
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "tool-result":
+		var next ToolContentPartVariantToolResult
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("ToolContentPart: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("ToolContentPart: unknown type tag %q", tag.Type)
 }
 
 type ToolContentPartVariantToolResult struct {
 	Output ToolResultOutput `json:"output"`
 	// Provider-specific options for this part (e.g. `anthropic.cacheControl`).
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	ToolCallID      string                                       `json:"toolCallId"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	ToolCallID      string                                `json:"toolCallId"`
 	// The tool name. Required upstream; when absent here, the conversion
 	// takes it from the preceding tool call with the same id.
-	ToolName Field[string] `json:"toolName,omitempty"`
-}
-
-func (v *ToolContentPartVariantToolResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolContentPartVariantToolResult: %w", err)
-	}
-	var next ToolContentPartVariantToolResult
-	if err := dtoTag(object, "type", "tool-result"); err != nil {
-		return fmt.Errorf("ToolContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, true, false); err != nil {
-		return fmt.Errorf("ToolContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ToolContentPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, false, true); err != nil {
-		return fmt.Errorf("ToolContentPartVariantToolResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolContentPartVariantToolResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-result"
-	object["output"] = v.Output
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["toolCallId"] = v.ToolCallID
-	if v.ToolName.Present {
-		object["toolName"] = v.ToolName
-	}
-	return json.Marshal(object)
+	ToolName *string `json:"toolName,omitzero"`
 }
 
 func (ToolContentPartVariantToolResult) isToolContentPart() {}
 
-type ToolContentPartVariantToolApprovalResponse struct {
-	ApprovalID       string        `json:"approvalId"`
-	Approved         bool          `json:"approved"`
-	ProviderExecuted Field[bool]   `json:"providerExecuted,omitempty"`
-	Reason           Field[string] `json:"reason,omitempty"`
+func (v ToolContentPartVariantToolResult) MarshalJSON() ([]byte, error) {
+	type plain ToolContentPartVariantToolResult
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-result", plain: plain(v)})
 }
 
-func (v *ToolContentPartVariantToolApprovalResponse) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolContentPartVariantToolApprovalResponse: %w", err)
-	}
-	var next ToolContentPartVariantToolApprovalResponse
-	if err := dtoTag(object, "type", "tool-approval-response"); err != nil {
-		return fmt.Errorf("ToolContentPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("ToolContentPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "approved", &next.Approved, true, false); err != nil {
-		return fmt.Errorf("ToolContentPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ToolContentPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("ToolContentPartVariantToolApprovalResponse: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolContentPartVariantToolApprovalResponse) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-approval-response"
-	object["approvalId"] = v.ApprovalID
-	object["approved"] = v.Approved
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	return json.Marshal(object)
+type ToolContentPartVariantToolApprovalResponse struct {
+	ApprovalID       string  `json:"approvalId"`
+	Approved         bool    `json:"approved"`
+	ProviderExecuted *bool   `json:"providerExecuted,omitzero"`
+	Reason           *string `json:"reason,omitzero"`
 }
 
 func (ToolContentPartVariantToolApprovalResponse) isToolContentPart() {}
 
+func (v ToolContentPartVariantToolApprovalResponse) MarshalJSON() ([]byte, error) {
+	type plain ToolContentPartVariantToolApprovalResponse
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-approval-response", plain: plain(v)})
+}
+
 // The output of a tool whose execution was denied (the AI SDK's
 // `StaticToolOutputDenied`, `ai` `generate-text/tool-output-denied.ts:7-15`).
 type ToolOutputDenied struct {
-	Dynamic          Field[bool] `json:"dynamic,omitempty"`
-	ProviderExecuted Field[bool] `json:"providerExecuted,omitempty"`
-	ToolCallID       string      `json:"toolCallId"`
-	ToolName         string      `json:"toolName"`
-}
-
-func (v *ToolOutputDenied) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolOutputDenied: %w", err)
-	}
-	var next ToolOutputDenied
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("ToolOutputDenied: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ToolOutputDenied: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ToolOutputDenied: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ToolOutputDenied: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolOutputDenied) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+	Dynamic          *bool  `json:"dynamic,omitzero"`
+	ProviderExecuted *bool  `json:"providerExecuted,omitzero"`
+	ToolCallID       string `json:"toolCallId"`
+	ToolName         string `json:"toolName"`
 }
 
 // Parts allowed in a tool message.
 type ToolPartVariant interface{ isToolPart() }
-type ToolPart struct{ Value ToolPartVariant }
+type ToolPart struct {
+	Value ToolPartVariant
+}
 
 func (v ToolPart) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ToolPart: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ToolPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolPart: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("ToolPart: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "tool-result" {
-		var next ToolPartVariantToolResult
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "tool-approval-response" {
+	switch tag.Type {
+	case "tool-approval-response":
 		var next ToolPartVariantToolApprovalResponse
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "tool-result":
+		var next ToolPartVariantToolResult
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("ToolPart: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("ToolPart: unknown type tag %q", tag.Type)
 }
 
 type ToolPartVariantToolResult struct {
-	Output          ToolResultOutput2                            `json:"output"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	ToolCallID      string                                       `json:"toolCallId"`
-	ToolName        string                                       `json:"toolName"`
-}
-
-func (v *ToolPartVariantToolResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolPartVariantToolResult: %w", err)
-	}
-	var next ToolPartVariantToolResult
-	if err := dtoTag(object, "type", "tool-result"); err != nil {
-		return fmt.Errorf("ToolPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, true, false); err != nil {
-		return fmt.Errorf("ToolPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ToolPartVariantToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ToolPartVariantToolResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolPartVariantToolResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-result"
-	object["output"] = v.Output
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+	Output          ToolResultOutput2                     `json:"output"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	ToolCallID      string                                `json:"toolCallId"`
+	ToolName        string                                `json:"toolName"`
 }
 
 func (ToolPartVariantToolResult) isToolPart() {}
 
-type ToolPartVariantToolApprovalResponse struct {
-	ApprovalID      string                                       `json:"approvalId"`
-	Approved        bool                                         `json:"approved"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Reason          Field[string]                                `json:"reason,omitempty"`
+func (v ToolPartVariantToolResult) MarshalJSON() ([]byte, error) {
+	type plain ToolPartVariantToolResult
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-result", plain: plain(v)})
 }
 
-func (v *ToolPartVariantToolApprovalResponse) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolPartVariantToolApprovalResponse: %w", err)
-	}
-	var next ToolPartVariantToolApprovalResponse
-	if err := dtoTag(object, "type", "tool-approval-response"); err != nil {
-		return fmt.Errorf("ToolPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "approvalId", &next.ApprovalID, true, false); err != nil {
-		return fmt.Errorf("ToolPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "approved", &next.Approved, true, false); err != nil {
-		return fmt.Errorf("ToolPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolPartVariantToolApprovalResponse: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("ToolPartVariantToolApprovalResponse: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolPartVariantToolApprovalResponse) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "tool-approval-response"
-	object["approvalId"] = v.ApprovalID
-	object["approved"] = v.Approved
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	return json.Marshal(object)
+type ToolPartVariantToolApprovalResponse struct {
+	ApprovalID      string                                `json:"approvalId"`
+	Approved        bool                                  `json:"approved"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Reason          *string                               `json:"reason,omitzero"`
 }
 
 func (ToolPartVariantToolApprovalResponse) isToolPart() {}
 
-type ToolRepairApplyRequest struct {
-	Options  Field[GenerateTextOptions] `json:"options,omitempty"`
-	Reply    ToolCallRepairReply        `json:"reply"`
-	ToolCall ToolCallInput              `json:"toolCall"`
+func (v ToolPartVariantToolApprovalResponse) MarshalJSON() ([]byte, error) {
+	type plain ToolPartVariantToolApprovalResponse
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "tool-approval-response", plain: plain(v)})
 }
 
-func (v *ToolRepairApplyRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolRepairApplyRequest: %w", err)
-	}
-	var next ToolRepairApplyRequest
-	if err := dtoRead(object, "options", &next.Options, false, false); err != nil {
-		return fmt.Errorf("ToolRepairApplyRequest: %w", err)
-	}
-	if err := dtoRead(object, "reply", &next.Reply, true, false); err != nil {
-		return fmt.Errorf("ToolRepairApplyRequest: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("ToolRepairApplyRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolRepairApplyRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Options.Present {
-		object["options"] = v.Options
-	}
-	object["reply"] = v.Reply
-	object["toolCall"] = v.ToolCall
-	return json.Marshal(object)
+type ToolRepairApplyRequest struct {
+	Options  *GenerateTextOptions `json:"options,omitzero"`
+	Reply    ToolCallRepairReply  `json:"reply"`
+	ToolCall ToolCallInput        `json:"toolCall"`
 }
 
 type ToolRepairApplyResultRequest struct {
-	Options    Field[GenerateTextOptions] `json:"options,omitempty"`
-	Reply      ToolCallRepairReply        `json:"reply"`
-	Result     GenerateTextResultInput    `json:"result"`
-	ToolCallID string                     `json:"toolCallId"`
-}
-
-func (v *ToolRepairApplyResultRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolRepairApplyResultRequest: %w", err)
-	}
-	var next ToolRepairApplyResultRequest
-	if err := dtoRead(object, "options", &next.Options, false, false); err != nil {
-		return fmt.Errorf("ToolRepairApplyResultRequest: %w", err)
-	}
-	if err := dtoRead(object, "reply", &next.Reply, true, false); err != nil {
-		return fmt.Errorf("ToolRepairApplyResultRequest: %w", err)
-	}
-	if err := dtoRead(object, "result", &next.Result, true, false); err != nil {
-		return fmt.Errorf("ToolRepairApplyResultRequest: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ToolRepairApplyResultRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolRepairApplyResultRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Options.Present {
-		object["options"] = v.Options
-	}
-	object["reply"] = v.Reply
-	object["result"] = v.Result
-	object["toolCallId"] = v.ToolCallID
-	return json.Marshal(object)
+	Options    *GenerateTextOptions    `json:"options,omitzero"`
+	Reply      ToolCallRepairReply     `json:"reply"`
+	Result     GenerateTextResultInput `json:"result"`
+	ToolCallID string                  `json:"toolCallId"`
 }
 
 type ToolRepairContextRequest struct {
-	Options  Field[GenerateTextOptions] `json:"options,omitempty"`
-	Prompt   ModelPrompt                `json:"prompt"`
-	ToolCall ToolCallInput              `json:"toolCall"`
-}
-
-func (v *ToolRepairContextRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolRepairContextRequest: %w", err)
-	}
-	var next ToolRepairContextRequest
-	if err := dtoRead(object, "options", &next.Options, false, false); err != nil {
-		return fmt.Errorf("ToolRepairContextRequest: %w", err)
-	}
-	if err := dtoRead(object, "prompt", &next.Prompt, true, false); err != nil {
-		return fmt.Errorf("ToolRepairContextRequest: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("ToolRepairContextRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolRepairContextRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Options.Present {
-		object["options"] = v.Options
-	}
-	object["prompt"] = v.Prompt
-	object["toolCall"] = v.ToolCall
-	return json.Marshal(object)
+	Options  *GenerateTextOptions `json:"options,omitzero"`
+	Prompt   ModelPrompt          `json:"prompt"`
+	ToolCall ToolCallInput        `json:"toolCall"`
 }
 
 type ToolRepairContextResult = *ToolRepairContextSchema
@@ -18945,100 +7949,14 @@ type ToolRepairContextSchema struct {
 	Tools        []Tool                          `json:"tools"`
 }
 
-func (v *ToolRepairContextSchema) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolRepairContextSchema: %w", err)
-	}
-	var next ToolRepairContextSchema
-	if err := dtoRead(object, "error", &next.Error, true, false); err != nil {
-		return fmt.Errorf("ToolRepairContextSchema: %w", err)
-	}
-	if err := dtoRead(object, "inputSchema", &next.InputSchema, true, true); err != nil {
-		return fmt.Errorf("ToolRepairContextSchema: %w", err)
-	}
-	if err := dtoRead(object, "instructions", &next.Instructions, true, true); err != nil {
-		return fmt.Errorf("ToolRepairContextSchema: %w", err)
-	}
-	if err := dtoRead(object, "messages", &next.Messages, true, false); err != nil {
-		return fmt.Errorf("ToolRepairContextSchema: %w", err)
-	}
-	if err := dtoRead(object, "toolCall", &next.ToolCall, true, false); err != nil {
-		return fmt.Errorf("ToolRepairContextSchema: %w", err)
-	}
-	if err := dtoRead(object, "tools", &next.Tools, true, false); err != nil {
-		return fmt.Errorf("ToolRepairContextSchema: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolRepairContextSchema) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["error"] = v.Error
-	object["inputSchema"] = v.InputSchema
-	object["instructions"] = v.Instructions
-	object["messages"] = v.Messages
-	object["toolCall"] = v.ToolCall
-	object["tools"] = v.Tools
-	return json.Marshal(object)
-}
-
 type ToolRepairContextSchemaToolCall struct {
-	Dynamic          Field[bool]                                  `json:"dynamic,omitempty"`
-	Input            string                                       `json:"input"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
-	Type             ToolRepairContextSchemaToolCallType          `json:"type"`
-}
-
-func (v *ToolRepairContextSchemaToolCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolRepairContextSchemaToolCall: %w", err)
-	}
-	var next ToolRepairContextSchemaToolCall
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("ToolRepairContextSchemaToolCall: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, true, false); err != nil {
-		return fmt.Errorf("ToolRepairContextSchemaToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("ToolRepairContextSchemaToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ToolRepairContextSchemaToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ToolRepairContextSchemaToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ToolRepairContextSchemaToolCall: %w", err)
-	}
-	if err := dtoRead(object, "type", &next.Type, true, false); err != nil {
-		return fmt.Errorf("ToolRepairContextSchemaToolCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolRepairContextSchemaToolCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	object["input"] = v.Input
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	object["type"] = v.Type
-	return json.Marshal(object)
+	Dynamic          *bool                                 `json:"dynamic,omitzero"`
+	Input            string                                `json:"input"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
+	Type             ToolRepairContextSchemaToolCallType   `json:"type"`
 }
 
 type ToolRepairContextSchemaToolCallType string
@@ -19047,30 +7965,17 @@ const (
 	ToolRepairContextSchemaToolCallTypeToolCall ToolRepairContextSchemaToolCallType = "tool-call"
 )
 
-func (v *ToolRepairContextSchemaToolCallType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "tool-call":
-		*v = ToolRepairContextSchemaToolCallType(next)
-		return nil
-	}
-	return fmt.Errorf("ToolRepairContextSchemaToolCallType: unknown value %s", data)
-}
-
 // A tool result produced by a provider-executed tool (e.g. xAI `file_search`,
 // web search), carried next to the [`RawToolCall`] it answers.
 type ToolResult struct {
 	// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
+	Dynamic *bool `json:"dynamic,omitzero"`
 	// Whether the result is an error or error message.
-	IsError Field[bool] `json:"isError,omitempty"`
+	IsError *bool `json:"isError,omitzero"`
 	// Whether the result is preliminary (replaces prior, e.g. image previews).
-	Preliminary Field[bool] `json:"preliminary,omitempty"`
+	Preliminary *bool `json:"preliminary,omitzero"`
 	// Additional provider-specific metadata for the tool result.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// The tool's output: any JSON value but `null`, as the V4
 	// `result: NonNullable<JSONValue>` (`@ai-sdk/provider@4.0.21
 	// src/language-model/v4/language-model-v4-tool-result.ts:23`); a `null`
@@ -19081,210 +7986,94 @@ type ToolResult struct {
 	ToolName   string `json:"toolName"`
 }
 
-func (v *ToolResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResult: %w", err)
-	}
-	var next ToolResult
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("ToolResult: %w", err)
-	}
-	if err := dtoRead(object, "isError", &next.IsError, false, true); err != nil {
-		return fmt.Errorf("ToolResult: %w", err)
-	}
-	if err := dtoRead(object, "preliminary", &next.Preliminary, false, true); err != nil {
-		return fmt.Errorf("ToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("ToolResult: %w", err)
-	}
-	if err := dtoRead(object, "result", &next.Result, true, true); err != nil {
-		return fmt.Errorf("ToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ToolResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.IsError.Present {
-		object["isError"] = v.IsError
-	}
-	if v.Preliminary.Present {
-		object["preliminary"] = v.Preliminary
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["result"] = v.Result
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
-}
-
 // Content within a tool result.
 type ToolResultContentVariant interface{ isToolResultContent() }
-type ToolResultContent struct{ Value ToolResultContentVariant }
+type ToolResultContent struct {
+	Value ToolResultContentVariant
+}
 
 func (v ToolResultContent) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ToolResultContent: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ToolResultContent) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContent: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("ToolResultContent: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "text" {
-		var next ToolResultContentVariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "file" {
-		var next ToolResultContentVariantFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "custom" {
+	switch tag.Type {
+	case "custom":
 		var next ToolResultContentVariantCustom
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "file":
+		var next ToolResultContentVariantFile
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "text":
+		var next ToolResultContentVariantText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("ToolResultContent: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("ToolResultContent: unknown type tag %q", tag.Type)
 }
 
 type ToolResultContentVariantText struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Text            string                                       `json:"text"`
-}
-
-func (v *ToolResultContentVariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentVariantText: %w", err)
-	}
-	var next ToolResultContentVariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("ToolResultContentVariantText: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentVariantText: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentVariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultContentVariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Text            string                                `json:"text"`
 }
 
 func (ToolResultContentVariantText) isToolResultContent() {}
 
-type ToolResultContentVariantFile struct {
-	Data            FileData                                     `json:"data"`
-	Filename        Field[string]                                `json:"filename,omitempty"`
-	MediaType       string                                       `json:"mediaType"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v ToolResultContentVariantText) MarshalJSON() ([]byte, error) {
+	type plain ToolResultContentVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
 }
 
-func (v *ToolResultContentVariantFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentVariantFile: %w", err)
-	}
-	var next ToolResultContentVariantFile
-	if err := dtoTag(object, "type", "file"); err != nil {
-		return fmt.Errorf("ToolResultContentVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentVariantFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultContentVariantFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file"
-	object["data"] = v.Data
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type ToolResultContentVariantFile struct {
+	Data            FileData                              `json:"data"`
+	Filename        *string                               `json:"filename,omitzero"`
+	MediaType       string                                `json:"mediaType"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (ToolResultContentVariantFile) isToolResultContent() {}
 
-type ToolResultContentVariantCustom struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v ToolResultContentVariantFile) MarshalJSON() ([]byte, error) {
+	type plain ToolResultContentVariantFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file", plain: plain(v)})
 }
 
-func (v *ToolResultContentVariantCustom) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentVariantCustom: %w", err)
-	}
-	var next ToolResultContentVariantCustom
-	if err := dtoTag(object, "type", "custom"); err != nil {
-		return fmt.Errorf("ToolResultContentVariantCustom: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentVariantCustom: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultContentVariantCustom) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "custom"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type ToolResultContentVariantCustom struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (ToolResultContentVariantCustom) isToolResultContent() {}
+
+func (v ToolResultContentVariantCustom) MarshalJSON() ([]byte, error) {
+	type plain ToolResultContentVariantCustom
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "custom", plain: plain(v)})
+}
 
 // One item of a `content` [`ToolResultOutput`] (upstream
 // `content-part.ts:303-546`).
@@ -19294,1290 +8083,663 @@ func (ToolResultContentVariantCustom) isToolResultContent() {}
 // conversion turns each into a `file` part with a deprecation warning, as
 // upstream's `mapToolResultOutput` does.
 type ToolResultContentPartVariant interface{ isToolResultContentPart() }
-type ToolResultContentPart struct{ Value ToolResultContentPartVariant }
+type ToolResultContentPart struct {
+	Value ToolResultContentPartVariant
+}
 
 func (v ToolResultContentPart) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ToolResultContentPart: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ToolResultContentPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentPart: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentPart: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "text" {
-		var next ToolResultContentPartVariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "file" {
-		var next ToolResultContentPartVariantFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "file-data" {
-		var next ToolResultContentPartVariantFileData
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "file-url" {
-		var next ToolResultContentPartVariantFileURL
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "file-id" {
-		var next ToolResultContentPartVariantFileID
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "file-reference" {
-		var next ToolResultContentPartVariantFileReference
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "image-data" {
-		var next ToolResultContentPartVariantImageData
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "image-url" {
-		var next ToolResultContentPartVariantImageURL
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "image-file-id" {
-		var next ToolResultContentPartVariantImageFileID
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "image-file-reference" {
-		var next ToolResultContentPartVariantImageFileReference
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "custom" {
+	switch tag.Type {
+	case "custom":
 		var next ToolResultContentPartVariantCustom
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "file":
+		var next ToolResultContentPartVariantFile
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "file-data":
+		var next ToolResultContentPartVariantFileData
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "file-id":
+		var next ToolResultContentPartVariantFileID
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "file-reference":
+		var next ToolResultContentPartVariantFileReference
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "file-url":
+		var next ToolResultContentPartVariantFileURL
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "image-data":
+		var next ToolResultContentPartVariantImageData
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "image-file-id":
+		var next ToolResultContentPartVariantImageFileID
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "image-file-reference":
+		var next ToolResultContentPartVariantImageFileReference
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "image-url":
+		var next ToolResultContentPartVariantImageURL
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "text":
+		var next ToolResultContentPartVariantText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("ToolResultContentPart: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("ToolResultContentPart: unknown type tag %q", tag.Type)
 }
 
 type ToolResultContentPartVariantText struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Text            string                                       `json:"text"`
-}
-
-func (v *ToolResultContentPartVariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantText: %w", err)
-	}
-	var next ToolResultContentPartVariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantText: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantText: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultContentPartVariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Text            string                                `json:"text"`
 }
 
 func (ToolResultContentPartVariantText) isToolResultContentPart() {}
 
-type ToolResultContentPartVariantFile struct {
-	Data            FileData                                     `json:"data"`
-	Filename        Field[string]                                `json:"filename,omitempty"`
-	MediaType       string                                       `json:"mediaType"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v ToolResultContentPartVariantText) MarshalJSON() ([]byte, error) {
+	type plain ToolResultContentPartVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
 }
 
-func (v *ToolResultContentPartVariantFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFile: %w", err)
-	}
-	var next ToolResultContentPartVariantFile
-	if err := dtoTag(object, "type", "file"); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultContentPartVariantFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file"
-	object["data"] = v.Data
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type ToolResultContentPartVariantFile struct {
+	Data            FileData                              `json:"data"`
+	Filename        *string                               `json:"filename,omitzero"`
+	MediaType       string                                `json:"mediaType"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (ToolResultContentPartVariantFile) isToolResultContentPart() {}
 
-type ToolResultContentPartVariantFileData struct {
-	Data            string                                       `json:"data"`
-	Filename        Field[string]                                `json:"filename,omitempty"`
-	MediaType       string                                       `json:"mediaType"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v ToolResultContentPartVariantFile) MarshalJSON() ([]byte, error) {
+	type plain ToolResultContentPartVariantFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file", plain: plain(v)})
 }
 
-func (v *ToolResultContentPartVariantFileData) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileData: %w", err)
-	}
-	var next ToolResultContentPartVariantFileData
-	if err := dtoTag(object, "type", "file-data"); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileData: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileData: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileData: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileData: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileData: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultContentPartVariantFileData) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file-data"
-	object["data"] = v.Data
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type ToolResultContentPartVariantFileData struct {
+	Data            string                                `json:"data"`
+	Filename        *string                               `json:"filename,omitzero"`
+	MediaType       string                                `json:"mediaType"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (ToolResultContentPartVariantFileData) isToolResultContentPart() {}
 
-type ToolResultContentPartVariantFileURL struct {
-	MediaType       Field[string]                                `json:"mediaType,omitempty"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	URL             string                                       `json:"url"`
+func (v ToolResultContentPartVariantFileData) MarshalJSON() ([]byte, error) {
+	type plain ToolResultContentPartVariantFileData
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file-data", plain: plain(v)})
 }
 
-func (v *ToolResultContentPartVariantFileURL) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileURL: %w", err)
-	}
-	var next ToolResultContentPartVariantFileURL
-	if err := dtoTag(object, "type", "file-url"); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileURL: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileURL: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileURL: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileURL: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultContentPartVariantFileURL) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file-url"
-	if v.MediaType.Present {
-		object["mediaType"] = v.MediaType
-	}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["url"] = v.URL
-	return json.Marshal(object)
+type ToolResultContentPartVariantFileURL struct {
+	MediaType       *string                               `json:"mediaType,omitzero"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	URL             string                                `json:"url"`
 }
 
 func (ToolResultContentPartVariantFileURL) isToolResultContentPart() {}
 
-type ToolResultContentPartVariantFileID struct {
-	FileID          ToolResultFileID                             `json:"fileId"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v ToolResultContentPartVariantFileURL) MarshalJSON() ([]byte, error) {
+	type plain ToolResultContentPartVariantFileURL
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file-url", plain: plain(v)})
 }
 
-func (v *ToolResultContentPartVariantFileID) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileID: %w", err)
-	}
-	var next ToolResultContentPartVariantFileID
-	if err := dtoTag(object, "type", "file-id"); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileID: %w", err)
-	}
-	if err := dtoRead(object, "fileId", &next.FileID, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileID: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileID: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultContentPartVariantFileID) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file-id"
-	object["fileId"] = v.FileID
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type ToolResultContentPartVariantFileID struct {
+	FileID          ToolResultFileID                      `json:"fileId"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (ToolResultContentPartVariantFileID) isToolResultContentPart() {}
 
-type ToolResultContentPartVariantFileReference struct {
-	ProviderOptions   Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	ProviderReference map[string]string                            `json:"providerReference"`
+func (v ToolResultContentPartVariantFileID) MarshalJSON() ([]byte, error) {
+	type plain ToolResultContentPartVariantFileID
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file-id", plain: plain(v)})
 }
 
-func (v *ToolResultContentPartVariantFileReference) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileReference: %w", err)
-	}
-	var next ToolResultContentPartVariantFileReference
-	if err := dtoTag(object, "type", "file-reference"); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileReference: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileReference: %w", err)
-	}
-	if err := dtoRead(object, "providerReference", &next.ProviderReference, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantFileReference: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultContentPartVariantFileReference) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file-reference"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["providerReference"] = v.ProviderReference
-	return json.Marshal(object)
+type ToolResultContentPartVariantFileReference struct {
+	ProviderOptions   map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	ProviderReference map[string]string                     `json:"providerReference"`
 }
 
 func (ToolResultContentPartVariantFileReference) isToolResultContentPart() {}
 
-type ToolResultContentPartVariantImageData struct {
-	Data            string                                       `json:"data"`
-	MediaType       string                                       `json:"mediaType"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v ToolResultContentPartVariantFileReference) MarshalJSON() ([]byte, error) {
+	type plain ToolResultContentPartVariantFileReference
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file-reference", plain: plain(v)})
 }
 
-func (v *ToolResultContentPartVariantImageData) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageData: %w", err)
-	}
-	var next ToolResultContentPartVariantImageData
-	if err := dtoTag(object, "type", "image-data"); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageData: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageData: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageData: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageData: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultContentPartVariantImageData) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "image-data"
-	object["data"] = v.Data
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type ToolResultContentPartVariantImageData struct {
+	Data            string                                `json:"data"`
+	MediaType       string                                `json:"mediaType"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (ToolResultContentPartVariantImageData) isToolResultContentPart() {}
 
-type ToolResultContentPartVariantImageURL struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	URL             string                                       `json:"url"`
+func (v ToolResultContentPartVariantImageData) MarshalJSON() ([]byte, error) {
+	type plain ToolResultContentPartVariantImageData
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "image-data", plain: plain(v)})
 }
 
-func (v *ToolResultContentPartVariantImageURL) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageURL: %w", err)
-	}
-	var next ToolResultContentPartVariantImageURL
-	if err := dtoTag(object, "type", "image-url"); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageURL: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageURL: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageURL: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultContentPartVariantImageURL) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "image-url"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["url"] = v.URL
-	return json.Marshal(object)
+type ToolResultContentPartVariantImageURL struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	URL             string                                `json:"url"`
 }
 
 func (ToolResultContentPartVariantImageURL) isToolResultContentPart() {}
 
-type ToolResultContentPartVariantImageFileID struct {
-	FileID          ToolResultFileID                             `json:"fileId"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v ToolResultContentPartVariantImageURL) MarshalJSON() ([]byte, error) {
+	type plain ToolResultContentPartVariantImageURL
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "image-url", plain: plain(v)})
 }
 
-func (v *ToolResultContentPartVariantImageFileID) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageFileID: %w", err)
-	}
-	var next ToolResultContentPartVariantImageFileID
-	if err := dtoTag(object, "type", "image-file-id"); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageFileID: %w", err)
-	}
-	if err := dtoRead(object, "fileId", &next.FileID, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageFileID: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageFileID: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultContentPartVariantImageFileID) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "image-file-id"
-	object["fileId"] = v.FileID
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type ToolResultContentPartVariantImageFileID struct {
+	FileID          ToolResultFileID                      `json:"fileId"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (ToolResultContentPartVariantImageFileID) isToolResultContentPart() {}
 
-type ToolResultContentPartVariantImageFileReference struct {
-	ProviderOptions   Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	ProviderReference map[string]string                            `json:"providerReference"`
+func (v ToolResultContentPartVariantImageFileID) MarshalJSON() ([]byte, error) {
+	type plain ToolResultContentPartVariantImageFileID
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "image-file-id", plain: plain(v)})
 }
 
-func (v *ToolResultContentPartVariantImageFileReference) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageFileReference: %w", err)
-	}
-	var next ToolResultContentPartVariantImageFileReference
-	if err := dtoTag(object, "type", "image-file-reference"); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageFileReference: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageFileReference: %w", err)
-	}
-	if err := dtoRead(object, "providerReference", &next.ProviderReference, true, false); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantImageFileReference: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultContentPartVariantImageFileReference) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "image-file-reference"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["providerReference"] = v.ProviderReference
-	return json.Marshal(object)
+type ToolResultContentPartVariantImageFileReference struct {
+	ProviderOptions   map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	ProviderReference map[string]string                     `json:"providerReference"`
 }
 
 func (ToolResultContentPartVariantImageFileReference) isToolResultContentPart() {}
 
-type ToolResultContentPartVariantCustom struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v ToolResultContentPartVariantImageFileReference) MarshalJSON() ([]byte, error) {
+	type plain ToolResultContentPartVariantImageFileReference
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "image-file-reference", plain: plain(v)})
 }
 
-func (v *ToolResultContentPartVariantCustom) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantCustom: %w", err)
-	}
-	var next ToolResultContentPartVariantCustom
-	if err := dtoTag(object, "type", "custom"); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantCustom: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultContentPartVariantCustom: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultContentPartVariantCustom) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "custom"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type ToolResultContentPartVariantCustom struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (ToolResultContentPartVariantCustom) isToolResultContentPart() {}
+
+func (v ToolResultContentPartVariantCustom) MarshalJSON() ([]byte, error) {
+	type plain ToolResultContentPartVariantCustom
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "custom", plain: plain(v)})
+}
 
 // The `fileId` of a deprecated `file-id` / `image-file-id` tool output item:
 // an id for the called provider, or ids keyed by provider
 // (`string | Record<string, string>`).
 type ToolResultFileIDVariant interface{ isToolResultFileID() }
-type ToolResultFileID struct{ Value ToolResultFileIDVariant }
+type ToolResultFileID struct {
+	Value ToolResultFileIDVariant
+}
 
 func (v ToolResultFileID) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ToolResultFileID: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ToolResultFileID) UnmarshalJSON(data []byte) error {
+	var err error
 	{
 		var next string
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = ToolResultFileIDBranch0{Value: next}
 			return nil
 		}
 	}
 	{
 		var next map[string]string
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = ToolResultFileIDBranch1{Value: next}
 			return nil
 		}
 	}
-	return fmt.Errorf("ToolResultFileID: no matching branch")
+	return err
 }
 
 type ToolResultFileIDBranch0 struct{ Value string }
 
-func (ToolResultFileIDBranch0) isToolResultFileID()            {}
-func (v ToolResultFileIDBranch0) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (ToolResultFileIDBranch0) isToolResultFileID() {}
+
+func (v ToolResultFileIDBranch0) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type ToolResultFileIDBranch1 struct{ Value map[string]string }
 
-func (ToolResultFileIDBranch1) isToolResultFileID()            {}
-func (v ToolResultFileIDBranch1) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (ToolResultFileIDBranch1) isToolResultFileID() {}
+
+func (v ToolResultFileIDBranch1) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 // The output of a tool call (upstream `ToolResultOutput`).
 type ToolResultOutputVariant interface{ isToolResultOutput() }
-type ToolResultOutput struct{ Value ToolResultOutputVariant }
+type ToolResultOutput struct {
+	Value ToolResultOutputVariant
+}
 
 func (v ToolResultOutput) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ToolResultOutput: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ToolResultOutput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultOutput: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("ToolResultOutput: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "text" {
-		var next ToolResultOutputVariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "json" {
-		var next ToolResultOutputVariantJSON
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "execution-denied" {
-		var next ToolResultOutputVariantExecutionDenied
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "error-text" {
-		var next ToolResultOutputVariantErrorText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "error-json" {
-		var next ToolResultOutputVariantErrorJSON
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "content" {
+	switch tag.Type {
+	case "content":
 		var next ToolResultOutputVariantContent
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "error-json":
+		var next ToolResultOutputVariantErrorJSON
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "error-text":
+		var next ToolResultOutputVariantErrorText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "execution-denied":
+		var next ToolResultOutputVariantExecutionDenied
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "json":
+		var next ToolResultOutputVariantJSON
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "text":
+		var next ToolResultOutputVariantText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("ToolResultOutput: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("ToolResultOutput: unknown type tag %q", tag.Type)
 }
 
 type ToolResultOutputVariantText struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Value           string                                       `json:"value"`
-}
-
-func (v *ToolResultOutputVariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultOutputVariantText: %w", err)
-	}
-	var next ToolResultOutputVariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantText: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantText: %w", err)
-	}
-	if err := dtoRead(object, "value", &next.Value, true, false); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultOutputVariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["value"] = v.Value
-	return json.Marshal(object)
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Value           string                                `json:"value"`
 }
 
 func (ToolResultOutputVariantText) isToolResultOutput() {}
 
-type ToolResultOutputVariantJSON struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Value           json.RawMessage                              `json:"value"`
+func (v ToolResultOutputVariantText) MarshalJSON() ([]byte, error) {
+	type plain ToolResultOutputVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
 }
 
-func (v *ToolResultOutputVariantJSON) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultOutputVariantJSON: %w", err)
-	}
-	var next ToolResultOutputVariantJSON
-	if err := dtoTag(object, "type", "json"); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantJSON: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantJSON: %w", err)
-	}
-	if err := dtoRead(object, "value", &next.Value, true, true); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantJSON: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultOutputVariantJSON) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "json"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["value"] = v.Value
-	return json.Marshal(object)
+type ToolResultOutputVariantJSON struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Value           json.RawMessage                       `json:"value"`
 }
 
 func (ToolResultOutputVariantJSON) isToolResultOutput() {}
 
-type ToolResultOutputVariantExecutionDenied struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Reason          Field[string]                                `json:"reason,omitempty"`
+func (v ToolResultOutputVariantJSON) MarshalJSON() ([]byte, error) {
+	type plain ToolResultOutputVariantJSON
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "json", plain: plain(v)})
 }
 
-func (v *ToolResultOutputVariantExecutionDenied) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultOutputVariantExecutionDenied: %w", err)
-	}
-	var next ToolResultOutputVariantExecutionDenied
-	if err := dtoTag(object, "type", "execution-denied"); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantExecutionDenied: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantExecutionDenied: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantExecutionDenied: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultOutputVariantExecutionDenied) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "execution-denied"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	return json.Marshal(object)
+type ToolResultOutputVariantExecutionDenied struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Reason          *string                               `json:"reason,omitzero"`
 }
 
 func (ToolResultOutputVariantExecutionDenied) isToolResultOutput() {}
 
-type ToolResultOutputVariantErrorText struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Value           string                                       `json:"value"`
+func (v ToolResultOutputVariantExecutionDenied) MarshalJSON() ([]byte, error) {
+	type plain ToolResultOutputVariantExecutionDenied
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "execution-denied", plain: plain(v)})
 }
 
-func (v *ToolResultOutputVariantErrorText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultOutputVariantErrorText: %w", err)
-	}
-	var next ToolResultOutputVariantErrorText
-	if err := dtoTag(object, "type", "error-text"); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantErrorText: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantErrorText: %w", err)
-	}
-	if err := dtoRead(object, "value", &next.Value, true, false); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantErrorText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultOutputVariantErrorText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "error-text"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["value"] = v.Value
-	return json.Marshal(object)
+type ToolResultOutputVariantErrorText struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Value           string                                `json:"value"`
 }
 
 func (ToolResultOutputVariantErrorText) isToolResultOutput() {}
 
-type ToolResultOutputVariantErrorJSON struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Value           json.RawMessage                              `json:"value"`
+func (v ToolResultOutputVariantErrorText) MarshalJSON() ([]byte, error) {
+	type plain ToolResultOutputVariantErrorText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "error-text", plain: plain(v)})
 }
 
-func (v *ToolResultOutputVariantErrorJSON) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultOutputVariantErrorJSON: %w", err)
-	}
-	var next ToolResultOutputVariantErrorJSON
-	if err := dtoTag(object, "type", "error-json"); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantErrorJSON: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantErrorJSON: %w", err)
-	}
-	if err := dtoRead(object, "value", &next.Value, true, true); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantErrorJSON: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultOutputVariantErrorJSON) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "error-json"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["value"] = v.Value
-	return json.Marshal(object)
+type ToolResultOutputVariantErrorJSON struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Value           json.RawMessage                       `json:"value"`
 }
 
 func (ToolResultOutputVariantErrorJSON) isToolResultOutput() {}
+
+func (v ToolResultOutputVariantErrorJSON) MarshalJSON() ([]byte, error) {
+	type plain ToolResultOutputVariantErrorJSON
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "error-json", plain: plain(v)})
+}
 
 type ToolResultOutputVariantContent struct {
 	Value []ToolResultContentPart `json:"value"`
 }
 
-func (v *ToolResultOutputVariantContent) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultOutputVariantContent: %w", err)
-	}
-	var next ToolResultOutputVariantContent
-	if err := dtoTag(object, "type", "content"); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantContent: %w", err)
-	}
-	if err := dtoRead(object, "value", &next.Value, true, false); err != nil {
-		return fmt.Errorf("ToolResultOutputVariantContent: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultOutputVariantContent) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "content"
-	object["value"] = v.Value
-	return json.Marshal(object)
-}
-
 func (ToolResultOutputVariantContent) isToolResultOutput() {}
+
+func (v ToolResultOutputVariantContent) MarshalJSON() ([]byte, error) {
+	type plain ToolResultOutputVariantContent
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "content", plain: plain(v)})
+}
 
 // The provider-facing result of a tool call.
 type ToolResultOutput2Variant interface{ isToolResultOutput2() }
-type ToolResultOutput2 struct{ Value ToolResultOutput2Variant }
+type ToolResultOutput2 struct {
+	Value ToolResultOutput2Variant
+}
 
 func (v ToolResultOutput2) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("ToolResultOutput2: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *ToolResultOutput2) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultOutput2: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("ToolResultOutput2: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "text" {
-		var next ToolResultOutput2VariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "json" {
-		var next ToolResultOutput2VariantJSON
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "execution-denied" {
-		var next ToolResultOutput2VariantExecutionDenied
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "error-text" {
-		var next ToolResultOutput2VariantErrorText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "error-json" {
-		var next ToolResultOutput2VariantErrorJSON
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "content" {
+	switch tag.Type {
+	case "content":
 		var next ToolResultOutput2VariantContent
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "error-json":
+		var next ToolResultOutput2VariantErrorJSON
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "error-text":
+		var next ToolResultOutput2VariantErrorText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "execution-denied":
+		var next ToolResultOutput2VariantExecutionDenied
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "json":
+		var next ToolResultOutput2VariantJSON
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "text":
+		var next ToolResultOutput2VariantText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("ToolResultOutput2: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("ToolResultOutput2: unknown type tag %q", tag.Type)
 }
 
 type ToolResultOutput2VariantText struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Value           string                                       `json:"value"`
-}
-
-func (v *ToolResultOutput2VariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantText: %w", err)
-	}
-	var next ToolResultOutput2VariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantText: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantText: %w", err)
-	}
-	if err := dtoRead(object, "value", &next.Value, true, false); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultOutput2VariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["value"] = v.Value
-	return json.Marshal(object)
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Value           string                                `json:"value"`
 }
 
 func (ToolResultOutput2VariantText) isToolResultOutput2() {}
 
-type ToolResultOutput2VariantJSON struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Value           json.RawMessage                              `json:"value"`
+func (v ToolResultOutput2VariantText) MarshalJSON() ([]byte, error) {
+	type plain ToolResultOutput2VariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
 }
 
-func (v *ToolResultOutput2VariantJSON) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantJSON: %w", err)
-	}
-	var next ToolResultOutput2VariantJSON
-	if err := dtoTag(object, "type", "json"); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantJSON: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantJSON: %w", err)
-	}
-	if err := dtoRead(object, "value", &next.Value, true, true); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantJSON: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultOutput2VariantJSON) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "json"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["value"] = v.Value
-	return json.Marshal(object)
+type ToolResultOutput2VariantJSON struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Value           json.RawMessage                       `json:"value"`
 }
 
 func (ToolResultOutput2VariantJSON) isToolResultOutput2() {}
 
-type ToolResultOutput2VariantExecutionDenied struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Reason          Field[string]                                `json:"reason,omitempty"`
+func (v ToolResultOutput2VariantJSON) MarshalJSON() ([]byte, error) {
+	type plain ToolResultOutput2VariantJSON
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "json", plain: plain(v)})
 }
 
-func (v *ToolResultOutput2VariantExecutionDenied) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantExecutionDenied: %w", err)
-	}
-	var next ToolResultOutput2VariantExecutionDenied
-	if err := dtoTag(object, "type", "execution-denied"); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantExecutionDenied: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantExecutionDenied: %w", err)
-	}
-	if err := dtoRead(object, "reason", &next.Reason, false, true); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantExecutionDenied: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultOutput2VariantExecutionDenied) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "execution-denied"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	if v.Reason.Present {
-		object["reason"] = v.Reason
-	}
-	return json.Marshal(object)
+type ToolResultOutput2VariantExecutionDenied struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Reason          *string                               `json:"reason,omitzero"`
 }
 
 func (ToolResultOutput2VariantExecutionDenied) isToolResultOutput2() {}
 
-type ToolResultOutput2VariantErrorText struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Value           string                                       `json:"value"`
+func (v ToolResultOutput2VariantExecutionDenied) MarshalJSON() ([]byte, error) {
+	type plain ToolResultOutput2VariantExecutionDenied
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "execution-denied", plain: plain(v)})
 }
 
-func (v *ToolResultOutput2VariantErrorText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantErrorText: %w", err)
-	}
-	var next ToolResultOutput2VariantErrorText
-	if err := dtoTag(object, "type", "error-text"); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantErrorText: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantErrorText: %w", err)
-	}
-	if err := dtoRead(object, "value", &next.Value, true, false); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantErrorText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultOutput2VariantErrorText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "error-text"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["value"] = v.Value
-	return json.Marshal(object)
+type ToolResultOutput2VariantErrorText struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Value           string                                `json:"value"`
 }
 
 func (ToolResultOutput2VariantErrorText) isToolResultOutput2() {}
 
-type ToolResultOutput2VariantErrorJSON struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Value           json.RawMessage                              `json:"value"`
+func (v ToolResultOutput2VariantErrorText) MarshalJSON() ([]byte, error) {
+	type plain ToolResultOutput2VariantErrorText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "error-text", plain: plain(v)})
 }
 
-func (v *ToolResultOutput2VariantErrorJSON) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantErrorJSON: %w", err)
-	}
-	var next ToolResultOutput2VariantErrorJSON
-	if err := dtoTag(object, "type", "error-json"); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantErrorJSON: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantErrorJSON: %w", err)
-	}
-	if err := dtoRead(object, "value", &next.Value, true, true); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantErrorJSON: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultOutput2VariantErrorJSON) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "error-json"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["value"] = v.Value
-	return json.Marshal(object)
+type ToolResultOutput2VariantErrorJSON struct {
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Value           json.RawMessage                       `json:"value"`
 }
 
 func (ToolResultOutput2VariantErrorJSON) isToolResultOutput2() {}
+
+func (v ToolResultOutput2VariantErrorJSON) MarshalJSON() ([]byte, error) {
+	type plain ToolResultOutput2VariantErrorJSON
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "error-json", plain: plain(v)})
+}
 
 type ToolResultOutput2VariantContent struct {
 	Value []ToolResultContent `json:"value"`
 }
 
-func (v *ToolResultOutput2VariantContent) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantContent: %w", err)
-	}
-	var next ToolResultOutput2VariantContent
-	if err := dtoTag(object, "type", "content"); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantContent: %w", err)
-	}
-	if err := dtoRead(object, "value", &next.Value, true, false); err != nil {
-		return fmt.Errorf("ToolResultOutput2VariantContent: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultOutput2VariantContent) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "content"
-	object["value"] = v.Value
-	return json.Marshal(object)
-}
-
 func (ToolResultOutput2VariantContent) isToolResultOutput2() {}
+
+func (v ToolResultOutput2VariantContent) MarshalJSON() ([]byte, error) {
+	type plain ToolResultOutput2VariantContent
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "content", plain: plain(v)})
+}
 
 // The result of a tool call (upstream `ToolResultPart`,
 // `provider-utils` `types/content-part.ts:240-268`).
 type ToolResultPart struct {
 	Output ToolResultOutput `json:"output"`
 	// Provider-specific options for this part (e.g. `anthropic.cacheControl`).
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	ToolCallID      string                                       `json:"toolCallId"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	ToolCallID      string                                `json:"toolCallId"`
 	// The tool name. Required upstream; when absent here, the conversion
 	// takes it from the preceding tool call with the same id.
-	ToolName Field[string] `json:"toolName,omitempty"`
-}
-
-func (v *ToolResultPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultPart: %w", err)
-	}
-	var next ToolResultPart
-	if err := dtoRead(object, "output", &next.Output, true, false); err != nil {
-		return fmt.Errorf("ToolResultPart: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultPart: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ToolResultPart: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, false, true); err != nil {
-		return fmt.Errorf("ToolResultPart: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultPart) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["output"] = v.Output
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["toolCallId"] = v.ToolCallID
-	if v.ToolName.Present {
-		object["toolName"] = v.ToolName
-	}
-	return json.Marshal(object)
+	ToolName *string `json:"toolName,omitzero"`
 }
 
 // Tool result content part.
 type ToolResultPart2 struct {
-	Output          ToolResultOutput2                            `json:"output"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	ToolCallID      string                                       `json:"toolCallId"`
-	ToolName        string                                       `json:"toolName"`
-}
-
-func (v *ToolResultPart2) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("ToolResultPart2: %w", err)
-	}
-	var next ToolResultPart2
-	if err := dtoRead(object, "output", &next.Output, true, false); err != nil {
-		return fmt.Errorf("ToolResultPart2: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("ToolResultPart2: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("ToolResultPart2: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("ToolResultPart2: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v ToolResultPart2) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["output"] = v.Output
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+	Output          ToolResultOutput2                     `json:"output"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	ToolCallID      string                                `json:"toolCallId"`
+	ToolName        string                                `json:"toolName"`
 }
 
 type TraceAggregateParams struct {
 	// Query filter (RFC-0015 §5.3).
-	Filter Field[TraceAggregateParamsFilter] `json:"filter,omitempty"`
-}
-
-func (v *TraceAggregateParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TraceAggregateParams: %w", err)
-	}
-	var next TraceAggregateParams
-	if err := dtoRead(object, "filter", &next.Filter, false, false); err != nil {
-		return fmt.Errorf("TraceAggregateParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TraceAggregateParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Filter.Present {
-		object["filter"] = v.Filter
-	}
-	return json.Marshal(object)
+	Filter *TraceAggregateParamsFilter `json:"filter,omitzero"`
 }
 
 // Query filter (RFC-0015 §5.3).
 type TraceAggregateParamsFilter struct {
-	Model       Field[string] `json:"model,omitempty"`
-	Provider    Field[string] `json:"provider,omitempty"`
-	SessionID   Field[string] `json:"sessionId,omitempty"`
-	SinceUnixMs Field[int64]  `json:"sinceUnixMs,omitempty"`
-}
-
-func (v *TraceAggregateParamsFilter) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TraceAggregateParamsFilter: %w", err)
-	}
-	var next TraceAggregateParamsFilter
-	if err := dtoRead(object, "model", &next.Model, false, true); err != nil {
-		return fmt.Errorf("TraceAggregateParamsFilter: %w", err)
-	}
-	if err := dtoRead(object, "provider", &next.Provider, false, true); err != nil {
-		return fmt.Errorf("TraceAggregateParamsFilter: %w", err)
-	}
-	if err := dtoRead(object, "sessionId", &next.SessionID, false, true); err != nil {
-		return fmt.Errorf("TraceAggregateParamsFilter: %w", err)
-	}
-	if err := dtoRead(object, "sinceUnixMs", &next.SinceUnixMs, false, true); err != nil {
-		return fmt.Errorf("TraceAggregateParamsFilter: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TraceAggregateParamsFilter) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Model.Present {
-		object["model"] = v.Model
-	}
-	if v.Provider.Present {
-		object["provider"] = v.Provider
-	}
-	if v.SessionID.Present {
-		object["sessionId"] = v.SessionID
-	}
-	if v.SinceUnixMs.Present {
-		object["sinceUnixMs"] = v.SinceUnixMs
-	}
-	return json.Marshal(object)
+	Model       *string `json:"model,omitzero"`
+	Provider    *string `json:"provider,omitzero"`
+	SessionID   *string `json:"sessionId,omitzero"`
+	SinceUnixMs *int64  `json:"sinceUnixMs,omitzero"`
 }
 
 type TraceCreateParams struct {
-	AuditMode        Field[AuditMode2] `json:"auditMode,omitempty"`
-	Capacity         Field[uint64]     `json:"capacity,omitempty"`
-	PerScopeCapacity Field[uint64]     `json:"perScopeCapacity,omitempty"`
-}
-
-func (v *TraceCreateParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TraceCreateParams: %w", err)
-	}
-	var next TraceCreateParams
-	if err := dtoRead(object, "auditMode", &next.AuditMode, false, false); err != nil {
-		return fmt.Errorf("TraceCreateParams: %w", err)
-	}
-	if err := dtoRead(object, "capacity", &next.Capacity, false, false); err != nil {
-		return fmt.Errorf("TraceCreateParams: %w", err)
-	}
-	if err := dtoRead(object, "perScopeCapacity", &next.PerScopeCapacity, false, false); err != nil {
-		return fmt.Errorf("TraceCreateParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TraceCreateParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.AuditMode.Present {
-		object["auditMode"] = v.AuditMode
-	}
-	if v.Capacity.Present {
-		object["capacity"] = v.Capacity
-	}
-	if v.PerScopeCapacity.Present {
-		object["perScopeCapacity"] = v.PerScopeCapacity
-	}
-	return json.Marshal(object)
+	AuditMode        *AuditMode2 `json:"auditMode,omitzero"`
+	Capacity         *uint64     `json:"capacity,omitzero"`
+	PerScopeCapacity *uint64     `json:"perScopeCapacity,omitzero"`
 }
 
 // One probed call. Plaintext never persists — fingerprints only.
@@ -20587,136 +8749,32 @@ type TraceRecord struct {
 	CallID string `json:"callId"`
 	// Error string when the call failed (still recorded: failures are part
 	// of the session).
-	Error       Field[string] `json:"error,omitempty"`
-	Fingerprint Fingerprint   `json:"fingerprint"`
+	Error       *string     `json:"error,omitzero"`
+	Fingerprint Fingerprint `json:"fingerprint"`
 	// Client-side LCP token upper bound (block upper bound, byte-proxy
 	// len/4). `None` when no history matched. Consumed by `TraceStats`
 	// aggregation.
-	LcpTokenUpper     Field[uint64]            `json:"lcpTokenUpper,omitempty"`
-	Model             string                   `json:"model"`
-	Provider          string                   `json:"provider"`
-	RequestCacheHints Field[RequestCacheHints] `json:"requestCacheHints,omitempty"`
-	RequestID         Field[string]            `json:"requestId,omitempty"`
+	LcpTokenUpper     *uint64            `json:"lcpTokenUpper,omitzero"`
+	Model             string             `json:"model"`
+	Provider          string             `json:"provider"`
+	RequestCacheHints *RequestCacheHints `json:"requestCacheHints,omitzero"`
+	RequestID         *string            `json:"requestId,omitzero"`
 	// Response-side cache headers (e.g. `x-openrouter-cache-status`).
-	ResponseCacheHeaders Field[map[string]string] `json:"responseCacheHeaders,omitempty"`
+	ResponseCacheHeaders map[string]string `json:"responseCacheHeaders,omitzero"`
 	// When the call was sent (epoch ms).
 	SentAtUnixMs int64 `json:"sentAtUnixMs"`
 	// The explicit session id of the operation (RFC-0024), else the
 	// layer's default session.
-	SessionID Field[string] `json:"sessionId,omitempty"`
+	SessionID *string `json:"sessionId,omitzero"`
 	// Time to first streamed token (ms). Non-streaming: `None`.
-	TtftMs Field[uint64] `json:"ttftMs,omitempty"`
+	TtftMs *uint64       `json:"ttftMs,omitzero"`
 	Usage  UsageSnapshot `json:"usage"`
 	// Audit verdict (`None` when no auditor is attached — the default).
-	Verdict Field[Verdict] `json:"verdict,omitempty"`
-}
-
-func (v *TraceRecord) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	var next TraceRecord
-	if err := dtoRead(object, "callId", &next.CallID, true, false); err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, false, true); err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	if err := dtoRead(object, "fingerprint", &next.Fingerprint, true, false); err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	if err := dtoRead(object, "lcpTokenUpper", &next.LcpTokenUpper, false, true); err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	if err := dtoRead(object, "model", &next.Model, true, false); err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	if err := dtoRead(object, "provider", &next.Provider, true, false); err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	if err := dtoRead(object, "requestCacheHints", &next.RequestCacheHints, false, true); err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	if err := dtoRead(object, "requestId", &next.RequestID, false, true); err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	if err := dtoRead(object, "responseCacheHeaders", &next.ResponseCacheHeaders, false, true); err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	if err := dtoRead(object, "sentAtUnixMs", &next.SentAtUnixMs, true, false); err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	if err := dtoRead(object, "sessionId", &next.SessionID, false, true); err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	if err := dtoRead(object, "ttftMs", &next.TtftMs, false, true); err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	if err := dtoRead(object, "usage", &next.Usage, true, false); err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	if err := dtoRead(object, "verdict", &next.Verdict, false, true); err != nil {
-		return fmt.Errorf("TraceRecord: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TraceRecord) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["callId"] = v.CallID
-	if v.Error.Present {
-		object["error"] = v.Error
-	}
-	object["fingerprint"] = v.Fingerprint
-	if v.LcpTokenUpper.Present {
-		object["lcpTokenUpper"] = v.LcpTokenUpper
-	}
-	object["model"] = v.Model
-	object["provider"] = v.Provider
-	if v.RequestCacheHints.Present {
-		object["requestCacheHints"] = v.RequestCacheHints
-	}
-	if v.RequestID.Present {
-		object["requestId"] = v.RequestID
-	}
-	if v.ResponseCacheHeaders.Present {
-		object["responseCacheHeaders"] = v.ResponseCacheHeaders
-	}
-	object["sentAtUnixMs"] = v.SentAtUnixMs
-	if v.SessionID.Present {
-		object["sessionId"] = v.SessionID
-	}
-	if v.TtftMs.Present {
-		object["ttftMs"] = v.TtftMs
-	}
-	object["usage"] = v.Usage
-	if v.Verdict.Present {
-		object["verdict"] = v.Verdict
-	}
-	return json.Marshal(object)
+	Verdict *Verdict `json:"verdict,omitzero"`
 }
 
 type TraceSessionParams struct {
 	SessionID string `json:"sessionId"`
-}
-
-func (v *TraceSessionParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TraceSessionParams: %w", err)
-	}
-	var next TraceSessionParams
-	if err := dtoRead(object, "sessionId", &next.SessionID, true, false); err != nil {
-		return fmt.Errorf("TraceSessionParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TraceSessionParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["sessionId"] = v.SessionID
-	return json.Marshal(object)
 }
 
 // Aggregated statistics (RFC-0015 §5.2 — the two hit rates are reported
@@ -20724,86 +8782,16 @@ func (v TraceSessionParams) MarshalJSON() ([]byte, error) {
 type TraceStats struct {
 	ClaimedCacheReadTotal   uint64            `json:"claimedCacheReadTotal"`
 	ClaimedCacheWriteTotal  uint64            `json:"claimedCacheWriteTotal"`
-	ClientUpperBoundHitRate Field[float64]    `json:"clientUpperBoundHitRate,omitempty"`
+	ClientUpperBoundHitRate *float64          `json:"clientUpperBoundHitRate,omitzero"`
 	Errors                  uint64            `json:"errors"`
 	InputTokensTotal        uint64            `json:"inputTokensTotal"`
 	Model                   string            `json:"model"`
 	Provider                string            `json:"provider"`
-	ReportedHitRate         Field[float64]    `json:"reportedHitRate,omitempty"`
+	ReportedHitRate         *float64          `json:"reportedHitRate,omitzero"`
 	Requests                uint64            `json:"requests"`
-	TtftP50Ms               Field[uint64]     `json:"ttftP50Ms,omitempty"`
-	TtftP95Ms               Field[uint64]     `json:"ttftP95Ms,omitempty"`
+	TtftP50Ms               *uint64           `json:"ttftP50Ms,omitzero"`
+	TtftP95Ms               *uint64           `json:"ttftP95Ms,omitzero"`
 	VerdictCounts           map[string]uint64 `json:"verdictCounts"`
-}
-
-func (v *TraceStats) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TraceStats: %w", err)
-	}
-	var next TraceStats
-	if err := dtoRead(object, "claimedCacheReadTotal", &next.ClaimedCacheReadTotal, true, false); err != nil {
-		return fmt.Errorf("TraceStats: %w", err)
-	}
-	if err := dtoRead(object, "claimedCacheWriteTotal", &next.ClaimedCacheWriteTotal, true, false); err != nil {
-		return fmt.Errorf("TraceStats: %w", err)
-	}
-	if err := dtoRead(object, "clientUpperBoundHitRate", &next.ClientUpperBoundHitRate, false, true); err != nil {
-		return fmt.Errorf("TraceStats: %w", err)
-	}
-	if err := dtoRead(object, "errors", &next.Errors, true, false); err != nil {
-		return fmt.Errorf("TraceStats: %w", err)
-	}
-	if err := dtoRead(object, "inputTokensTotal", &next.InputTokensTotal, true, false); err != nil {
-		return fmt.Errorf("TraceStats: %w", err)
-	}
-	if err := dtoRead(object, "model", &next.Model, true, false); err != nil {
-		return fmt.Errorf("TraceStats: %w", err)
-	}
-	if err := dtoRead(object, "provider", &next.Provider, true, false); err != nil {
-		return fmt.Errorf("TraceStats: %w", err)
-	}
-	if err := dtoRead(object, "reportedHitRate", &next.ReportedHitRate, false, true); err != nil {
-		return fmt.Errorf("TraceStats: %w", err)
-	}
-	if err := dtoRead(object, "requests", &next.Requests, true, false); err != nil {
-		return fmt.Errorf("TraceStats: %w", err)
-	}
-	if err := dtoRead(object, "ttftP50Ms", &next.TtftP50Ms, false, true); err != nil {
-		return fmt.Errorf("TraceStats: %w", err)
-	}
-	if err := dtoRead(object, "ttftP95Ms", &next.TtftP95Ms, false, true); err != nil {
-		return fmt.Errorf("TraceStats: %w", err)
-	}
-	if err := dtoRead(object, "verdictCounts", &next.VerdictCounts, true, false); err != nil {
-		return fmt.Errorf("TraceStats: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TraceStats) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["claimedCacheReadTotal"] = v.ClaimedCacheReadTotal
-	object["claimedCacheWriteTotal"] = v.ClaimedCacheWriteTotal
-	if v.ClientUpperBoundHitRate.Present {
-		object["clientUpperBoundHitRate"] = v.ClientUpperBoundHitRate
-	}
-	object["errors"] = v.Errors
-	object["inputTokensTotal"] = v.InputTokensTotal
-	object["model"] = v.Model
-	object["provider"] = v.Provider
-	if v.ReportedHitRate.Present {
-		object["reportedHitRate"] = v.ReportedHitRate
-	}
-	object["requests"] = v.Requests
-	if v.TtftP50Ms.Present {
-		object["ttftP50Ms"] = v.TtftP50Ms
-	}
-	if v.TtftP95Ms.Present {
-		object["ttftP95Ms"] = v.TtftP95Ms
-	}
-	object["verdictCounts"] = v.VerdictCounts
-	return json.Marshal(object)
 }
 
 // Options passed to [`TranscriptionModel::do_generate`].
@@ -20814,140 +8802,36 @@ type TranscriptionCallOptions struct {
 	// that [`transcribe`] downloads.
 	Audio AudioInput `json:"audio"`
 	// Additional HTTP headers to send with the request.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
 	// retrying. `None` uses 2, the AI SDK default.
-	MaxRetries Field[uint32] `json:"maxRetries,omitempty"`
+	MaxRetries *uint32 `json:"maxRetries,omitzero"`
 	// The IANA media type of the audio data, e.g. `"audio/mp3"`. For a URL,
 	// the media type the download reports replaces it, as the AI SDK uses
 	// the downloaded media type (`transcribe.ts:227-233`).
 	MediaType string `json:"mediaType"`
 	// Additional provider-specific options, keyed by provider name.
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 	// Per-call operation timeout.
-	Timeout Field[TimeoutConfiguration] `json:"timeout,omitempty"`
-}
-
-func (v *TranscriptionCallOptions) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionCallOptions: %w", err)
-	}
-	var next TranscriptionCallOptions
-	if err := dtoRead(object, "audio", &next.Audio, true, false); err != nil {
-		return fmt.Errorf("TranscriptionCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("TranscriptionCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "maxRetries", &next.MaxRetries, false, true); err != nil {
-		return fmt.Errorf("TranscriptionCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("TranscriptionCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("TranscriptionCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "timeout", &next.Timeout, false, true); err != nil {
-		return fmt.Errorf("TranscriptionCallOptions: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TranscriptionCallOptions) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["audio"] = v.Audio
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.MaxRetries.Present {
-		object["maxRetries"] = v.MaxRetries
-	}
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	if v.Timeout.Present {
-		object["timeout"] = v.Timeout
-	}
-	return json.Marshal(object)
+	Timeout *TimeoutConfiguration `json:"timeout,omitzero"`
 }
 
 // Optional request information for a transcription call.
 type TranscriptionRequest struct {
 	// Raw request HTTP body that was sent (JSON stringified).
-	Body Field[string] `json:"body,omitempty"`
-}
-
-func (v *TranscriptionRequest) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionRequest: %w", err)
-	}
-	var next TranscriptionRequest
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("TranscriptionRequest: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TranscriptionRequest) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	return json.Marshal(object)
+	Body *string `json:"body,omitzero"`
 }
 
 // Response information for a transcription call.
 type TranscriptionResponse struct {
 	// Response body (opaque JSON).
-	Body Field[json.RawMessage] `json:"body,omitempty"`
+	Body Field[json.RawMessage] `json:"body,omitzero"`
 	// Response headers.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// The ID of the model that was used to generate the response.
-	ModelID Field[string] `json:"modelId,omitempty"`
+	ModelID *string `json:"modelId,omitzero"`
 	// Timestamp for the start of the generated response (`toISOString()` in the JSON).
-	Timestamp Field[Timestamp] `json:"timestamp,omitempty"`
-}
-
-func (v *TranscriptionResponse) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionResponse: %w", err)
-	}
-	var next TranscriptionResponse
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("TranscriptionResponse: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("TranscriptionResponse: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, false, true); err != nil {
-		return fmt.Errorf("TranscriptionResponse: %w", err)
-	}
-	if err := dtoRead(object, "timestamp", &next.Timestamp, false, true); err != nil {
-		return fmt.Errorf("TranscriptionResponse: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TranscriptionResponse) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.ModelID.Present {
-		object["modelId"] = v.ModelID
-	}
-	if v.Timestamp.Present {
-		object["timestamp"] = v.Timestamp
-	}
-	return json.Marshal(object)
+	Timestamp *Timestamp `json:"timestamp,omitzero"`
 }
 
 // The result of [`TranscriptionModel::do_generate`].
@@ -20955,13 +8839,13 @@ func (v TranscriptionResponse) MarshalJSON() ([]byte, error) {
 // Aligned with V4 `TranscriptionModelV4Result`.
 type TranscriptionResult struct {
 	// The total duration of the audio in seconds, if determined.
-	DurationInSeconds Field[float64] `json:"durationInSeconds,omitempty"`
+	DurationInSeconds *float64 `json:"durationInSeconds,omitzero"`
 	// The detected language (ISO 639-1 code, e.g. `"en"`), if detected.
-	Language Field[string] `json:"language,omitempty"`
+	Language *string `json:"language,omitzero"`
 	// Additional provider-specific metadata, keyed by provider name.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Optional request information for telemetry and debugging.
-	Request Field[TranscriptionRequest] `json:"request,omitempty"`
+	Request *TranscriptionRequest `json:"request,omitzero"`
 	// Response information for telemetry and debugging.
 	Response TranscriptionResponse `json:"response"`
 	// Transcript segments with timing information.
@@ -20970,60 +8854,6 @@ type TranscriptionResult struct {
 	Text string `json:"text"`
 	// Warnings for the call, e.g. unsupported settings.
 	Warnings []Warning `json:"warnings"`
-}
-
-func (v *TranscriptionResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionResult: %w", err)
-	}
-	var next TranscriptionResult
-	if err := dtoRead(object, "durationInSeconds", &next.DurationInSeconds, false, true); err != nil {
-		return fmt.Errorf("TranscriptionResult: %w", err)
-	}
-	if err := dtoRead(object, "language", &next.Language, false, true); err != nil {
-		return fmt.Errorf("TranscriptionResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TranscriptionResult: %w", err)
-	}
-	if err := dtoRead(object, "request", &next.Request, false, true); err != nil {
-		return fmt.Errorf("TranscriptionResult: %w", err)
-	}
-	if err := dtoRead(object, "response", &next.Response, true, false); err != nil {
-		return fmt.Errorf("TranscriptionResult: %w", err)
-	}
-	if err := dtoRead(object, "segments", &next.Segments, true, false); err != nil {
-		return fmt.Errorf("TranscriptionResult: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("TranscriptionResult: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, true, false); err != nil {
-		return fmt.Errorf("TranscriptionResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TranscriptionResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.DurationInSeconds.Present {
-		object["durationInSeconds"] = v.DurationInSeconds
-	}
-	if v.Language.Present {
-		object["language"] = v.Language
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.Request.Present {
-		object["request"] = v.Request
-	}
-	object["response"] = v.Response
-	object["segments"] = v.Segments
-	object["text"] = v.Text
-	object["warnings"] = v.Warnings
-	return json.Marshal(object)
 }
 
 // A transcript segment with timing information.
@@ -21036,89 +8866,13 @@ type TranscriptionSegment struct {
 	Text string `json:"text"`
 }
 
-func (v *TranscriptionSegment) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionSegment: %w", err)
-	}
-	var next TranscriptionSegment
-	if err := dtoRead(object, "endSecond", &next.EndSecond, true, false); err != nil {
-		return fmt.Errorf("TranscriptionSegment: %w", err)
-	}
-	if err := dtoRead(object, "startSecond", &next.StartSecond, true, false); err != nil {
-		return fmt.Errorf("TranscriptionSegment: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("TranscriptionSegment: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TranscriptionSegment) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["endSecond"] = v.EndSecond
-	object["startSecond"] = v.StartSecond
-	object["text"] = v.Text
-	return json.Marshal(object)
-}
-
 type TranscriptionStartParams struct {
-	Abort            Field[HandleIdInput]                         `json:"abort,omitempty"`
-	Headers          Field[map[string]string]                     `json:"headers,omitempty"`
-	IncludeRawChunks Field[bool]                                  `json:"includeRawChunks,omitempty"`
-	InputAudioFormat Field[InputAudioFormat]                      `json:"inputAudioFormat,omitempty"`
-	ProviderOptions  Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Timeout          Field[TimeoutConfiguration]                  `json:"timeout,omitempty"`
-}
-
-func (v *TranscriptionStartParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionStartParams: %w", err)
-	}
-	var next TranscriptionStartParams
-	if err := dtoRead(object, "abort", &next.Abort, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStartParams: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStartParams: %w", err)
-	}
-	if err := dtoRead(object, "includeRawChunks", &next.IncludeRawChunks, false, false); err != nil {
-		return fmt.Errorf("TranscriptionStartParams: %w", err)
-	}
-	if err := dtoRead(object, "inputAudioFormat", &next.InputAudioFormat, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStartParams: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStartParams: %w", err)
-	}
-	if err := dtoRead(object, "timeout", &next.Timeout, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStartParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TranscriptionStartParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Abort.Present {
-		object["abort"] = v.Abort
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.IncludeRawChunks.Present {
-		object["includeRawChunks"] = v.IncludeRawChunks
-	}
-	if v.InputAudioFormat.Present {
-		object["inputAudioFormat"] = v.InputAudioFormat
-	}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	if v.Timeout.Present {
-		object["timeout"] = v.Timeout
-	}
-	return json.Marshal(object)
+	Abort            *HandleIdInput                        `json:"abort,omitzero"`
+	Headers          map[string]string                     `json:"headers,omitzero"`
+	IncludeRawChunks *bool                                 `json:"includeRawChunks,omitzero"`
+	InputAudioFormat *InputAudioFormat                     `json:"inputAudioFormat,omitzero"`
+	ProviderOptions  map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Timeout          *TimeoutConfiguration                 `json:"timeout,omitzero"`
 }
 
 // A single chunk in the stream returned by `do_stream`.
@@ -21130,476 +8884,248 @@ type TranscriptionStreamPart struct {
 }
 
 func (v TranscriptionStreamPart) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("TranscriptionStreamPart: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *TranscriptionStreamPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionStreamPart: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("TranscriptionStreamPart: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "stream-start" {
-		var next TranscriptionStreamPartVariantStreamStart
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "transcript-delta" {
-		var next TranscriptionStreamPartVariantTranscriptDelta
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "transcript-partial" {
-		var next TranscriptionStreamPartVariantTranscriptPartial
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "transcript-final" {
-		var next TranscriptionStreamPartVariantTranscriptFinal
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "response-metadata" {
-		var next TranscriptionStreamPartVariantResponseMetadata
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "finish" {
-		var next TranscriptionStreamPartVariantFinish
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "raw" {
-		var next TranscriptionStreamPartVariantRaw
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "error" {
+	switch tag.Type {
+	case "error":
 		var next TranscriptionStreamPartVariantError
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "finish":
+		var next TranscriptionStreamPartVariantFinish
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "raw":
+		var next TranscriptionStreamPartVariantRaw
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "response-metadata":
+		var next TranscriptionStreamPartVariantResponseMetadata
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "stream-start":
+		var next TranscriptionStreamPartVariantStreamStart
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "transcript-delta":
+		var next TranscriptionStreamPartVariantTranscriptDelta
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "transcript-final":
+		var next TranscriptionStreamPartVariantTranscriptFinal
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "transcript-partial":
+		var next TranscriptionStreamPartVariantTranscriptPartial
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("TranscriptionStreamPart: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("TranscriptionStreamPart: unknown type tag %q", tag.Type)
 }
 
 type TranscriptionStreamPartVariantStreamStart struct {
 	Warnings []Warning `json:"warnings"`
 }
 
-func (v *TranscriptionStreamPartVariantStreamStart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantStreamStart: %w", err)
-	}
-	var next TranscriptionStreamPartVariantStreamStart
-	if err := dtoTag(object, "type", "stream-start"); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantStreamStart: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, true, false); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantStreamStart: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TranscriptionStreamPartVariantStreamStart) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "stream-start"
-	object["warnings"] = v.Warnings
-	return json.Marshal(object)
-}
-
 func (TranscriptionStreamPartVariantStreamStart) isTranscriptionStreamPart() {}
 
-type TranscriptionStreamPartVariantTranscriptDelta struct {
-	Delta            string                                       `json:"delta"`
-	ID               Field[string]                                `json:"id,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+func (v TranscriptionStreamPartVariantStreamStart) MarshalJSON() ([]byte, error) {
+	type plain TranscriptionStreamPartVariantStreamStart
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "stream-start", plain: plain(v)})
 }
 
-func (v *TranscriptionStreamPartVariantTranscriptDelta) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptDelta: %w", err)
-	}
-	var next TranscriptionStreamPartVariantTranscriptDelta
-	if err := dtoTag(object, "type", "transcript-delta"); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptDelta: %w", err)
-	}
-	if err := dtoRead(object, "delta", &next.Delta, true, false); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptDelta: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptDelta: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptDelta: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TranscriptionStreamPartVariantTranscriptDelta) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "transcript-delta"
-	object["delta"] = v.Delta
-	if v.ID.Present {
-		object["id"] = v.ID
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	return json.Marshal(object)
+type TranscriptionStreamPartVariantTranscriptDelta struct {
+	Delta            string                                `json:"delta"`
+	ID               *string                               `json:"id,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 }
 
 func (TranscriptionStreamPartVariantTranscriptDelta) isTranscriptionStreamPart() {}
 
-type TranscriptionStreamPartVariantTranscriptPartial struct {
-	ChannelIndex      Field[uint32]                                `json:"channelIndex,omitempty"`
-	DurationInSeconds Field[float64]                               `json:"durationInSeconds,omitempty"`
-	ID                Field[string]                                `json:"id,omitempty"`
-	ProviderMetadata  Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	StartSecond       Field[float64]                               `json:"startSecond,omitempty"`
-	Text              string                                       `json:"text"`
+func (v TranscriptionStreamPartVariantTranscriptDelta) MarshalJSON() ([]byte, error) {
+	type plain TranscriptionStreamPartVariantTranscriptDelta
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "transcript-delta", plain: plain(v)})
 }
 
-func (v *TranscriptionStreamPartVariantTranscriptPartial) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptPartial: %w", err)
-	}
-	var next TranscriptionStreamPartVariantTranscriptPartial
-	if err := dtoTag(object, "type", "transcript-partial"); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptPartial: %w", err)
-	}
-	if err := dtoRead(object, "channelIndex", &next.ChannelIndex, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptPartial: %w", err)
-	}
-	if err := dtoRead(object, "durationInSeconds", &next.DurationInSeconds, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptPartial: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptPartial: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptPartial: %w", err)
-	}
-	if err := dtoRead(object, "startSecond", &next.StartSecond, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptPartial: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptPartial: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TranscriptionStreamPartVariantTranscriptPartial) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "transcript-partial"
-	if v.ChannelIndex.Present {
-		object["channelIndex"] = v.ChannelIndex
-	}
-	if v.DurationInSeconds.Present {
-		object["durationInSeconds"] = v.DurationInSeconds
-	}
-	if v.ID.Present {
-		object["id"] = v.ID
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.StartSecond.Present {
-		object["startSecond"] = v.StartSecond
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+type TranscriptionStreamPartVariantTranscriptPartial struct {
+	ChannelIndex      *uint32                               `json:"channelIndex,omitzero"`
+	DurationInSeconds *float64                              `json:"durationInSeconds,omitzero"`
+	ID                *string                               `json:"id,omitzero"`
+	ProviderMetadata  map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	StartSecond       *float64                              `json:"startSecond,omitzero"`
+	Text              string                                `json:"text"`
 }
 
 func (TranscriptionStreamPartVariantTranscriptPartial) isTranscriptionStreamPart() {}
 
-type TranscriptionStreamPartVariantTranscriptFinal struct {
-	ChannelIndex     Field[uint32]                                `json:"channelIndex,omitempty"`
-	EndSecond        Field[float64]                               `json:"endSecond,omitempty"`
-	ID               Field[string]                                `json:"id,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	StartSecond      Field[float64]                               `json:"startSecond,omitempty"`
-	Text             string                                       `json:"text"`
+func (v TranscriptionStreamPartVariantTranscriptPartial) MarshalJSON() ([]byte, error) {
+	type plain TranscriptionStreamPartVariantTranscriptPartial
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "transcript-partial", plain: plain(v)})
 }
 
-func (v *TranscriptionStreamPartVariantTranscriptFinal) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptFinal: %w", err)
-	}
-	var next TranscriptionStreamPartVariantTranscriptFinal
-	if err := dtoTag(object, "type", "transcript-final"); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptFinal: %w", err)
-	}
-	if err := dtoRead(object, "channelIndex", &next.ChannelIndex, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptFinal: %w", err)
-	}
-	if err := dtoRead(object, "endSecond", &next.EndSecond, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptFinal: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptFinal: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptFinal: %w", err)
-	}
-	if err := dtoRead(object, "startSecond", &next.StartSecond, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptFinal: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantTranscriptFinal: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TranscriptionStreamPartVariantTranscriptFinal) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "transcript-final"
-	if v.ChannelIndex.Present {
-		object["channelIndex"] = v.ChannelIndex
-	}
-	if v.EndSecond.Present {
-		object["endSecond"] = v.EndSecond
-	}
-	if v.ID.Present {
-		object["id"] = v.ID
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.StartSecond.Present {
-		object["startSecond"] = v.StartSecond
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+type TranscriptionStreamPartVariantTranscriptFinal struct {
+	ChannelIndex     *uint32                               `json:"channelIndex,omitzero"`
+	EndSecond        *float64                              `json:"endSecond,omitzero"`
+	ID               *string                               `json:"id,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	StartSecond      *float64                              `json:"startSecond,omitzero"`
+	Text             string                                `json:"text"`
 }
 
 func (TranscriptionStreamPartVariantTranscriptFinal) isTranscriptionStreamPart() {}
 
-type TranscriptionStreamPartVariantResponseMetadata struct {
-	Body      Field[json.RawMessage]   `json:"body,omitempty"`
-	Headers   Field[map[string]string] `json:"headers,omitempty"`
-	ModelID   Field[string]            `json:"modelId,omitempty"`
-	Timestamp Field[Timestamp]         `json:"timestamp,omitempty"`
+func (v TranscriptionStreamPartVariantTranscriptFinal) MarshalJSON() ([]byte, error) {
+	type plain TranscriptionStreamPartVariantTranscriptFinal
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "transcript-final", plain: plain(v)})
 }
 
-func (v *TranscriptionStreamPartVariantResponseMetadata) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantResponseMetadata: %w", err)
-	}
-	var next TranscriptionStreamPartVariantResponseMetadata
-	if err := dtoTag(object, "type", "response-metadata"); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantResponseMetadata: %w", err)
-	}
-	if err := dtoRead(object, "body", &next.Body, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantResponseMetadata: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantResponseMetadata: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantResponseMetadata: %w", err)
-	}
-	if err := dtoRead(object, "timestamp", &next.Timestamp, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantResponseMetadata: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TranscriptionStreamPartVariantResponseMetadata) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "response-metadata"
-	if v.Body.Present {
-		object["body"] = v.Body
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.ModelID.Present {
-		object["modelId"] = v.ModelID
-	}
-	if v.Timestamp.Present {
-		object["timestamp"] = v.Timestamp
-	}
-	return json.Marshal(object)
+type TranscriptionStreamPartVariantResponseMetadata struct {
+	Body      Field[json.RawMessage] `json:"body,omitzero"`
+	Headers   map[string]string      `json:"headers,omitzero"`
+	ModelID   *string                `json:"modelId,omitzero"`
+	Timestamp *Timestamp             `json:"timestamp,omitzero"`
 }
 
 func (TranscriptionStreamPartVariantResponseMetadata) isTranscriptionStreamPart() {}
 
-type TranscriptionStreamPartVariantFinish struct {
-	DurationInSeconds Field[float64]                               `json:"durationInSeconds,omitempty"`
-	Language          Field[string]                                `json:"language,omitempty"`
-	ProviderMetadata  Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Segments          []TranscriptionSegment                       `json:"segments"`
-	Text              string                                       `json:"text"`
+func (v TranscriptionStreamPartVariantResponseMetadata) MarshalJSON() ([]byte, error) {
+	type plain TranscriptionStreamPartVariantResponseMetadata
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "response-metadata", plain: plain(v)})
 }
 
-func (v *TranscriptionStreamPartVariantFinish) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantFinish: %w", err)
-	}
-	var next TranscriptionStreamPartVariantFinish
-	if err := dtoTag(object, "type", "finish"); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantFinish: %w", err)
-	}
-	if err := dtoRead(object, "durationInSeconds", &next.DurationInSeconds, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantFinish: %w", err)
-	}
-	if err := dtoRead(object, "language", &next.Language, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantFinish: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantFinish: %w", err)
-	}
-	if err := dtoRead(object, "segments", &next.Segments, true, false); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantFinish: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantFinish: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TranscriptionStreamPartVariantFinish) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "finish"
-	if v.DurationInSeconds.Present {
-		object["durationInSeconds"] = v.DurationInSeconds
-	}
-	if v.Language.Present {
-		object["language"] = v.Language
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["segments"] = v.Segments
-	object["text"] = v.Text
-	return json.Marshal(object)
+type TranscriptionStreamPartVariantFinish struct {
+	DurationInSeconds *float64                              `json:"durationInSeconds,omitzero"`
+	Language          *string                               `json:"language,omitzero"`
+	ProviderMetadata  map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Segments          []TranscriptionSegment                `json:"segments"`
+	Text              string                                `json:"text"`
 }
 
 func (TranscriptionStreamPartVariantFinish) isTranscriptionStreamPart() {}
+
+func (v TranscriptionStreamPartVariantFinish) MarshalJSON() ([]byte, error) {
+	type plain TranscriptionStreamPartVariantFinish
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "finish", plain: plain(v)})
+}
 
 type TranscriptionStreamPartVariantRaw struct {
 	RawValue json.RawMessage `json:"rawValue"`
 }
 
-func (v *TranscriptionStreamPartVariantRaw) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantRaw: %w", err)
-	}
-	var next TranscriptionStreamPartVariantRaw
-	if err := dtoTag(object, "type", "raw"); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantRaw: %w", err)
-	}
-	if err := dtoRead(object, "rawValue", &next.RawValue, true, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantRaw: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TranscriptionStreamPartVariantRaw) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "raw"
-	object["rawValue"] = v.RawValue
-	return json.Marshal(object)
-}
-
 func (TranscriptionStreamPartVariantRaw) isTranscriptionStreamPart() {}
+
+func (v TranscriptionStreamPartVariantRaw) MarshalJSON() ([]byte, error) {
+	type plain TranscriptionStreamPartVariantRaw
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "raw", plain: plain(v)})
+}
 
 type TranscriptionStreamPartVariantError struct {
 	Error json.RawMessage `json:"error"`
 }
 
-func (v *TranscriptionStreamPartVariantError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantError: %w", err)
-	}
-	var next TranscriptionStreamPartVariantError
-	if err := dtoTag(object, "type", "error"); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantError: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, true, true); err != nil {
-		return fmt.Errorf("TranscriptionStreamPartVariantError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TranscriptionStreamPartVariantError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "error"
-	object["error"] = v.Error
-	return json.Marshal(object)
-}
-
 func (TranscriptionStreamPartVariantError) isTranscriptionStreamPart() {}
 
+func (v TranscriptionStreamPartVariantError) MarshalJSON() ([]byte, error) {
+	type plain TranscriptionStreamPartVariantError
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "error", plain: plain(v)})
+}
+
 type TransportParamsVariant interface{ isTransportParams() }
-type TransportParams struct{ Value TransportParamsVariant }
+type TransportParams struct {
+	Value TransportParamsVariant
+}
 
 func (v TransportParams) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("TransportParams: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *TransportParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TransportParams: %w", err)
+	var tag struct {
+		Kind string `json:"kind"`
 	}
-	var tag string
-	if err := dtoRead(object, "kind", &tag, true, false); err != nil {
-		return fmt.Errorf("TransportParams: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "fetch" {
-		var next TransportParamsVariantFetch
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "ws" {
-		var next TransportParamsVariantWs
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "download" {
+	switch tag.Kind {
+	case "download":
 		var next TransportParamsVariantDownload
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "fetch":
+		var next TransportParamsVariantFetch
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "ws":
+		var next TransportParamsVariantWs
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("TransportParams: unknown or invalid kind tag %q", tag)
+	return fmt.Errorf("TransportParams: unknown kind tag %q", tag.Kind)
 }
 
 type TransportParamsVariantFetch struct {
@@ -21607,146 +9133,60 @@ type TransportParamsVariantFetch struct {
 	// hop, or the WebSocket connector. With every field empty, HTTP follows the
 	// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
 	// reqwest does, and the WebSocket connector connects directly.
-	Proxy Field[TransportParams0Proxy] `json:"proxy,omitempty"`
-}
-
-func (v *TransportParamsVariantFetch) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TransportParamsVariantFetch: %w", err)
-	}
-	var next TransportParamsVariantFetch
-	if err := dtoTag(object, "kind", "fetch"); err != nil {
-		return fmt.Errorf("TransportParamsVariantFetch: %w", err)
-	}
-	if err := dtoRead(object, "proxy", &next.Proxy, false, false); err != nil {
-		return fmt.Errorf("TransportParamsVariantFetch: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TransportParamsVariantFetch) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["kind"] = "fetch"
-	if v.Proxy.Present {
-		object["proxy"] = v.Proxy
-	}
-	return json.Marshal(object)
+	Proxy *TransportParams0Proxy `json:"proxy,omitzero"`
 }
 
 func (TransportParamsVariantFetch) isTransportParams() {}
+
+func (v TransportParamsVariantFetch) MarshalJSON() ([]byte, error) {
+	type plain TransportParamsVariantFetch
+	return json.Marshal(struct {
+		Kind string `json:"kind"`
+		plain
+	}{Kind: "fetch", plain: plain(v)})
+}
 
 type TransportParamsVariantWs struct {
 	// Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
 	// hop, or the WebSocket connector. With every field empty, HTTP follows the
 	// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
 	// reqwest does, and the WebSocket connector connects directly.
-	Proxy Field[TransportParams1Proxy] `json:"proxy,omitempty"`
-}
-
-func (v *TransportParamsVariantWs) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TransportParamsVariantWs: %w", err)
-	}
-	var next TransportParamsVariantWs
-	if err := dtoTag(object, "kind", "ws"); err != nil {
-		return fmt.Errorf("TransportParamsVariantWs: %w", err)
-	}
-	if err := dtoRead(object, "proxy", &next.Proxy, false, false); err != nil {
-		return fmt.Errorf("TransportParamsVariantWs: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TransportParamsVariantWs) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["kind"] = "ws"
-	if v.Proxy.Present {
-		object["proxy"] = v.Proxy
-	}
-	return json.Marshal(object)
+	Proxy *TransportParams1Proxy `json:"proxy,omitzero"`
 }
 
 func (TransportParamsVariantWs) isTransportParams() {}
 
-type TransportParamsVariantDownload struct {
-	MaxBytes Field[uint64] `json:"maxBytes,omitempty"`
+func (v TransportParamsVariantWs) MarshalJSON() ([]byte, error) {
+	type plain TransportParamsVariantWs
+	return json.Marshal(struct {
+		Kind string `json:"kind"`
+		plain
+	}{Kind: "ws", plain: plain(v)})
 }
 
-func (v *TransportParamsVariantDownload) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TransportParamsVariantDownload: %w", err)
-	}
-	var next TransportParamsVariantDownload
-	if err := dtoTag(object, "kind", "download"); err != nil {
-		return fmt.Errorf("TransportParamsVariantDownload: %w", err)
-	}
-	if err := dtoRead(object, "maxBytes", &next.MaxBytes, false, true); err != nil {
-		return fmt.Errorf("TransportParamsVariantDownload: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TransportParamsVariantDownload) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["kind"] = "download"
-	if v.MaxBytes.Present {
-		object["maxBytes"] = v.MaxBytes
-	}
-	return json.Marshal(object)
+type TransportParamsVariantDownload struct {
+	MaxBytes *uint64 `json:"maxBytes,omitzero"`
 }
 
 func (TransportParamsVariantDownload) isTransportParams() {}
+
+func (v TransportParamsVariantDownload) MarshalJSON() ([]byte, error) {
+	type plain TransportParamsVariantDownload
+	return json.Marshal(struct {
+		Kind string `json:"kind"`
+		plain
+	}{Kind: "download", plain: plain(v)})
+}
 
 // Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
 // hop, or the WebSocket connector. With every field empty, HTTP follows the
 // `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
 // reqwest does, and the WebSocket connector connects directly.
 type TransportParams0Proxy struct {
-	AllURL   Field[string] `json:"all_url,omitempty"`
-	HTTPURL  Field[string] `json:"http_url,omitempty"`
-	HttpsURL Field[string] `json:"https_url,omitempty"`
-	NoProxy  Field[string] `json:"no_proxy,omitempty"`
-}
-
-func (v *TransportParams0Proxy) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TransportParams0Proxy: %w", err)
-	}
-	var next TransportParams0Proxy
-	if err := dtoRead(object, "all_url", &next.AllURL, false, true); err != nil {
-		return fmt.Errorf("TransportParams0Proxy: %w", err)
-	}
-	if err := dtoRead(object, "http_url", &next.HTTPURL, false, true); err != nil {
-		return fmt.Errorf("TransportParams0Proxy: %w", err)
-	}
-	if err := dtoRead(object, "https_url", &next.HttpsURL, false, true); err != nil {
-		return fmt.Errorf("TransportParams0Proxy: %w", err)
-	}
-	if err := dtoRead(object, "no_proxy", &next.NoProxy, false, true); err != nil {
-		return fmt.Errorf("TransportParams0Proxy: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TransportParams0Proxy) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.AllURL.Present {
-		object["all_url"] = v.AllURL
-	}
-	if v.HTTPURL.Present {
-		object["http_url"] = v.HTTPURL
-	}
-	if v.HttpsURL.Present {
-		object["https_url"] = v.HttpsURL
-	}
-	if v.NoProxy.Present {
-		object["no_proxy"] = v.NoProxy
-	}
-	return json.Marshal(object)
+	AllURL   *string `json:"all_url,omitzero"`
+	HTTPURL  *string `json:"http_url,omitzero"`
+	HttpsURL *string `json:"https_url,omitzero"`
+	NoProxy  *string `json:"no_proxy,omitzero"`
 }
 
 // Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
@@ -21754,48 +9194,10 @@ func (v TransportParams0Proxy) MarshalJSON() ([]byte, error) {
 // `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
 // reqwest does, and the WebSocket connector connects directly.
 type TransportParams1Proxy struct {
-	AllURL   Field[string] `json:"all_url,omitempty"`
-	HTTPURL  Field[string] `json:"http_url,omitempty"`
-	HttpsURL Field[string] `json:"https_url,omitempty"`
-	NoProxy  Field[string] `json:"no_proxy,omitempty"`
-}
-
-func (v *TransportParams1Proxy) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TransportParams1Proxy: %w", err)
-	}
-	var next TransportParams1Proxy
-	if err := dtoRead(object, "all_url", &next.AllURL, false, true); err != nil {
-		return fmt.Errorf("TransportParams1Proxy: %w", err)
-	}
-	if err := dtoRead(object, "http_url", &next.HTTPURL, false, true); err != nil {
-		return fmt.Errorf("TransportParams1Proxy: %w", err)
-	}
-	if err := dtoRead(object, "https_url", &next.HttpsURL, false, true); err != nil {
-		return fmt.Errorf("TransportParams1Proxy: %w", err)
-	}
-	if err := dtoRead(object, "no_proxy", &next.NoProxy, false, true); err != nil {
-		return fmt.Errorf("TransportParams1Proxy: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TransportParams1Proxy) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.AllURL.Present {
-		object["all_url"] = v.AllURL
-	}
-	if v.HTTPURL.Present {
-		object["http_url"] = v.HTTPURL
-	}
-	if v.HttpsURL.Present {
-		object["https_url"] = v.HttpsURL
-	}
-	if v.NoProxy.Present {
-		object["no_proxy"] = v.NoProxy
-	}
-	return json.Marshal(object)
+	AllURL   *string `json:"all_url,omitzero"`
+	HTTPURL  *string `json:"http_url,omitzero"`
+	HttpsURL *string `json:"https_url,omitzero"`
+	NoProxy  *string `json:"no_proxy,omitzero"`
 }
 
 // A source in a text result's `sources`: a [`Source`] with its `type` tag,
@@ -21803,148 +9205,94 @@ func (v TransportParams1Proxy) MarshalJSON() ([]byte, error) {
 //
 // Schema view of the tag written by [`crate::wire::typed_vec`].
 type TypedSourceVariant interface{ isTypedSource() }
-type TypedSource struct{ Value TypedSourceVariant }
+type TypedSource struct {
+	Value TypedSourceVariant
+}
 
 func (v TypedSource) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("TypedSource: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *TypedSource) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TypedSource: %w", err)
+	var tag struct {
+		SourceType string `json:"sourceType"`
 	}
-	var tag string
-	if err := dtoRead(object, "sourceType", &tag, true, false); err != nil {
-		return fmt.Errorf("TypedSource: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "url" {
-		var next TypedSourceVariantURL
-		if err := json.Unmarshal(data, &next); err == nil {
+	switch tag.SourceType {
+	case "document":
+		var subtag struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(data, &subtag); err != nil {
+			return err
+		}
+		if subtag.Type == "source" {
+			var next TypedSourceVariantDocument
+			if err := json.Unmarshal(data, &next); err != nil {
+				return err
+			}
 			v.Value = next
 			return nil
 		}
-	}
-	if tag == "document" {
-		var next TypedSourceVariantDocument
-		if err := json.Unmarshal(data, &next); err == nil {
+		return fmt.Errorf("TypedSource: unknown tag %+v", subtag)
+	case "url":
+		var subtag struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(data, &subtag); err != nil {
+			return err
+		}
+		if subtag.Type == "source" {
+			var next TypedSourceVariantURL
+			if err := json.Unmarshal(data, &next); err != nil {
+				return err
+			}
 			v.Value = next
 			return nil
 		}
+		return fmt.Errorf("TypedSource: unknown tag %+v", subtag)
 	}
-	return fmt.Errorf("TypedSource: unknown or invalid sourceType tag %q", tag)
+	return fmt.Errorf("TypedSource: unknown sourceType tag %q", tag.SourceType)
 }
 
 type TypedSourceVariantURL struct {
-	ID               string                                       `json:"id"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Title            Field[string]                                `json:"title,omitempty"`
-	Type             TypedSource0Type                             `json:"type"`
-	URL              string                                       `json:"url"`
-}
-
-func (v *TypedSourceVariantURL) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TypedSourceVariantURL: %w", err)
-	}
-	var next TypedSourceVariantURL
-	if err := dtoTag(object, "sourceType", "url"); err != nil {
-		return fmt.Errorf("TypedSourceVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("TypedSourceVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TypedSourceVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "title", &next.Title, false, true); err != nil {
-		return fmt.Errorf("TypedSourceVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "type", &next.Type, true, false); err != nil {
-		return fmt.Errorf("TypedSourceVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("TypedSourceVariantURL: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TypedSourceVariantURL) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["sourceType"] = "url"
-	object["id"] = v.ID
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	if v.Title.Present {
-		object["title"] = v.Title
-	}
-	object["type"] = v.Type
-	object["url"] = v.URL
-	return json.Marshal(object)
+	ID               string                                `json:"id"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Title            *string                               `json:"title,omitzero"`
+	Type             TypedSource0Type                      `json:"type"`
+	URL              string                                `json:"url"`
 }
 
 func (TypedSourceVariantURL) isTypedSource() {}
 
-type TypedSourceVariantDocument struct {
-	Filename         Field[string]                                `json:"filename,omitempty"`
-	ID               string                                       `json:"id"`
-	MediaType        string                                       `json:"mediaType"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	Title            string                                       `json:"title"`
-	Type             TypedSource1Type                             `json:"type"`
+func (v TypedSourceVariantURL) MarshalJSON() ([]byte, error) {
+	type plain TypedSourceVariantURL
+	return json.Marshal(struct {
+		SourceType string `json:"sourceType"`
+		plain
+	}{SourceType: "url", plain: plain(v)})
 }
 
-func (v *TypedSourceVariantDocument) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TypedSourceVariantDocument: %w", err)
-	}
-	var next TypedSourceVariantDocument
-	if err := dtoTag(object, "sourceType", "document"); err != nil {
-		return fmt.Errorf("TypedSourceVariantDocument: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("TypedSourceVariantDocument: %w", err)
-	}
-	if err := dtoRead(object, "id", &next.ID, true, false); err != nil {
-		return fmt.Errorf("TypedSourceVariantDocument: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("TypedSourceVariantDocument: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TypedSourceVariantDocument: %w", err)
-	}
-	if err := dtoRead(object, "title", &next.Title, true, false); err != nil {
-		return fmt.Errorf("TypedSourceVariantDocument: %w", err)
-	}
-	if err := dtoRead(object, "type", &next.Type, true, false); err != nil {
-		return fmt.Errorf("TypedSourceVariantDocument: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TypedSourceVariantDocument) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["sourceType"] = "document"
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["id"] = v.ID
-	object["mediaType"] = v.MediaType
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["title"] = v.Title
-	object["type"] = v.Type
-	return json.Marshal(object)
+type TypedSourceVariantDocument struct {
+	Filename         *string                               `json:"filename,omitzero"`
+	ID               string                                `json:"id"`
+	MediaType        string                                `json:"mediaType"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	Title            string                                `json:"title"`
+	Type             TypedSource1Type                      `json:"type"`
 }
 
 func (TypedSourceVariantDocument) isTypedSource() {}
+
+func (v TypedSourceVariantDocument) MarshalJSON() ([]byte, error) {
+	type plain TypedSourceVariantDocument
+	return json.Marshal(struct {
+		SourceType string `json:"sourceType"`
+		plain
+	}{SourceType: "document", plain: plain(v)})
+}
 
 type TypedSource0Type string
 
@@ -21952,37 +9300,11 @@ const (
 	TypedSource0TypeSource TypedSource0Type = "source"
 )
 
-func (v *TypedSource0Type) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "source":
-		*v = TypedSource0Type(next)
-		return nil
-	}
-	return fmt.Errorf("TypedSource0Type: unknown value %s", data)
-}
-
 type TypedSource1Type string
 
 const (
 	TypedSource1TypeSource TypedSource1Type = "source"
 )
-
-func (v *TypedSource1Type) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "source":
-		*v = TypedSource1Type(next)
-		return nil
-	}
-	return fmt.Errorf("TypedSource1Type: unknown value %s", data)
-}
 
 // A tool call outside `content` (a text result's `toolCalls`, an approval
 // request's `toolCall`): a [`ToolCall`] with its `type` tag, the AI SDK's
@@ -21991,84 +9313,24 @@ func (v *TypedSource1Type) UnmarshalJSON(data []byte) error {
 // Schema view of the tag written by [`crate::wire::typed`].
 type TypedToolCall struct {
 	// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
+	Dynamic *bool `json:"dynamic,omitzero"`
 	// Typed failure associated with an invalid tool call.
-	Error Field[AiMuxError] `json:"error,omitempty"`
+	Error *AiMuxError `json:"error,omitzero"`
 	// Parsed arguments, or the original string when `invalid` is true and the
 	// provider input was not valid JSON.
 	Input json.RawMessage `json:"input"`
 	// Set when lookup, JSON parsing, or schema validation still failed after
 	// the optional repair attempt.
-	Invalid Field[bool] `json:"invalid,omitempty"`
+	Invalid *bool `json:"invalid,omitzero"`
 	// Whether the tool call will be executed by the provider.
-	ProviderExecuted Field[bool] `json:"providerExecuted,omitempty"`
+	ProviderExecuted *bool `json:"providerExecuted,omitzero"`
 	// Additional provider-specific metadata associated with this call.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Provider-assigned call id.
 	ToolCallID string `json:"toolCallId"`
 	// Tool name.
 	ToolName string            `json:"toolName"`
 	Type     TypedToolCallType `json:"type"`
-}
-
-func (v *TypedToolCall) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TypedToolCall: %w", err)
-	}
-	var next TypedToolCall
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("TypedToolCall: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, false, true); err != nil {
-		return fmt.Errorf("TypedToolCall: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, true, true); err != nil {
-		return fmt.Errorf("TypedToolCall: %w", err)
-	}
-	if err := dtoRead(object, "invalid", &next.Invalid, false, true); err != nil {
-		return fmt.Errorf("TypedToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("TypedToolCall: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TypedToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("TypedToolCall: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("TypedToolCall: %w", err)
-	}
-	if err := dtoRead(object, "type", &next.Type, true, false); err != nil {
-		return fmt.Errorf("TypedToolCall: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TypedToolCall) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.Error.Present {
-		object["error"] = v.Error
-	}
-	object["input"] = v.Input
-	if v.Invalid.Present {
-		object["invalid"] = v.Invalid
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	object["type"] = v.Type
-	return json.Marshal(object)
 }
 
 // A tool call outside `content` (a text result's `toolCalls`, an approval
@@ -22078,86 +9340,24 @@ func (v TypedToolCall) MarshalJSON() ([]byte, error) {
 // Schema view of the tag written by [`crate::wire::typed`].
 type TypedToolCallInput struct {
 	// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
+	Dynamic *bool `json:"dynamic,omitzero"`
 	// Typed failure associated with an invalid tool call.
-	Error Field[AiMuxErrorInput] `json:"error,omitempty"`
+	Error *AiMuxErrorInput `json:"error,omitzero"`
 	// Parsed arguments, or the original string when `invalid` is true and the
 	// provider input was not valid JSON.
 	Input json.RawMessage `json:"input"`
 	// Set when lookup, JSON parsing, or schema validation still failed after
 	// the optional repair attempt.
-	Invalid Field[bool] `json:"invalid,omitempty"`
+	Invalid *bool `json:"invalid,omitzero"`
 	// Whether the tool call will be executed by the provider.
-	ProviderExecuted Field[bool] `json:"providerExecuted,omitempty"`
+	ProviderExecuted *bool `json:"providerExecuted,omitzero"`
 	// Additional provider-specific metadata associated with this call.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Provider-assigned call id.
 	ToolCallID string `json:"toolCallId"`
 	// Tool name.
-	ToolName string                        `json:"toolName"`
-	Type     Field[TypedToolCallInputType] `json:"type,omitempty"`
-}
-
-func (v *TypedToolCallInput) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TypedToolCallInput: %w", err)
-	}
-	var next TypedToolCallInput
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("TypedToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, false, true); err != nil {
-		return fmt.Errorf("TypedToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, true, true); err != nil {
-		return fmt.Errorf("TypedToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "invalid", &next.Invalid, false, true); err != nil {
-		return fmt.Errorf("TypedToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("TypedToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TypedToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("TypedToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("TypedToolCallInput: %w", err)
-	}
-	if err := dtoRead(object, "type", &next.Type, false, false); err != nil {
-		return fmt.Errorf("TypedToolCallInput: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TypedToolCallInput) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.Error.Present {
-		object["error"] = v.Error
-	}
-	object["input"] = v.Input
-	if v.Invalid.Present {
-		object["invalid"] = v.Invalid
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	if v.Type.Present {
-		object["type"] = v.Type
-	}
-	return json.Marshal(object)
+	ToolName string                  `json:"toolName"`
+	Type     *TypedToolCallInputType `json:"type,omitzero"`
 }
 
 type TypedToolCallInputType string
@@ -22166,100 +9366,24 @@ const (
 	TypedToolCallInputTypeToolCall TypedToolCallInputType = "tool-call"
 )
 
-func (v *TypedToolCallInputType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "tool-call":
-		*v = TypedToolCallInputType(next)
-		return nil
-	}
-	return fmt.Errorf("TypedToolCallInputType: unknown value %s", data)
-}
-
 type TypedToolCallType string
 
 const (
 	TypedToolCallTypeToolCall TypedToolCallType = "tool-call"
 )
 
-func (v *TypedToolCallType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "tool-call":
-		*v = TypedToolCallType(next)
-		return nil
-	}
-	return fmt.Errorf("TypedToolCallType: unknown value %s", data)
-}
-
 // A tool error (the AI SDK's `TypedToolError`, `ai`
 // `generate-text/tool-error.ts:6-36`). `toolMetadata` and `title` are
 // absent, as on [`TypedToolResult`].
 type TypedToolError struct {
-	Dynamic Field[bool]     `json:"dynamic,omitempty"`
+	Dynamic *bool           `json:"dynamic,omitzero"`
 	Error   json.RawMessage `json:"error"`
 	// The input of the tool call; absent for a deferred provider result.
-	Input            Field[json.RawMessage]                       `json:"input,omitempty"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
-}
-
-func (v *TypedToolError) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TypedToolError: %w", err)
-	}
-	var next TypedToolError
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("TypedToolError: %w", err)
-	}
-	if err := dtoRead(object, "error", &next.Error, true, true); err != nil {
-		return fmt.Errorf("TypedToolError: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, false, true); err != nil {
-		return fmt.Errorf("TypedToolError: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("TypedToolError: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TypedToolError: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("TypedToolError: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("TypedToolError: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TypedToolError) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	object["error"] = v.Error
-	if v.Input.Present {
-		object["input"] = v.Input
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+	Input            *json.RawMessage                      `json:"input,omitzero"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
 }
 
 // A tool result (the AI SDK's `TypedToolResult`, `ai`
@@ -22270,72 +9394,16 @@ func (v TypedToolError) MarshalJSON() ([]byte, error) {
 // by the union that holds it (`content`, the text stream) or, in a result's
 // `toolResults`, by [`crate::wire::typed_vec`] ([`TaggedToolResult`]).
 type TypedToolResult struct {
-	Dynamic Field[bool] `json:"dynamic,omitempty"`
+	Dynamic *bool `json:"dynamic,omitzero"`
 	// The input of the tool call the result answers; absent for a deferred
 	// provider result, whose call is not in this response.
-	Input            Field[json.RawMessage]                       `json:"input,omitempty"`
-	Output           json.RawMessage                              `json:"output"`
-	Preliminary      Field[bool]                                  `json:"preliminary,omitempty"`
-	ProviderExecuted Field[bool]                                  `json:"providerExecuted,omitempty"`
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
-	ToolCallID       string                                       `json:"toolCallId"`
-	ToolName         string                                       `json:"toolName"`
-}
-
-func (v *TypedToolResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("TypedToolResult: %w", err)
-	}
-	var next TypedToolResult
-	if err := dtoRead(object, "dynamic", &next.Dynamic, false, true); err != nil {
-		return fmt.Errorf("TypedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "input", &next.Input, false, true); err != nil {
-		return fmt.Errorf("TypedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "output", &next.Output, true, true); err != nil {
-		return fmt.Errorf("TypedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "preliminary", &next.Preliminary, false, true); err != nil {
-		return fmt.Errorf("TypedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerExecuted", &next.ProviderExecuted, false, true); err != nil {
-		return fmt.Errorf("TypedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("TypedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolCallId", &next.ToolCallID, true, false); err != nil {
-		return fmt.Errorf("TypedToolResult: %w", err)
-	}
-	if err := dtoRead(object, "toolName", &next.ToolName, true, false); err != nil {
-		return fmt.Errorf("TypedToolResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v TypedToolResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Dynamic.Present {
-		object["dynamic"] = v.Dynamic
-	}
-	if v.Input.Present {
-		object["input"] = v.Input
-	}
-	object["output"] = v.Output
-	if v.Preliminary.Present {
-		object["preliminary"] = v.Preliminary
-	}
-	if v.ProviderExecuted.Present {
-		object["providerExecuted"] = v.ProviderExecuted
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["toolCallId"] = v.ToolCallID
-	object["toolName"] = v.ToolName
-	return json.Marshal(object)
+	Input            *json.RawMessage                      `json:"input,omitzero"`
+	Output           json.RawMessage                       `json:"output"`
+	Preliminary      *bool                                 `json:"preliminary,omitzero"`
+	ProviderExecuted *bool                                 `json:"providerExecuted,omitzero"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
+	ToolCallID       string                                `json:"toolCallId"`
+	ToolName         string                                `json:"toolName"`
 }
 
 // File data accepted by [`Files::upload_file`].
@@ -22344,147 +9412,79 @@ func (v TypedToolResult) MarshalJSON() ([]byte, error) {
 // `SharedV4FileData` (URLs and provider references are not valid uploads), so
 // this is a dedicated two-variant enum rather than the full [`crate::shared::FileData`].
 type UploadFileDataVariant interface{ isUploadFileData() }
-type UploadFileData struct{ Value UploadFileDataVariant }
+type UploadFileData struct {
+	Value UploadFileDataVariant
+}
 
 func (v UploadFileData) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("UploadFileData: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *UploadFileData) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("UploadFileData: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("UploadFileData: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "data" {
+	switch tag.Type {
+	case "data":
 		var next UploadFileDataVariantData
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "text" {
+		v.Value = next
+		return nil
+	case "text":
 		var next UploadFileDataVariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("UploadFileData: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("UploadFileData: unknown type tag %q", tag.Type)
 }
 
 type UploadFileDataVariantData struct {
 	Data FileBytes `json:"data"`
 }
 
-func (v *UploadFileDataVariantData) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("UploadFileDataVariantData: %w", err)
-	}
-	var next UploadFileDataVariantData
-	if err := dtoTag(object, "type", "data"); err != nil {
-		return fmt.Errorf("UploadFileDataVariantData: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("UploadFileDataVariantData: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v UploadFileDataVariantData) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "data"
-	object["data"] = v.Data
-	return json.Marshal(object)
-}
-
 func (UploadFileDataVariantData) isUploadFileData() {}
+
+func (v UploadFileDataVariantData) MarshalJSON() ([]byte, error) {
+	type plain UploadFileDataVariantData
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "data", plain: plain(v)})
+}
 
 type UploadFileDataVariantText struct {
 	Text string `json:"text"`
 }
 
-func (v *UploadFileDataVariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("UploadFileDataVariantText: %w", err)
-	}
-	var next UploadFileDataVariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("UploadFileDataVariantText: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("UploadFileDataVariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v UploadFileDataVariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	object["text"] = v.Text
-	return json.Marshal(object)
-}
-
 func (UploadFileDataVariantText) isUploadFileData() {}
+
+func (v UploadFileDataVariantText) MarshalJSON() ([]byte, error) {
+	type plain UploadFileDataVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
+}
 
 // Runtime control is lifted separately from the canonical upload options.
 type UploadFileParams struct {
-	Abort Field[HandleIdInput] `json:"abort,omitempty"`
+	Abort *HandleIdInput `json:"abort,omitzero"`
 	// The file data (raw bytes/base64 or inline text).
 	Data UploadFileData `json:"data"`
 	// The filename of the file.
-	Filename Field[string] `json:"filename,omitempty"`
+	Filename *string `json:"filename,omitzero"`
 	// The IANA media type of the file, e.g. `"application/pdf"`.
 	MediaType string `json:"mediaType"`
 	// Additional provider-specific options, keyed by provider name.
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-}
-
-func (v *UploadFileParams) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("UploadFileParams: %w", err)
-	}
-	var next UploadFileParams
-	if err := dtoRead(object, "abort", &next.Abort, false, true); err != nil {
-		return fmt.Errorf("UploadFileParams: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("UploadFileParams: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("UploadFileParams: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("UploadFileParams: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("UploadFileParams: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v UploadFileParams) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Abort.Present {
-		object["abort"] = v.Abort
-	}
-	object["data"] = v.Data
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 // Result of [`Files::upload_file`].
@@ -22492,12 +9492,12 @@ func (v UploadFileParams) MarshalJSON() ([]byte, error) {
 // Aligned with V4 `FilesV4UploadFileResult`.
 type UploadFileResult struct {
 	// The filename of the uploaded file, if available from the provider.
-	Filename Field[string] `json:"filename,omitempty"`
+	Filename *string `json:"filename,omitzero"`
 	// The IANA media type of the uploaded file, if available from the
 	// provider.
-	MediaType Field[string] `json:"mediaType,omitempty"`
+	MediaType *string `json:"mediaType,omitzero"`
 	// Additional provider-specific metadata, keyed by provider name.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// A provider reference mapping provider names to provider-specific file
 	// identifiers.
 	ProviderReference map[string]string `json:"providerReference"`
@@ -22505,443 +9505,224 @@ type UploadFileResult struct {
 	Warnings []Warning `json:"warnings"`
 }
 
-func (v *UploadFileResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("UploadFileResult: %w", err)
-	}
-	var next UploadFileResult
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("UploadFileResult: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, false, true); err != nil {
-		return fmt.Errorf("UploadFileResult: %w", err)
-	}
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("UploadFileResult: %w", err)
-	}
-	if err := dtoRead(object, "providerReference", &next.ProviderReference, true, false); err != nil {
-		return fmt.Errorf("UploadFileResult: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, true, false); err != nil {
-		return fmt.Errorf("UploadFileResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v UploadFileResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	if v.MediaType.Present {
-		object["mediaType"] = v.MediaType
-	}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["providerReference"] = v.ProviderReference
-	object["warnings"] = v.Warnings
-	return json.Marshal(object)
-}
-
 // Token usage snapshot (7 flat fields + raw passthrough).
 type UsageSnapshot struct {
-	CacheRead       Field[uint64] `json:"cacheRead,omitempty"`
-	CacheWrite      Field[uint64] `json:"cacheWrite,omitempty"`
-	InputNoCache    Field[uint64] `json:"inputNoCache,omitempty"`
-	InputTotal      Field[uint64] `json:"inputTotal,omitempty"`
-	OutputReasoning Field[uint64] `json:"outputReasoning,omitempty"`
-	OutputText      Field[uint64] `json:"outputText,omitempty"`
-	OutputTotal     Field[uint64] `json:"outputTotal,omitempty"`
+	CacheRead       *uint64 `json:"cacheRead,omitzero"`
+	CacheWrite      *uint64 `json:"cacheWrite,omitzero"`
+	InputNoCache    *uint64 `json:"inputNoCache,omitzero"`
+	InputTotal      *uint64 `json:"inputTotal,omitzero"`
+	OutputReasoning *uint64 `json:"outputReasoning,omitzero"`
+	OutputText      *uint64 `json:"outputText,omitzero"`
+	OutputTotal     *uint64 `json:"outputTotal,omitzero"`
 	// Raw provider usage payload (opaque passthrough; numbers only — no
 	// prompt text).
-	Raw Field[json.RawMessage] `json:"raw,omitempty"`
-}
-
-func (v *UsageSnapshot) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("UsageSnapshot: %w", err)
-	}
-	var next UsageSnapshot
-	if err := dtoRead(object, "cacheRead", &next.CacheRead, false, true); err != nil {
-		return fmt.Errorf("UsageSnapshot: %w", err)
-	}
-	if err := dtoRead(object, "cacheWrite", &next.CacheWrite, false, true); err != nil {
-		return fmt.Errorf("UsageSnapshot: %w", err)
-	}
-	if err := dtoRead(object, "inputNoCache", &next.InputNoCache, false, true); err != nil {
-		return fmt.Errorf("UsageSnapshot: %w", err)
-	}
-	if err := dtoRead(object, "inputTotal", &next.InputTotal, false, true); err != nil {
-		return fmt.Errorf("UsageSnapshot: %w", err)
-	}
-	if err := dtoRead(object, "outputReasoning", &next.OutputReasoning, false, true); err != nil {
-		return fmt.Errorf("UsageSnapshot: %w", err)
-	}
-	if err := dtoRead(object, "outputText", &next.OutputText, false, true); err != nil {
-		return fmt.Errorf("UsageSnapshot: %w", err)
-	}
-	if err := dtoRead(object, "outputTotal", &next.OutputTotal, false, true); err != nil {
-		return fmt.Errorf("UsageSnapshot: %w", err)
-	}
-	if err := dtoRead(object, "raw", &next.Raw, false, true); err != nil {
-		return fmt.Errorf("UsageSnapshot: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v UsageSnapshot) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.CacheRead.Present {
-		object["cacheRead"] = v.CacheRead
-	}
-	if v.CacheWrite.Present {
-		object["cacheWrite"] = v.CacheWrite
-	}
-	if v.InputNoCache.Present {
-		object["inputNoCache"] = v.InputNoCache
-	}
-	if v.InputTotal.Present {
-		object["inputTotal"] = v.InputTotal
-	}
-	if v.OutputReasoning.Present {
-		object["outputReasoning"] = v.OutputReasoning
-	}
-	if v.OutputText.Present {
-		object["outputText"] = v.OutputText
-	}
-	if v.OutputTotal.Present {
-		object["outputTotal"] = v.OutputTotal
-	}
-	if v.Raw.Present {
-		object["raw"] = v.Raw
-	}
-	return json.Marshal(object)
+	Raw *json.RawMessage `json:"raw,omitzero"`
 }
 
 // The content of a user message: a string or parts (upstream `UserContent`).
 type UserContentVariant interface{ isUserContent() }
-type UserContent struct{ Value UserContentVariant }
+type UserContent struct {
+	Value UserContentVariant
+}
 
 func (v UserContent) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("UserContent: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *UserContent) UnmarshalJSON(data []byte) error {
+	var err error
 	{
 		var next string
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = UserContentBranch0{Value: next}
 			return nil
 		}
 	}
 	{
 		var next []UserContentPart
-		if err := dtoDecode(data, &next, false); err == nil {
+		if err = decodeUnionBranch(data, &next, false); err == nil {
 			v.Value = UserContentBranch1{Value: next}
 			return nil
 		}
 	}
-	return fmt.Errorf("UserContent: no matching branch")
+	return err
 }
 
 type UserContentBranch0 struct{ Value string }
 
-func (UserContentBranch0) isUserContent()                 {}
-func (v UserContentBranch0) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (UserContentBranch0) isUserContent() {}
+
+func (v UserContentBranch0) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type UserContentBranch1 struct{ Value []UserContentPart }
 
-func (UserContentBranch1) isUserContent()                 {}
-func (v UserContentBranch1) MarshalJSON() ([]byte, error) { return json.Marshal(v.Value) }
+func (UserContentBranch1) isUserContent() {}
+
+func (v UserContentBranch1) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 // A part of a user message: upstream's `TextPart | ImagePart | FilePart`.
 type UserContentPartVariant interface{ isUserContentPart() }
-type UserContentPart struct{ Value UserContentPartVariant }
+type UserContentPart struct {
+	Value UserContentPartVariant
+}
 
 func (v UserContentPart) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("UserContentPart: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *UserContentPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("UserContentPart: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("UserContentPart: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "text" {
-		var next UserContentPartVariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "image" {
-		var next UserContentPartVariantImage
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "file" {
+	switch tag.Type {
+	case "file":
 		var next UserContentPartVariantFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "image":
+		var next UserContentPartVariantImage
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "text":
+		var next UserContentPartVariantText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("UserContentPart: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("UserContentPart: unknown type tag %q", tag.Type)
 }
 
 type UserContentPartVariantText struct {
 	// Provider-specific options for this part (e.g. `openai.promptCacheBreakpoint`).
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Text            string                                       `json:"text"`
-}
-
-func (v *UserContentPartVariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("UserContentPartVariantText: %w", err)
-	}
-	var next UserContentPartVariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("UserContentPartVariantText: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("UserContentPartVariantText: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("UserContentPartVariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v UserContentPartVariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Text            string                                `json:"text"`
 }
 
 func (UserContentPartVariantText) isUserContentPart() {}
 
-type UserContentPartVariantImage struct {
-	Image           string                                       `json:"image"`
-	MediaType       string                                       `json:"mediaType"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v UserContentPartVariantText) MarshalJSON() ([]byte, error) {
+	type plain UserContentPartVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
 }
 
-func (v *UserContentPartVariantImage) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("UserContentPartVariantImage: %w", err)
-	}
-	var next UserContentPartVariantImage
-	if err := dtoTag(object, "type", "image"); err != nil {
-		return fmt.Errorf("UserContentPartVariantImage: %w", err)
-	}
-	if err := dtoRead(object, "image", &next.Image, true, false); err != nil {
-		return fmt.Errorf("UserContentPartVariantImage: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("UserContentPartVariantImage: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("UserContentPartVariantImage: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v UserContentPartVariantImage) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "image"
-	object["image"] = v.Image
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type UserContentPartVariantImage struct {
+	Image           string                                `json:"image"`
+	MediaType       string                                `json:"mediaType"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (UserContentPartVariantImage) isUserContentPart() {}
 
-type UserContentPartVariantFile struct {
-	Data            FilePartData                                 `json:"data"`
-	Filename        Field[string]                                `json:"filename,omitempty"`
-	MediaType       string                                       `json:"mediaType"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v UserContentPartVariantImage) MarshalJSON() ([]byte, error) {
+	type plain UserContentPartVariantImage
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "image", plain: plain(v)})
 }
 
-func (v *UserContentPartVariantFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("UserContentPartVariantFile: %w", err)
-	}
-	var next UserContentPartVariantFile
-	if err := dtoTag(object, "type", "file"); err != nil {
-		return fmt.Errorf("UserContentPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("UserContentPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("UserContentPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("UserContentPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("UserContentPartVariantFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v UserContentPartVariantFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file"
-	object["data"] = v.Data
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type UserContentPartVariantFile struct {
+	Data            FilePartData                          `json:"data"`
+	Filename        *string                               `json:"filename,omitzero"`
+	MediaType       string                                `json:"mediaType"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (UserContentPartVariantFile) isUserContentPart() {}
 
+func (v UserContentPartVariantFile) MarshalJSON() ([]byte, error) {
+	type plain UserContentPartVariantFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file", plain: plain(v)})
+}
+
 // Parts allowed in a user message.
 type UserPartVariant interface{ isUserPart() }
-type UserPart struct{ Value UserPartVariant }
+type UserPart struct {
+	Value UserPartVariant
+}
 
 func (v UserPart) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("UserPart: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *UserPart) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("UserPart: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("UserPart: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "text" {
-		var next UserPartVariantText
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "file" {
+	switch tag.Type {
+	case "file":
 		var next UserPartVariantFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "text":
+		var next UserPartVariantText
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("UserPart: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("UserPart: unknown type tag %q", tag.Type)
 }
 
 type UserPartVariantText struct {
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
-	Text            string                                       `json:"text"`
-}
-
-func (v *UserPartVariantText) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("UserPartVariantText: %w", err)
-	}
-	var next UserPartVariantText
-	if err := dtoTag(object, "type", "text"); err != nil {
-		return fmt.Errorf("UserPartVariantText: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("UserPartVariantText: %w", err)
-	}
-	if err := dtoRead(object, "text", &next.Text, true, false); err != nil {
-		return fmt.Errorf("UserPartVariantText: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v UserPartVariantText) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "text"
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	object["text"] = v.Text
-	return json.Marshal(object)
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+	Text            string                                `json:"text"`
 }
 
 func (UserPartVariantText) isUserPart() {}
 
-type UserPartVariantFile struct {
-	Data            FileData                                     `json:"data"`
-	Filename        Field[string]                                `json:"filename,omitempty"`
-	MediaType       string                                       `json:"mediaType"`
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+func (v UserPartVariantText) MarshalJSON() ([]byte, error) {
+	type plain UserPartVariantText
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "text", plain: plain(v)})
 }
 
-func (v *UserPartVariantFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("UserPartVariantFile: %w", err)
-	}
-	var next UserPartVariantFile
-	if err := dtoTag(object, "type", "file"); err != nil {
-		return fmt.Errorf("UserPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("UserPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "filename", &next.Filename, false, true); err != nil {
-		return fmt.Errorf("UserPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("UserPartVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, true); err != nil {
-		return fmt.Errorf("UserPartVariantFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v UserPartVariantFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file"
-	object["data"] = v.Data
-	if v.Filename.Present {
-		object["filename"] = v.Filename
-	}
-	object["mediaType"] = v.MediaType
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	return json.Marshal(object)
+type UserPartVariantFile struct {
+	Data            FileData                              `json:"data"`
+	Filename        *string                               `json:"filename,omitzero"`
+	MediaType       string                                `json:"mediaType"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 }
 
 func (UserPartVariantFile) isUserPart() {}
+
+func (v UserPartVariantFile) MarshalJSON() ([]byte, error) {
+	type plain UserPartVariantFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file", plain: plain(v)})
+}
 
 // A verdict for one call.
 type Verdict struct {
@@ -22957,48 +9738,6 @@ type Verdict struct {
 	Violated []string `json:"violated"`
 }
 
-func (v *Verdict) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("Verdict: %w", err)
-	}
-	var next Verdict
-	if err := dtoRead(object, "claimed", &next.Claimed, true, false); err != nil {
-		return fmt.Errorf("Verdict: %w", err)
-	}
-	if err := dtoRead(object, "confidence", &next.Confidence, true, false); err != nil {
-		return fmt.Errorf("Verdict: %w", err)
-	}
-	if err := dtoRead(object, "expectedMax", &next.ExpectedMax, true, false); err != nil {
-		return fmt.Errorf("Verdict: %w", err)
-	}
-	if err := dtoRead(object, "kind", &next.Kind, true, false); err != nil {
-		return fmt.Errorf("Verdict: %w", err)
-	}
-	if err := dtoRead(object, "lcpBytes", &next.LcpBytes, true, false); err != nil {
-		return fmt.Errorf("Verdict: %w", err)
-	}
-	if err := dtoRead(object, "notes", &next.Notes, true, false); err != nil {
-		return fmt.Errorf("Verdict: %w", err)
-	}
-	if err := dtoRead(object, "violated", &next.Violated, true, false); err != nil {
-		return fmt.Errorf("Verdict: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v Verdict) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["claimed"] = v.Claimed
-	object["confidence"] = v.Confidence
-	object["expectedMax"] = v.ExpectedMax
-	object["kind"] = v.Kind
-	object["lcpBytes"] = v.LcpBytes
-	object["notes"] = v.Notes
-	object["violated"] = v.Violated
-	return json.Marshal(object)
-}
-
 // Confidence level.
 type VerdictConfidence string
 
@@ -23007,25 +9746,6 @@ const (
 	VerdictConfidenceMedium VerdictConfidence = "Medium"
 	VerdictConfidenceLow    VerdictConfidence = "Low"
 )
-
-func (v *VerdictConfidence) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "High":
-		*v = VerdictConfidence(next)
-		return nil
-	case "Medium":
-		*v = VerdictConfidence(next)
-		return nil
-	case "Low":
-		*v = VerdictConfidence(next)
-		return nil
-	}
-	return fmt.Errorf("VerdictConfidence: unknown value %s", data)
-}
 
 // Verdict kinds (RFC-0015 §4.1).
 type VerdictKind string
@@ -23037,178 +9757,46 @@ const (
 	VerdictKindUnknown           VerdictKind = "Unknown"
 )
 
-func (v *VerdictKind) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "Trusted":
-		*v = VerdictKind(next)
-		return nil
-	case "SuspectOverclaim":
-		*v = VerdictKind(next)
-		return nil
-	case "SuspectUnderclaim":
-		*v = VerdictKind(next)
-		return nil
-	case "Unknown":
-		*v = VerdictKind(next)
-		return nil
-	}
-	return fmt.Errorf("VerdictKind: unknown value %s", data)
-}
-
 // Options passed to [`VideoModel::do_start`] and [`VideoModel::do_status`].
 //
 // Aligned with V4 `VideoModelV4CallOptions`.
 type VideoCallOptions struct {
 	// Aspect ratio, in `{width}:{height}` format (e.g. `"16:9"`).
-	AspectRatio Field[AspectRatio] `json:"aspectRatio,omitempty"`
+	AspectRatio *AspectRatio `json:"aspectRatio,omitzero"`
 	// Duration of the video in seconds. Typically 3–10 seconds.
-	Duration Field[uint32] `json:"duration,omitempty"`
+	Duration *uint32 `json:"duration,omitzero"`
 	// Frames per second. Common values: 24, 30, 60.
-	Fps Field[uint32] `json:"fps,omitempty"`
+	Fps *uint32 `json:"fps,omitzero"`
 	// Role-tagged image inputs for first-last-frame generation.
-	FrameImages Field[[]VideoFrameImage] `json:"frameImages,omitempty"`
+	FrameImages []VideoFrameImage `json:"frameImages,omitzero"`
 	// Whether the model should generate audio alongside the video.
-	GenerateAudio Field[bool] `json:"generateAudio,omitempty"`
+	GenerateAudio *bool `json:"generateAudio,omitzero"`
 	// Additional HTTP headers to send with the request.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// Input image for image-to-video generation (the starting frame).
-	Image Field[VideoFile] `json:"image,omitempty"`
+	Image *VideoFile `json:"image,omitzero"`
 	// Reference inputs for reference-to-video generation (images or videos).
-	InputReferences Field[[]VideoFile] `json:"inputReferences,omitempty"`
+	InputReferences []VideoFile `json:"inputReferences,omitzero"`
 	// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
 	// retrying. `None` uses 2, the AI SDK default.
-	MaxRetries Field[uint32] `json:"maxRetries,omitempty"`
+	MaxRetries *uint32 `json:"maxRetries,omitzero"`
 	// Number of videos to generate. Default `1`; most models only support
 	// `n = 1` due to computational cost.
-	N Field[uint32] `json:"n,omitempty"`
+	N *uint32 `json:"n,omitzero"`
 	// Poll pacing for the start/status flow, the AI SDK's `generateVideo`
 	// `poll` option. Unset fields use the AI SDK defaults (5000 ms between
 	// status checks, 600000 ms in total).
-	Poll Field[VideoPollOptions] `json:"poll,omitempty"`
+	Poll *VideoPollOptions `json:"poll,omitzero"`
 	// Text prompt for the video generation. `None` when not required.
-	Prompt Field[string] `json:"prompt,omitempty"`
+	Prompt *string `json:"prompt,omitzero"`
 	// Additional provider-specific options, keyed by provider name.
-	ProviderOptions Field[map[string]map[string]json.RawMessage] `json:"providerOptions,omitempty"`
+	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 	// Resolution, in `{width}x{height}` format (e.g. `"1280x720"`).
-	Resolution Field[Size] `json:"resolution,omitempty"`
+	Resolution *Size `json:"resolution,omitzero"`
 	// Seed for deterministic generation. `None` uses a random seed.
-	Seed Field[uint64] `json:"seed,omitempty"`
+	Seed *uint64 `json:"seed,omitzero"`
 	// Per-call operation timeout.
-	Timeout Field[TimeoutConfiguration] `json:"timeout,omitempty"`
-}
-
-func (v *VideoCallOptions) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	var next VideoCallOptions
-	if err := dtoRead(object, "aspectRatio", &next.AspectRatio, false, true); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "duration", &next.Duration, false, true); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "fps", &next.Fps, false, true); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "frameImages", &next.FrameImages, false, true); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "generateAudio", &next.GenerateAudio, false, true); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "image", &next.Image, false, true); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "inputReferences", &next.InputReferences, false, true); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "maxRetries", &next.MaxRetries, false, true); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "n", &next.N, false, false); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "poll", &next.Poll, false, true); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "prompt", &next.Prompt, false, true); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "providerOptions", &next.ProviderOptions, false, false); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "resolution", &next.Resolution, false, true); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "seed", &next.Seed, false, true); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	if err := dtoRead(object, "timeout", &next.Timeout, false, true); err != nil {
-		return fmt.Errorf("VideoCallOptions: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v VideoCallOptions) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.AspectRatio.Present {
-		object["aspectRatio"] = v.AspectRatio
-	}
-	if v.Duration.Present {
-		object["duration"] = v.Duration
-	}
-	if v.Fps.Present {
-		object["fps"] = v.Fps
-	}
-	if v.FrameImages.Present {
-		object["frameImages"] = v.FrameImages
-	}
-	if v.GenerateAudio.Present {
-		object["generateAudio"] = v.GenerateAudio
-	}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.Image.Present {
-		object["image"] = v.Image
-	}
-	if v.InputReferences.Present {
-		object["inputReferences"] = v.InputReferences
-	}
-	if v.MaxRetries.Present {
-		object["maxRetries"] = v.MaxRetries
-	}
-	if v.N.Present {
-		object["n"] = v.N
-	}
-	if v.Poll.Present {
-		object["poll"] = v.Poll
-	}
-	if v.Prompt.Present {
-		object["prompt"] = v.Prompt
-	}
-	if v.ProviderOptions.Present {
-		object["providerOptions"] = v.ProviderOptions
-	}
-	if v.Resolution.Present {
-		object["resolution"] = v.Resolution
-	}
-	if v.Seed.Present {
-		object["seed"] = v.Seed
-	}
-	if v.Timeout.Present {
-		object["timeout"] = v.Timeout
-	}
-	return json.Marshal(object)
+	Timeout *TimeoutConfiguration `json:"timeout,omitzero"`
 }
 
 // Generated video data: a URL, base64-encoded string, or binary data.
@@ -23216,45 +9804,45 @@ func (v VideoCallOptions) MarshalJSON() ([]byte, error) {
 // Aligned with V4 `VideoModelV4VideoData`. Most providers return URLs due to
 // large file sizes.
 type VideoDataVariant interface{ isVideoData() }
-type VideoData struct{ Value VideoDataVariant }
+type VideoData struct {
+	Value VideoDataVariant
+}
 
 func (v VideoData) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("VideoData: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *VideoData) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("VideoData: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("VideoData: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "url" {
-		var next VideoDataVariantURL
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "base64" {
+	switch tag.Type {
+	case "base64":
 		var next VideoDataVariantBase64
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "binary" {
+		v.Value = next
+		return nil
+	case "binary":
 		var next VideoDataVariantBinary
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "url":
+		var next VideoDataVariantURL
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("VideoData: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("VideoData: unknown type tag %q", tag.Type)
 }
 
 type VideoDataVariantURL struct {
@@ -23262,136 +9850,82 @@ type VideoDataVariantURL struct {
 	URL       string `json:"url"`
 }
 
-func (v *VideoDataVariantURL) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("VideoDataVariantURL: %w", err)
-	}
-	var next VideoDataVariantURL
-	if err := dtoTag(object, "type", "url"); err != nil {
-		return fmt.Errorf("VideoDataVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("VideoDataVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("VideoDataVariantURL: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v VideoDataVariantURL) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "url"
-	object["mediaType"] = v.MediaType
-	object["url"] = v.URL
-	return json.Marshal(object)
-}
-
 func (VideoDataVariantURL) isVideoData() {}
+
+func (v VideoDataVariantURL) MarshalJSON() ([]byte, error) {
+	type plain VideoDataVariantURL
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "url", plain: plain(v)})
+}
 
 type VideoDataVariantBase64 struct {
 	Data      string `json:"data"`
 	MediaType string `json:"mediaType"`
 }
 
-func (v *VideoDataVariantBase64) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("VideoDataVariantBase64: %w", err)
-	}
-	var next VideoDataVariantBase64
-	if err := dtoTag(object, "type", "base64"); err != nil {
-		return fmt.Errorf("VideoDataVariantBase64: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("VideoDataVariantBase64: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("VideoDataVariantBase64: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v VideoDataVariantBase64) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "base64"
-	object["data"] = v.Data
-	object["mediaType"] = v.MediaType
-	return json.Marshal(object)
-}
-
 func (VideoDataVariantBase64) isVideoData() {}
+
+func (v VideoDataVariantBase64) MarshalJSON() ([]byte, error) {
+	type plain VideoDataVariantBase64
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "base64", plain: plain(v)})
+}
 
 type VideoDataVariantBinary struct {
 	Data      string `json:"data"`
 	MediaType string `json:"mediaType"`
 }
 
-func (v *VideoDataVariantBinary) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("VideoDataVariantBinary: %w", err)
-	}
-	var next VideoDataVariantBinary
-	if err := dtoTag(object, "type", "binary"); err != nil {
-		return fmt.Errorf("VideoDataVariantBinary: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("VideoDataVariantBinary: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("VideoDataVariantBinary: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v VideoDataVariantBinary) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "binary"
-	object["data"] = v.Data
-	object["mediaType"] = v.MediaType
-	return json.Marshal(object)
-}
-
 func (VideoDataVariantBinary) isVideoData() {}
+
+func (v VideoDataVariantBinary) MarshalJSON() ([]byte, error) {
+	type plain VideoDataVariantBinary
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "binary", plain: plain(v)})
+}
 
 // A video or image file used for video editing or image-to-video generation.
 //
 // Aligned with V4 `VideoModelV4File`.
 type VideoFileVariant interface{ isVideoFile() }
-type VideoFile struct{ Value VideoFileVariant }
+type VideoFile struct {
+	Value VideoFileVariant
+}
 
 func (v VideoFile) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("VideoFile: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *VideoFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("VideoFile: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("VideoFile: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "file" {
+	switch tag.Type {
+	case "file":
 		var next VideoFileVariantFile
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "url" {
+		v.Value = next
+		return nil
+	case "url":
 		var next VideoFileVariantURL
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("VideoFile: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("VideoFile: unknown type tag %q", tag.Type)
 }
 
 type VideoFileVariantFile struct {
@@ -23401,70 +9935,32 @@ type VideoFileVariantFile struct {
 	MediaType string `json:"mediaType"`
 }
 
-func (v *VideoFileVariantFile) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("VideoFileVariantFile: %w", err)
-	}
-	var next VideoFileVariantFile
-	if err := dtoTag(object, "type", "file"); err != nil {
-		return fmt.Errorf("VideoFileVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "data", &next.Data, true, false); err != nil {
-		return fmt.Errorf("VideoFileVariantFile: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, true, false); err != nil {
-		return fmt.Errorf("VideoFileVariantFile: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v VideoFileVariantFile) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "file"
-	object["data"] = v.Data
-	object["mediaType"] = v.MediaType
-	return json.Marshal(object)
-}
-
 func (VideoFileVariantFile) isVideoFile() {}
+
+func (v VideoFileVariantFile) MarshalJSON() ([]byte, error) {
+	type plain VideoFileVariantFile
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "file", plain: plain(v)})
+}
 
 type VideoFileVariantURL struct {
 	// The media type of the referenced file, when known.
-	MediaType Field[string] `json:"mediaType,omitempty"`
+	MediaType *string `json:"mediaType,omitzero"`
 	// The URL of the video or image file.
 	URL string `json:"url"`
 }
 
-func (v *VideoFileVariantURL) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("VideoFileVariantURL: %w", err)
-	}
-	var next VideoFileVariantURL
-	if err := dtoTag(object, "type", "url"); err != nil {
-		return fmt.Errorf("VideoFileVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "mediaType", &next.MediaType, false, true); err != nil {
-		return fmt.Errorf("VideoFileVariantURL: %w", err)
-	}
-	if err := dtoRead(object, "url", &next.URL, true, false); err != nil {
-		return fmt.Errorf("VideoFileVariantURL: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v VideoFileVariantURL) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "url"
-	if v.MediaType.Present {
-		object["mediaType"] = v.MediaType
-	}
-	object["url"] = v.URL
-	return json.Marshal(object)
-}
-
 func (VideoFileVariantURL) isVideoFile() {}
+
+func (v VideoFileVariantURL) MarshalJSON() ([]byte, error) {
+	type plain VideoFileVariantURL
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "url", plain: plain(v)})
+}
 
 // File payload for a [`VideoFile::File`]: base64 string or raw bytes.
 //
@@ -23481,28 +9977,6 @@ type VideoFrameImage struct {
 	Image VideoFile `json:"image"`
 }
 
-func (v *VideoFrameImage) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("VideoFrameImage: %w", err)
-	}
-	var next VideoFrameImage
-	if err := dtoRead(object, "frameType", &next.FrameType, true, false); err != nil {
-		return fmt.Errorf("VideoFrameImage: %w", err)
-	}
-	if err := dtoRead(object, "image", &next.Image, true, false); err != nil {
-		return fmt.Errorf("VideoFrameImage: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v VideoFrameImage) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["frameType"] = v.FrameType
-	object["image"] = v.Image
-	return json.Marshal(object)
-}
-
 // The role a frame image plays in video generation.
 //
 // Aligned with V4 `VideoModelV4FrameType`.
@@ -23513,98 +9987,24 @@ const (
 	VideoFrameTypeLastFrame  VideoFrameType = "last_frame"
 )
 
-func (v *VideoFrameType) UnmarshalJSON(data []byte) error {
-	var next string
-	if err := json.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	switch next {
-	case "first_frame":
-		*v = VideoFrameType(next)
-		return nil
-	case "last_frame":
-		*v = VideoFrameType(next)
-		return nil
-	}
-	return fmt.Errorf("VideoFrameType: unknown value %s", data)
-}
-
 // Per-call poll pacing for video generation (AI SDK `generateVideo` `poll`,
 // ai@7.0.127 `generate-video/generate-video.ts:55-80`). The poll settings
 // belong to the operation, as upstream: a video model has none of its own.
 type VideoPollOptions struct {
 	// Delay between consecutive status checks, in milliseconds.
-	IntervalMs Field[uint64] `json:"intervalMs,omitempty"`
+	IntervalMs *uint64 `json:"intervalMs,omitzero"`
 	// Maximum total time to wait for completion, in milliseconds.
-	TimeoutMs Field[uint64] `json:"timeoutMs,omitempty"`
-}
-
-func (v *VideoPollOptions) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("VideoPollOptions: %w", err)
-	}
-	var next VideoPollOptions
-	if err := dtoRead(object, "intervalMs", &next.IntervalMs, false, true); err != nil {
-		return fmt.Errorf("VideoPollOptions: %w", err)
-	}
-	if err := dtoRead(object, "timeoutMs", &next.TimeoutMs, false, true); err != nil {
-		return fmt.Errorf("VideoPollOptions: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v VideoPollOptions) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.IntervalMs.Present {
-		object["intervalMs"] = v.IntervalMs
-	}
-	if v.TimeoutMs.Present {
-		object["timeoutMs"] = v.TimeoutMs
-	}
-	return json.Marshal(object)
+	TimeoutMs *uint64 `json:"timeoutMs,omitzero"`
 }
 
 // Response information for a video generation call.
 type VideoResponse struct {
 	// Response headers.
-	Headers Field[map[string]string] `json:"headers,omitempty"`
+	Headers map[string]string `json:"headers,omitzero"`
 	// The ID of the model that was used to generate the response.
-	ModelID Field[string] `json:"modelId,omitempty"`
+	ModelID *string `json:"modelId,omitzero"`
 	// Timestamp for the start of the generated response (`toISOString()` in the JSON).
-	Timestamp Field[Timestamp] `json:"timestamp,omitempty"`
-}
-
-func (v *VideoResponse) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("VideoResponse: %w", err)
-	}
-	var next VideoResponse
-	if err := dtoRead(object, "headers", &next.Headers, false, true); err != nil {
-		return fmt.Errorf("VideoResponse: %w", err)
-	}
-	if err := dtoRead(object, "modelId", &next.ModelID, false, true); err != nil {
-		return fmt.Errorf("VideoResponse: %w", err)
-	}
-	if err := dtoRead(object, "timestamp", &next.Timestamp, false, true); err != nil {
-		return fmt.Errorf("VideoResponse: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v VideoResponse) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.Headers.Present {
-		object["headers"] = v.Headers
-	}
-	if v.ModelID.Present {
-		object["modelId"] = v.ModelID
-	}
-	if v.Timestamp.Present {
-		object["timestamp"] = v.Timestamp
-	}
-	return json.Marshal(object)
+	Timestamp *Timestamp `json:"timestamp,omitzero"`
 }
 
 // The final result of a video generation operation.
@@ -23612,7 +10012,7 @@ func (v VideoResponse) MarshalJSON() ([]byte, error) {
 // Aligned with V4 `VideoModelV4Result`.
 type VideoResult struct {
 	// Additional provider-specific metadata, keyed by provider name.
-	ProviderMetadata Field[map[string]map[string]json.RawMessage] `json:"providerMetadata,omitempty"`
+	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Response information for telemetry and debugging.
 	Response VideoResponse `json:"response"`
 	// Generated videos as URLs, base64 strings, or binary data.
@@ -23621,218 +10021,114 @@ type VideoResult struct {
 	Warnings []Warning `json:"warnings"`
 }
 
-func (v *VideoResult) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("VideoResult: %w", err)
-	}
-	var next VideoResult
-	if err := dtoRead(object, "providerMetadata", &next.ProviderMetadata, false, true); err != nil {
-		return fmt.Errorf("VideoResult: %w", err)
-	}
-	if err := dtoRead(object, "response", &next.Response, true, false); err != nil {
-		return fmt.Errorf("VideoResult: %w", err)
-	}
-	if err := dtoRead(object, "videos", &next.Videos, true, false); err != nil {
-		return fmt.Errorf("VideoResult: %w", err)
-	}
-	if err := dtoRead(object, "warnings", &next.Warnings, true, false); err != nil {
-		return fmt.Errorf("VideoResult: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v VideoResult) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	if v.ProviderMetadata.Present {
-		object["providerMetadata"] = v.ProviderMetadata
-	}
-	object["response"] = v.Response
-	object["videos"] = v.Videos
-	object["warnings"] = v.Warnings
-	return json.Marshal(object)
-}
-
 // A warning issued by the provider (e.g. unsupported parameter).
 type WarningVariant interface{ isWarning() }
-type Warning struct{ Value WarningVariant }
+type Warning struct {
+	Value WarningVariant
+}
 
 func (v Warning) MarshalJSON() ([]byte, error) {
-	if v.Value == nil {
-		return nil, fmt.Errorf("Warning: missing variant")
-	}
 	return json.Marshal(v.Value)
 }
+
 func (v *Warning) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("Warning: %w", err)
+	var tag struct {
+		Type string `json:"type"`
 	}
-	var tag string
-	if err := dtoRead(object, "type", &tag, true, false); err != nil {
-		return fmt.Errorf("Warning: %w", err)
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
 	}
-	if tag == "unsupported" {
-		var next WarningVariantUnsupported
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
-		}
-	}
-	if tag == "compatibility" {
+	switch tag.Type {
+	case "compatibility":
 		var next WarningVariantCompatibility
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "deprecated" {
+		v.Value = next
+		return nil
+	case "deprecated":
 		var next WarningVariantDeprecated
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
-	}
-	if tag == "other" {
+		v.Value = next
+		return nil
+	case "other":
 		var next WarningVariantOther
-		if err := json.Unmarshal(data, &next); err == nil {
-			v.Value = next
-			return nil
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
 		}
+		v.Value = next
+		return nil
+	case "unsupported":
+		var next WarningVariantUnsupported
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	}
-	return fmt.Errorf("Warning: unknown or invalid type tag %q", tag)
+	return fmt.Errorf("Warning: unknown type tag %q", tag.Type)
 }
 
 type WarningVariantUnsupported struct {
-	Details Field[string] `json:"details,omitempty"`
-	Feature string        `json:"feature"`
-}
-
-func (v *WarningVariantUnsupported) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("WarningVariantUnsupported: %w", err)
-	}
-	var next WarningVariantUnsupported
-	if err := dtoTag(object, "type", "unsupported"); err != nil {
-		return fmt.Errorf("WarningVariantUnsupported: %w", err)
-	}
-	if err := dtoRead(object, "details", &next.Details, false, true); err != nil {
-		return fmt.Errorf("WarningVariantUnsupported: %w", err)
-	}
-	if err := dtoRead(object, "feature", &next.Feature, true, false); err != nil {
-		return fmt.Errorf("WarningVariantUnsupported: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v WarningVariantUnsupported) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "unsupported"
-	if v.Details.Present {
-		object["details"] = v.Details
-	}
-	object["feature"] = v.Feature
-	return json.Marshal(object)
+	Details *string `json:"details,omitzero"`
+	Feature string  `json:"feature"`
 }
 
 func (WarningVariantUnsupported) isWarning() {}
 
-type WarningVariantCompatibility struct {
-	Details Field[string] `json:"details,omitempty"`
-	Feature string        `json:"feature"`
+func (v WarningVariantUnsupported) MarshalJSON() ([]byte, error) {
+	type plain WarningVariantUnsupported
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "unsupported", plain: plain(v)})
 }
 
-func (v *WarningVariantCompatibility) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("WarningVariantCompatibility: %w", err)
-	}
-	var next WarningVariantCompatibility
-	if err := dtoTag(object, "type", "compatibility"); err != nil {
-		return fmt.Errorf("WarningVariantCompatibility: %w", err)
-	}
-	if err := dtoRead(object, "details", &next.Details, false, true); err != nil {
-		return fmt.Errorf("WarningVariantCompatibility: %w", err)
-	}
-	if err := dtoRead(object, "feature", &next.Feature, true, false); err != nil {
-		return fmt.Errorf("WarningVariantCompatibility: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v WarningVariantCompatibility) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "compatibility"
-	if v.Details.Present {
-		object["details"] = v.Details
-	}
-	object["feature"] = v.Feature
-	return json.Marshal(object)
+type WarningVariantCompatibility struct {
+	Details *string `json:"details,omitzero"`
+	Feature string  `json:"feature"`
 }
 
 func (WarningVariantCompatibility) isWarning() {}
+
+func (v WarningVariantCompatibility) MarshalJSON() ([]byte, error) {
+	type plain WarningVariantCompatibility
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "compatibility", plain: plain(v)})
+}
 
 type WarningVariantDeprecated struct {
 	Message string `json:"message"`
 	Setting string `json:"setting"`
 }
 
-func (v *WarningVariantDeprecated) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("WarningVariantDeprecated: %w", err)
-	}
-	var next WarningVariantDeprecated
-	if err := dtoTag(object, "type", "deprecated"); err != nil {
-		return fmt.Errorf("WarningVariantDeprecated: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("WarningVariantDeprecated: %w", err)
-	}
-	if err := dtoRead(object, "setting", &next.Setting, true, false); err != nil {
-		return fmt.Errorf("WarningVariantDeprecated: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v WarningVariantDeprecated) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "deprecated"
-	object["message"] = v.Message
-	object["setting"] = v.Setting
-	return json.Marshal(object)
-}
-
 func (WarningVariantDeprecated) isWarning() {}
+
+func (v WarningVariantDeprecated) MarshalJSON() ([]byte, error) {
+	type plain WarningVariantDeprecated
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "deprecated", plain: plain(v)})
+}
 
 type WarningVariantOther struct {
 	Message string `json:"message"`
 }
 
-func (v *WarningVariantOther) UnmarshalJSON(data []byte) error {
-	object, err := dtoObject(data)
-	if err != nil {
-		return fmt.Errorf("WarningVariantOther: %w", err)
-	}
-	var next WarningVariantOther
-	if err := dtoTag(object, "type", "other"); err != nil {
-		return fmt.Errorf("WarningVariantOther: %w", err)
-	}
-	if err := dtoRead(object, "message", &next.Message, true, false); err != nil {
-		return fmt.Errorf("WarningVariantOther: %w", err)
-	}
-	*v = next
-	return nil
-}
-func (v WarningVariantOther) MarshalJSON() ([]byte, error) {
-	object := map[string]any{}
-	object["type"] = "other"
-	object["message"] = v.Message
-	return json.Marshal(object)
-}
-
 func (WarningVariantOther) isWarning() {}
+
+func (v WarningVariantOther) MarshalJSON() ([]byte, error) {
+	type plain WarningVariantOther
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "other", plain: plain(v)})
+}
 
 type AimuxCoreModelCatalogueRuntimeModel = []RuntimeModel
 
