@@ -23,7 +23,7 @@ use crate::shared::SharedProviderOptions;
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ModelMessage {
     /// Upstream `SystemModelMessage`.
     System {
@@ -58,7 +58,7 @@ pub enum ModelMessage {
 /// The content of a user message: a string or parts (upstream `UserContent`).
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum UserContent {
     Text(String),
     Parts(Vec<UserContentPart>),
@@ -68,7 +68,7 @@ pub enum UserContent {
 /// `AssistantContent`).
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AssistantContent {
     Text(String),
     Parts(Vec<AssistantContentPart>),
@@ -165,7 +165,7 @@ impl ModelMessage {
 /// Can be a simple string (converted to a single user message) or a list of messages.
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ModelPrompt {
     /// A plain string prompt — equivalent to a single user message.
     Text(String),

@@ -151,7 +151,8 @@ pub type SharedProviderReference = IndexMap<String, String>;
 /// is written as base64 and parsing yields `Base64`. Two values are equal when
 /// they hold the same bytes, whatever their form.
 #[derive(Debug, Clone, TS)]
-#[ts(export, type = "string")]
+#[ts(type = "string")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum FileBytes {
     /// Raw binary bytes.
     Binary(Vec<u8>),
@@ -183,7 +184,7 @@ impl PartialEq for FileBytes {
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum FileData {
     /// Raw bytes (`Uint8Array`) or a base64-encoded string.
     Data { data: FileBytes },
@@ -207,7 +208,7 @@ pub enum FileData {
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum GeneratedFileData {
     Data {
         data: FileBytes,
@@ -227,7 +228,8 @@ pub enum GeneratedFileData {
 /// `` `${number}x${number}` ``.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(into = "String", try_from = "String")]
-#[ts(export, type = "`${number}x${number}`")]
+#[ts(type = "`${number}x${number}`")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct Size {
     width: u32,
     height: u32,
@@ -305,7 +307,8 @@ impl std::str::FromStr for Size {
 /// `` `${number}:${number}` ``.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(into = "String", try_from = "String")]
-#[ts(export, type = "`${number}:${number}`")]
+#[ts(type = "`${number}:${number}`")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct AspectRatio {
     width: u32,
     height: u32,
@@ -394,7 +397,7 @@ fn parse_pair(s: &str, sep: char) -> Option<(u32, u32)> {
 /// `Option<ResponseInfo>`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ResponseInfo {
     /// ID of the generated response, when supplied by the provider.
     #[ts(optional)]
@@ -427,7 +430,7 @@ pub struct ResponseInfo {
 /// Aligned with the `request?` object that appears on some V4 model results.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RequestInfo {
     /// The request body that was sent (opaque JSON).
     #[ts(optional)]
@@ -442,7 +445,7 @@ pub struct RequestInfo {
 /// Response information returned when starting a language-model stream.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct StreamResponseInfo {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]

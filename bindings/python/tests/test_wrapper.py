@@ -24,6 +24,7 @@ from aimux.wrapper import (
     TextContent,
     TextContentPart,
     FunctionTool,
+    ProviderTool,
     ToolChoiceTool,
     generate_text,
     stream_text,
@@ -183,6 +184,20 @@ class TestStreamText:
 # ── options: tools / tool_choice reach the provider ──────────────────────────
 
 class TestOptionsReachProvider:
+
+    @pytest.mark.parametrize("supported", [None, True, False])
+    def test_provider_tool_deferred_results_roundtrip(self, supported):
+        original = ProviderTool(
+            id="anthropic.code_execution_20250522", name="code_execution", args={},
+            supports_deferred_results=supported,
+        )
+        wire = json.loads(_opts_to_json(GenerateTextOptions(tools=[original])))["tools"][0]
+        assert "supports_deferred_results" not in wire
+        if supported is None:
+            assert "supportsDeferredResults" not in wire
+        else:
+            assert wire["supportsDeferredResults"] is supported
+        assert ProviderTool.model_validate(wire) == original
 
     def test_tools_and_tool_choice_reach_provider(self):
         with RecordingMockServer(OPENAI_TOOL_CALL) as mock:

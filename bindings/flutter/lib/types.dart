@@ -505,21 +505,49 @@ class Tool {
   final String? name;
   final Json? args;
 
-  const Tool._({required this.type, this.function, this.id, this.name, this.args});
+  /// Whether a result may arrive in a later response than its call
+  /// (provider-utils@5.0.55 src/types/tool.ts:316-326).
+  final bool? supportsDeferredResults;
+
+  const Tool._(
+      {required this.type,
+      this.function,
+      this.id,
+      this.name,
+      this.args,
+      this.supportsDeferredResults});
 
   factory Tool.function(FunctionTool fn) => Tool._(type: 'function', function: fn);
   factory Tool.provider(
-          {required String id, required String name, required Json args}) =>
-      Tool._(type: 'provider', id: id, name: name, args: args);
+          {required String id,
+          required String name,
+          required Json args,
+          bool? supportsDeferredResults}) =>
+      Tool._(
+          type: 'provider',
+          id: id,
+          name: name,
+          args: args,
+          supportsDeferredResults: supportsDeferredResults);
 
   Json toJson() => function != null
       ? {'type': 'function', ...function!.toJson()}
-      : {'type': 'provider', 'id': id!, 'name': name!, 'args': args ?? {}};
+      : {
+          'type': 'provider',
+          'id': id!,
+          'name': name!,
+          'args': args ?? {},
+          if (supportsDeferredResults != null)
+            'supportsDeferredResults': supportsDeferredResults,
+        };
 
   factory Tool.fromJson(Json j) => j['type'] == 'function'
       ? Tool.function(FunctionTool.fromJson(j))
       : Tool.provider(
-          id: j['id'] as String, name: j['name'] as String, args: j['args'] as Json);
+          id: j['id'] as String,
+          name: j['name'] as String,
+          args: j['args'] as Json,
+          supportsDeferredResults: j['supportsDeferredResults'] as bool?);
 }
 
 /// How the model should choose tools. Mirrors `ToolChoice.ts`.

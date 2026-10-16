@@ -41,6 +41,23 @@ final class WrapperTests: XCTestCase {
 
     // MARK: - generateText: tool calls
 
+    func testProviderToolDeferredResultsRoundTrip() throws {
+        for supported in [nil, true, false] as [Bool?] {
+            let original = ProviderTool(id: "anthropic.code_execution_20250522", name: "code_execution",
+                                        args: [:], supportsDeferredResults: supported)
+            let encoded = try JSONEncoder().encode(original)
+            let wire = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+            XCTAssertEqual(wire.keys.contains("supportsDeferredResults"), supported != nil)
+            XCTAssertEqual(try JSONDecoder().decode(ProviderTool.self, from: encoded), original)
+
+            let tool = Tool.provider(original)
+            let toolEncoded = try JSONEncoder().encode(tool)
+            let toolWire = try XCTUnwrap(JSONSerialization.jsonObject(with: toolEncoded) as? [String: Any])
+            XCTAssertEqual(toolWire.keys.contains("supportsDeferredResults"), supported != nil)
+            XCTAssertEqual(try JSONDecoder().decode(Tool.self, from: toolEncoded), tool)
+        }
+    }
+
     func testToolCallProviderMetadataRoundTrip() throws {
         let original = ToolCall(
             toolCallId: "call_1",

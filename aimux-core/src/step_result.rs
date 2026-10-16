@@ -28,7 +28,7 @@ use crate::types::{FinishReasonUnified, LanguageModelUsage, ProviderMetadata, Wa
 /// The model that ran a step (`StepResult.model`, `step-result.ts:155-161`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct StepModel {
     pub provider: String,
     pub model_id: String,
@@ -37,7 +37,7 @@ pub struct StepModel {
 /// Distribution of the gaps between output chunks of a streamed step
 /// (`OutputChunkTimingStats`, `step-result.ts:39-57`).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct OutputChunkTimingStats {
     pub min: f64,
     pub p10: f64,
@@ -78,7 +78,7 @@ impl OutputChunkTimingStats {
 /// Durations are milliseconds.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct StepResultPerformance {
     /// Output tokens per second over the whole response time.
     pub effective_output_tokens_per_second: f64,
@@ -167,7 +167,7 @@ impl StepResultPerformance {
 /// `finish-step` stream part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct StepResponseMetadata {
     /// Response id; the call layer generates one when the provider sent none.
     pub id: String,
@@ -186,7 +186,7 @@ pub struct StepResponseMetadata {
 /// with the response `id`, `timestamp`, `modelId`, `headers?` and `body?`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct StepResponse {
     pub id: String,
     pub timestamp: Timestamp,
@@ -229,7 +229,7 @@ impl StepResponse {
 /// getters (`text`, `toolCalls`, ...) and without `undefined` fields.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct StepResult {
     /// Identifies the generation call the step belongs to.
     pub call_id: String,

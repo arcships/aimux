@@ -21,7 +21,7 @@ use crate::types::{FinishReason, NamespacedKind, ProviderMetadata, Usage, Warnin
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum GenerateContent {
     /// Generated text.
     Text {
@@ -72,7 +72,7 @@ pub enum GenerateContent {
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ContentPart {
     /// Generated text.
     Text {
@@ -123,7 +123,7 @@ pub enum ContentPart {
 /// `toolResults`, by [`crate::wire::typed_vec`] ([`TaggedToolResult`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TypedToolResult {
     pub tool_call_id: String,
     pub tool_name: String,
@@ -158,7 +158,7 @@ impl crate::wire::TypeTag for TypedToolResult {
 /// Only the TypeScript type is generated from this struct; Rust fields hold a
 /// [`TypedToolResult`] and serde writes the tag ([`crate::wire::typed_vec`]).
 #[derive(TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[allow(dead_code)]
 pub struct TaggedToolResult {
     #[ts(rename = "type", type = "\"tool-result\"")]
@@ -172,7 +172,7 @@ pub struct TaggedToolResult {
 /// absent, as on [`TypedToolResult`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TypedToolError {
     pub tool_call_id: String,
     pub tool_name: String,
@@ -197,7 +197,7 @@ pub struct TypedToolError {
 /// `generate-text/tool-approval-response-output.ts:7-35`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolApprovalResponseOutput {
     pub approval_id: String,
     /// The answered call, with its `type` tag (`TypedToolCall`,
@@ -218,7 +218,7 @@ pub struct ToolApprovalResponseOutput {
 /// `StaticToolOutputDenied`, `ai` `generate-text/tool-output-denied.ts:7-15`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolOutputDenied {
     pub tool_call_id: String,
     pub tool_name: String,
@@ -233,7 +233,7 @@ pub struct ToolOutputDenied {
 /// Provider approval request for a provider-executed call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RawToolApprovalRequest {
     pub approval_id: String,
     pub tool_call_id: String,
@@ -245,7 +245,7 @@ pub struct RawToolApprovalRequest {
 /// Approval request exposed by text generation.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolApprovalRequestOutput {
     pub approval_id: String,
     /// The call to approve, with its `type` tag (`ai`
@@ -282,7 +282,7 @@ pub struct ToolApprovalRequestOutput {
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum Source {
     Url {
         id: String,
@@ -320,7 +320,7 @@ impl crate::wire::TypeTag for Source {
 /// Only the TypeScript type is generated from this struct; Rust fields hold a
 /// [`Source`] and serde writes the tag ([`crate::wire::typed_vec`]).
 #[derive(TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[allow(dead_code)]
 pub struct TypedSource {
     #[ts(rename = "type", type = "\"source\"")]
@@ -336,7 +336,7 @@ pub struct TypedSource {
 /// `ReasoningFile` and `StreamPart::File` / `ReasoningFile`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct LanguageModelFile {
     pub data: GeneratedFileData,
     pub media_type: String,
@@ -354,7 +354,7 @@ pub struct LanguageModelFile {
 /// provider's URL file before it builds one (`resolve-generated-file-data.ts`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GeneratedFile {
     /// The file's bytes, `base64` in the JSON.
     #[serde(rename = "base64")]
@@ -397,7 +397,7 @@ impl GeneratedFile {
 /// metadata; the file itself has none.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GeneratedFileOutput {
     pub file: GeneratedFile,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -412,7 +412,7 @@ pub struct GeneratedFileOutput {
 /// `GenerateContent::Reasoning` and the element of the text results' `reasoning`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ReasoningOutput {
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -423,7 +423,7 @@ pub struct ReasoningOutput {
 /// Text or a generated file produced during reasoning.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ReasoningPart {
     #[serde(rename = "reasoning")]
     Text(ReasoningOutput),
@@ -434,7 +434,7 @@ pub enum ReasoningPart {
 /// Result of `LanguageModel::do_generate` (non-streaming).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateResult {
     /// Generated content items (text, tool calls, etc.).
     pub content: Vec<GenerateContent>,
