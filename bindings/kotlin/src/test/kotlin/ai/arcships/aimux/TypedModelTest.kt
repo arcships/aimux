@@ -263,6 +263,28 @@ class TypedModelTest {
 class TypedModelRoundTripTest {
 
     @Test
+    fun `provider tool deferred results round-trip and omit null`() {
+        for (supported in listOf(null, true, false)) {
+            val original = ProviderTool(
+                id = "anthropic.code_execution_20250522",
+                name = "code_execution",
+                supportsDeferredResults = supported,
+            )
+            val json = AimuxJson.encodeToString(ProviderTool.serializer(), original)
+            assertThat(AimuxJson.parseToJsonElement(json).jsonObject.containsKey("supportsDeferredResults"))
+                .isEqualTo(supported != null)
+            assertThat(AimuxJson.decodeFromString(ProviderTool.serializer(), json)).isEqualTo(original)
+
+            val tool = Tool.Provider.from(original)
+            assertThat(tool.supportsDeferredResults).isEqualTo(supported)
+            val toolJson = AimuxJson.encodeToString(Tool.serializer(), tool)
+            assertThat(AimuxJson.parseToJsonElement(toolJson).jsonObject.containsKey("supportsDeferredResults"))
+                .isEqualTo(supported != null)
+            assertThat(AimuxJson.decodeFromString(Tool.serializer(), toolJson)).isEqualTo(tool)
+        }
+    }
+
+    @Test
     fun `top-level ToolCall provider metadata round-trips`() {
         val original = ToolCall(
             toolCallId = "call_1",

@@ -350,9 +350,12 @@ public struct ProviderTool: Codable, Equatable {
     public var id: String
     public var name: String
     public var args: [String: JSONValue]
+    /// Whether a result may arrive in a later response than its call (provider-utils@5.0.55 src/types/tool.ts:316-326).
+    public var supportsDeferredResults: Bool?
 
-    public init(id: String, name: String, args: [String: JSONValue]) {
+    public init(id: String, name: String, args: [String: JSONValue], supportsDeferredResults: Bool? = nil) {
         self.id = id; self.name = name; self.args = args
+        self.supportsDeferredResults = supportsDeferredResults
     }
 }
 

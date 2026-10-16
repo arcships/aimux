@@ -14,8 +14,8 @@ use crate::streaming_tool_call_argument_state::{
     StreamingToolCallArgumentState, starts_with_structured_value,
 };
 
-/// Id used when the id generator returns a blank string; also the output of
-/// the default generator.
+/// Id used only when the generator returns a blank string
+/// (provider-utils@5.0.55 src/streaming-tool-call-tracker.ts:461).
 const FALLBACK_TOOL_CALL_ID: &str = "tool-call";
 
 /// One `tool_calls[i]` entry of a streaming chunk, borrowed from the
@@ -127,13 +127,14 @@ impl Default for StreamingToolCallTracker {
 }
 
 impl StreamingToolCallTracker {
-    /// A tracker without `type` validation whose generated ids are
-    /// `tool-call`, `tool-call-1`, `tool-call-2`, …
+    /// A tracker without `type` validation. Generated ids come from `generate_id`
+    /// unless [`Self::with_generate_id`] sets another generator
+    /// (provider-utils@5.0.55 src/streaming-tool-call-tracker.ts:114).
     #[must_use]
     pub fn new() -> Self {
         Self {
             calls: Vec::new(),
-            generate_id: Box::new(|| FALLBACK_TOOL_CALL_ID.to_string()),
+            generate_id: Box::new(crate::generate_id::generate_id),
             type_validation: TypeValidation::None,
         }
     }
