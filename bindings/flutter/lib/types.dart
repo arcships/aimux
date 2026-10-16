@@ -423,23 +423,25 @@ class Tool {
   final String? id;
   final String? name;
   final Map<String, dynamic>? args;
+  /// Whether a result may arrive in a later response than its call (provider-utils@5.0.55 src/types/tool.ts:316-326).
+  final bool? supportsDeferredResults;
 
-  Tool._({required this.type, this.function, this.id, this.name, this.args});
+  Tool._({required this.type, this.function, this.id, this.name, this.args, this.supportsDeferredResults});
 
   factory Tool.function(FunctionTool fn) =>
       Tool._(type: 'function', function: fn);
-  factory Tool.provider({required String id, required String name, required Map<String, dynamic> args}) =>
-      Tool._(type: 'provider', id: id, name: name, args: args);
+  factory Tool.provider({required String id, required String name, required Map<String, dynamic> args, bool? supportsDeferredResults}) =>
+      Tool._(type: 'provider', id: id, name: name, args: args, supportsDeferredResults: supportsDeferredResults);
 
   Map<String, dynamic> toJson() {
     if (function != null) return {'type': 'function', ...function!.toJson()};
-    return {'type': 'provider', 'id': id!, 'name': name!, 'args': args ?? {}};
+    return {'type': 'provider', 'id': id!, 'name': name!, 'args': args ?? {}, if (supportsDeferredResults != null) 'supportsDeferredResults': supportsDeferredResults};
   }
   factory Tool.fromJson(Map<String, dynamic> json) {
     if (json['type'] == 'function') {
       return Tool._(type: 'function', function: FunctionTool.fromJson(json));
     }
-    return Tool._(type: 'provider', id: json['id'] as String, name: json['name'] as String, args: json['args'] as Map<String, dynamic>?);
+    return Tool._(type: 'provider', id: json['id'] as String, name: json['name'] as String, args: json['args'] as Map<String, dynamic>?, supportsDeferredResults: json['supportsDeferredResults'] as bool?);
   }
 }
 

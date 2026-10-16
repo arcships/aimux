@@ -932,10 +932,14 @@ class FunctionTool(BaseModel):
 class ProviderTool(BaseModel):
     """A provider-defined tool (Rust ``ProviderTool``)."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     type: Literal["provider"] = "provider"
     id: str
     name: str
     args: Dict[str, Any]
+    #: Whether a result may arrive in a later response than its call (provider-utils@5.0.55 src/types/tool.ts:316-326).
+    supports_deferred_results: Optional[bool] = Field(default=None, alias="supportsDeferredResults")
 
 
 Tool = Annotated[

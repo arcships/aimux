@@ -404,6 +404,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **All bindings**
 
+- Typed provider tools in Java, Kotlin, Swift, Python and Flutter carry
+  optional `supportsDeferredResults`, omitted from JSON when absent
+  (provider-utils@5.0.55 src/types/tool.ts:316-326).
+
 - The typed results and stream parts follow the core's AI SDK shapes
   (Go, Java, Kotlin, Swift, Flutter, Node, Python). `GenerateTextResult`
   gains `steps`, `tool_results` and `output` and loses `raw`; its `content`
