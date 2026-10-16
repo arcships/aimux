@@ -17,9 +17,16 @@ pub struct NamedType {
 }
 #[derive(Debug, PartialEq)]
 pub enum Kind {
-    Struct(Vec<Field>),
+    /// `closed`: the schema forbids keys it does not list (`additionalProperties: false`).
+    Struct {
+        fields: Vec<Field>,
+        closed: bool,
+    },
     StringEnum(Vec<String>),
-    Tagged { tag: String, variants: Vec<Variant> },
+    Tagged {
+        tag: String,
+        variants: Vec<Variant>,
+    },
     Untagged(Vec<Ty>),
     Alias(Ty),
 }
@@ -28,6 +35,7 @@ pub struct Variant {
     pub tag_value: String,
     pub name: String,
     pub fields: Vec<Field>,
+    pub closed: bool,
 }
 #[derive(Debug, PartialEq)]
 pub struct Field {
@@ -201,7 +209,7 @@ impl Kind {
             fields.iter().for_each(|field| field.ty.refs(out));
         };
         match self {
-            Kind::Struct(items) => fields(items, out),
+            Kind::Struct { fields: items, .. } => fields(items, out),
             Kind::Tagged { variants, .. } => variants.iter().for_each(|v| fields(&v.fields, out)),
             Kind::Untagged(branches) => branches.iter().for_each(|ty| ty.refs(out)),
             Kind::Alias(ty) => ty.refs(out),
@@ -502,6 +510,7 @@ impl Normalizer {
                             pascal(value)
                         },
                         fields: self.fields(branch, name, &path, Some(&tag))?,
+                        closed: branch["additionalProperties"] == false,
                     });
                 }
                 return Ok(Kind::Tagged { tag, variants });
@@ -532,7 +541,10 @@ impl Normalizer {
                 .get("additionalProperties")
                 .is_none_or(|v| v == false)
         {
-            return Ok(Kind::Struct(self.fields(schema, name, pointer, None)?));
+            return Ok(Kind::Struct {
+                fields: self.fields(schema, name, pointer, None)?,
+                closed: schema["additionalProperties"] == false,
+            });
         }
         Ok(Kind::Alias(self.ty(schema, name, pointer)?))
     }
@@ -820,7 +832,12 @@ mod tests {
             )
             .types[0]
                 .kind,
-            Kind::Struct(_)
+            Kind::Struct { closed: false, .. }
+        ));
+        assert!(matches!(
+            model(json!({"type":"object","properties":{},"additionalProperties":false})).types[0]
+                .kind,
+            Kind::Struct { closed: true, .. }
         ));
         assert!(matches!(
             model(json!({"type":"string","enum":["a","b"]})).types[0].kind,
@@ -882,20 +899,23 @@ mod tests {
         assert_eq!(m.types[0].doc.as_deref(), Some("Root"));
         assert_eq!(
             m.types[0].kind,
-            Kind::Struct(vec![
-                Field {
-                    json_name: "a".into(),
-                    ty: Ty::Bool,
-                    required: true,
-                    doc: Some("A field".into())
-                },
-                Field {
-                    json_name: "z".into(),
-                    ty: Ty::String,
-                    required: false,
-                    doc: None
-                },
-            ])
+            Kind::Struct {
+                closed: false,
+                fields: vec![
+                    Field {
+                        json_name: "a".into(),
+                        ty: Ty::Bool,
+                        required: true,
+                        doc: Some("A field".into())
+                    },
+                    Field {
+                        json_name: "z".into(),
+                        ty: Ty::String,
+                        required: false,
+                        doc: None
+                    },
+                ]
+            }
         );
     }
 

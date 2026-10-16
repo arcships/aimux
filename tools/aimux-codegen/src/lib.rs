@@ -425,6 +425,9 @@ fn managed_path(path: &Path) -> bool {
     if path.starts_with("schema/ops") || path.starts_with("schema/types") {
         return path.extension().is_some_and(|ext| ext == "json");
     }
+    if emit::owned_paths().any(|owned| path.starts_with(owned)) {
+        return true;
+    }
     let constants = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -463,6 +466,7 @@ fn existing_files(root: &Path) -> Result<BTreeSet<PathBuf>> {
         .into_iter()
         .chain(HEADERS)
         .chain(["schema/ops", "schema/types"])
+        .chain(emit::owned_paths())
     {
         collect_files(root, Path::new(path), &mut files)?;
     }

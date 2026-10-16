@@ -53,10 +53,6 @@ fn dto_vectors_round_trip_through_rust() {
                 round_trip::<aimux_core::step_result::StepResponse>(value.clone())
             }
             "ToolCallInput" => round_trip::<aimux_core::tool::ToolCall>(value.clone()),
-            "null" => round_trip::<()>(value.clone()),
-            "string" => round_trip::<String>(value.clone()),
-            "AnyValue" => round_trip::<Value>(value.clone()),
-            "_uint8_" => round_trip::<Vec<u8>>(value.clone()),
             "AiMuxError" => round_trip::<aimux_core::error::AiMuxError>(value.clone()),
             "AssistantContent" => {
                 round_trip::<aimux_core::message::AssistantContent>(value.clone())

@@ -362,6 +362,7 @@ pub struct HttpRecord {
     pub method: String,
     pub url: String,
     /// 敏感头(authorization/cookie/含 api-key/key/x-amz-security-token 等)已脱敏为 "\[REDACTED\]"。
+    #[schemars(with = "Vec<[String; 2]>")]
     pub headers: Vec<(String, String)>,
     /// 明文(脱敏后);None = 无 body。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -372,6 +373,7 @@ pub struct HttpRecord {
 #[serde(rename_all = "camelCase")]
 pub struct ResponseRecord {
     pub status: u16,
+    #[schemars(with = "Vec<[String; 2]>")]
     pub headers: Vec<(String, String)>,
     /// 非流式:完整 JSON;流式:原始 SSE 拼接文本(上限截断)。
     #[serde(default, skip_serializing_if = "Option::is_none")]

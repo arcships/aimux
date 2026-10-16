@@ -24,10 +24,6 @@
     "file": "AiMuxErrorInput/003.json"
   },
   {
-    "type": "AnyValue",
-    "file": "AnyValue/001.json"
-  },
-  {
     "type": "AssistantContent",
     "file": "AssistantContent/001.json"
   },
@@ -1014,17 +1010,5 @@
   {
     "type": "Warning",
     "file": "Warning/001.json"
-  },
-  {
-    "type": "_uint8_",
-    "file": "_uint8_/001.json"
-  },
-  {
-    "type": "null",
-    "file": "null/001.json"
-  },
-  {
-    "type": "string",
-    "file": "string/001.json"
   }
 ]

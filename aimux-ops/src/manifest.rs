@@ -182,8 +182,15 @@ fn type_contract(serialize: bool) -> (Vec<Value>, Value) {
         }
     }
     if serialize {
-        let ty = crate::op::TypeRef::of::<crate::ErrorEnvelope>();
-        roots.insert((ty.id)().into_owned(), ty);
+        // Bindings also read errors, recordings and trace records, which no op returns.
+        use crate::op::TypeRef;
+        for ty in [
+            TypeRef::of::<crate::ErrorEnvelope>(),
+            TypeRef::of::<aimux_core::recording::Recording>(),
+            TypeRef::of::<aimux_core::trace::TraceRecord>(),
+        ] {
+            roots.insert((ty.id)().into_owned(), ty);
+        }
     }
     let mut types = Vec::new();
     for (id, ty) in roots {
