@@ -52,10 +52,13 @@ static int cancelled(uint64_t id) {
 static void wait_abort(uint64_t id) {
     while (!cancelled(id)) pthread_cond_wait(&changed, &lock);
 }
-uint32_t aimux_abi_version(void) { return 1u << 16; }
+uint32_t aimux_abi_version(void) { return AIMUX_ABI_VERSION; }
 aimux_error_t *aimux_manifest_json(char **out) {
+    char buf[256];
     pthread_mutex_lock(&lock);
-    *out = owned("{\"abiVersion\":65536,\"opsVersion\":\"1.0\",\"digest\":\"" AIMUX_MANIFEST_DIGEST "\",\"fixture\":true}");
+    snprintf(buf, sizeof(buf), "{\"abiVersion\":%u,\"opsVersion\":\"" AIMUX_OPS_VERSION "\",\"digest\":\""
+             AIMUX_MANIFEST_DIGEST "\",\"fixture\":true}", (unsigned)AIMUX_ABI_VERSION);
+    *out = owned(buf);
     pthread_mutex_unlock(&lock);
     return NULL;
 }
@@ -64,10 +67,10 @@ aimux_error_t *aimux_call(uint64_t id, const char *op, const char *params, uint6
     *out = NULL;
     aimux_error_t *err = NULL;
     if (id && !live(id)) err = failure(203, "binding", "InvalidHandle");
-    else if (!strcmp(op, "abort.create") || !strcmp(op, "test.create") || !strcmp(op, "transcription.start") || !strcmp(op, "composite.router")) {
+    else if (!strcmp(op, AIMUX_OP_ABORT_CREATE) || !strcmp(op, "test.create") || !strcmp(op, AIMUX_OP_TRANSCRIPTION_START) || !strcmp(op, AIMUX_OP_COMPOSITE_ROUTER)) {
         char buf[128];
         uint64_t created = new_entry(abort_id);
-        if (!strcmp(op, "transcription.start") || !strcmp(op, "composite.router"))
+        if (!strcmp(op, AIMUX_OP_TRANSCRIPTION_START) || !strcmp(op, AIMUX_OP_COMPOSITE_ROUTER))
             snprintf(buf, sizeof(buf), "\"%llu\"", (unsigned long long)created);
         else snprintf(buf, sizeof(buf), "{\"handle\":\"%llu\"}", (unsigned long long)created);
         *out = owned(buf);
@@ -86,12 +89,12 @@ aimux_error_t *aimux_call(uint64_t id, const char *op, const char *params, uint6
         char buf[256];
         snprintf(buf, sizeof(buf), "{\"live\":%u,\"strings\":%d,\"errors\":%d,\"waitingCalls\":%d,\"waitingStreams\":%d,\"waitingPushes\":%d,\"waitingPolls\":%d}", count, strings, errors, waiting_calls, waiting_streams, waiting_pushes, waiting_polls);
         *out = owned(buf);
-    } else if (!strcmp(op, "operation.inputDone")) {
+    } else if (!strcmp(op, AIMUX_OP_OPERATION_INPUT_DONE)) {
         entry(id)->input_done = 1;
         *out = owned("{}");
-    } else if (!strcmp(op, "operation.status")) *out = owned("{\"state\":\"running\"}");
+    } else if (!strcmp(op, AIMUX_OP_OPERATION_STATUS)) *out = owned("{\"state\":\"running\"}");
     else if (!strcmp(op, "test.echo")) *out = owned(params);
-    else if (!strcmp(op, "text.generate")) *out = owned("{\"text\":\"fixture\"}");
+    else if (!strcmp(op, AIMUX_OP_TEXT_GENERATE)) *out = owned("{\"text\":\"fixture\"}");
     else err = failure(300, "protocol", "InvalidOp");
     pthread_mutex_unlock(&lock);
     return err;
