@@ -10,10 +10,24 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 # language: command (argv), run from ROOT
 RUNNERS = {
+    "node": ["node", "--experimental-strip-types", "bindings/node/__test__/dto_vectors.ts"],
     "dart": ["dart", "bindings/flutter/tool/dto_vectors.dart"],
     "swift": ["bash", "bindings/swift/scripts/test-dto-vectors.sh"],
     "go": ["go", "-C", "bindings/go", "run", "./cmd/dtovectors", "../../contract-tests/dto"],
 }
+
+# JavaScript numbers are IEEE doubles, so integers above 2^53 round (a registered difference).
+DOUBLE_NUMBERS = {"node"}
+
+
+def as_double(value):
+    if isinstance(value, dict):
+        return {key: as_double(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [as_double(item) for item in value]
+    if isinstance(value, (int, Decimal)) and not isinstance(value, bool):
+        return float(value)
+    return value
 
 
 def same(left, right):
@@ -58,7 +72,10 @@ def main():
             seen.add(name)
             if record.get("ok") is not True or "error" in record:
                 raise ValueError(f"{language}: {name}: {record.get('error', 'codec failed')}")
-            if "value" not in record or not same(record["value"], expected[name]):
+            value, want = record.get("value"), expected[name]
+            if language in DOUBLE_NUMBERS:
+                value, want = as_double(value), as_double(want)
+            if "value" not in record or not same(value, want):
                 raise ValueError(f"{language}: {name}: re-encoded value differs")
         if seen != expected.keys():
             raise ValueError(f"{language}: missing vectors: {sorted(expected.keys() - seen)}")

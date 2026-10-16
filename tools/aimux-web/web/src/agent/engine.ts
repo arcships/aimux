@@ -8,7 +8,7 @@
 
 import { api, callStream, parseStreamPart } from '../api/client'
 import type { WireCallRequest } from '@/types/generated/WireCallRequest'
-import type { TextStreamPart } from '@aimux/types/TextStreamPart'
+import type { TextStreamPart } from '@aimux/types'
 
 /** A chat message as sent to the backend (loose typing: the backend wire
  * schema's `JsonValue` is a recursive union that trips TS2589 inside

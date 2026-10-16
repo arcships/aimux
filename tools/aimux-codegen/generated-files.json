@@ -10,6 +10,8 @@
     "bindings/java/generated/AimuxOps.java",
     "bindings/kotlin/generated/AimuxOps.kt",
     "bindings/node/generated/ops.ts",
+    "bindings/node/src/generated/dto_vectors.ts",
+    "bindings/node/src/generated/types.ts",
     "bindings/python/generated/ops.py",
     "bindings/swift/generated/AimuxOps.swift",
     "bindings/swift/generated/DtoVectorTypes.swift",
