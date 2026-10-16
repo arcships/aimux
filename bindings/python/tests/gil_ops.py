@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 import time
 
+from aimux import ops
 from ops_fixtures import (
     OPENAI_RESPONSES, OPENAI_RESPONSES_STREAM, EMBEDDING_RESP, SPEECH_RESP, IMAGE_RESP,
     TRANSCRIPTION_RESP, RERANKING_RESP, SEARCH_RESP, FILES_RESP, slow_http, slow_ws,
@@ -17,11 +18,11 @@ from ops_fixtures import (
 def model_at(url, method="languageModel", model_id="test-model", package="openai"):
     import aimux
     client = aimux.Client()
-    with client.adopt(client.call("provider.create", {
+    with client.adopt(client.call(ops.OP_PROVIDER_CREATE, {
         "package": package, "settings": {"apiKey": "test-key", "baseUrl": url},
     })["handle"]) as provider:
-        result = provider.call("provider.files") if method == "files" else provider.call(
-            "provider.model", {"method": method, "modelId": model_id},
+        result = provider.call(ops.OP_PROVIDER_FILES) if method == "files" else provider.call(
+            ops.OP_PROVIDER_MODEL, {"method": method, "modelId": model_id},
         )
         with client.adopt(result if isinstance(result, str) else result["handle"]) as model:
             yield model
@@ -29,10 +30,10 @@ def model_at(url, method="languageModel", model_id="test-model", package="openai
 
 @contextmanager
 def language(op):
-    streaming = op in ("text.stream", "text.streamOpenAI", "text.consume")
+    streaming = op in (ops.OP_TEXT_STREAM, ops.OP_TEXT_STREAM_OPEN_AI, ops.OP_TEXT_CONSUME)
     body = OPENAI_RESPONSES_STREAM if streaming else OPENAI_RESPONSES
     options = {"maxRetries": 0, "timeout": {"totalMs": 5000}}
-    if op == "text.generateObject":
+    if op == ops.OP_TEXT_GENERATE_OBJECT:
         body = json.loads(OPENAI_RESPONSES)
         body["output"][0]["content"][0]["text"] = '{"answer":"hello"}'
         body = json.dumps(body)
@@ -43,7 +44,7 @@ def language(op):
     with slow_http(body, "text/event-stream" if streaming else "application/json") as url:
         with model_at(url, model_id="gpt-4o") as model:
             params = {"prompt": "hi", "options": options}
-            if op.startswith("text.stream"):
+            if op in (ops.OP_TEXT_STREAM, ops.OP_TEXT_STREAM_OPEN_AI):
                 with model.stream(op, params) as events:
                     yield lambda: list(events)
             else:
@@ -51,14 +52,14 @@ def language(op):
 
 
 MODALITIES = {
-    "embedding": ("openai", "embeddingModel", "text-embedding-3-small", "embedding.embed", {"values": ["hello"]}, EMBEDDING_RESP, "application/json"),
-    "embedding_many": ("openai", "embeddingModel", "text-embedding-3-small", "embedding.embedMany", {"values": ["hello"]}, EMBEDDING_RESP, "application/json"),
-    "speech": ("openai", "speechModel", "tts-1", "speech.generate", {"text": "Hi", "voice": "alloy", "outputFormat": "mp3"}, SPEECH_RESP, "audio/mpeg"),
-    "image": ("openai", "imageModel", "dall-e-3", "image.generate", {"prompt": "otter", "n": 1, "providerOptions": {}}, IMAGE_RESP, "application/json"),
-    "transcription": ("openai", "transcriptionModel", "whisper-1", "transcription.generate", {"audio": "dGVzdA==", "mediaType": "audio/mp3"}, TRANSCRIPTION_RESP, "application/json"),
-    "reranking": ("cohere", "rerankingModel", "rerank-v3.0", "reranking.rerank", {"query": "which?", "documents": {"type": "text", "values": ["a", "b"]}}, RERANKING_RESP, "application/json"),
-    "search": ("tavily", "searchModel", "tavily", "search.search", {"query": "Rust?"}, SEARCH_RESP, "application/json"),
-    "upload_file": ("openai", "files", "", "files.upload", {"data": {"type": "data", "data": "dGVzdA=="}, "mediaType": "application/pdf"}, FILES_RESP, "application/json"),
+    "embedding": ("openai", "embeddingModel", "text-embedding-3-small", ops.OP_EMBEDDING_EMBED, {"values": ["hello"]}, EMBEDDING_RESP, "application/json"),
+    "embedding_many": ("openai", "embeddingModel", "text-embedding-3-small", ops.OP_EMBEDDING_EMBED_MANY, {"values": ["hello"]}, EMBEDDING_RESP, "application/json"),
+    "speech": ("openai", "speechModel", "tts-1", ops.OP_SPEECH_GENERATE, {"text": "Hi", "voice": "alloy", "outputFormat": "mp3"}, SPEECH_RESP, "audio/mpeg"),
+    "image": ("openai", "imageModel", "dall-e-3", ops.OP_IMAGE_GENERATE, {"prompt": "otter", "n": 1, "providerOptions": {}}, IMAGE_RESP, "application/json"),
+    "transcription": ("openai", "transcriptionModel", "whisper-1", ops.OP_TRANSCRIPTION_GENERATE, {"audio": "dGVzdA==", "mediaType": "audio/mp3"}, TRANSCRIPTION_RESP, "application/json"),
+    "reranking": ("cohere", "rerankingModel", "rerank-v3.0", ops.OP_RERANKING_RERANK, {"query": "which?", "documents": {"type": "text", "values": ["a", "b"]}}, RERANKING_RESP, "application/json"),
+    "search": ("tavily", "searchModel", "tavily", ops.OP_SEARCH_SEARCH, {"query": "Rust?"}, SEARCH_RESP, "application/json"),
+    "upload_file": ("openai", "files", "", ops.OP_FILES_UPLOAD, {"data": {"type": "data", "data": "dGVzdA=="}, "mediaType": "application/pdf"}, FILES_RESP, "application/json"),
 }
 
 
@@ -84,7 +85,7 @@ def video():
     }
     with slow_http(body) as url:
         with model_at(url, "videoModel", "veo-3.0-generate-001", "google_vertex") as model:
-            yield lambda: model.call("video.generate", {"prompt": "otter", "n": 1,
+            yield lambda: model.call(ops.OP_VIDEO_GENERATE, {"prompt": "otter", "n": 1,
                 "providerOptions": {}, "maxRetries": 0, "poll": {"intervalMs": 1, "timeoutMs": 5000}})
 
 
@@ -94,7 +95,7 @@ def decision():
     contract = json.loads(fixture.read_text())
     with slow_http(json.dumps(contract["response"])) as url:
         with model_at(url, "decision", "gpt-4o") as model:
-            yield lambda: model.call("decision.decide", {"options": contract["options"]})
+            yield lambda: model.call(ops.OP_DECISION_DECIDE, {"options": contract["options"]})
 
 
 @contextmanager
@@ -108,18 +109,18 @@ def discovery(catalogue=False):
     body = json.dumps({"data": [{"id": "gpt-4o", "object": "model"}]})
     with slow_http(body) as url:
         client = aimux.Client()
-        with client.adopt(client.call("provider.create", {
+        with client.adopt(client.call(ops.OP_PROVIDER_CREATE, {
             "package": "openai", "settings": {"apiKey": "test-key", "baseUrl": url},
         })["handle"]) as provider:
-            yield lambda: provider.call("provider.invoke", {"method": "listModels"})
+            yield lambda: provider.call(ops.OP_PROVIDER_INVOKE, {"method": "listModels"})
 
 
 @contextmanager
 def session():
     with slow_ws() as url:
         with model_at(url, "transcriptionModel", "gpt-realtime-whisper") as model:
-            with model.client.adopt(model.call("transcription.start")) as operation:
-                yield lambda: operation.call("operation.next", {"timeoutMs": 5000})
+            with model.client.adopt(model.call(ops.OP_TRANSCRIPTION_START)) as operation:
+                yield lambda: operation.call(ops.OP_OPERATION_NEXT, {"timeoutMs": 5000})
 
 
 def _fifo_reader(path, opened, drain):
@@ -150,24 +151,24 @@ def recording(method):
                 def invoke():
                     nonlocal recorder
                     opened.set()
-                    recorder = client.adopt(client.call("recorder.create", params)["handle"])
+                    recorder = client.adopt(client.call(ops.OP_RECORDER_CREATE, params)["handle"])
                     return recorder
                 yield invoke
             else:
                 opened.set()
-                recorder = client.adopt(client.call("recorder.create", params)["handle"])
-                recorder.call("recorder.attach")
+                recorder = client.adopt(client.call(ops.OP_RECORDER_CREATE, params)["handle"])
+                recorder.call(ops.OP_RECORDER_ATTACH)
                 body = json.loads(OPENAI_RESPONSES)
                 body["output"][0]["content"][0]["text"] = "x" * (2 * 1024 * 1024)
                 with slow_http(json.dumps(body), delay=0) as url:
                     with model_at(url) as model:
-                        model.call("text.generate", {"prompt": "hi", "options": {"maxRetries": 0}})
-                if method == "close": recorder.call("recorder.stop")
+                        model.call(ops.OP_TEXT_GENERATE, {"prompt": "hi", "options": {"maxRetries": 0}})
+                if method == "close": recorder.call(ops.OP_RECORDER_STOP)
                 def invoke():
                     nonlocal recorder
                     drain.set()
                     if method != "close":
-                        return recorder.call("recorder.flush")
+                        return recorder.call(ops.OP_RECORDER_FLUSH)
                     # A closed handle is gone; teardown must not stop it again.
                     closing, recorder = recorder, None
                     return closing.close()
@@ -176,19 +177,19 @@ def recording(method):
             opened.set()
             drain.set()
             if recorder is not None:
-                recorder.call("recorder.stop")
+                recorder.call(ops.OP_RECORDER_STOP)
                 recorder.close()
             reader.join(timeout=2)
             if reader.is_alive(): reader.terminate(); reader.join(timeout=2)
 
 
 ENTRY_POINTS = {
-    "text_generate": ("generate", lambda: language("text.generate")),
-    "text_object": ("generate", lambda: language("text.generateObject")),
-    "text_openai": ("generate", lambda: language("text.generateOpenAI")),
-    "text_consume": ("generate", lambda: language("text.consume")),
-    "stream_next": ("poll", lambda: language("text.stream")),
-    "stream_openai_next": ("poll", lambda: language("text.streamOpenAI")),
+    "text_generate": ("generate", lambda: language(ops.OP_TEXT_GENERATE)),
+    "text_object": ("generate", lambda: language(ops.OP_TEXT_GENERATE_OBJECT)),
+    "text_openai": ("generate", lambda: language(ops.OP_TEXT_GENERATE_OPEN_AI)),
+    "text_consume": ("generate", lambda: language(ops.OP_TEXT_CONSUME)),
+    "stream_next": ("poll", lambda: language(ops.OP_TEXT_STREAM)),
+    "stream_openai_next": ("poll", lambda: language(ops.OP_TEXT_STREAM_OPEN_AI)),
     **{name: ("generate", lambda name=name: modality(name)) for name in MODALITIES},
     "video": ("generate", video),
     "decision": ("generate", decision),

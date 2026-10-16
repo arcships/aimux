@@ -191,7 +191,7 @@ fn deterministic_complete_outputs_cover_every_language_and_abi_primitive() {
             .iter()
             .find(|(path, _)| {
                 path.starts_with(format!("bindings/{language}"))
-                    && path.to_string_lossy().contains("generated/")
+                    && (path.to_string_lossy().contains("generated/") || path.ends_with("ops.py"))
             })
             .unwrap();
         let text = std::str::from_utf8(bytes).unwrap();
@@ -239,13 +239,13 @@ fn digest_and_previous_constant_drift_are_detected() {
     )
     .unwrap();
     fs::write(
-        dir.path().join("bindings/python/generated/ops-old.py"),
+        dir.path().join("bindings/python/python/aimux/ops-old.py"),
         b"OLD = 1",
     )
     .unwrap();
     let error = check(dir.path(), &outputs).unwrap_err().to_string();
     assert!(error.contains("differs: tools/aimux-codegen/generated-files.json"));
-    assert!(error.contains("stale: bindings/python/generated/ops-old.py"));
+    assert!(error.contains("stale: bindings/python/python/aimux/ops-old.py"));
 }
 
 #[test]
@@ -257,7 +257,7 @@ fn writes_preserve_unowned_binding_types_and_reject_path_traversal() {
     fs::write(&types, b"export type OwnedElsewhere = string;").unwrap();
     let native = dir.path().join("bindings/flutter/native/unowned.h");
     fs::write(&native, b"binding-owned").unwrap();
-    let cache = dir.path().join("bindings/python/generated/__pycache__");
+    let cache = dir.path().join("bindings/python/python/aimux/__pycache__");
     fs::create_dir_all(&cache).unwrap();
     fs::write(cache.join("ops.pyc"), b"compiled cache").unwrap();
     write(dir.path(), &outputs).unwrap();

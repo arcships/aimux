@@ -19,11 +19,11 @@ sets and bytes, including the digest inventory. It never rewrites the checked
 tree. Normal generation replaces files and removes obsolete artifacts in its
 owned locations: `schema/ops/*.json`, `aimux-ffi/include/aimux.h`,
 `bindings/flutter/native/aimux_ops.h` (an identical packaged header), and files
-starting with `ops.`, `ops-`, or `AimuxOps` with the language's source extension
-in each binding's `generated/` directory. Compiled caches and other generated
+starting with `ops.`, `ops-` or `AimuxOps` with the language's
+source extension beside its constants file. Compiled caches and other generated
 binding types belong to their respective toolchains or owners.
 
-Constants live in `bindings/{go,java,kotlin,swift,flutter,node,python}/generated/`.
+Python constants live in `bindings/python/python/aimux/ops.py`; the other bindings use their `generated/` directories.
 Go uses package `generated`; Java/Kotlin use `ai.arcships.aimux.generated`
 with `AimuxOps` / `AimuxKotlinOps` to avoid duplicate JVM classes when Kotlin
 depends on Java. Swift uses `AimuxOps`. Binding owners must add these sources to their package

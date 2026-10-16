@@ -18,7 +18,8 @@ const HEADERS: [&str; 2] = [
     "bindings/flutter/native/aimux_ops.h",
 ];
 const SCHEMA_BASE: &str = "https://aimux.dev/schema/ops/";
-/// Each binding's constants file. Dart's sits under `lib/` so `package:aimux` imports resolve.
+/// Each binding's constants file, where its own imports resolve it (Dart under `lib/`,
+/// Node under `src/`, Python inside the package).
 const LANGUAGES: &[(&str, &str)] = &[
     ("go", "bindings/go/generated/ops.go"),
     ("java", "bindings/java/generated/AimuxOps.java"),
@@ -26,7 +27,7 @@ const LANGUAGES: &[(&str, &str)] = &[
     ("swift", "bindings/swift/generated/AimuxOps.swift"),
     ("flutter", "bindings/flutter/lib/generated/ops.dart"),
     ("node", "bindings/node/src/generated/ops.ts"),
-    ("python", "bindings/python/generated/ops.py"),
+    ("python", "bindings/python/python/aimux/ops.py"),
 ];
 
 #[derive(Deserialize)]

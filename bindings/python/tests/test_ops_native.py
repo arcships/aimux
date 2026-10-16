@@ -12,6 +12,7 @@ import weakref
 
 if os.environ.get('AIMUX_OPS_DOUBLE') == '1':
     import aimux
+    from aimux import ops
 
 
 def heartbeat(operation):
@@ -47,7 +48,7 @@ class NativeBoundary(unittest.TestCase):
         self.client = aimux.Client()
 
     def stream(self, **params):
-        return self.client.stream('text.stream', params, handle='0')
+        return self.client.stream(ops.OP_TEXT_STREAM, params, handle='0')
 
     def stats(self):
         return self.client.call('test.stats')
@@ -72,11 +73,11 @@ class NativeBoundary(unittest.TestCase):
 
     def test_gil_heartbeat_every_blocking_call_family(self):
         operations = [
-            'text.generate', 'text.generateObject', 'text.consume', 'text.generateOpenAI',
-            'embedding.embed', 'embedding.embedMany', 'image.generate', 'speech.generate',
-            'transcription.generate', 'reranking.rerank', 'video.generate', 'search.search',
-            'provider.create', 'provider.invoke', 'catalogue.fetch', 'recorder.create',
-            'transcription.start', 'operation.next', 'recorder.flush', 'files.upload',
+            ops.OP_TEXT_GENERATE, ops.OP_TEXT_GENERATE_OBJECT, ops.OP_TEXT_CONSUME, ops.OP_TEXT_GENERATE_OPEN_AI,
+            ops.OP_EMBEDDING_EMBED, ops.OP_EMBEDDING_EMBED_MANY, ops.OP_IMAGE_GENERATE, ops.OP_SPEECH_GENERATE,
+            ops.OP_TRANSCRIPTION_GENERATE, ops.OP_RERANKING_RERANK, ops.OP_VIDEO_GENERATE, ops.OP_SEARCH_SEARCH,
+            ops.OP_PROVIDER_CREATE, ops.OP_PROVIDER_INVOKE, ops.OP_CATALOGUE_FETCH, ops.OP_RECORDER_CREATE,
+            ops.OP_TRANSCRIPTION_START, ops.OP_OPERATION_NEXT, ops.OP_RECORDER_FLUSH, ops.OP_FILES_UPLOAD,
         ]
         for op in operations:
             with self.subTest(op=op):
@@ -212,7 +213,7 @@ class NativeBoundary(unittest.TestCase):
         started = time.monotonic()
         try:
             with self.assertRaises(aimux.RequestAbortedError):
-                self.client.call('text.generate', {'delayMs': 10000}, abort=abort)
+                self.client.call(ops.OP_TEXT_GENERATE, {'delayMs': 10000}, abort=abort)
         finally:
             timer.join()
         self.assertLess(time.monotonic() - started, 1)
@@ -220,7 +221,7 @@ class NativeBoundary(unittest.TestCase):
 
     def test_explicit_abort_interrupts_stream(self):
         abort = aimux.Abort()
-        stream = self.client.stream('text.stream', {'delayMs': 10000}, handle='0', abort=abort)
+        stream = self.client.stream(ops.OP_TEXT_STREAM, {'delayMs': 10000}, handle='0', abort=abort)
         abort.cancel()
         try:
             with self.assertRaises(aimux.RequestAbortedError):
@@ -234,7 +235,7 @@ class NativeBoundary(unittest.TestCase):
         timer.start()
         try:
             with self.assertRaises(KeyboardInterrupt):
-                self.client.call('text.generate', {'delayMs': 10000})
+                self.client.call(ops.OP_TEXT_GENERATE, {'delayMs': 10000})
         finally:
             timer.join()
 
@@ -288,15 +289,15 @@ class NativeBoundary(unittest.TestCase):
 
     def test_handle_context_and_gc_drop(self):
         before = self.stats()['handles']
-        result = self.client.call('provider.create', {'delayMs': 0})
+        result = self.client.call(ops.OP_PROVIDER_CREATE, {'delayMs': 0})
         with self.client.adopt(result['handle']) as provider:
             self.assertEqual(self.stats()['handles'], before + 1)
         self.assertEqual(self.stats()['handles'], before)
         provider.close()
         with self.assertRaises(aimux.BindingError) as error:
-            provider.call('model.info')
+            provider.call(ops.OP_MODEL_INFO)
         self.assertEqual(error.exception.code, 203)
-        leaked = self.client.adopt(self.client.call('provider.create', {'delayMs': 0})['handle'])
+        leaked = self.client.adopt(self.client.call(ops.OP_PROVIDER_CREATE, {'delayMs': 0})['handle'])
         del leaked
         gc.collect()
         for _ in range(100):
@@ -322,20 +323,20 @@ class NativeBoundary(unittest.TestCase):
 
     def test_wire_errors_use_binding_domain(self):
         with self.assertRaises(aimux.BindingError) as error:
-            self.client._native.call('0', 'text.generate', '{bad')
+            self.client._native.call('0', ops.OP_TEXT_GENERATE, '{bad')
         self.assertEqual(error.exception.code, 202)
         self.assertEqual(error.exception.argument, 'params_json')
         for handle in ['-1', ' 1', '', '18446744073709551616', '1x']:
             with self.subTest(handle=handle), self.assertRaises(aimux.ProtocolError):
-                self.client._native.call(handle, 'model.info')
+                self.client._native.call(handle, ops.OP_MODEL_INFO)
 
     def test_multimodal_wire_round_trip(self):
         params = {
             'delayMs': 0, 'values': ['中文', '😀'], 'audio': {'type':'base64','value':'AAEC'},
             'providerOptions': {'vendor': {'open': [None, True, 1.5]}},
         }
-        for op in ['embedding.embedMany', 'image.generate', 'speech.generate', 'transcription.generate',
-                   'reranking.rerank', 'video.generate', 'search.search', 'files.upload']:
+        for op in [ops.OP_EMBEDDING_EMBED_MANY, ops.OP_IMAGE_GENERATE, ops.OP_SPEECH_GENERATE, ops.OP_TRANSCRIPTION_GENERATE,
+                   ops.OP_RERANKING_RERANK, ops.OP_VIDEO_GENERATE, ops.OP_SEARCH_SEARCH, ops.OP_FILES_UPLOAD]:
             with self.subTest(op=op):
                 self.assertEqual(self.client.call(op, params)['params'], params)
 
@@ -343,18 +344,18 @@ class NativeBoundary(unittest.TestCase):
         api = dict(name='AI_APICallError', statusCode=429, message='slow', isRetryable=True)
         payload = dict(name='AI_RetryError', reason='maxRetriesExceeded', errors=[api, api])
         with self.assertRaises(aimux.RetryError) as error:
-            self.client.call('text.generate', {'delayMs': 0, 'failure': payload})
+            self.client.call(ops.OP_TEXT_GENERATE, {'delayMs': 0, 'failure': payload})
         self.assertEqual(len(error.exception.errors), 2)
         self.assertIsInstance(error.exception.last_error, aimux.APICallError)
         payload = dict(name='AI_ToolCallRepairError', originalError=api,
                        cause={'name':'AI_JSONParseError','message':'bad'})
         with self.assertRaises(aimux.ToolCallRepairError) as error:
-            self.client.call('text.generate', {'delayMs': 0, 'failure': payload})
+            self.client.call(ops.OP_TEXT_GENERATE, {'delayMs': 0, 'failure': payload})
         self.assertIsInstance(error.exception.__cause__, aimux.JSONParseError)
 
     def test_manifest_checks(self):
-        self.assertEqual(aimux.verify_contract()['opsVersion'], '1.0')
-        self.assertEqual(aimux.manifest_digest(), 'isolated-test-double')
+        self.assertEqual(aimux.verify_contract()['opsVersion'], ops.OPS_VERSION)
+        self.assertEqual(aimux.manifest_digest(), ops.MANIFEST_DIGEST)
         with self.assertRaises(ImportError):
             aimux.verify_contract('a different consumer digest')
         aimux.verify_contract(aimux.manifest_digest())

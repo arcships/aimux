@@ -21,7 +21,7 @@ from pydantic import (
 )
 from pydantic.alias_generators import to_camel
 
-from . import Handle
+from . import Handle, ops
 
 __all__ = [
     "Role",
@@ -1185,12 +1185,12 @@ def _params(prompt, options):
 
 def generate_text(model: Handle, prompt: Prompt, options=None) -> GenerateTextResult:
     """Call text.generate using the shared wire DTO."""
-    return GenerateTextResult.model_validate(model.call("text.generate", _params(prompt, options)))
+    return GenerateTextResult.model_validate(model.call(ops.OP_TEXT_GENERATE, _params(prompt, options)))
 
 
 def stream_text(model: Handle, prompt: Prompt, options=None) -> Iterator[dict]:
     """Yield text events; closing the generator cancels the native stream."""
-    with model.stream("text.stream", _params(prompt, options)) as stream:
+    with model.stream(ops.OP_TEXT_STREAM, _params(prompt, options)) as stream:
         for frame in stream:
             yield frame["event"]
 
@@ -1203,10 +1203,10 @@ def parse_stream_part(part: dict) -> BaseModel:
 
 
 def generate_text_as_openai(model: Handle, prompt: Prompt, options=None) -> ChatCompletion:
-    return ChatCompletion.model_validate(model.call("text.generateOpenAI", _params(prompt, options)))
+    return ChatCompletion.model_validate(model.call(ops.OP_TEXT_GENERATE_OPEN_AI, _params(prompt, options)))
 
 
 def stream_text_as_openai(model: Handle, prompt: Prompt, options=None) -> Iterator[ChatCompletionChunk]:
-    with model.stream("text.streamOpenAI", _params(prompt, options)) as stream:
+    with model.stream(ops.OP_TEXT_STREAM_OPEN_AI, _params(prompt, options)) as stream:
         for frame in stream:
             yield ChatCompletionChunk.model_validate(frame["event"])

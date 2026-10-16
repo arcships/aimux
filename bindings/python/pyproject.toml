@@ -29,6 +29,4 @@ test = ["pytest>=7,<9", "pydantic>=2,<3"]
 [tool.maturin]
 features = ["pyo3/extension-module"]
 python-source = "python"
-
-include = ["generated/ops.py"]
 module-name = "aimux.aimux"
