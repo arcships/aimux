@@ -71,6 +71,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   otherwise SigV4 with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
   `AWS_SESSION_TOKEN`. All of them are read when a request is made.
 
+- Anthropic gains the computer toolset of `@ai-sdk/anthropic` 4.0.71
+  (`anthropic.computer_toolset_20260801`). A member call in a response (for
+  example `left_click`) comes back as one call of the caller's toolset tool,
+  with the member name as `action` in its input and
+  `providerMetadata.anthropic.toolsetName`. Sent back as history, the call
+  keeps its input as it is, `action` included; a call without a string
+  `action` is still sent, named after the toolset, with a warning; the
+  toolset name is read from the call's tools or from
+  `providerOptions.anthropic.toolsetName` only.
+
 - Public surface (`aimux-core`, `aimux-provider-utils`): removed
   `recording::init_recording_from_env`; made private the retry preparation
   helpers and default constants, `composite::{add_usage,
