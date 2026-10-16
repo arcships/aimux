@@ -4,6 +4,7 @@
 > **Date**: 2026-09-22
 > **Scope**: 让 7 个绑定拿到等价于 AI SDK `repairToolCall` 的能力,而不引入回调、句柄或会话
 > **Related**: [RFC-0016](0016-align-with-aisdk.md) §7.5(agent loop 明确不做)、[#186](https://github.com/arcships/aimux/pull/186)(函数指针回调,已否决)、[#191](https://github.com/arcships/aimux/pull/191)(有状态 operation session,已否决)
+> **后续变更**: 2026-10-11 删除 `contract-tests/fixtures/tool-call-repair.json`、回放它的 Rust 测试 `contract_fixture_matches_the_implementation` 与七家绑定的修复契约测试(#249);§6 所述共享 fixture 及其 Rust 回放已不存在,各分支改由 `aimux-core/tests/tool_input_test.rs`、`aimux-core/src/parse_tool_call.rs` 单元测试与 `aimux-ffi/tests/exports_smoke_test.rs` 固定。
 
 ---
 

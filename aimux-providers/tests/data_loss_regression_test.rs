@@ -160,6 +160,7 @@ async fn collect(result: StreamResult) -> Vec<StreamPart> {
     parts
 }
 
+/// The base64 payload of a `GenerateContent::File`, or panic.
 fn file_base64(content: &GenerateContent) -> &str {
     match content {
         GenerateContent::File(GeneratedFile {
@@ -328,7 +329,12 @@ fn sources(content: &[GenerateContent]) -> Vec<SourceView<'_>> {
 //            gemini/test_google_image_and_text_output.json
 // ═══════════════════════════════════════════════════════════════════════════
 
+/// PNG magic bytes, base64-encoded: every image in the two Gemini image
+/// cassettes starts with this. Asserting the prefix (rather than "non-empty")
+/// proves the *actual* bytes survived rather than some placeholder.
 const PNG_BASE64_PREFIX: &str = "iVBORw0KGgoAAAANSUhEUgAA";
+
+/// The exact base64 length recorded in `nano_banana_image_generation_smoke`.
 const NANO_BANANA_BASE64_LEN: usize = 258_820;
 
 fn google_at(uri: &str) -> GoogleProvider {
@@ -409,7 +415,7 @@ async fn finding_1_gemini_image_and_text_output_both_survive() {
     assert_eq!(f.len(), 1);
     match f[0] {
         GenerateContent::File(GeneratedFile { media_type, .. }) => {
-            assert_eq!(media_type, "image/png")
+            assert_eq!(media_type, "image/png");
         }
         other => panic!("expected File, got {other:?}"),
     }

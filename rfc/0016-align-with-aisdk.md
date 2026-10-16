@@ -5,6 +5,7 @@
 > **Date**: 2026-08-01
 > **Scope**: 系统对比 aimux 0.1.2 与 Vercel AI SDK (`@ai-sdk/openai` / `@ai-sdk/openai-compatible` / `@ai-sdk/provider` V4) 的接口与实现,识别能力缺口,并按优先级规划补齐路径
 > **Related**: [RFC-0009](0009-request-resilience.md) request resilience(retry/timeout,本 RFC 的 abortSignal/timeout 缺口与之相关),[RFC-0014](0014-logging.md) 统一日志体系(可观测性缺口依赖本 RFC 的 span 树)
+> **后续变更**: 2026-10-11 删除共享契约 fixture `contract-tests/fixtures/wire-format.json` 及各绑定的契约测试(#249);§7.3 ④"契约测试同步"与 §7.6 R8(`timeout_configuration_values` fixture)已不再适用,新增字段改由从固定版本 AI SDK 录制的 fixture 与移植的上游测试对齐,版本见 [fixtures/aisdk/VERSIONS.json](../fixtures/aisdk/VERSIONS.json)。
 >
 > **Request-pipeline sections are superseded by
 > [RFC-0031](../docs/ai-sdk-request-pipeline.md)**: retry/timeout ownership moved
