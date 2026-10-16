@@ -14,6 +14,16 @@ from pydantic import (
 from typing_extensions import TypeAliasType
 
 
+U8 = Annotated[int, Field(ge=0, le=255)]
+U16 = Annotated[int, Field(ge=0, le=65535)]
+U32 = Annotated[int, Field(ge=0, le=4294967295)]
+U64 = Annotated[int, Field(ge=0, le=18446744073709551615)]
+I8 = Annotated[int, Field(ge=-128, le=127)]
+I16 = Annotated[int, Field(ge=-32768, le=32767)]
+I32 = Annotated[int, Field(ge=-2147483648, le=2147483647)]
+I64 = Annotated[int, Field(ge=-9223372036854775808, le=9223372036854775807)]
+
+
 def base64_wire(value, *, decode=False):
     """Keep wire strings, encode bytes, or decode base64 with decode=True."""
     if isinstance(value, (bytes, bytearray, memoryview)):
@@ -82,15 +92,15 @@ class AiMuxErrorAIAPICallError(_Wire):
     #: Provider's machine-readable code (OpenAI's `code`/`type`,
     #: e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     #: status. Our normalized take on `APICallError.data`.
-    provider_code: Optional[Optional[str]] = Field(default=None, alias="providerCode")
+    provider_code: Optional[str] = Field(default=None, alias="providerCode")
     #: Sanitized request values used to create the API request.
     request_body_values: Any = Field(alias="requestBodyValues")
     #: The raw response body, verbatim (`APICallError.responseBody`) — the
     #: lossless evidence when `message`/`provider_code` are extractions.
     #: `None` when the error did not come from a response body.
-    response_body: Optional[Optional[str]] = Field(default=None, alias="responseBody")
+    response_body: Optional[str] = Field(default=None, alias="responseBody")
     #: Sanitized response headers.
-    response_headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="responseHeaders")
+    response_headers: Optional[Dict[str, str]] = Field(default=None, alias="responseHeaders")
     #: HTTP status of the response, when it came from one
     #: (`APICallError.statusCode`). The HTTP layer fills the observed status
     #: for every response-derived error. An error frame inside a stream
@@ -98,7 +108,7 @@ class AiMuxErrorAIAPICallError(_Wire):
     #: stream errors do (OpenAI infers one from the frame's `code`/`type`,
     #: Anthropic from its error type); errors built without an HTTP exchange
     #: leave it `None`.
-    status_code: Optional[Optional[Annotated[int, Field(ge=0, le=65535)]]] = Field(default=None, alias="statusCode")
+    status_code: Optional[U16] = Field(default=None, alias="statusCode")
     #: Sanitized request URL. Required for every API-derived failure.
     url: str = Field(alias="url")
 
@@ -132,8 +142,8 @@ class AiMuxErrorAIToolCallNotFoundForApprovalError(_Wire):
 
 class AiMuxErrorAINoSuchToolError(_Wire):
     name: Literal["AI_NoSuchToolError"] = Field(default="AI_NoSuchToolError", alias="name")
-    available_tools: Optional[Optional[List[str]]] = Field(default=None, alias="availableTools")
-    tool_input: Optional[Optional[str]] = Field(default=None, alias="toolInput")
+    available_tools: Optional[List[str]] = Field(default=None, alias="availableTools")
+    tool_input: Optional[str] = Field(default=None, alias="toolInput")
     tool_name: str = Field(alias="toolName")
 
 
@@ -256,15 +266,15 @@ class AiMuxErrorInputAIAPICallError(_Wire):
     #: Provider's machine-readable code (OpenAI's `code`/`type`,
     #: e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     #: status. Our normalized take on `APICallError.data`.
-    provider_code: Optional[Optional[str]] = Field(default=None, alias="providerCode")
+    provider_code: Optional[str] = Field(default=None, alias="providerCode")
     #: Sanitized request values used to create the API request.
     request_body_values: Any = Field(alias="requestBodyValues")
     #: The raw response body, verbatim (`APICallError.responseBody`) — the
     #: lossless evidence when `message`/`provider_code` are extractions.
     #: `None` when the error did not come from a response body.
-    response_body: Optional[Optional[str]] = Field(default=None, alias="responseBody")
+    response_body: Optional[str] = Field(default=None, alias="responseBody")
     #: Sanitized response headers.
-    response_headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="responseHeaders")
+    response_headers: Optional[Dict[str, str]] = Field(default=None, alias="responseHeaders")
     #: HTTP status of the response, when it came from one
     #: (`APICallError.statusCode`). The HTTP layer fills the observed status
     #: for every response-derived error. An error frame inside a stream
@@ -272,7 +282,7 @@ class AiMuxErrorInputAIAPICallError(_Wire):
     #: stream errors do (OpenAI infers one from the frame's `code`/`type`,
     #: Anthropic from its error type); errors built without an HTTP exchange
     #: leave it `None`.
-    status_code: Optional[Optional[Annotated[int, Field(ge=0, le=65535)]]] = Field(default=None, alias="statusCode")
+    status_code: Optional[U16] = Field(default=None, alias="statusCode")
     #: Sanitized request URL. Required for every API-derived failure.
     url: str = Field(alias="url")
 
@@ -306,8 +316,8 @@ class AiMuxErrorInputAIToolCallNotFoundForApprovalError(_Wire):
 
 class AiMuxErrorInputAINoSuchToolError(_Wire):
     name: Literal["AI_NoSuchToolError"] = Field(default="AI_NoSuchToolError", alias="name")
-    available_tools: Optional[Optional[List[str]]] = Field(default=None, alias="availableTools")
-    tool_input: Optional[Optional[str]] = Field(default=None, alias="toolInput")
+    available_tools: Optional[List[str]] = Field(default=None, alias="availableTools")
+    tool_input: Optional[str] = Field(default=None, alias="toolInput")
     tool_name: str = Field(alias="toolName")
 
 
@@ -449,15 +459,15 @@ class ApiCallError(_Wire):
     #: Provider's machine-readable code (OpenAI's `code`/`type`,
     #: e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     #: status. Our normalized take on `APICallError.data`.
-    provider_code: Optional[Optional[str]] = Field(default=None, alias="providerCode")
+    provider_code: Optional[str] = Field(default=None, alias="providerCode")
     #: Sanitized request values used to create the API request.
     request_body_values: Any = Field(alias="requestBodyValues")
     #: The raw response body, verbatim (`APICallError.responseBody`) — the
     #: lossless evidence when `message`/`provider_code` are extractions.
     #: `None` when the error did not come from a response body.
-    response_body: Optional[Optional[str]] = Field(default=None, alias="responseBody")
+    response_body: Optional[str] = Field(default=None, alias="responseBody")
     #: Sanitized response headers.
-    response_headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="responseHeaders")
+    response_headers: Optional[Dict[str, str]] = Field(default=None, alias="responseHeaders")
     #: HTTP status of the response, when it came from one
     #: (`APICallError.statusCode`). The HTTP layer fills the observed status
     #: for every response-derived error. An error frame inside a stream
@@ -465,7 +475,7 @@ class ApiCallError(_Wire):
     #: stream errors do (OpenAI infers one from the frame's `code`/`type`,
     #: Anthropic from its error type); errors built without an HTTP exchange
     #: leave it `None`.
-    status_code: Optional[Optional[Annotated[int, Field(ge=0, le=65535)]]] = Field(default=None, alias="statusCode")
+    status_code: Optional[U16] = Field(default=None, alias="statusCode")
     #: Sanitized request URL. Required for every API-derived failure.
     url: str = Field(alias="url")
 
@@ -505,15 +515,15 @@ class ApiCallErrorInput(_Wire):
     #: Provider's machine-readable code (OpenAI's `code`/`type`,
     #: e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     #: status. Our normalized take on `APICallError.data`.
-    provider_code: Optional[Optional[str]] = Field(default=None, alias="providerCode")
+    provider_code: Optional[str] = Field(default=None, alias="providerCode")
     #: Sanitized request values used to create the API request.
     request_body_values: Any = Field(alias="requestBodyValues")
     #: The raw response body, verbatim (`APICallError.responseBody`) — the
     #: lossless evidence when `message`/`provider_code` are extractions.
     #: `None` when the error did not come from a response body.
-    response_body: Optional[Optional[str]] = Field(default=None, alias="responseBody")
+    response_body: Optional[str] = Field(default=None, alias="responseBody")
     #: Sanitized response headers.
-    response_headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="responseHeaders")
+    response_headers: Optional[Dict[str, str]] = Field(default=None, alias="responseHeaders")
     #: HTTP status of the response, when it came from one
     #: (`APICallError.statusCode`). The HTTP layer fills the observed status
     #: for every response-derived error. An error frame inside a stream
@@ -521,7 +531,7 @@ class ApiCallErrorInput(_Wire):
     #: stream errors do (OpenAI infers one from the frame's `code`/`type`,
     #: Anthropic from its error type); errors built without an HTTP exchange
     #: leave it `None`.
-    status_code: Optional[Optional[Annotated[int, Field(ge=0, le=65535)]]] = Field(default=None, alias="statusCode")
+    status_code: Optional[U16] = Field(default=None, alias="statusCode")
     #: Sanitized request URL. Required for every API-derived failure.
     url: str = Field(alias="url")
 
@@ -540,22 +550,22 @@ AssistantContent = TypeAliasType("AssistantContent", Annotated[Union[str, List["
 class AssistantContentPartText(_Wire):
     type: Literal["text"] = Field(default="text", alias="type")
     #: Provider-specific options for this part.
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     text: str = Field(alias="text")
 
 
 class AssistantContentPartCustom(_Wire):
     type: Literal["custom"] = Field(default="custom", alias="type")
     kind: "_dto.NamespacedKind" = Field(alias="kind")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class AssistantContentPartFile(_Wire):
     type: Literal["file"] = Field(default="file", alias="type")
     data: "_dto.FilePartData" = Field(alias="data")
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     media_type: str = Field(alias="mediaType")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class AssistantContentPartReasoning(_Wire):
@@ -563,7 +573,7 @@ class AssistantContentPartReasoning(_Wire):
     #: Provider-specific options for this part (e.g.
     #: `anthropic.signature`, `anthropic.redactedData`,
     #: `anthropic.cacheControl`).
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     text: str = Field(alias="text")
 
 
@@ -571,7 +581,7 @@ class AssistantContentPartReasoningFile(_Wire):
     type: Literal["reasoning-file"] = Field(default="reasoning-file", alias="type")
     data: "_dto.ReasoningFilePartData" = Field(alias="data")
     media_type: str = Field(alias="mediaType")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class AssistantContentPartToolCall(_Wire):
@@ -581,10 +591,10 @@ class AssistantContentPartToolCall(_Wire):
     #: Whether the tool call is executed by the provider rather than by
     #: the client. Providers need it to replay server tool calls on a
     #: later turn.
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
     #: Provider-specific options for this part (e.g.
     #: `anthropic.cacheControl`).
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
@@ -593,20 +603,20 @@ class AssistantContentPartToolResult(_Wire):
     type: Literal["tool-result"] = Field(default="tool-result", alias="type")
     output: "_dto.ToolResultOutput" = Field(alias="output")
     #: Provider-specific options for this part (e.g. `anthropic.cacheControl`).
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     tool_call_id: str = Field(alias="toolCallId")
     #: The tool name. Required upstream; when absent here, the conversion
     #: takes it from the preceding tool call with the same id.
-    tool_name: Optional[Optional[str]] = Field(default=None, alias="toolName")
+    tool_name: Optional[str] = Field(default=None, alias="toolName")
 
 
 class AssistantContentPartToolApprovalRequest(_Wire):
     type: Literal["tool-approval-request"] = Field(default="tool-approval-request", alias="type")
     approval_id: str = Field(alias="approvalId")
     input_schema_input: Optional[Any] = Field(default=None, alias="inputSchemaInput")
-    is_automatic: Optional[Optional[bool]] = Field(default=None, alias="isAutomatic")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
-    signature: Optional[Optional[str]] = Field(default=None, alias="signature")
+    is_automatic: Optional[bool] = Field(default=None, alias="isAutomatic")
+    reason: Optional[str] = Field(default=None, alias="reason")
+    signature: Optional[str] = Field(default=None, alias="signature")
     tool_call_id: str = Field(alias="toolCallId")
 
 
@@ -617,21 +627,21 @@ AssistantContentPart = TypeAliasType("AssistantContentPart", Annotated[Union["As
 
 class AssistantPartText(_Wire):
     type: Literal["text"] = Field(default="text", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     text: str = Field(alias="text")
 
 
 class AssistantPartFile(_Wire):
     type: Literal["file"] = Field(default="file", alias="type")
     data: "_dto.FileData" = Field(alias="data")
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     media_type: str = Field(alias="mediaType")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class AssistantPartReasoning(_Wire):
     type: Literal["reasoning"] = Field(default="reasoning", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     text: str = Field(alias="text")
 
 
@@ -639,20 +649,20 @@ class AssistantPartReasoningFile(_Wire):
     type: Literal["reasoning-file"] = Field(default="reasoning-file", alias="type")
     data: "_dto.GeneratedFileData" = Field(alias="data")
     media_type: str = Field(alias="mediaType")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class AssistantPartCustom(_Wire):
     type: Literal["custom"] = Field(default="custom", alias="type")
     kind: "_dto.NamespacedKind" = Field(alias="kind")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class AssistantPartToolCall(_Wire):
     type: Literal["tool-call"] = Field(default="tool-call", alias="type")
     input: Any = Field(alias="input")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
@@ -660,7 +670,7 @@ class AssistantPartToolCall(_Wire):
 class AssistantPartToolResult(_Wire):
     type: Literal["tool-result"] = Field(default="tool-result", alias="type")
     output: "_dto.ToolResultOutput2" = Field(alias="output")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
@@ -691,7 +701,7 @@ AuditMode2 = TypeAliasType("AuditMode2", Literal["off", "shared", "strict"])
 class BackendConfigRing(_Wire):
     model_config = ConfigDict(extra="forbid")
     type: Literal["ring"] = Field(default="ring", alias="type")
-    capacity: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="capacity")
+    capacity: Optional[U64] = Field(default=None, alias="capacity")
 
 
 class BackendConfigJsonl(_Wire):
@@ -712,13 +722,13 @@ CapturePolicy = TypeAliasType("CapturePolicy", Literal["full"])
 #: name then model id.
 class Catalogue(_Wire):
     specs: Dict[str, Dict[str, "_dto.ModelSpec"]] = Field(alias="specs")
-    updated_at: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="updatedAt")
+    updated_at: U64 = Field(alias="updatedAt")
 
 
 class CatalogueFetchRequest(_Wire):
     model_config = ConfigDict(extra="forbid")
-    abort: Optional[Optional["_dto.HandleIdInput"]] = Field(default=None, alias="abort")
-    source_url: Optional[Optional[str]] = Field(default=None, alias="sourceUrl")
+    abort: Optional["_dto.HandleIdInput"] = Field(default=None, alias="abort")
+    source_url: Optional[str] = Field(default=None, alias="sourceUrl")
 
 
 #: Where a [`ModelSpec`] came from.
@@ -729,17 +739,17 @@ CatalogueSource = TypeAliasType("CatalogueSource", Literal["Anya2a", "ModelsDev"
 #: Mirrors the OpenAI `chat.completion` object.
 class ChatCompletion(_Wire):
     choices: List["_dto.ChatCompletionChoice"] = Field(alias="choices")
-    created: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="created")
+    created: U64 = Field(alias="created")
     id: str = Field(alias="id")
     model: str = Field(alias="model")
     object: str = Field(alias="object")
-    system_fingerprint: Optional[Optional[str]] = Field(default=None, alias="system_fingerprint")
+    system_fingerprint: Optional[str] = Field(default=None, alias="system_fingerprint")
     usage: "_dto.ChatCompletionUsage" = Field(alias="usage")
 
 
 class ChatCompletionChoice(_Wire):
     finish_reason: Optional[str] = Field(alias="finish_reason")
-    index: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="index")
+    index: U32 = Field(alias="index")
     #: The Chat Completions logprobs object, `{ "content": [...], "refusal":
     #: null }`, each entry `{ token, logprob, bytes, top_logprobs }`, when
     #: the calling provider returned logprobs.
@@ -752,37 +762,37 @@ class ChatCompletionChoice(_Wire):
 #: Mirrors the OpenAI `chat.completion.chunk` object.
 class ChatCompletionChunk(_Wire):
     choices: List["_dto.ChatCompletionChunkChoice"] = Field(alias="choices")
-    created: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="created")
+    created: U64 = Field(alias="created")
     id: str = Field(alias="id")
     model: str = Field(alias="model")
     object: str = Field(alias="object")
-    usage: Optional[Optional["_dto.ChatCompletionUsage"]] = Field(default=None, alias="usage")
+    usage: Optional["_dto.ChatCompletionUsage"] = Field(default=None, alias="usage")
 
 
 class ChatCompletionChunkChoice(_Wire):
     delta: "_dto.ChatCompletionDelta" = Field(alias="delta")
     finish_reason: Optional[str] = Field(alias="finish_reason")
-    index: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="index")
+    index: U32 = Field(alias="index")
     logprobs: Optional[Any] = Field(default=None, alias="logprobs")
 
 
 class ChatCompletionChunkFunction(_Wire):
-    arguments: Optional[Optional[str]] = Field(default=None, alias="arguments")
-    name: Optional[Optional[str]] = Field(default=None, alias="name")
+    arguments: Optional[str] = Field(default=None, alias="arguments")
+    name: Optional[str] = Field(default=None, alias="name")
 
 
 class ChatCompletionChunkToolCall(_Wire):
     function: "_dto.ChatCompletionChunkFunction" = Field(alias="function")
-    id: Optional[Optional[str]] = Field(default=None, alias="id")
-    index: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="index")
-    type: Optional[Optional[str]] = Field(default=None, alias="type")
+    id: Optional[str] = Field(default=None, alias="id")
+    index: U32 = Field(alias="index")
+    type: Optional[str] = Field(default=None, alias="type")
 
 
 class ChatCompletionDelta(_Wire):
-    content: Optional[Optional[str]] = Field(default=None, alias="content")
-    reasoning_content: Optional[Optional[str]] = Field(default=None, alias="reasoning_content")
-    role: Optional[Optional[str]] = Field(default=None, alias="role")
-    tool_calls: Optional[Optional[List["_dto.ChatCompletionChunkToolCall"]]] = Field(default=None, alias="tool_calls")
+    content: Optional[str] = Field(default=None, alias="content")
+    reasoning_content: Optional[str] = Field(default=None, alias="reasoning_content")
+    role: Optional[str] = Field(default=None, alias="role")
+    tool_calls: Optional[List["_dto.ChatCompletionChunkToolCall"]] = Field(default=None, alias="tool_calls")
 
 
 class ChatCompletionFunction(_Wire):
@@ -791,11 +801,11 @@ class ChatCompletionFunction(_Wire):
 
 
 class ChatCompletionMessage(_Wire):
-    annotations: Optional[Optional[List[Any]]] = Field(default=None, alias="annotations")
+    annotations: Optional[List[Any]] = Field(default=None, alias="annotations")
     content: Optional[str] = Field(alias="content")
-    reasoning_content: Optional[Optional[str]] = Field(default=None, alias="reasoning_content")
+    reasoning_content: Optional[str] = Field(default=None, alias="reasoning_content")
     role: str = Field(alias="role")
-    tool_calls: Optional[Optional[List["_dto.ChatCompletionToolCall"]]] = Field(default=None, alias="tool_calls")
+    tool_calls: Optional[List["_dto.ChatCompletionToolCall"]] = Field(default=None, alias="tool_calls")
 
 
 class ChatCompletionToolCall(_Wire):
@@ -805,11 +815,11 @@ class ChatCompletionToolCall(_Wire):
 
 
 class ChatCompletionUsage(_Wire):
-    completion_tokens: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="completion_tokens")
-    completion_tokens_details: Optional[Optional["_dto.CompletionTokensDetails"]] = Field(default=None, alias="completion_tokens_details")
-    prompt_tokens: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="prompt_tokens")
-    prompt_tokens_details: Optional[Optional["_dto.PromptTokensDetails"]] = Field(default=None, alias="prompt_tokens_details")
-    total_tokens: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="total_tokens")
+    completion_tokens: U32 = Field(alias="completion_tokens")
+    completion_tokens_details: Optional["_dto.CompletionTokensDetails"] = Field(default=None, alias="completion_tokens_details")
+    prompt_tokens: U32 = Field(alias="prompt_tokens")
+    prompt_tokens_details: Optional["_dto.PromptTokensDetails"] = Field(default=None, alias="prompt_tokens_details")
+    total_tokens: U32 = Field(alias="total_tokens")
 
 
 class CodexRefreshRequest(_Wire):
@@ -826,55 +836,55 @@ class CodexTokens(_Wire):
     #: Access token to pass as the `ChatGptAccount` token of [`CodexProviderSettings`].
     access_token: str = Field(alias="access_token")
     #: Access-token lifetime in seconds, if the endpoint reports it.
-    expires_in_secs: Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]] = Field(alias="expires_in_secs")
+    expires_in_secs: Optional[U64] = Field(alias="expires_in_secs")
     #: Rotated refresh token — **single use**; the caller must persist the
     #: new value (the library never persists credentials).
     refresh_token: Optional[str] = Field(alias="refresh_token")
 
 
 class CompletionTokensDetails(_Wire):
-    reasoning_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="reasoning_tokens")
+    reasoning_tokens: Optional[U32] = Field(default=None, alias="reasoning_tokens")
 
 
 class ContentPartText(_Wire):
     type: Literal["text"] = Field(default="text", alias="type")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     text: str = Field(alias="text")
 
 
 class ContentPartCustom(_Wire):
     type: Literal["custom"] = Field(default="custom", alias="type")
     kind: "_dto.NamespacedKind" = Field(alias="kind")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class ContentPartReasoning(_Wire):
     type: Literal["reasoning"] = Field(default="reasoning", alias="type")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     text: str = Field(alias="text")
 
 
 class ContentPartReasoningFile(_Wire):
     type: Literal["reasoning-file"] = Field(default="reasoning-file", alias="type")
     file: "_dto.GeneratedFile" = Field(alias="file")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class ContentPartSource5(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     id: str = Field(alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     source_type: "_dto.ContentPart4SourceType" = Field(alias="sourceType")
-    title: Optional[Optional[str]] = Field(default=None, alias="title")
+    title: Optional[str] = Field(default=None, alias="title")
     url: str = Field(alias="url")
 
 
 class ContentPartSource6(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     id: str = Field(alias="id")
     media_type: str = Field(alias="mediaType")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     source_type: "_dto.ContentPart5SourceType" = Field(alias="sourceType")
     title: str = Field(alias="title")
 
@@ -882,25 +892,25 @@ class ContentPartSource6(_Wire):
 class ContentPartFile(_Wire):
     type: Literal["file"] = Field(default="file", alias="type")
     file: "_dto.GeneratedFile" = Field(alias="file")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class ContentPartToolCall(_Wire):
     type: Literal["tool-call"] = Field(default="tool-call", alias="type")
     #: Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     #: Typed failure associated with an invalid tool call.
-    error: Optional[Optional["_dto.AiMuxError"]] = Field(default=None, alias="error")
+    error: Optional["_dto.AiMuxError"] = Field(default=None, alias="error")
     #: Parsed arguments, or the original string when `invalid` is true and the
     #: provider input was not valid JSON.
     input: Any = Field(alias="input")
     #: Set when lookup, JSON parsing, or schema validation still failed after
     #: the optional repair attempt.
-    invalid: Optional[Optional[bool]] = Field(default=None, alias="invalid")
+    invalid: Optional[bool] = Field(default=None, alias="invalid")
     #: Whether the tool call will be executed by the provider.
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
     #: Additional provider-specific metadata associated with this call.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Provider-assigned call id.
     tool_call_id: str = Field(alias="toolCallId")
     #: Tool name.
@@ -909,26 +919,26 @@ class ContentPartToolCall(_Wire):
 
 class ContentPartToolResult(_Wire):
     type: Literal["tool-result"] = Field(default="tool-result", alias="type")
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     #: The input of the tool call the result answers; absent for a deferred
     #: provider result, whose call is not in this response.
     input: Optional[Any] = Field(default=None, alias="input")
     output: Any = Field(alias="output")
-    preliminary: Optional[Optional[bool]] = Field(default=None, alias="preliminary")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    preliminary: Optional[bool] = Field(default=None, alias="preliminary")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
 
 class ContentPartToolError(_Wire):
     type: Literal["tool-error"] = Field(default="tool-error", alias="type")
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     error: Any = Field(alias="error")
     #: The input of the tool call; absent for a deferred provider result.
     input: Optional[Any] = Field(default=None, alias="input")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
@@ -936,9 +946,9 @@ class ContentPartToolError(_Wire):
 class ContentPartToolApprovalRequest(_Wire):
     type: Literal["tool-approval-request"] = Field(default="tool-approval-request", alias="type")
     approval_id: str = Field(alias="approvalId")
-    is_automatic: Optional[Optional[bool]] = Field(default=None, alias="isAutomatic")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
-    signature: Optional[Optional[str]] = Field(default=None, alias="signature")
+    is_automatic: Optional[bool] = Field(default=None, alias="isAutomatic")
+    reason: Optional[str] = Field(default=None, alias="reason")
+    signature: Optional[str] = Field(default=None, alias="signature")
     #: The call to approve, with its `type` tag (`ai`
     #: `generate-text/tool-approval-request-output.ts:20`).
     tool_call: "_dto.TypedToolCall" = Field(alias="toolCall")
@@ -948,8 +958,8 @@ class ContentPartToolApprovalResponse(_Wire):
     type: Literal["tool-approval-response"] = Field(default="tool-approval-response", alias="type")
     approval_id: str = Field(alias="approvalId")
     approved: bool = Field(alias="approved")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    reason: Optional[str] = Field(default=None, alias="reason")
     #: The answered call, with its `type` tag (`TypedToolCall`,
     #: `tool-approval-response-output.ts:18`).
     tool_call: "_dto.TypedToolCall" = Field(alias="toolCall")
@@ -972,43 +982,43 @@ ContentPart5SourceType = TypeAliasType("ContentPart5SourceType", Literal["docume
 
 class ContentPartInputText(_Wire):
     type: Literal["text"] = Field(default="text", alias="type")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     text: str = Field(alias="text")
 
 
 class ContentPartInputCustom(_Wire):
     type: Literal["custom"] = Field(default="custom", alias="type")
     kind: "_dto.NamespacedKind" = Field(alias="kind")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class ContentPartInputReasoning(_Wire):
     type: Literal["reasoning"] = Field(default="reasoning", alias="type")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     text: str = Field(alias="text")
 
 
 class ContentPartInputReasoningFile(_Wire):
     type: Literal["reasoning-file"] = Field(default="reasoning-file", alias="type")
     file: "_dto.GeneratedFile" = Field(alias="file")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class ContentPartInputSource5(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     id: str = Field(alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     source_type: "_dto.ContentPartInput4SourceType" = Field(alias="sourceType")
-    title: Optional[Optional[str]] = Field(default=None, alias="title")
+    title: Optional[str] = Field(default=None, alias="title")
     url: str = Field(alias="url")
 
 
 class ContentPartInputSource6(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     id: str = Field(alias="id")
     media_type: str = Field(alias="mediaType")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     source_type: "_dto.ContentPartInput5SourceType" = Field(alias="sourceType")
     title: str = Field(alias="title")
 
@@ -1016,25 +1026,25 @@ class ContentPartInputSource6(_Wire):
 class ContentPartInputFile(_Wire):
     type: Literal["file"] = Field(default="file", alias="type")
     file: "_dto.GeneratedFile" = Field(alias="file")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class ContentPartInputToolCall(_Wire):
     type: Literal["tool-call"] = Field(default="tool-call", alias="type")
     #: Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     #: Typed failure associated with an invalid tool call.
-    error: Optional[Optional["_dto.AiMuxErrorInput"]] = Field(default=None, alias="error")
+    error: Optional["_dto.AiMuxErrorInput"] = Field(default=None, alias="error")
     #: Parsed arguments, or the original string when `invalid` is true and the
     #: provider input was not valid JSON.
     input: Any = Field(alias="input")
     #: Set when lookup, JSON parsing, or schema validation still failed after
     #: the optional repair attempt.
-    invalid: Optional[Optional[bool]] = Field(default=None, alias="invalid")
+    invalid: Optional[bool] = Field(default=None, alias="invalid")
     #: Whether the tool call will be executed by the provider.
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
     #: Additional provider-specific metadata associated with this call.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Provider-assigned call id.
     tool_call_id: str = Field(alias="toolCallId")
     #: Tool name.
@@ -1043,26 +1053,26 @@ class ContentPartInputToolCall(_Wire):
 
 class ContentPartInputToolResult(_Wire):
     type: Literal["tool-result"] = Field(default="tool-result", alias="type")
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     #: The input of the tool call the result answers; absent for a deferred
     #: provider result, whose call is not in this response.
     input: Optional[Any] = Field(default=None, alias="input")
     output: Any = Field(alias="output")
-    preliminary: Optional[Optional[bool]] = Field(default=None, alias="preliminary")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    preliminary: Optional[bool] = Field(default=None, alias="preliminary")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
 
 class ContentPartInputToolError(_Wire):
     type: Literal["tool-error"] = Field(default="tool-error", alias="type")
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     error: Any = Field(alias="error")
     #: The input of the tool call; absent for a deferred provider result.
     input: Optional[Any] = Field(default=None, alias="input")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
@@ -1070,9 +1080,9 @@ class ContentPartInputToolError(_Wire):
 class ContentPartInputToolApprovalRequest(_Wire):
     type: Literal["tool-approval-request"] = Field(default="tool-approval-request", alias="type")
     approval_id: str = Field(alias="approvalId")
-    is_automatic: Optional[Optional[bool]] = Field(default=None, alias="isAutomatic")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
-    signature: Optional[Optional[str]] = Field(default=None, alias="signature")
+    is_automatic: Optional[bool] = Field(default=None, alias="isAutomatic")
+    reason: Optional[str] = Field(default=None, alias="reason")
+    signature: Optional[str] = Field(default=None, alias="signature")
     #: The call to approve, with its `type` tag (`ai`
     #: `generate-text/tool-approval-request-output.ts:20`).
     tool_call: "_dto.TypedToolCallInput" = Field(alias="toolCall")
@@ -1082,8 +1092,8 @@ class ContentPartInputToolApprovalResponse(_Wire):
     type: Literal["tool-approval-response"] = Field(default="tool-approval-response", alias="type")
     approval_id: str = Field(alias="approvalId")
     approved: bool = Field(alias="approved")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    reason: Optional[str] = Field(default=None, alias="reason")
     #: The answered call, with its `type` tag (`TypedToolCall`,
     #: `tool-approval-response-output.ts:18`).
     tool_call: "_dto.TypedToolCallInput" = Field(alias="toolCall")
@@ -1118,31 +1128,31 @@ class CredentialParams(_Wire):
 #: Provider-specific content identified by its provider and kind.
 class CustomPart(_Wire):
     kind: "_dto.NamespacedKind" = Field(alias="kind")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 #: Options of [`decide`]: the call options plus the operation settings
 #: (`ai@7.0.128 src/decide/decide.ts:53-61`).
 class DecideOptions(_Wire):
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Maximum retries for transient provider failures. Defaults to 2.
-    max_retries: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="maxRetries")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    max_retries: Optional[U32] = Field(default=None, alias="maxRetries")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     questions: Dict[str, "_dto.DecisionQuestion"] = Field(alias="questions")
     state: "_dto.DecisionInput" = Field(alias="state")
     #: Operation deadline (aimux extension).
-    timeout: Optional[Optional["_dto.TimeoutConfiguration"]] = Field(default=None, alias="timeout")
+    timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
 
 
 #: The result of [`decide`] (`DecisionResult` of
 #: `ai@7.0.128 src/decide/decision-result.ts:22-39`).
 class DecideResult(_Wire):
     answers: Dict[str, "_dto.DecisionAnswer"] = Field(alias="answers")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: The model's response information; the timestamp defaults to the end of
     #: the call and the model id to the model's.
     response: "_dto.ResponseInfo" = Field(alias="response")
-    rounding: Optional[Optional["_dto.DecisionRounding"]] = Field(default=None, alias="rounding")
+    rounding: Optional["_dto.DecisionRounding"] = Field(default=None, alias="rounding")
     usage: "_dto.DecideUsage" = Field(alias="usage")
     warnings: List["_dto.Warning"] = Field(alias="warnings")
 
@@ -1151,9 +1161,9 @@ class DecideResult(_Wire):
 #: (`ai@7.0.128 src/decide/decision-result.ts:27-31`): an unknown count is
 #: `undefined` there, so it is omitted.
 class DecideUsage(_Wire):
-    input_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="inputTokens")
-    output_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="outputTokens")
-    total_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="totalTokens")
+    input_tokens: Optional[U32] = Field(default=None, alias="inputTokens")
+    output_tokens: Optional[U32] = Field(default=None, alias="outputTokens")
+    total_tokens: Optional[U32] = Field(default=None, alias="totalTokens")
 
 
 class DecisionAnswerChoice(_Wire):
@@ -1162,14 +1172,14 @@ class DecisionAnswerChoice(_Wire):
     #: exists.
     choice: str = Field(alias="choice")
     #: Complete distribution over the question's options, when available.
-    probabilities: Optional[Optional[Dict[str, float]]] = Field(default=None, alias="probabilities")
+    probabilities: Optional[Dict[str, float]] = Field(default=None, alias="probabilities")
 
 
 class DecisionAnswerScore(_Wire):
     type: Literal["score"] = Field(default="score", alias="type")
     #: Complete distribution keyed by zero-based level indices as
     #: strings; when supplied, `score` is its probability-weighted mean.
-    probabilities: Optional[Optional[Dict[str, float]]] = Field(default=None, alias="probabilities")
+    probabilities: Optional[Dict[str, float]] = Field(default=None, alias="probabilities")
     #: Fractional position in `[0, levels - 1]`.
     score: float = Field(alias="score")
 
@@ -1190,8 +1200,8 @@ DecisionAnswer = TypeAliasType("DecisionAnswer", Annotated[Union["DecisionAnswer
 #: `false` (`ai@7.0.128 src/decide/validate-decision.ts:94-105`).
 class DecisionBooleanCriteria(_Wire):
     model_config = ConfigDict(extra="forbid")
-    false: Optional[Optional["_dto.DecisionInput"]] = Field(default=None, alias="false")
-    true: Optional[Optional["_dto.DecisionInput"]] = Field(default=None, alias="true")
+    false: Optional["_dto.DecisionInput"] = Field(default=None, alias="false")
+    true: Optional["_dto.DecisionInput"] = Field(default=None, alias="true")
 
 
 #: Runtime controls surround the canonical business options; only the control
@@ -1199,7 +1209,7 @@ class DecisionBooleanCriteria(_Wire):
 #: owner before entering the handler and supplies its signal in `Ctx`.
 class DecisionDecideRequest(_Wire):
     model_config = ConfigDict(extra="forbid")
-    abort: Optional[Optional["_dto.HandleIdInput"]] = Field(default=None, alias="abort")
+    abort: Optional["_dto.HandleIdInput"] = Field(default=None, alias="abort")
     options: "_dto.DecideOptions" = Field(alias="options")
 
 
@@ -1224,7 +1234,7 @@ class DecisionQuestionScore(_Wire):
 
 class DecisionQuestionBoolean(_Wire):
     type: Literal["boolean"] = Field(default="boolean", alias="type")
-    criteria: Optional[Optional["_dto.DecisionBooleanCriteria"]] = Field(default=None, alias="criteria")
+    criteria: Optional["_dto.DecisionBooleanCriteria"] = Field(default=None, alias="criteria")
     instructions: "_dto.DecisionInput" = Field(alias="instructions")
 
 
@@ -1235,8 +1245,8 @@ DecisionQuestion = TypeAliasType("DecisionQuestion", Annotated[Union["DecisionQu
 #: precision. Validation allows half a unit in the last place per rounded
 #: value (`decision-model-v4-result.ts:39-42`).
 class DecisionRounding(_Wire):
-    probability_decimals: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="probabilityDecimals")
-    score_decimals: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="scoreDecimals")
+    probability_decimals: Optional[U32] = Field(default=None, alias="probabilityDecimals")
+    score_decimals: Optional[U32] = Field(default=None, alias="scoreDecimals")
 
 
 #: Options passed to [`EmbeddingModel::do_embed`].
@@ -1244,14 +1254,14 @@ class DecisionRounding(_Wire):
 #: Aligned with V4 `EmbeddingModelV4CallOptions`.
 class EmbeddingCallOptions(_Wire):
     #: Additional HTTP headers to send with the request.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     #: retrying. `None` uses 2, the AI SDK default.
-    max_retries: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="maxRetries")
+    max_retries: Optional[U32] = Field(default=None, alias="maxRetries")
     #: Additional provider-specific options, keyed by provider name.
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     #: Per-call operation timeout.
-    timeout: Optional[Optional["_dto.TimeoutConfiguration"]] = Field(default=None, alias="timeout")
+    timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
     #: List of text values to generate embeddings for.
     values: List[str] = Field(alias="values")
 
@@ -1261,7 +1271,7 @@ class EmbeddingResponse(_Wire):
     #: The response body (opaque JSON).
     body: Optional[Any] = Field(default=None, alias="body")
     #: Response headers.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
 
 
 #: The result of [`EmbeddingModel::do_embed`].
@@ -1271,11 +1281,11 @@ class EmbeddingResult(_Wire):
     #: Generated embeddings, in the same order as the input `values`.
     embeddings: List[List[float]] = Field(alias="embeddings")
     #: Additional provider-specific metadata.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Optional response information for debugging.
-    response: Optional[Optional["_dto.EmbeddingResponse"]] = Field(default=None, alias="response")
+    response: Optional["_dto.EmbeddingResponse"] = Field(default=None, alias="response")
     #: Token usage (input tokens only).
-    usage: Optional[Optional["_dto.EmbeddingUsage"]] = Field(default=None, alias="usage")
+    usage: Optional["_dto.EmbeddingUsage"] = Field(default=None, alias="usage")
     #: Warnings for the call, e.g. unsupported settings.
     warnings: List["_dto.Warning"] = Field(alias="warnings")
 
@@ -1283,7 +1293,7 @@ class EmbeddingResult(_Wire):
 #: Token usage for an embedding call. Embeddings only report input tokens.
 class EmbeddingUsage(_Wire):
     #: Number of input tokens consumed.
-    tokens: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="tokens")
+    tokens: U32 = Field(alias="tokens")
 
 
 class EmptyParams(_Wire):
@@ -1300,11 +1310,11 @@ ErrorDomain = TypeAliasType("ErrorDomain", Literal["aimux", "recording", "bindin
 #: JSON nulls survive decoding and re-encoding by an older adapter.
 class ErrorEnvelope(_Wire):
     model_config = ConfigDict(extra="forbid")
-    code: Annotated[int, Field(ge=-2147483648, le=2147483647)] = Field(alias="code")
+    code: I32 = Field(alias="code")
     error: Any = Field(alias="error")
     kind: "_dto.ErrorDomain" = Field(alias="kind")
     message: str = Field(alias="message")
-    retry_after_ms: Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]] = Field(default=None, alias="retryAfterMs")
+    retry_after_ms: Optional[U64] = Field(default=None, alias="retryAfterMs")
 
 
 Fallback = TypeAliasType("Fallback", Literal["on_error", "none"])
@@ -1328,7 +1338,7 @@ class FileDataData(_Wire):
 
 class FileDataUrl(_Wire):
     type: Literal["url"] = Field(default="url", alias="type")
-    original_url: Optional[Optional[str]] = Field(default=None, alias="originalUrl")
+    original_url: Optional[str] = Field(default=None, alias="originalUrl")
     url: str = Field(alias="url")
 
 
@@ -1350,9 +1360,9 @@ FileData = TypeAliasType("FileData", Annotated[Union["FileDataData", "FileDataUr
 #: File content part (the only file part; `data` is a tagged `FileData`).
 class FilePart(_Wire):
     data: "_dto.FileData" = Field(alias="data")
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     media_type: str = Field(alias="mediaType")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 #: `FilePart.data` (`provider-utils` `types/content-part.ts:75`):
@@ -1369,13 +1379,13 @@ FilePartData = TypeAliasType("FilePartData", Annotated[Union["_dto.FileData", st
 class Fingerprint(_Wire):
     #: Block-hash chain (hex), one entry per block.
     block_hashes: List[str] = Field(alias="blockHashes")
-    block_size: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="blockSize")
+    block_size: U64 = Field(alias="blockSize")
     #: 128-bit hash of the whole denoised body (hex).
     body_hash: str = Field(alias="bodyHash")
-    len_bytes: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="lenBytes")
+    len_bytes: U64 = Field(alias="lenBytes")
     #: Token estimate — byte proxy `len_bytes / 4` when no tokenizer is
     #: attached (RFC-0015 §4.1: W capped at one block in this mode).
-    token_estimate: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="tokenEstimate")
+    token_estimate: U64 = Field(alias="tokenEstimate")
 
 
 #: Unified finish reason enum (aligned with V4 `LanguageModelV4FinishReason`).
@@ -1384,10 +1394,10 @@ FinishReasonUnified = TypeAliasType("FinishReasonUnified", Literal["stop", "leng
 #: A tool definition passed to the model in `CallOptions.tools`.
 class FunctionTool(_Wire):
     #: Human-readable description.
-    description: Optional[Optional[str]] = Field(default=None, alias="description")
+    description: Optional[str] = Field(default=None, alias="description")
     #: Example inputs for the tool (V4 `inputExamples`), used by some providers
     #: to emit `input_examples` in the request body.
-    input_examples: Optional[Optional[List["_dto.FunctionToolInputExample"]]] = Field(default=None, alias="inputExamples")
+    input_examples: Optional[List["_dto.FunctionToolInputExample"]] = Field(default=None, alias="inputExamples")
     #: JSON Schema describing the tool's parameters.
     input_schema: Any = Field(alias="inputSchema")
     #: Unique tool name.
@@ -1395,9 +1405,9 @@ class FunctionTool(_Wire):
     #: Provider-specific options, keyed by provider name
     #: (e.g. `{"anthropic": {"eagerInputStreaming": true}}`). Aligned with the
     #: V4 `providerOptions` field on function tools.
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     #: Whether the tool supports strict schema enforcement (OpenAI strict mode).
-    strict: Optional[Optional[bool]] = Field(default=None, alias="strict")
+    strict: Optional[bool] = Field(default=None, alias="strict")
 
 
 #: An example input for a function tool.
@@ -1407,16 +1417,16 @@ class FunctionToolInputExample(_Wire):
 
 class GenerateContentText(_Wire):
     type: Literal["text"] = Field(default="text", alias="type")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     text: str = Field(alias="text")
 
 
 class GenerateContentToolCall(_Wire):
     type: Literal["tool-call"] = Field(default="tool-call", alias="type")
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     input: str = Field(alias="input")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
@@ -1424,25 +1434,25 @@ class GenerateContentToolCall(_Wire):
 class GenerateContentSource3(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     id: str = Field(alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     source_type: "_dto.GenerateContent2SourceType" = Field(alias="sourceType")
-    title: Optional[Optional[str]] = Field(default=None, alias="title")
+    title: Optional[str] = Field(default=None, alias="title")
     url: str = Field(alias="url")
 
 
 class GenerateContentSource4(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     id: str = Field(alias="id")
     media_type: str = Field(alias="mediaType")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     source_type: "_dto.GenerateContent3SourceType" = Field(alias="sourceType")
     title: str = Field(alias="title")
 
 
 class GenerateContentReasoning(_Wire):
     type: Literal["reasoning"] = Field(default="reasoning", alias="type")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     text: str = Field(alias="text")
 
 
@@ -1450,39 +1460,39 @@ class GenerateContentFile(_Wire):
     type: Literal["file"] = Field(default="file", alias="type")
     data: "_dto.GeneratedFileData" = Field(alias="data")
     media_type: str = Field(alias="mediaType")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class GenerateContentReasoningFile(_Wire):
     type: Literal["reasoning-file"] = Field(default="reasoning-file", alias="type")
     data: "_dto.GeneratedFileData" = Field(alias="data")
     media_type: str = Field(alias="mediaType")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class GenerateContentCustom(_Wire):
     type: Literal["custom"] = Field(default="custom", alias="type")
     kind: "_dto.NamespacedKind" = Field(alias="kind")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class GenerateContentToolApprovalRequest(_Wire):
     type: Literal["tool-approval-request"] = Field(default="tool-approval-request", alias="type")
     approval_id: str = Field(alias="approvalId")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
 
 
 class GenerateContentToolResult(_Wire):
     type: Literal["tool-result"] = Field(default="tool-result", alias="type")
     #: Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     #: Whether the result is an error or error message.
-    is_error: Optional[Optional[bool]] = Field(default=None, alias="isError")
+    is_error: Optional[bool] = Field(default=None, alias="isError")
     #: Whether the result is preliminary (replaces prior, e.g. image previews).
-    preliminary: Optional[Optional[bool]] = Field(default=None, alias="preliminary")
+    preliminary: Optional[bool] = Field(default=None, alias="preliminary")
     #: Additional provider-specific metadata for the tool result.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: The tool's output: any JSON value but `null`, as the V4
     #: `result: NonNullable<JSONValue>` (`@ai-sdk/provider@4.0.21
     #: src/language-model/v4/language-model-v4-tool-result.ts:23`); a `null`
@@ -1505,7 +1515,7 @@ GenerateContent3SourceType = TypeAliasType("GenerateContent3SourceType", Literal
 #: `Omit<LanguageModelResponseMetadata, 'messages'>`.
 class GenerateObjectResponse(_Wire):
     body: Optional[Any] = Field(default=None, alias="body")
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     id: str = Field(alias="id")
     model_id: str = Field(alias="modelId")
     timestamp: "_dto.Timestamp" = Field(alias="timestamp")
@@ -1519,9 +1529,9 @@ class GenerateObjectResult(_Wire):
     #: The generated object, as parsed by the output.
     object: Any = Field(alias="object")
     #: Provider metadata of the model call.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: The reasoning text, `None` when there is none.
-    reasoning: Optional[Optional[str]] = Field(default=None, alias="reasoning")
+    reasoning: Optional[str] = Field(default=None, alias="reasoning")
     #: The request of the model call.
     request: "_dto.RequestInfo" = Field(alias="request")
     #: The response of the model call, without messages.
@@ -1537,40 +1547,40 @@ class GenerateObjectResult(_Wire):
 #: Unlike `CallOptions` (provider-facing), this does not include `prompt`
 #: (passed separately) and defaults are more ergonomic.
 class GenerateTextOptions(_Wire):
-    frequency_penalty: Optional[Optional[float]] = Field(default=None, alias="frequencyPenalty")
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    frequency_penalty: Optional[float] = Field(default=None, alias="frequencyPenalty")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
-    include_raw_chunks: Optional[Optional[bool]] = Field(default=None, alias="includeRawChunks")
+    include_raw_chunks: Optional[bool] = Field(default=None, alias="includeRawChunks")
     #: System instructions prepended to the prompt.
-    instructions: Optional[Optional[str]] = Field(default=None, alias="instructions")
-    max_output_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="maxOutputTokens")
+    instructions: Optional[str] = Field(default=None, alias="instructions")
+    max_output_tokens: Optional[U32] = Field(default=None, alias="maxOutputTokens")
     #: Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     #: retrying. `None` uses 2, the AI SDK default.
-    max_retries: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="maxRetries")
+    max_retries: Optional[U32] = Field(default=None, alias="maxRetries")
     #: The structured output to generate, the AI SDK's `output`
     #: (`generate-text/output.ts`). It sets the model call's
     #: `response_format` and parses the final text into
     #: [`GenerateTextResult::output`]. `None` sends no response format and
     #: takes the text as the output.
-    output: Optional[Optional["_dto.Output"]] = Field(default=None, alias="output")
-    presence_penalty: Optional[Optional[float]] = Field(default=None, alias="presencePenalty")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    output: Optional["_dto.Output"] = Field(default=None, alias="output")
+    presence_penalty: Optional[float] = Field(default=None, alias="presencePenalty")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     #: Top-level reasoning effort.
-    reasoning: Optional[Optional["_dto.ReasoningEffort"]] = Field(default=None, alias="reasoning")
-    seed: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="seed")
+    reasoning: Optional["_dto.ReasoningEffort"] = Field(default=None, alias="reasoning")
+    seed: Optional[U64] = Field(default=None, alias="seed")
     #: Session identifier, for grouping consecutive calls into a session
     #: (observability, see RFC-0024). Orthogonal to RFC-0019 session-affinity
     #: headers. When `None` and the optional session inferer is enabled, one
     #: may be inferred from prompt-prefix continuation.
-    session_id: Optional[Optional[str]] = Field(default=None, alias="sessionId")
-    stop_sequences: Optional[Optional[List[str]]] = Field(default=None, alias="stopSequences")
-    temperature: Optional[Optional[float]] = Field(default=None, alias="temperature")
+    session_id: Optional[str] = Field(default=None, alias="sessionId")
+    stop_sequences: Optional[List[str]] = Field(default=None, alias="stopSequences")
+    temperature: Optional[float] = Field(default=None, alias="temperature")
     #: Per-call timeout configuration (total / first-chunk / chunk idle).
-    timeout: Optional[Optional["_dto.TimeoutConfiguration"]] = Field(default=None, alias="timeout")
-    tool_choice: Optional[Optional["_dto.ToolChoice"]] = Field(default=None, alias="toolChoice")
-    tools: Optional[Optional[List["_dto.Tool"]]] = Field(default=None, alias="tools")
-    top_k: Optional[Optional[float]] = Field(default=None, alias="topK")
-    top_p: Optional[Optional[float]] = Field(default=None, alias="topP")
+    timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
+    tool_choice: Optional["_dto.ToolChoice"] = Field(default=None, alias="toolChoice")
+    tools: Optional[List["_dto.Tool"]] = Field(default=None, alias="tools")
+    top_k: Optional[float] = Field(default=None, alias="topK")
+    top_p: Optional[float] = Field(default=None, alias="topP")
 
 
 #: Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
@@ -1589,12 +1599,12 @@ class GenerateTextResult(_Wire):
     #: Absent when the output was not parsed.
     output: Optional[Any] = Field(default=None, alias="output")
     #: Deprecated upstream: the last step's provider metadata.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
-    raw_finish_reason: Optional[Optional[str]] = Field(default=None, alias="rawFinishReason")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
+    raw_finish_reason: Optional[str] = Field(default=None, alias="rawFinishReason")
     #: Deprecated upstream: the last step's reasoning.
     reasoning: List["_dto.ReasoningPart"] = Field(alias="reasoning")
     #: Deprecated upstream: the last step's reasoning text.
-    reasoning_text: Optional[Optional[str]] = Field(default=None, alias="reasoningText")
+    reasoning_text: Optional[str] = Field(default=None, alias="reasoningText")
     #: Deprecated upstream: the last step's request.
     request: "_dto.RequestInfo" = Field(alias="request")
     #: Deprecated upstream: the last step's response.
@@ -1640,7 +1650,7 @@ class GeneratedFile(_Wire):
     #: The file's bytes, `base64` in the JSON.
     base64: "_dto.FileBytes" = Field(alias="base64")
     media_type: str = Field(alias="mediaType")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class GeneratedFileDataData(_Wire):
@@ -1650,7 +1660,7 @@ class GeneratedFileDataData(_Wire):
 
 class GeneratedFileDataUrl(_Wire):
     type: Literal["url"] = Field(default="url", alias="type")
-    original_url: Optional[Optional[str]] = Field(default=None, alias="originalUrl")
+    original_url: Optional[str] = Field(default=None, alias="originalUrl")
     url: str = Field(alias="url")
 
 
@@ -1664,7 +1674,7 @@ GeneratedFileData = TypeAliasType("GeneratedFileData", Annotated[Union["Generate
 #: metadata; the file itself has none.
 class GeneratedFileOutput(_Wire):
     file: "_dto.GeneratedFile" = Field(alias="file")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 #: Global scope is 0; live resource identifiers are never reused.
@@ -1695,24 +1705,24 @@ class HttpExchange(_Wire):
     #: Core operation attempt, starting at 1. Attempt numbers are unique
     #: across the whole call, including composite child steps, so
     #: `(attempt, exchange_index)` alone still identifies an exchange.
-    attempt: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="attempt")
-    error: Optional[Optional[str]] = Field(default=None, alias="error")
+    attempt: U32 = Field(alias="attempt")
+    error: Optional[str] = Field(default=None, alias="error")
     #: HTTP exchange within the operation attempt, starting at 1.
-    exchange_index: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="exchangeIndex")
+    exchange_index: U32 = Field(alias="exchangeIndex")
     #: 流式:该 exchange 是否已终结(收到 response 补全)。非流式恒 true。
     finalized: bool = Field(alias="finalized")
     request: "_dto.HttpRecord" = Field(alias="request")
     #: None = 请求失败未获响应。
-    response: Optional[Optional["_dto.ResponseRecord"]] = Field(default=None, alias="response")
+    response: Optional["_dto.ResponseRecord"] = Field(default=None, alias="response")
     #: Composite step this exchange belongs to (e.g. `router[0]:openai/gpt-4o`
     #: or `moa.ref[1]:...`). `None` for a plain, non-composite operation.
-    step: Optional[Optional[str]] = Field(default=None, alias="step")
+    step: Optional[str] = Field(default=None, alias="step")
     timing: "_dto.TimingRecord" = Field(alias="timing")
 
 
 class HttpRecord(_Wire):
     #: 明文(脱敏后);None = 无 body。
-    body: Optional[Optional[str]] = Field(default=None, alias="body")
+    body: Optional[str] = Field(default=None, alias="body")
     #: 敏感头(authorization/cookie/含 api-key/key/x-amz-security-token 等)已脱敏为 "\[REDACTED\]"。
     headers: List[List[str]] = Field(alias="headers")
     method: str = Field(alias="method")
@@ -1725,30 +1735,30 @@ class HttpRecord(_Wire):
 class ImageCallOptions(_Wire):
     #: Aspect ratio of the images, in `{width}:{height}` format.
     #: `None` uses the provider's default aspect ratio.
-    aspect_ratio: Optional[Optional["_dto.AspectRatio"]] = Field(default=None, alias="aspectRatio")
+    aspect_ratio: Optional["_dto.AspectRatio"] = Field(default=None, alias="aspectRatio")
     #: Images for image editing or variation generation.
-    files: Optional[Optional[List["_dto.ImageFile"]]] = Field(default=None, alias="files")
+    files: Optional[List["_dto.ImageFile"]] = Field(default=None, alias="files")
     #: Additional HTTP headers to send with the request.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Mask image for inpainting operations.
-    mask: Optional[Optional["_dto.ImageFile"]] = Field(default=None, alias="mask")
+    mask: Optional["_dto.ImageFile"] = Field(default=None, alias="mask")
     #: Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     #: retrying. `None` uses 2, the AI SDK default.
-    max_retries: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="maxRetries")
+    max_retries: Optional[U32] = Field(default=None, alias="maxRetries")
     #: Number of images to generate.
-    n: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="n")
+    n: U32 = Field(alias="n")
     #: Prompt for the image generation. `None` for operations (e.g. upscaling)
     #: that do not require a prompt.
-    prompt: Optional[Optional[str]] = Field(default=None, alias="prompt")
+    prompt: Optional[str] = Field(default=None, alias="prompt")
     #: Additional provider-specific options, keyed by provider name.
     provider_options: Dict[str, Dict[str, Any]] = Field(alias="providerOptions")
     #: Seed for deterministic generation. `None` uses the provider's default.
-    seed: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="seed")
+    seed: Optional[U64] = Field(default=None, alias="seed")
     #: Size of the images, in `{width}x{height}` format.
     #: `None` uses the provider's default size.
-    size: Optional[Optional["_dto.Size"]] = Field(default=None, alias="size")
+    size: Optional["_dto.Size"] = Field(default=None, alias="size")
     #: Per-call operation timeout.
-    timeout: Optional[Optional["_dto.TimeoutConfiguration"]] = Field(default=None, alias="timeout")
+    timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
 
 
 class ImageFileFile(_Wire):
@@ -1790,11 +1800,11 @@ ImageOutputs = TypeAliasType("ImageOutputs", List[Annotated[str, BeforeValidator
 #: Response information for an image generation call.
 class ImageResponse(_Wire):
     #: Response headers.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: The ID of the model that was used to generate the response.
-    model_id: Optional[Optional[str]] = Field(default=None, alias="modelId")
+    model_id: Optional[str] = Field(default=None, alias="modelId")
     #: Timestamp for the start of the generated response (`toISOString()` in the JSON).
-    timestamp: Optional[Optional["_dto.Timestamp"]] = Field(default=None, alias="timestamp")
+    timestamp: Optional["_dto.Timestamp"] = Field(default=None, alias="timestamp")
 
 
 #: The result of [`ImageModel::do_generate`].
@@ -1804,11 +1814,11 @@ class ImageResult(_Wire):
     #: Generated images (base64 strings or binary data).
     images: "_dto.ImageOutputs" = Field(alias="images")
     #: Additional provider-specific metadata, keyed by provider name.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Response information for telemetry and debugging.
     response: "_dto.ImageResponse" = Field(alias="response")
     #: Optional token usage for the call (if the provider reports it).
-    usage: Optional[Optional["_dto.ImageUsage"]] = Field(default=None, alias="usage")
+    usage: Optional["_dto.ImageUsage"] = Field(default=None, alias="usage")
     #: Warnings for the call, e.g. unsupported features.
     warnings: List["_dto.Warning"] = Field(alias="warnings")
 
@@ -1818,11 +1828,11 @@ class ImageResult(_Wire):
 #: Aligned with V4 `ImageModelV4Usage`.
 class ImageUsage(_Wire):
     #: Number of input (prompt) tokens used.
-    input_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="inputTokens")
+    input_tokens: Optional[U32] = Field(default=None, alias="inputTokens")
     #: Number of output tokens used, if reported.
-    output_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="outputTokens")
+    output_tokens: Optional[U32] = Field(default=None, alias="outputTokens")
     #: Total tokens as reported by the provider.
-    total_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="totalTokens")
+    total_tokens: Optional[U32] = Field(default=None, alias="totalTokens")
 
 
 #: The input audio format for a streaming transcription request.
@@ -1831,7 +1841,7 @@ class InputAudioFormat(_Wire):
     #: Audio format type, e.g. `"audio/pcm"`, `"audio/pcmu"`, `"audio/pcma"`.
     format_type: str = Field(alias="formatType")
     #: Sample rate in Hz. Only applicable for formats that require a rate.
-    rate: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="rate")
+    rate: Optional[U32] = Field(default=None, alias="rate")
 
 
 #: ① 输入侧:完整调用参数,足以重建 generate_text 调用。
@@ -1849,11 +1859,11 @@ class InputRecord(_Wire):
 #: `LanguageModelUsage.inputTokenDetails`.
 class InputTokenDetails(_Wire):
     #: Input tokens read from a cache.
-    cache_read_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="cacheReadTokens")
+    cache_read_tokens: Optional[U32] = Field(default=None, alias="cacheReadTokens")
     #: Input tokens written to a cache.
-    cache_write_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="cacheWriteTokens")
+    cache_write_tokens: Optional[U32] = Field(default=None, alias="cacheWriteTokens")
     #: Input tokens that were not read from or written to a cache.
-    no_cache_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="noCacheTokens")
+    no_cache_tokens: Optional[U32] = Field(default=None, alias="noCacheTokens")
 
 
 #: A file in a provider's output: `LanguageModelV4File` /
@@ -1864,31 +1874,31 @@ class InputTokenDetails(_Wire):
 class LanguageModelFile(_Wire):
     data: "_dto.GeneratedFileData" = Field(alias="data")
     media_type: str = Field(alias="mediaType")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class LanguageModelMessageSystem(_Wire):
     role: Literal["system"] = Field(default="system", alias="role")
     content: str = Field(alias="content")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class LanguageModelMessageUser(_Wire):
     role: Literal["user"] = Field(default="user", alias="role")
     content: List["_dto.UserPart"] = Field(alias="content")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class LanguageModelMessageAssistant(_Wire):
     role: Literal["assistant"] = Field(default="assistant", alias="role")
     content: List["_dto.AssistantPart"] = Field(alias="content")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class LanguageModelMessageTool(_Wire):
     role: Literal["tool"] = Field(default="tool", alias="role")
     content: List["_dto.ToolPart"] = Field(alias="content")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 #: A single provider-facing message, a union by role.
@@ -1909,15 +1919,15 @@ class LanguageModelUsage(_Wire):
     #: Breakdown of the input tokens.
     input_token_details: "_dto.InputTokenDetails" = Field(alias="inputTokenDetails")
     #: Total input (prompt) tokens.
-    input_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="inputTokens")
+    input_tokens: Optional[U32] = Field(default=None, alias="inputTokens")
     #: Breakdown of the output tokens.
     output_token_details: "_dto.OutputTokenDetails" = Field(alias="outputTokenDetails")
     #: Total output (completion) tokens.
-    output_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="outputTokens")
+    output_tokens: Optional[U32] = Field(default=None, alias="outputTokens")
     #: The provider's raw usage object, passed through unchanged.
-    raw: Optional[Optional[Dict[str, Any]]] = Field(default=None, alias="raw")
+    raw: Optional[Dict[str, Any]] = Field(default=None, alias="raw")
     #: Input plus output tokens, when either is known.
-    total_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="totalTokens")
+    total_tokens: Optional[U32] = Field(default=None, alias="totalTokens")
 
 
 #: Token usage of a generation step or a whole call: the AI SDK's
@@ -1932,15 +1942,15 @@ class LanguageModelUsageInput(_Wire):
     #: Breakdown of the input tokens.
     input_token_details: Optional["_dto.InputTokenDetails"] = Field(default=None, alias="inputTokenDetails")
     #: Total input (prompt) tokens.
-    input_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="inputTokens")
+    input_tokens: Optional[U32] = Field(default=None, alias="inputTokens")
     #: Breakdown of the output tokens.
     output_token_details: Optional["_dto.OutputTokenDetails"] = Field(default=None, alias="outputTokenDetails")
     #: Total output (completion) tokens.
-    output_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="outputTokens")
+    output_tokens: Optional[U32] = Field(default=None, alias="outputTokens")
     #: The provider's raw usage object, passed through unchanged.
-    raw: Optional[Optional[Dict[str, Any]]] = Field(default=None, alias="raw")
+    raw: Optional[Dict[str, Any]] = Field(default=None, alias="raw")
     #: Input plus output tokens, when either is known.
-    total_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="totalTokens")
+    total_tokens: Optional[U32] = Field(default=None, alias="totalTokens")
 
 
 class LanguageModelV4ToolChoiceAuto(_Wire):
@@ -1991,10 +2001,10 @@ class LoggingConfig(_Wire):
 
 class MiddlewareParams(_Wire):
     model_config = ConfigDict(extra="forbid")
-    audit_mode: Optional[Optional["_dto.AuditMode"]] = Field(default=None, alias="auditMode")
+    audit_mode: Optional["_dto.AuditMode"] = Field(default=None, alias="auditMode")
     kind: str = Field(alias="kind")
-    scope_name: Optional[Optional[str]] = Field(default=None, alias="scopeName")
-    trace_store: Optional[Optional["_dto.HandleIdInput"]] = Field(default=None, alias="traceStore")
+    scope_name: Optional[str] = Field(default=None, alias="scopeName")
+    trace_store: Optional["_dto.HandleIdInput"] = Field(default=None, alias="traceStore")
 
 
 #: Reference-failure policy.
@@ -2005,7 +2015,7 @@ class MoaParams(_Wire):
     aggregator: str = Field(alias="aggregator")
     #: Optional aggregator system instruction prepended to the reference user
     #: message. `None` uses a built-in default.
-    aggregator_instructions: Optional[Optional[str]] = Field(default=None, alias="aggregatorInstructions")
+    aggregator_instructions: Optional[str] = Field(default=None, alias="aggregatorInstructions")
     #: Reference-failure policy.
     fail_mode: Optional["_dto.MoaFailMode"] = Field(default=None, alias="failMode")
     #: `model_id()` value (default `"moa"`).
@@ -2036,10 +2046,10 @@ class ModelCapabilities(_Wire):
 #: Pricing (advisory, read-only metadata). Units follow the source catalog
 #: (anya2a uses USD per 1M tokens).
 class ModelCost(_Wire):
-    cache_read: Optional[Optional[float]] = Field(default=None, alias="cacheRead")
-    cache_write: Optional[Optional[float]] = Field(default=None, alias="cacheWrite")
-    input: Optional[Optional[float]] = Field(default=None, alias="input")
-    output: Optional[Optional[float]] = Field(default=None, alias="output")
+    cache_read: Optional[float] = Field(default=None, alias="cacheRead")
+    cache_write: Optional[float] = Field(default=None, alias="cacheWrite")
+    input: Optional[float] = Field(default=None, alias="input")
+    output: Optional[float] = Field(default=None, alias="output")
 
 
 class ModelInfo(_Wire):
@@ -2057,35 +2067,35 @@ class ModelInfoParams(_Wire):
 #: Token / request limits for a model.
 class ModelLimits(_Wire):
     #: Maximum total context window (input + output), in tokens.
-    context: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="context")
+    context: Optional[U64] = Field(default=None, alias="context")
     #: Maximum input tokens (when distinct from `context`).
-    input: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="input")
+    input: Optional[U64] = Field(default=None, alias="input")
     #: Maximum output tokens.
-    output: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="output")
+    output: Optional[U64] = Field(default=None, alias="output")
 
 
 class ModelMessageSystem(_Wire):
     role: Literal["system"] = Field(default="system", alias="role")
     content: str = Field(alias="content")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class ModelMessageUser(_Wire):
     role: Literal["user"] = Field(default="user", alias="role")
     content: "_dto.UserContent" = Field(alias="content")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class ModelMessageAssistant(_Wire):
     role: Literal["assistant"] = Field(default="assistant", alias="role")
     content: "_dto.AssistantContent" = Field(alias="content")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class ModelMessageTool(_Wire):
     role: Literal["tool"] = Field(default="tool", alias="role")
     content: List["_dto.ToolContentPart"] = Field(alias="content")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 #: A single user-facing chat message, a union by role.
@@ -2123,15 +2133,15 @@ class ModelResolveParams(_Wire):
 #: The caller reads them to decide how to configure `GenerateTextOptions`.
 class ModelSpec(_Wire):
     capabilities: "_dto.ModelCapabilities" = Field(alias="capabilities")
-    cost: Optional[Optional["_dto.ModelCost"]] = Field(default=None, alias="cost")
-    display_name: Optional[Optional[str]] = Field(default=None, alias="displayName")
+    cost: Optional["_dto.ModelCost"] = Field(default=None, alias="cost")
+    display_name: Optional[str] = Field(default=None, alias="displayName")
     limits: "_dto.ModelLimits" = Field(alias="limits")
     modalities: "_dto.ModelModalities" = Field(alias="modalities")
     #: Provider name (normalized to aimux registry spelling).
-    provider: Optional[Optional[str]] = Field(default=None, alias="provider")
+    provider: Optional[str] = Field(default=None, alias="provider")
     #: Verbatim source entry, preserved for forward compatibility / debugging.
     raw: Optional[Any] = Field(default=None, alias="raw")
-    reasoning: Optional[Optional["_dto.ReasoningSpec"]] = Field(default=None, alias="reasoning")
+    reasoning: Optional["_dto.ReasoningSpec"] = Field(default=None, alias="reasoning")
     source: "_dto.CatalogueSource" = Field(alias="source")
     type: "_dto.ModelType" = Field(alias="type")
 
@@ -2162,7 +2172,7 @@ class OpenAiOutputRequest(_Wire):
 
 class OpenAiTextRequest(_Wire):
     model_config = ConfigDict(extra="forbid")
-    abort: Optional[Optional["_dto.HandleIdInput"]] = Field(default=None, alias="abort")
+    abort: Optional["_dto.HandleIdInput"] = Field(default=None, alias="abort")
     options: Optional["_dto.Options"] = Field(default=None, alias="options")
     prompt: "_dto.ModelPrompt" = Field(alias="prompt")
     stream_options: Optional["_dto.StreamOptions"] = Field(default=None, alias="streamOptions")
@@ -2177,7 +2187,7 @@ class OperationCapabilities(_Wire):
 
 class OperationNextParams(_Wire):
     model_config = ConfigDict(extra="forbid")
-    timeout_ms: Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]] = Field(default=None, alias="timeoutMs")
+    timeout_ms: Optional[U64] = Field(default=None, alias="timeoutMs")
 
 
 OperationOutcome = TypeAliasType("OperationOutcome", Literal["success", "error", "cancelled"])
@@ -2201,17 +2211,17 @@ OperationState = TypeAliasType("OperationState", Literal["running", "inputClosed
 
 class OperationStatus(_Wire):
     capabilities: "_dto.OperationCapabilities" = Field(alias="capabilities")
-    cleanup_failure: Optional[Optional[str]] = Field(default=None, alias="cleanupFailure")
+    cleanup_failure: Optional[str] = Field(default=None, alias="cleanupFailure")
     consumer_closed: bool = Field(alias="consumerClosed")
     #: The close boundary in the same admission sequence as pushes.
-    input_done_sequence: Optional[Optional[str]] = Field(default=None, alias="inputDoneSequence")
-    queued_input_bytes: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="queuedInputBytes")
-    queued_input_items: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="queuedInputItems")
-    queued_output_bytes: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="queuedOutputBytes")
-    queued_output_items: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="queuedOutputItems")
+    input_done_sequence: Optional[str] = Field(default=None, alias="inputDoneSequence")
+    queued_input_bytes: U64 = Field(alias="queuedInputBytes")
+    queued_input_items: U64 = Field(alias="queuedInputItems")
+    queued_output_bytes: U64 = Field(alias="queuedOutputBytes")
+    queued_output_items: U64 = Field(alias="queuedOutputItems")
     state: "_dto.OperationState" = Field(alias="state")
     subkind: str = Field(alias="subkind")
-    terminal: Optional[Optional["_dto.TerminalSummary"]] = Field(default=None, alias="terminal")
+    terminal: Optional["_dto.TerminalSummary"] = Field(default=None, alias="terminal")
 
 
 #: User-facing options for `generate_text` and `stream_text`.
@@ -2220,40 +2230,40 @@ class OperationStatus(_Wire):
 #: (passed separately) and defaults are more ergonomic.
 class Options(_Wire):
     model_config = ConfigDict(extra="forbid")
-    frequency_penalty: Optional[Optional[float]] = Field(default=None, alias="frequencyPenalty")
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    frequency_penalty: Optional[float] = Field(default=None, alias="frequencyPenalty")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
-    include_raw_chunks: Optional[Optional[bool]] = Field(default=None, alias="includeRawChunks")
+    include_raw_chunks: Optional[bool] = Field(default=None, alias="includeRawChunks")
     #: System instructions prepended to the prompt.
-    instructions: Optional[Optional[str]] = Field(default=None, alias="instructions")
-    max_output_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="maxOutputTokens")
+    instructions: Optional[str] = Field(default=None, alias="instructions")
+    max_output_tokens: Optional[U32] = Field(default=None, alias="maxOutputTokens")
     #: Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     #: retrying. `None` uses 2, the AI SDK default.
-    max_retries: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="maxRetries")
+    max_retries: Optional[U32] = Field(default=None, alias="maxRetries")
     #: The structured output to generate, the AI SDK's `output`
     #: (`generate-text/output.ts`). It sets the model call's
     #: `response_format` and parses the final text into
     #: [`GenerateTextResult::output`]. `None` sends no response format and
     #: takes the text as the output.
-    output: Optional[Optional["_dto.Output"]] = Field(default=None, alias="output")
-    presence_penalty: Optional[Optional[float]] = Field(default=None, alias="presencePenalty")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    output: Optional["_dto.Output"] = Field(default=None, alias="output")
+    presence_penalty: Optional[float] = Field(default=None, alias="presencePenalty")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     #: Top-level reasoning effort.
-    reasoning: Optional[Optional["_dto.ReasoningEffort"]] = Field(default=None, alias="reasoning")
-    seed: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="seed")
+    reasoning: Optional["_dto.ReasoningEffort"] = Field(default=None, alias="reasoning")
+    seed: Optional[U64] = Field(default=None, alias="seed")
     #: Session identifier, for grouping consecutive calls into a session
     #: (observability, see RFC-0024). Orthogonal to RFC-0019 session-affinity
     #: headers. When `None` and the optional session inferer is enabled, one
     #: may be inferred from prompt-prefix continuation.
-    session_id: Optional[Optional[str]] = Field(default=None, alias="sessionId")
-    stop_sequences: Optional[Optional[List[str]]] = Field(default=None, alias="stopSequences")
-    temperature: Optional[Optional[float]] = Field(default=None, alias="temperature")
+    session_id: Optional[str] = Field(default=None, alias="sessionId")
+    stop_sequences: Optional[List[str]] = Field(default=None, alias="stopSequences")
+    temperature: Optional[float] = Field(default=None, alias="temperature")
     #: Per-call timeout configuration (total / first-chunk / chunk idle).
-    timeout: Optional[Optional["_dto.TimeoutConfiguration"]] = Field(default=None, alias="timeout")
-    tool_choice: Optional[Optional["_dto.ToolChoice"]] = Field(default=None, alias="toolChoice")
-    tools: Optional[Optional[List["_dto.Tool"]]] = Field(default=None, alias="tools")
-    top_k: Optional[Optional[float]] = Field(default=None, alias="topK")
-    top_p: Optional[Optional[float]] = Field(default=None, alias="topP")
+    timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
+    tool_choice: Optional["_dto.ToolChoice"] = Field(default=None, alias="toolChoice")
+    tools: Optional[List["_dto.Tool"]] = Field(default=None, alias="tools")
+    top_k: Optional[float] = Field(default=None, alias="topK")
+    top_p: Optional[float] = Field(default=None, alias="topP")
 
 
 Outcome = TypeAliasType("Outcome", Literal["success", "error", "cancelled"])
@@ -2263,11 +2273,11 @@ class OutcomeRecord(_Wire):
     #: The result `decide` returned (`DecideResult`), independent of a
     #: provider's wire format.
     decision_result: Optional[Any] = Field(default=None, alias="decisionResult")
-    error: Optional[Optional[str]] = Field(default=None, alias="error")
+    error: Optional[str] = Field(default=None, alias="error")
     #: Lossless structured domain error. In particular, `RetryError.errors`
     #: keeps the complete attempt history rather than only its display text.
     error_value: Optional[Any] = Field(default=None, alias="errorValue")
-    finish_reason: Optional[Optional[str]] = Field(default=None, alias="finishReason")
+    finish_reason: Optional[str] = Field(default=None, alias="finishReason")
     status: "_dto.OutcomeStatus" = Field(alias="status")
     #: 序列化的 Usage。
     usage: Optional[Any] = Field(default=None, alias="usage")
@@ -2282,31 +2292,31 @@ class OutputText(_Wire):
 
 class OutputObject(_Wire):
     type: Literal["object"] = Field(default="object", alias="type")
-    description: Optional[Optional[str]] = Field(default=None, alias="description")
-    name: Optional[Optional[str]] = Field(default=None, alias="name")
+    description: Optional[str] = Field(default=None, alias="description")
+    name: Optional[str] = Field(default=None, alias="name")
     schema_: Any = Field(alias="schema")
 
 
 class OutputArray(_Wire):
     type: Literal["array"] = Field(default="array", alias="type")
-    description: Optional[Optional[str]] = Field(default=None, alias="description")
+    description: Optional[str] = Field(default=None, alias="description")
     element: Any = Field(alias="element")
-    max_items: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="maxItems")
-    min_items: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="minItems")
-    name: Optional[Optional[str]] = Field(default=None, alias="name")
+    max_items: Optional[U32] = Field(default=None, alias="maxItems")
+    min_items: Optional[U32] = Field(default=None, alias="minItems")
+    name: Optional[str] = Field(default=None, alias="name")
 
 
 class OutputChoice(_Wire):
     type: Literal["choice"] = Field(default="choice", alias="type")
-    description: Optional[Optional[str]] = Field(default=None, alias="description")
-    name: Optional[Optional[str]] = Field(default=None, alias="name")
+    description: Optional[str] = Field(default=None, alias="description")
+    name: Optional[str] = Field(default=None, alias="name")
     options: List[str] = Field(alias="options")
 
 
 class OutputJson(_Wire):
     type: Literal["json"] = Field(default="json", alias="type")
-    description: Optional[Optional[str]] = Field(default=None, alias="description")
-    name: Optional[Optional[str]] = Field(default=None, alias="name")
+    description: Optional[str] = Field(default=None, alias="description")
+    name: Optional[str] = Field(default=None, alias="name")
 
 
 #: What the final text of a generation is parsed into.
@@ -2333,9 +2343,9 @@ class OutputChunkTimingStats(_Wire):
 #: `LanguageModelUsage.outputTokenDetails`.
 class OutputTokenDetails(_Wire):
     #: Output tokens spent on reasoning.
-    reasoning_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="reasoningTokens")
+    reasoning_tokens: Optional[U32] = Field(default=None, alias="reasoningTokens")
     #: Output tokens of text.
-    text_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="textTokens")
+    text_tokens: Optional[U32] = Field(default=None, alias="textTokens")
 
 
 #: A prefix break between two consecutive records of a session.
@@ -2343,13 +2353,13 @@ class PrefixBreak(_Wire):
     at_record_id: str = Field(alias="atRecordId")
     expected_break: bool = Field(alias="expectedBreak")
     kind: "_dto.BreakKind" = Field(alias="kind")
-    lcp_bytes: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="lcpBytes")
+    lcp_bytes: U64 = Field(alias="lcpBytes")
     prev_record_id: str = Field(alias="prevRecordId")
 
 
 class PromptTokensDetails(_Wire):
-    cache_write_tokens: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="cache_write_tokens")
-    cached_tokens: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="cached_tokens")
+    cache_write_tokens: Optional[U32] = Field(default=None, alias="cache_write_tokens")
+    cached_tokens: U32 = Field(alias="cached_tokens")
 
 
 class ProviderCreateParams(_Wire):
@@ -2361,10 +2371,10 @@ class ProviderCreateParams(_Wire):
 class ProviderCustomParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     decision_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="decisionModels")
-    default_method: Optional[Optional[str]] = Field(default=None, alias="defaultMethod")
+    default_method: Optional[str] = Field(default=None, alias="defaultMethod")
     embedding_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="embeddingModels")
-    fallback_provider: Optional[Optional["_dto.HandleIdInput"]] = Field(default=None, alias="fallbackProvider")
-    files: Optional[Optional["_dto.HandleIdInput"]] = Field(default=None, alias="files")
+    fallback_provider: Optional["_dto.HandleIdInput"] = Field(default=None, alias="fallbackProvider")
+    files: Optional["_dto.HandleIdInput"] = Field(default=None, alias="files")
     image_model_middleware: Optional[List["_dto.HandleIdInput"]] = Field(default=None, alias="imageModelMiddleware")
     image_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="imageModels")
     language_model_middleware: Optional[List["_dto.HandleIdInput"]] = Field(default=None, alias="languageModelMiddleware")
@@ -2383,13 +2393,13 @@ class ProviderDefaultParams(_Wire):
 
 class ProviderInvokeParams(_Wire):
     model_config = ConfigDict(extra="forbid")
-    abort: Optional[Optional["_dto.HandleIdInput"]] = Field(default=None, alias="abort")
+    abort: Optional["_dto.HandleIdInput"] = Field(default=None, alias="abort")
     method: str = Field(alias="method")
 
 
 class ProviderModelParams(_Wire):
     model_config = ConfigDict(extra="forbid")
-    method: Optional[Optional[str]] = Field(default=None, alias="method")
+    method: Optional[str] = Field(default=None, alias="method")
     model_id: str = Field(alias="modelId")
 
 
@@ -2410,17 +2420,17 @@ class ProviderRecord(_Wire):
 
 class ProviderSettings(_Wire):
     model_config = ConfigDict(extra="forbid")
-    api_key: Optional[Optional[str]] = Field(default=None, alias="apiKey")
-    base_url: Optional[Optional[str]] = Field(default=None, alias="baseUrl")
-    credential_resolver: Optional[Optional["_dto.HandleIdInput"]] = Field(default=None, alias="credentialResolver")
-    endpoint: Optional[Optional[str]] = Field(default=None, alias="endpoint")
-    fetch: Optional[Optional["_dto.HandleIdInput"]] = Field(default=None, alias="fetch")
+    api_key: Optional[str] = Field(default=None, alias="apiKey")
+    base_url: Optional[str] = Field(default=None, alias="baseUrl")
+    credential_resolver: Optional["_dto.HandleIdInput"] = Field(default=None, alias="credentialResolver")
+    endpoint: Optional[str] = Field(default=None, alias="endpoint")
+    fetch: Optional["_dto.HandleIdInput"] = Field(default=None, alias="fetch")
     headers: Optional[Dict[str, Optional[str]]] = Field(default=None, alias="headers")
-    organization: Optional[Optional[str]] = Field(default=None, alias="organization")
+    organization: Optional[str] = Field(default=None, alias="organization")
     params: Optional[Dict[str, str]] = Field(default=None, alias="params")
-    probability_source: Optional[Optional[str]] = Field(default=None, alias="probabilitySource")
-    project: Optional[Optional[str]] = Field(default=None, alias="project")
-    web_socket: Optional[Optional["_dto.HandleIdInput"]] = Field(default=None, alias="webSocket")
+    probability_source: Optional[str] = Field(default=None, alias="probabilitySource")
+    project: Optional[str] = Field(default=None, alias="project")
+    web_socket: Optional["_dto.HandleIdInput"] = Field(default=None, alias="webSocket")
 
 
 #: A provider-defined tool (e.g. `anthropic.web_search_20250305`,
@@ -2450,7 +2460,7 @@ class ProviderWrapParams(_Wire):
 #: Provider approval request for a provider-executed call.
 class RawToolApprovalRequest(_Wire):
     approval_id: str = Field(alias="approvalId")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
 
 
@@ -2459,10 +2469,10 @@ class RawToolApprovalRequest(_Wire):
 #: The wire shape matches [`ToolCall`] field for field, except that `input`
 #: is the provider's raw argument *text* rather than a parsed value.
 class RawToolCall(_Wire):
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     input: str = Field(alias="input")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
@@ -2477,7 +2487,7 @@ ReasoningEffort = TypeAliasType("ReasoningEffort", Literal["provider-default", "
 class ReasoningFilePart(_Wire):
     data: "_dto.GeneratedFileData" = Field(alias="data")
     media_type: str = Field(alias="mediaType")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 #: `ReasoningFilePart.data` (`types/content-part.ts:164`):
@@ -2494,20 +2504,20 @@ ReasoningMode = TypeAliasType("ReasoningMode", Literal["Other", "Budget", "Effor
 #: (`providerMetadata.anthropic.signature`). The payload of
 #: `GenerateContent::Reasoning` and the element of the text results' `reasoning`.
 class ReasoningOutput(_Wire):
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     text: str = Field(alias="text")
 
 
 class ReasoningPartReasoning(_Wire):
     type: Literal["reasoning"] = Field(default="reasoning", alias="type")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     text: str = Field(alias="text")
 
 
 class ReasoningPartReasoningFile(_Wire):
     type: Literal["reasoning-file"] = Field(default="reasoning-file", alias="type")
     file: "_dto.GeneratedFile" = Field(alias="file")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 #: Text or a generated file produced during reasoning.
@@ -2515,28 +2525,28 @@ ReasoningPart = TypeAliasType("ReasoningPart", Annotated[Union["ReasoningPartRea
 
 #: Reasoning / thinking content part.
 class ReasoningPart2(_Wire):
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     text: str = Field(alias="text")
 
 
 #: Reasoning / thinking portrait for a model (advisory).
 class ReasoningSpec(_Wire):
     #: Minimum token budget (when `mode` is Budget/Mixed).
-    budget_min: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="budgetMin")
+    budget_min: Optional[U64] = Field(default=None, alias="budgetMin")
     #: Whether reasoning should be on by default.
     default_enabled: bool = Field(alias="defaultEnabled")
     #: Default effort level (when `mode` is Effort/Mixed).
-    effort_default: Optional[Optional[str]] = Field(default=None, alias="effortDefault")
+    effort_default: Optional[str] = Field(default=None, alias="effortDefault")
     #: Supported effort levels.
     effort_options: Optional[List[str]] = Field(default=None, alias="effortOptions")
     #: Interleaved reasoning (thinking blocks between tool calls).
     interleaved: bool = Field(alias="interleaved")
     #: Primary control mode.
-    mode: Optional[Optional["_dto.ReasoningMode"]] = Field(default=None, alias="mode")
+    mode: Optional["_dto.ReasoningMode"] = Field(default=None, alias="mode")
     #: Whether the model family supports reasoning at all.
     supported: bool = Field(alias="supported")
     #: Output visibility.
-    visibility: Optional[Optional["_dto.ReasoningVisibility"]] = Field(default=None, alias="visibility")
+    visibility: Optional["_dto.ReasoningVisibility"] = Field(default=None, alias="visibility")
 
 
 #: Visibility of reasoning output to the caller.
@@ -2552,16 +2562,16 @@ class RecorderHandleResult(_Wire):
 
 class RecorderStatsRing(_Wire):
     type: Literal["ring"] = Field(default="ring", alias="type")
-    completed: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="completed")
-    dropped: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="dropped")
+    completed: U64 = Field(alias="completed")
+    dropped: U64 = Field(alias="dropped")
     inconsistent_call_ids: List[str] = Field(alias="inconsistentCallIds")
-    pending: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="pending")
-    pending_evicted: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="pendingEvicted")
+    pending: U64 = Field(alias="pending")
+    pending_evicted: U64 = Field(alias="pendingEvicted")
 
 
 class RecorderStatsJsonl(_Wire):
     type: Literal["jsonl"] = Field(default="jsonl", alias="type")
-    dropped: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="dropped")
+    dropped: U64 = Field(alias="dropped")
     inconsistent_call_ids: List[str] = Field(alias="inconsistentCallIds")
     last_write_error: Optional[str] = Field(alias="lastWriteError")
     path: str = Field(alias="path")
@@ -2593,13 +2603,13 @@ class Recording(_Wire):
     #: options), which is ignored, and write the envelope's keys snake_case
     #: (`call_id`, `recorded_at`, ...), which are read as aliases of the
     #: camelCase keys this version writes.
-    schema_: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="schema")
+    schema_: U32 = Field(alias="schema")
     #: 会话归组(RFC-0024 P3):所在会话 id。None = 未归组(无 session_id 且
     #: 推断关闭)。由 `Recorder::record_session` 填充,写入 InputRecord 之前
     #: 或之后均可(writer 端按 call_id 合并)。
-    session_id: Optional[Optional[str]] = Field(default=None, alias="sessionId")
+    session_id: Optional[str] = Field(default=None, alias="sessionId")
     #: 会话内步号(0 起,由 SessionStore 分配)。与 `session_id` 同生命周期。
-    step: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="step")
+    step: Optional[U32] = Field(default=None, alias="step")
     #: 传输层封闭信号:层 B 声明"不再有 exchange"(P1:层 A 收尾自动发;
     #: P2:由层 B 发送)。false = 仍可能来 exchange(记录暂不可定稿)。
     transport_closed: bool = Field(alias="transportClosed")
@@ -2636,7 +2646,7 @@ class ReplayInspection(_Wire):
 
 class ReplayLiveParams(_Wire):
     model_config = ConfigDict(extra="forbid")
-    abort: Optional[Optional["_dto.HandleIdInput"]] = Field(default=None, alias="abort")
+    abort: Optional["_dto.HandleIdInput"] = Field(default=None, alias="abort")
     call_id: str = Field(alias="callId")
     target: "_dto.LiveTarget" = Field(alias="target")
 
@@ -2658,7 +2668,7 @@ class ReplayPlannedCall(_Wire):
 class ReplayRecordingInfo(_Wire):
     call_id: str = Field(alias="callId")
     complete: bool = Field(alias="complete")
-    exchange_count: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="exchangeCount")
+    exchange_count: U64 = Field(alias="exchangeCount")
     operation: "_dto.RecordingOperation" = Field(alias="operation")
     provider: "_dto.ProviderRecord" = Field(alias="provider")
     transport_closed: bool = Field(alias="transportClosed")
@@ -2689,18 +2699,18 @@ class RerankingCallOptions(_Wire):
     #: Documents to rerank.
     documents: "_dto.RerankingDocuments" = Field(alias="documents")
     #: Additional HTTP headers to send with the request.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     #: retrying. `None` uses 2, the AI SDK default.
-    max_retries: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="maxRetries")
+    max_retries: Optional[U32] = Field(default=None, alias="maxRetries")
     #: Additional provider-specific options, keyed by provider name.
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     #: The query to rerank the documents against.
     query: str = Field(alias="query")
     #: Per-call operation timeout.
-    timeout: Optional[Optional["_dto.TimeoutConfiguration"]] = Field(default=None, alias="timeout")
+    timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
     #: Optional limit: return only the top `n` documents.
-    top_n: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="topN")
+    top_n: Optional[U32] = Field(default=None, alias="topN")
 
 
 class RerankingDocumentsText(_Wire):
@@ -2721,7 +2731,7 @@ RerankingDocuments = TypeAliasType("RerankingDocuments", Annotated[Union["Rerank
 #: A single reranked entry: the original index and its relevance score.
 class RerankingRank(_Wire):
     #: The index of the document in the original list (before reranking).
-    index: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="index")
+    index: U32 = Field(alias="index")
     #: The relevance score of the document after reranking.
     relevance_score: float = Field(alias="relevanceScore")
 
@@ -2731,13 +2741,13 @@ class RerankingResponse(_Wire):
     #: Response body (opaque JSON).
     body: Optional[Any] = Field(default=None, alias="body")
     #: Response headers.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: ID for the generated response, if the provider sends one.
-    id: Optional[Optional[str]] = Field(default=None, alias="id")
+    id: Optional[str] = Field(default=None, alias="id")
     #: The ID of the model that was used to generate the response.
-    model_id: Optional[Optional[str]] = Field(default=None, alias="modelId")
+    model_id: Optional[str] = Field(default=None, alias="modelId")
     #: Timestamp for the start of the generated response (`toISOString()` in the JSON).
-    timestamp: Optional[Optional["_dto.Timestamp"]] = Field(default=None, alias="timestamp")
+    timestamp: Optional["_dto.Timestamp"] = Field(default=None, alias="timestamp")
 
 
 #: The result of [`RerankingModel::do_rerank`].
@@ -2745,15 +2755,15 @@ class RerankingResponse(_Wire):
 #: Aligned with V4 `RerankingModelV4Result`.
 class RerankingResult(_Wire):
     #: Additional provider-specific metadata, keyed by provider name.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Ordered list of reranked documents, sorted by descending relevance
     #: score. Each entry's `index` refers to the position in the original
     #: `documents` list.
     ranking: List["_dto.RerankingRank"] = Field(alias="ranking")
     #: Optional response information for debugging.
-    response: Optional[Optional["_dto.RerankingResponse"]] = Field(default=None, alias="response")
+    response: Optional["_dto.RerankingResponse"] = Field(default=None, alias="response")
     #: Warnings for the call, e.g. unsupported settings.
-    warnings: Optional[Optional[List["_dto.Warning"]]] = Field(default=None, alias="warnings")
+    warnings: Optional[List["_dto.Warning"]] = Field(default=None, alias="warnings")
 
 
 #: Response information for telemetry and debugging.
@@ -2767,23 +2777,23 @@ class ResponseInfo(_Wire):
     #: The response body (opaque JSON).
     body: Optional[Any] = Field(default=None, alias="body")
     #: Response headers.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: ID of the generated response, when supplied by the provider.
-    id: Optional[Optional[str]] = Field(default=None, alias="id")
+    id: Optional[str] = Field(default=None, alias="id")
     #: The ID of the model that was used to generate the response.
-    model_id: Optional[Optional[str]] = Field(default=None, alias="modelId")
+    model_id: Optional[str] = Field(default=None, alias="modelId")
     #: Timestamp for the start of the generated response (`toISOString()` in the JSON).
-    timestamp: Optional[Optional["_dto.Timestamp"]] = Field(default=None, alias="timestamp")
+    timestamp: Optional["_dto.Timestamp"] = Field(default=None, alias="timestamp")
 
 
 class ResponseRecord(_Wire):
     #: 非流式:完整 JSON;流式:原始 SSE 拼接文本(上限截断)。
-    body: Optional[Optional[str]] = Field(default=None, alias="body")
+    body: Optional[str] = Field(default=None, alias="body")
     headers: List[List[str]] = Field(alias="headers")
-    status: Annotated[int, Field(ge=0, le=65535)] = Field(alias="status")
-    stream_chunks: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="streamChunks")
+    status: U16 = Field(alias="status")
+    stream_chunks: Optional[U64] = Field(default=None, alias="streamChunks")
     #: 首字节延迟(流式)。
-    ttfb_ms: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="ttfbMs")
+    ttfb_ms: Optional[U64] = Field(default=None, alias="ttfbMs")
 
 
 #: Complete error history for a retried model operation.
@@ -2805,15 +2815,15 @@ class RouterParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     children: List[str] = Field(alias="children")
     fallback: Optional["_dto.Fallback"] = Field(default=None, alias="fallback")
-    model_id: Optional[Optional[str]] = Field(default=None, alias="modelId")
-    provider_name: Optional[Optional[str]] = Field(default=None, alias="providerName")
+    model_id: Optional[str] = Field(default=None, alias="modelId")
+    provider_name: Optional[str] = Field(default=None, alias="providerName")
     strategy: "_dto.Strategy" = Field(alias="strategy")
 
 
 class RuntimeConfigureParams(_Wire):
     model_config = ConfigDict(extra="forbid")
-    logging: Optional[Optional["_dto.LoggingConfig"]] = Field(default=None, alias="logging")
-    proxy: Optional[Optional["_dto.RuntimeConfigureParamsProxy"]] = Field(default=None, alias="proxy")
+    logging: Optional["_dto.LoggingConfig"] = Field(default=None, alias="logging")
+    proxy: Optional["_dto.RuntimeConfigureParamsProxy"] = Field(default=None, alias="proxy")
 
 
 #: Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
@@ -2822,10 +2832,10 @@ class RuntimeConfigureParams(_Wire):
 #: reqwest does, and the WebSocket connector connects directly.
 class RuntimeConfigureParamsProxy(_Wire):
     model_config = ConfigDict(extra="forbid")
-    all_url: Optional[Optional[str]] = Field(default=None, alias="all_url")
-    http_url: Optional[Optional[str]] = Field(default=None, alias="http_url")
-    https_url: Optional[Optional[str]] = Field(default=None, alias="https_url")
-    no_proxy: Optional[Optional[str]] = Field(default=None, alias="no_proxy")
+    all_url: Optional[str] = Field(default=None, alias="all_url")
+    http_url: Optional[str] = Field(default=None, alias="http_url")
+    https_url: Optional[str] = Field(default=None, alias="https_url")
+    no_proxy: Optional[str] = Field(default=None, alias="no_proxy")
 
 
 class RuntimeDescribeParams(_Wire):
@@ -2840,40 +2850,40 @@ class RuntimeDescribeParams(_Wire):
 #: needed (RFC-0027). aimux itself does not combine them.
 class RuntimeModel(_Wire):
     #: `created` unix timestamp from OpenAI-compatible `/models` responses.
-    created: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="created")
+    created: Optional[U64] = Field(default=None, alias="created")
     #: Model identifier, e.g. `"gpt-4o"`.
     id: str = Field(alias="id")
     #: `owned_by` field from OpenAI-compatible `/models` responses.
-    owned_by: Optional[Optional[str]] = Field(default=None, alias="ownedBy")
+    owned_by: Optional[str] = Field(default=None, alias="ownedBy")
 
 
 #: Options passed to [`SearchModel::do_search`].
 class SearchCallOptions(_Wire):
     #: Optional list of domains to exclude from results.
-    exclude_domains: Optional[Optional[List[str]]] = Field(default=None, alias="excludeDomains")
+    exclude_domains: Optional[List[str]] = Field(default=None, alias="excludeDomains")
     #: Additional HTTP headers to send with the request.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Optional list of domains to include in results.
-    include_domains: Optional[Optional[List[str]]] = Field(default=None, alias="includeDomains")
+    include_domains: Optional[List[str]] = Field(default=None, alias="includeDomains")
     #: Whether to include raw page content in results.
     #:
     #: Provider support varies; providers that cannot honor this should
     #: issue a warning rather than erroring.
-    include_raw_content: Optional[Optional[bool]] = Field(default=None, alias="includeRawContent")
+    include_raw_content: Optional[bool] = Field(default=None, alias="includeRawContent")
     #: Maximum number of results to return.
-    max_results: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="maxResults")
+    max_results: Optional[U32] = Field(default=None, alias="maxResults")
     #: Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     #: retrying. `None` uses 2, the AI SDK default.
-    max_retries: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="maxRetries")
+    max_retries: Optional[U32] = Field(default=None, alias="maxRetries")
     #: Additional provider-specific options, keyed by provider name.
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     #: The search query string.
     query: str = Field(alias="query")
     #: Optional time range filter (e.g. `"day"`, `"week"`, `"month"`,
     #: `"year"`). Provider support varies.
-    time_range: Optional[Optional[str]] = Field(default=None, alias="timeRange")
+    time_range: Optional[str] = Field(default=None, alias="timeRange")
     #: Per-call operation timeout.
-    timeout: Optional[Optional["_dto.TimeoutConfiguration"]] = Field(default=None, alias="timeout")
+    timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
 
 
 #: Optional response information for a search call.
@@ -2881,18 +2891,18 @@ class SearchResponse(_Wire):
     #: The response body (opaque JSON).
     body: Optional[Any] = Field(default=None, alias="body")
     #: Response headers.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
 
 
 #: The result of [`SearchModel::do_search`].
 class SearchResult(_Wire):
     #: An optional direct answer / summary (some providers return
     #: an AI-generated answer alongside results).
-    answer: Optional[Optional[str]] = Field(default=None, alias="answer")
+    answer: Optional[str] = Field(default=None, alias="answer")
     #: Additional provider-specific metadata.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Optional response information for debugging.
-    response: Optional[Optional["_dto.SearchResponse"]] = Field(default=None, alias="response")
+    response: Optional["_dto.SearchResponse"] = Field(default=None, alias="response")
     #: Ordered list of search results.
     results: List["_dto.SearchResultItem"] = Field(alias="results")
     #: Warnings for the call.
@@ -2902,18 +2912,18 @@ class SearchResult(_Wire):
 #: A single search result item.
 class SearchResultItem(_Wire):
     #: A snippet/summary of the result content.
-    content: Optional[Optional[str]] = Field(default=None, alias="content")
+    content: Optional[str] = Field(default=None, alias="content")
     #: Provider-specific metadata for this result.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Raw page content (when `include_raw_content` is requested and
     #: supported by the provider).
-    raw_content: Optional[Optional[str]] = Field(default=None, alias="rawContent")
+    raw_content: Optional[str] = Field(default=None, alias="rawContent")
     #: A relevance score (0.0–1.0) if the provider returns one.
-    score: Optional[Optional[float]] = Field(default=None, alias="score")
+    score: Optional[float] = Field(default=None, alias="score")
     #: The title of the result (e.g. page title).
-    title: Optional[Optional[str]] = Field(default=None, alias="title")
+    title: Optional[str] = Field(default=None, alias="title")
     #: The URL of the result.
-    url: Optional[Optional[str]] = Field(default=None, alias="url")
+    url: Optional[str] = Field(default=None, alias="url")
 
 
 #: A single call within a session (an index entry only — call content lives
@@ -2926,7 +2936,7 @@ class SessionCall(_Wire):
     #: When the call was recorded (RFC 3339 UTC, millisecond precision).
     recorded_at: str = Field(alias="recordedAt")
     #: Step within the session (0-based).
-    step: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="step")
+    step: U32 = Field(alias="step")
 
 
 #: Session chain view (append-only order + prefix stability, RFC-0015 §5.3).
@@ -2945,14 +2955,14 @@ class SessionStepStat(_Wire):
     #: The call's id (association key into Recording / replay, RFC-0023).
     call_id: str = Field(alias="callId")
     #: Error string for failed calls (failures are part of the session).
-    error: Optional[Optional[str]] = Field(default=None, alias="error")
+    error: Optional[str] = Field(default=None, alias="error")
     #: Reported hit rate for this step (`cache_read / input_total`); `None`
     #: when the call carried no input/cache-read usage.
-    hit_rate: Optional[Optional[float]] = Field(default=None, alias="hitRate")
+    hit_rate: Optional[float] = Field(default=None, alias="hitRate")
     #: Step within the session (0-based, session order).
-    step: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="step")
+    step: U32 = Field(alias="step")
     #: Audit verdict (present only when an auditor is attached).
-    verdict: Optional[Optional["_dto.Verdict"]] = Field(default=None, alias="verdict")
+    verdict: Optional["_dto.Verdict"] = Field(default=None, alias="verdict")
 
 
 class SessionStoreCallsParams(_Wire):
@@ -2988,17 +2998,17 @@ Size = TypeAliasType("Size", str)
 class SourceUrl(_Wire):
     source_type: Literal["url"] = Field(default="url", alias="sourceType")
     id: str = Field(alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
-    title: Optional[Optional[str]] = Field(default=None, alias="title")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
+    title: Optional[str] = Field(default=None, alias="title")
     url: str = Field(alias="url")
 
 
 class SourceDocument(_Wire):
     source_type: Literal["document"] = Field(default="document", alias="sourceType")
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     id: str = Field(alias="id")
     media_type: str = Field(alias="mediaType")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     title: str = Field(alias="title")
 
 
@@ -3012,29 +3022,29 @@ Source = TypeAliasType("Source", Annotated[Union["SourceUrl", "SourceDocument"],
 #: Aligned with V4 `SpeechModelV4CallOptions`.
 class SpeechCallOptions(_Wire):
     #: Additional HTTP headers to send with the request.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Instructions for the speech generation, e.g.
     #: `"Speak in a slow and steady tone"`.
-    instructions: Optional[Optional[str]] = Field(default=None, alias="instructions")
+    instructions: Optional[str] = Field(default=None, alias="instructions")
     #: The language for speech generation (ISO 639-1 code, e.g. `"en"`, or
     #: `"auto"` for automatic detection). Provider support varies.
-    language: Optional[Optional[str]] = Field(default=None, alias="language")
+    language: Optional[str] = Field(default=None, alias="language")
     #: Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     #: retrying. `None` uses 2, the AI SDK default.
-    max_retries: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="maxRetries")
+    max_retries: Optional[U32] = Field(default=None, alias="maxRetries")
     #: The desired output format for the audio, e.g. `"mp3"`, `"wav"`.
-    output_format: Optional[Optional[str]] = Field(default=None, alias="outputFormat")
+    output_format: Optional[str] = Field(default=None, alias="outputFormat")
     #: Additional provider-specific options, keyed by provider name.
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     #: The speed of the speech generation.
-    speed: Optional[Optional[float]] = Field(default=None, alias="speed")
+    speed: Optional[float] = Field(default=None, alias="speed")
     #: Text to convert to speech.
     text: str = Field(alias="text")
     #: Per-call operation timeout.
-    timeout: Optional[Optional["_dto.TimeoutConfiguration"]] = Field(default=None, alias="timeout")
+    timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
     #: The voice to use (provider-specific voice ID, name, or other
     #: identifier).
-    voice: Optional[Optional[str]] = Field(default=None, alias="voice")
+    voice: Optional[str] = Field(default=None, alias="voice")
 
 
 #: Optional request information for a speech call.
@@ -3048,11 +3058,11 @@ class SpeechResponse(_Wire):
     #: Response body (opaque JSON).
     body: Optional[Any] = Field(default=None, alias="body")
     #: Response headers.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: The ID of the model that was used to generate the response.
-    model_id: Optional[Optional[str]] = Field(default=None, alias="modelId")
+    model_id: Optional[str] = Field(default=None, alias="modelId")
     #: Timestamp for the start of the generated response (`toISOString()` in the JSON).
-    timestamp: Optional[Optional["_dto.Timestamp"]] = Field(default=None, alias="timestamp")
+    timestamp: Optional["_dto.Timestamp"] = Field(default=None, alias="timestamp")
 
 
 #: The result of [`SpeechModel::do_generate`].
@@ -3062,9 +3072,9 @@ class SpeechResult(_Wire):
     #: Generated audio (base64 string or binary data).
     audio: "_dto.AudioData" = Field(alias="audio")
     #: Additional provider-specific metadata, keyed by provider name.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Optional request information for telemetry and debugging.
-    request: Optional[Optional["_dto.SpeechRequest"]] = Field(default=None, alias="request")
+    request: Optional["_dto.SpeechRequest"] = Field(default=None, alias="request")
     #: Response information for telemetry and debugging.
     response: "_dto.SpeechResponse" = Field(alias="response")
     #: Usage information reported by the provider, in the provider's native
@@ -3088,7 +3098,7 @@ class StepResponse(_Wire):
     #: The raw response body (non-streaming calls): `unknown`, so a JSON
     #: `null` is kept apart from a missing body.
     body: Optional[Any] = Field(default=None, alias="body")
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     id: str = Field(alias="id")
     #: The assistant and tool messages of this step, ready to append to the
     #: prompt of the next call.
@@ -3104,7 +3114,7 @@ class StepResponseInput(_Wire):
     #: The raw response body (non-streaming calls): `unknown`, so a JSON
     #: `null` is kept apart from a missing body.
     body: Optional[Any] = Field(default=None, alias="body")
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     id: str = Field(alias="id")
     #: The assistant and tool messages of this step, ready to append to the
     #: prompt of the next call.
@@ -3117,7 +3127,7 @@ class StepResponseInput(_Wire):
 #: `Omit<LanguageModelResponseMetadata, 'messages' | 'body'>`, carried by the
 #: `finish-step` stream part.
 class StepResponseMetadata(_Wire):
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Response id; the call layer generates one when the provider sent none.
     id: str = Field(alias="id")
     #: The model that produced the response.
@@ -3144,15 +3154,15 @@ class StepResult(_Wire):
     #: Timing of this step.
     performance: "_dto.StepResultPerformance" = Field(alias="performance")
     #: Provider metadata of the model call.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: The provider's own finish reason.
-    raw_finish_reason: Optional[Optional[str]] = Field(default=None, alias="rawFinishReason")
+    raw_finish_reason: Optional[str] = Field(default=None, alias="rawFinishReason")
     #: The request of the model call.
     request: "_dto.RequestInfo" = Field(alias="request")
     #: The response of the model call, with the step's response messages.
     response: "_dto.StepResponse" = Field(alias="response")
     #: Zero-based step index.
-    step_number: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="stepNumber")
+    step_number: U32 = Field(alias="stepNumber")
     #: Token usage of this step.
     usage: "_dto.LanguageModelUsage" = Field(alias="usage")
     #: Warnings of the model call.
@@ -3176,15 +3186,15 @@ class StepResultInput(_Wire):
     #: Timing of this step.
     performance: "_dto.StepResultPerformanceInput" = Field(alias="performance")
     #: Provider metadata of the model call.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: The provider's own finish reason.
-    raw_finish_reason: Optional[Optional[str]] = Field(default=None, alias="rawFinishReason")
+    raw_finish_reason: Optional[str] = Field(default=None, alias="rawFinishReason")
     #: The request of the model call.
     request: Optional["_dto.RequestInfo"] = Field(default=None, alias="request")
     #: The response of the model call, with the step's response messages.
     response: "_dto.StepResponseInput" = Field(alias="response")
     #: Zero-based step index.
-    step_number: Annotated[int, Field(ge=0, le=4294967295)] = Field(alias="stepNumber")
+    step_number: U32 = Field(alias="stepNumber")
     #: Token usage of this step.
     usage: "_dto.LanguageModelUsageInput" = Field(alias="usage")
     #: Warnings of the model call.
@@ -3199,17 +3209,17 @@ class StepResultPerformance(_Wire):
     #: Input plus output tokens per second over the whole response time.
     effective_total_tokens_per_second: float = Field(alias="effectiveTotalTokensPerSecond")
     #: Input tokens per second until the first output chunk (streaming only).
-    input_tokens_per_second: Optional[Optional[float]] = Field(default=None, alias="inputTokensPerSecond")
+    input_tokens_per_second: Optional[float] = Field(default=None, alias="inputTokensPerSecond")
     #: Output tokens per second after the first output chunk (streaming only).
-    output_tokens_per_second: Optional[Optional[float]] = Field(default=None, alias="outputTokensPerSecond")
+    output_tokens_per_second: Optional[float] = Field(default=None, alias="outputTokensPerSecond")
     #: From the model call to its finish, including retries.
     response_time_ms: float = Field(alias="responseTimeMs")
     #: The whole step, including retries and tool execution.
     step_time_ms: float = Field(alias="stepTimeMs")
     #: Gaps between output chunks (streaming only, two or more chunks).
-    time_between_output_chunks_ms: Optional[Optional["_dto.OutputChunkTimingStats"]] = Field(default=None, alias="timeBetweenOutputChunksMs")
+    time_between_output_chunks_ms: Optional["_dto.OutputChunkTimingStats"] = Field(default=None, alias="timeBetweenOutputChunksMs")
     #: From the model call to its first output chunk (streaming only).
-    time_to_first_output_ms: Optional[Optional[float]] = Field(default=None, alias="timeToFirstOutputMs")
+    time_to_first_output_ms: Optional[float] = Field(default=None, alias="timeToFirstOutputMs")
     #: Execution time of each host-executed tool, by tool call id. Aimux does
     #: not execute tools, so this is empty.
     tool_execution_ms: Dict[str, float] = Field(alias="toolExecutionMs")
@@ -3223,17 +3233,17 @@ class StepResultPerformanceInput(_Wire):
     #: Input plus output tokens per second over the whole response time.
     effective_total_tokens_per_second: float = Field(alias="effectiveTotalTokensPerSecond")
     #: Input tokens per second until the first output chunk (streaming only).
-    input_tokens_per_second: Optional[Optional[float]] = Field(default=None, alias="inputTokensPerSecond")
+    input_tokens_per_second: Optional[float] = Field(default=None, alias="inputTokensPerSecond")
     #: Output tokens per second after the first output chunk (streaming only).
-    output_tokens_per_second: Optional[Optional[float]] = Field(default=None, alias="outputTokensPerSecond")
+    output_tokens_per_second: Optional[float] = Field(default=None, alias="outputTokensPerSecond")
     #: From the model call to its finish, including retries.
     response_time_ms: float = Field(alias="responseTimeMs")
     #: The whole step, including retries and tool execution.
     step_time_ms: float = Field(alias="stepTimeMs")
     #: Gaps between output chunks (streaming only, two or more chunks).
-    time_between_output_chunks_ms: Optional[Optional["_dto.OutputChunkTimingStats"]] = Field(default=None, alias="timeBetweenOutputChunksMs")
+    time_between_output_chunks_ms: Optional["_dto.OutputChunkTimingStats"] = Field(default=None, alias="timeBetweenOutputChunksMs")
     #: From the model call to its first output chunk (streaming only).
-    time_to_first_output_ms: Optional[Optional[float]] = Field(default=None, alias="timeToFirstOutputMs")
+    time_to_first_output_ms: Optional[float] = Field(default=None, alias="timeToFirstOutputMs")
     #: Execution time of each host-executed tool, by tool call id. Aimux does
     #: not execute tools, so this is empty.
     tool_execution_ms: Optional[Dict[str, float]] = Field(default=None, alias="toolExecutionMs")
@@ -3262,7 +3272,7 @@ class StreamFrameEvent(_Wire):
 class StreamFrameEnd(_Wire):
     model_config = ConfigDict(extra="forbid")
     type: Literal["end"] = Field(default="end", alias="type")
-    error: Optional[Optional["_dto.ErrorEnvelope"]] = Field(default=None, alias="error")
+    error: Optional["_dto.ErrorEnvelope"] = Field(default=None, alias="error")
     outcome: "_dto.Outcome" = Field(alias="outcome")
     seq: Annotated[str, BeforeValidator(u64_string)] = Field(alias="seq")
 
@@ -3283,14 +3293,14 @@ class StreamOptions(_Wire):
 #:
 #: Schema view of the tag written by [`crate::wire::typed_vec`].
 class TaggedToolResult(_Wire):
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     #: The input of the tool call the result answers; absent for a deferred
     #: provider result, whose call is not in this response.
     input: Optional[Any] = Field(default=None, alias="input")
     output: Any = Field(alias="output")
-    preliminary: Optional[Optional[bool]] = Field(default=None, alias="preliminary")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    preliminary: Optional[bool] = Field(default=None, alias="preliminary")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
     type: "_dto.TaggedToolResultType" = Field(alias="type")
@@ -3299,19 +3309,19 @@ class TaggedToolResult(_Wire):
 TaggedToolResultType = TypeAliasType("TaggedToolResultType", Literal["tool-result"])
 
 class TerminalSummary(_Wire):
-    error: Optional[Optional["_dto.ErrorEnvelope"]] = Field(default=None, alias="error")
+    error: Optional["_dto.ErrorEnvelope"] = Field(default=None, alias="error")
     outcome: "_dto.OperationOutcome" = Field(alias="outcome")
 
 
 #: Text content part.
 class TextPart(_Wire):
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     text: str = Field(alias="text")
 
 
 class TextRequest(_Wire):
     model_config = ConfigDict(extra="forbid")
-    abort: Optional[Optional["_dto.HandleIdInput"]] = Field(default=None, alias="abort")
+    abort: Optional["_dto.HandleIdInput"] = Field(default=None, alias="abort")
     options: Optional["_dto.Options"] = Field(default=None, alias="options")
     prompt: "_dto.ModelPrompt" = Field(alias="prompt")
 
@@ -3319,88 +3329,88 @@ class TextRequest(_Wire):
 class TextStreamPartTextStart(_Wire):
     type: Literal["text-start"] = Field(default="text-start", alias="type")
     id: str = Field(alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class TextStreamPartTextEnd(_Wire):
     type: Literal["text-end"] = Field(default="text-end", alias="type")
     id: str = Field(alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class TextStreamPartTextDelta(_Wire):
     type: Literal["text-delta"] = Field(default="text-delta", alias="type")
     id: str = Field(alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     text: str = Field(alias="text")
 
 
 class TextStreamPartReasoningStart(_Wire):
     type: Literal["reasoning-start"] = Field(default="reasoning-start", alias="type")
     id: str = Field(alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class TextStreamPartReasoningEnd(_Wire):
     type: Literal["reasoning-end"] = Field(default="reasoning-end", alias="type")
     id: str = Field(alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class TextStreamPartReasoningDelta(_Wire):
     type: Literal["reasoning-delta"] = Field(default="reasoning-delta", alias="type")
     id: str = Field(alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     text: str = Field(alias="text")
 
 
 class TextStreamPartCustom(_Wire):
     type: Literal["custom"] = Field(default="custom", alias="type")
     kind: "_dto.NamespacedKind" = Field(alias="kind")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class TextStreamPartToolInputStart(_Wire):
     type: Literal["tool-input-start"] = Field(default="tool-input-start", alias="type")
     #: Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     id: str = Field(alias="id")
     #: Whether the tool call will be executed by the provider.
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Optional title for the tool call.
-    title: Optional[Optional[str]] = Field(default=None, alias="title")
+    title: Optional[str] = Field(default=None, alias="title")
     tool_name: str = Field(alias="toolName")
 
 
 class TextStreamPartToolInputEnd(_Wire):
     type: Literal["tool-input-end"] = Field(default="tool-input-end", alias="type")
     id: str = Field(alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class TextStreamPartToolInputDelta(_Wire):
     type: Literal["tool-input-delta"] = Field(default="tool-input-delta", alias="type")
     delta: str = Field(alias="delta")
     id: str = Field(alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class TextStreamPartSource11(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     id: str = Field(alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     source_type: "_dto.TextStreamPart10SourceType" = Field(alias="sourceType")
-    title: Optional[Optional[str]] = Field(default=None, alias="title")
+    title: Optional[str] = Field(default=None, alias="title")
     url: str = Field(alias="url")
 
 
 class TextStreamPartSource12(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     id: str = Field(alias="id")
     media_type: str = Field(alias="mediaType")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     source_type: "_dto.TextStreamPart11SourceType" = Field(alias="sourceType")
     title: str = Field(alias="title")
 
@@ -3408,31 +3418,31 @@ class TextStreamPartSource12(_Wire):
 class TextStreamPartFile(_Wire):
     type: Literal["file"] = Field(default="file", alias="type")
     file: "_dto.GeneratedFile" = Field(alias="file")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class TextStreamPartReasoningFile(_Wire):
     type: Literal["reasoning-file"] = Field(default="reasoning-file", alias="type")
     file: "_dto.GeneratedFile" = Field(alias="file")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class TextStreamPartToolCall(_Wire):
     type: Literal["tool-call"] = Field(default="tool-call", alias="type")
     #: Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     #: Typed failure associated with an invalid tool call.
-    error: Optional[Optional["_dto.AiMuxError"]] = Field(default=None, alias="error")
+    error: Optional["_dto.AiMuxError"] = Field(default=None, alias="error")
     #: Parsed arguments, or the original string when `invalid` is true and the
     #: provider input was not valid JSON.
     input: Any = Field(alias="input")
     #: Set when lookup, JSON parsing, or schema validation still failed after
     #: the optional repair attempt.
-    invalid: Optional[Optional[bool]] = Field(default=None, alias="invalid")
+    invalid: Optional[bool] = Field(default=None, alias="invalid")
     #: Whether the tool call will be executed by the provider.
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
     #: Additional provider-specific metadata associated with this call.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Provider-assigned call id.
     tool_call_id: str = Field(alias="toolCallId")
     #: Tool name.
@@ -3441,34 +3451,34 @@ class TextStreamPartToolCall(_Wire):
 
 class TextStreamPartToolResult(_Wire):
     type: Literal["tool-result"] = Field(default="tool-result", alias="type")
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     #: The input of the tool call the result answers; absent for a deferred
     #: provider result, whose call is not in this response.
     input: Optional[Any] = Field(default=None, alias="input")
     output: Any = Field(alias="output")
-    preliminary: Optional[Optional[bool]] = Field(default=None, alias="preliminary")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    preliminary: Optional[bool] = Field(default=None, alias="preliminary")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
 
 class TextStreamPartToolError(_Wire):
     type: Literal["tool-error"] = Field(default="tool-error", alias="type")
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     error: Any = Field(alias="error")
     #: The input of the tool call; absent for a deferred provider result.
     input: Optional[Any] = Field(default=None, alias="input")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
 
 class TextStreamPartToolOutputDenied(_Wire):
     type: Literal["tool-output-denied"] = Field(default="tool-output-denied", alias="type")
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
@@ -3476,9 +3486,9 @@ class TextStreamPartToolOutputDenied(_Wire):
 class TextStreamPartToolApprovalRequest(_Wire):
     type: Literal["tool-approval-request"] = Field(default="tool-approval-request", alias="type")
     approval_id: str = Field(alias="approvalId")
-    is_automatic: Optional[Optional[bool]] = Field(default=None, alias="isAutomatic")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
-    signature: Optional[Optional[str]] = Field(default=None, alias="signature")
+    is_automatic: Optional[bool] = Field(default=None, alias="isAutomatic")
+    reason: Optional[str] = Field(default=None, alias="reason")
+    signature: Optional[str] = Field(default=None, alias="signature")
     #: The call to approve, with its `type` tag (`ai`
     #: `generate-text/tool-approval-request-output.ts:20`).
     tool_call: "_dto.TypedToolCall" = Field(alias="toolCall")
@@ -3488,8 +3498,8 @@ class TextStreamPartToolApprovalResponse(_Wire):
     type: Literal["tool-approval-response"] = Field(default="tool-approval-response", alias="type")
     approval_id: str = Field(alias="approvalId")
     approved: bool = Field(alias="approved")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    reason: Optional[str] = Field(default=None, alias="reason")
     #: The answered call, with its `type` tag (`TypedToolCall`,
     #: `tool-approval-response-output.ts:18`).
     tool_call: "_dto.TypedToolCall" = Field(alias="toolCall")
@@ -3505,8 +3515,8 @@ class TextStreamPartFinishStep(_Wire):
     type: Literal["finish-step"] = Field(default="finish-step", alias="type")
     finish_reason: "_dto.FinishReasonUnified" = Field(alias="finishReason")
     performance: "_dto.StepResultPerformance" = Field(alias="performance")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
-    raw_finish_reason: Optional[Optional[str]] = Field(default=None, alias="rawFinishReason")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
+    raw_finish_reason: Optional[str] = Field(default=None, alias="rawFinishReason")
     #: Response metadata without the messages and the body.
     response: "_dto.StepResponseMetadata" = Field(alias="response")
     usage: "_dto.LanguageModelUsage" = Field(alias="usage")
@@ -3519,14 +3529,14 @@ class TextStreamPartStart(_Wire):
 class TextStreamPartFinish(_Wire):
     type: Literal["finish"] = Field(default="finish", alias="type")
     finish_reason: "_dto.FinishReasonUnified" = Field(alias="finishReason")
-    raw_finish_reason: Optional[Optional[str]] = Field(default=None, alias="rawFinishReason")
+    raw_finish_reason: Optional[str] = Field(default=None, alias="rawFinishReason")
     #: Usage summed over every step.
     total_usage: "_dto.LanguageModelUsage" = Field(alias="totalUsage")
 
 
 class TextStreamPartAbort(_Wire):
     type: Literal["abort"] = Field(default="abort", alias="type")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
+    reason: Optional[str] = Field(default=None, alias="reason")
 
 
 class TextStreamPartError(_Wire):
@@ -3577,19 +3587,19 @@ TextStreamPart11SourceType = TypeAliasType("TextStreamPart11SourceType", Literal
 class TimeoutConfiguration(_Wire):
     model_config = ConfigDict(extra="forbid")
     #: Maximum idle time between consecutive stream chunks (streaming only).
-    chunk_ms: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="chunkMs")
+    chunk_ms: Optional[U64] = Field(default=None, alias="chunkMs")
     #: Timeout waiting for the first stream chunk (streaming only).
     #:
     #: Counted from operation start, so it also bounds stream establishment
     #: and any retries before the first semantic output: it is the
     #: user-perceived time-to-first-output budget, not a per-attempt timer.
-    first_chunk_ms: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="firstChunkMs")
+    first_chunk_ms: Optional[U64] = Field(default=None, alias="firstChunkMs")
     #: Timeout for one generation step, including that step's attempts and
     #: retry backoff, in milliseconds. Aimux currently has one step.
-    step_ms: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="stepMs")
+    step_ms: Optional[U64] = Field(default=None, alias="stepMs")
     #: Overall timeout for the entire call (including retries and, for
     #: streaming, the whole stream), in milliseconds.
-    total_ms: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="totalMs")
+    total_ms: Optional[U64] = Field(default=None, alias="totalMs")
 
 
 #: A point in time: a `Date` in the AI SDK, whose JSON is
@@ -3604,17 +3614,17 @@ Timestamp = TypeAliasType("Timestamp", Annotated[str, BeforeValidator(timestamp)
 
 class TimingRecord(_Wire):
     #: ms 级延迟,TS 用 number(远小于 2^53,避免 bigint)。
-    latency_ms: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="latencyMs")
-    ttfb_ms: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="ttfbMs")
+    latency_ms: U64 = Field(alias="latencyMs")
+    ttfb_ms: Optional[U64] = Field(default=None, alias="ttfbMs")
 
 
 class ToolFunction(_Wire):
     type: Literal["function"] = Field(default="function", alias="type")
     #: Human-readable description.
-    description: Optional[Optional[str]] = Field(default=None, alias="description")
+    description: Optional[str] = Field(default=None, alias="description")
     #: Example inputs for the tool (V4 `inputExamples`), used by some providers
     #: to emit `input_examples` in the request body.
-    input_examples: Optional[Optional[List["_dto.FunctionToolInputExample"]]] = Field(default=None, alias="inputExamples")
+    input_examples: Optional[List["_dto.FunctionToolInputExample"]] = Field(default=None, alias="inputExamples")
     #: JSON Schema describing the tool's parameters.
     input_schema: Any = Field(alias="inputSchema")
     #: Unique tool name.
@@ -3622,9 +3632,9 @@ class ToolFunction(_Wire):
     #: Provider-specific options, keyed by provider name
     #: (e.g. `{"anthropic": {"eagerInputStreaming": true}}`). Aligned with the
     #: V4 `providerOptions` field on function tools.
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     #: Whether the tool supports strict schema enforcement (OpenAI strict mode).
-    strict: Optional[Optional[bool]] = Field(default=None, alias="strict")
+    strict: Optional[bool] = Field(default=None, alias="strict")
 
 
 class ToolProvider(_Wire):
@@ -3646,9 +3656,9 @@ Tool = TypeAliasType("Tool", Annotated[Union["ToolFunction", "ToolProvider"], Fi
 #: Approval request exposed by text generation.
 class ToolApprovalRequestOutput(_Wire):
     approval_id: str = Field(alias="approvalId")
-    is_automatic: Optional[Optional[bool]] = Field(default=None, alias="isAutomatic")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
-    signature: Optional[Optional[str]] = Field(default=None, alias="signature")
+    is_automatic: Optional[bool] = Field(default=None, alias="isAutomatic")
+    reason: Optional[str] = Field(default=None, alias="reason")
+    signature: Optional[str] = Field(default=None, alias="signature")
     #: The call to approve, with its `type` tag (`ai`
     #: `generate-text/tool-approval-request-output.ts:20`).
     tool_call: "_dto.TypedToolCall" = Field(alias="toolCall")
@@ -3657,9 +3667,9 @@ class ToolApprovalRequestOutput(_Wire):
 #: Approval request exposed by text generation.
 class ToolApprovalRequestOutputInput(_Wire):
     approval_id: str = Field(alias="approvalId")
-    is_automatic: Optional[Optional[bool]] = Field(default=None, alias="isAutomatic")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
-    signature: Optional[Optional[str]] = Field(default=None, alias="signature")
+    is_automatic: Optional[bool] = Field(default=None, alias="isAutomatic")
+    reason: Optional[str] = Field(default=None, alias="reason")
+    signature: Optional[str] = Field(default=None, alias="signature")
     #: The call to approve, with its `type` tag (`ai`
     #: `generate-text/tool-approval-request-output.ts:20`).
     tool_call: "_dto.TypedToolCallInput" = Field(alias="toolCall")
@@ -3671,8 +3681,8 @@ class ToolApprovalRequestOutputInput(_Wire):
 class ToolApprovalResponseOutput(_Wire):
     approval_id: str = Field(alias="approvalId")
     approved: bool = Field(alias="approved")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    reason: Optional[str] = Field(default=None, alias="reason")
     #: The answered call, with its `type` tag (`TypedToolCall`,
     #: `tool-approval-response-output.ts:18`).
     tool_call: "_dto.TypedToolCall" = Field(alias="toolCall")
@@ -3684,8 +3694,8 @@ class ToolApprovalResponseOutput(_Wire):
 class ToolApprovalResponseOutputInput(_Wire):
     approval_id: str = Field(alias="approvalId")
     approved: bool = Field(alias="approved")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    reason: Optional[str] = Field(default=None, alias="reason")
     #: The answered call, with its `type` tag (`TypedToolCall`,
     #: `tool-approval-response-output.ts:18`).
     tool_call: "_dto.TypedToolCallInput" = Field(alias="toolCall")
@@ -3695,26 +3705,26 @@ class ToolApprovalResponseOutputInput(_Wire):
 class ToolApprovalResponsePart(_Wire):
     approval_id: str = Field(alias="approvalId")
     approved: bool = Field(alias="approved")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
+    reason: Optional[str] = Field(default=None, alias="reason")
 
 
 #: A tool call requested by the model.
 class ToolCall(_Wire):
     #: Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     #: Typed failure associated with an invalid tool call.
-    error: Optional[Optional["_dto.AiMuxError"]] = Field(default=None, alias="error")
+    error: Optional["_dto.AiMuxError"] = Field(default=None, alias="error")
     #: Parsed arguments, or the original string when `invalid` is true and the
     #: provider input was not valid JSON.
     input: Any = Field(alias="input")
     #: Set when lookup, JSON parsing, or schema validation still failed after
     #: the optional repair attempt.
-    invalid: Optional[Optional[bool]] = Field(default=None, alias="invalid")
+    invalid: Optional[bool] = Field(default=None, alias="invalid")
     #: Whether the tool call will be executed by the provider.
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
     #: Additional provider-specific metadata associated with this call.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Provider-assigned call id.
     tool_call_id: str = Field(alias="toolCallId")
     #: Tool name.
@@ -3724,19 +3734,19 @@ class ToolCall(_Wire):
 #: A tool call requested by the model.
 class ToolCallInput(_Wire):
     #: Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     #: Typed failure associated with an invalid tool call.
-    error: Optional[Optional["_dto.AiMuxErrorInput"]] = Field(default=None, alias="error")
+    error: Optional["_dto.AiMuxErrorInput"] = Field(default=None, alias="error")
     #: Parsed arguments, or the original string when `invalid` is true and the
     #: provider input was not valid JSON.
     input: Any = Field(alias="input")
     #: Set when lookup, JSON parsing, or schema validation still failed after
     #: the optional repair attempt.
-    invalid: Optional[Optional[bool]] = Field(default=None, alias="invalid")
+    invalid: Optional[bool] = Field(default=None, alias="invalid")
     #: Whether the tool call will be executed by the provider.
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
     #: Additional provider-specific metadata associated with this call.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Provider-assigned call id.
     tool_call_id: str = Field(alias="toolCallId")
     #: Tool name.
@@ -3746,8 +3756,8 @@ class ToolCallInput(_Wire):
 #: Tool call content part.
 class ToolCallPart(_Wire):
     input: Any = Field(alias="input")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
@@ -3779,10 +3789,10 @@ class ToolCallRepairReplyFailed(_Wire):
 ToolCallRepairReply = TypeAliasType("ToolCallRepairReply", Annotated[Union["ToolCallRepairReplyRepaired", "ToolCallRepairReplyUnchanged", "ToolCallRepairReplyFailed"], Field(discriminator="type")])
 
 class ToolCallRepairReply0ToolCall(_Wire):
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     input: str = Field(alias="input")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
     type: Optional["_dto.ToolCallRepairReply0ToolCallType"] = Field(default=None, alias="type")
@@ -3832,19 +3842,19 @@ class ToolContentPartToolResult(_Wire):
     type: Literal["tool-result"] = Field(default="tool-result", alias="type")
     output: "_dto.ToolResultOutput" = Field(alias="output")
     #: Provider-specific options for this part (e.g. `anthropic.cacheControl`).
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     tool_call_id: str = Field(alias="toolCallId")
     #: The tool name. Required upstream; when absent here, the conversion
     #: takes it from the preceding tool call with the same id.
-    tool_name: Optional[Optional[str]] = Field(default=None, alias="toolName")
+    tool_name: Optional[str] = Field(default=None, alias="toolName")
 
 
 class ToolContentPartToolApprovalResponse(_Wire):
     type: Literal["tool-approval-response"] = Field(default="tool-approval-response", alias="type")
     approval_id: str = Field(alias="approvalId")
     approved: bool = Field(alias="approved")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    reason: Optional[str] = Field(default=None, alias="reason")
 
 
 #: A part of a tool message: upstream's `ToolResultPart | ToolApprovalResponse`.
@@ -3853,8 +3863,8 @@ ToolContentPart = TypeAliasType("ToolContentPart", Annotated[Union["ToolContentP
 #: The output of a tool whose execution was denied (the AI SDK's
 #: `StaticToolOutputDenied`, `ai` `generate-text/tool-output-denied.ts:7-15`).
 class ToolOutputDenied(_Wire):
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
@@ -3862,7 +3872,7 @@ class ToolOutputDenied(_Wire):
 class ToolPartToolResult(_Wire):
     type: Literal["tool-result"] = Field(default="tool-result", alias="type")
     output: "_dto.ToolResultOutput2" = Field(alias="output")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
@@ -3871,8 +3881,8 @@ class ToolPartToolApprovalResponse(_Wire):
     type: Literal["tool-approval-response"] = Field(default="tool-approval-response", alias="type")
     approval_id: str = Field(alias="approvalId")
     approved: bool = Field(alias="approved")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
+    reason: Optional[str] = Field(default=None, alias="reason")
 
 
 #: Parts allowed in a tool message.
@@ -3912,10 +3922,10 @@ class ToolRepairContextSchema(_Wire):
 
 
 class ToolRepairContextSchemaToolCall(_Wire):
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     input: str = Field(alias="input")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
     type: "_dto.ToolRepairContextSchemaToolCallType" = Field(alias="type")
@@ -3927,13 +3937,13 @@ ToolRepairContextSchemaToolCallType = TypeAliasType("ToolRepairContextSchemaTool
 #: web search), carried next to the [`RawToolCall`] it answers.
 class ToolResult(_Wire):
     #: Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     #: Whether the result is an error or error message.
-    is_error: Optional[Optional[bool]] = Field(default=None, alias="isError")
+    is_error: Optional[bool] = Field(default=None, alias="isError")
     #: Whether the result is preliminary (replaces prior, e.g. image previews).
-    preliminary: Optional[Optional[bool]] = Field(default=None, alias="preliminary")
+    preliminary: Optional[bool] = Field(default=None, alias="preliminary")
     #: Additional provider-specific metadata for the tool result.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: The tool's output: any JSON value but `null`, as the V4
     #: `result: NonNullable<JSONValue>` (`@ai-sdk/provider@4.0.21
     #: src/language-model/v4/language-model-v4-tool-result.ts:23`); a `null`
@@ -3946,21 +3956,21 @@ class ToolResult(_Wire):
 
 class ToolResultContentText(_Wire):
     type: Literal["text"] = Field(default="text", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     text: str = Field(alias="text")
 
 
 class ToolResultContentFile(_Wire):
     type: Literal["file"] = Field(default="file", alias="type")
     data: "_dto.FileData" = Field(alias="data")
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     media_type: str = Field(alias="mediaType")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class ToolResultContentCustom(_Wire):
     type: Literal["custom"] = Field(default="custom", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 #: Content within a tool result.
@@ -3968,42 +3978,42 @@ ToolResultContent = TypeAliasType("ToolResultContent", Annotated[Union["ToolResu
 
 class ToolResultContentPartText(_Wire):
     type: Literal["text"] = Field(default="text", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     text: str = Field(alias="text")
 
 
 class ToolResultContentPartFile(_Wire):
     type: Literal["file"] = Field(default="file", alias="type")
     data: "_dto.FileData" = Field(alias="data")
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     media_type: str = Field(alias="mediaType")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class ToolResultContentPartFileData(_Wire):
     type: Literal["file-data"] = Field(default="file-data", alias="type")
     data: str = Field(alias="data")
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     media_type: str = Field(alias="mediaType")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class ToolResultContentPartFileUrl(_Wire):
     type: Literal["file-url"] = Field(default="file-url", alias="type")
-    media_type: Optional[Optional[str]] = Field(default=None, alias="mediaType")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    media_type: Optional[str] = Field(default=None, alias="mediaType")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     url: str = Field(alias="url")
 
 
 class ToolResultContentPartFileId(_Wire):
     type: Literal["file-id"] = Field(default="file-id", alias="type")
     file_id: "_dto.ToolResultFileId" = Field(alias="fileId")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class ToolResultContentPartFileReference(_Wire):
     type: Literal["file-reference"] = Field(default="file-reference", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     provider_reference: Dict[str, str] = Field(alias="providerReference")
 
 
@@ -4011,30 +4021,30 @@ class ToolResultContentPartImageData(_Wire):
     type: Literal["image-data"] = Field(default="image-data", alias="type")
     data: str = Field(alias="data")
     media_type: str = Field(alias="mediaType")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class ToolResultContentPartImageUrl(_Wire):
     type: Literal["image-url"] = Field(default="image-url", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     url: str = Field(alias="url")
 
 
 class ToolResultContentPartImageFileId(_Wire):
     type: Literal["image-file-id"] = Field(default="image-file-id", alias="type")
     file_id: "_dto.ToolResultFileId" = Field(alias="fileId")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class ToolResultContentPartImageFileReference(_Wire):
     type: Literal["image-file-reference"] = Field(default="image-file-reference", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     provider_reference: Dict[str, str] = Field(alias="providerReference")
 
 
 class ToolResultContentPartCustom(_Wire):
     type: Literal["custom"] = Field(default="custom", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 #: One item of a `content` [`ToolResultOutput`] (upstream
@@ -4053,31 +4063,31 @@ ToolResultFileId = TypeAliasType("ToolResultFileId", Annotated[Union[str, Dict[s
 
 class ToolResultOutputText(_Wire):
     type: Literal["text"] = Field(default="text", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     value: str = Field(alias="value")
 
 
 class ToolResultOutputJson(_Wire):
     type: Literal["json"] = Field(default="json", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     value: Any = Field(alias="value")
 
 
 class ToolResultOutputExecutionDenied(_Wire):
     type: Literal["execution-denied"] = Field(default="execution-denied", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
+    reason: Optional[str] = Field(default=None, alias="reason")
 
 
 class ToolResultOutputErrorText(_Wire):
     type: Literal["error-text"] = Field(default="error-text", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     value: str = Field(alias="value")
 
 
 class ToolResultOutputErrorJson(_Wire):
     type: Literal["error-json"] = Field(default="error-json", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     value: Any = Field(alias="value")
 
 
@@ -4091,31 +4101,31 @@ ToolResultOutput = TypeAliasType("ToolResultOutput", Annotated[Union["ToolResult
 
 class ToolResultOutput2Text(_Wire):
     type: Literal["text"] = Field(default="text", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     value: str = Field(alias="value")
 
 
 class ToolResultOutput2Json(_Wire):
     type: Literal["json"] = Field(default="json", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     value: Any = Field(alias="value")
 
 
 class ToolResultOutput2ExecutionDenied(_Wire):
     type: Literal["execution-denied"] = Field(default="execution-denied", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
-    reason: Optional[Optional[str]] = Field(default=None, alias="reason")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
+    reason: Optional[str] = Field(default=None, alias="reason")
 
 
 class ToolResultOutput2ErrorText(_Wire):
     type: Literal["error-text"] = Field(default="error-text", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     value: str = Field(alias="value")
 
 
 class ToolResultOutput2ErrorJson(_Wire):
     type: Literal["error-json"] = Field(default="error-json", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     value: Any = Field(alias="value")
 
 
@@ -4132,17 +4142,17 @@ ToolResultOutput2 = TypeAliasType("ToolResultOutput2", Annotated[Union["ToolResu
 class ToolResultPart(_Wire):
     output: "_dto.ToolResultOutput" = Field(alias="output")
     #: Provider-specific options for this part (e.g. `anthropic.cacheControl`).
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     tool_call_id: str = Field(alias="toolCallId")
     #: The tool name. Required upstream; when absent here, the conversion
     #: takes it from the preceding tool call with the same id.
-    tool_name: Optional[Optional[str]] = Field(default=None, alias="toolName")
+    tool_name: Optional[str] = Field(default=None, alias="toolName")
 
 
 #: Tool result content part.
 class ToolResultPart2(_Wire):
     output: "_dto.ToolResultOutput2" = Field(alias="output")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
@@ -4156,17 +4166,17 @@ class TraceAggregateParams(_Wire):
 #: Query filter (RFC-0015 §5.3).
 class TraceAggregateParamsFilter(_Wire):
     model_config = ConfigDict(extra="forbid")
-    model: Optional[Optional[str]] = Field(default=None, alias="model")
-    provider: Optional[Optional[str]] = Field(default=None, alias="provider")
-    session_id: Optional[Optional[str]] = Field(default=None, alias="sessionId")
-    since_unix_ms: Optional[Optional[Annotated[int, Field(ge=-9223372036854775808, le=9223372036854775807)]]] = Field(default=None, alias="sinceUnixMs")
+    model: Optional[str] = Field(default=None, alias="model")
+    provider: Optional[str] = Field(default=None, alias="provider")
+    session_id: Optional[str] = Field(default=None, alias="sessionId")
+    since_unix_ms: Optional[I64] = Field(default=None, alias="sinceUnixMs")
 
 
 class TraceCreateParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     audit_mode: Optional["_dto.AuditMode2"] = Field(default=None, alias="auditMode")
-    capacity: Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]] = Field(default=None, alias="capacity")
-    per_scope_capacity: Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]] = Field(default=None, alias="perScopeCapacity")
+    capacity: Optional[U64] = Field(default=None, alias="capacity")
+    per_scope_capacity: Optional[U64] = Field(default=None, alias="perScopeCapacity")
 
 
 #: One probed call. Plaintext never persists — fingerprints only.
@@ -4176,28 +4186,28 @@ class TraceRecord(_Wire):
     call_id: str = Field(alias="callId")
     #: Error string when the call failed (still recorded: failures are part
     #: of the session).
-    error: Optional[Optional[str]] = Field(default=None, alias="error")
+    error: Optional[str] = Field(default=None, alias="error")
     fingerprint: "_dto.Fingerprint" = Field(alias="fingerprint")
     #: Client-side LCP token upper bound (block upper bound, byte-proxy
     #: len/4). `None` when no history matched. Consumed by `TraceStats`
     #: aggregation.
-    lcp_token_upper: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="lcpTokenUpper")
+    lcp_token_upper: Optional[U64] = Field(default=None, alias="lcpTokenUpper")
     model: str = Field(alias="model")
     provider: str = Field(alias="provider")
-    request_cache_hints: Optional[Optional["_dto.RequestCacheHints"]] = Field(default=None, alias="requestCacheHints")
-    request_id: Optional[Optional[str]] = Field(default=None, alias="requestId")
+    request_cache_hints: Optional["_dto.RequestCacheHints"] = Field(default=None, alias="requestCacheHints")
+    request_id: Optional[str] = Field(default=None, alias="requestId")
     #: Response-side cache headers (e.g. `x-openrouter-cache-status`).
-    response_cache_headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="responseCacheHeaders")
+    response_cache_headers: Optional[Dict[str, str]] = Field(default=None, alias="responseCacheHeaders")
     #: When the call was sent (epoch ms).
-    sent_at_unix_ms: Annotated[int, Field(ge=-9223372036854775808, le=9223372036854775807)] = Field(alias="sentAtUnixMs")
+    sent_at_unix_ms: I64 = Field(alias="sentAtUnixMs")
     #: The explicit session id of the operation (RFC-0024), else the
     #: layer's default session.
-    session_id: Optional[Optional[str]] = Field(default=None, alias="sessionId")
+    session_id: Optional[str] = Field(default=None, alias="sessionId")
     #: Time to first streamed token (ms). Non-streaming: `None`.
-    ttft_ms: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="ttftMs")
+    ttft_ms: Optional[U64] = Field(default=None, alias="ttftMs")
     usage: "_dto.UsageSnapshot" = Field(alias="usage")
     #: Audit verdict (`None` when no auditor is attached — the default).
-    verdict: Optional[Optional["_dto.Verdict"]] = Field(default=None, alias="verdict")
+    verdict: Optional["_dto.Verdict"] = Field(default=None, alias="verdict")
 
 
 class TraceSessionParams(_Wire):
@@ -4208,18 +4218,18 @@ class TraceSessionParams(_Wire):
 #: Aggregated statistics (RFC-0015 §5.2 — the two hit rates are reported
 #: side by side, never merged into a single number).
 class TraceStats(_Wire):
-    claimed_cache_read_total: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="claimedCacheReadTotal")
-    claimed_cache_write_total: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="claimedCacheWriteTotal")
-    client_upper_bound_hit_rate: Optional[Optional[float]] = Field(default=None, alias="clientUpperBoundHitRate")
-    errors: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="errors")
-    input_tokens_total: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="inputTokensTotal")
+    claimed_cache_read_total: U64 = Field(alias="claimedCacheReadTotal")
+    claimed_cache_write_total: U64 = Field(alias="claimedCacheWriteTotal")
+    client_upper_bound_hit_rate: Optional[float] = Field(default=None, alias="clientUpperBoundHitRate")
+    errors: U64 = Field(alias="errors")
+    input_tokens_total: U64 = Field(alias="inputTokensTotal")
     model: str = Field(alias="model")
     provider: str = Field(alias="provider")
-    reported_hit_rate: Optional[Optional[float]] = Field(default=None, alias="reportedHitRate")
-    requests: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="requests")
-    ttft_p50_ms: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="ttftP50Ms")
-    ttft_p95_ms: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="ttftP95Ms")
-    verdict_counts: Dict[str, Annotated[int, Field(ge=0, le=18446744073709551615)]] = Field(alias="verdictCounts")
+    reported_hit_rate: Optional[float] = Field(default=None, alias="reportedHitRate")
+    requests: U64 = Field(alias="requests")
+    ttft_p50_ms: Optional[U64] = Field(default=None, alias="ttftP50Ms")
+    ttft_p95_ms: Optional[U64] = Field(default=None, alias="ttftP95Ms")
+    verdict_counts: Dict[str, U64] = Field(alias="verdictCounts")
 
 
 #: Options passed to [`TranscriptionModel::do_generate`].
@@ -4230,24 +4240,24 @@ class TranscriptionCallOptions(_Wire):
     #: that [`transcribe`] downloads.
     audio: "_dto.AudioInput" = Field(alias="audio")
     #: Additional HTTP headers to send with the request.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     #: retrying. `None` uses 2, the AI SDK default.
-    max_retries: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="maxRetries")
+    max_retries: Optional[U32] = Field(default=None, alias="maxRetries")
     #: The IANA media type of the audio data, e.g. `"audio/mp3"`. For a URL,
     #: the media type the download reports replaces it, as the AI SDK uses
     #: the downloaded media type (`transcribe.ts:227-233`).
     media_type: str = Field(alias="mediaType")
     #: Additional provider-specific options, keyed by provider name.
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     #: Per-call operation timeout.
-    timeout: Optional[Optional["_dto.TimeoutConfiguration"]] = Field(default=None, alias="timeout")
+    timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
 
 
 #: Optional request information for a transcription call.
 class TranscriptionRequest(_Wire):
     #: Raw request HTTP body that was sent (JSON stringified).
-    body: Optional[Optional[str]] = Field(default=None, alias="body")
+    body: Optional[str] = Field(default=None, alias="body")
 
 
 #: Response information for a transcription call.
@@ -4255,11 +4265,11 @@ class TranscriptionResponse(_Wire):
     #: Response body (opaque JSON).
     body: Optional[Any] = Field(default=None, alias="body")
     #: Response headers.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: The ID of the model that was used to generate the response.
-    model_id: Optional[Optional[str]] = Field(default=None, alias="modelId")
+    model_id: Optional[str] = Field(default=None, alias="modelId")
     #: Timestamp for the start of the generated response (`toISOString()` in the JSON).
-    timestamp: Optional[Optional["_dto.Timestamp"]] = Field(default=None, alias="timestamp")
+    timestamp: Optional["_dto.Timestamp"] = Field(default=None, alias="timestamp")
 
 
 #: The result of [`TranscriptionModel::do_generate`].
@@ -4267,13 +4277,13 @@ class TranscriptionResponse(_Wire):
 #: Aligned with V4 `TranscriptionModelV4Result`.
 class TranscriptionResult(_Wire):
     #: The total duration of the audio in seconds, if determined.
-    duration_in_seconds: Optional[Optional[float]] = Field(default=None, alias="durationInSeconds")
+    duration_in_seconds: Optional[float] = Field(default=None, alias="durationInSeconds")
     #: The detected language (ISO 639-1 code, e.g. `"en"`), if detected.
-    language: Optional[Optional[str]] = Field(default=None, alias="language")
+    language: Optional[str] = Field(default=None, alias="language")
     #: Additional provider-specific metadata, keyed by provider name.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Optional request information for telemetry and debugging.
-    request: Optional[Optional["_dto.TranscriptionRequest"]] = Field(default=None, alias="request")
+    request: Optional["_dto.TranscriptionRequest"] = Field(default=None, alias="request")
     #: Response information for telemetry and debugging.
     response: "_dto.TranscriptionResponse" = Field(alias="response")
     #: Transcript segments with timing information.
@@ -4296,12 +4306,12 @@ class TranscriptionSegment(_Wire):
 
 class TranscriptionStartParams(_Wire):
     model_config = ConfigDict(extra="forbid")
-    abort: Optional[Optional["_dto.HandleIdInput"]] = Field(default=None, alias="abort")
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    abort: Optional["_dto.HandleIdInput"] = Field(default=None, alias="abort")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     include_raw_chunks: Optional[bool] = Field(default=None, alias="includeRawChunks")
-    input_audio_format: Optional[Optional["_dto.InputAudioFormat"]] = Field(default=None, alias="inputAudioFormat")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
-    timeout: Optional[Optional["_dto.TimeoutConfiguration"]] = Field(default=None, alias="timeout")
+    input_audio_format: Optional["_dto.InputAudioFormat"] = Field(default=None, alias="inputAudioFormat")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
+    timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
 
 
 class TranscriptionStreamPartStreamStart(_Wire):
@@ -4312,43 +4322,43 @@ class TranscriptionStreamPartStreamStart(_Wire):
 class TranscriptionStreamPartTranscriptDelta(_Wire):
     type: Literal["transcript-delta"] = Field(default="transcript-delta", alias="type")
     delta: str = Field(alias="delta")
-    id: Optional[Optional[str]] = Field(default=None, alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    id: Optional[str] = Field(default=None, alias="id")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
 class TranscriptionStreamPartTranscriptPartial(_Wire):
     type: Literal["transcript-partial"] = Field(default="transcript-partial", alias="type")
-    channel_index: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="channelIndex")
-    duration_in_seconds: Optional[Optional[float]] = Field(default=None, alias="durationInSeconds")
-    id: Optional[Optional[str]] = Field(default=None, alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
-    start_second: Optional[Optional[float]] = Field(default=None, alias="startSecond")
+    channel_index: Optional[U32] = Field(default=None, alias="channelIndex")
+    duration_in_seconds: Optional[float] = Field(default=None, alias="durationInSeconds")
+    id: Optional[str] = Field(default=None, alias="id")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
+    start_second: Optional[float] = Field(default=None, alias="startSecond")
     text: str = Field(alias="text")
 
 
 class TranscriptionStreamPartTranscriptFinal(_Wire):
     type: Literal["transcript-final"] = Field(default="transcript-final", alias="type")
-    channel_index: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="channelIndex")
-    end_second: Optional[Optional[float]] = Field(default=None, alias="endSecond")
-    id: Optional[Optional[str]] = Field(default=None, alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
-    start_second: Optional[Optional[float]] = Field(default=None, alias="startSecond")
+    channel_index: Optional[U32] = Field(default=None, alias="channelIndex")
+    end_second: Optional[float] = Field(default=None, alias="endSecond")
+    id: Optional[str] = Field(default=None, alias="id")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
+    start_second: Optional[float] = Field(default=None, alias="startSecond")
     text: str = Field(alias="text")
 
 
 class TranscriptionStreamPartResponseMetadata(_Wire):
     type: Literal["response-metadata"] = Field(default="response-metadata", alias="type")
     body: Optional[Any] = Field(default=None, alias="body")
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
-    model_id: Optional[Optional[str]] = Field(default=None, alias="modelId")
-    timestamp: Optional[Optional["_dto.Timestamp"]] = Field(default=None, alias="timestamp")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
+    model_id: Optional[str] = Field(default=None, alias="modelId")
+    timestamp: Optional["_dto.Timestamp"] = Field(default=None, alias="timestamp")
 
 
 class TranscriptionStreamPartFinish(_Wire):
     type: Literal["finish"] = Field(default="finish", alias="type")
-    duration_in_seconds: Optional[Optional[float]] = Field(default=None, alias="durationInSeconds")
-    language: Optional[Optional[str]] = Field(default=None, alias="language")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    duration_in_seconds: Optional[float] = Field(default=None, alias="durationInSeconds")
+    language: Optional[str] = Field(default=None, alias="language")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     segments: List["_dto.TranscriptionSegment"] = Field(alias="segments")
     text: str = Field(alias="text")
 
@@ -4391,7 +4401,7 @@ class TransportParamsWs(_Wire):
 class TransportParamsDownload(_Wire):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["download"] = Field(default="download", alias="kind")
-    max_bytes: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="maxBytes")
+    max_bytes: Optional[U64] = Field(default=None, alias="maxBytes")
 
 
 TransportParams = TypeAliasType("TransportParams", Annotated[Union["TransportParamsFetch", "TransportParamsWs", "TransportParamsDownload"], Field(discriminator="kind")])
@@ -4402,10 +4412,10 @@ TransportParams = TypeAliasType("TransportParams", Annotated[Union["TransportPar
 #: reqwest does, and the WebSocket connector connects directly.
 class TransportParams0Proxy(_Wire):
     model_config = ConfigDict(extra="forbid")
-    all_url: Optional[Optional[str]] = Field(default=None, alias="all_url")
-    http_url: Optional[Optional[str]] = Field(default=None, alias="http_url")
-    https_url: Optional[Optional[str]] = Field(default=None, alias="https_url")
-    no_proxy: Optional[Optional[str]] = Field(default=None, alias="no_proxy")
+    all_url: Optional[str] = Field(default=None, alias="all_url")
+    http_url: Optional[str] = Field(default=None, alias="http_url")
+    https_url: Optional[str] = Field(default=None, alias="https_url")
+    no_proxy: Optional[str] = Field(default=None, alias="no_proxy")
 
 
 #: Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
@@ -4414,27 +4424,27 @@ class TransportParams0Proxy(_Wire):
 #: reqwest does, and the WebSocket connector connects directly.
 class TransportParams1Proxy(_Wire):
     model_config = ConfigDict(extra="forbid")
-    all_url: Optional[Optional[str]] = Field(default=None, alias="all_url")
-    http_url: Optional[Optional[str]] = Field(default=None, alias="http_url")
-    https_url: Optional[Optional[str]] = Field(default=None, alias="https_url")
-    no_proxy: Optional[Optional[str]] = Field(default=None, alias="no_proxy")
+    all_url: Optional[str] = Field(default=None, alias="all_url")
+    http_url: Optional[str] = Field(default=None, alias="http_url")
+    https_url: Optional[str] = Field(default=None, alias="https_url")
+    no_proxy: Optional[str] = Field(default=None, alias="no_proxy")
 
 
 class TypedSourceUrl(_Wire):
     source_type: Literal["url"] = Field(default="url", alias="sourceType")
     id: str = Field(alias="id")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
-    title: Optional[Optional[str]] = Field(default=None, alias="title")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
+    title: Optional[str] = Field(default=None, alias="title")
     type: "_dto.TypedSource0Type" = Field(alias="type")
     url: str = Field(alias="url")
 
 
 class TypedSourceDocument(_Wire):
     source_type: Literal["document"] = Field(default="document", alias="sourceType")
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     id: str = Field(alias="id")
     media_type: str = Field(alias="mediaType")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     title: str = Field(alias="title")
     type: "_dto.TypedSource1Type" = Field(alias="type")
 
@@ -4456,19 +4466,19 @@ TypedSource1Type = TypeAliasType("TypedSource1Type", Literal["source"])
 #: Schema view of the tag written by [`crate::wire::typed`].
 class TypedToolCall(_Wire):
     #: Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     #: Typed failure associated with an invalid tool call.
-    error: Optional[Optional["_dto.AiMuxError"]] = Field(default=None, alias="error")
+    error: Optional["_dto.AiMuxError"] = Field(default=None, alias="error")
     #: Parsed arguments, or the original string when `invalid` is true and the
     #: provider input was not valid JSON.
     input: Any = Field(alias="input")
     #: Set when lookup, JSON parsing, or schema validation still failed after
     #: the optional repair attempt.
-    invalid: Optional[Optional[bool]] = Field(default=None, alias="invalid")
+    invalid: Optional[bool] = Field(default=None, alias="invalid")
     #: Whether the tool call will be executed by the provider.
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
     #: Additional provider-specific metadata associated with this call.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Provider-assigned call id.
     tool_call_id: str = Field(alias="toolCallId")
     #: Tool name.
@@ -4483,19 +4493,19 @@ class TypedToolCall(_Wire):
 #: Schema view of the tag written by [`crate::wire::typed`].
 class TypedToolCallInput(_Wire):
     #: Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     #: Typed failure associated with an invalid tool call.
-    error: Optional[Optional["_dto.AiMuxErrorInput"]] = Field(default=None, alias="error")
+    error: Optional["_dto.AiMuxErrorInput"] = Field(default=None, alias="error")
     #: Parsed arguments, or the original string when `invalid` is true and the
     #: provider input was not valid JSON.
     input: Any = Field(alias="input")
     #: Set when lookup, JSON parsing, or schema validation still failed after
     #: the optional repair attempt.
-    invalid: Optional[Optional[bool]] = Field(default=None, alias="invalid")
+    invalid: Optional[bool] = Field(default=None, alias="invalid")
     #: Whether the tool call will be executed by the provider.
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
     #: Additional provider-specific metadata associated with this call.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Provider-assigned call id.
     tool_call_id: str = Field(alias="toolCallId")
     #: Tool name.
@@ -4511,12 +4521,12 @@ TypedToolCallType = TypeAliasType("TypedToolCallType", Literal["tool-call"])
 #: `generate-text/tool-error.ts:6-36`). `toolMetadata` and `title` are
 #: absent, as on [`TypedToolResult`].
 class TypedToolError(_Wire):
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     error: Any = Field(alias="error")
     #: The input of the tool call; absent for a deferred provider result.
     input: Optional[Any] = Field(default=None, alias="input")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
@@ -4529,14 +4539,14 @@ class TypedToolError(_Wire):
 #: by the union that holds it (`content`, the text stream) or, in a result's
 #: `toolResults`, by [`crate::wire::typed_vec`] ([`TaggedToolResult`]).
 class TypedToolResult(_Wire):
-    dynamic: Optional[Optional[bool]] = Field(default=None, alias="dynamic")
+    dynamic: Optional[bool] = Field(default=None, alias="dynamic")
     #: The input of the tool call the result answers; absent for a deferred
     #: provider result, whose call is not in this response.
     input: Optional[Any] = Field(default=None, alias="input")
     output: Any = Field(alias="output")
-    preliminary: Optional[Optional[bool]] = Field(default=None, alias="preliminary")
-    provider_executed: Optional[Optional[bool]] = Field(default=None, alias="providerExecuted")
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    preliminary: Optional[bool] = Field(default=None, alias="preliminary")
+    provider_executed: Optional[bool] = Field(default=None, alias="providerExecuted")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
 
@@ -4563,15 +4573,15 @@ UploadFileData = TypeAliasType("UploadFileData", Annotated[Union["UploadFileData
 #: Runtime control is lifted separately from the canonical upload options.
 class UploadFileParams(_Wire):
     model_config = ConfigDict(extra="forbid")
-    abort: Optional[Optional["_dto.HandleIdInput"]] = Field(default=None, alias="abort")
+    abort: Optional["_dto.HandleIdInput"] = Field(default=None, alias="abort")
     #: The file data (raw bytes/base64 or inline text).
     data: "_dto.UploadFileData" = Field(alias="data")
     #: The filename of the file.
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     #: The IANA media type of the file, e.g. `"application/pdf"`.
     media_type: str = Field(alias="mediaType")
     #: Additional provider-specific options, keyed by provider name.
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 #: Result of [`Files::upload_file`].
@@ -4579,12 +4589,12 @@ class UploadFileParams(_Wire):
 #: Aligned with V4 `FilesV4UploadFileResult`.
 class UploadFileResult(_Wire):
     #: The filename of the uploaded file, if available from the provider.
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     #: The IANA media type of the uploaded file, if available from the
     #: provider.
-    media_type: Optional[Optional[str]] = Field(default=None, alias="mediaType")
+    media_type: Optional[str] = Field(default=None, alias="mediaType")
     #: Additional provider-specific metadata, keyed by provider name.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: A provider reference mapping provider names to provider-specific file
     #: identifiers.
     provider_reference: Dict[str, str] = Field(alias="providerReference")
@@ -4594,13 +4604,13 @@ class UploadFileResult(_Wire):
 
 #: Token usage snapshot (7 flat fields + raw passthrough).
 class UsageSnapshot(_Wire):
-    cache_read: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="cacheRead")
-    cache_write: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="cacheWrite")
-    input_no_cache: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="inputNoCache")
-    input_total: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="inputTotal")
-    output_reasoning: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="outputReasoning")
-    output_text: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="outputText")
-    output_total: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="outputTotal")
+    cache_read: Optional[U64] = Field(default=None, alias="cacheRead")
+    cache_write: Optional[U64] = Field(default=None, alias="cacheWrite")
+    input_no_cache: Optional[U64] = Field(default=None, alias="inputNoCache")
+    input_total: Optional[U64] = Field(default=None, alias="inputTotal")
+    output_reasoning: Optional[U64] = Field(default=None, alias="outputReasoning")
+    output_text: Optional[U64] = Field(default=None, alias="outputText")
+    output_total: Optional[U64] = Field(default=None, alias="outputTotal")
     #: Raw provider usage payload (opaque passthrough; numbers only — no
     #: prompt text).
     raw: Optional[Any] = Field(default=None, alias="raw")
@@ -4612,7 +4622,7 @@ UserContent = TypeAliasType("UserContent", Annotated[Union[str, List["_dto.UserC
 class UserContentPartText(_Wire):
     type: Literal["text"] = Field(default="text", alias="type")
     #: Provider-specific options for this part (e.g. `openai.promptCacheBreakpoint`).
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     text: str = Field(alias="text")
 
 
@@ -4620,15 +4630,15 @@ class UserContentPartImage(_Wire):
     type: Literal["image"] = Field(default="image", alias="type")
     image: Annotated[str, BeforeValidator(base64_wire)] = Field(alias="image")
     media_type: str = Field(alias="mediaType")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 class UserContentPartFile(_Wire):
     type: Literal["file"] = Field(default="file", alias="type")
     data: "_dto.FilePartData" = Field(alias="data")
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     media_type: str = Field(alias="mediaType")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 #: A part of a user message: upstream's `TextPart | ImagePart | FilePart`.
@@ -4636,16 +4646,16 @@ UserContentPart = TypeAliasType("UserContentPart", Annotated[Union["UserContentP
 
 class UserPartText(_Wire):
     type: Literal["text"] = Field(default="text", alias="type")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     text: str = Field(alias="text")
 
 
 class UserPartFile(_Wire):
     type: Literal["file"] = Field(default="file", alias="type")
     data: "_dto.FileData" = Field(alias="data")
-    filename: Optional[Optional[str]] = Field(default=None, alias="filename")
+    filename: Optional[str] = Field(default=None, alias="filename")
     media_type: str = Field(alias="mediaType")
-    provider_options: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerOptions")
+    provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
 
 
 #: Parts allowed in a user message.
@@ -4653,13 +4663,13 @@ UserPart = TypeAliasType("UserPart", Annotated[Union["UserPartText", "UserPartFi
 
 #: A verdict for one call.
 class Verdict(_Wire):
-    claimed: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="claimed")
+    claimed: U64 = Field(alias="claimed")
     confidence: "_dto.VerdictConfidence" = Field(alias="confidence")
     #: Expected upper bound U (tokens).
-    expected_max: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="expectedMax")
+    expected_max: U64 = Field(alias="expectedMax")
     kind: "_dto.VerdictKind" = Field(alias="kind")
     #: Client-side LCP (bytes).
-    lcp_bytes: Annotated[int, Field(ge=0, le=18446744073709551615)] = Field(alias="lcpBytes")
+    lcp_bytes: U64 = Field(alias="lcpBytes")
     notes: List[str] = Field(alias="notes")
     #: Violated rule ids (R-1.1 / R-1.2 / …).
     violated: List[str] = Field(alias="violated")
@@ -4676,41 +4686,41 @@ VerdictKind = TypeAliasType("VerdictKind", Literal["Trusted", "SuspectOverclaim"
 #: Aligned with V4 `VideoModelV4CallOptions`.
 class VideoCallOptions(_Wire):
     #: Aspect ratio, in `{width}:{height}` format (e.g. `"16:9"`).
-    aspect_ratio: Optional[Optional["_dto.AspectRatio"]] = Field(default=None, alias="aspectRatio")
+    aspect_ratio: Optional["_dto.AspectRatio"] = Field(default=None, alias="aspectRatio")
     #: Duration of the video in seconds. Typically 3–10 seconds.
-    duration: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="duration")
+    duration: Optional[U32] = Field(default=None, alias="duration")
     #: Frames per second. Common values: 24, 30, 60.
-    fps: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="fps")
+    fps: Optional[U32] = Field(default=None, alias="fps")
     #: Role-tagged image inputs for first-last-frame generation.
-    frame_images: Optional[Optional[List["_dto.VideoFrameImage"]]] = Field(default=None, alias="frameImages")
+    frame_images: Optional[List["_dto.VideoFrameImage"]] = Field(default=None, alias="frameImages")
     #: Whether the model should generate audio alongside the video.
-    generate_audio: Optional[Optional[bool]] = Field(default=None, alias="generateAudio")
+    generate_audio: Optional[bool] = Field(default=None, alias="generateAudio")
     #: Additional HTTP headers to send with the request.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Input image for image-to-video generation (the starting frame).
-    image: Optional[Optional["_dto.VideoFile"]] = Field(default=None, alias="image")
+    image: Optional["_dto.VideoFile"] = Field(default=None, alias="image")
     #: Reference inputs for reference-to-video generation (images or videos).
-    input_references: Optional[Optional[List["_dto.VideoFile"]]] = Field(default=None, alias="inputReferences")
+    input_references: Optional[List["_dto.VideoFile"]] = Field(default=None, alias="inputReferences")
     #: Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     #: retrying. `None` uses 2, the AI SDK default.
-    max_retries: Optional[Optional[Annotated[int, Field(ge=0, le=4294967295)]]] = Field(default=None, alias="maxRetries")
+    max_retries: Optional[U32] = Field(default=None, alias="maxRetries")
     #: Number of videos to generate. Default `1`; most models only support
     #: `n = 1` due to computational cost.
-    n: Optional[Annotated[int, Field(ge=0, le=4294967295)]] = Field(default=None, alias="n")
+    n: Optional[U32] = Field(default=None, alias="n")
     #: Poll pacing for the start/status flow, the AI SDK's `generateVideo`
     #: `poll` option. Unset fields use the AI SDK defaults (5000 ms between
     #: status checks, 600000 ms in total).
-    poll: Optional[Optional["_dto.VideoPollOptions"]] = Field(default=None, alias="poll")
+    poll: Optional["_dto.VideoPollOptions"] = Field(default=None, alias="poll")
     #: Text prompt for the video generation. `None` when not required.
-    prompt: Optional[Optional[str]] = Field(default=None, alias="prompt")
+    prompt: Optional[str] = Field(default=None, alias="prompt")
     #: Additional provider-specific options, keyed by provider name.
     provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     #: Resolution, in `{width}x{height}` format (e.g. `"1280x720"`).
-    resolution: Optional[Optional["_dto.Size"]] = Field(default=None, alias="resolution")
+    resolution: Optional["_dto.Size"] = Field(default=None, alias="resolution")
     #: Seed for deterministic generation. `None` uses a random seed.
-    seed: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="seed")
+    seed: Optional[U64] = Field(default=None, alias="seed")
     #: Per-call operation timeout.
-    timeout: Optional[Optional["_dto.TimeoutConfiguration"]] = Field(default=None, alias="timeout")
+    timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
 
 
 class VideoDataUrl(_Wire):
@@ -4748,7 +4758,7 @@ class VideoFileFile(_Wire):
 class VideoFileUrl(_Wire):
     type: Literal["url"] = Field(default="url", alias="type")
     #: The media type of the referenced file, when known.
-    media_type: Optional[Optional[str]] = Field(default=None, alias="mediaType")
+    media_type: Optional[str] = Field(default=None, alias="mediaType")
     #: The URL of the video or image file.
     url: str = Field(alias="url")
 
@@ -4783,19 +4793,19 @@ VideoFrameType = TypeAliasType("VideoFrameType", Literal["first_frame", "last_fr
 #: belong to the operation, as upstream: a video model has none of its own.
 class VideoPollOptions(_Wire):
     #: Delay between consecutive status checks, in milliseconds.
-    interval_ms: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="intervalMs")
+    interval_ms: Optional[U64] = Field(default=None, alias="intervalMs")
     #: Maximum total time to wait for completion, in milliseconds.
-    timeout_ms: Optional[Optional[Annotated[int, Field(ge=0, le=18446744073709551615)]]] = Field(default=None, alias="timeoutMs")
+    timeout_ms: Optional[U64] = Field(default=None, alias="timeoutMs")
 
 
 #: Response information for a video generation call.
 class VideoResponse(_Wire):
     #: Response headers.
-    headers: Optional[Optional[Dict[str, str]]] = Field(default=None, alias="headers")
+    headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: The ID of the model that was used to generate the response.
-    model_id: Optional[Optional[str]] = Field(default=None, alias="modelId")
+    model_id: Optional[str] = Field(default=None, alias="modelId")
     #: Timestamp for the start of the generated response (`toISOString()` in the JSON).
-    timestamp: Optional[Optional["_dto.Timestamp"]] = Field(default=None, alias="timestamp")
+    timestamp: Optional["_dto.Timestamp"] = Field(default=None, alias="timestamp")
 
 
 #: The final result of a video generation operation.
@@ -4803,7 +4813,7 @@ class VideoResponse(_Wire):
 #: Aligned with V4 `VideoModelV4Result`.
 class VideoResult(_Wire):
     #: Additional provider-specific metadata, keyed by provider name.
-    provider_metadata: Optional[Optional[Dict[str, Dict[str, Any]]]] = Field(default=None, alias="providerMetadata")
+    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
     #: Response information for telemetry and debugging.
     response: "_dto.VideoResponse" = Field(alias="response")
     #: Generated videos as URLs, base64 strings, or binary data.
@@ -4814,13 +4824,13 @@ class VideoResult(_Wire):
 
 class WarningUnsupported(_Wire):
     type: Literal["unsupported"] = Field(default="unsupported", alias="type")
-    details: Optional[Optional[str]] = Field(default=None, alias="details")
+    details: Optional[str] = Field(default=None, alias="details")
     feature: str = Field(alias="feature")
 
 
 class WarningCompatibility(_Wire):
     type: Literal["compatibility"] = Field(default="compatibility", alias="type")
-    details: Optional[Optional[str]] = Field(default=None, alias="details")
+    details: Optional[str] = Field(default=None, alias="details")
     feature: str = Field(alias="feature")
 
 

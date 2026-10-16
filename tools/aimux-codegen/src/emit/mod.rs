@@ -18,7 +18,14 @@ pub trait Emitter: Sync {
 }
 
 /// Every language's DTO emitter; each writes only its own binding's files.
-pub static EMITTERS: &[&dyn Emitter] = &[&dart::Dart, &go::Go, &java::Java, &node::Node, &python::Python, &swift::Swift];
+pub static EMITTERS: &[&dyn Emitter] = &[
+    &dart::Dart,
+    &go::Go,
+    &java::Java,
+    &node::Node,
+    &python::Python,
+    &swift::Swift,
+];
 
 pub(crate) fn owned_paths() -> impl Iterator<Item = &'static str> {
     EMITTERS

@@ -240,15 +240,7 @@ fn ty(value: &Ty) -> String {
         Ty::Ref(name) => quote(&format!("_dto.{name}")),
         Ty::String => "str".into(),
         Ty::Bool => "bool".into(),
-        Ty::Int { unsigned, bits } => {
-            let min = if *unsigned {
-                0
-            } else {
-                -(1_i128 << (bits - 1))
-            };
-            let max = (1_u128 << (bits - u8::from(!unsigned))) - 1;
-            format!("Annotated[int, Field(ge={min}, le={max})]")
-        }
+        Ty::Int { unsigned, bits } => format!("{}{bits}", if *unsigned { "U" } else { "I" }),
         Ty::Float => "float".into(),
         Ty::Array(inner) => format!("List[{}]", ty(inner)),
         Ty::Map(inner) => format!("Dict[str, {}]", ty(inner)),
@@ -260,6 +252,14 @@ fn ty(value: &Ty) -> String {
             Codec::Timestamp => "Annotated[str, BeforeValidator(timestamp)]".into(),
             Codec::Presence | Codec::Tagged => ty(inner),
         },
+    }
+}
+
+fn nullable(value: &Ty) -> bool {
+    match value {
+        Ty::Nullable(_) => true,
+        Ty::Codec(_, inner) => nullable(inner),
+        _ => false,
     }
 }
 
@@ -307,7 +307,7 @@ fn class(
     }
     for field in fields {
         docs(out, field.doc.as_deref(), "    ");
-        let annotation = if field.required {
+        let annotation = if field.required || nullable(&field.ty) {
             ty(&field.ty)
         } else {
             format!("Optional[{}]", ty(&field.ty))
@@ -421,6 +421,16 @@ from pydantic import (
     model_serializer,
 )
 from typing_extensions import TypeAliasType
+
+
+U8 = Annotated[int, Field(ge=0, le=255)]
+U16 = Annotated[int, Field(ge=0, le=65535)]
+U32 = Annotated[int, Field(ge=0, le=4294967295)]
+U64 = Annotated[int, Field(ge=0, le=18446744073709551615)]
+I8 = Annotated[int, Field(ge=-128, le=127)]
+I16 = Annotated[int, Field(ge=-32768, le=32767)]
+I32 = Annotated[int, Field(ge=-2147483648, le=2147483647)]
+I64 = Annotated[int, Field(ge=-9223372036854775808, le=9223372036854775807)]
 
 
 def base64_wire(value, *, decode=False):
