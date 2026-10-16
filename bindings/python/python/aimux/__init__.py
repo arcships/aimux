@@ -6,6 +6,7 @@ are synchronous; use the caller's executor when integrating with asyncio.
 import json
 import weakref
 
+from . import ops
 from .aimux import (
     ABI_VERSION, OPS_VERSION, EXPECTED_ABI_VERSION, EXPECTED_OPS_VERSION,
     EXPECTED_MANIFEST_DIGEST, Abort, Client as _NativeClient, StreamIterator,
@@ -140,7 +141,7 @@ class Handle:
 
     def close(self):
         if self._release.alive:
-            self.client.call("handle.drop", handle=self.id)
+            self.client.call(ops.OP_HANDLE_DROP, handle=self.id)
             self._release.detach()
 
     def __enter__(self):

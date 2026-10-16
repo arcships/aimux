@@ -64,7 +64,7 @@ func (h *Handle) ID() (HandleID, error) {
 	return 0, ErrClosed
 }
 
-// CheckABI checks the ABI major and exact generated operation version once,
+// CheckABI checks the ABI major and exact generated operation version and digest once,
 // before any operation is executed.
 func CheckABI() error {
 	abiCheck.Do(func() {
@@ -78,17 +78,23 @@ func CheckABI() error {
 			abiCheck.err = err
 			return
 		}
-		var manifest struct {
-			ABI uint32 `json:"abiVersion"`
-			Ops string `json:"opsVersion"`
-		}
-		if err := json.Unmarshal(raw, &manifest); err != nil {
-			abiCheck.err = localError("binding", 205, "ResultSerialization", err.Error())
-		} else if manifest.ABI != actual || manifest.Ops != generated.OPS_VERSION {
-			abiCheck.err = localError("protocol", 302, "UnsupportedOpsVersion", "runtime manifest does not match the binding operation version")
-		}
+		abiCheck.err = validateManifest(actual, raw)
 	})
 	return abiCheck.err
+}
+
+func validateManifest(actual uint32, raw []byte) error {
+	var manifest struct {
+		ABI    uint32 `json:"abiVersion"`
+		Ops    string `json:"opsVersion"`
+		Digest string `json:"digest"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return localError("binding", 205, "ResultSerialization", err.Error())
+	} else if manifest.ABI != actual || manifest.Ops != generated.OPS_VERSION || manifest.Digest != generated.MANIFEST_DIGEST {
+		return localError("protocol", 302, "UnsupportedOpsVersion", fmt.Sprintf("incompatible runtime manifest: opsVersion %q (expected %q), digest %q (expected %q)", manifest.Ops, generated.OPS_VERSION, manifest.Digest, generated.MANIFEST_DIGEST))
+	}
+	return nil
 }
 
 func Manifest() (json.RawMessage, error) {
@@ -186,7 +192,7 @@ func handleFromResult(raw []byte) (*Handle, error) {
 }
 
 func createAbort() (*Handle, error) {
-	raw, err := nativeCall(0, "abort.create", []byte(`{}`), 0)
+	raw, err := nativeCall(0, generated.OP_ABORT_CREATE, []byte(`{}`), 0)
 	if err != nil {
 		return nil, err
 	}

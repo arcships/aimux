@@ -4,6 +4,10 @@
 mod bridge;
 mod error;
 
+#[cfg(feature = "contract-tests")]
+#[path = "../../node/__test__/native_scenarios.rs"]
+mod native_scenarios;
+
 include!(concat!(env!("OUT_DIR"), "/contract.rs"));
 
 use std::collections::HashMap;
@@ -19,6 +23,9 @@ use serde_json::Value;
 
 use bridge::{StreamIterator, wait_call};
 
+// Process lifetime: Rust statics are not dropped at interpreter shutdown. Each
+// InterpreterOwner queues release_owner on this still-live runtime; late Python
+// finalizers therefore cannot encounter a runtime that we have already dropped.
 static RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
 
 fn runtime() -> Result<&'static tokio::runtime::Runtime, OpsError> {
@@ -202,6 +209,32 @@ impl Client {
         // No Python references cross this boundary, including in construction,
         // discovery, poll and recorder flush operations.
         wait_call(py, signal, async move {
+            #[cfg(feature = "contract-tests")]
+            if op == "test.teardown" {
+                let owner = InterpreterOwner {
+                    token: Owner::new_python()?,
+                };
+                let token = owner.token;
+                let id = native_scenarios::operation(token).await;
+                // Exercise the same Drop implementation as the module guard and
+                // Client, without retiring this test interpreter's live owner.
+                drop(owner);
+                tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                    while !native_scenarios::released(token, id) {
+                        tokio::task::yield_now().await;
+                    }
+                })
+                .await
+                .unwrap();
+                let runtime_alive = runtime()?.spawn(async { true }).await.unwrap();
+                return serialize(&serde_json::json!({
+                    "released": true, "runtimeAlive": runtime_alive,
+                }));
+            }
+            #[cfg(feature = "contract-tests")]
+            if op == "test.scenario" {
+                return serialize(&native_scenarios::replay(params, ctx.owner).await);
+            }
             let value = dispatch::call(ctx, handle, &op, params).await?;
             serialize(&value)
         })
@@ -239,7 +272,7 @@ impl Client {
             let _ = dispatch::call(
                 context(owner, AbortSignal::new()),
                 handle,
-                "handle.drop",
+                dispatch::HANDLE_DROP,
                 serde_json::json!({}),
             )
             .await;

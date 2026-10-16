@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
+import * as ops from '../src/generated/ops.ts'
 
 // Install the test transport before loading either public entrypoint.
 const require = createRequire(import.meta.url)
@@ -17,7 +18,7 @@ test('raw and typed preserve the same DTO, null, nested provider options and 64-
   assert.ok(model instanceof LanguageModel)
   assert.ok(BigInt(model.handle) > BigInt(Number.MAX_SAFE_INTEGER))
   const params = { prompt: '你好 🚀', options: { providerOptions: { openai: { nested: [null, { enabled: true }] } }, toolChoice: 'required' as const } }
-  const raw = JSON.parse(await client.raw.call(model.handle, 'text.generate', JSON.stringify(params)))
+  const raw = JSON.parse(await client.raw.call(model.handle, ops.OP_TEXT_GENERATE, JSON.stringify(params)))
   const typed = await (model as InstanceType<typeof LanguageModel>).generate(params.prompt, params.options)
   assert.deepEqual(typed, raw)
   const embedding = await provider.model('embed', 'embeddingModel')
@@ -46,7 +47,7 @@ test('events retain recoverable error data and a unique explicit terminal', asyn
   const client = new Client()
   const model = await (await client.provider({ package: 'openai' })).model('test')
   const frames = []
-  for await (const frame of await client.stream(model.handle, 'text.stream')) frames.push(frame)
+  for await (const frame of await client.stream(model.handle, ops.OP_TEXT_STREAM)) frames.push(frame)
   assert.equal(frames.length, 2)
   assert.equal(frames[0].type, 'event')
   assert.equal(frames[0].seq, '9007199254740993')
@@ -55,13 +56,13 @@ test('events retain recoverable error data and a unique explicit terminal', asyn
 
 test('pre-acceptance rejection occurs before an iterator exists', async () => {
   const client = new Client()
-  await assert.rejects(client.stream('0', 'text.stream', { reject: true }), (error: unknown) => error instanceof AimuxError && error.code === 301)
+  await assert.rejects(client.stream('0', ops.OP_TEXT_STREAM, { reject: true }), (error: unknown) => error instanceof AimuxError && error.code === 301)
 })
 
 test('return cancels while next is pending', async () => {
   const client = new Client()
   const abort = client.abort()
-  const iterator = await client.stream('0', 'text.stream', { pending: true }, { abort })
+  const iterator = await client.stream('0', ops.OP_TEXT_STREAM, { pending: true }, { abort })
   const pending = iterator.next()
   await iterator.return!()
   assert.equal(abort.aborted, true)
@@ -72,7 +73,7 @@ test('return cancels while next is pending', async () => {
 test('reader.cancel cancels while a read is pending without prefetch', async () => {
   const client = new Client()
   const abort = client.abort()
-  const iterator = await client.stream('0', 'text.stream', { pending: true }, { abort })
+  const iterator = await client.stream('0', ops.OP_TEXT_STREAM, { pending: true }, { abort })
   const reader = readable(iterator).getReader()
   const pending = reader.read()
   await new Promise(resolve => setImmediate(resolve))
@@ -84,7 +85,7 @@ test('reader.cancel cancels while a read is pending without prefetch', async () 
 test('throw preserves the original consumer error and aborts', async () => {
   const client = new Client()
   const abort = client.abort()
-  const iterator = await client.stream('0', 'text.stream', {}, { abort })
+  const iterator = await client.stream('0', ops.OP_TEXT_STREAM, {}, { abort })
   const error = new Error('consumer failed')
   await assert.rejects(iterator.throw!(error), caught => caught === error)
   assert.equal(abort.aborted, true)
@@ -94,7 +95,7 @@ test('AbortSignal is wired before invocation, including pre-aborted signals', as
   const client = new Client()
   const controller = new AbortController()
   controller.abort()
-  await assert.rejects(client.call('0', 'runtime.describe', {}, { signal: controller.signal }), error => error instanceof AimuxError && error.kind === 'aimux')
+  await assert.rejects(client.call('0', ops.OP_RUNTIME_DESCRIBE, {}, { signal: controller.signal }), error => error instanceof AimuxError && error.kind === 'aimux')
   const second = new AbortController()
   const abort = client.abort(second.signal)
   second.abort()
@@ -107,7 +108,7 @@ test('clients in one environment share handles and Abort objects', async () => {
   const provider = await first.provider({ package: 'openai' })
   const registry = await second.registry({ shared: provider })
   assert.equal((await registry.provider('shared')).kind, 'Provider')
-  await second.call('0', 'runtime.describe', {}, { abort: first.abort() })
+  await second.call('0', ops.OP_RUNTIME_DESCRIBE, {}, { abort: first.abort() })
   await Promise.all([registry.close(), provider.close()])
 })
 
@@ -125,9 +126,9 @@ test('devtools, registry and binary operation use the same raw dispatch', async 
   const registry = await client.registry({ main: provider })
   assert.equal((await registry.provider('main')).kind, 'Provider')
   const trace = await client.trace({ capacity: 64 })
-  assert.deepEqual(await trace.sessionChain('s'), { op: 'trace.sessionChain', params: { sessionId: 's' } })
+  assert.deepEqual(await trace.sessionChain('s'), { op: ops.OP_TRACE_SESSION_CHAIN, params: { sessionId: 's' } })
   const recorder = await client.recorder({ kind: 'ring' })
-  assert.deepEqual(await recorder.flush(), { op: 'recorder.flush', params: {} })
+  assert.deepEqual(await recorder.flush(), { op: ops.OP_RECORDER_FLUSH, params: {} })
   const transcription = await provider.model('asr', 'transcriptionModel') as InstanceType<typeof api.TranscriptionModel>
   const operation = await transcription.start({})
   await operation.push(new Uint8Array([0, 255, 128]))
@@ -136,15 +137,25 @@ test('devtools, registry and binary operation use the same raw dispatch', async 
   await events.return!()
 })
 
-test('incompatible manifest is rejected at loading', () => {
-  assert.throws(() => rawApi.verifyManifest({ abiVersion: 0, opsVersion: '1.0' } as never), error => error instanceof AimuxError && error.code === 302)
+test('manifest handshake pins every generated value and reports both sides', () => {
+  const compatible = { abiVersion: ops.ABI_VERSION, opsVersion: ops.OPS_VERSION, digest: ops.MANIFEST_DIGEST } as rawApi.Manifest
+  rawApi.verifyManifest(compatible)
+  for (const [field, received] of [['abiVersion', 0], ['opsVersion', '1.1'], ['digest', 'outdated'], ['digest', undefined]] as const) {
+    assert.throws(() => rawApi.verifyManifest({ ...compatible, [field]: received }), (error: unknown) => {
+      assert.ok(error instanceof AimuxError)
+      assert.equal(error.code, 302)
+      assert.ok(error.message.includes(String(compatible[field])))
+      assert.ok(error.message.includes(String(received)))
+      return true
+    })
+  }
 })
 
 test('typed serialization failures stay in the binding error domain', async () => {
   const client = new Client()
   const cyclic: Record<string, unknown> = {}
   cyclic.self = cyclic
-  await assert.rejects(client.call('0', 'runtime.configure', cyclic), error => error instanceof AimuxError && error.kind === 'binding' && error.code === 202)
+  await assert.rejects(client.call('0', ops.OP_RUNTIME_CONFIGURE, cyclic), error => error instanceof AimuxError && error.kind === 'binding' && error.code === 202)
 })
 
 test('raw and typed expose matching error/cancelled terminal frames as DTOs', async () => {
@@ -153,9 +164,9 @@ test('raw and typed expose matching error/cancelled terminal frames as DTOs', as
     const envelope = { kind: 'aimux', code: 1, message: 'failed', error: { name: 'AI_APICallError', isRetryable: false } }
     const values = [{ type: 'end', seq: '1', outcome, ...(outcome === 'error' ? { error: envelope } : {}) }]
     const raw = []
-    for await (const frame of await client.raw.stream('0', 'text.stream', JSON.stringify({ values }))) raw.push(JSON.parse(frame))
+    for await (const frame of await client.raw.stream('0', ops.OP_TEXT_STREAM, JSON.stringify({ values }))) raw.push(JSON.parse(frame))
     const typed = []
-    for await (const frame of await client.stream('0', 'text.stream', { values })) typed.push(frame)
+    for await (const frame of await client.stream('0', ops.OP_TEXT_STREAM, { values })) typed.push(frame)
     assert.deepEqual(typed, raw)
     assert.deepEqual(typed, values)
   }

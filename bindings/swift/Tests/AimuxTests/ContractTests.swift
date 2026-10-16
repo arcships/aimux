@@ -37,11 +37,37 @@ struct ContractTests {
 #if !AIMUX_STANDALONE
     @Test
 #endif
+    static func manifestRequiresExactVersionAndDigest() throws {
+        let valid: [String: JSONValue] = [
+            "abiVersion": .integer(Int64(AimuxOps.ABI_VERSION)),
+            "opsVersion": .string(AimuxOps.OPS_VERSION),
+            "digest": .string(AimuxOps.MANIFEST_DIGEST),
+        ]
+        try validateManifest(.object(valid), version: AimuxOps.ABI_VERSION)
+        for (field, value) in [("opsVersion", JSONValue.string("1.1")),
+                               ("digest", .string("wrong-digest")), ("digest", .null)] {
+            var invalid = valid
+            invalid[field] = value
+            do {
+                try validateManifest(.object(invalid), version: AimuxOps.ABI_VERSION)
+                throw CheckFailure(description: "Accepted incompatible manifest")
+            } catch let error as AimuxError {
+                try require(error.code == 302)
+                let message = error.message
+                try require(message.contains(AimuxOps.OPS_VERSION))
+                try require(message.contains(AimuxOps.MANIFEST_DIGEST))
+                try require(message.contains(String(describing: value)))
+            }
+        }
+    }
+#if !AIMUX_STANDALONE
+    @Test
+#endif
     static func manifestAndHandles() async throws {
         let manifest = try await AimuxRuntime.manifest()
         guard case .object(let fields) = manifest else { throw CheckFailure(description: "Missing manifest") }
-        try require(fields["opsVersion"] == .string("1.0"))
-        let handle = try await AimuxRuntime.open("provider.create")
+        try require(fields["opsVersion"] == .string(AimuxOps.OPS_VERSION))
+        let handle = try await AimuxRuntime.open(AimuxOps.OP_PROVIDER_CREATE)
         try require(try await handle.call("echo", params: .string("你好 🌍")) == .string("你好 🌍"))
         handle.close()
         do { _ = try await handle.call("echo"); throw CheckFailure(description: "Closed handle admitted") }
@@ -53,7 +79,7 @@ struct ContractTests {
 #endif
     static func versionMismatch() async throws {
         aimux_test_version(2 << 16)
-        defer { aimux_test_version(1 << 16) }
+        defer { aimux_test_version(AimuxOps.ABI_VERSION) }
         do { _ = try await AimuxRuntime.manifest(); throw CheckFailure(description: "Accepted wrong ABI") }
         catch let error as AimuxError { try require(error.code == 304) }
     }

@@ -918,10 +918,10 @@ impl JsonlRecorder {
         })
     }
 
-    /// 在 `dir` 下创建录制器并启动 writer 线程(兼容入口:FFI `aimux_init_recording`
-    /// 及绑定均以 infallible `new` 调用,A9 要求保持兼容)。内部委托 [`JsonlRecorder::try_new`],
-    /// 失败时降级为无 writer 的 no-op recorder(`tx = None`,事件静默丢弃),
-    /// 行为等价于原先 `create_dir_all().ok()` + writer 打开文件失败早退。
+    /// Create a recorder in `dir` and start its writer thread.
+    /// Delegates to [`JsonlRecorder::try_new`]; on failure this infallible Rust
+    /// constructor returns a disabled recorder that silently discards events.
+    /// The ops `recorder.create` path uses `try_new` and reports initialization errors.
     pub fn new(dir: impl Into<PathBuf>) -> Self {
         let dir = dir.into();
         Self::try_new(dir.clone()).unwrap_or_else(|_| Self::disabled(dir))

@@ -434,7 +434,6 @@ async fn strict_controls_and_reference_errors_cross_projected_boundary() {
     cases.push((registry, "model.resolve", extra, 301));
     for value in [
         json!(provider.0),
-        json!(format!("0{}", provider.0)),
         json!("+1"),
         json!("18446744073709551616"),
     ] {
@@ -450,7 +449,6 @@ async fn strict_controls_and_reference_errors_cross_projected_boundary() {
     )))));
     for value in [
         json!(middleware.0),
-        json!(format!("0{}", middleware.0)),
         json!("+1"),
         json!("18446744073709551616"),
     ] {

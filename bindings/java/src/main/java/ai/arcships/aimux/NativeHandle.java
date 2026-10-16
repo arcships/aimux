@@ -1,11 +1,18 @@
 package ai.arcships.aimux;
 
 import ai.arcships.aimux.types.*;
+import com.sun.jna.Pointer;
+import java.lang.ref.PhantomReference;
+import java.lang.ref.ReferenceQueue;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** A short admission lock; no monitor is held across native calls or callbacks. */
 abstract class NativeHandle implements AutoCloseable {
     final Aimux aimux;
     private final long id;
+    private final Cleanup cleanup;
     private int active;
     private boolean closed;
 
@@ -13,6 +20,7 @@ abstract class NativeHandle implements AutoCloseable {
         if (id == 0) throw new IllegalArgumentException("Resource handle cannot be zero");
         this.aimux = java.util.Objects.requireNonNull(aimux, "aimux");
         this.id = id;
+        cleanup = new Cleanup(this, aimux.ffi, id);
     }
 
     public final String getHandle() { return Long.toUnsignedString(id); }
@@ -91,9 +99,46 @@ abstract class NativeHandle implements AutoCloseable {
         synchronized (this) {
             if (closed) return;
             closed = true;
+            cleanup.disarm();
             drop = active == 0;
         }
         if (drop) aimux.drop(id);
+    }
+
+    private static final class Cleanup extends PhantomReference<NativeHandle> {
+        private static final ReferenceQueue<NativeHandle> QUEUE = new ReferenceQueue<>();
+        private static final Set<Cleanup> LIVE = ConcurrentHashMap.newKeySet();
+        static {
+            Thread reaper = new Thread(() -> {
+                while (true) {
+                    try {
+                        Cleanup cleanup = (Cleanup) QUEUE.remove();
+                        long id = cleanup.id.getAndSet(0);
+                        cleanup.disarm();
+                        if (id != 0) cleanup.ffi.aimux_handle_finalizer(Pointer.createConstant(id));
+                    } catch (InterruptedException | RuntimeException | LinkageError ignored) {
+                        // A failed cleanup must not disable the safety net for other handles.
+                    }
+                }
+            }, "aimux-handle-finalizer");
+            reaper.setDaemon(true);
+            reaper.start();
+        }
+        private final AimuxFFI ffi;
+        private final AtomicLong id;
+
+        Cleanup(NativeHandle handle, AimuxFFI ffi, long id) {
+            super(handle, QUEUE);
+            this.ffi = ffi;
+            this.id = new AtomicLong(id);
+            LIVE.add(this);
+        }
+
+        void disarm() {
+            id.set(0);
+            LIVE.remove(this);
+            clear();
+        }
     }
 
     static final class Lease implements AutoCloseable {

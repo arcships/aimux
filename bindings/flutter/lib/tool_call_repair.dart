@@ -1,3 +1,4 @@
+import 'generated/ops.dart' as ops;
 import 'aimux.dart';
 
 /// Pure repair DTO operations. Host repair functions remain on the caller's
@@ -9,12 +10,13 @@ final class ToolCallRepair {
   Future<ToolRepairContextResult> context(
           ToolRepairContextRequest params) async =>
       ToolRepairContextResult.fromJson(
-          await client.call('toolRepair.context', params: params));
+          await client.call(ops.OP_TOOL_REPAIR_CONTEXT, params: params));
   Future<ToolCall> apply(ToolRepairApplyRequest params) async =>
-      ToolCall.fromJson((await client.call('toolRepair.apply', params: params))
-          as Map<String, dynamic>);
+      ToolCall.fromJson((await client.call(ops.OP_TOOL_REPAIR_APPLY,
+          params: params)) as Map<String, dynamic>);
   Future<GenerateTextResult> applyResult(
           ToolRepairApplyResultRequest params) async =>
-      GenerateTextResult.fromJson((await client.call('toolRepair.applyResult',
-          params: params)) as Map<String, dynamic>);
+      GenerateTextResult.fromJson(
+          (await client.call(ops.OP_TOOL_REPAIR_APPLY_RESULT, params: params))
+              as Map<String, dynamic>);
 }

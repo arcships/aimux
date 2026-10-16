@@ -509,9 +509,6 @@
     {
       "additionalProperties": false,
       "properties": {
-        "abort": {
-          "$ref": "handle-id.json"
-        },
         "handle": {
           "$ref": "handle-id.json",
           "not": {

@@ -8,15 +8,16 @@ import unittest
 
 if os.environ.get('AIMUX_REAL_OPS') == '1':
     import aimux
+    from aimux import ops
 
 
 @unittest.skipUnless(os.environ.get('AIMUX_REAL_OPS') == '1', 'requires assembled shared ops runtime')
 class RealOps(unittest.TestCase):
     def test_manifest_pin_and_describe(self):
         client = aimux.Client()
-        self.assertEqual(aimux.verify_contract()['opsVersion'], '1.0')
+        self.assertEqual(aimux.verify_contract()['opsVersion'], ops.OPS_VERSION)
         self.assertEqual(aimux.manifest_digest(), aimux.EXPECTED_MANIFEST_DIGEST)
-        self.assertIsInstance(client.call('runtime.describe'), dict)
+        self.assertIsInstance(client.call(ops.OP_RUNTIME_DESCRIBE), dict)
 
     def test_unknown_op_is_protocol_error(self):
         with self.assertRaises(aimux.ProtocolError) as error:
@@ -25,18 +26,18 @@ class RealOps(unittest.TestCase):
 
     def test_unknown_handle_is_binding_error(self):
         with self.assertRaises(aimux.BindingError) as error:
-            aimux.Client().call('model.info', handle='18446744073709551615')
+            aimux.Client().call(ops.OP_MODEL_INFO, handle='18446744073709551615')
         self.assertEqual(error.exception.code, 203)
 
     def test_drop_unknown_and_global_is_idempotent(self):
         client = aimux.Client()
         for handle in ('0', '18446744073709551615'):
             for _ in range(2):
-                client.call('handle.drop', handle=handle)
+                client.call(ops.OP_HANDLE_DROP, handle=handle)
 
     def provider(self, client=None):
         client = client or aimux.Client()
-        return client.adopt(client.call('provider.create', {
+        return client.adopt(client.call(ops.OP_PROVIDER_CREATE, {
             'package': 'openai', 'settings': {'apiKey': 'offline-test-key'},
         })['handle'])
 
@@ -46,7 +47,7 @@ class RealOps(unittest.TestCase):
 
     def test_all_model_kinds_round_trip_and_child_survives_provider(self):
         with self.provider() as provider:
-            models = [provider.client.adopt(provider.call('provider.model', {
+            models = [provider.client.adopt(provider.call(ops.OP_PROVIDER_MODEL, {
                 'method': method, 'modelId': 'offline-model',
             })['handle']) for method in (
                 'languageModel', 'embeddingModel', 'imageModel', 'speechModel',
@@ -54,29 +55,29 @@ class RealOps(unittest.TestCase):
             )]
         try:
             for model in models:
-                self.assertIsInstance(model.call('model.info'), dict)
+                self.assertIsInstance(model.call(ops.OP_MODEL_INFO), dict)
         finally:
             for model in models: model.close()
 
     def test_clients_in_same_interpreter_share_handles(self):
         with self.provider() as provider:
             other = aimux.Client()
-            result = other.call('provider.model', {
+            result = other.call(ops.OP_PROVIDER_MODEL, {
                 'method': 'languageModel', 'modelId': 'offline-model',
             }, handle=provider)
             with other.adopt(result['handle']) as model:
-                self.assertIsInstance(model.call('model.info'), dict)
+                self.assertIsInstance(model.call(ops.OP_MODEL_INFO), dict)
 
     def test_drop_is_idempotent_and_invalid_handle_does_not_leak_kind(self):
         provider = self.provider()
-        model = provider.client.adopt(provider.call('provider.model', {
+        model = provider.client.adopt(provider.call(ops.OP_PROVIDER_MODEL, {
             'method': 'languageModel', 'modelId': 'offline-model',
         })['handle'])
         provider.close()
         model.close()
         model.close()
         with self.assertRaises(aimux.BindingError) as error:
-            model.call('model.info')
+            model.call(ops.OP_MODEL_INFO)
         self.assertEqual(error.exception.code, 203)
         self.assertIsNone(error.exception.error.get('actual'))
 
@@ -91,7 +92,7 @@ class RealOps(unittest.TestCase):
         # provider.model is provider-scoped and creates no child on invalid input.
         for _ in range(100):
             try:
-                result = client.call('provider.model', {'method': 'languageModel', 'modelId': 'offline'}, handle=handle)
+                result = client.call(ops.OP_PROVIDER_MODEL, {'method': 'languageModel', 'modelId': 'offline'}, handle=handle)
                 client.adopt(result['handle']).close()
             except aimux.BindingError as error:
                 self.assertEqual(error.code, 203)
@@ -101,8 +102,8 @@ class RealOps(unittest.TestCase):
             self.fail('GC cleanup did not remove provider')
 
     def test_control_dtos_reject_unknown_fields(self):
-        for op, params in [('runtime.describe', {'unknown': True}),
-                           ('provider.create', {'package': 'openai', 'unknown': True})]:
+        for op, params in [(ops.OP_RUNTIME_DESCRIBE, {'unknown': True}),
+                           (ops.OP_PROVIDER_CREATE, {'package': 'openai', 'unknown': True})]:
             with self.subTest(op=op), self.assertRaises(aimux.ProtocolError) as error:
                 aimux.Client().call(op, params)
             self.assertEqual(error.exception.code, 301)
@@ -110,7 +111,7 @@ class RealOps(unittest.TestCase):
     def test_wrong_handle_kind_rejected_before_provider_call(self):
         with self.provider() as provider:
             with self.assertRaises(aimux.BindingError) as error:
-                provider.call('text.generate', {'prompt': 'hi'})
+                provider.call(ops.OP_TEXT_GENERATE, {'prompt': 'hi'})
             self.assertEqual(error.exception.code, 203)
 
     def test_binary_push_uses_typed_service_and_enforces_byte_limit(self):
@@ -123,18 +124,18 @@ class RealOps(unittest.TestCase):
                 client.operation_push('0', payload)
             self.assertEqual(error.exception.code, 305)
         with self.assertRaises(aimux.ProtocolError) as error:
-            client.call('operation.push')
+            client.call(ops.OP_OPERATION_PUSH)
         self.assertEqual(error.exception.code, 300)
 
     def test_secondary_abort_is_owner_typed(self):
         with self.provider() as provider:
             with self.assertRaises(aimux.BindingError) as error:
-                provider.call('provider.invoke', {'method': 'listModels', 'abort': provider.id})
+                provider.call(ops.OP_PROVIDER_INVOKE, {'method': 'listModels', 'abort': provider.id})
             self.assertEqual(error.exception.code, 203)
 
     def test_stream_validation_error_precedes_acceptance(self):
         with self.assertRaises(aimux.BindingError):
-            aimux.Client().stream('text.stream', {'prompt': 'hi'}, handle='18446744073709551615')
+            aimux.Client().stream(ops.OP_TEXT_STREAM, {'prompt': 'hi'}, handle='18446744073709551615')
 
     def test_recording_domain_comes_from_real_core(self):
         import tempfile
@@ -143,7 +144,7 @@ class RealOps(unittest.TestCase):
             path = Path(directory) / 'file'
             path.write_text('blocks directory creation')
             with self.assertRaises(aimux.RecordingError) as error:
-                aimux.Client().call('recorder.create', {
+                aimux.Client().call(ops.OP_RECORDER_CREATE, {
                     'backend': {'type': 'jsonl', 'directory': str(path / 'child')},
                     'capturePolicy': 'full',
                 })
@@ -151,12 +152,12 @@ class RealOps(unittest.TestCase):
 
     def test_recorder_round_trip(self):
         client = aimux.Client()
-        with client.adopt(client.call('recorder.create', {
+        with client.adopt(client.call(ops.OP_RECORDER_CREATE, {
             'backend': {'type': 'ring', 'capacity': 4}, 'capturePolicy': 'full',
         })['handle']) as recorder:
-            self.assertIsInstance(recorder.call('recorder.stats'), dict)
-            recorder.call('recorder.flush')
-            self.assertIsInstance(recorder.call('recorder.export')['jsonl'], str)
+            self.assertIsInstance(recorder.call(ops.OP_RECORDER_STATS), dict)
+            recorder.call(ops.OP_RECORDER_FLUSH)
+            self.assertIsInstance(recorder.call(ops.OP_RECORDER_EXPORT)['jsonl'], str)
 
     @unittest.skipUnless(hasattr(os, 'mkfifo'), 'requires POSIX FIFOs')
     def test_real_constructor_io_releases_gil(self):
@@ -187,28 +188,30 @@ class RealProviderRoundTrips(unittest.TestCase):
 
     def test_text_and_streams(self):
         from gil_ops import language
-        for op in ('text.generate', 'text.generateObject', 'text.generateOpenAI', 'text.consume',
-                   'text.stream', 'text.streamOpenAI'):
+        for op in (ops.OP_TEXT_GENERATE, ops.OP_TEXT_GENERATE_OBJECT, ops.OP_TEXT_GENERATE_OPEN_AI, ops.OP_TEXT_CONSUME,
+                   ops.OP_TEXT_STREAM, ops.OP_TEXT_STREAM_OPEN_AI):
             with self.subTest(op=op), language(op) as invoke:
                 result = invoke()
-                self.assertIsInstance(result, list if op.startswith('text.stream') else dict)
-                if op.startswith('text.stream'):
-                    self.assertEqual(result[-1]['type'], 'end')
-                    self.assertEqual(result[-1]['outcome'], 'success')
-                    events = [frame['event'] for frame in result if frame['type'] == 'event']
-                    if op == 'text.stream':
+                self.assertIsInstance(result, list if op in (ops.OP_TEXT_STREAM, ops.OP_TEXT_STREAM_OPEN_AI) else dict)
+                if op in (ops.OP_TEXT_STREAM, ops.OP_TEXT_STREAM_OPEN_AI):
+                    # The Python bridge consumes End: success stops iteration,
+                    # while terminal failures raise typed exceptions.
+                    self.assertTrue(result)
+                    self.assertTrue(all(frame['type'] == 'event' for frame in result))
+                    events = [frame['event'] for frame in result]
+                    if op == ops.OP_TEXT_STREAM:
                         text = ''.join(event['text'] for event in events if event['type'] == 'text-delta')
                     else:
                         text = ''.join(choice['delta'].get('content', '')
                                        for event in events for choice in event['choices'])
                     self.assertEqual(text, 'Hello world')
-                elif op == 'text.generateObject':
+                elif op == ops.OP_TEXT_GENERATE_OBJECT:
                     self.assertEqual(result['object'], {'answer': 'hello'})
-                elif op == 'text.generateOpenAI':
+                elif op == ops.OP_TEXT_GENERATE_OPEN_AI:
                     self.assertEqual(result['choices'][0]['message']['content'],
                                      'Rust is a systems programming language.')
                 else:
-                    self.assertEqual(result['text'], 'Hello world' if op == 'text.consume'
+                    self.assertEqual(result['text'], 'Hello world' if op == ops.OP_TEXT_CONSUME
                                      else 'Rust is a systems programming language.')
 
     def test_video_and_decision(self):
@@ -221,10 +224,10 @@ class RealProviderRoundTrips(unittest.TestCase):
         from gil_ops import model_at
         from ops_fixtures import slow_ws
         with slow_ws(0) as url, model_at(url, 'transcriptionModel', 'gpt-realtime-whisper') as model:
-            with model.client.adopt(model.call('transcription.start')) as operation:
+            with model.client.adopt(model.call(ops.OP_TRANSCRIPTION_START)) as operation:
                 operation.push(b'\0\0')
-                part = operation.call('operation.next', {'timeoutMs': 5000})
+                part = operation.call(ops.OP_OPERATION_NEXT, {'timeoutMs': 5000})
                 self.assertEqual(part['type'], 'part')
-                operation.call('operation.inputDone')
-                operation.call('operation.cancel')
-                self.assertIsInstance(operation.call('operation.status'), dict)
+                operation.call(ops.OP_OPERATION_INPUT_DONE)
+                operation.call(ops.OP_OPERATION_CANCEL)
+                self.assertIsInstance(operation.call(ops.OP_OPERATION_STATUS), dict)

@@ -29,7 +29,7 @@ pub fn manifest() -> Value {
             );
         }
     }
-    json!({
+    let mut value = json!({
         "abiVersion": ABI_VERSION,
         "opsVersion": OPS_VERSION,
         "manifestRevision": "1",
@@ -44,7 +44,9 @@ pub fn manifest() -> Value {
             "G-c: replay transport capabilities and credential creation are future",
             "G-e: per-asset platform install verification is not claimed"
         ],
-    })
+    });
+    value["digest"] = json!(digest(value.clone()));
+    value
 }
 
 /// SHA-256 of recursively key-sorted compact JSON, independent of map insertion order.

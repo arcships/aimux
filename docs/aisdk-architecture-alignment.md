@@ -1521,11 +1521,13 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - RFC-0039 D3：协议错误固定使用 300..306，AiMux 错误扩至 20，保留空缺码 4，码 3 对应三个变体、码 6 对应两个变体，因为替换 ABI 时必须保留既有数值含义（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
 - RFC-0039 D4：`aimux_handle_finalizer(void *token)` 作为第十四个导出，因为 GC 清理需要不阻塞的指针签名入口，不能强转 `aimux_drop(uint64_t)`（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
 - RFC-0039 D5：已实现的输入 64 条、输出 256 条、队列 8 MiB、单个事件或二进制块 1 MiB 和清理五秒上限仍是稳定冻结前的建议值，因为还缺 RFC-0038 测量及平台验证证据（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
-- RFC-0039 D6：`operation.next` 是返回 part/ended/timeout 标签结果的 JSON `call`，与原生轮询并存，因为两条路径必须共用 Operation 服务，无需另建轮询模式分发器（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
+- RFC-0039 D6（已解决）：`operation.next` 已按 RFC §3.2 登记为 `poll`，JSON 与原生轮询仍共用 Operation 服务及 part/ended/timeout 结果（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
 - RFC-0039 D7：`operation.push` 只接受 BinaryPush，同步原生入口在队列满时返回 ResourceLimit，Rust 的 `Operation::push` 仍异步等待容量，因为同步入口必须在复制前预留容量，不能等待异步队列（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
 - RFC-0039 D8：跨所有者查询返回与未知 ID 相同且不含 `actual` 类型的 InvalidHandle，跨所有者的 `handle.drop` 则成功但无效果，因为所有权边界不能泄露资源信息（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
 - RFC-0039 D9：唯一的重试提示解析器位于 `aimux_core::error::retry_after_ms_from_headers` 并由 ops 重新导出，已解析但无效的优先数值阻止回退、格式错误的文本允许回退，因为 core 的重试策略不能依赖适配层 crate（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
 - RFC-0039 D10：未暴露 stdio、宿主 fetch/token/model/telemetry 回调、单次原始二进制上传、原生透传及 skills/Batch/Evaluation 操作，因为这些能力需要超出现有引擎范围的独立实现（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
+- RFC-0039 D11：维护者接受 D8 在 ops/ABI 切换后按 RFC-0042 交付，ts-rs 与 `scripts/gen_ts_types.py` 保留为业务类型过渡链，因为本 PR 先完成控制对象、头文件和操作常量的同源生成；D8 完成时须删除过渡链及其漂移门禁，G-d 仍未关闭（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
+- RFC-0039 D12：维护者接受 schema-2 读写保留至本系列最后一个 PR，因为 schema-3 迁移由 RFC-0041 的最后一步完成；届时必须删除 schema-2 及更早格式的读取，不能提前删除或长期保留（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
 - RFC-0039 G-a：录制器、会话存储挂接及推断状态仍为进程全局，因为按所有者隔离采集需要修改 core 的运行时上下文（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-b：`aimux-core/src/recording.rs` 的写入格式是 schema 2，读取接受 schema 1 和 2，因为迁至 schema 3 并移除旧 schema 读取计划作为本系列的最后一步按 RFC-0041 完成（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-c：`credential.create` 和 `replay.capabilities` 仍属 Future 并返回 UnsupportedFunctionality，回放只保留既有 Language/Decision 模型路径，因为尚未实现凭据构造及 Fetch/WebSocket/Download 回放引擎（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
@@ -1533,7 +1535,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - RFC-0039 G-e：发布配置已将 ops 排在 FFI 前并打包头文件，但本文尚未提供所有平台产物的安装和运行验证，因为构建与打包定义不能证明发布验收完成（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-f：完整包来源、所有包的权威默认方法、通用厂商命名方法分发及文本请求的 registry/字符串模型提升仍缺失，已解析模型只有按所有者隔离的引用元数据且 `provider.invoke` 只接受 `listModels`，因为注册项保留的是规范 Arc，现有工厂和控制 DTO 未提供全部元数据或提升逻辑（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-g：队列和线格式限制尚不能约束所有 provider 分配及 core 现有的无界文本转发队列，因为本层只控制已准入的数据，不改写 core 的流式内部实现（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
-- RFC-0039 G-h：尚无逐业务类型的版本或哈希校验，Node 只检查 ABI/ops 版本而不比对生成的摘要，因为消费类型元数据及统一加载校验尚未完整实现（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
+- RFC-0039 G-h：尚无逐业务类型的版本或哈希校验，因为消费类型元数据尚未完整实现；各绑定加载时已精确校验 ABI 版本、ops 版本和 manifest 摘要（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-i：本文尚未建立八种语言的完整业务向量、同源发布、已安装 wheel 及全部平台 sanitizer/链接/安装验证证据，Dart Windows 流式调用也明确不支持，因为局部和替身测试不能证明完整矩阵通过（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-k：旧 MockReplayModel 构造器尚无暴露给离线文本生成的替代入口，因为 `replay.create` 返回 ReplaySession、文本操作只接受 Language，而 `replay.live` 还需要调用者另行提供目标（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 

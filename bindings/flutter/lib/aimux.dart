@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
+import 'generated/ops.dart' as ops;
 import 'errors.dart';
 import 'src/generated/types.dart';
 import 'src/bridge.dart';
@@ -324,7 +325,7 @@ Stream<StreamFrame> _stream(
         abortId = parseHandle(suppliedAbort);
       } else {
         final result =
-            await client.call('abort.create') as Map<String, dynamic>;
+            await client.call(ops.OP_ABORT_CREATE) as Map<String, dynamic>;
         abort = client.adopt(result['handle'] as String);
         abortId = client._id(abort);
       }

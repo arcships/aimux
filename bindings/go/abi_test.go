@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/arcships/aimux/bindings/go/generated"
 )
 
 func fixture(t *testing.T) {
@@ -67,6 +70,36 @@ func checkCode(t *testing.T, err error, kind string, code int32) *Error {
 	return native
 }
 
+func TestManifestRequiresExactGeneratedVersionAndDigest(t *testing.T) {
+	for _, tc := range []struct {
+		ops, digest string
+		valid       bool
+	}{
+		{generated.OPS_VERSION, generated.MANIFEST_DIGEST, true},
+		{"1.1", generated.MANIFEST_DIGEST, false},
+		{generated.OPS_VERSION, "wrong-digest", false},
+		{generated.OPS_VERSION, "", false},
+	} {
+		raw, err := json.Marshal(map[string]any{"abiVersion": ABIVersion, "opsVersion": tc.ops, "digest": tc.digest})
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = validateManifest(ABIVersion, raw)
+		if tc.valid {
+			if err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		checkCode(t, err, "protocol", 302)
+		for _, value := range []string{tc.ops, generated.OPS_VERSION, tc.digest, generated.MANIFEST_DIGEST} {
+			if !strings.Contains(err.Error(), value) {
+				t.Fatalf("mismatch omits %q: %v", value, err)
+			}
+		}
+	}
+}
+
 func TestRuntimeManifest(t *testing.T) {
 	raw, err := Manifest()
 	if err != nil {
@@ -79,7 +112,7 @@ func TestRuntimeManifest(t *testing.T) {
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.ABI>>16 != 1 || manifest.Ops != "1.0" {
+	if manifest.ABI>>16 != generated.ABI_VERSION>>16 || manifest.Ops != generated.OPS_VERSION {
 		t.Fatalf("unexpected manifest: %s", raw)
 	}
 }
@@ -193,7 +226,7 @@ func TestCloseCallRace(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				<-start
-				_, err := h.Call(context.Background(), "text.generate", struct{}{})
+				_, err := h.Call(context.Background(), generated.OP_TEXT_GENERATE, struct{}{})
 				errs <- err
 			}()
 		}
@@ -212,7 +245,7 @@ func TestCloseCallRace(t *testing.T) {
 
 func TestStreamCopiesBorrowedFramesAndLateCancel(t *testing.T) {
 	h := fixtureHandle(t)
-	s, err := h.Stream(context.Background(), "text.stream", struct{}{})
+	s, err := h.Stream(context.Background(), generated.OP_TEXT_STREAM, struct{}{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +328,7 @@ func TestStreamPreCancelAndAdmissionRejection(t *testing.T) {
 	h := fixtureHandle(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	s, err := h.Stream(ctx, "text.stream", struct{}{})
+	s, err := h.Stream(ctx, generated.OP_TEXT_STREAM, struct{}{})
 	if s != nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("pre-cancel: %v, %v", s, err)
 	}
@@ -361,7 +394,7 @@ func TestStreamTerminalCancelRace(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan struct{})
 		go func() { runtime.Gosched(); cancel(); close(done) }()
-		s, err := h.Stream(ctx, "text.stream", struct{}{})
+		s, err := h.Stream(ctx, generated.OP_TEXT_STREAM, struct{}{})
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
 				t.Fatal(err)
@@ -457,13 +490,13 @@ func TestCompositeConstructionPreservesHandleStrings(t *testing.T) {
 	params := struct {
 		Children []HandleID `json:"children"`
 	}{[]HandleID{childID}}
-	composite, err := Create(context.Background(), nil, "composite.router", params)
+	composite, err := Create(context.Background(), nil, generated.OP_COMPOSITE_ROUTER, params)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer composite.Close()
 	child.Close()
-	if _, err := composite.Call(context.Background(), "text.generate", struct{}{}); err != nil {
+	if _, err := composite.Call(context.Background(), generated.OP_TEXT_GENERATE, struct{}{}); err != nil {
 		t.Fatal(err)
 	}
 }

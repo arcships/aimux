@@ -9,6 +9,9 @@ description = "Python binding for aimux (PyO3, native path — bypasses aimux-ff
 name = "aimux"
 crate-type = ["cdylib"]
 
+[features]
+contract-tests = []
+
 [dependencies]
 aimux-core = { path = "../../aimux-core" }
 aimux-ops = { path = "../../aimux-ops" }

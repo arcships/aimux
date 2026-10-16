@@ -371,3 +371,59 @@ fn only_direct_api_calls_get_top_level_retry_hints() {
         );
     }
 }
+
+#[test]
+fn settings_errors_redact_secret_canary() {
+    const VARIABLE: &str = "AIMUX_OPS_REDACTION_CANARY";
+    const SECRET: &str = "sk-redaction-canary-do-not-expose";
+    const CHILD: &str = "AIMUX_OPS_REDACTION_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        let key = aimux_provider_utils::api_key::load_api_key(None, VARIABLE, "test provider")
+            .unwrap_err();
+        let setting = aimux_provider_utils::api_key::load_setting(None, VARIABLE, "test setting")
+            .unwrap_err();
+        assert!(matches!(key, AiMuxError::LoadApiKey { .. }));
+        assert!(matches!(setting, AiMuxError::LoadSetting { .. }));
+        for error in [key, setting] {
+            let nested = AiMuxError::ToolCallRepair {
+                original_error: Box::new(error.clone()),
+                cause: Box::new(AiMuxError::Retry(RetryError {
+                    reason: RetryErrorReason::MaxRetriesExceeded,
+                    errors: vec![error.clone()],
+                })),
+            };
+            for error in [error, nested] {
+                let wire = serde_json::to_string(&OpsError::from(error).envelope(now())).unwrap();
+                assert!(!wire.contains(SECRET), "secret leaked in envelope: {wire}");
+            }
+        }
+        return;
+    }
+
+    // Separate processes avoid mutating the environment of parallel tests.
+    let run = |value: Option<std::ffi::OsString>| {
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["--exact", "settings_errors_redact_secret_canary"])
+            .env(CHILD, "1")
+            .env_remove(VARIABLE);
+        if let Some(value) = value {
+            command.env(VARIABLE, value);
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    run(None);
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        let mut invalid = SECRET.as_bytes().to_vec();
+        invalid.push(0xff);
+        run(Some(std::ffi::OsString::from_vec(invalid)));
+    }
+}

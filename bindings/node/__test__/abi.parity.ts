@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { Runtime, AimuxError } from '../src/native.ts'
+import * as ops from '../src/generated/ops.ts'
 
 test('Node dispatch and the C ABI agree on provider, registry, devtools and errors', async () => {
   assert.ok(process.env.AIMUX_FFI_LIBRARY, 'Set AIMUX_FFI_LIBRARY to the built aimux-ffi library')
@@ -13,25 +14,25 @@ test('Node dispatch and the C ABI agree on provider, registry, devtools and erro
     exchanges: [], outcome: { status: 'success' }, complete: true, transportClosed: true,
   }
   const vectors = [
-    { op: 'provider.create', params: { package: 'openai', settings: { apiKey: 'local-test-key' } }, save: 'provider' },
-    { handle: '$provider', op: 'provider.model', params: { modelId: 'test-model', method: 'languageModel' }, save: 'model' },
-    { handle: '$model', op: 'model.info' },
-    { handle: '$provider', op: 'provider.files', save: 'files' },
-    { op: 'registry.create', params: { namespace: 'test', entries: [{ key: 'main', provider: '$provider' }] }, save: 'registry' },
-    { handle: '$registry', op: 'registry.provider', params: { key: 'main' }, save: 'lookup' },
-    { op: 'trace.create', params: { capacity: 16 }, save: 'trace' },
-    { handle: '$trace', op: 'trace.aggregate', params: { filter: {} } },
-    { op: 'sessionStore.create', params: { infer: false }, save: 'sessions' },
-    { handle: '$sessions', op: 'sessionStore.list' },
-    { op: 'recorder.create', params: { backend: { type: 'ring', capacity: 16 }, capturePolicy: 'full' }, save: 'recorder' },
-    { handle: '$recorder', op: 'recorder.export' },
-    { op: 'replay.create', params: { recordingsJsonl: JSON.stringify(recording) }, save: 'replay' },
-    { handle: '$replay', op: 'replay.inspect' },
-    { handle: '$replay', op: 'replay.dryRun' },
+    { op: ops.OP_PROVIDER_CREATE, params: { package: 'openai', settings: { apiKey: 'local-test-key' } }, save: 'provider' },
+    { handle: '$provider', op: ops.OP_PROVIDER_MODEL, params: { modelId: 'test-model', method: 'languageModel' }, save: 'model' },
+    { handle: '$model', op: ops.OP_MODEL_INFO },
+    { handle: '$provider', op: ops.OP_PROVIDER_FILES, save: 'files' },
+    { op: ops.OP_REGISTRY_CREATE, params: { namespace: 'test', entries: [{ key: 'main', provider: '$provider' }] }, save: 'registry' },
+    { handle: '$registry', op: ops.OP_REGISTRY_PROVIDER, params: { key: 'main' }, save: 'lookup' },
+    { op: ops.OP_TRACE_CREATE, params: { capacity: 16 }, save: 'trace' },
+    { handle: '$trace', op: ops.OP_TRACE_AGGREGATE, params: { filter: {} } },
+    { op: ops.OP_SESSION_STORE_CREATE, params: { infer: false }, save: 'sessions' },
+    { handle: '$sessions', op: ops.OP_SESSION_STORE_LIST },
+    { op: ops.OP_RECORDER_CREATE, params: { backend: { type: 'ring', capacity: 16 }, capturePolicy: 'full' }, save: 'recorder' },
+    { handle: '$recorder', op: ops.OP_RECORDER_EXPORT },
+    { op: ops.OP_REPLAY_CREATE, params: { recordingsJsonl: JSON.stringify(recording) }, save: 'replay' },
+    { handle: '$replay', op: ops.OP_REPLAY_INSPECT },
+    { handle: '$replay', op: ops.OP_REPLAY_DRY_RUN },
     { op: 'unknown.op' },
-    { handle: '$provider', op: 'text.generate' },
-    { op: 'provider.create', params: { package: 'does-not-exist' } },
-    { op: 'replay.create', params: { recordingsJsonl: '' } },
+    { handle: '$provider', op: ops.OP_TEXT_GENERATE },
+    { op: ops.OP_PROVIDER_CREATE, params: { package: 'does-not-exist' } },
+    { op: ops.OP_REPLAY_CREATE, params: { recordingsJsonl: '' } },
   ]
   const python = spawnSync('python3', [fileURLToPath(new URL('./fixtures/ffi.py', import.meta.url)), process.env.AIMUX_FFI_LIBRARY], { input: JSON.stringify(vectors), encoding: 'utf8', timeout: 30_000 })
   assert.equal(python.status, 0, python.stderr)

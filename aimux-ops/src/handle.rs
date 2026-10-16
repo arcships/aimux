@@ -34,13 +34,23 @@ impl Serialize for HandleId {
     }
 }
 
+impl std::str::FromStr for HandleId {
+    type Err = String;
+
+    /// The one handle-id rule: a decimal string that fits u64.
+    fn from_str(value: &str) -> Result<Self, String> {
+        if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err("expected a decimal handle string".into());
+        }
+        value.parse().map(Self).map_err(|error| format!("{error}"))
+    }
+}
+
 impl<'de> Deserialize<'de> for HandleId {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = String::deserialize(deserializer)?;
-        if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-            return Err(serde::de::Error::custom("expected a decimal handle string"));
-        }
-        value.parse().map(Self).map_err(serde::de::Error::custom)
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -278,7 +288,11 @@ impl HandleRegistry {
     }
 }
 
-fn allocate(next: &AtomicU64) -> Result<u64, OpsError> {
+/// Take the next nonzero id from a counter that starts at 1, failing once it is exhausted.
+///
+/// # Errors
+/// Returns HandleExhausted after u64::MAX has been allocated.
+pub fn allocate(next: &AtomicU64) -> Result<u64, OpsError> {
     // 0 is an exhausted sentinel, reached after allocating u64::MAX once.
     let mut id = next.load(Ordering::Relaxed);
     loop {

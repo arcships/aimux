@@ -203,11 +203,16 @@ fn deterministic_complete_outputs_cover_every_language_and_abi_primitive() {
     assert!(header.contains("AIMUX_ERROR_PROTOCOL_INVALID_OP = 300"));
     assert!(header.contains("AIMUX_OP_TEXT_GENERATE_OPEN_AI \"text.generateOpenAI\""));
     assert!(header.contains("borrowed until the callback returns"));
-    for language in ["go", "java", "kotlin", "swift", "flutter", "node", "python"] {
-        let (_, bytes) = outputs
-            .iter()
-            .find(|(path, _)| path.starts_with(format!("bindings/{language}/generated")))
-            .unwrap();
+    for path in [
+        "bindings/go/generated/ops.go",
+        "bindings/java/generated/AimuxOps.java",
+        "bindings/kotlin/generated/AimuxOps.kt",
+        "bindings/swift/generated/AimuxOps.swift",
+        "bindings/flutter/lib/generated/ops.dart",
+        "bindings/node/src/generated/ops.ts",
+        "bindings/python/python/aimux/ops.py",
+    ] {
+        let bytes = &outputs[Path::new(path)];
         let text = std::str::from_utf8(bytes).unwrap();
         for op in fixture()["ops"].as_array().unwrap() {
             assert!(text.contains(op["name"].as_str().unwrap()));
@@ -222,13 +227,13 @@ fn check_detects_missing_stale_and_changed_files_without_rewriting() {
     let outputs = artifacts();
     write(dir.path(), &outputs).unwrap();
     check(dir.path(), &outputs).unwrap();
-    fs::remove_file(dir.path().join("bindings/node/generated/ops.ts")).unwrap();
+    fs::remove_file(dir.path().join("bindings/node/src/generated/ops.ts")).unwrap();
     fs::write(dir.path().join("schema/ops/stale.json"), b"{}").unwrap();
     fs::write(dir.path().join("bindings/go/generated/ops.go"), b"changed").unwrap();
     let packaged = dir.path().join("bindings/flutter/native/aimux_ops.h");
     fs::write(&packaged, b"changed").unwrap();
     let error = check(dir.path(), &outputs).unwrap_err().to_string();
-    assert!(error.contains("missing: bindings/node/generated/ops.ts"));
+    assert!(error.contains("missing: bindings/node/src/generated/ops.ts"));
     assert!(error.contains("stale: schema/ops/stale.json"));
     assert!(error.contains("differs: bindings/go/generated/ops.go"));
     assert!(error.contains("differs: bindings/flutter/native/aimux_ops.h"));
@@ -253,13 +258,13 @@ fn digest_and_previous_constant_drift_are_detected() {
     )
     .unwrap();
     fs::write(
-        dir.path().join("bindings/python/generated/ops-old.py"),
+        dir.path().join("bindings/python/python/aimux/ops-old.py"),
         b"OLD = 1",
     )
     .unwrap();
     let error = check(dir.path(), &outputs).unwrap_err().to_string();
     assert!(error.contains("differs: tools/aimux-codegen/generated-files.json"));
-    assert!(error.contains("stale: bindings/python/generated/ops-old.py"));
+    assert!(error.contains("stale: bindings/python/python/aimux/ops-old.py"));
 }
 
 #[test]
@@ -267,11 +272,11 @@ fn writes_preserve_unowned_binding_types_and_reject_path_traversal() {
     let dir = tempfile::tempdir().unwrap();
     let outputs = artifacts();
     write(dir.path(), &outputs).unwrap();
-    let types = dir.path().join("bindings/node/generated/types.ts");
+    let types = dir.path().join("bindings/node/src/generated/types.ts");
     fs::write(&types, b"export type OwnedElsewhere = string;").unwrap();
     let native = dir.path().join("bindings/flutter/native/unowned.h");
     fs::write(&native, b"binding-owned").unwrap();
-    let cache = dir.path().join("bindings/python/generated/__pycache__");
+    let cache = dir.path().join("bindings/python/python/aimux/__pycache__");
     fs::create_dir_all(&cache).unwrap();
     fs::write(cache.join("ops.pyc"), b"compiled cache").unwrap();
     write(dir.path(), &outputs).unwrap();
@@ -327,6 +332,8 @@ fn handles_cover_u64_strings_and_reject_precision_loss_and_overflow() {
     for handle in [
         "0",
         "1",
+        "01",
+        "00018446744073709551615",
         "9999999999999999999",
         "10000000000000000000",
         "18446744073709551614",
@@ -339,7 +346,6 @@ fn handles_cover_u64_strings_and_reject_precision_loss_and_overflow() {
         "1\n",
         "1\r",
         "١",
-        "01",
         "-1",
         "+1",
         "1.0",
@@ -374,9 +380,6 @@ fn frame_and_error_envelope_use_contract_discriminators() {
     assert!(!errors.is_valid(&wrong));
     wrong = error.clone();
     wrong["retryAfterMs"] = Value::Null;
-    assert!(!errors.is_valid(&wrong));
-    wrong = error;
-    wrong["kind"] = json!("binding");
     assert!(!errors.is_valid(&wrong));
 }
 
@@ -415,6 +418,33 @@ fn real_manifest_control_schemas_are_emitted_and_enforced() {
     for ty in model.types {
         assert!(outputs.contains_key(Path::new(&format!("schema/types/{}.json", ty.name))));
     }
+    for (name, target) in [
+        ("handle-id", "HandleIdInput"),
+        ("error-envelope", "ErrorEnvelope"),
+        ("stream-frame", "StreamFrame"),
+    ] {
+        assert_eq!(
+            schema(&outputs, name)["$ref"],
+            format!("../types/{target}.json")
+        );
+    }
+    let handles = validator(&outputs, "handle-id");
+    for wire in ["01", "00018446744073709551615"] {
+        let value = json!(wire);
+        let _: aimux_ops::handle::HandleId = serde_json::from_value(value.clone()).unwrap();
+        assert!(handles.is_valid(&value));
+    }
+    let unknown = json!({"kind":"aimux", "code":21, "message":"future error",
+        "error":{"name":"AI_FutureError", "data":{"secret":null}}});
+    let envelope: aimux_ops::envelope::ErrorEnvelope =
+        serde_json::from_value(unknown.clone()).unwrap();
+    assert!(validator(&outputs, "error-envelope").is_valid(&unknown));
+    let frame = aimux_ops::frame::StreamFrame::End {
+        seq: "01".into(),
+        outcome: aimux_ops::frame::Outcome::Error,
+        error: Some(envelope),
+    };
+    assert!(validator(&outputs, "stream-frame").is_valid(&serde_json::to_value(frame).unwrap()));
     let requests = validator(&outputs, "request");
     assert!(
         requests.is_valid(&json!({"handle":"1","op":"operation.next","params":{"timeoutMs":0}}))

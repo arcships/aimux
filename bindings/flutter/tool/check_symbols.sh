@@ -2,13 +2,10 @@
 # Check defined global symbols across every executable in an iOS app bundle.
 set -euo pipefail
 app=${1:?usage: check_symbols.sh path/to/Runner.app}
-required=(aimux_abi_version aimux_manifest_json aimux_call aimux_stream
-  aimux_operation_push aimux_operation_next_part aimux_abort aimux_drop
-  aimux_handle_finalizer aimux_free_string aimux_error_free aimux_error_code aimux_error_message
-  aimux_error_json aimux_dart_finalize aimux_dart_token_new aimux_dart_token_dispose
-  aimux_dart_bridge_new aimux_dart_bridge_event aimux_dart_bridge_ack
-  aimux_dart_bridge_cancel aimux_dart_bridge_pending aimux_dart_bridge_failure
-  aimux_dart_bridge_free aimux_dart_frame_free)
+native=$(cd "$(dirname "$0")/../native" && pwd)
+# The ABI is what the generated header declares plus the transport's EXPORTs.
+required=($(sed -n 's/.*\(aimux_[a-z0-9_]*\)(.*/\1/p' "$native/aimux_ops.h"
+  sed -n '/^EXPORT/s/.*\(aimux_dart_[a-z0-9_]*\)(.*/\1/p' "$native/aimux_dart.c"))
 symbols=$(mktemp)
 trap 'rm -f "$symbols"' EXIT
 while IFS= read -r -d '' file; do

@@ -76,11 +76,16 @@ private func nativeManifest() throws -> JSONValue {
     var output: UnsafeMutablePointer<CChar>?
     if let error = aimux_manifest_json(&output) { throw takeError(error) }
     let value = try JSONDecoder().decode(JSONValue.self, from: Data(takeString(output).utf8))
-    guard value["opsVersion"] == .string(AimuxOps.OPS_VERSION),
-          value["abiVersion"] == .integer(Int64(version)) else {
-        throw AimuxError.state("Manifest version does not match Swift binding", code: 302)
-    }
+    try validateManifest(value, version: version)
     return value
+}
+
+func validateManifest(_ value: JSONValue, version: UInt32) throws {
+    guard value["opsVersion"] == .string(AimuxOps.OPS_VERSION),
+          value["abiVersion"] == .integer(Int64(version)),
+          value["digest"] == .string(AimuxOps.MANIFEST_DIGEST) else {
+        throw AimuxError.state("Incompatible manifest: opsVersion \(String(describing: value["opsVersion"])) (expected \(AimuxOps.OPS_VERSION)), digest \(String(describing: value["digest"])) (expected \(AimuxOps.MANIFEST_DIGEST))", code: 302)
+    }
 }
 
 private enum RuntimeMetadata {
@@ -216,7 +221,7 @@ final class HandleState: @unchecked Sendable {
         users += 1
         lock.unlock()
         DispatchQueue.global(qos: .utility).async {
-            _ = try? nativeCall(value, "operation.cancel", "{}")
+            _ = try? nativeCall(value, AimuxOps.OP_OPERATION_CANCEL, "{}")
             self.end(nil)
         }
     }
@@ -345,7 +350,7 @@ func invoke(_ state: HandleState?, _ op: String, _ params: JSONValue) async thro
         do {
             result = try await Blocking.run {
                 try verifyRuntime()
-                let abort = try handleID(nativeCall(0, "abort.create", "{}"))
+                let abort = try handleID(nativeCall(0, AimuxOps.OP_ABORT_CREATE, "{}"))
                 cancellation.install(abort)
                 let result = try nativeCall(admission?.0 ?? 0, op, json, abort)
                 return try JSONDecoder().decode(JSONValue.self, from: Data(result.utf8))

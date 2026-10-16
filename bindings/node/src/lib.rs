@@ -3,6 +3,10 @@
 mod bridge;
 mod error;
 
+#[cfg(feature = "contract-tests")]
+#[path = "../__test__/native_scenarios.rs"]
+mod native_scenarios;
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -11,7 +15,7 @@ use std::time::SystemTime;
 use aimux_core::AbortSignal;
 use aimux_ops::dispatch::{self, Ctx};
 use aimux_ops::envelope::{ErrorEnvelope, OpsError, ProtocolError};
-use aimux_ops::handle::{Entry, HandleId, HandleKind, HandleRegistry, Owner};
+use aimux_ops::handle::{Entry, HandleId, HandleKind, HandleRegistry, Owner, allocate};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde_json::Value;
@@ -56,10 +60,7 @@ impl Realm {
         if resources.closed {
             return Err(invalid_state("Node environment is closed"));
         }
-        let id = self
-            .next_request
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-            .map_err(|_| envelope(OpsError::Protocol(ProtocolError::HandleExhausted)))?;
+        let id = allocate(&self.next_request).map_err(envelope)?;
         resources.active.insert(id, Arc::downgrade(&signal));
         Ok(Request {
             realm: self.clone(),
@@ -68,45 +69,24 @@ impl Realm {
         })
     }
 
-    fn remember(&self, op: &str, result: &Value, signal: &Arc<AbortSignal>) {
-        // Only lifecycle results carry handles. Ordinary model JSON is never scanned.
-        if !matches!(
-            op,
-            "provider.create"
-                | "provider.default"
-                | "provider.custom"
-                | "provider.model"
-                | "provider.wrap"
-                | "provider.files"
-                | "registry.create"
-                | "registry.provider"
-                | "model.resolve"
-                | "model.wrap"
-                | "composite.router"
-                | "composite.moa"
-                | "transcription.start"
-                | "abort.create"
-                | "transport.create"
-                | "credential.create"
-                | "middleware.create"
-                | "trace.create"
-                | "recorder.create"
-                | "sessionStore.create"
-                | "replay.create"
-                | "replay.capabilities"
-        ) {
+    fn remember(&self, result: &Value, signal: &Arc<AbortSignal>) {
+        let registry = HandleRegistry::global();
+        let mut resources = self.lock();
+        if resources.closed {
+            // A call that finished after cleanup may have created handles.
+            drop(resources);
+            signal.abort();
+            registry.release_owner(self.owner);
             return;
         }
-        let mut handles = Vec::new();
-        collect_handles(result, &mut handles);
-        let mut resources = self.lock();
-        for id in handles {
-            if resources.closed {
-                signal.abort();
-                drop(HandleRegistry::global().remove(self.owner, HandleId(id)));
-            } else if op == "transcription.start" {
-                resources.operations.insert(id, signal.clone());
-            }
+        // An operation keeps its start call's cancellation signal until handle.drop.
+        // Only a bare handle-id result can name one; model JSON is never scanned.
+        let operation = result
+            .as_str()
+            .and_then(|id| id.parse().ok())
+            .filter(|&id| registry.get(self.owner, id, &[HandleKind::Operation]).is_ok());
+        if let Some(HandleId(id)) = operation {
+            resources.operations.insert(id, signal.clone());
         }
     }
 
@@ -149,51 +129,9 @@ fn invalid_state(message: &str) -> ErrorEnvelope {
 }
 
 fn handle(value: &str) -> std::result::Result<HandleId, ErrorEnvelope> {
-    if value.is_empty()
-        || !value.bytes().all(|c| c.is_ascii_digit())
-        || (value.len() > 1 && value.starts_with('0'))
-    {
-        return Err(envelope(OpsError::Protocol(ProtocolError::InvalidParams(
-            "handle must be a canonical decimal string".into(),
-        ))));
-    }
-    value.parse().map(HandleId).map_err(|_| {
-        envelope(OpsError::Protocol(ProtocolError::InvalidParams(
-            "handle exceeds u64".into(),
-        )))
-    })
-}
-
-fn collect_handles(value: &Value, result: &mut Vec<u64>) {
-    match value {
-        Value::String(id) => {
-            if let Ok(HandleId(id @ 1..)) = handle(id) {
-                result.push(id);
-            }
-        }
-        Value::Object(fields) => {
-            for (key, value) in fields {
-                if matches!(
-                    key.as_str(),
-                    "handle"
-                        | "handleId"
-                        | "id"
-                        | "fetch"
-                        | "webSocket"
-                        | "download"
-                        | "capabilities"
-                ) {
-                    collect_handles(value, result);
-                }
-            }
-        }
-        Value::Array(values) => {
-            for value in values {
-                collect_handles(value, result);
-            }
-        }
-        _ => {}
-    }
+    value
+        .parse()
+        .map_err(|message| envelope(OpsError::Protocol(ProtocolError::InvalidParams(message))))
 }
 
 /// All Runtime instances in one napi Env share one unforgeable Owner::Node.
@@ -219,6 +157,9 @@ impl Runtime {
             next_request: AtomicU64::new(1),
             resources: Mutex::default(),
         });
+        // napi registers its runtime cleanup during module initialization. Node
+        // runs Env hooks in reverse registration order, so release_owner runs
+        // here before napi shuts its runtime down (and before JS finalizers).
         env.add_env_cleanup_hook(realm.clone(), |realm| realm.cleanup())?;
         env.set_instance_data(realm.clone(), (), |_| {})?;
         Ok(Self { realm })
@@ -265,11 +206,36 @@ impl Runtime {
                 let params = error::parse("params", &params_json)?;
                 let signal = self.signal(abort)?;
                 let request = self.realm.request(signal.clone())?;
+                #[cfg(feature = "contract-tests")]
+                if op == "test.operation" {
+                    return error::serialize(&native_scenarios::operation(self.realm.owner).await);
+                }
+                #[cfg(feature = "contract-tests")]
+                if op == "test.teardown" {
+                    let realm = Realm {
+                        owner: Owner::new_node().map_err(envelope)?,
+                        next_request: AtomicU64::new(1),
+                        resources: Mutex::default(),
+                    };
+                    let id = native_scenarios::operation(realm.owner).await;
+                    realm.cleanup();
+                    let runtime_alive = tokio::spawn(async { true }).await.unwrap();
+                    return error::serialize(&serde_json::json!({
+                        "released": native_scenarios::released(realm.owner, id),
+                        "runtimeAlive": runtime_alive,
+                    }));
+                }
+                #[cfg(feature = "contract-tests")]
+                if op == "test.scenario" {
+                    return error::serialize(
+                        &native_scenarios::replay(params, self.realm.owner).await,
+                    );
+                }
                 let result = dispatch::call(self.realm.context(&signal), id, &op, params)
                     .await
                     .map_err(envelope)?;
-                self.realm.remember(&op, &result, &signal);
-                if op == "handle.drop" {
+                self.realm.remember(&result, &signal);
+                if op == dispatch::HANDLE_DROP {
                     let mut resources = self.realm.lock();
                     if let Some(signal) = resources.operations.remove(&id.0) {
                         signal.abort();
@@ -296,22 +262,14 @@ impl Runtime {
                     "audio chunk exceeds 1 MiB".into(),
                 ))));
             }
-            let entry = HandleRegistry::global()
-                .get(self.realm.owner, handle(&id)?, &[HandleKind::Operation])
-                .map_err(envelope)?;
-            match entry {
-                Entry::Operation(operation) => Ok((operation, data.to_vec())),
-                _ => Err(invalid_state("registry returned a non-operation entry")),
-            }
+            dispatch::operation_push(
+                &self.realm.context(&AbortSignal::new()),
+                handle(&id)?,
+                &data,
+            )
+            .map_err(envelope)
         })();
-        env.spawn_future(async move {
-            Ok(WireResult(match prepared {
-                Ok((operation, bytes)) => {
-                    operation.push(&bytes).await.map(|_| ()).map_err(envelope)
-                }
-                Err(error) => Err(error),
-            }))
-        })
+        env.spawn_future(async move { Ok(WireResult(prepared)) })
     }
 
     #[napi(ts_return_type = "Promise<FrameIterator>")]
@@ -429,13 +387,36 @@ impl Drop for Abort {
 mod tests {
     use super::*;
     #[test]
-    fn handles_preserve_all_u64_bits_and_reject_noncanonical_ids() {
+    fn handles_preserve_all_u64_bits_and_follow_the_handle_id_rule() {
         assert_eq!(
             handle("18446744073709551615").ok().map(|id| id.0),
             Some(u64::MAX)
         );
-        for id in ["", "01", "-1", "+1", "1.0", "18446744073709551616"] {
+        assert_eq!(handle("01").ok().map(|id| id.0), Some(1));
+        for id in ["", "-1", "+1", "1.0", "18446744073709551616"] {
             assert!(handle(id).is_err(), "{id}");
         }
+    }
+
+    #[cfg(feature = "contract-tests")]
+    #[tokio::test]
+    async fn remember_keeps_operation_signals_and_releases_results_after_cleanup() {
+        let realm = Realm {
+            owner: Owner::new_node().unwrap(),
+            next_request: AtomicU64::new(1),
+            resources: Mutex::default(),
+        };
+        let started = Arc::new(AbortSignal::new());
+        let id = native_scenarios::operation(realm.owner).await;
+        realm.remember(&Value::String(id.0.to_string()), &started);
+        assert!(realm.lock().operations.contains_key(&id.0));
+        realm.cleanup();
+        assert!(started.is_aborted());
+
+        let late = native_scenarios::operation(realm.owner).await;
+        let finishing = Arc::new(AbortSignal::new());
+        realm.remember(&serde_json::json!({ "handle": late.0.to_string() }), &finishing);
+        assert!(native_scenarios::released(realm.owner, late));
+        assert!(finishing.is_aborted());
     }
 }

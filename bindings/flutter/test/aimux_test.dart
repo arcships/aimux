@@ -13,6 +13,8 @@ import 'package:aimux/src/bridge.dart';
 import 'package:aimux/src/native.dart';
 import 'package:test/test.dart';
 
+import 'package:aimux/generated/ops.dart' as ops;
+
 String fixture([String name = 'ops_fixture']) =>
     '${Directory.current.path}/.dart_tool/native/$name.${Platform.isMacOS ? 'dylib' : 'so'}';
 
@@ -31,8 +33,45 @@ void main() {
   Future<Map> stats() async =>
       await client.call('test.stats', handle: handle) as Map;
 
+  test('manifest requires exact generated version and digest', () {
+    validateManifest(ops.ABI_VERSION, client.manifest);
+    for (final changes in [
+      {'opsVersion': '1.1'},
+      {'digest': 'wrong-digest'},
+      {'digest': null},
+    ]) {
+      final manifest = {...client.manifest, ...changes};
+      expect(
+        () => validateManifest(ops.ABI_VERSION, manifest),
+        throwsA(
+          isA<StateError>()
+              .having(
+                (e) => e.message,
+                'actual opsVersion',
+                contains(manifest['opsVersion']),
+              )
+              .having(
+                (e) => e.message,
+                'expected opsVersion',
+                contains(ops.OPS_VERSION),
+              )
+              .having(
+                (e) => e.message,
+                'actual digest',
+                contains('${manifest['digest']}'),
+              )
+              .having(
+                (e) => e.message,
+                'expected digest',
+                contains(ops.MANIFEST_DIGEST),
+              ),
+        ),
+      );
+    }
+  });
+
   test('load validates ABI, manifest and required ops', () async {
-    expect(client.manifest['opsVersion'], '1.0');
+    expect(client.manifest['opsVersion'], ops.OPS_VERSION);
     await expectLater(
       Aimux.open(libraryPath: fixture('missing_symbol'), bridgePath: fixture()),
       throwsArgumentError,
@@ -61,7 +100,7 @@ void main() {
     await Aimux.open(
       libraryPath: fixture(),
       bridgePath: fixture(),
-      requiredOps: ['runtime.describe', 'text.stream'],
+      requiredOps: [ops.OP_RUNTIME_DESCRIBE, ops.OP_TEXT_STREAM],
     );
   });
 

@@ -1,7 +1,7 @@
 {
   "files": [
     "aimux-ffi/include/aimux.h",
-    "bindings/flutter/generated/ops.dart",
+    "bindings/flutter/lib/generated/ops.dart",
     "bindings/flutter/lib/src/generated/dto_vectors.dart",
     "bindings/flutter/lib/src/generated/types.dart",
     "bindings/flutter/native/aimux_ops.h",
@@ -332,12 +332,12 @@
     "bindings/java/generated/ai/arcships/aimux/types/WireAimuxCoreTraceStoreSessionStepStat.java",
     "bindings/java/generated/ai/arcships/aimux/types/WireAimuxCoreTraceStoreTraceStats.java",
     "bindings/kotlin/generated/AimuxOps.kt",
-    "bindings/node/generated/ops.ts",
     "bindings/node/src/generated/dto_vectors.ts",
+    "bindings/node/src/generated/ops.ts",
     "bindings/node/src/generated/types.ts",
-    "bindings/python/generated/ops.py",
     "bindings/python/python/aimux/_error_payloads.py",
     "bindings/python/python/aimux/_types.py",
+    "bindings/python/python/aimux/ops.py",
     "bindings/swift/generated/AimuxOps.swift",
     "bindings/swift/generated/DtoVectorTypes.swift",
     "bindings/swift/generated/Types.swift",
@@ -671,5 +671,5 @@
     "schema/types/string.json",
     "tools/aimux-codegen/generated-files.json"
   ],
-  "manifestDigest": "9226dd8ad40b26499eea7a80eb67483f12ce3c0e12e889ed0135629d7f2de61f"
+  "manifestDigest": "7d34a2b494b6b1bffbe88d56bab1e8ac457d3b254ff8d3603e5d05b3503c70f5"
 }

@@ -21,14 +21,16 @@ const HEADERS: [&str; 2] = [
     "bindings/flutter/native/aimux_ops.h",
 ];
 const SCHEMA_BASE: &str = "https://aimux.dev/schema/ops/";
+/// Each binding's constants file, where its own imports resolve it (Dart under `lib/`,
+/// Node under `src/`, Python inside the package).
 const LANGUAGES: &[(&str, &str)] = &[
-    ("go", "ops.go"),
-    ("java", "AimuxOps.java"),
-    ("kotlin", "AimuxOps.kt"),
-    ("swift", "AimuxOps.swift"),
-    ("flutter", "ops.dart"),
-    ("node", "ops.ts"),
-    ("python", "ops.py"),
+    ("go", "bindings/go/generated/ops.go"),
+    ("java", "bindings/java/generated/AimuxOps.java"),
+    ("kotlin", "bindings/kotlin/generated/AimuxOps.kt"),
+    ("swift", "bindings/swift/generated/AimuxOps.swift"),
+    ("flutter", "bindings/flutter/lib/generated/ops.dart"),
+    ("node", "bindings/node/src/generated/ops.ts"),
+    ("python", "bindings/python/python/aimux/ops.py"),
 ];
 
 #[derive(Deserialize)]
@@ -209,9 +211,9 @@ pub fn generate(value: &Value, runtime_digest: &str) -> Result<Artifacts> {
     let [c_header, flutter_header] = HEADERS;
     artifacts.insert(c_header.into(), header.clone());
     artifacts.insert(flutter_header.into(), header);
-    for &(language, filename) in LANGUAGES {
+    for &(language, path) in LANGUAGES {
         artifacts.insert(
-            format!("bindings/{language}/generated/{filename}").into(),
+            path.into(),
             constants(&manifest, &digest, language)?.into_bytes(),
         );
     }
@@ -228,7 +230,7 @@ pub fn generate(value: &Value, runtime_digest: &str) -> Result<Artifacts> {
             pretty_json(&type_document(name, schema.clone()))?,
         );
     }
-    for (name, schema) in schemas(&manifest, &definitions)? {
+    for (name, schema) in schemas(&manifest)? {
         artifacts.insert(
             format!("schema/ops/{name}.json").into(),
             pretty_json(&schema)?,
@@ -374,24 +376,22 @@ fn root_name<'a>(manifest: &'a Manifest, id: &str, direction: &str) -> Result<&'
         .ok_or_else(|| format!("missing {direction} root: {id}").into())
 }
 
-fn schemas(
-    manifest: &Manifest,
-    definitions: &BTreeMap<String, Value>,
-) -> Result<BTreeMap<String, Value>> {
+fn schemas(manifest: &Manifest) -> Result<BTreeMap<String, Value>> {
     let mut documents = BTreeMap::new();
-    for (file, name) in [
-        ("handle-id", "HandleId"),
-        ("error-envelope", "ErrorEnvelope"),
-        ("stream-frame", "StreamFrame"),
-    ] {
-        if definitions.contains_key(name) {
-            documents.insert(
-                file.into(),
-                schema_document(file, json!({"$ref": format!("../types/{name}.json")})),
-            );
-        }
-    }
     let names = model::contract_names(&manifest.type_defs)?;
+    for (file, direction, control) in [
+        ("handle-id", "input", "HandleId"),
+        ("error-envelope", "output", "ErrorEnvelope"),
+        ("stream-frame", "output", "StreamFrame"),
+    ] {
+        let name = names
+            .get(&format!("#/typeDefs/{direction}/{control}"))
+            .ok_or_else(|| format!("missing manifest control schema: {control}"))?;
+        documents.insert(
+            file.into(),
+            schema_document(file, json!({"$ref": format!("../types/{name}.json")})),
+        );
+    }
     let mut requests = Vec::new();
     for op in &manifest.ops {
         let mut handle = json!({"$ref": "handle-id.json"});
@@ -435,9 +435,9 @@ fn managed_path(path: &Path) -> bool {
             name.starts_with("ops.") || name.starts_with("ops-") || name.starts_with("AimuxOps")
         });
     constants
-        && LANGUAGES.iter().any(|(language, filename)| {
-            path.starts_with(format!("bindings/{language}/generated"))
-                && path.extension() == Path::new(filename).extension()
+        && LANGUAGES.iter().any(|&(_, file)| {
+            let file = Path::new(file);
+            path.parent() == file.parent() && path.extension() == file.extension()
         })
 }
 
@@ -470,12 +470,8 @@ fn existing_files(root: &Path) -> Result<BTreeSet<PathBuf>> {
     {
         collect_files(root, Path::new(path), &mut files)?;
     }
-    for &(language, _) in LANGUAGES {
-        collect_files(
-            root,
-            Path::new(&format!("bindings/{language}/generated")),
-            &mut files,
-        )?;
+    for &(_, file) in LANGUAGES {
+        collect_files(root, Path::new(file).parent().unwrap(), &mut files)?;
     }
     files.retain(|path| managed_path(path));
     Ok(files)

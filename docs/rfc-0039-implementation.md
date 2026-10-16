@@ -62,13 +62,19 @@ All secondary fields listed in `runtimeHandleFields`, including wildcard paths,
 and the C abort argument use the same typed owner resolver. Foreign and unknown
 handles have identical undisclosing errors. `handle.drop` is admitted before
 lookup: 0, unknown, already-dropped and foreign IDs succeed; foreign drops do
-nothing. Explicit close/drop does not flush a recorder. C drop may dispose a
+nothing. This preserves idempotence without disclosing whether another owner
+has a resource or allowing it to be disposed. Explicit close/drop does not flush a recorder. C drop may dispose a
 resource synchronously; the finalizer helper queues it off the GC thread.
 
 The 23 kinds are Provider, Registry, Language, Embedding, Image, Speech,
 Transcription, Reranking, Video, Search, Decision, Files, Operation, Abort,
 Fetch, WebSocket, Download, CredentialResolver, Middleware, TraceStore,
 Recorder, SessionStore and ReplaySession.
+
+The provider `default_method` metadata uses a process-level weak side table keyed
+by canonical `Arc<dyn Provider>` identity. It never retains a provider strongly,
+and insertions prune expired entries. This is descriptor metadata; the handle
+registry still holds the canonical provider and enforces owner isolation.
 
 ## Complete operation table
 
@@ -102,7 +108,7 @@ mode, not an inference from the operation name.
 | `model.wrap` | call | Models | `registry::wrap` | Current |
 | `operation.cancel` | call | Operation | `operation::cancel` | Current |
 | `operation.inputDone` | call | Operation | `operation::input_done` | Current |
-| `operation.next` | call | Operation | `operation::next` | Current |
+| `operation.next` | poll | Operation | `operation::next` | Current |
 | `operation.push` | binaryPush | Operation | `dispatch::operation_push → Operation::try_push` | Current |
 | `operation.status` | call | Operation | `operation::status` | Current |
 | `output.toOpenAI` | call | Language | `misc::to_openai` | Current |
@@ -306,9 +312,8 @@ and tested against the primitive signatures, not emitted by aimux-codegen.
 
 The generated file set is checked against the current manifest by the commands below;
 this documentation audit does not claim a successful generator run.
-Python pins its generated digest at import; Node checks ABI/ops versions and
-exposes the runtime digest without comparing the generated digest (G-h).
-Other adapters have their implemented ABI/ops checks. No adapter can claim per-consumed-business-type hash validation
+Every adapter requires the exact generated ABI version, ops version and manifest
+digest at load. No adapter can claim per-consumed-business-type hash validation
 until that metadata exists. Schema presence does not validate live handles,
 owner isolation, capabilities or state transitions.
 
@@ -349,21 +354,24 @@ inventory; the canonical business error union remains owned by RFC-0042.
 - **D3 — Error registrations (§6.1):** Protocol errors use fixed codes 300..306, AiMux codes extend through 20, code 4 stays reserved, code 3 aliases three variants and code 6 aliases two variants, because existing numeric meanings must survive the ABI replacement.
 - **D4 — Finalizer ABI (§4.1):** `aimux_handle_finalizer(void *token)` is the fourteenth export because GC cleanup needs a nonblocking pointer-signature entry rather than a cast of `aimux_drop(uint64_t)`.
 - **D5 — Resource budgets (§5.3):** The implemented 64/256-item, 8 MiB queue, 1 MiB event/chunk and five-second cleanup values remain proposals for stable freeze because RFC-0038 measurement and platform evidence are still required.
-- **D6 — Operation polling (§3.2):** `operation.next` is a JSON `call` returning a tagged part/ended/timeout result, alongside native polling, because both paths must use the same Operation service without a separate poll-mode dispatcher.
+- **D6 — Operation polling (§3.2), resolved:** `operation.next` is registered as `poll`, matching the RFC. JSON dispatch and the native polling primitive still use the same Operation service and part/ended/timeout results.
 - **D7 — Binary input (§3.2):** `operation.push` is BinaryPush-only and the synchronous native admission path returns ResourceLimit when full, because it must reserve input capacity before copying without waiting on an async queue; Rust `Operation::push` retains asynchronous backpressure.
 - **D8 — Foreign handles (§3.3):** Foreign-owner lookup returns InvalidHandle with no `actual` kind and the same message as an unknown ID, while foreign `handle.drop` succeeds without effect, because the owner boundary must not disclose resources.
 - **D9 — Retry-hint parser (§6.2):** The single parser lives in `aimux_core::error::retry_after_ms_from_headers` and is re-exported by ops because core retry policy cannot depend on an adapter-layer crate; a parsed invalid preferred number blocks fallback, while malformed text permits it.
 - **D10 — Current capability scope (§11.4):** Stdio, host fetch/token/model/telemetry callbacks, raw one-shot binary upload, native passthrough and skills/Batch/Evaluation operations are not exposed because they require separate capabilities beyond the existing engine.
 
+- **D11 — D8 delivery order (§0.1.7):** The maintainer accepted business Schema/DTO generation after the ops/ABI switch, with ts-rs and `scripts/gen_ts_types.py` retained as the transitional business generation chain. D8 under RFC-0042 must replace that chain and its drift gate; control schemas, headers and constants already come from the manifest. This is a delivery-order exception, not closure of G-d.
+- **D12 — Schema-2 retention (§7.1):** The maintainer accepted schema-2 read/write retention until the last PR of this series. That PR must migrate to schema 3 and remove schema-2 and earlier reading under RFC-0041; the switch must not remove it early or turn it into a permanent compatibility path.
+
 ## Registered gaps
 
 - **G-a — Process-wide capture:** Recorder, session-store attachment and inference state remain process-wide because owner-local capture requires a core runtime-context change.
 - **G-b — Recording compatibility:** Writers use schema 2 and readers accept schemas 1 and 2, as implemented in `aimux-core/src/recording.rs`, because migration to schema 3 and removal of old-schema reading are planned as the final step of this series under RFC-0041.
-- **G-c — Future capabilities:** `credential.create` and `replay.capabilities` have Future scope and return UnsupportedFunctionality because no credential-construction or Fetch/WebSocket/Download replay engine is implemented; replay retains existing Language/Decision model replay.
+- **G-c — Future capabilities:** `credential.create` and `replay.capabilities` have Future scope and return UnsupportedFunctionality as amended in RFC-0039 §0.2 on the basis of RFC-0041, because no credential-construction or Fetch/WebSocket/Download replay engine is implemented; replay retains existing Language/Decision model replay.
 - **G-d — Business schemas and DTO generation:** Business types have stable Rust type references but no complete generated schemas or language DTO chain because RFC-0042 owns that work; `scripts/gen_ts_types.py` remains for its existing outputs.
 - **G-e — Release installation evidence:** Release publishing orders ops before FFI and packages the header, but installation and execution of every platform asset are not established here because build and packaging definitions alone do not establish release closure.
 - **G-f — Provider metadata:** Complete package provenance, authoritative default methods for every package, general named vendor-method dispatch and registry/string-model lifting in text requests are absent because entries retain canonical Arcs and current factories/control DTOs do not supply all that metadata or lifting; owner-scoped reference metadata exists for registry-resolved models, and `provider.invoke` accepts only `listModels`.
 - **G-g — End-to-end memory bound:** Queue and wire limits do not bound every provider allocation or the existing unbounded core text pump because this layer controls admitted payloads rather than rewriting core streaming internals.
-- **G-h — Generated-product consistency:** Per-business-type revision/hash checks are unavailable and Node currently checks ABI/ops versions without comparing its generated digest because consumed-type metadata and uniform loader consistency enforcement are incomplete.
+- **G-h — Generated-product consistency:** Per-business-type revision/hash checks are unavailable because consumed-type metadata is incomplete; every adapter already pins the exact ABI version, ops version and manifest digest.
 - **G-i — Cross-language and platform conformance:** Exhaustive eight-language business-vector execution, same-source release evidence, installed-wheel checks and all platform sanitizer/link/install results are not established here because narrower local and fixture suites do not prove the full matrix; Dart Windows streaming is explicitly unsupported.
 - **G-k — Offline mock-model migration:** The old MockReplayModel constructor has no exposed replacement for offline text generation because replay.create returns ReplaySession, text operations admit only Language, and replay.live requires a separate caller-supplied target.

@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory(prefix="aimux-python-contract-") as folder:
     manifest.write_text(text)
     double_manifest = double / "Cargo.toml"
     double_manifest.write_text(double_manifest.read_text().replace('../../../../aimux-core', str(core)))
-    pin = copied / "generated/ops.py"
+    pin = copied / "python/aimux/ops.py"
     pin.write_text(pin.read_text().replace(
         next(line for line in pin.read_text().splitlines() if line.startswith("MANIFEST_DIGEST = ")),
         'MANIFEST_DIGEST = "isolated-test-double"',

@@ -197,6 +197,43 @@ async fn start(model: Arc<MockModel>, limits: OperationLimits) -> Arc<Operation>
     .unwrap_or_else(|_| panic!("mock operation failed admission"))
 }
 
+#[test]
+fn drop_after_runtime_shutdown_is_safe() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let model = MockModel::new(Mode::Pending);
+    let operation = runtime.block_on(start(model.clone(), OperationLimits::default()));
+    drop(runtime);
+    drop(operation);
+    assert!(
+        model
+            .provider_abort
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .is_aborted()
+    );
+}
+
+#[test]
+fn terminate_after_runtime_shutdown_is_safe() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let operation = runtime.block_on(start(
+        MockModel::new(Mode::Pending),
+        OperationLimits::default(),
+    ));
+    drop(runtime);
+    futures::executor::block_on(operation.terminate());
+    assert!(operation.status().cleanup_failure.is_none());
+    assert!(matches!(operation.status().state, OperationState::Terminal));
+}
+
 async fn until(mut predicate: impl FnMut() -> bool) {
     tokio::time::timeout(WAIT, async {
         while !predicate() {

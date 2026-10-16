@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/arcships/aimux/bindings/go/generated"
 )
 
 type PollState int32
@@ -36,7 +38,7 @@ func (h *Handle) StartOperation(ctx context.Context, params any) (*Operation, er
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	data, err := encodeParams("transcription.start", params)
+	data, err := encodeParams(generated.OP_TRANSCRIPTION_START, params)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +55,7 @@ func (h *Handle) StartOperation(ctx context.Context, params any) (*Operation, er
 		return nil, err
 	}
 	stop := watchAbort(ctx, abort)
-	raw, err := nativeCall(uint64(id), "transcription.start", data, abort.id.Load())
+	raw, err := nativeCall(uint64(id), generated.OP_TRANSCRIPTION_START, data, abort.id.Load())
 	if err != nil {
 		stop()
 		abort.Close()
@@ -116,7 +118,7 @@ func (o *Operation) InputDone(ctx context.Context) error {
 	if o == nil {
 		return ErrClosed
 	}
-	_, err := o.handle.Call(ctx, "operation.inputDone", struct{}{})
+	_, err := o.handle.Call(ctx, generated.OP_OPERATION_INPUT_DONE, struct{}{})
 	runtime.KeepAlive(o)
 	return err
 }
@@ -125,7 +127,7 @@ func (o *Operation) Status(ctx context.Context) (json.RawMessage, error) {
 	if o == nil {
 		return nil, ErrClosed
 	}
-	result, err := o.handle.Call(ctx, "operation.status", struct{}{})
+	result, err := o.handle.Call(ctx, generated.OP_OPERATION_STATUS, struct{}{})
 	runtime.KeepAlive(o)
 	return result, err
 }
