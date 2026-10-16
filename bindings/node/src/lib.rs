@@ -153,19 +153,9 @@ fn invalid_state(message: &str) -> ErrorEnvelope {
 }
 
 fn handle(value: &str) -> std::result::Result<HandleId, ErrorEnvelope> {
-    if value.is_empty()
-        || !value.bytes().all(|c| c.is_ascii_digit())
-        || (value.len() > 1 && value.starts_with('0'))
-    {
-        return Err(envelope(OpsError::Protocol(ProtocolError::InvalidParams(
-            "handle must be a canonical decimal string".into(),
-        ))));
-    }
-    value.parse().map(HandleId).map_err(|_| {
-        envelope(OpsError::Protocol(ProtocolError::InvalidParams(
-            "handle exceeds u64".into(),
-        )))
-    })
+    value
+        .parse()
+        .map_err(|message| envelope(OpsError::Protocol(ProtocolError::InvalidParams(message))))
 }
 
 fn collect_handles(value: &Value, result: &mut Vec<u64>) {
@@ -453,12 +443,13 @@ impl Drop for Abort {
 mod tests {
     use super::*;
     #[test]
-    fn handles_preserve_all_u64_bits_and_reject_noncanonical_ids() {
+    fn handles_preserve_all_u64_bits_and_follow_the_handle_id_rule() {
         assert_eq!(
             handle("18446744073709551615").ok().map(|id| id.0),
             Some(u64::MAX)
         );
-        for id in ["", "01", "-1", "+1", "1.0", "18446744073709551616"] {
+        assert_eq!(handle("01").ok().map(|id| id.0), Some(1));
+        for id in ["", "-1", "+1", "1.0", "18446744073709551616"] {
             assert!(handle(id).is_err(), "{id}");
         }
     }

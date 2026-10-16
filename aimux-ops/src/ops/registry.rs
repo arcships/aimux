@@ -178,16 +178,7 @@ fn invalid(message: impl Into<String>) -> OpsError {
 }
 
 fn handle(value: &str) -> Result<HandleId, OpsError> {
-    if value.is_empty()
-        || !value.bytes().all(|b| b.is_ascii_digit())
-        || (value.len() > 1 && value.starts_with('0'))
-    {
-        return Err(invalid("handle must be a canonical decimal string"));
-    }
-    value
-        .parse::<u64>()
-        .map(HandleId)
-        .map_err(|_| invalid("handle exceeds u64"))
+    value.parse().map_err(invalid)
 }
 
 fn wrong(entry: &Entry, expected: &[HandleKind]) -> OpsError {
@@ -684,10 +675,11 @@ mod tests {
     }
 
     #[test]
-    fn handles_are_canonical_decimal_strings() {
-        for bad in ["", " 1", "+1", "-1", "01", "1.0", "18446744073709551616"] {
+    fn handles_follow_the_handle_id_rule() {
+        for bad in ["", " 1", "+1", "-1", "1.0", "18446744073709551616"] {
             assert!(handle(bad).is_err(), "{bad}");
         }
+        assert_eq!(handle("01").unwrap().0, 1);
         assert_eq!(handle("18446744073709551615").unwrap().0, u64::MAX);
     }
 
