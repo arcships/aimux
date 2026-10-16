@@ -97,7 +97,7 @@ public final class AimuxStream: Sendable, AsyncSequence {
                 let event = try await reader.next()?.value
                 try Task.checkCancellation()
                 return event
-            } catch BoundedStream<BufferedEvent>.Failure.multipleConsumers {
+            } catch BoundedStream<BufferedEvent>.QueueError.multipleConsumers {
                 throw AimuxError.state("Stream already has a consumer", code: 303)
             } catch {
                 if Task.isCancelled { close(); throw CancellationError() }
