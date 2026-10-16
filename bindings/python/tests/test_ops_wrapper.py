@@ -13,6 +13,33 @@ if HAS_TYPED:
     )
 
 @unittest.skipUnless(HAS_TYPED, "requires installed binding and optional Pydantic")
+class TestRequestOptions(unittest.TestCase):
+
+    def test_unknown_request_options_are_rejected(self):
+        from aimux.wrapper import GenerateTextOptions
+
+        for wire in ({"maxRetry": 0}, {"timeout": {"toolMs": 100}},
+                     {"timeout": {"totalMs": 100, "unknown": True}}):
+            with self.subTest(wire=wire), self.assertRaises(ValueError):
+                GenerateTextOptions.model_validate(wire)
+
+    def test_python_names_and_provider_tool_flags_round_trip(self):
+        from aimux.wrapper import GenerateTextOptions, ProviderTool, TimeoutConfiguration
+
+        for deferred in (None, False, True):
+            with self.subTest(deferred=deferred):
+                tool = ProviderTool(id="anthropic.code_execution_20250825", name="code_execution",
+                                    args={}, supports_deferred_results=deferred)
+                wire_tool = {"type": "provider", "id": tool.id, "name": tool.name, "args": {}}
+                if deferred is not None:
+                    wire_tool["supportsDeferredResults"] = deferred
+                wire = {"maxRetries": 0, "timeout": {"totalMs": 100}, "tools": [wire_tool]}
+                options = GenerateTextOptions(max_retries=0, timeout=TimeoutConfiguration(total_ms=100),
+                                              tools=[tool])
+                self.assertEqual(options.model_dump(mode="json", by_alias=True), wire)
+                self.assertEqual(GenerateTextOptions.model_validate(wire), options)
+
+@unittest.skipUnless(HAS_TYPED, "requires installed binding and optional Pydantic")
 class TestGeneratedFiles(unittest.TestCase):
 
     def test_generated_file_is_base64_and_media_type(self):

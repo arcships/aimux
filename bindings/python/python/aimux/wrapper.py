@@ -853,6 +853,8 @@ class TimeoutConfiguration(_Wire):
     All values are milliseconds; ``None`` disables the corresponding limit.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     total_ms: Optional[int] = None
     step_ms: Optional[int] = None
     first_chunk_ms: Optional[int] = None
@@ -885,6 +887,8 @@ class GenerateTextOptions(_Wire):
     Invalid tool calls arrive with ``invalid``/``error`` set on the tool call.
     Use the explicit toolRepair operations to repair them.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     max_output_tokens: Optional[int] = None
     temperature: Optional[float] = None
