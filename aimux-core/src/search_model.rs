@@ -16,7 +16,7 @@ use crate::{AbortSignal, retry, timeout};
 
 /// Options passed to [`SearchModel::do_search`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export)]
 pub struct SearchCallOptions {
     /// The search query string.

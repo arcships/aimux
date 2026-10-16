@@ -349,7 +349,7 @@ pub fn unsupported_question_type_error(
 /// Options of [`decide`]: the call options plus the operation settings
 /// (`ai@7.0.128 src/decide/decide.ts:53-61`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export)]
 pub struct DecideOptions {
     pub state: DecisionInput,

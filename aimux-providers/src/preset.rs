@@ -195,9 +195,11 @@ fn registry_optional<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
     T::deserialize(d).map(Some)
 }
 
-fn load_registry() -> Vec<PresetDescriptor> {
-    let json: Vec<serde_json::Value> = serde_json::from_str(include_str!("provider_registry.json"))
-        .expect("invalid provider_registry.json: expected an array of rows");
+/// Parse and check the registry rows in `json`. Any row that breaks the
+/// schema panics with the row's name and the rule it breaks.
+fn parse_registry(json: &str) -> Vec<PresetDescriptor> {
+    let json: Vec<serde_json::Value> =
+        serde_json::from_str(json).expect("invalid registry: expected an array of rows");
     let mut rows: Vec<RegistryRow> = json
         .iter()
         .map(|row| {
@@ -367,7 +369,7 @@ pub fn entries() -> impl Iterator<Item = &'static PresetEntry> {
     TABLE
         .get_or_init(|| {
             DESCRIPTORS
-                .get_or_init(load_registry)
+                .get_or_init(|| parse_registry(include_str!("provider_registry.json")))
                 .iter()
                 .map(|descriptor| PresetEntry { descriptor })
                 .collect()
@@ -641,5 +643,132 @@ mod tests {
             .expect("abacus is listed");
         assert!(std::ptr::eq(first.descriptor, from_entries.descriptor));
         assert_eq!(names().count(), entries().count());
+    }
+
+    fn registry(rows: serde_json::Value) -> Vec<PresetDescriptor> {
+        parse_registry(&rows.to_string())
+    }
+
+    fn row(fields: serde_json::Value) -> serde_json::Value {
+        let mut row = serde_json::json!({
+            "name": "vendor",
+            "display": "Vendor",
+            "base_url": "https://api.vendor.example/v1",
+            "env_var": "VENDOR_API_KEY",
+        });
+        row.as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().cloned().unwrap());
+        row
+    }
+
+    #[test]
+    fn a_valid_row_parses_into_a_descriptor() {
+        let descriptors = registry(serde_json::json!([
+            row(serde_json::json!({})),
+            row(serde_json::json!({
+                "name": "local",
+                "base_url": "http://localhost:{port}/v1",
+                "auth": "none",
+                "env_var": "LOCAL_API_KEY",
+                "base_url_env": "LOCAL_BASE_URL",
+                "params": [{ "name": "port", "default": "8080" }],
+                "profile": { "max_tokens_key": "max_completion_tokens" },
+            })),
+        ]));
+        assert_eq!(descriptors.len(), 2);
+        let local = &descriptors[0];
+        assert_eq!(local.name, "local");
+        assert_eq!(local.auth, AuthMode::None);
+        assert_eq!(local.base_url_env.as_deref(), Some("LOCAL_BASE_URL"));
+        assert_eq!(
+            local.max_tokens_key.as_deref(),
+            Some("max_completion_tokens")
+        );
+        assert_eq!(local.params[0].default.as_deref(), Some("8080"));
+        let vendor = &descriptors[1];
+        assert_eq!(vendor.auth, AuthMode::ApiKey);
+        assert_eq!(vendor.env_var, "VENDOR_API_KEY");
+    }
+
+    #[test]
+    #[should_panic(expected = "registry row 'vendor': duplicate registry name")]
+    fn a_name_is_listed_once() {
+        registry(serde_json::json!([
+            row(serde_json::json!({})),
+            row(serde_json::json!({}))
+        ]));
+    }
+
+    #[test]
+    #[should_panic(expected = "registry row 'Vendor-1': invalid name")]
+    fn a_name_is_a_lowercase_identifier() {
+        registry(serde_json::json!([row(
+            serde_json::json!({ "name": "Vendor-1" })
+        )]));
+    }
+
+    #[test]
+    #[should_panic(expected = "base_url must start with http(s)://")]
+    fn a_base_url_is_http() {
+        registry(serde_json::json!([row(
+            serde_json::json!({ "base_url": "ftp://vendor" })
+        )]));
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown auth \"oauth\"")]
+    fn auth_is_api_key_or_none() {
+        registry(serde_json::json!([row(
+            serde_json::json!({ "auth": "oauth" })
+        )]));
+    }
+
+    #[test]
+    #[should_panic(expected = "env_var must be nonempty for api_key")]
+    fn an_api_key_row_names_its_variable() {
+        registry(serde_json::json!([row(
+            serde_json::json!({ "env_var": "" })
+        )]));
+    }
+
+    #[test]
+    #[should_panic(expected = "URL placeholders differ from params")]
+    fn every_placeholder_is_a_param() {
+        registry(serde_json::json!([row(serde_json::json!({
+            "base_url": "https://{region}.vendor.example/v1",
+        }))]));
+    }
+
+    #[test]
+    #[should_panic(expected = "derived param has env/default")]
+    fn a_derived_param_has_no_env_or_default() {
+        registry(serde_json::json!([row(serde_json::json!({
+            "base_url": "https://{region}.{host}/v1",
+            "params": [
+                { "name": "region", "default": "eu" },
+                {
+                    "name": "host",
+                    "default": "x",
+                    "derive": { "from": "region", "map": {}, "otherwise": "vendor.example" },
+                },
+            ],
+        }))]));
+    }
+
+    #[test]
+    #[should_panic(expected = "registry row \"vendor\"")]
+    fn an_explicit_null_is_not_a_value() {
+        registry(serde_json::json!([row(
+            serde_json::json!({ "env_var": null })
+        )]));
+    }
+
+    #[test]
+    #[should_panic(expected = "registry row \"vendor\"")]
+    fn an_unknown_field_is_refused() {
+        registry(serde_json::json!([row(
+            serde_json::json!({ "region": "eu" })
+        )]));
     }
 }

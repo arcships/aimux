@@ -53,8 +53,12 @@ pub enum ResponseFormat {
 ///
 /// All values are milliseconds; `None` disables the corresponding limit. A
 /// `total` timeout also covers retry backoff and the whole streamed response.
+///
+/// Unknown keys, upstream's `toolMs` / `tools` among them, are rejected
+/// (RFC-0042 §7.2): aimux 0.5's `total_ms` is an error naming it, not a call
+/// without a timeout.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export)]
 pub struct TimeoutConfiguration {
     /// Overall timeout for the entire call (including retries and, for
