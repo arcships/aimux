@@ -20,7 +20,7 @@ use crate::{AbortSignal, retry, timeout};
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum RerankingDocuments {
     /// A list of plain-text documents.
     Text { values: Vec<String> },
@@ -32,8 +32,8 @@ pub enum RerankingDocuments {
 ///
 /// Aligned with V4 `RerankingModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RerankingCallOptions {
     /// Documents to rerank.
     pub documents: RerankingDocuments,
@@ -92,7 +92,7 @@ impl RerankingCallOptions {
 /// A single reranked entry: the original index and its relevance score.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RerankingRank {
     /// The index of the document in the original list (before reranking).
     pub index: u32,
@@ -105,7 +105,7 @@ pub struct RerankingRank {
 /// Aligned with V4 `RerankingModelV4Result`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RerankingResult {
     /// Ordered list of reranked documents, sorted by descending relevance
     /// score. Each entry's `index` refers to the position in the original
@@ -131,7 +131,7 @@ pub struct RerankingResult {
 /// Optional response information for a reranking call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RerankingResponse {
     /// ID for the generated response, if the provider sends one.
     #[ts(optional)]

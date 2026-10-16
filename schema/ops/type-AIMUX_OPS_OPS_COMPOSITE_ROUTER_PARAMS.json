@@ -17,7 +17,7 @@
     },
     "fallback": {
       "enum": [
-        "on_error",
+        "on-error",
         "none"
       ]
     },

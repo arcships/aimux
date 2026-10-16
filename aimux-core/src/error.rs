@@ -78,7 +78,7 @@ pub fn retry_after_ms_from_headers(
 /// AI SDK's `APICallError` contract.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ApiCallError {
     /// Sanitized request URL. Required for every API-derived failure.
     pub url: String,
@@ -154,7 +154,7 @@ impl ApiCallError {
 /// Why the retry wrapper stopped retrying.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum RetryErrorReason {
     /// Every permitted retry attempt failed with a retryable error.
     MaxRetriesExceeded,
@@ -165,7 +165,7 @@ pub enum RetryErrorReason {
 /// Complete error history for a retried model operation.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RetryError {
     pub reason: RetryErrorReason,
     pub errors: Vec<AiMuxError>,
@@ -246,7 +246,8 @@ impl std::fmt::Display for ApiCallError {
 /// compact; serde and every binding still observe the same object shape.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, Error)]
 #[serde(from = "AiMuxErrorWire", into = "AiMuxErrorWire")]
-#[ts(export, as = "AiMuxErrorWire")]
+#[ts(as = "AiMuxErrorWire")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AiMuxError {
     #[error("API call error: {0}")]
     ApiCall(Box<ApiCallError>),
@@ -607,7 +608,7 @@ fn missing_tool_results_message(tool_call_ids: &[String]) -> String {
 /// SDK's `ToolChoiceViolationError` (`ai` `error/tool-choice-violation-error.ts`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS, Error)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[error("{}", tool_choice_violation_message(.tool_choice))]
 pub struct ToolChoiceViolationError {
     /// The enforced tool choice (`required`, or `tool` with a name) that the

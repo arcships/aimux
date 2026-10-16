@@ -30,12 +30,17 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 
 use serde::Deserialize;
+use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
+use aimux_core::types::Usage;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::openai_compatible::config::{BaseUrl, ChatSettings, UsageDialect};
-use crate::openai_compatible::{Assembly, OpenAICompatibleProvider, TransformRequestBody};
+use crate::openai_compatible::chat::usage_from_raw;
+use crate::openai_compatible::config::{BaseUrl, ChatSettings};
+use crate::openai_compatible::{
+    Assembly, ConvertUsage, OpenAICompatibleProvider, TransformRequestBody,
+};
 use crate::shared::Credential;
 
 /// How a preset authenticates.
@@ -85,8 +90,9 @@ pub struct PresetDescriptor {
     /// The only max-token key the vendor accepts (`"max_tokens"` or
     /// `"max_completion_tokens"`); `None` sends `max_tokens`.
     pub max_tokens_key: Option<String>,
-    /// How chat usage is read (`profile.convert_usage`).
-    pub(crate) convert_usage: UsageDialect,
+    /// How chat usage is read (`profile.convert_usage`); `None`: the generic
+    /// OpenAI-shaped usage.
+    pub(crate) convert_usage: Option<fn(Option<&Value>) -> Usage>,
     pub params: Vec<ParamSpec>,
     /// `(package, version)` of the `ai-sdk-{package}/{version}` user-agent
     /// (`profile.user_agent`). `openai-compatible` by default;
@@ -189,9 +195,11 @@ fn registry_optional<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
     T::deserialize(d).map(Some)
 }
 
-fn load_registry() -> Vec<PresetDescriptor> {
-    let json: Vec<serde_json::Value> = serde_json::from_str(include_str!("provider_registry.json"))
-        .expect("invalid provider_registry.json: expected an array of rows");
+/// Parse and check the registry rows in `json`. Any row that breaks the
+/// schema panics with the row's name and the rule it breaks.
+fn parse_registry(json: &str) -> Vec<PresetDescriptor> {
+    let json: Vec<serde_json::Value> =
+        serde_json::from_str(json).expect("invalid registry: expected an array of rows");
     let mut rows: Vec<RegistryRow> = json
         .iter()
         .map(|row| {
@@ -265,12 +273,13 @@ fn load_registry() -> Vec<PresetDescriptor> {
                 .is_none_or(|key| matches!(key, "max_tokens" | "max_completion_tokens")),
             "invalid max_tokens_key",
         );
-        let convert_usage = match row.profile.get("convert_usage").map(String::as_str) {
-            None => UsageDialect::OpenAICompatible,
-            Some("alibaba") => UsageDialect::Alibaba,
-            Some("moonshotai") => UsageDialect::MoonshotAI,
-            Some(value) => panic!("registry row '{name}': unknown convert_usage {value:?}"),
-        };
+        let convert_usage: Option<fn(Option<&Value>) -> Usage> =
+            match row.profile.get("convert_usage").map(String::as_str) {
+                None => None,
+                Some("alibaba") => Some(alibaba_usage),
+                Some("moonshotai") => Some(moonshotai_usage),
+                Some(value) => panic!("registry row '{name}': unknown convert_usage {value:?}"),
+            };
         let mut params = Vec::with_capacity(row.params.len());
         for param in row.params {
             check(identifier.is_match(&param.name), "bad param name");
@@ -360,7 +369,7 @@ pub fn entries() -> impl Iterator<Item = &'static PresetEntry> {
     TABLE
         .get_or_init(|| {
             DESCRIPTORS
-                .get_or_init(load_registry)
+                .get_or_init(|| parse_registry(include_str!("provider_registry.json")))
                 .iter()
                 .map(|descriptor| PresetEntry { descriptor })
                 .collect()
@@ -424,7 +433,9 @@ fn assemble(
         supports_structured_outputs: true,
         supports_top_k: true,
         max_tokens_key: descriptor.max_tokens_key.as_deref(),
-        usage_dialect: descriptor.convert_usage,
+        convert_usage: descriptor
+            .convert_usage
+            .map(|convert| Arc::new(convert) as ConvertUsage),
         ..ChatSettings::default()
     };
 
@@ -577,6 +588,44 @@ pub(crate) fn resolve_base_url(
     validate_base_url(&url)
 }
 
+/// Alibaba's `convertUsage`: cache writes from
+/// `prompt_tokens_details.cache_creation_input_tokens` (or
+/// `cache_write_tokens`), taken out of the uncached input.
+fn alibaba_usage(raw: Option<&Value>) -> Usage {
+    let mut usage = usage_from_raw(raw);
+    if let Some(raw) = raw.filter(|raw| !raw.is_null()) {
+        let details = &raw["prompt_tokens_details"];
+        let cache_write = tokens(&details["cache_creation_input_tokens"])
+            .or_else(|| tokens(&details["cache_write_tokens"]))
+            .unwrap_or(0);
+        usage.input_tokens.cache_write = Some(cache_write);
+        usage.input_tokens.no_cache = usage
+            .input_tokens
+            .no_cache
+            .map(|tokens| tokens.saturating_sub(cache_write));
+    }
+    usage
+}
+
+/// Moonshot AI's `convertUsage`: cache reads from the top-level
+/// `cached_tokens`.
+fn moonshotai_usage(raw: Option<&Value>) -> Usage {
+    let mut usage = usage_from_raw(raw);
+    if let Some(cached) = raw.and_then(|raw| tokens(&raw["cached_tokens"])) {
+        usage.input_tokens.cache_read = Some(cached);
+        usage.input_tokens.no_cache = usage
+            .input_tokens
+            .total
+            .map(|tokens| tokens.saturating_sub(cached));
+    }
+    usage
+}
+
+/// A token count of a raw usage object.
+fn tokens(value: &Value) -> Option<u32> {
+    value.as_u64().and_then(|value| u32::try_from(value).ok())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -594,5 +643,132 @@ mod tests {
             .expect("abacus is listed");
         assert!(std::ptr::eq(first.descriptor, from_entries.descriptor));
         assert_eq!(names().count(), entries().count());
+    }
+
+    fn registry(rows: serde_json::Value) -> Vec<PresetDescriptor> {
+        parse_registry(&rows.to_string())
+    }
+
+    fn row(fields: serde_json::Value) -> serde_json::Value {
+        let mut row = serde_json::json!({
+            "name": "vendor",
+            "display": "Vendor",
+            "base_url": "https://api.vendor.example/v1",
+            "env_var": "VENDOR_API_KEY",
+        });
+        row.as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().cloned().unwrap());
+        row
+    }
+
+    #[test]
+    fn a_valid_row_parses_into_a_descriptor() {
+        let descriptors = registry(serde_json::json!([
+            row(serde_json::json!({})),
+            row(serde_json::json!({
+                "name": "local",
+                "base_url": "http://localhost:{port}/v1",
+                "auth": "none",
+                "env_var": "LOCAL_API_KEY",
+                "base_url_env": "LOCAL_BASE_URL",
+                "params": [{ "name": "port", "default": "8080" }],
+                "profile": { "max_tokens_key": "max_completion_tokens" },
+            })),
+        ]));
+        assert_eq!(descriptors.len(), 2);
+        let local = &descriptors[0];
+        assert_eq!(local.name, "local");
+        assert_eq!(local.auth, AuthMode::None);
+        assert_eq!(local.base_url_env.as_deref(), Some("LOCAL_BASE_URL"));
+        assert_eq!(
+            local.max_tokens_key.as_deref(),
+            Some("max_completion_tokens")
+        );
+        assert_eq!(local.params[0].default.as_deref(), Some("8080"));
+        let vendor = &descriptors[1];
+        assert_eq!(vendor.auth, AuthMode::ApiKey);
+        assert_eq!(vendor.env_var, "VENDOR_API_KEY");
+    }
+
+    #[test]
+    #[should_panic(expected = "registry row 'vendor': duplicate registry name")]
+    fn a_name_is_listed_once() {
+        registry(serde_json::json!([
+            row(serde_json::json!({})),
+            row(serde_json::json!({}))
+        ]));
+    }
+
+    #[test]
+    #[should_panic(expected = "registry row 'Vendor-1': invalid name")]
+    fn a_name_is_a_lowercase_identifier() {
+        registry(serde_json::json!([row(
+            serde_json::json!({ "name": "Vendor-1" })
+        )]));
+    }
+
+    #[test]
+    #[should_panic(expected = "base_url must start with http(s)://")]
+    fn a_base_url_is_http() {
+        registry(serde_json::json!([row(
+            serde_json::json!({ "base_url": "ftp://vendor" })
+        )]));
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown auth \"oauth\"")]
+    fn auth_is_api_key_or_none() {
+        registry(serde_json::json!([row(
+            serde_json::json!({ "auth": "oauth" })
+        )]));
+    }
+
+    #[test]
+    #[should_panic(expected = "env_var must be nonempty for api_key")]
+    fn an_api_key_row_names_its_variable() {
+        registry(serde_json::json!([row(
+            serde_json::json!({ "env_var": "" })
+        )]));
+    }
+
+    #[test]
+    #[should_panic(expected = "URL placeholders differ from params")]
+    fn every_placeholder_is_a_param() {
+        registry(serde_json::json!([row(serde_json::json!({
+            "base_url": "https://{region}.vendor.example/v1",
+        }))]));
+    }
+
+    #[test]
+    #[should_panic(expected = "derived param has env/default")]
+    fn a_derived_param_has_no_env_or_default() {
+        registry(serde_json::json!([row(serde_json::json!({
+            "base_url": "https://{region}.{host}/v1",
+            "params": [
+                { "name": "region", "default": "eu" },
+                {
+                    "name": "host",
+                    "default": "x",
+                    "derive": { "from": "region", "map": {}, "otherwise": "vendor.example" },
+                },
+            ],
+        }))]));
+    }
+
+    #[test]
+    #[should_panic(expected = "registry row \"vendor\"")]
+    fn an_explicit_null_is_not_a_value() {
+        registry(serde_json::json!([row(
+            serde_json::json!({ "env_var": null })
+        )]));
+    }
+
+    #[test]
+    #[should_panic(expected = "registry row \"vendor\"")]
+    fn an_unknown_field_is_refused() {
+        registry(serde_json::json!([row(
+            serde_json::json!({ "region": "eu" })
+        )]));
     }
 }

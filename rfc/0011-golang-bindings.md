@@ -3,6 +3,7 @@
 > **Status**: v0.2 (typed API + 8-modality multimodal + DeepSeek factory, aligned with Node flagship coverage)
 > **Date**: 2026-07-31
 > **Related**: [RFC-0001](0001-multilang-bindings.md) multilang bindings, [aimux-ffi](../aimux-ffi/aimux-ffi.h)
+> **后续变更**: 2026-10-11 删除共享契约 fixture `contract-tests/fixtures/wire-format.json` 及 Go 的 `wire_format_test.go`(#249);§7.3 与 §9 Phase 3 所述跨语言 wire-format 契约测试已不再适用:该 fixture 记录的是 Rust 自身的 serde 输出,wire 对齐改由从固定版本 AI SDK 录制的 fixture 与移植的上游测试承担,版本见 [fixtures/aisdk/VERSIONS.json](../fixtures/aisdk/VERSIONS.json)。
 
 ---
 

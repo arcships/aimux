@@ -73,8 +73,9 @@ env var。非回环绑定(`--host 0.0.0.0` 等)时网页内 key 管理自动禁�
 
 自填 `base_url`(不是该 provider 的默认地址)时只用请求里直接给的 key(仅回环
 绑定可填明文):Settings 已存 key 和环境变量都不会发往该地址,`env:` 引用被拒绝;
-key 留空则不带 key 调用。还会从环境读取其他凭据的 provider(Bedrock、Vertex、
-Codex 等)不能自填 `base_url`。Replay 总是发往 provider 的默认地址。
+key 留空则以空 key 调用(与 AI SDK 显式传 `apiKey: ''` 相同,不回落到任何已存或环境 key;
+部分 provider 因此发一个空凭据头,如 OpenAI 的 `Authorization: Bearer`)。还会从环境
+读取其他凭据的 provider(Bedrock、Vertex、Codex 等)不能自填 `base_url`。Replay 总是发往 provider 的默认地址。
 
 打开后使用 Playground / Agent 页跑一次调用,Traces 页即可看到完整录制。
 
@@ -146,3 +147,7 @@ tools/aimux-web/
   `web/src/types/generated/`(同样由 `scripts/gen_ts_types.py` 生成、CI `--check` 防漂移)。
   不导出到 `bindings/node`,因为它们属于前端而非 node 绑定。改 `src/wire.rs` 后运行
   `scripts/gen_ts_types.py` 并一起提交,**不要手改** `generated/` 下的文件。
+- **类型导出**:`aimux-core` 和 `aimux-web` 都通过 `ts-export` feature 门控导出测试,
+  普通 `cargo test` 不写入类型文件。`scripts/gen_ts_types.py` 是唯一写入入口,
+  由它启用 feature,先在临时目录导出再同步到受跟踪目录;CI 用 `--check` 检查漂移和
+  未门控的导出属性。

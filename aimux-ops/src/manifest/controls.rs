@@ -129,12 +129,12 @@ pub(super) fn schema(id: &str) -> Option<Value> {
                 json!({"children":children,"strategy":{"oneOf":[
                 object(json!({"type":{"const":"rule"}}), &["type"]),
                 object(json!({"type":{"const":"weighted"},"weights":array(json!({"type":"number"}))}), &["type","weights"])
-            ]},"fallback":{"enum":["on_error","none"]},"providerName":nullable(string()),"modelId":nullable(string())}),
+            ]},"fallback":{"enum":["on-error","none"]},"providerName":nullable(string()),"modelId":nullable(string())}),
                 &["children", "strategy"],
             )
         }
         "composite::MoaParams" => object(
-            json!({"references":array(handle()),"aggregator":handle(),"providerName":string(),"modelId":string(),"aggregatorInstructions":nullable(string()),"stripReferenceTools":boolean(),"failMode":{"enum":["best_effort","fail_fast"]}}),
+            json!({"references":array(handle()),"aggregator":handle(),"providerName":string(),"modelId":string(),"aggregatorInstructions":nullable(string()),"stripReferenceTools":boolean(),"failMode":{"enum":["best-effort","fail-fast"]}}),
             &["references", "aggregator"],
         ),
         "text::TextRequest" => text_request(false),

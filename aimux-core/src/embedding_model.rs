@@ -25,8 +25,8 @@ pub type Embedding = Vec<f32>;
 ///
 /// Aligned with V4 `EmbeddingModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct EmbeddingCallOptions {
     /// List of text values to generate embeddings for.
     pub values: Vec<String>,
@@ -75,7 +75,7 @@ impl EmbeddingCallOptions {
 /// Token usage for an embedding call. Embeddings only report input tokens.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct EmbeddingUsage {
     /// Number of input tokens consumed.
     pub tokens: u32,
@@ -86,7 +86,7 @@ pub struct EmbeddingUsage {
 /// Aligned with V4 `EmbeddingModelV4Result`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct EmbeddingResult {
     /// Generated embeddings, in the same order as the input `values`.
     pub embeddings: Vec<Embedding>,
@@ -113,7 +113,7 @@ pub struct EmbeddingResult {
 /// Debugging response info specific to embedding calls.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct EmbeddingResponse {
     /// Response headers.
     #[ts(optional)]

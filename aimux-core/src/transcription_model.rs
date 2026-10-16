@@ -30,7 +30,8 @@ use crate::{AbortSignal, retry, timeout};
 /// any other string as base64 (base64 has no `:`), as a file part's string
 /// data is read (ai@7.0.127 `prompt/file-part-data.ts:89-141`).
 #[derive(Debug, Clone, TS)]
-#[ts(export, type = "string")]
+#[ts(type = "string")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AudioInput {
     /// Raw binary bytes.
     Binary(Vec<u8>),
@@ -57,7 +58,8 @@ impl AudioInput {
 ///
 /// The JSON is a base64 string either way, as in the AI SDK's JSON.
 #[derive(Debug, Clone, TS)]
-#[ts(export, type = "string")]
+#[ts(type = "string")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AudioChunk {
     /// Raw binary bytes.
     Binary(Vec<u8>),
@@ -90,7 +92,7 @@ impl<'de> Deserialize<'de> for AudioInput {
 /// A transcript segment with timing information.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TranscriptionSegment {
     /// The text content of this segment.
     pub text: String,
@@ -104,8 +106,8 @@ pub struct TranscriptionSegment {
 ///
 /// Aligned with V4 `TranscriptionModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TranscriptionCallOptions {
     /// Audio to transcribe: raw bytes, a base64-encoded string, or a URL
     /// that [`transcribe`] downloads.
@@ -173,7 +175,7 @@ impl TranscriptionCallOptions {
 /// Aligned with V4 `TranscriptionModelV4Result`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TranscriptionResult {
     /// The complete transcribed text from the audio.
     pub text: String,
@@ -211,7 +213,7 @@ pub struct TranscriptionResult {
 /// Optional request information for a transcription call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TranscriptionRequest {
     /// Raw request HTTP body that was sent (JSON stringified).
     #[ts(optional)]
@@ -222,7 +224,7 @@ pub struct TranscriptionRequest {
 /// Response information for a transcription call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TranscriptionResponse {
     /// Timestamp for the start of the generated response (`toISOString()` in the JSON).
     #[ts(optional)]
@@ -249,7 +251,7 @@ pub struct TranscriptionResponse {
 /// The input audio format for a streaming transcription request.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct InputAudioFormat {
     /// Audio format type, e.g. `"audio/pcm"`, `"audio/pcmu"`, `"audio/pcma"`.
     pub format_type: String,
@@ -312,7 +314,7 @@ impl std::fmt::Debug for TranscriptionStreamOptions {
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum TranscriptionStreamPart {
     /// Stream start event, carrying warnings.
     StreamStart { warnings: Vec<Warning> },

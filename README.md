@@ -28,6 +28,8 @@ difference: aimux is an access layer, those are orchestration layers.
 
 ---
 
+For planned milestones and their current status, see the [roadmap](ROADMAP.md).
+
 ## Why aimux
 
 - **327 provider names** — 282 registry-backed OpenAI-compatible presets

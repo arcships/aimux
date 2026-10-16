@@ -23,8 +23,8 @@
     },
     "failMode": {
       "enum": [
-        "best_effort",
-        "fail_fast"
+        "best-effort",
+        "fail-fast"
       ]
     },
     "modelId": {

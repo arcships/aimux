@@ -426,6 +426,52 @@ async fn stream_json_response_tool_as_text() {
     );
 }
 
+/// Provider tool args go through the Anthropic `prepareTools` check, and
+/// the tools Bedrock leaves out are dropped before it runs.
+#[tokio::test]
+async fn provider_tool_args_are_checked_before_the_request() {
+    let tool = |id: &str, args: Value| {
+        aimux_core::tool::Tool::Provider(aimux_core::tool::ProviderTool {
+            id: id.parse().unwrap(),
+            name: "web".into(),
+            args: args.as_object().cloned().unwrap(),
+            supports_deferred_results: None,
+        })
+    };
+    let fetch = MockFetch::new(vec![]);
+    let mut call = options();
+    call.tools = Some(vec![tool(
+        "anthropic.web_fetch_20250910",
+        json!({"maxUses": "3"}),
+    )]);
+    let error = provider(&fetch)
+        .chat("anthropic.model")
+        .do_generate(&call)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::InvalidArgument(message) if message == "Invalid configuration for provider-defined tool anthropic.web_fetch_20250910"),
+        "{error:?}"
+    );
+    assert!(fetch.seen().is_empty());
+
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "output":{"message":{"role":"assistant","content":[{"text":"Hi"}]}},
+        "usage":{"inputTokens":1,"outputTokens":1,"totalTokens":2},"stopReason":"end_turn"
+    }))]);
+    call.tools = Some(vec![tool(
+        "anthropic.web_search_20250305",
+        json!({"maxUses": "3"}),
+    )]);
+    let result = provider(&fetch)
+        .chat("anthropic.model")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    assert_eq!(fetch.seen().len(), 1);
+    assert_eq!(result.warnings.len(), 1, "{:?}", result.warnings);
+}
+
 /// TS: "should handle Anthropic provider-defined tools" (amazon-bedrock-chat-language-model.test.ts).
 #[tokio::test]
 async fn generate_provider_defined_tool_with_input_schema() {
@@ -439,6 +485,7 @@ async fn generate_provider_defined_tool_with_input_schema() {
             id: "anthropic.bash_20241022".parse().unwrap(),
             name: "bash".into(),
             args: serde_json::Map::new(),
+            supports_deferred_results: None,
         },
     )]);
     call.tool_choice = Some(aimux_core::options::LanguageModelV4ToolChoice::Auto);

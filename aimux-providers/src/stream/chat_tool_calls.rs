@@ -1,75 +1,52 @@
-//! Streaming tool call tracker for the OpenAI chat-completions wire format.
+//! The `tool_calls[i]` deltas of a chat-completions stream.
 //!
-//! Port of `@ai-sdk/provider-utils`'s `streaming-tool-call-tracker.ts`; see
-//! [`StreamingToolCallTracker`].
+//! OpenAI-style chat streams carry no tool-call boundaries: a call is a
+//! series of `tool_calls[i]` fragments, labelled by `index`, `id` and
+//! `function.name`, that providers fill in inconsistently. [`ChatToolCalls`]
+//! is the part of a chat stream that puts those fragments back together the
+//! way `@ai-sdk/provider-utils@5.0.55`'s `streaming-tool-call-tracker.ts`
+//! does, so every chat stream (OpenAI, OpenAI-compatible, DeepSeek, Groq,
+//! Mistral) emits the same parts for the same deltas.
 
-use thiserror::Error;
+use std::sync::Arc;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::RawToolCall;
 use aimux_core::types::ProviderMetadata;
 
-use crate::streaming_tool_call_argument_state::{
-    StreamingToolCallArgumentState, starts_with_structured_value,
-};
+use super::tool_call_arguments::{StreamingToolCallArgumentState, starts_with_structured_value};
+use super::{Controller, Emit, GenerateId};
 
-/// Id used when the id generator returns a blank string; also the output of
-/// the default generator.
+/// Id used only when the generator returns a blank string
+/// (provider-utils@5.0.55 src/streaming-tool-call-tracker.ts:461).
 const FALLBACK_TOOL_CALL_ID: &str = "tool-call";
 
-/// One `tool_calls[i]` entry of a streaming chunk, borrowed from the
-/// provider's own wire type.
-///
-/// The upstream `function: { name, arguments }` object is flattened; a
-/// missing `function` is the same as both fields being `None`.
-#[derive(Debug, Clone, Default)]
-pub struct StreamingToolCallDelta<'a> {
-    pub index: Option<usize>,
-    pub id: Option<&'a str>,
-    pub r#type: Option<&'a str>,
-    pub name: Option<&'a str>,
+/// One `tool_calls[i]` entry of a chunk, borrowed from the vendor's wire
+/// type. A missing `function` object is both `name` and `arguments` absent.
+#[derive(Debug, Default)]
+pub(crate) struct ToolCallDelta<'a> {
+    pub(crate) index: Option<usize>,
+    pub(crate) id: Option<&'a str>,
+    pub(crate) name: Option<&'a str>,
     /// `None` is the wire `null` / absent; `Some("")` is an empty fragment.
-    pub arguments: Option<&'a str>,
-    /// Provider metadata for the `ToolCall` part (the upstream
-    /// `extractMetadata` hook). Read only from the delta that starts a call.
-    pub provider_metadata: Option<ProviderMetadata>,
+    pub(crate) arguments: Option<&'a str>,
+    /// The delta's `type` breaks the vendor's rule (`'function'` when
+    /// present for OpenAI, always `'function'` for Groq). Only checked when
+    /// the delta starts a call.
+    pub(crate) invalid_type: bool,
+    /// Metadata for the `ToolCall` part (the upstream `extractMetadata`);
+    /// only read from the delta that starts a call.
+    pub(crate) provider_metadata: Option<ProviderMetadata>,
 }
 
-/// How to validate the `type` field on the delta that starts a call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TypeValidation {
-    /// No validation.
-    #[default]
-    None,
-    /// Reject a `type` that is present and not `"function"`.
-    IfPresent,
-    /// Reject a `type` that is not exactly `"function"`.
-    Required,
-}
-
-/// A delta the tracker cannot accept; the upstream
-/// `InvalidResponseDataError`.
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum TrackerError {
-    #[error("Expected 'function.name' to be a string.")]
-    MissingFunctionName,
-    #[error("Expected 'function' type.")]
-    InvalidType,
-}
-
-impl From<TrackerError> for AiMuxError {
-    fn from(error: TrackerError) -> Self {
-        AiMuxError::InvalidResponseData(error.to_string())
-    }
-}
-
+/// A call being streamed.
 struct ToolCall {
     id: String,
     name: String,
     arguments: String,
     argument_state: StreamingToolCallArgumentState,
-    /// Index of the starting delta; orders [`StreamingToolCallTracker::finish`].
+    /// Index of the starting delta; orders [`ChatToolCalls::finish`].
     index: Option<usize>,
     /// Every wire id and index seen for this call.
     wire_ids: Vec<String>,
@@ -77,25 +54,24 @@ struct ToolCall {
     provider_metadata: Option<ProviderMetadata>,
 }
 
+/// Which call a delta belongs to.
 enum Resolution {
     Existing(usize),
     New,
     Ambiguous,
 }
 
-/// Tracks the tool calls of one streamed response.
+/// The tool calls of one chat stream, in arrival order.
 ///
-/// Port of `@ai-sdk/provider-utils`'s `streaming-tool-call-tracker.ts`. It
-/// accumulates `tool_calls[i]` deltas, emits [`StreamPart::ToolInputStart`] /
-/// [`StreamPart::ToolInputDelta`] as they arrive, and emits
-/// [`StreamPart::ToolInputEnd`] / [`StreamPart::ToolCall`] for every call in
-/// [`StreamingToolCallTracker::finish`]. A call is never finalized earlier: a
-/// parsable argument buffer can still be the prefix of a longer argument
-/// string (ai-sdk #13137).
+/// Every delta is emitted as it arrives ([`StreamPart::ToolInputStart`] /
+/// [`StreamPart::ToolInputDelta`]); every call is ended only by
+/// [`finish`](Self::finish) when the stream flushes, because a parsable
+/// argument buffer can still be the prefix of longer arguments (ai-sdk
+/// #13137).
 ///
-/// Deltas are correlated to calls by wire `id`, `index` and function name,
-/// not by `index` alone, so providers that reuse indices, repeat ids, drop
-/// ids on continuations or send blank names are handled:
+/// Deltas are matched to calls by wire `id`, `index` and function name, not
+/// by `index` alone, so providers that reuse indices, repeat ids, drop ids on
+/// continuations or send blank names are handled:
 ///
 /// | ID evidence | index/name evidence | start evidence | resolution |
 /// | --- | --- | --- | --- |
@@ -108,67 +84,43 @@ enum Resolution {
 /// | absent | absent | named | new call |
 /// | absent | absent | unnamed | sole unfinished call, new call, or ambiguity |
 ///
-/// An ambiguous delta is dropped. Behaviour follows
-/// `@ai-sdk/provider-utils@5.0.55`, which keeps parallel calls apart when
-/// stream labels are missing or reused (`hasEmptyArguments`).
-///
-/// Protocols whose streams carry explicit tool-call boundaries (Anthropic,
-/// Google, Bedrock, Cohere, the Responses API) do not need this.
-pub struct StreamingToolCallTracker {
+/// An ambiguous delta is dropped (`hasEmptyArguments` in 5.0.55 keeps
+/// parallel calls apart when labels are missing or reused).
+pub(crate) struct ChatToolCalls {
     calls: Vec<ToolCall>,
-    generate_id: Box<dyn Fn() -> String + Send + Sync>,
-    type_validation: TypeValidation,
+    /// Names a call without a usable wire id. Blank or repeated outputs are
+    /// made unique.
+    generate_id: GenerateId,
 }
 
-impl Default for StreamingToolCallTracker {
+/// Ids from [`aimux_provider_utils::generate_id`].
+impl Default for ChatToolCalls {
     fn default() -> Self {
-        Self::new()
+        Self::new(Arc::new(aimux_provider_utils::generate_id))
     }
 }
 
-impl StreamingToolCallTracker {
-    /// A tracker without `type` validation whose generated ids are
-    /// `tool-call`, `tool-call-1`, `tool-call-2`, …
-    #[must_use]
-    pub fn new() -> Self {
+impl ChatToolCalls {
+    pub(crate) fn new(generate_id: GenerateId) -> Self {
         Self {
             calls: Vec::new(),
-            generate_id: Box::new(|| FALLBACK_TOOL_CALL_ID.to_string()),
-            type_validation: TypeValidation::None,
+            generate_id,
         }
     }
 
-    /// Set the generator for calls without a usable wire id. Blank or
-    /// repeated outputs are turned into unique ids.
-    #[must_use]
-    pub fn with_generate_id(mut self, f: impl Fn() -> String + Send + Sync + 'static) -> Self {
-        self.generate_id = Box::new(f);
-        self
-    }
-
-    #[must_use]
-    pub fn with_type_validation(mut self, validation: TypeValidation) -> Self {
-        self.type_validation = validation;
-        self
-    }
-
-    /// Process one delta, appending the parts it produces to `out`.
+    /// Apply one delta, emitting the parts it produces.
     ///
-    /// # Errors
-    ///
-    /// A delta that starts a call without a function name, or whose `type`
-    /// fails validation.
-    pub fn process(
-        &mut self,
-        delta: StreamingToolCallDelta<'_>,
-        out: &mut Vec<StreamPart>,
-    ) -> Result<(), TrackerError> {
-        let StreamingToolCallDelta {
+    /// A delta that starts a call with an invalid `type` or without a
+    /// function name is the upstream `InvalidResponseDataError`: the stream
+    /// ends with it and `false` is returned.
+    #[must_use]
+    pub(crate) fn delta(&mut self, delta: ToolCallDelta<'_>, controller: &mut Controller) -> bool {
+        let ToolCallDelta {
             index,
             id,
-            r#type,
             name: wire_name,
             arguments,
+            invalid_type,
             provider_metadata,
         } = delta;
         let wire_id = non_blank(id);
@@ -177,23 +129,28 @@ impl StreamingToolCallTracker {
         let empty_arguments = arguments.is_none_or(|arguments| arguments.trim().is_empty());
 
         let call = match self.resolve(wire_id, index, name, explicit_start, empty_arguments) {
-            Resolution::Ambiguous => return Ok(()),
+            Resolution::Ambiguous => return true,
             // Blank names cannot start a usable call, but some providers
-            // repeat a blank name on continuations; those were correlated
+            // repeat a blank name on continuations; those were matched
             // above, so only an unmatched blank-name delta is ignored.
-            Resolution::New if wire_name.is_some() && name.is_none() => return Ok(()),
-            Resolution::New => {
-                self.validate_type(r#type)?;
-                let name = name.ok_or(TrackerError::MissingFunctionName)?;
-                self.start(
-                    wire_id,
-                    index,
-                    name,
-                    arguments.unwrap_or(""),
-                    provider_metadata,
-                    out,
-                )
-            }
+            Resolution::New if wire_name.is_some() && name.is_none() => return true,
+            Resolution::New => match (invalid_type, name) {
+                (false, Some(name)) => {
+                    let arguments = arguments.unwrap_or("");
+                    self.start(
+                        wire_id,
+                        index,
+                        name,
+                        arguments,
+                        provider_metadata,
+                        controller,
+                    )
+                }
+                (true, _) => return invalid(controller, "Expected 'function' type."),
+                (false, None) => {
+                    return invalid(controller, "Expected 'function.name' to be a string.");
+                }
+            },
             Resolution::Existing(call) => {
                 let tool_call = &mut self.calls[call];
                 if let Some(wire_id) = wire_id
@@ -204,11 +161,7 @@ impl StreamingToolCallTracker {
                 if let Some(arguments) = arguments {
                     tool_call.argument_state.append(arguments);
                     tool_call.arguments.push_str(arguments);
-                    out.push(StreamPart::ToolInputDelta {
-                        id: tool_call.id.clone(),
-                        delta: arguments.to_string(),
-                        provider_metadata: None,
-                    });
+                    controller.tool_input_delta(tool_call.id.clone(), arguments.to_string());
                 }
                 call
             }
@@ -220,22 +173,18 @@ impl StreamingToolCallTracker {
         {
             indices.push(index);
         }
-        Ok(())
+        true
     }
 
-    /// Finalize every call, appending `ToolInputEnd` and `ToolCall` parts to
-    /// `out`. Calls are ordered by index when every call has one, otherwise
-    /// by arrival.
-    pub fn finish(mut self, out: &mut Vec<StreamPart>) {
+    /// End every call with `ToolInputEnd` and `ToolCall`, ordered by index
+    /// when every call has one, otherwise by arrival.
+    pub(crate) fn finish(mut self, controller: &mut Controller) {
         if self.calls.iter().all(|c| c.index.is_some()) {
             self.calls.sort_by_key(|c| c.index); // stable: ties keep arrival order
         }
         for call in self.calls {
-            out.push(StreamPart::ToolInputEnd {
-                id: call.id.clone(),
-                provider_metadata: None,
-            });
-            out.push(StreamPart::ToolCall(RawToolCall {
+            controller.tool_input_end(call.id.clone());
+            controller.enqueue(StreamPart::ToolCall(RawToolCall {
                 tool_call_id: call.id,
                 tool_name: call.name,
                 // Raw argument text; Core parses it.
@@ -247,7 +196,7 @@ impl StreamingToolCallTracker {
         }
     }
 
-    /// Apply the correlation table in the type docs.
+    /// Apply the matching table in the type docs.
     fn resolve(
         &self,
         wire_id: Option<&str>,
@@ -275,11 +224,10 @@ impl StreamingToolCallTracker {
 
         let has_id = |c: &ToolCall| c.wire_ids.iter().any(|w| w == wire_id);
         if !self.calls.iter().any(has_id) {
-            // A named structured start with an unseen id identifies a new
-            // call. Empty arguments can also occur when a continuation
-            // changes its id: keep the incomplete matching call then, and
-            // start a new call only once the matching call's structured
-            // arguments are complete.
+            // A named structured start with an unseen id is a new call.
+            // Empty arguments also occur when a continuation changes its id:
+            // keep the incomplete matching call then, and start a new call
+            // only once its structured arguments are complete.
             if explicit_start {
                 return Resolution::New;
             }
@@ -343,19 +291,7 @@ impl StreamingToolCallTracker {
         }
     }
 
-    fn validate_type(&self, r#type: Option<&str>) -> Result<(), TrackerError> {
-        let valid = match self.type_validation {
-            TypeValidation::None => true,
-            TypeValidation::IfPresent => r#type.is_none_or(|t| t == "function"),
-            TypeValidation::Required => r#type == Some("function"),
-        };
-        if valid {
-            Ok(())
-        } else {
-            Err(TrackerError::InvalidType)
-        }
-    }
-
+    /// Start a call: `ToolInputStart`, then its first argument fragment.
     fn start(
         &mut self,
         wire_id: Option<&str>,
@@ -363,23 +299,12 @@ impl StreamingToolCallTracker {
         name: &str,
         arguments: &str,
         provider_metadata: Option<ProviderMetadata>,
-        out: &mut Vec<StreamPart>,
+        controller: &mut Controller,
     ) -> usize {
         let id = self.unique_id(wire_id);
-        out.push(StreamPart::ToolInputStart {
-            id: id.clone(),
-            tool_name: name.to_string(),
-            provider_executed: None,
-            dynamic: None,
-            title: None,
-            provider_metadata: None,
-        });
+        controller.tool_input_start(id.clone(), name.to_string());
         if !arguments.is_empty() {
-            out.push(StreamPart::ToolInputDelta {
-                id: id.clone(),
-                delta: arguments.to_string(),
-                provider_metadata: None,
-            });
+            controller.tool_input_delta(id.clone(), arguments.to_string());
         }
         self.calls.push(ToolCall {
             id,
@@ -408,13 +333,23 @@ impl StreamingToolCallTracker {
         if !used(generated) {
             return generated.to_string();
         }
-        // Ids are never released, so the first free suffix equals what the
-        // upstream resume-from-last-suffix search returns.
-        (1..)
-            .map(|suffix| format!("{generated}-{suffix}"))
-            .find(|id| !used(id))
-            .expect("finitely many ids are in use")
+        // `generated` is one of the `n` ids in use, so at most `n - 1` of
+        // `generated-1 ..= generated-n` are: one of them is free (the
+        // pigeonhole bound of streaming-tool-call-tracker.ts:468-485). Ids are
+        // never released, so the first free suffix is what upstream's
+        // resume-from-the-last-suffix search returns.
+        let n = self.calls.len();
+        let suffix = (1..=n)
+            .find(|suffix| !used(&format!("{generated}-{suffix}")))
+            .unwrap_or(n + 1);
+        format!("{generated}-{suffix}")
     }
+}
+
+/// End the stream with the upstream `InvalidResponseDataError`.
+fn invalid(controller: &mut Controller, message: &str) -> bool {
+    controller.error(AiMuxError::InvalidResponseData(message.to_string()));
+    false
 }
 
 fn non_blank(value: Option<&str>) -> Option<&str> {

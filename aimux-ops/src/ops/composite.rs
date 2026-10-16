@@ -34,7 +34,7 @@ enum Strategy {
 }
 
 #[derive(Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
 enum Fallback {
     #[default]
     OnError,

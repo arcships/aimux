@@ -37,9 +37,11 @@ use aimux_core::tool::Tool;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
 
 use aimux_provider_utils::{
-    MediaTypeData, TransformStreamController, Transformer, detect_media_type,
-    get_top_level_media_type, is_full_media_type, pipe_through,
+    MediaTypeData, Transformer, detect_media_type, get_top_level_media_type, is_full_media_type,
+    pipe_through,
 };
+
+use crate::stream::{Controller, Emit, FINISH_OTHER, StreamContext};
 
 use crate::shared::EndpointConfig;
 
@@ -237,22 +239,17 @@ impl LanguageModel for HuggingFaceResponsesModel {
         {
             return Err(error);
         }
-        let stream_error_url = endpoint;
-        let stream_request_body = body.clone();
-        let stream_response_headers = response_headers.clone();
-
-        let warnings = request.warnings.clone();
         let stream = pipe_through(
             futures::stream::iter(first_event).chain(sse_stream),
             HuggingFaceResponsesStream {
-                warnings,
-                stream_error_url,
-                stream_request_body,
-                stream_response_headers,
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Other,
-                    raw: None,
+                ctx: StreamContext {
+                    warnings: request.warnings.clone(),
+                    url: endpoint,
+                    request_body: body.clone(),
+                    response_headers: response_headers.clone(),
+                    ..StreamContext::default()
                 },
+                finish_reason: FINISH_OTHER,
                 response_id: None,
                 usage_raw: None,
                 finished: false,
@@ -271,10 +268,8 @@ impl LanguageModel for HuggingFaceResponsesModel {
 
 /// The `TransformStream` of the Hugging Face Responses `doStream`.
 struct HuggingFaceResponsesStream {
-    warnings: Vec<Warning>,
-    stream_error_url: String,
-    stream_request_body: Value,
-    stream_response_headers: HashMap<String, String>,
+    /// Raw chunks are never forwarded.
+    ctx: StreamContext,
     finish_reason: FinishReason,
     response_id: Option<String>,
     usage_raw: Option<Value>,
@@ -287,17 +282,11 @@ impl Transformer for HuggingFaceResponsesStream {
     type Input = Result<Value, AiMuxError>;
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        controller.enqueue(StreamPart::StreamStart {
-            warnings: std::mem::take(&mut self.warnings),
-        });
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
     }
 
-    fn transform(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         self.transform_event(event, controller);
         if self.finished {
             // An error event ends the response: the rest of the body is not
@@ -307,18 +296,14 @@ impl Transformer for HuggingFaceResponsesStream {
         }
     }
 
-    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(mut self, controller: &mut Controller) {
         self.finish(controller);
     }
 }
 
 impl HuggingFaceResponsesStream {
     /// Handle one parsed SSE event.
-    fn transform_event(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform_event(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         let Self {
             ref mut finish_reason,
             ref mut response_id,
@@ -329,9 +314,9 @@ impl HuggingFaceResponsesStream {
             Ok(parsed) => {
                 if let Some(error) = huggingface_stream_error(
                     &parsed,
-                    &self.stream_error_url,
-                    self.stream_request_body.clone(),
-                    self.stream_response_headers.clone(),
+                    &self.ctx.url,
+                    self.ctx.request_body.clone(),
+                    self.ctx.response_headers.clone(),
                 ) {
                     controller.enqueue(StreamPart::Error { error });
                     self.finished = true;
@@ -396,14 +381,7 @@ impl HuggingFaceResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
-                                    controller.enqueue(StreamPart::ToolInputStart {
-                                        id: call_id,
-                                        tool_name: name,
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        title: None,
-                                        provider_metadata: None,
-                                    });
+                                    controller.tool_input_start(call_id, name);
                                 }
                                 "reasoning" => {
                                     let id = item
@@ -438,10 +416,7 @@ impl HuggingFaceResponsesStream {
                                             .and_then(|v| v.as_str())
                                             .unwrap_or("")
                                             .to_string();
-                                        controller.enqueue(StreamPart::TextEnd {
-                                            id,
-                                            provider_metadata: None,
-                                        });
+                                        controller.text_end(id);
                                     }
                                 }
                                 "function_call" => {
@@ -461,10 +436,7 @@ impl HuggingFaceResponsesStream {
                                         .unwrap_or("{}");
                                     let input = arguments.to_string();
 
-                                    controller.enqueue(StreamPart::ToolInputEnd {
-                                        id: call_id.clone(),
-                                        provider_metadata: None,
-                                    });
+                                    controller.tool_input_end(call_id.clone());
                                     controller.enqueue(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: call_id.clone(),
                                         tool_name: name.clone(),
@@ -504,11 +476,7 @@ impl HuggingFaceResponsesStream {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        controller.enqueue(StreamPart::TextDelta {
-                            id: item_id,
-                            delta,
-                            provider_metadata: None,
-                        });
+                        controller.text_delta(item_id, delta);
                     }
 
                     "response.reasoning_text.delta" => {
@@ -522,11 +490,7 @@ impl HuggingFaceResponsesStream {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        controller.enqueue(StreamPart::ReasoningDelta {
-                            id: item_id,
-                            delta,
-                            provider_metadata: None,
-                        });
+                        controller.reasoning_delta(item_id, delta);
                     }
 
                     "response.reasoning_text.done" => {
@@ -535,10 +499,7 @@ impl HuggingFaceResponsesStream {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        controller.enqueue(StreamPart::ReasoningEnd {
-                            id: item_id,
-                            provider_metadata: None,
-                        });
+                        controller.reasoning_end(item_id);
                     }
 
                     "response.completed" => {
@@ -584,7 +545,7 @@ impl HuggingFaceResponsesStream {
 
     /// Emit `Finish`: at the end of the body, or right after an error
     /// event.
-    fn finish(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn finish(&mut self, controller: &mut Controller) {
         let usage = convert_usage(self.usage_raw.as_ref());
 
         controller.enqueue(StreamPart::Finish {

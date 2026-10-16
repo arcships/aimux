@@ -185,3 +185,40 @@ fn model_id_is_searxng_search() {
     assert_eq!(model.model_id(), "searxng-search");
     assert_eq!(model.provider(), "searxng.search");
 }
+
+// -- instance URL from the environment ---------------------------------------
+
+/// Without `base_url`, the instance URL is `SEARXNG_URL`, read for each
+/// request: set, the request goes there; unset, the request fails with
+/// `LoadSetting` and nothing is sent.
+#[serial_test::serial]
+#[tokio::test]
+async fn instance_url_comes_from_searxng_url_per_request() {
+    let server = MockServer::start().await;
+    mount_search_mock(&server).await;
+    let saved = std::env::var("SEARXNG_URL").ok();
+    let provider = create_searxng(SearxngProviderSettings::default()).unwrap();
+    let model = provider.search_model();
+
+    unsafe {
+        std::env::set_var("SEARXNG_URL", server.uri());
+    }
+    let found = model.do_search(&opts("rust language")).await;
+
+    unsafe {
+        std::env::remove_var("SEARXNG_URL");
+    }
+    let missing = model.do_search(&opts("rust language")).await;
+
+    unsafe {
+        if let Some(value) = saved {
+            std::env::set_var("SEARXNG_URL", value);
+        }
+    }
+    assert_eq!(found.unwrap().results.len(), 2);
+    assert!(
+        matches!(missing, Err(AiMuxError::LoadSetting { .. })),
+        "{missing:?}"
+    );
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+}

@@ -3,6 +3,7 @@
 > **Status**: IMPLEMENTED (2026-08-01)
 > **Date**: 2026-08-01
 > **Related**: [RFC-0001](0001-multilang-bindings.md) multilang bindings, [RFC-0008](0008-multimodal-bindings.md) multimodal bindings, [RFC-0011](0011-golang-bindings.md) Golang bindings, [aimux-ffi.h](../aimux-ffi/aimux-ffi.h)
+> **后续变更**: 2026-10-11 删除共享契约 fixture `contract-tests/fixtures/wire-format.json`、其 Node 运行器 `contract-tests/run-node.ts` 与 `ContractTest.java`(#249);§5 目录中的 `ContractTest.java` 与 §7.3 所述契约测试已不再适用,wire 对齐改由从固定版本 AI SDK 录制的 fixture 与移植的上游测试承担,版本见 [fixtures/aisdk/VERSIONS.json](../fixtures/aisdk/VERSIONS.json)。
 
 ---
 

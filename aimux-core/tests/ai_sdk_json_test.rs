@@ -6,14 +6,16 @@
 //! test cites the upstream type it pins (`ai@7.0.127`,
 //! `@ai-sdk/provider@4.0.21`, `@ai-sdk/provider-utils@5.0.53`).
 
-use aimux_core::content::{AssistantContentPart, FilePartData, UserContentPart};
+use aimux_core::content::{
+    AssistantContentPart, FilePartData, ReasoningFilePartData, ToolContentPart, UserContentPart,
+};
 use aimux_core::error::ApiCallError;
 use aimux_core::generate::GenerateTextResult;
 use aimux_core::image_model::ImageOutputs;
 use aimux_core::language_model_message::{
     convert_file_part_data, convert_to_language_model_prompt,
 };
-use aimux_core::message::ModelMessage;
+use aimux_core::message::{AssistantContent, ModelMessage, ModelPrompt, UserContent};
 use aimux_core::result::{
     ContentPart, GenerateContent, GeneratedFile, GeneratedFileOutput, LanguageModelFile,
     ToolApprovalRequestOutput,
@@ -746,6 +748,17 @@ fn output_specifications_are_tagged() {
     assert!(serde_json::from_value::<Output>(json!({ "Object": { "schema": {} } })).is_err());
 }
 
+/// The video frame type is snake_case because upstream's is
+/// (`@ai-sdk/provider@4.0.22` `src/video-model/v4/video-model-v4-frame-image.ts:9`:
+/// `'first_frame' | 'last_frame'`).
+#[test]
+fn video_frame_types_are_upstream_literals() {
+    use aimux_core::video_model::VideoFrameType;
+    assert_json_back::<VideoFrameType>(json!("first_frame"));
+    assert_json_back::<VideoFrameType>(json!("last_frame"));
+    assert!(serde_json::from_value::<VideoFrameType>(json!("firstFrame")).is_err());
+}
+
 /// Decisions are the AI SDK's JSON. The model's call options
 /// (`@ai-sdk/provider@4.0.22 decision-model/v4/decision-model-v4-call-options.ts:7-14`)
 /// and result (`decision-model-v4-result.ts:31-56`: `rounding
@@ -813,6 +826,225 @@ fn decisions_are_the_ai_sdk_json() {
         .unwrap(),
         json!({ "inputTokens": 3 })
     );
+}
+
+// ── Unknown types ───────────────────────────────────────────────────────────
+
+/// Every tagged union of the public JSON rejects an unknown `type` (or
+/// `role`) with an error that names it, never as empty content (RFC-0042
+/// §7.2, `rfc/0042-v4-type-boundaries.md:211`).
+#[test]
+fn an_unknown_type_is_a_decode_error_naming_it() {
+    use aimux_core::output::Output;
+    let unknown = json!({ "type": "no-such-type" });
+    for error in [
+        decode_error::<TextStreamPart>(unknown.clone()),
+        decode_error::<StreamPart>(unknown.clone()),
+        decode_error::<ContentPart>(unknown.clone()),
+        decode_error::<GenerateContent>(unknown.clone()),
+        decode_error::<UserContentPart>(unknown.clone()),
+        decode_error::<AssistantContentPart>(unknown.clone()),
+        decode_error::<ToolContentPart>(unknown.clone()),
+        decode_error::<FileData>(unknown.clone()),
+        decode_error::<GeneratedFileData>(unknown.clone()),
+        decode_error::<Output>(unknown),
+    ] {
+        assert!(error.contains("unknown variant `no-such-type`"), "{error}");
+    }
+    let error = decode_error::<ModelMessage>(json!({ "role": "robot", "content": "hi" }));
+    assert!(error.contains("unknown variant `robot`"), "{error}");
+}
+
+/// The wrappers around those unions keep the error. A prompt or message
+/// content with an unknown part names the part's `type`, and file `data`
+/// with a `type` is tagged data, never a provider reference (`ai@7.0.127`
+/// `src/prompt/file-part-data.ts:14-21` `isTaggedFileData`;
+/// `@ai-sdk/provider-utils@5.0.55` `src/is-provider-reference.ts:9-21`,
+/// `!('type' in data)`).
+#[test]
+fn untagged_wrappers_keep_the_unknown_type_error() {
+    let part = json!({ "type": "no-such-part", "text": "hi" });
+    for error in [
+        decode_error::<ModelPrompt>(json!([{ "role": "user", "content": [part.clone()] }])),
+        decode_error::<ModelPrompt>(json!([{ "role": "assistant", "content": [part.clone()] }])),
+        decode_error::<UserContent>(json!([part.clone()])),
+        decode_error::<AssistantContent>(json!([part])),
+    ] {
+        assert!(error.contains("unknown variant `no-such-part`"), "{error}");
+    }
+
+    for (data, tag) in [
+        (
+            json!({ "type": "URL", "url": "https://example.com/a.pdf" }),
+            "URL",
+        ),
+        (json!({ "type": "bogus" }), "bogus"),
+    ] {
+        let error = decode_error::<FilePartData>(data.clone());
+        assert!(
+            error.contains(&format!("unknown variant `{tag}`")),
+            "{error}"
+        );
+        // The same inside a prompt.
+        let error = decode_error::<ModelPrompt>(json!([{ "role": "user", "content": [
+            { "type": "file", "data": data, "mediaType": "application/pdf" }
+        ] }]));
+        assert!(
+            error.contains(&format!("unknown variant `{tag}`")),
+            "{error}"
+        );
+    }
+    let error = decode_error::<ReasoningFilePartData>(
+        json!({ "type": "reference", "reference": { "openai": "file-abc" } }),
+    );
+    assert!(error.contains("unknown variant `reference`"), "{error}");
+
+    // A bare `{ provider: id }` map is still a reference and a string still a
+    // string (`file_part_data_converts_as_the_ai_sdk_does` covers the rest).
+    assert!(matches!(
+        serde_json::from_value::<FilePartData>(json!({ "openai": "file-abc" })).unwrap(),
+        FilePartData::Reference(_)
+    ));
+    assert!(matches!(
+        serde_json::from_value::<FilePartData>(json!("aGk=")).unwrap(),
+        FilePartData::String(_)
+    ));
+    // Neither a string nor an array says what was expected.
+    let error = decode_error::<ModelPrompt>(json!(42));
+    assert!(
+        error.contains("expected a prompt string or an array of messages"),
+        "{error}"
+    );
+}
+
+// ── Request configuration ───────────────────────────────────────────────────
+
+/// The message of a value that must not decode.
+fn decode_error<T: DeserializeOwned>(wire: Value) -> String {
+    match serde_json::from_value::<T>(wire) {
+        Ok(_) => panic!("decoded a value that must not decode"),
+        Err(error) => error.to_string(),
+    }
+}
+
+/// Request configuration rejects unknown keys (RFC-0042 §7.2,
+/// `rfc/0042-v4-type-boundaries.md:212`): aimux 0.5's snake_case keys and
+/// typos fail naming the key instead of falling back to the default.
+#[test]
+fn request_options_reject_unknown_keys() {
+    use aimux_core::decision_model::DecideOptions;
+    use aimux_core::embedding_model::EmbeddingCallOptions;
+    use aimux_core::files_model::UploadFileCallOptions;
+    use aimux_core::generate::GenerateTextOptions;
+    use aimux_core::image_model::ImageCallOptions;
+    use aimux_core::moa::MoaConfig;
+    use aimux_core::options::{CallOptions, TimeoutConfiguration};
+    use aimux_core::reranking_model::RerankingCallOptions;
+    use aimux_core::search_model::SearchCallOptions;
+    use aimux_core::speech_model::SpeechCallOptions;
+    use aimux_core::transcription_model::TranscriptionCallOptions;
+    use aimux_core::video_model::VideoCallOptions;
+
+    let options: GenerateTextOptions = serde_json::from_value(json!({
+        "maxRetries": 0,
+        "timeout": { "totalMs": 10000 },
+        "maxOutputTokens": 5,
+    }))
+    .unwrap();
+    assert_eq!(options.max_retries, Some(0));
+    assert_eq!(options.timeout.and_then(|t| t.total_ms), Some(10000));
+    assert_eq!(options.max_output_tokens, Some(5));
+    for (wire, key) in [
+        (json!({ "max_retries": 0 }), "max_retries"),
+        (json!({ "timeout": { "total_ms": 10000 } }), "total_ms"),
+        (json!({ "maxRetries": 0, "temprature": 0.2 }), "temprature"),
+    ] {
+        let error = decode_error::<GenerateTextOptions>(wire);
+        assert!(error.contains(&format!("unknown field `{key}`")), "{error}");
+    }
+
+    // The other operations' options, the nested settings objects and the MoA
+    // config. The unknown key is reported before any missing field.
+    for (error, key) in [
+        (
+            decode_error::<TimeoutConfiguration>(json!({ "first_chunk_ms": 1 })),
+            "first_chunk_ms",
+        ),
+        (
+            decode_error::<EmbeddingCallOptions>(json!({ "max_retries": 0 })),
+            "max_retries",
+        ),
+        (
+            decode_error::<SpeechCallOptions>(json!({ "output_format": "mp3" })),
+            "output_format",
+        ),
+        (
+            decode_error::<ImageCallOptions>(json!({ "aspect_ratio": "1:1" })),
+            "aspect_ratio",
+        ),
+        (
+            decode_error::<TranscriptionCallOptions>(json!({ "media_type": "audio/wav" })),
+            "media_type",
+        ),
+        (
+            decode_error::<RerankingCallOptions>(json!({ "top_n": 2 })),
+            "top_n",
+        ),
+        (
+            decode_error::<VideoCallOptions>(json!({ "poll": { "interval_ms": 10 } })),
+            "interval_ms",
+        ),
+        (
+            decode_error::<SearchCallOptions>(json!({ "max_results": 5 })),
+            "max_results",
+        ),
+        (
+            decode_error::<UploadFileCallOptions>(json!({ "media_type": "text/plain" })),
+            "media_type",
+        ),
+        (
+            decode_error::<DecideOptions>(json!({ "max_retries": 0 })),
+            "max_retries",
+        ),
+        (
+            decode_error::<MoaConfig>(json!({ "fail_mode": "fail-fast" })),
+            "fail_mode",
+        ),
+    ] {
+        assert!(error.contains(&format!("unknown field `{key}`")), "{error}");
+    }
+
+    // `CallOptions` stays lenient: a recording holds the call options and
+    // the operation settings in one object, and replay reads both from it.
+    let call: CallOptions = serde_json::from_value(json!({
+        "prompt": [],
+        "temperature": 0.5,
+        "maxRetries": 1,
+        "timeout": { "totalMs": 5 },
+        "sessionId": "s",
+    }))
+    .unwrap();
+    assert_eq!(call.temperature, Some(0.5));
+}
+
+#[test]
+fn moa_fail_mode_uses_kebab_case() {
+    use aimux_core::moa::{MoaConfig, MoaFailMode};
+
+    for (wire, expected) in [
+        ("best-effort", MoaFailMode::BestEffort),
+        ("fail-fast", MoaFailMode::FailFast),
+    ] {
+        let config: MoaConfig = serde_json::from_value(json!({ "failMode": wire })).unwrap();
+        assert_eq!(config.fail_mode, expected);
+    }
+    for wire in ["best_effort", "fail_fast"] {
+        let error = decode_error::<MoaConfig>(json!({ "failMode": wire }));
+        assert!(
+            error.contains(&format!("unknown variant `{wire}`")),
+            "{error}"
+        );
+    }
 }
 
 /// Parse `wire` and check that it serializes back unchanged.

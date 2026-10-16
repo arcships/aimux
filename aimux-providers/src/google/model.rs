@@ -1,6 +1,6 @@
 //! Google Gemini language model — implements `LanguageModel`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use aimux_core::tool::RawToolCall;
 use aimux_core::tool::ToolResult;
@@ -17,9 +17,11 @@ use aimux_core::result::{
 use aimux_core::shared::{FileBytes, GeneratedFileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage, Warning,
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
 };
-use aimux_provider_utils::{TransformStreamController, Transformer, pipe_through};
+use aimux_provider_utils::{Transformer, pipe_through};
+
+use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext};
 
 use aimux_core::language_model::SupportedUrls;
 
@@ -129,10 +131,7 @@ impl LanguageModel for GoogleModel {
                 .finish_reason
                 .as_deref()
                 .map(|r| parse_finish_reason(r, has_tool_calls))
-                .unwrap_or(FinishReason {
-                    unified: FinishReasonUnified::Other,
-                    raw: None,
-                })
+                .unwrap_or(FINISH_OTHER)
         };
 
         let usage = data
@@ -200,41 +199,15 @@ impl LanguageModel for GoogleModel {
             Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
             first_event => first_event,
         };
-        let stream_error_url = endpoint.clone();
-        let stream_request_body = body.clone();
-        let stream_error_headers = response_headers.clone();
-
-        let generate_id = self.generate_id.clone();
-        let include_raw_chunks = options.include_raw_chunks.unwrap_or(false);
         let stream = pipe_through(
             futures::stream::iter(first_event).chain(sse_stream),
             GoogleLanguageModelStream {
-                warnings: tool_warnings,
-                include_raw_chunks,
+                ctx: StreamContext {
+                    generate_id: self.generate_id.clone(),
+                    ..StreamContext::new(options, tool_warnings, endpoint, &body, &response_headers)
+                },
                 code_execution_tool_name,
-                stream_error_url,
-                stream_request_body,
-                stream_error_headers,
-                generate_id,
-                text_id: None,
-                reasoning_id: None,
-                block_counter: 0,
-                final_usage: Usage::default(),
-                final_finish_reason: None,
-                has_tool_calls: false,
-                response_metadata_emitted: false,
-                stream_errored: false,
-                prompt_blocked: false,
-                last_grounding_metadata: None,
-                last_url_context_metadata: None,
-                last_prompt_feedback: None,
-                last_safety_ratings: None,
-                last_finish_message: None,
-                last_usage_metadata_value: None,
-                emitted_source_urls: HashSet::new(),
-                source_id: 0,
-                last_code_execution_tool_call_id: None,
-                last_server_tool_call_id: None,
+                ..GoogleLanguageModelStream::default()
             },
         );
 
@@ -249,14 +222,10 @@ impl LanguageModel for GoogleModel {
 }
 
 /// The `TransformStream` of `GoogleLanguageModel.doStream`.
+#[derive(Default)]
 struct GoogleLanguageModelStream {
-    warnings: Vec<Warning>,
-    include_raw_chunks: bool,
+    ctx: StreamContext,
     code_execution_tool_name: String,
-    stream_error_url: String,
-    stream_request_body: Value,
-    stream_error_headers: HashMap<String, String>,
-    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
     text_id: Option<String>,
     reasoning_id: Option<String>,
     block_counter: usize,
@@ -284,11 +253,7 @@ struct GoogleLanguageModelStream {
 }
 
 impl GoogleLanguageModelStream {
-    fn transform_chunk(
-        &mut self,
-        chunk: Box<StreamChunk>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform_chunk(&mut self, chunk: Box<StreamChunk>, controller: &mut Controller) {
         // Emit ResponseMetadata from the first chunk that has
         // a responseId (matches TS behaviour).
         if !self.response_metadata_emitted
@@ -358,7 +323,7 @@ impl GoogleLanguageModelStream {
                 && self.emitted_source_urls.insert(url.clone())
             {
                 controller.enqueue(StreamPart::Source(Source::Url {
-                    id: (self.generate_id)(),
+                    id: (self.ctx.generate_id)(),
                     url,
                     title,
                     provider_metadata: None,
@@ -402,10 +367,7 @@ impl GoogleLanguageModelStream {
                         if is_thought {
                             // Close any open text block before starting reasoning
                             if let Some(id) = self.text_id.take() {
-                                controller.enqueue(StreamPart::TextEnd {
-                                    id,
-                                    provider_metadata: None,
-                                });
+                                controller.text_end(id);
                             }
                             // Start a reasoning block if not already active
                             if self.reasoning_id.is_none() {
@@ -427,10 +389,7 @@ impl GoogleLanguageModelStream {
                         } else {
                             // Close any open reasoning block before starting text
                             if let Some(id) = self.reasoning_id.take() {
-                                controller.enqueue(StreamPart::ReasoningEnd {
-                                    id,
-                                    provider_metadata: None,
-                                });
+                                controller.reasoning_end(id);
                             }
                             if self.text_id.is_none() {
                                 let id = format!("{}", self.block_counter);
@@ -458,7 +417,7 @@ impl GoogleLanguageModelStream {
                         .map(|s| !s.is_empty())
                         .unwrap_or(false);
                     if has_code {
-                        let id = (self.generate_id)();
+                        let id = (self.ctx.generate_id)();
                         self.last_code_execution_tool_call_id = Some(id.clone());
                         controller.enqueue(StreamPart::ToolCall(RawToolCall {
                             tool_call_id: id.clone(),
@@ -500,7 +459,7 @@ impl GoogleLanguageModelStream {
                         .and_then(|v| v.as_str())
                         .filter(|id| !id.is_empty())
                         .map(std::string::ToString::to_string)
-                        .unwrap_or_else(|| (self.generate_id)());
+                        .unwrap_or_else(|| (self.ctx.generate_id)());
                     self.last_server_tool_call_id = Some(id.clone());
                     let args = tc.get("args").cloned().unwrap_or(json!({}));
                     let server_meta = server_tool_metadata(
@@ -529,7 +488,7 @@ impl GoogleLanguageModelStream {
                                 .map(std::string::ToString::to_string)
                         })
                         .filter(|id| !id.is_empty())
-                        .unwrap_or_else(|| (self.generate_id)());
+                        .unwrap_or_else(|| (self.ctx.generate_id)());
                     let response = tr.get("response").cloned().unwrap_or(json!({}));
                     let server_meta = server_tool_metadata(
                         &id,
@@ -549,16 +508,10 @@ impl GoogleLanguageModelStream {
                     // File output — upstream :847-877.
                     // Close any open text/reasoning block before file.
                     if let Some(id) = self.text_id.take() {
-                        controller.enqueue(StreamPart::TextEnd {
-                            id,
-                            provider_metadata: None,
-                        });
+                        controller.text_end(id);
                     }
                     if let Some(id) = self.reasoning_id.take() {
-                        controller.enqueue(StreamPart::ReasoningEnd {
-                            id,
-                            provider_metadata: None,
-                        });
+                        controller.reasoning_end(id);
                     }
                     if let (Some(data), Some(mime)) = (
                         inline.get("data").and_then(|v| v.as_str()),
@@ -605,9 +558,8 @@ impl GoogleLanguageModelStream {
                         .get("id")
                         .and_then(|v| v.as_str())
                         .filter(|id| !id.is_empty())
-                        .filter(|id| !id.is_empty())
                         .map(std::string::ToString::to_string)
-                        .unwrap_or_else(|| (self.generate_id)());
+                        .unwrap_or_else(|| (self.ctx.generate_id)());
                     let args = fc
                         .get("args")
                         .filter(|value| !value.is_null())
@@ -660,24 +612,14 @@ impl Transformer for GoogleLanguageModelStream {
     type Input = Result<Value, AiMuxError>;
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        controller.enqueue(StreamPart::StreamStart {
-            warnings: std::mem::take(&mut self.warnings),
-        });
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
     }
 
-    fn transform(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         let event = match event {
             Ok(raw_value) => {
-                if self.include_raw_chunks {
-                    controller.enqueue(StreamPart::Raw {
-                        raw_value: raw_value.clone(),
-                    });
-                }
+                self.ctx.raw(&raw_value, controller);
                 serde_json::from_value::<GoogleStreamEvent>(raw_value).map_err(AiMuxError::from)
             }
             Err(error) => Err(error),
@@ -689,9 +631,9 @@ impl Transformer for GoogleLanguageModelStream {
                 controller.enqueue(StreamPart::Error {
                     error: super::google_stream_error(
                         &error.error,
-                        &self.stream_error_url,
-                        self.stream_request_body.clone(),
-                        self.stream_error_headers.clone(),
+                        &self.ctx.url,
+                        self.ctx.request_body.clone(),
+                        self.ctx.response_headers.clone(),
                     ),
                 });
                 // The rest of the body is not read: the stream finishes now.
@@ -709,7 +651,7 @@ impl Transformer for GoogleLanguageModelStream {
         }
     }
 
-    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(mut self, controller: &mut Controller) {
         self.finish(controller);
     }
 }
@@ -717,19 +659,13 @@ impl Transformer for GoogleLanguageModelStream {
 impl GoogleLanguageModelStream {
     /// Close the open segments and emit `Finish`: at the end of the body, or
     /// right after an error event.
-    fn finish(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn finish(&mut self, controller: &mut Controller) {
         // Close any remaining open text/reasoning segment.
         if let Some(id) = self.text_id.take() {
-            controller.enqueue(StreamPart::TextEnd {
-                id,
-                provider_metadata: None,
-            });
+            controller.text_end(id);
         }
         if let Some(id) = self.reasoning_id.take() {
-            controller.enqueue(StreamPart::ReasoningEnd {
-                id,
-                provider_metadata: None,
-            });
+            controller.reasoning_end(id);
         }
 
         let provider_metadata = Some(google_metadata(serde_json::json!({
@@ -744,15 +680,9 @@ impl GoogleLanguageModelStream {
 
         controller.enqueue(StreamPart::Finish {
             finish_reason: if self.stream_errored {
-                FinishReason {
-                    unified: FinishReasonUnified::Error,
-                    raw: None,
-                }
+                FINISH_ERROR
             } else {
-                self.final_finish_reason.take().unwrap_or(FinishReason {
-                    unified: FinishReasonUnified::Other,
-                    raw: None,
-                })
+                self.final_finish_reason.take().unwrap_or(FINISH_OTHER)
             },
             usage: if self.stream_errored {
                 Usage::default()

@@ -741,19 +741,23 @@ public final class Types {
         @JsonProperty("id") private String id = "";
         @JsonProperty("name") private String name = "";
         @JsonProperty("args") private ObjectNode args = emptyObject();
+        /** Whether a result may arrive in a later response than its call (provider-utils@5.0.55 src/types/tool.ts:316-326). */
+        @JsonProperty("supportsDeferredResults") private Boolean supportsDeferredResults;
 
         @JsonCreator
         ProviderTool() {}
 
-        private ProviderTool(String id, String name, ObjectNode args) {
+        private ProviderTool(String id, String name, ObjectNode args, Boolean supportsDeferredResults) {
             this.id = id;
             this.name = name;
             this.args = args;
+            this.supportsDeferredResults = supportsDeferredResults;
         }
 
         public String getId() { return id; }
         public String getName() { return name; }
         public ObjectNode getArgs() { return args; }
+        public Boolean getSupportsDeferredResults() { return supportsDeferredResults; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -761,12 +765,14 @@ public final class Types {
             private String id = "";
             private String name = "";
             private ObjectNode args = emptyObject();
+            private Boolean supportsDeferredResults;
 
             public Builder id(String v) { this.id = v; return this; }
             public Builder name(String v) { this.name = v; return this; }
             public Builder args(ObjectNode v) { this.args = v; return this; }
+            public Builder supportsDeferredResults(Boolean v) { this.supportsDeferredResults = v; return this; }
 
-            public ProviderTool build() { return new ProviderTool(id, name, args); }
+            public ProviderTool build() { return new ProviderTool(id, name, args, supportsDeferredResults); }
         }
 
         @Override
@@ -776,12 +782,13 @@ public final class Types {
             ProviderTool that = (ProviderTool) o;
             return Objects.equals(id, that.id)
                 && Objects.equals(name, that.name)
-                && Objects.equals(args, that.args);
+                && Objects.equals(args, that.args)
+                && Objects.equals(supportsDeferredResults, that.supportsDeferredResults);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(id, name, args);
+            return Objects.hash(id, name, args, supportsDeferredResults);
         }
     }
 
@@ -880,24 +887,28 @@ public final class Types {
             @JsonProperty("id") private String id = "";
             @JsonProperty("name") private String name = "";
             @JsonProperty("args") private ObjectNode args = emptyObject();
+            /** Whether a result may arrive in a later response than its call (provider-utils@5.0.55 src/types/tool.ts:316-326). */
+            @JsonProperty("supportsDeferredResults") private Boolean supportsDeferredResults;
 
             @JsonCreator
             Provider() {}
 
-            private Provider(String id, String name, ObjectNode args) {
+            private Provider(String id, String name, ObjectNode args, Boolean supportsDeferredResults) {
                 this.id = id;
                 this.name = name;
                 this.args = args;
+                this.supportsDeferredResults = supportsDeferredResults;
             }
 
             /** Convenience constructor from a {@link ProviderTool}. */
             public static Provider from(ProviderTool tool) {
-                return new Provider(tool.id, tool.name, tool.args);
+                return new Provider(tool.id, tool.name, tool.args, tool.supportsDeferredResults);
             }
 
             public String getId() { return id; }
             public String getName() { return name; }
             public ObjectNode getArgs() { return args; }
+            public Boolean getSupportsDeferredResults() { return supportsDeferredResults; }
 
             public static Builder builder() { return new Builder(); }
 
@@ -905,12 +916,14 @@ public final class Types {
                 private String id = "";
                 private String name = "";
                 private ObjectNode args = emptyObject();
+                private Boolean supportsDeferredResults;
 
                 public Builder id(String v) { this.id = v; return this; }
                 public Builder name(String v) { this.name = v; return this; }
                 public Builder args(ObjectNode v) { this.args = v; return this; }
+                public Builder supportsDeferredResults(Boolean v) { this.supportsDeferredResults = v; return this; }
 
-                public Provider build() { return new Provider(id, name, args); }
+                public Provider build() { return new Provider(id, name, args, supportsDeferredResults); }
             }
 
             @Override
@@ -920,12 +933,13 @@ public final class Types {
                 Provider that = (Provider) o;
                 return Objects.equals(id, that.id)
                     && Objects.equals(name, that.name)
-                    && Objects.equals(args, that.args);
+                    && Objects.equals(args, that.args)
+                    && Objects.equals(supportsDeferredResults, that.supportsDeferredResults);
             }
 
             @Override
             public int hashCode() {
-                return Objects.hash(id, name, args);
+                return Objects.hash(id, name, args, supportsDeferredResults);
             }
         }
     }

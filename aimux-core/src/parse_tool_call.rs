@@ -456,7 +456,7 @@ fn back_filled_input(text: &str) -> Value {
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolCallRepairReply {
     /// Re-validate this replacement call, exactly as the closure path does
     /// for a returned `Some(call)`.

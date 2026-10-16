@@ -27,7 +27,7 @@ use aimux_core::search_model::{
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{BaseUrl, Credential, EndpointConfig, EndpointSource, ProviderHeaders};
+use crate::shared::{BaseUrl, Credential, EndpointConfig, HttpEndpoint, ProviderHeaders};
 
 /// Fixed model ID for the SearXNG search model.
 const MODEL_ID: &str = "searxng-search";
@@ -132,7 +132,7 @@ impl SearxngProvider {
     fn model_config(&self, method: &str) -> EndpointConfig {
         EndpointConfig::new(
             format!("{}.{method}", self.name),
-            EndpointSource::Http {
+            HttpEndpoint {
                 base_url: self.base_url.clone(),
                 headers: self.headers.clone().into(),
             },

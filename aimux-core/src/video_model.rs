@@ -25,7 +25,7 @@ use crate::{AbortSignal, retry, timeout};
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum VideoFile {
     /// Inline file data (base64 or binary) with an explicit media type.
     File {
@@ -49,7 +49,8 @@ pub enum VideoFile {
 ///
 /// The JSON is a base64 string either way, as in the AI SDK's JSON.
 #[derive(Debug, Clone, TS)]
-#[ts(export, type = "string")]
+#[ts(type = "string")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum VideoFileData {
     /// Base64-encoded string.
     Base64(String),
@@ -61,10 +62,13 @@ crate::wire::base64_wire_enum!(VideoFileData);
 
 /// The role a frame image plays in video generation.
 ///
-/// Aligned with V4 `VideoModelV4FrameType`.
+/// `VideoModelV4FrameType` (`@ai-sdk/provider@4.0.22`
+/// `src/video-model/v4/video-model-v4-frame-image.ts:9`): the values are
+/// upstream's literals `'first_frame' | 'last_frame'`, snake_case as there,
+/// which `ai@7.0.127` compares against (`generate-video.ts:814`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum VideoFrameType {
     /// The starting frame the model animates from.
     FirstFrame,
@@ -77,7 +81,7 @@ pub enum VideoFrameType {
 /// Aligned with V4 `VideoModelV4FrameImage`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct VideoFrameImage {
     /// The image file used for this frame.
     pub image: VideoFile,
@@ -95,7 +99,7 @@ pub struct VideoFrameImage {
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum VideoData {
     /// Video available as a URL (most common).
     Url { url: String, media_type: String },
@@ -114,8 +118,8 @@ pub enum VideoData {
 ///
 /// Aligned with V4 `VideoModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct VideoCallOptions {
     /// Text prompt for the video generation. `None` when not required.
     #[ts(optional)]
@@ -251,8 +255,8 @@ impl VideoCallOptions {
 /// ai@7.0.127 `generate-video/generate-video.ts:55-80`). The poll settings
 /// belong to the operation, as upstream: a video model has none of its own.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct VideoPollOptions {
     /// Delay between consecutive status checks, in milliseconds.
     // `number`, not the `bigint` ts-rs infers from u64: the JS bindings pass
@@ -271,7 +275,7 @@ pub struct VideoPollOptions {
 /// Aligned with V4 `VideoModelV4Result`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct VideoResult {
     /// Generated videos as URLs, base64 strings, or binary data.
     pub videos: Vec<VideoData>,
@@ -291,7 +295,7 @@ pub struct VideoResult {
 /// Response information for a video generation call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct VideoResponse {
     /// Timestamp for the start of the generated response (`toISOString()` in the JSON).
     #[ts(optional)]
@@ -559,6 +563,16 @@ fn downloaded_video_media_type(own: &str, downloaded: Option<&str>) -> String {
 ///
 /// Each batch mints its own idempotency key (AI SDK batching semantics): a
 /// batch, not the whole `n`-video request, is the unit of idempotent replay.
+///
+/// The key aimux mints goes on `do_start` only; `do_status` gets the
+/// caller's headers as given. So a caller-supplied `idempotency-key`
+/// reaches the status calls too (as `<key>:batch:<i>` when there are
+/// several batches), while a minted key never does. This follows the AI
+/// SDK, which adds its key to `startCallOptions` alone and passes
+/// `callOptions.headers` to `doStatus` (ai@7.0.127
+/// `generate-video/generate-video.ts:520-536`, `:582`, `:613`). Tests:
+/// `start_retry_reuses_one_idempotency_key`,
+/// `caller_idempotency_key_is_preserved_for_start_and_status`.
 async fn start_and_poll_one_batch(
     model: &dyn VideoModel,
     options: VideoCallOptions,

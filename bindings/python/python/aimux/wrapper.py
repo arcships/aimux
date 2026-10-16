@@ -709,6 +709,9 @@ class ProviderTool(_Wire):
     id: str
     name: str
     args: Dict[str, Any]
+    #: Whether a result may arrive in a later response than its call
+    #: (provider-utils@5.0.55 src/types/tool.ts:316-326).
+    supports_deferred_results: Optional[bool] = None
 
 
 Tool = Annotated[

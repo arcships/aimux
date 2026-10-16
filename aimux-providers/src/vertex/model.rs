@@ -4,7 +4,7 @@
 //! [`crate::google::types`] response types. Only the endpoint construction and
 //! authentication differ from the public Gemini API provider.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use aimux_core::tool::RawToolCall;
 use aimux_core::tool::ToolResult;
@@ -21,7 +21,9 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage, Warning,
 };
-use aimux_provider_utils::{TransformStreamController, Transformer, pipe_through};
+use aimux_provider_utils::{Transformer, pipe_through};
+
+use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext};
 
 use crate::google::convert::{
     build_vertex_request_body, code_execution_tool_name, extract_sources, parse_finish_reason,
@@ -173,7 +175,6 @@ impl LanguageModel for VertexModel {
         let options = &options;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
         let (body, warnings) = vertex_request_body(&self.model_id, options, true)?;
-        let include_raw_chunks = options.include_raw_chunks == Some(true);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
         let endpoint = self.stream_endpoint(exchange.base_url());
@@ -187,39 +188,12 @@ impl LanguageModel for VertexModel {
 
         let response_headers = resp.response_headers;
         let sse_stream = resp.value;
-        let stream_error_url = endpoint;
-        let stream_request_body = body.clone();
-        let stream_error_headers = response_headers.clone();
-
         let stream = pipe_through(
             sse_stream,
             VertexModelStream {
-                warnings,
-                include_raw_chunks,
+                ctx: StreamContext::new(options, warnings, endpoint, &body, &response_headers),
                 code_execution_tool_name,
-                stream_error_url,
-                stream_request_body,
-                stream_error_headers,
-                text_id: None,
-                reasoning_id: None,
-                block_counter: 0,
-                final_usage: Usage::default(),
-                final_finish_reason: None,
-                has_tool_calls: false,
-                active_tool_calls: Vec::new(),
-                response_metadata_emitted: false,
-                stream_errored: false,
-                prompt_blocked: false,
-                last_grounding_metadata: None,
-                last_url_context_metadata: None,
-                last_prompt_feedback: None,
-                last_safety_ratings: None,
-                last_finish_message: None,
-                last_usage_metadata_value: None,
-                emitted_source_urls: HashSet::new(),
-                source_id: 0,
-                last_code_execution_tool_call_id: None,
-                last_server_tool_call_id: None,
+                ..VertexModelStream::default()
             },
         );
 
@@ -235,13 +209,10 @@ impl LanguageModel for VertexModel {
 
 /// The `TransformStream` of `GoogleLanguageModel.doStream` as configured by
 /// `@ai-sdk/google-vertex`.
+#[derive(Default)]
 struct VertexModelStream {
-    warnings: Vec<Warning>,
-    include_raw_chunks: bool,
+    ctx: StreamContext,
     code_execution_tool_name: String,
-    stream_error_url: String,
-    stream_request_body: Value,
-    stream_error_headers: HashMap<String, String>,
     text_id: Option<String>,
     reasoning_id: Option<String>,
     block_counter: usize,
@@ -270,11 +241,7 @@ struct VertexModelStream {
 }
 
 impl VertexModelStream {
-    fn transform_chunk(
-        &mut self,
-        chunk: Box<StreamChunk>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform_chunk(&mut self, chunk: Box<StreamChunk>, controller: &mut Controller) {
         if !self.response_metadata_emitted
             && let Some(id) = &chunk.response_id
         {
@@ -371,10 +338,7 @@ impl VertexModelStream {
                         }
                     } else if part.get("thought") == Some(&Value::Bool(true)) {
                         if let Some(id) = self.text_id.take() {
-                            controller.enqueue(StreamPart::TextEnd {
-                                id,
-                                provider_metadata: None,
-                            });
+                            controller.text_end(id);
                         }
                         if self.reasoning_id.is_none() {
                             let id = format!("{}", self.block_counter);
@@ -392,10 +356,7 @@ impl VertexModelStream {
                         });
                     } else {
                         if let Some(id) = self.reasoning_id.take() {
-                            controller.enqueue(StreamPart::ReasoningEnd {
-                                id,
-                                provider_metadata: None,
-                            });
+                            controller.reasoning_end(id);
                         }
                         if self.text_id.is_none() {
                             let id = format!("{}", self.block_counter);
@@ -414,16 +375,10 @@ impl VertexModelStream {
                     }
                 } else if let Some(file) = inline_file(part) {
                     if let Some(id) = self.text_id.take() {
-                        controller.enqueue(StreamPart::TextEnd {
-                            id,
-                            provider_metadata: None,
-                        });
+                        controller.text_end(id);
                     }
                     if let Some(id) = self.reasoning_id.take() {
-                        controller.enqueue(StreamPart::ReasoningEnd {
-                            id,
-                            provider_metadata: None,
-                        });
+                        controller.reasoning_end(id);
                     }
                     controller.enqueue(if part.get("thought") == Some(&Value::Bool(true)) {
                         StreamPart::ReasoningFile(file)
@@ -580,16 +535,10 @@ impl VertexModelStream {
                     self.has_tool_calls = true;
                 } else if let Some(inline) = part.get("inlineData") {
                     if let Some(id) = self.text_id.take() {
-                        controller.enqueue(StreamPart::TextEnd {
-                            id,
-                            provider_metadata: None,
-                        });
+                        controller.text_end(id);
                     }
                     if let Some(id) = self.reasoning_id.take() {
-                        controller.enqueue(StreamPart::ReasoningEnd {
-                            id,
-                            provider_metadata: None,
-                        });
+                        controller.reasoning_end(id);
                     }
                     if let (Some(data), Some(media_type)) = (
                         inline.get("data").and_then(Value::as_str),
@@ -730,24 +679,14 @@ impl Transformer for VertexModelStream {
     type Input = Result<Value, AiMuxError>;
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        controller.enqueue(StreamPart::StreamStart {
-            warnings: std::mem::take(&mut self.warnings),
-        });
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
     }
 
-    fn transform(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         let event = match event {
             Ok(raw) => {
-                if self.include_raw_chunks {
-                    controller.enqueue(StreamPart::Raw {
-                        raw_value: raw.clone(),
-                    });
-                }
+                self.ctx.raw(&raw, controller);
                 if let Some(usage) = raw.get("usageMetadata") {
                     self.final_usage = vertex_usage(Some(usage));
                     self.last_usage_metadata_value = Some(usage.clone());
@@ -764,9 +703,9 @@ impl Transformer for VertexModelStream {
                 controller.enqueue(StreamPart::Error {
                     error: crate::google::google_stream_error(
                         &error.error,
-                        &self.stream_error_url,
-                        self.stream_request_body.clone(),
-                        self.stream_error_headers.clone(),
+                        &self.ctx.url,
+                        self.ctx.request_body.clone(),
+                        self.ctx.response_headers.clone(),
                     ),
                 });
                 // The rest of the body is not read: the stream finishes now.
@@ -784,7 +723,7 @@ impl Transformer for VertexModelStream {
         }
     }
 
-    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(mut self, controller: &mut Controller) {
         self.finish(controller);
     }
 }
@@ -792,19 +731,13 @@ impl Transformer for VertexModelStream {
 impl VertexModelStream {
     /// Close the open segments and emit `Finish`: at the end of the body, or
     /// right after an error event.
-    fn finish(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn finish(&mut self, controller: &mut Controller) {
         if let Some(id) = self.text_id.take() {
-            controller.enqueue(StreamPart::TextEnd {
-                id,
-                provider_metadata: None,
-            });
+            controller.text_end(id);
         }
 
         if let Some(id) = self.reasoning_id.take() {
-            controller.enqueue(StreamPart::ReasoningEnd {
-                id,
-                provider_metadata: None,
-            });
+            controller.reasoning_end(id);
         }
         let provider_metadata = Some(vertex_provider_metadata(json!({
             "promptFeedback": self.last_prompt_feedback,
@@ -818,15 +751,9 @@ impl VertexModelStream {
 
         controller.enqueue(StreamPart::Finish {
             finish_reason: if self.stream_errored {
-                FinishReason {
-                    unified: FinishReasonUnified::Error,
-                    raw: None,
-                }
+                FINISH_ERROR
             } else {
-                self.final_finish_reason.take().unwrap_or(FinishReason {
-                    unified: FinishReasonUnified::Other,
-                    raw: None,
-                })
+                self.final_finish_reason.take().unwrap_or(FINISH_OTHER)
             },
             usage: if self.stream_errored {
                 Usage::default()

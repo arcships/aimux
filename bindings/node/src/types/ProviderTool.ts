@@ -12,17 +12,25 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * schemas are defined by the provider, and some are executed on the provider's
  * servers (e.g. web search, code execution).
  */
-export type ProviderTool = { 
+export type ProviderTool = {
 /**
  * The ID of the tool, following the format `<provider-id>.<unique-tool-name>`.
  */
-id: NamespacedKind, 
+id: NamespacedKind,
 /**
  * The name of the tool, unique within this model call.
  */
-name: string, 
+name: string,
 /**
  * The arguments for configuring the tool. Must match the expected
  * arguments defined by the provider for this tool.
  */
-args: { [key in string]: JsonValue }, };
+args: { [key in string]: JsonValue },
+/**
+ * Whether a result of this tool may arrive in a later response than its
+ * call (a deferred result, as in programmatic tool calling). The AI SDK
+ * tool's `supportsDeferredResults` (provider-utils@5.0.55
+ * `src/types/tool.ts:316-326`), which the provider's tool factory sets;
+ * absent means `false`. It is not sent to the provider.
+ */
+supportsDeferredResults?: boolean | null, };

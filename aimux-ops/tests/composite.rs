@@ -270,7 +270,7 @@ async fn moa_retains_references_and_aggregator_and_completes() {
         "composite.moa",
         serde_json::json!({
             "references": [reference.0.to_string()], "aggregator": aggregator.0.to_string(),
-            "failMode": "fail_fast", "stripReferenceTools": false
+            "failMode": "fail-fast", "stripReferenceTools": false
         }),
     )
     .await
@@ -418,11 +418,11 @@ async fn control_configs_are_strict_and_preserve_model_identity() {
     for (name, params) in [
         (
             "composite.router",
-            serde_json::json!({"children":[valid],"strategy":{"type":"rule"},"fallback":"on_error","providerName":"custom","modelId":"id"}),
+            serde_json::json!({"children":[valid],"strategy":{"type":"rule"},"fallback":"on-error","providerName":"custom","modelId":"id"}),
         ),
         (
             "composite.moa",
-            serde_json::json!({"references":[],"aggregator":valid,"providerName":"custom","modelId":"id","aggregatorInstructions":"combine","stripReferenceTools":false,"failMode":"best_effort"}),
+            serde_json::json!({"references":[],"aggregator":valid,"providerName":"custom","modelId":"id","aggregatorInstructions":"combine","stripReferenceTools":false,"failMode":"best-effort"}),
         ),
     ] {
         let id = construct(owner, name, params).await.unwrap();

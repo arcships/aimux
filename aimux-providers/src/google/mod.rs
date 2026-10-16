@@ -300,8 +300,9 @@ impl GoogleProvider {
             self.fetch.clone(),
             None,
         )
-        .with_supported_urls(SupportedUrlsSource::Google {
+        .with_supported_urls(SupportedUrlsSource::ByModel {
             base_url: self.base_url.clone(),
+            resolve: supported_urls,
         })
     }
 

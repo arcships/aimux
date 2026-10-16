@@ -1,23 +1,40 @@
-//! Port of `streaming-tool-call-tracker.test.ts` from
-//! `@ai-sdk/provider-utils`, case for case.
+//! `streaming-tool-call-tracker.test.ts` from `@ai-sdk/provider-utils`, case
+//! for case, and the T3 differential fixture recorded from the same tracker,
+//! run through the chat streams that use [`ChatToolCalls`](super::ChatToolCalls).
 //!
-//! Tracker parts are projected to a local `Part` enum so the assertions stay
-//! byte-for-byte comparable with the upstream expectations.
+//! A case drives a stream's `Transformer` synchronously: every
+//! `tool_calls[i]` delta is one chunk, `flush` ends the stream, and only the
+//! tool parts are kept. Which stream runs a case follows the tracker options
+//! upstream tested:
+//!
+//! - no `type` check (the tracker default): Mistral, whose `index` is
+//!   optional and whose ids come from an injected generator;
+//! - `'function'` when present (`'if-present'`): OpenAI;
+//! - `'function'` required (`'required'`): Groq;
+//! - `extractMetadata`: OpenAI-compatible, whose thought signature is the
+//!   metadata of the call a delta starts.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use serde_json::{Value, json};
+
+use aimux_core::error::AiMuxError;
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::RawToolCall;
 use aimux_core::types::ProviderMetadata;
-use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallTracker, TrackerError, TypeValidation,
-};
-use serde_json::json;
+use aimux_provider_utils::{TransformStreamController, Transformer};
 
-/// The TS tracker's four events, projected out of [`StreamPart`] so the
-/// assertions below read like the upstream suite.
+use super::Controller;
+
+type GenerateId = Arc<dyn Fn() -> String + Send + Sync>;
+
+const MISSING_NAME: &str = "Expected 'function.name' to be a string.";
+const INVALID_TYPE: &str = "Expected 'function' type.";
+
+/// The tracker's four events, projected out of [`StreamPart`] so the
+/// assertions read like the upstream suite.
 #[derive(Debug, Clone, PartialEq)]
 #[allow(
     clippy::enum_variant_names,
@@ -44,8 +61,11 @@ enum Part {
     },
 }
 
-fn project(part: StreamPart) -> Part {
-    match part {
+/// The tool part `part` is, if it is one. Any other part a chat stream emits
+/// around tool calls (stream start, response metadata, finish) is dropped;
+/// an error part means the case's chunk did not fit the vendor's schema.
+fn project(part: StreamPart) -> Option<Part> {
+    Some(match part {
         StreamPart::ToolInputStart {
             id,
             tool_name,
@@ -76,44 +96,124 @@ fn project(part: StreamPart) -> Part {
             input,
             provider_metadata,
         },
-        other => panic!("tracker emitted an unexpected part: {other:?}"),
+        StreamPart::Error { error } => panic!("the stream rejected a chunk: {error:?}"),
+        part @ (StreamPart::ToolInputStart { .. }
+        | StreamPart::ToolInputDelta { .. }
+        | StreamPart::ToolInputEnd { .. }
+        | StreamPart::ToolCall(_)) => panic!("unexpected tool part: {part:?}"),
+        _ => return None,
+    })
+}
+
+/// A chat stream with its chunk type fixed, so the vendors can share one
+/// harness.
+trait ChatStream {
+    fn chunk(&mut self, chunk: Value, controller: &mut Controller);
+    fn end(self: Box<Self>, controller: &mut Controller);
+}
+
+impl<T> ChatStream for T
+where
+    T: Transformer<Input = Result<Value, AiMuxError>, Output = StreamPart>,
+{
+    fn chunk(&mut self, chunk: Value, controller: &mut Controller) {
+        self.transform(Ok(chunk), controller);
+    }
+
+    fn end(self: Box<Self>, controller: &mut Controller) {
+        (*self).flush(controller);
     }
 }
 
-/// Tracker plus the parts it has emitted so far (the TS `createCollector`).
+/// A chat stream plus the tool parts it has emitted so far (the TS
+/// `createCollector`).
 struct Harness {
-    /// `None` once flushed: `finish` consumes the tracker.
-    tracker: Option<StreamingToolCallTracker>,
+    /// `None` once flushed.
+    stream: Option<Box<dyn ChatStream>>,
     parts: Vec<Part>,
 }
 
 impl Harness {
+    /// No `type` check; every generated id is `tool-call`.
     fn new() -> Self {
-        Self::with(StreamingToolCallTracker::new())
+        Self::with_ids(|| "tool-call".to_string())
     }
 
-    fn with(tracker: StreamingToolCallTracker) -> Self {
+    /// No `type` check, ids from `generate_id`.
+    fn with_ids(generate_id: impl Fn() -> String + Send + Sync + 'static) -> Self {
+        Self::of(crate::mistral::chat_test_stream(Arc::new(generate_id)))
+    }
+
+    /// `type` must be `'function'` when present.
+    fn openai() -> Self {
+        Self::of(crate::openai::model::chat_test_stream(Arc::new(|| {
+            "tool-call".to_string()
+        })))
+    }
+
+    /// `type` must be `'function'` on the delta that starts a call.
+    fn groq() -> Self {
+        Self::of(crate::groq::chat_test_stream(Arc::new(|| {
+            "tool-call".to_string()
+        })))
+    }
+
+    /// Thought signatures become the metadata of the call; the provider's
+    /// metadata key is `google`.
+    fn compatible() -> Self {
+        Self::of(crate::openai_compatible::chat::chat_test_stream(
+            "google",
+            Arc::new(|| "tool-call".to_string()),
+        ))
+    }
+
+    fn of(stream: impl ChatStream + 'static) -> Self {
         Self {
-            tracker: Some(tracker),
+            stream: Some(Box::new(stream)),
             parts: Vec::new(),
         }
     }
 
-    fn delta(&mut self, delta: StreamingToolCallDelta<'_>) -> Result<(), TrackerError> {
-        let mut parts = Vec::new();
-        let tracker = self.tracker.as_mut().expect("delta after flush");
-        let result = tracker.process(delta, &mut parts);
-        self.parts.extend(parts.into_iter().map(project));
-        result
+    /// Feed one `tool_calls[i]` entry as a chunk. An `Err` is the message of
+    /// the `InvalidResponseData` error the stream ended with. Every delta
+    /// gets a fresh controller, so, like the upstream tracker, the stream
+    /// can be fed again after an error.
+    fn delta(&mut self, tool_call: Value) -> Result<(), String> {
+        let mut controller = TransformStreamController::new();
+        let stream = self.stream.as_mut().expect("delta after flush");
+        stream.chunk(
+            json!({ "choices": [{ "delta": { "tool_calls": [tool_call] } }] }),
+            &mut controller,
+        );
+        self.collect(&mut controller)
     }
 
     fn flush(&mut self) {
-        let mut parts = Vec::new();
-        self.tracker
-            .take()
-            .expect("flushed twice")
-            .finish(&mut parts);
-        self.parts.extend(parts.into_iter().map(project));
+        let mut controller = TransformStreamController::new();
+        let stream = self.stream.take().expect("flushed twice");
+        stream.end(&mut controller);
+        // The OpenAI-compatible stream reports a missing finish reason as an
+        // error part; it is not a tool part.
+        let parts: Vec<StreamPart> = controller.drain().filter_map(Result::ok).collect();
+        self.parts.extend(
+            parts
+                .into_iter()
+                .filter(|part| !matches!(part, StreamPart::Error { .. }))
+                .filter_map(project),
+        );
+    }
+
+    fn collect(&mut self, controller: &mut Controller) -> Result<(), String> {
+        let mut result = Ok(());
+        for item in controller.drain() {
+            match item {
+                Ok(part) => self.parts.extend(project(part)),
+                Err(AiMuxError::InvalidResponseData(message)) => result = Err(message),
+                Err(error) => panic!("unexpected stream error: {error:?}"),
+            }
+        }
+        assert_eq!(result.is_err(), controller.is_closed());
+        result
     }
 
     fn clear(&mut self) {
@@ -137,31 +237,37 @@ impl Harness {
     }
 }
 
-/// A delta with an explicit `function` object (as every TS test passes one).
-fn delta<'a>(
+/// A `tool_calls[i]` entry with an explicit `function` object (as every TS
+/// test passes one). `None` leaves a field out.
+fn delta(
     index: Option<usize>,
-    id: Option<&'a str>,
-    ty: Option<&'a str>,
-    name: Option<&'a str>,
-    arguments: Option<&'a str>,
-) -> StreamingToolCallDelta<'a> {
-    StreamingToolCallDelta {
-        index,
-        id,
-        r#type: ty,
-        name,
-        arguments,
-        provider_metadata: None,
+    id: Option<&str>,
+    ty: Option<&str>,
+    name: Option<&str>,
+    arguments: Option<&str>,
+) -> Value {
+    let mut function = serde_json::Map::new();
+    if let Some(name) = name {
+        function.insert("name".into(), json!(name));
     }
+    if let Some(arguments) = arguments {
+        function.insert("arguments".into(), json!(arguments));
+    }
+    let mut tool_call = json!({ "function": function });
+    if let Some(index) = index {
+        tool_call["index"] = json!(index);
+    }
+    if let Some(id) = id {
+        tool_call["id"] = json!(id);
+    }
+    if let Some(ty) = ty {
+        tool_call["type"] = json!(ty);
+    }
+    tool_call
 }
 
 /// Full call start: index, id, `type: 'function'`, name and arguments.
-fn start<'a>(
-    index: usize,
-    id: &'a str,
-    name: &'a str,
-    arguments: &'a str,
-) -> StreamingToolCallDelta<'a> {
+fn start(index: usize, id: &str, name: &str, arguments: &str) -> Value {
     delta(
         Some(index),
         Some(id),
@@ -172,8 +278,14 @@ fn start<'a>(
 }
 
 /// Continuation carrying only arguments (plus an optional index).
-fn cont(index: Option<usize>, arguments: &str) -> StreamingToolCallDelta<'_> {
+fn cont(index: Option<usize>, arguments: &str) -> Value {
     delta(index, None, None, None, Some(arguments))
+}
+
+/// `tool_call` carrying a Gemini thought signature (`extra_content`).
+fn signed(mut tool_call: Value, signature: &str) -> Value {
+    tool_call["extra_content"] = json!({ "google": { "thought_signature": signature } });
+    tool_call
 }
 
 fn tc(id: &str, name: &str, input: &str) -> (String, String, String) {
@@ -207,8 +319,14 @@ fn tool_call(id: &str, name: &str, input: &str) -> Part {
     }
 }
 
-/// Deterministic id generator: `prefix-1`, `prefix-2`, … and a call counter.
-fn counting_generator(ids: &'static [&'static str]) -> (impl Fn() -> String, Arc<AtomicUsize>) {
+/// Deterministic id generator over `ids` (the last one repeats) and a call
+/// counter.
+fn counting_generator(
+    ids: &'static [&'static str],
+) -> (
+    impl Fn() -> String + Send + Sync + 'static,
+    Arc<AtomicUsize>,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&calls);
     (
@@ -219,7 +337,6 @@ fn counting_generator(ids: &'static [&'static str]) -> (impl Fn() -> String, Arc
         calls,
     )
 }
-
 mod process_delta {
     use super::*;
 
@@ -560,9 +677,7 @@ mod process_delta {
 
     #[test]
     fn generates_an_id_when_id_is_missing() {
-        let mut h = Harness::with(
-            StreamingToolCallTracker::new().with_generate_id(|| "generated-id".to_string()),
-        );
+        let mut h = Harness::with_ids(|| "generated-id".to_string());
 
         h.delta(delta(
             Some(0),
@@ -584,11 +699,7 @@ mod process_delta {
 
         let result = h.delta(delta(Some(0), Some("call_1"), Some("function"), None, None));
 
-        assert_eq!(result, Err(TrackerError::MissingFunctionName));
-        assert_eq!(
-            TrackerError::MissingFunctionName.to_string(),
-            "Expected 'function.name' to be a string."
-        );
+        assert_eq!(result, Err(MISSING_NAME.to_string()));
     }
 
     #[test]
@@ -635,7 +746,7 @@ mod process_delta {
     #[test]
     fn keeps_id_less_calls_distinct_when_an_index_is_reused_and_type_is_omitted() {
         let (generate, _) = counting_generator(&["generated-1", "generated-2", "generated-3"]);
-        let mut h = Harness::with(StreamingToolCallTracker::new().with_generate_id(generate));
+        let mut h = Harness::with_ids(generate);
 
         h.delta(delta(
             Some(0),
@@ -676,9 +787,7 @@ mod process_delta {
     #[test]
     fn keeps_complete_same_name_calls_distinct_with_reused_index() {
         for id in [None, Some("dup")] {
-            let mut h = Harness::with(
-                StreamingToolCallTracker::new().with_generate_id(|| "generated-id".to_string()),
-            );
+            let mut h = Harness::with_ids(|| "generated-id".to_string());
 
             for value in ["{\"value\":1}", "{\"value\":2}"] {
                 h.delta(delta(
@@ -703,9 +812,7 @@ mod process_delta {
     #[test]
     fn keeps_a_partial_same_name_call_distinct_with_reused_index() {
         for id in [None, Some("dup")] {
-            let mut h = Harness::with(
-                StreamingToolCallTracker::new().with_generate_id(|| "generated-id".to_string()),
-            );
+            let mut h = Harness::with_ids(|| "generated-id".to_string());
 
             for value in ["{\"value\":1}", "{\"value\":"] {
                 h.delta(delta(
@@ -786,7 +893,7 @@ mod process_delta {
     #[test]
     fn generates_unique_ids_for_blank_and_repeated_ids() {
         let (generate, _) = counting_generator(&["generated-1", "generated-2"]);
-        let mut h = Harness::with(StreamingToolCallTracker::new().with_generate_id(generate));
+        let mut h = Harness::with_ids(generate);
 
         h.delta(start(0, "", "read_file", "{}")).unwrap();
         h.delta(start(1, "dup", "read_file", "{}")).unwrap();
@@ -805,9 +912,7 @@ mod process_delta {
 
     #[test]
     fn keeps_same_name_calls_with_repeated_ids_and_distinct_indices_separate() {
-        let mut h = Harness::with(
-            StreamingToolCallTracker::new().with_generate_id(|| "generated-id".to_string()),
-        );
+        let mut h = Harness::with_ids(|| "generated-id".to_string());
 
         h.delta(start(0, "dup", "same_tool", "{\"value\":0}"))
             .unwrap();
@@ -848,7 +953,7 @@ mod process_delta {
     #[test]
     fn creates_bounded_unique_ids_when_generate_id_returns_duplicates() {
         let (generate, calls) = counting_generator(&["generated-id"]);
-        let mut h = Harness::with(StreamingToolCallTracker::new().with_generate_id(generate));
+        let mut h = Harness::with_ids(generate);
 
         for (index, name) in [(0, "first"), (1, "second"), (2, "third")] {
             h.delta(delta(
@@ -873,7 +978,7 @@ mod process_delta {
     #[test]
     fn creates_usable_ids_when_generate_id_returns_blank_values() {
         let (generate, calls) = counting_generator(&["   "]);
-        let mut h = Harness::with(StreamingToolCallTracker::new().with_generate_id(generate));
+        let mut h = Harness::with_ids(generate);
 
         for (index, name) in [(0, "first"), (1, "second")] {
             h.delta(delta(
@@ -914,9 +1019,7 @@ mod process_delta {
 
     #[test]
     fn ignores_an_ambiguous_continuation_for_a_repeated_id() {
-        let mut h = Harness::with(
-            StreamingToolCallTracker::new().with_generate_id(|| "generated-id".to_string()),
-        );
+        let mut h = Harness::with_ids(|| "generated-id".to_string());
 
         h.delta(start(0, "dup", "read_file", "{\"path\":\"a\"}"))
             .unwrap();
@@ -943,9 +1046,7 @@ mod process_delta {
 
     #[test]
     fn uses_a_matching_name_and_index_for_an_id_less_continuation() {
-        let mut h = Harness::with(
-            StreamingToolCallTracker::new().with_type_validation(TypeValidation::Required),
-        );
+        let mut h = Harness::groq();
 
         h.delta(start(0, "call_1", "read_file", "{\"pa")).unwrap();
         h.delta(delta(
@@ -1066,14 +1167,14 @@ mod process_delta {
         // `function: {}` — a function object with neither name nor arguments.
         let result = h.delta(delta(Some(0), Some("call_1"), Some("function"), None, None));
 
-        assert_eq!(result, Err(TrackerError::MissingFunctionName));
+        assert_eq!(result, Err(MISSING_NAME.to_string()));
     }
 }
 
 mod type_validation {
     use super::*;
 
-    fn custom_type() -> StreamingToolCallDelta<'static> {
+    fn custom_type() -> Value {
         delta(
             Some(0),
             Some("call_1"),
@@ -1083,30 +1184,22 @@ mod type_validation {
         )
     }
 
-    fn no_type() -> StreamingToolCallDelta<'static> {
+    fn no_type() -> Value {
         delta(Some(0), Some("call_1"), None, Some("fn"), Some(""))
     }
 
     #[test]
     fn does_not_validate_type_with_none() {
-        let mut h = Harness::with(
-            StreamingToolCallTracker::new().with_type_validation(TypeValidation::None),
-        );
+        let mut h = Harness::new();
 
         assert_eq!(h.delta(custom_type()), Ok(()));
     }
 
     #[test]
     fn validates_type_when_present_with_if_present() {
-        let mut h = Harness::with(
-            StreamingToolCallTracker::new().with_type_validation(TypeValidation::IfPresent),
-        );
+        let mut h = Harness::openai();
 
-        assert_eq!(h.delta(custom_type()), Err(TrackerError::InvalidType));
-        assert_eq!(
-            TrackerError::InvalidType.to_string(),
-            "Expected 'function' type."
-        );
+        assert_eq!(h.delta(custom_type()), Err(INVALID_TYPE.to_string()));
 
         // A missing type is accepted.
         assert_eq!(h.delta(no_type()), Ok(()));
@@ -1114,11 +1207,9 @@ mod type_validation {
 
     #[test]
     fn requires_function_type_with_required() {
-        let mut h = Harness::with(
-            StreamingToolCallTracker::new().with_type_validation(TypeValidation::Required),
-        );
+        let mut h = Harness::groq();
 
-        assert_eq!(h.delta(no_type()), Err(TrackerError::InvalidType));
+        assert_eq!(h.delta(no_type()), Err(INVALID_TYPE.to_string()));
 
         assert_eq!(h.delta(start(0, "call_1", "fn", "")), Ok(()));
     }
@@ -1151,19 +1242,15 @@ mod metadata {
     use super::*;
 
     // The upstream `extractMetadata` / `buildToolCallProviderMetadata` hooks
-    // become `provider_metadata` on the delta that starts a call.
+    // are the OpenAI-compatible stream's thought signatures here: the
+    // signature of the delta that starts a call is the call's metadata.
 
     #[test]
     fn includes_the_starting_delta_metadata_in_the_tool_call() {
-        let mut h = Harness::new();
+        let mut h = Harness::compatible();
 
-        h.delta(StreamingToolCallDelta {
-            provider_metadata: Some(
-                provider_namespace("google", json!({ "thoughtSignature": "sig123" })).unwrap(),
-            ),
-            ..start(0, "call_1", "fn", "{\"incomplete")
-        })
-        .unwrap();
+        h.delta(signed(start(0, "call_1", "fn", "{\"incomplete"), "sig123"))
+            .unwrap();
         h.flush();
 
         assert_eq!(
@@ -1181,16 +1268,10 @@ mod metadata {
 
     #[test]
     fn ignores_metadata_on_continuations() {
-        let mut h = Harness::new();
+        let mut h = Harness::compatible();
 
         h.delta(start(0, "call_1", "fn", "{")).unwrap();
-        h.delta(StreamingToolCallDelta {
-            provider_metadata: Some(
-                provider_namespace("custom", json!({ "key": "value" })).unwrap(),
-            ),
-            ..cont(Some(0), "}")
-        })
-        .unwrap();
+        h.delta(signed(cont(Some(0), "}"), "sig123")).unwrap();
         h.flush();
 
         assert_eq!(h.parts.last(), Some(&tool_call("call_1", "fn", "{}")));
@@ -1201,10 +1282,39 @@ mod generate_id {
     use super::*;
 
     #[test]
-    fn keeps_the_wire_id_when_present() {
-        let mut h = Harness::with(
-            StreamingToolCallTracker::new().with_generate_id(|| "custom-id".to_string()),
+    fn generates_a_16_character_id_when_wire_id_is_missing() {
+        let mut h = Harness::with_ids(aimux_provider_utils::generate_id);
+
+        h.delta(delta(
+            Some(0),
+            None,
+            Some("function"),
+            Some("fn"),
+            Some("{}"),
+        ))
+        .unwrap();
+        h.flush();
+
+        let calls = h.tool_calls();
+        assert_eq!(calls.len(), 1);
+        let id = &calls[0].0;
+        assert_eq!(id.len(), 16);
+        assert_ne!(id, "tool-call");
+        assert!(id.bytes().all(|byte| byte.is_ascii_alphanumeric()));
+        assert_eq!(
+            h.parts,
+            vec![
+                input_start(id, "fn"),
+                input_delta(id, "{}"),
+                input_end(id),
+                tool_call(id, "fn", "{}"),
+            ]
         );
+    }
+
+    #[test]
+    fn keeps_the_wire_id_when_present() {
+        let mut h = Harness::with_ids(|| "custom-id".to_string());
 
         h.delta(start(0, "call_1", "fn", "{\"key\": \"val"))
             .unwrap();
@@ -1214,5 +1324,165 @@ mod generate_id {
 
         let ids: Vec<String> = h.tool_calls().into_iter().map(|c| c.0).collect();
         assert_eq!(ids, vec!["call_1"]);
+    }
+}
+
+/// The T3 differential fixture:
+/// `fixtures/aisdk/provider-utils/t3-unattributable-deltas.json` holds the
+/// deltas of each case plus what the `StreamingToolCallTracker` of the
+/// `@ai-sdk/provider-utils` version pinned in `fixtures/aisdk/VERSIONS.json`
+/// (5.0.55) emitted for them with the case's `typeValidation`
+/// (`'if-present'`: openai chat; `'required'`: groq; `'none'`:
+/// openai-compatible), recorded by `scripts/gen-t3-tracker-fixture.mjs`.
+/// Each case asserts that a chat stream with the same `type` rule matches
+/// per delta, on the error, and on flush.
+mod t3_unattributable_delta_parity {
+    use super::*;
+
+    const FIXTURE: &str =
+        include_str!("../../../fixtures/aisdk/provider-utils/t3-unattributable-deltas.json");
+
+    fn to_aisdk(part: &Part) -> Value {
+        match part {
+            Part::ToolInputStart { id, tool_name } => {
+                json!({"type": "tool-input-start", "id": id, "toolName": tool_name})
+            }
+            Part::ToolInputDelta { id, delta } => {
+                json!({"type": "tool-input-delta", "id": id, "delta": delta})
+            }
+            Part::ToolInputEnd { id } => json!({"type": "tool-input-end", "id": id}),
+            Part::ToolCall {
+                tool_call_id,
+                tool_name,
+                input,
+                ..
+            } => json!({
+                "type": "tool-call", "toolCallId": tool_call_id, "toolName": tool_name, "input": input
+            }),
+        }
+    }
+
+    /// The stream that applies the case's `typeValidation` to its deltas.
+    ///
+    /// The vendor schemas are stricter than the tracker: OpenAI and Groq
+    /// require `index`, and Groq rejects a `type` other than `'function'`
+    /// while parsing. A case those schemas would reject runs on a stream
+    /// whose rule gives the same verdict for its deltas: Mistral (no check)
+    /// for `'if-present'` deltas without an index, none of which has a
+    /// non-`'function'` type; OpenAI for `'required'` deltas with another
+    /// `type`, which both rules reject.
+    fn harness(case: &Value, generate_id: impl Fn() -> String + Send + Sync + 'static) -> Harness {
+        let deltas = case["deltas"].as_array().unwrap();
+        let all_indexed = deltas.iter().all(|d| d.get("index").is_some());
+        let other_type = deltas
+            .iter()
+            .any(|d| d.get("type").is_some_and(|t| t != "function"));
+        let generate_id: GenerateId = Arc::new(generate_id);
+        let stream: Box<dyn ChatStream> = match case["typeValidation"].as_str().unwrap() {
+            "if-present" if all_indexed => {
+                Box::new(crate::openai::model::chat_test_stream(generate_id))
+            }
+            "if-present" => {
+                assert!(!other_type);
+                Box::new(crate::mistral::chat_test_stream(generate_id))
+            }
+            "required" if other_type => {
+                Box::new(crate::openai::model::chat_test_stream(generate_id))
+            }
+            "required" => Box::new(crate::groq::chat_test_stream(generate_id)),
+            "none" => Box::new(crate::mistral::chat_test_stream(generate_id)),
+            other => panic!("unknown typeValidation {other}"),
+        };
+        Harness {
+            stream: Some(stream),
+            parts: Vec::new(),
+        }
+    }
+
+    fn run_case(case: &Value) {
+        let name = case["name"].as_str().unwrap();
+        // Ids are generated `gen-0`, `gen-1`, ... like the recording script.
+        let next_id = AtomicUsize::new(0);
+        let mut h = harness(case, move || {
+            format!("gen-{}", next_id.fetch_add(1, Ordering::SeqCst))
+        });
+        let mut steps = Vec::new();
+        let mut error = Value::Null;
+        for tool_call in case["deltas"].as_array().unwrap() {
+            h.clear();
+            let result = h.delta(tool_call.clone());
+            steps.push(json!({"parts": h.parts.iter().map(to_aisdk).collect::<Vec<_>>()}));
+            if let Err(message) = result {
+                error = json!({"name": "AI_InvalidResponseDataError", "message": message});
+                break;
+            }
+        }
+        let flush = if error.is_null() {
+            h.clear();
+            h.flush();
+            Value::Array(h.parts.iter().map(to_aisdk).collect())
+        } else {
+            Value::Null
+        };
+        let actual = json!({"steps": steps, "error": error, "flush": flush});
+        assert_eq!(actual, case["aisdk"], "{name} ({})", case["tracker"]);
+    }
+
+    fn case(name: &str) -> Value {
+        let fixture: Value = serde_json::from_str(FIXTURE).unwrap();
+        fixture["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == name)
+            .unwrap_or_else(|| panic!("missing fixture case {name}"))
+            .clone()
+    }
+
+    /// Every recorded case, including the typeValidation `required` (groq)
+    /// and `none` (openai-compatible) ones and the interleaved ones.
+    #[test]
+    fn every_fixture_case_matches_the_aisdk_tracker() {
+        let fixture: Value = serde_json::from_str(FIXTURE).unwrap();
+        let cases = fixture["cases"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            run_case(case);
+        }
+    }
+
+    /// streaming-tool-call-tracker.ts:144-146, :305-308.
+    #[test]
+    fn ambiguous_delta_across_open_calls_is_dropped() {
+        run_case(&case("ambiguous_delta_across_open_calls_is_dropped"));
+    }
+
+    /// streaming-tool-call-tracker.ts:153-155.
+    #[test]
+    fn blank_name_matching_no_call_is_dropped() {
+        run_case(&case("blank_name_matching_no_call_is_dropped"));
+    }
+
+    /// streaming-tool-call-tracker.ts:305-308, :384-389.
+    #[test]
+    fn nameless_delta_without_open_call_is_invalid_response_data() {
+        run_case(&case(
+            "nameless_delta_without_open_call_is_invalid_response_data",
+        ));
+    }
+
+    /// streaming-tool-call-tracker.ts:375-381.
+    #[test]
+    fn non_function_type_is_invalid_response_data() {
+        run_case(&case("non_function_type_is_invalid_response_data"));
+    }
+
+    /// The case 5.0.55 changed: an index-only continuation after the index
+    /// is reused goes to the only call there without complete structured
+    /// arguments (streaming-tool-call-tracker.ts:291-298, :345-347); 5.0.53
+    /// dropped it.
+    #[test]
+    fn index_only_continuation_goes_to_the_only_incomplete_call() {
+        run_case(&case("index_reuse_with_new_id"));
     }
 }
