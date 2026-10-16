@@ -334,7 +334,7 @@ impl ToolContentPart {
 }
 
 /// The result of a tool call (upstream `ToolResultPart`,
-/// `provider-utils` `types/content-part.ts:240-268`).
+/// `provider-utils` `types/content-part.ts:218-241`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -563,7 +563,7 @@ pub enum ToolResultFileId {
 /// A string is read as the AI SDK reads it when it converts the prompt
 /// (`ai` `prompt/file-part-data.ts:125-131`): a URL when it parses as one
 /// (a `data:` URL becomes inline data), base64 otherwise.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(untagged)]
 #[ts(export)]
 pub enum FilePartData {
@@ -578,7 +578,7 @@ pub enum FilePartData {
 /// `ReasoningFilePart.data` (`types/content-part.ts:164`):
 /// `FileDataData | FileDataUrl | DataContent | URL`, in JSON tagged data or a
 /// URL, or a string (base64 or a URL).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(untagged)]
 #[ts(export)]
 pub enum ReasoningFilePartData {
@@ -586,4 +586,96 @@ pub enum ReasoningFilePartData {
     Tagged(GeneratedFileData),
     /// A base64 string or a URL string.
     String(String),
+}
+
+// ── Deserialize by JSON kind ────────────────────────────────────────────────
+//
+// The two file data types serialize untagged, but are read by JSON kind: an
+// untagged `Deserialize` reports only "data did not match any variant", which
+// hides the tagged data's own error (RFC-0042 §7.2,
+// `rfc/0042-v4-type-boundaries.md:211`), and it read an object with an
+// unknown `type` as a provider reference whose provider is "type".
+
+/// An object with a `type` key is tagged file data and never a provider
+/// reference, as the AI SDK decides (`ai@7.0.127`
+/// `src/prompt/file-part-data.ts:14-21` `isTaggedFileData`;
+/// `@ai-sdk/provider-utils@5.0.55` `src/is-provider-reference.ts:9-21`, which
+/// requires `!('type' in data)`), so an unknown `type` is a decode error
+/// naming it. A string is the string form; any other object is a reference.
+impl<'de> Deserialize<'de> for FilePartData {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct KindVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for KindVisitor {
+            type Value = FilePartData;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str(
+                    "file data: a tagged object, a base64 or URL string, or a provider reference",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(FilePartData::String(value.to_owned()))
+            }
+
+            fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+                Ok(FilePartData::String(value))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let object = serde_json::Map::deserialize(
+                    serde::de::value::MapAccessDeserializer::new(map),
+                )?;
+                let tagged = object.contains_key("type");
+                let object = Value::Object(object);
+                if tagged {
+                    FileData::deserialize(object).map(FilePartData::Tagged)
+                } else {
+                    SharedProviderReference::deserialize(object).map(FilePartData::Reference)
+                }
+                .map_err(serde::de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_any(KindVisitor)
+    }
+}
+
+/// A string is the string form, an object is tagged generated-file data with
+/// its own error.
+impl<'de> Deserialize<'de> for ReasoningFilePartData {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct KindVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for KindVisitor {
+            type Value = ReasoningFilePartData;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter
+                    .write_str("reasoning file data: a tagged object or a base64 or URL string")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(ReasoningFilePartData::String(value.to_owned()))
+            }
+
+            fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+                Ok(ReasoningFilePartData::String(value))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                GeneratedFileData::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+                    .map(ReasoningFilePartData::Tagged)
+            }
+        }
+
+        deserializer.deserialize_any(KindVisitor)
+    }
 }

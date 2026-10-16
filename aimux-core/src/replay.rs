@@ -572,6 +572,22 @@ pub(crate) fn snake_case_option_keys(options: &serde_json::Value) -> Vec<String>
     keys
 }
 
+/// The recorded options as this version reads them: the null-valued keys of
+/// the `timeout` object are dropped. aimux 0.5 wrote every timeout key, an
+/// unset one as `null` (`"step_ms": null`); such a key carries nothing, so
+/// [`snake_case_option_keys`] does not report it, but the strict
+/// `TimeoutConfiguration` would reject its name.
+pub(crate) fn readable_options(options: &serde_json::Value) -> serde_json::Value {
+    let mut options = options.clone();
+    if let Some(timeout) = options
+        .get_mut("timeout")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        timeout.retain(|_, value| !value.is_null());
+    }
+    options
+}
+
 /// 解析 finish_reason 字符串为 unified 枚举。
 fn parse_finish(raw: Option<&str>) -> (FinishReasonUnified, Option<String>) {
     let unified = match raw {
@@ -1043,14 +1059,13 @@ pub async fn replay_with_model(
     }
     // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)
     //    and the operation settings recorded next to them.
-    let mut call_options: CallOptions = serde_json::from_value(recording.input.options.clone())
-        .map_err(|e| {
-            AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
-        })?;
-    let settings: OperationSettings = serde_json::from_value(recording.input.options.clone())
-        .map_err(|e| {
-            AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
-        })?;
+    let options = readable_options(&recording.input.options);
+    let mut call_options: CallOptions = serde_json::from_value(options.clone()).map_err(|e| {
+        AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
+    })?;
+    let settings: OperationSettings = serde_json::from_value(options).map_err(|e| {
+        AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
+    })?;
 
     // 2. 应用 overrides。
     if let Some(o) = overrides {
@@ -1979,5 +1994,133 @@ mod tests {
         assert_eq!(model.model_id(), "gpt-4o");
         assert_eq!(model.recordings().len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn exact_matcher_different_provider_options_misses() {
+        // A8: provider_options are part of the canonical key — a different
+        // non-redacted value misses.
+        let openai = |foo: i64| -> crate::shared::SharedProviderOptions {
+            [(
+                "openai".to_string(),
+                serde_json::json!({ "foo": foo })
+                    .as_object()
+                    .cloned()
+                    .unwrap(),
+            )]
+            .into_iter()
+            .collect()
+        };
+        let mut rec = openai_recording("t1", "ping", "pong", "stop");
+        let mut call = sample_options("ping", Some(0.7));
+        call.provider_options = Some(openai(1));
+        rec.input.options = serde_json::to_value(&call).unwrap();
+        let recs = [rec];
+        let matcher = ExactMatcher::new("openai", "gpt-4o");
+
+        // A different foo → miss.
+        let mut req = sample_options("ping", Some(0.7));
+        req.provider_options = Some(openai(2));
+        assert!(matcher.r#match(&req, &recs).is_err());
+
+        // Identical → hit (control).
+        let mut req2 = sample_options("ping", Some(0.7));
+        req2.provider_options = Some(openai(1));
+        assert!(matcher.r#match(&req2, &recs).is_ok());
+    }
+
+    // ── P4 request replay ───────────────────────────────────────────────────
+
+    /// Echo model: answers with the text of its user messages.
+    struct EchoModel;
+
+    #[async_trait]
+    impl LanguageModel for EchoModel {
+        fn provider(&self) -> &str {
+            "openai"
+        }
+
+        fn model_id(&self) -> &str {
+            "gpt-4o"
+        }
+
+        async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+            let text = options
+                .prompt
+                .iter()
+                .filter_map(|message| match message {
+                    LanguageModelMessage::User { content, .. } => match content.first() {
+                        Some(UserPart::Text(part)) => Some(part.text.clone()),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            Ok(GenerateResult {
+                content: vec![GenerateContent::Text {
+                    text,
+                    provider_metadata: None,
+                }],
+                finish_reason: FinishReason {
+                    unified: FinishReasonUnified::Stop,
+                    raw: Some("stop".into()),
+                },
+                usage: Usage::default(),
+                warnings: vec![],
+                provider_metadata: None,
+                response: None,
+                request: None,
+            })
+        }
+
+        async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+            unreachable!("not used in tests")
+        }
+    }
+
+    /// A recording whose options carry temperature and max_output_tokens,
+    /// serialized from real CallOptions (as the recording path does).
+    fn optioned_recording(prompt_text: &str) -> Recording {
+        let mut rec = openai_recording("t1", prompt_text, "pong", "stop");
+        let mut call = sample_options(prompt_text, Some(0.7));
+        call.max_output_tokens = Some(128);
+        rec.input.options = serde_json::to_value(&call).unwrap();
+        rec
+    }
+
+    #[test]
+    fn replay_with_model_rebuilds_input_and_resends() {
+        let rec = optioned_recording("hello");
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result =
+            rt.block_on(async { replay_with_model(&rec, &EchoModel, None).await.unwrap() });
+        assert_eq!(result.text(), "hello");
+    }
+
+    #[test]
+    fn replay_with_model_applies_overrides() {
+        let rec = optioned_recording("hello");
+        let overrides = ReplayOverrides {
+            prompt: Some(vec![LanguageModelMessage::user_text("overridden")]),
+            ..Default::default()
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(async {
+            replay_with_model(&rec, &EchoModel, Some(&overrides))
+                .await
+                .unwrap()
+        });
+        assert_eq!(result.text(), "overridden");
+    }
+
+    #[test]
+    fn replay_with_model_bad_input_options_errors() {
+        let mut rec = openai_recording("t1", "hello", "pong", "stop");
+        rec.input.options = serde_json::json!({ "not": "call-options" });
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let err =
+            rt.block_on(async { replay_with_model(&rec, &EchoModel, None).await.unwrap_err() });
+        assert!(matches!(err, AiMuxError::JsonParse(_)), "{err}");
     }
 }

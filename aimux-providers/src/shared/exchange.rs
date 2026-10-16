@@ -9,7 +9,9 @@
 //! the credential or the settings that produced it.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use async_trait::async_trait;
 use base64::Engine as _;
 use serde_json::Value;
 
@@ -130,36 +132,30 @@ impl EndpointHeaders {
 }
 
 /// Where the endpoint (base URL and provider headers) of a request comes
-/// from. Every variant is data; the work happens in [`EndpointConfig::endpoint`]
-/// when a request is made.
-#[derive(Clone)]
-pub(crate) enum EndpointSource {
-    /// A base URL and headers, each resolved on its own.
-    Http {
-        base_url: BaseUrl,
-        headers: EndpointHeaders,
-    },
-    /// A Gemini-publisher model of Google Vertex AI: the mode, key, token,
-    /// project and location decide the URL and the headers together.
-    Vertex(crate::vertex::GeminiEndpoint),
-    /// An Amazon Bedrock service: explicit URL, endpoint variables or the
-    /// regional host; API key or SigV4.
-    Bedrock(crate::bedrock::BedrockEndpoint),
-    /// Amazon Polly: explicit URL or the regional host; SigV4.
-    AwsPolly(crate::aws_polly::PollyEndpoint),
+/// from, resolved in [`EndpointConfig::endpoint`] when a request is made.
+///
+/// Most providers use [`HttpEndpoint`]. A package whose mode, credential and
+/// region decide the URL and the headers together (Vertex AI, Bedrock,
+/// Polly) implements it on its own plain-data struct.
+#[async_trait]
+pub(crate) trait ResolveEndpoint: Send + Sync {
+    /// The base URL and provider headers of one request.
+    async fn resolve(&self) -> Result<Endpoint, AiMuxError>;
 }
 
-impl EndpointSource {
+/// A base URL and headers, each resolved on its own.
+pub(crate) struct HttpEndpoint {
+    pub(crate) base_url: BaseUrl,
+    pub(crate) headers: EndpointHeaders,
+}
+
+#[async_trait]
+impl ResolveEndpoint for HttpEndpoint {
     async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
-        match self {
-            Self::Http { base_url, headers } => Ok(Endpoint {
-                base_url: base_url.resolve()?,
-                headers: headers.resolve().await?,
-            }),
-            Self::Vertex(endpoint) => endpoint.resolve().await,
-            Self::Bedrock(endpoint) => endpoint.resolve().await,
-            Self::AwsPolly(endpoint) => endpoint.resolve().await,
-        }
+        Ok(Endpoint {
+            base_url: self.base_url.resolve()?,
+            headers: self.headers.resolve().await?,
+        })
     }
 }
 
@@ -171,9 +167,12 @@ pub(crate) enum SupportedUrlsSource {
     None,
     /// The same patterns for every model.
     Fixed(SupportedUrls),
-    /// The Gemini API's patterns, which depend on the base URL and the model
-    /// id.
-    Google { base_url: String },
+    /// Patterns that depend on the base URL and the model id (the Gemini
+    /// API's).
+    ByModel {
+        base_url: String,
+        resolve: fn(&str, Option<&str>) -> SupportedUrls,
+    },
 }
 
 impl SupportedUrlsSource {
@@ -181,7 +180,7 @@ impl SupportedUrlsSource {
         match self {
             Self::None => SupportedUrls::default(),
             Self::Fixed(urls) => urls.clone(),
-            Self::Google { base_url } => crate::google::supported_urls(base_url, Some(model_id)),
+            Self::ByModel { base_url, resolve } => resolve(base_url, Some(model_id)),
         }
     }
 }
@@ -193,7 +192,7 @@ pub(crate) struct EndpointConfig {
     /// The identity the model reports from `provider()`.
     pub(crate) provider: String,
     /// Base URL and provider headers, resolved on every request.
-    pub(crate) endpoint: EndpointSource,
+    pub(crate) endpoint: Arc<dyn ResolveEndpoint>,
     /// Transport; `None` uses the process default, resolved per request.
     pub(crate) fetch: Option<FetchFunction>,
     /// URLs the model fetches itself, by model id. Empty: the caller
@@ -215,7 +214,7 @@ impl EndpointConfig {
     ) -> Self {
         Self::new(
             provider,
-            EndpointSource::Http {
+            HttpEndpoint {
                 base_url: BaseUrl::Fixed(base_url),
                 headers: headers.into(),
             },
@@ -227,12 +226,12 @@ impl EndpointConfig {
     /// A config whose endpoint comes from `endpoint`.
     pub(crate) fn new(
         provider: String,
-        endpoint: EndpointSource,
+        endpoint: impl ResolveEndpoint + 'static,
         fetch: Option<FetchFunction>,
     ) -> Self {
         Self {
             provider,
-            endpoint,
+            endpoint: Arc::new(endpoint),
             fetch,
             supported_urls: SupportedUrlsSource::None,
             transform_request_body: None,

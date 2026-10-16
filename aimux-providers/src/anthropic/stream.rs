@@ -344,6 +344,23 @@ pub(crate) fn tool_call_caller_metadata(
     )
 }
 
+/// What secureJsonParse refuses: a `__proto__` key, or a `constructor` object
+/// with a `prototype` key, anywhere in the value.
+fn contains_forbidden_prototype(value: &Value) -> bool {
+    match value {
+        Value::Object(object) => {
+            object.contains_key("__proto__")
+                || object
+                    .get("constructor")
+                    .and_then(Value::as_object)
+                    .is_some_and(|constructor| constructor.contains_key("prototype"))
+                || object.values().any(contains_forbidden_prototype)
+        }
+        Value::Array(items) => items.iter().any(contains_forbidden_prototype),
+        _ => false,
+    }
+}
+
 fn toolset_member_input(member_name: &str, input: &Value) -> Value {
     let mut value = json!({ "action": member_name });
     if let Some(input) = input.as_object() {
@@ -352,18 +369,25 @@ fn toolset_member_input(member_name: &str, input: &Value) -> Value {
     value
 }
 
+/// The provider metadata of a tool call: `toolsetName` first, then `caller`,
+/// as upstream spreads them (anthropic-language-model.ts:1360-1366 and
+/// :2677-2686).
 fn tool_call_metadata(
     caller: Option<&ToolCallCaller>,
     toolset_name: Option<&str>,
     options_name: &str,
 ) -> Option<ProviderMetadata> {
-    let mut metadata = tool_call_caller_metadata(caller, options_name);
-    if let Some(name) = toolset_name {
-        let metadata =
-            metadata.get_or_insert_with(|| provider_namespace(options_name, json!({})).unwrap());
-        metadata.get_mut(options_name).unwrap()["toolsetName"] = json!(name);
+    let Some(name) = toolset_name else {
+        return tool_call_caller_metadata(caller, options_name);
+    };
+    let mut entry = json!({ "toolsetName": name });
+    if let Some(caller) = tool_call_caller_metadata(caller, options_name)
+        .and_then(|mut metadata| metadata.shift_remove(options_name))
+        .and_then(|mut namespace| namespace.remove("caller"))
+    {
+        entry["caller"] = caller;
     }
-    metadata
+    Some(provider_namespace(options_name, entry).expect("provider metadata must be an object"))
 }
 
 fn is_tool_search_provider_name(name: &str) -> bool {
@@ -1595,12 +1619,16 @@ impl AnthropicMessagesStream {
                 ..
             } => {
                 if let Some(member_name) = toolset_member_name {
+                    // Upstream parses with secureJsonParse and keeps the raw
+                    // input when that fails (anthropic-language-model.ts:2606-2632).
                     let parsed = if accumulated_json.is_empty() {
-                        Ok(json!({}))
+                        Some(json!({}))
                     } else {
                         serde_json::from_str::<Value>(&accumulated_json)
+                            .ok()
+                            .filter(|input| !contains_forbidden_prototype(input))
                     };
-                    if let Ok(input) = parsed {
+                    if let Some(input) = parsed {
                         accumulated_json = toolset_member_input(&member_name, &input).to_string();
                     }
                     controller.tool_input_delta(id.clone(), accumulated_json.clone());

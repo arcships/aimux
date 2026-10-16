@@ -34,7 +34,7 @@ crate::wire::base64_wire_enum!(AudioData);
 ///
 /// Aligned with V4 `SpeechModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export)]
 pub struct SpeechCallOptions {
     /// Text to convert to speech.

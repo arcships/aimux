@@ -25,7 +25,7 @@ pub type Embedding = Vec<f32>;
 ///
 /// Aligned with V4 `EmbeddingModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export)]
 pub struct EmbeddingCallOptions {
     /// List of text values to generate embeddings for.

@@ -402,3 +402,83 @@ async fn video_completed_response_without_videos_errors() {
     );
     assert!(error.to_string().contains("No videos in response"));
 }
+
+const THOUGHT_SIGNATURE: &str = "EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH";
+
+/// user → assistant tool call (with `signature` in providerOptions.google)
+/// → tool result: the second turn that issue #9 saw rejected with HTTP 400.
+fn second_turn(signature: Option<&str>) -> Vec<LanguageModelMessage> {
+    let mut call = json!({
+        "type": "tool-call",
+        "toolCallId": "call-1",
+        "toolName": "weather",
+        "input": {"location": "San Francisco"}
+    });
+    if let Some(signature) = signature {
+        call["providerOptions"] = json!({"google": {"thoughtSignature": signature}});
+    }
+    serde_json::from_value(json!([
+        {"role": "user", "content": [{"type": "text", "text": "weather in SF?"}]},
+        {"role": "assistant", "content": [call]},
+        {"role": "tool", "content": [{
+            "type": "tool-result",
+            "toolCallId": "call-1",
+            "toolName": "weather",
+            "output": {"type": "json", "value": {"temp": 70}}
+        }]}
+    ]))
+    .unwrap()
+}
+
+/// The `parts` of the model turn that `model_id` was sent for `prompt`.
+async fn replayed_model_parts(model_id: &str, prompt: Vec<LanguageModelMessage>) -> Value {
+    let body = json!({"candidates":[{"content":{"parts":[{"text":"Done."}],"role":"model"},"finishReason":"STOP"}]});
+    let mock = MockFetch::new(vec![Canned::json(&body)]);
+    create_google(settings(&mock))
+        .unwrap()
+        .chat(model_id)
+        .do_generate(&CallOptions::new(prompt))
+        .await
+        .unwrap();
+    let sent = mock.seen()[0].json_body();
+    assert_eq!(sent["contents"][1]["role"], "model", "{sent}");
+    sent["contents"][1]["parts"].clone()
+}
+
+/// convert-to-google-messages.ts:404-411: a tool call's
+/// providerOptions.google.thoughtSignature goes back as a sibling of
+/// `functionCall` in the same part, not inside it (issue #9).
+#[tokio::test]
+async fn replays_a_thought_signature_beside_the_function_call() {
+    let parts = replayed_model_parts("gemini-2.5-pro", second_turn(Some(THOUGHT_SIGNATURE))).await;
+    assert_eq!(
+        parts,
+        json!([{
+            "functionCall": {"id": "call-1", "name": "weather", "args": {"location": "San Francisco"}},
+            "thoughtSignature": THOUGHT_SIGNATURE
+        }])
+    );
+}
+
+/// An unsigned call on a model before Gemini 3 is sent without the field.
+#[tokio::test]
+async fn an_unsigned_call_has_no_thought_signature_before_gemini_3() {
+    let parts = replayed_model_parts("gemini-2.5-pro", second_turn(None)).await;
+    assert!(parts[0].get("functionCall").is_some(), "{parts}");
+    assert!(parts[0].get("thoughtSignature").is_none(), "{parts}");
+}
+
+/// convert-to-google-messages.ts:540-552: on Gemini 3 an unsigned call gets
+/// the documented skip sentinel, while a signed call keeps its own signature.
+#[tokio::test]
+async fn gemini_3_fills_only_a_missing_thought_signature() {
+    let parts = replayed_model_parts("gemini-3-pro-preview", second_turn(None)).await;
+    assert_eq!(
+        parts[0]["thoughtSignature"],
+        "skip_thought_signature_validator"
+    );
+
+    let parts =
+        replayed_model_parts("gemini-3-pro-preview", second_turn(Some(THOUGHT_SIGNATURE))).await;
+    assert_eq!(parts[0]["thoughtSignature"], THOUGHT_SIGNATURE);
+}

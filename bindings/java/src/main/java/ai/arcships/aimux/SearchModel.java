@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <pre>{@code
  * try (SearchModel model = SearchModel.tavily("sk-...")) {
- *     String result = model.search("{\"query\":\"What is Rust?\",\"max_results\":5}");
+ *     String result = model.search("{\"query\":\"What is Rust?\",\"maxResults\":5}");
  * }
  * }</pre>
  */

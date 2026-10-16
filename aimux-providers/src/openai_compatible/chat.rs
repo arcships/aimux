@@ -816,10 +816,10 @@ mod tests {
         )
         .await;
         let chat = ChatSettings {
-            error_structure: |data: &Value| ProviderErrorParts {
+            error_structure: Arc::new(|data: &Value| ProviderErrorParts {
                 message: data["detail"].as_str().unwrap_or_default().to_string(),
                 provider_code: data["kind"].as_u64().map(|k| k.to_string()),
-            },
+            }),
             ..ChatSettings::default()
         };
         let error = provider(BaseUrl::Fixed(server.uri()), chat)
@@ -842,7 +842,6 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn a_lazy_base_url_is_evaluated_per_request_and_its_error_fails_the_request() {
-        use crate::openai_compatible::config::UsageDialect;
         use crate::preset::{AuthMode, ParamSpec, PresetDescriptor};
 
         const VAR: &str = "AIMUX_TEST_COMPAT_LAZY_BASE_URL";
@@ -865,7 +864,7 @@ mod tests {
             auth: AuthMode::None,
             base_url_env: Some(VAR.to_string()),
             max_tokens_key: None,
-            convert_usage: UsageDialect::default(),
+            convert_usage: None,
             params: vec![ParamSpec {
                 name: "host".to_string(),
                 env: Vec::new(),

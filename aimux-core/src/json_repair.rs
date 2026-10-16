@@ -5,6 +5,11 @@
 //! scanner states keep their upstream names in the variant docs so upstream
 //! changes can be located.
 //!
+//! Core's own paths do not call it: a final tool-call input is parsed as
+//! given, never repaired (RFC-0042 §3.2). It stays public because `ai`
+//! exports `parsePartialJson`, for callers that show streamed partial JSON
+//! (tool-input deltas, partial objects) before it is complete.
+//!
 //! Positions are counted in Unicode scalar values, where upstream counts
 //! UTF-16 code units. The two only disagree when a character outside the
 //! Basic Multilingual Plane (an emoji, say) directly ends a number or a
