@@ -11,7 +11,7 @@ use crate::types::ProviderMetadata;
 
 /// A tool definition passed to the model in `CallOptions.tools`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct FunctionTool {
     /// Unique tool name.
     pub name: String,
@@ -71,7 +71,7 @@ impl FunctionTool {
 /// schemas are defined by the provider, and some are executed on the provider's
 /// servers (e.g. web search, code execution).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ProviderTool {
     /// The ID of the tool, following the format `<provider-id>.<unique-tool-name>`.
     pub id: String,
@@ -87,7 +87,7 @@ pub struct ProviderTool {
 /// `Array<LanguageModelV4FunctionTool | LanguageModelV4ProviderTool>`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum Tool {
     /// A user-defined function tool.
     Function(FunctionTool),
@@ -103,7 +103,7 @@ impl From<FunctionTool> for Tool {
 
 /// A tool call requested by the model.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolCall {
     /// Provider-assigned call id.
     pub tool_call_id: String,
@@ -138,7 +138,7 @@ pub struct ToolCall {
 
 /// The result of executing a tool call, to be sent back to the model.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolResult {
     /// Must match the corresponding `ToolCall::tool_call_id`.
     pub tool_call_id: String,
@@ -159,10 +159,8 @@ pub struct ToolResult {
 /// This is a mixed tagged/untagged shape (unit variants as bare strings,
 /// `Tool` variant as a tagged object), so serde is implemented by hand.
 #[derive(Debug, Clone, Default, PartialEq, TS)]
-#[ts(
-    export,
-    type = "\"auto\" | \"none\" | \"required\" | { type: \"tool\"; toolName: string }"
-)]
+#[ts(type = "\"auto\" | \"none\" | \"required\" | { type: \"tool\"; toolName: string }")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolChoice {
     /// Model decides whether to call a tool (default).
     #[default]

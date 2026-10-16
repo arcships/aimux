@@ -16,7 +16,7 @@ pub type DecisionState = serde_json::Value;
 
 /// An inline image shared by all questions, placed before the textual state.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionImage {
     pub data: crate::shared::FileBytes,
     pub media_type: String,
@@ -28,7 +28,7 @@ pub struct DecisionImage {
 /// A native choice value, distinct from the canonical option label used as a key.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum DecisionValue {
     Text(String),
     Boolean(bool),
@@ -37,7 +37,7 @@ pub enum DecisionValue {
 /// Native question text or structured guidance, serialized without coercion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum DecisionDescription {
     Text(String),
     Object(#[ts(type = "Record<string, unknown>")] serde_json::Map<String, serde_json::Value>),
@@ -60,7 +60,7 @@ impl From<&str> for DecisionDescription {
 /// Convert into `DecisionDescription` to use it in `DecisionQuestion::Score`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionScoreLevel {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -90,7 +90,7 @@ impl DecisionDescription {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionBooleanCriteria {
     #[serde(rename = "true", default, skip_serializing_if = "Option::is_none")]
     pub true_description: Option<DecisionDescription>,
@@ -99,7 +99,7 @@ pub struct DecisionBooleanCriteria {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionOption {
     pub label: String,
     /// Native value; when omitted, the label is sent as the value.
@@ -111,7 +111,7 @@ pub struct DecisionOption {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum DecisionQuestion {
     Boolean {
         id: String,
@@ -151,7 +151,7 @@ impl DecisionQuestion {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionCallOptions {
     #[serde(skip)]
     #[ts(skip)]
@@ -267,7 +267,7 @@ impl DecisionCallOptions {
 /// calibration guarantee. Raw provider metadata retains calibration details.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum DecisionProbabilitySource {
     Native,
     LogitScoring,
@@ -291,7 +291,7 @@ impl std::str::FromStr for DecisionProbabilitySource {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum DecisionAnswer {
     /// The provider declined this question; other answers remain usable.
     Refusal,
@@ -317,7 +317,7 @@ pub enum DecisionAnswer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionCapabilities {
     #[serde(default)]
     pub supports_images: bool,
@@ -341,7 +341,7 @@ pub struct DecisionCapabilities {
 /// Declared decimal rounding precision. None means only floating-point noise
 /// is tolerated, not decimal rounding. Providers must report their actual rule.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionRounding {
     pub probability_decimals: Option<u8>,
     pub score_decimals: Option<u8>,
@@ -361,14 +361,14 @@ impl DecisionRounding {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionResponse {
     pub headers: Option<SharedHeaders>,
     pub body: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionResult {
     #[serde(default)]
     pub rounding: DecisionRounding,
