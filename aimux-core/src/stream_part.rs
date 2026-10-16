@@ -18,7 +18,8 @@ use crate::types::{FinishReason, ProviderMetadata, Usage, Warning};
 /// [`StreamPart`] (raw argument text); `stream_text` emits [`TextStreamPart`]
 /// (parsed and validated [`ToolCall`]).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, concrete(C = ToolCall))]
+#[ts(concrete(C = ToolCall))]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum StreamPart<C = RawToolCall> {
     // ── P0: text ──
     /// Start of a text segment.

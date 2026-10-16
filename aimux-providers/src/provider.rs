@@ -144,7 +144,7 @@ pub struct ProviderOptions {
 /// - `options` overrides individual fields of the resolved entry
 ///   (replaces the retired `with_base_url` etc.).
 /// - Unknown names return [`AiMuxError::NoSuchProvider`] naming the requested
-///   provider; built-in names are enumerated by the generated `ProviderName`
+///   provider; built-in names are available through [`provider_names`]
 ///   (overlay-registered names are not).
 ///
 /// # Errors
@@ -417,7 +417,7 @@ pub fn provider_handle(
         let entry = registry().iter().find(|e| e.name == name).ok_or_else(|| {
             AiMuxError::NoSuchProvider {
                 // Display derives from the id alone; valid names are discoverable
-                // via the generated `ProviderName` — listing 250 names here would
+                // via `provider_names()` — listing 250 names here would
                 // ride along in every error, across the C ABI.
                 provider_id: name.to_string(),
             }
@@ -594,6 +594,11 @@ pub fn provider_from_env(
     provider(name, None, model_id, options)
 }
 
+/// Names of all built-in registry providers.
+pub fn provider_names() -> impl Iterator<Item = &'static str> {
+    registry().iter().map(|entry| entry.name.as_str())
+}
+
 /// The environment variable [`provider`] / [`provider_handle`] read `name`'s
 /// API key from when no key is passed: the runtime overlay's `api_key`
 /// `env:` reference or its `env_var`, `{NAME}_API_KEY` for the local
@@ -639,7 +644,6 @@ pub fn provider_registry_entry(name: &str) -> Option<OpenAICompatProfile> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider_name::ProviderName;
 
     #[test]
     fn provider_api_key_env_names_the_variable_the_provider_reads() {
@@ -708,23 +712,12 @@ mod tests {
     }
 
     #[test]
-    fn provider_accepts_typed_and_string_names() {
-        // Both spellings work: typed ProviderName (recommended) and string.
-        let typed = match provider(
-            ProviderName::Groq,
-            Some("sk-test".into()),
-            "llama-3.3-70b",
-            None,
-        ) {
-            Ok(m) => m,
-            Err(e) => panic!("typed name should construct: {e}"),
-        };
-        assert_eq!(typed.model_id(), "llama-3.3-70b");
-        let string = match provider("groq", Some("sk-test".into()), "llama-3.3-70b", None) {
+    fn provider_accepts_string_names() {
+        let model = match provider("groq", Some("sk-test".into()), "llama-3.3-70b", None) {
             Ok(m) => m,
             Err(e) => panic!("string name should construct: {e}"),
         };
-        assert_eq!(string.model_id(), "llama-3.3-70b");
+        assert_eq!(model.model_id(), "llama-3.3-70b");
     }
 
     #[test]
@@ -855,38 +848,10 @@ mod tests {
     }
 
     #[test]
-    fn provider_name_roundtrip() {
-        assert_eq!(ProviderName::Groq.as_str(), "groq");
-        assert_eq!(
-            "deepseek".parse::<ProviderName>().ok(),
-            Some(ProviderName::Deepseek)
-        );
-        assert_eq!("nope".parse::<ProviderName>().ok(), None);
-        assert!(ProviderName::all_names().contains("groq"));
-        assert_eq!(ProviderName::ALL.len(), 251);
-    }
-
-    #[test]
-    fn provider_name_matches_registry_json() {
-        // Anti-drift: every registry name must exist as a ProviderName variant
-        // and round-trip; counts must match (guards against editing the JSON
-        // without regenerating provider_name.rs).
-        let registry: serde_json::Value =
-            serde_json::from_str(include_str!("provider_registry.json"))
-                .expect("registry JSON is valid");
-        let names: Vec<&str> = registry
-            .as_array()
-            .expect("registry is an array")
-            .iter()
-            .map(|e| e["name"].as_str().expect("name is a string"))
-            .collect();
-        assert_eq!(ProviderName::ALL.len(), names.len());
-        for name in &names {
-            let variant = name
-                .parse::<ProviderName>()
-                .unwrap_or_else(|_| panic!("registry name {name} missing from ProviderName"));
-            assert_eq!(variant.as_str(), *name);
-        }
+    fn provider_names_list_the_registry() {
+        let names: Vec<_> = provider_names().collect();
+        assert_eq!(names.len(), registry().len());
+        assert!(names.contains(&"groq"));
     }
 
     // ── RFC-0020: external provider overlay ────────────────────────────────

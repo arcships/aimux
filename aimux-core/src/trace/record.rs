@@ -13,7 +13,7 @@ use super::verdict::Verdict;
 
 /// Token usage snapshot (7 flat fields + raw passthrough).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct UsageSnapshot {
     pub input_total: Option<u64>,
     pub input_no_cache: Option<u64>,
@@ -30,7 +30,7 @@ pub struct UsageSnapshot {
 
 /// Request-side cache hints (best-effort, e.g. Anthropic `cache_control`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RequestCacheHints {
     /// Whether any message requested `cache_control` (write) this call.
     pub requested_write: bool,
@@ -38,7 +38,7 @@ pub struct RequestCacheHints {
 
 /// One probed call. Plaintext never persists — fingerprints only.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TraceRecord {
     pub provider: String,
     pub model: String,

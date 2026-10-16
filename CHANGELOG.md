@@ -133,6 +133,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `InvalidResponseData` (previously it started a call with an empty name).
   `DeltaToolCall.index` is now `Option<usize>`.
 
+### Fixed
+
+- Gated aimux-core's ts-rs exports behind `ts-export`, so plain `cargo test`
+  no longer rewrites tracked TypeScript types. `scripts/gen_ts_types.py`
+  enables exports and rejects ungated export attributes with `--check`.
+
 ### Removed
 
 - The cross-language contract fixtures are retired (#249):

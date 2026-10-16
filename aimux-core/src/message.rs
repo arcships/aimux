@@ -12,7 +12,7 @@ use crate::content::ContentPart;
 /// Who sent the message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, TS)]
 #[serde(rename_all = "lowercase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum Role {
     System,
     /// The default role (a bare `Role::default()` yields `User`, matching the
@@ -26,7 +26,7 @@ pub enum Role {
 /// Message body: either a simple string or multi-part content.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum MessageContent {
     Text(String),
     Parts(Vec<ContentPart>),
@@ -34,7 +34,7 @@ pub enum MessageContent {
 
 /// A single user-facing chat message.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ModelMessage {
     pub role: Role,
     pub content: MessageContent,
@@ -79,7 +79,7 @@ impl ModelMessage {
 /// Can be a simple string (converted to a single user message) or a list of messages.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ModelPrompt {
     /// A plain string prompt — equivalent to a single user message.
     Text(String),
