@@ -148,6 +148,7 @@ fn provider_tool(id: &str, name: &str) -> Tool {
         id: id.parse().unwrap(),
         name: name.to_string(),
         args: serde_json::Map::new(),
+        supports_deferred_results: None,
     })
 }
 
@@ -1032,6 +1033,7 @@ async fn finding_2_anthropic_advisor_result_keeps_text_and_stop_reason() {
                 .as_object()
                 .cloned()
                 .unwrap(),
+            supports_deferred_results: None,
         })]))
         .await
         .expect("do_generate should succeed");

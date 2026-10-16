@@ -16,13 +16,17 @@
 
 use crate::language_model_message::LanguageModelPrompt;
 use crate::options::CallOptions;
+use futures::Stream;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::future::Future;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex, RwLock};
+use std::task::{Context, Poll};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use ts_rs::TS;
 
@@ -179,7 +183,7 @@ pub struct InputRecord {
     /// empty when this version cannot read it ([`Self::unreadable_prompt`]).
     #[serde(deserialize_with = "deserialize_prompt")]
     pub prompt: LanguageModelPrompt,
-    /// 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
+    /// 序列化的 CallOptions(abort_signal 已 serde skip),
     /// 加上所在操作的 `max_retries` / `timeout` / `session_id`
     /// (`OperationSettings`);headers/provider_options 已递归脱敏。
     pub options: serde_json::Value,
@@ -544,7 +548,10 @@ pub trait Recorder: Send + Sync {
 static RECORDER: RwLock<Option<Arc<dyn Recorder>>> = RwLock::new(None);
 
 /// 一次调用的录制上下文(RFC R7 快照绑定):层 A 入口构造一次,
-/// 随 `CallOptions`/`HttpRequest` 传到底层,禁止各录制点重读全局 recorder。
+/// 作为 operation 作用域的值([`RecordingContext::scope`])传到底层,
+/// `HttpRequest` 构造时取一次([`RecordingContext::current`]);
+/// 禁止各录制点重读全局 recorder。它和 `OperationSettings` 一样不是模型调用
+/// 选项(docs/aisdk-architecture-alignment.md §3.1, §3.5)。
 #[derive(Clone)]
 pub struct RecordingContext {
     pub call_id: String,
@@ -616,6 +623,50 @@ impl std::fmt::Debug for RecordingContext {
             .field("call_id", &self.call_id)
             .field("recorder", &"..")
             .finish()
+    }
+}
+
+tokio::task_local! {
+    static CURRENT_CONTEXT: Option<RecordingContext>;
+}
+
+impl RecordingContext {
+    /// The recording context of the operation (or composite child step) the
+    /// current task runs in. `None` outside a scope, inside a `None` scope, or
+    /// when recording is off.
+    #[must_use]
+    pub fn current() -> Option<Self> {
+        CURRENT_CONTEXT.try_with(Clone::clone).ok().flatten()
+    }
+
+    /// Run `future` with `context` as the current recording context. A `None`
+    /// context hides an outer one. A task spawned inside the future does not
+    /// inherit it.
+    pub async fn scope<F: Future>(context: Option<Self>, future: F) -> F::Output {
+        CURRENT_CONTEXT.scope(context, future).await
+    }
+
+    /// `stream` with `context` current during every poll, so a request made
+    /// while the stream is consumed, from any task, is recorded under it.
+    pub fn scope_stream<S: Stream + Unpin>(context: Option<Self>, stream: S) -> ScopedStream<S> {
+        ScopedStream { context, stream }
+    }
+}
+
+/// A stream polled inside a recording scope ([`RecordingContext::scope_stream`]).
+pub struct ScopedStream<S> {
+    context: Option<RecordingContext>,
+    stream: S,
+}
+
+impl<S: Stream + Unpin> Stream for ScopedStream<S> {
+    type Item = S::Item;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<S::Item>> {
+        let this = self.get_mut();
+        CURRENT_CONTEXT.sync_scope(this.context.clone(), || {
+            Pin::new(&mut this.stream).poll_next(cx)
+        })
     }
 }
 
@@ -1991,6 +2042,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_recording_context_is_current_only_inside_its_scope_and_stream() {
+        use futures::StreamExt as _;
+
+        let recorder: Arc<dyn Recorder> =
+            Arc::new(CaptureRecorder(std::sync::Mutex::new(Vec::new())));
+        let context = RecordingContext::new("call-1", recorder);
+        let call_id = || RecordingContext::current().map(|context| context.call_id);
+        assert_eq!(call_id(), None);
+
+        let (inside, hidden) = RecordingContext::scope(Some(context.clone()), async {
+            let hidden = RecordingContext::scope(None, async { call_id() }).await;
+            (call_id(), hidden)
+        })
+        .await;
+        assert_eq!(inside.as_deref(), Some("call-1"));
+        assert_eq!(hidden, None);
+
+        let child = context.child("router[0]:p/m");
+        let seen: Vec<_> = RecordingContext::scope_stream(
+            Some(child),
+            futures::stream::iter(0..2)
+                .map(|_| RecordingContext::current().and_then(|context| context.step())),
+        )
+        .collect()
+        .await;
+        assert_eq!(seen, vec![Some("router[0]:p/m".to_owned()); 2]);
+        assert_eq!(call_id(), None);
+    }
+
+    #[tokio::test]
     async fn provider_error_outcome_keeps_usage_from_trailing_finish() {
         use futures::StreamExt as _;
 
@@ -2098,15 +2179,10 @@ mod tests {
     #[test]
     fn input_record_serializes_options_without_internal_fields() {
         let mut opts = sample_options();
-        opts.recording_context = Some(RecordingContext::new(
-            "call-test",
-            Arc::new(RingRecorder::new()),
-        ));
         opts.abort_signal = Some(crate::AbortSignal::new());
         let rec = InputRecord::from_call_options(&opts);
         let v = &rec.options;
         assert!(v.get("call_id").is_none());
-        assert!(v.get("recording_context").is_none());
         assert!(v.get("abort_signal").is_none());
     }
 

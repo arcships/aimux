@@ -136,12 +136,6 @@ pub struct CallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
-    /// RFC-0023 recording context (R7 快照绑定;internal;never serialized)。
-    /// 层 A 入口构造一次,provider 复制到 `HttpRequest`。None = 不录制。
-    #[serde(skip)]
-    #[ts(skip)]
-    pub recording_context: Option<crate::recording::RecordingContext>,
-
     /// Emit raw provider stream chunks as `StreamPart::Raw` (the AI SDK's
     /// `includeRawChunks`). When `Some(true)`, a streaming model yields one
     /// `Raw` part per SSE event, carrying the event's parsed JSON, before the
@@ -182,7 +176,6 @@ impl CallOptions {
             provider_options: None,
             reasoning: None,
             abort_signal: None,
-            recording_context: None,
             include_raw_chunks: None,
         }
     }

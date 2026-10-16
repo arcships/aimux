@@ -192,11 +192,9 @@ impl DecisionModel for DecisionLanguageModel {
         call.abort_signal.clone_from(&options.abort_signal);
         call.headers.clone_from(&options.headers);
         call.provider_options.clone_from(&options.provider_options);
-        // The language-model exchanges belong to the decision's recording
-        // (the call id is the recording context's).
-        call.recording_context
-            .clone_from(&options.recording_context);
 
+        // The language-model exchanges run in the decision's recording scope,
+        // so they carry its call id.
         let result = self.model.do_generate(&call).await?;
         check_abort()?;
         if result.finish_reason.unified != FinishReasonUnified::Stop {

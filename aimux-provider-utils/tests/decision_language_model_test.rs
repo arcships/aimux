@@ -24,6 +24,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, UserPart};
 use aimux_core::operation::OperationSettings;
 use aimux_core::options::{CallOptions, ResponseFormat, TimeoutConfiguration};
+use aimux_core::recording::{RecordingContext, RingRecorder};
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::shared::ResponseInfo;
 use aimux_core::types::{
@@ -36,6 +37,8 @@ struct MockLanguageModel {
     calls: Mutex<Vec<CallOptions>>,
     /// The operation settings each call ran in.
     operations: Mutex<Vec<Option<OperationSettings>>>,
+    /// The call id of the recording scope each call ran in.
+    recordings: Mutex<Vec<Option<String>>>,
     /// Aborted from inside `do_generate`, as the TS test does.
     abort_during_call: Option<AbortSignal>,
 }
@@ -54,6 +57,10 @@ impl LanguageModel for MockLanguageModel {
             .lock()
             .unwrap()
             .push(OperationSettings::current());
+        self.recordings
+            .lock()
+            .unwrap()
+            .push(RecordingContext::current().map(|context| context.call_id));
         if let Some(signal) = &self.abort_during_call {
             signal.abort();
         }
@@ -144,6 +151,7 @@ fn setup_with(
         result: Mutex::new(result),
         calls: Mutex::default(),
         operations: Mutex::default(),
+        recordings: Mutex::default(),
         abort_during_call,
     });
     let model = DecisionLanguageModel::new(language_model.clone(), Some("test.decision".into()));
@@ -579,6 +587,7 @@ fn provider_defaults_to_the_language_provider_with_a_decision_suffix() {
         result: Mutex::new(Ok(generate_result(DEFAULT_TEXT))),
         calls: Mutex::default(),
         operations: Mutex::default(),
+        recordings: Mutex::default(),
         abort_during_call: None,
     });
     let model = DecisionLanguageModel::new(language_model.clone(), None);
@@ -647,24 +656,18 @@ async fn errors_use_the_upstream_decision_messages() {
 }
 
 /// The language-model exchange belongs to the decision's recording: the
-/// call carries the recording scope `decide` set (aimux; upstream has no
+/// call runs in the recording scope `decide` sets (aimux; upstream has no
 /// recorder).
 #[tokio::test]
 async fn the_language_model_call_joins_the_decision_recording() {
     let (model, mock) = setup(DEFAULT_TEXT);
-    let mut opts = options(base_questions());
-    opts.recording_context = Some(aimux_core::recording::RecordingContext::new(
-        "call-decision",
-        Arc::new(aimux_core::recording::RingRecorder::new()),
-    ));
-    model.do_decide(&opts).await.unwrap();
-    let calls = mock.calls.lock().unwrap();
+    let context = RecordingContext::new("call-decision", Arc::new(RingRecorder::new()));
+    RecordingContext::scope(Some(context), model.do_decide(&options(base_questions())))
+        .await
+        .unwrap();
     assert_eq!(
-        calls[0]
-            .recording_context
-            .as_ref()
-            .map(|context| context.call_id.as_str()),
-        Some("call-decision")
+        *mock.recordings.lock().unwrap(),
+        [Some("call-decision".to_owned())]
     );
 }
 

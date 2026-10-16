@@ -435,6 +435,7 @@ async fn provider_tool_args_are_checked_before_the_request() {
             id: id.parse().unwrap(),
             name: "web".into(),
             args: args.as_object().cloned().unwrap(),
+            supports_deferred_results: None,
         })
     };
     let fetch = MockFetch::new(vec![]);
@@ -484,6 +485,7 @@ async fn generate_provider_defined_tool_with_input_schema() {
             id: "anthropic.bash_20241022".parse().unwrap(),
             name: "bash".into(),
             args: serde_json::Map::new(),
+            supports_deferred_results: None,
         },
     )]);
     call.tool_choice = Some(aimux_core::options::LanguageModelV4ToolChoice::Auto);
