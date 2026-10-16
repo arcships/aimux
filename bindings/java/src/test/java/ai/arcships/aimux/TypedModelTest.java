@@ -208,6 +208,28 @@ class TypedModelTest {
     }
 
     @Test
+    void providerToolDeferredResultsRoundTrip() throws Exception {
+        ObjectMapper mapper = Types.AimuxJson.MAPPER;
+        for (Boolean supported : new Boolean[] {null, true, false}) {
+            Types.ProviderTool original = Types.ProviderTool.builder()
+                .id("anthropic.code_execution_20250522").name("code_execution")
+                .supportsDeferredResults(supported).build();
+            String json = mapper.writeValueAsString(original);
+            assertThat(mapper.readTree(json).has("supportsDeferredResults")).isEqualTo(supported != null);
+            Types.ProviderTool decoded = mapper.readValue(json, Types.ProviderTool.class);
+            assertThat(decoded.getSupportsDeferredResults()).isEqualTo(supported);
+            assertThat(decoded).isEqualTo(original);
+
+            Types.Tool.Provider tool = Types.Tool.Provider.from(original);
+            String toolJson = mapper.writeValueAsString(tool);
+            assertThat(mapper.readTree(toolJson).has("supportsDeferredResults")).isEqualTo(supported != null);
+            Types.Tool.Provider decodedTool = (Types.Tool.Provider) mapper.readValue(toolJson, Types.Tool.class);
+            assertThat(decodedTool.getSupportsDeferredResults()).isEqualTo(supported);
+            assertThat(decodedTool).isEqualTo(tool);
+        }
+    }
+
+    @Test
     void topLevelToolCallProviderMetadataRoundTrips() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode metadata = mapper.createObjectNode();

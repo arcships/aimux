@@ -33,7 +33,7 @@ use crate::options::ResponseFormat;
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum Output {
     /// The text itself (`Output.text()`).
     Text {},

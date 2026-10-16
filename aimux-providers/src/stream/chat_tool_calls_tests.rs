@@ -134,8 +134,7 @@ struct Harness {
 }
 
 impl Harness {
-    /// The tracker defaults: no `type` check; the default generator's ids
-    /// are `tool-call`, `tool-call-1`, …
+    /// No `type` check; every generated id is `tool-call`.
     fn new() -> Self {
         Self::with_ids(|| "tool-call".to_string())
     }
@@ -1281,6 +1280,37 @@ mod metadata {
 
 mod generate_id {
     use super::*;
+
+    #[test]
+    fn generates_a_16_character_id_when_wire_id_is_missing() {
+        let mut h = Harness::with_ids(aimux_provider_utils::generate_id);
+
+        h.delta(delta(
+            Some(0),
+            None,
+            Some("function"),
+            Some("fn"),
+            Some("{}"),
+        ))
+        .unwrap();
+        h.flush();
+
+        let calls = h.tool_calls();
+        assert_eq!(calls.len(), 1);
+        let id = &calls[0].0;
+        assert_eq!(id.len(), 16);
+        assert_ne!(id, "tool-call");
+        assert!(id.bytes().all(|byte| byte.is_ascii_alphanumeric()));
+        assert_eq!(
+            h.parts,
+            vec![
+                input_start(id, "fn"),
+                input_delta(id, "{}"),
+                input_end(id),
+                tool_call(id, "fn", "{}"),
+            ]
+        );
+    }
 
     #[test]
     fn keeps_the_wire_id_when_present() {

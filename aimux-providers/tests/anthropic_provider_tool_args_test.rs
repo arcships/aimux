@@ -40,6 +40,7 @@ fn tool(id: &str, args: Value) -> Tool {
         id: id.parse().unwrap(),
         name: "tool".to_string(),
         args: args.as_object().cloned().unwrap(),
+        supports_deferred_results: None,
     })
 }
 

@@ -495,7 +495,7 @@ public class Model implements Closeable {
      * @param aggregator the aggregator model (must be non-null and open).
      * @param configJson optional MoaConfig: {@code {"providerName", "modelId",
      *                   "aggregatorInstructions", "stripReferenceTools",
-     *                   "failMode": "best_effort"|"fail_fast"}}.
+     *                   "failMode": "best-effort"|"fail-fast"}}.
      * @return a new MoaModel.
      */
     public static Model moa(java.util.List<Model> references, Model aggregator, String configJson) {

@@ -814,6 +814,7 @@ async fn responses_web_search_stream() {
         id: "openai.web_search".parse().unwrap(),
         name: "webSearch".into(),
         args: serde_json::Map::new(),
+        supports_deferred_results: None,
     })]);
     let result = provider(&fetch)
         .responses("test-model")
@@ -863,6 +864,16 @@ async fn provider_tools_member_makes_the_provider_tools() {
         (&factory.id, &factory.name, &factory.args)
     );
     assert_eq!(openai.tools.apply_patch().id, "openai.apply_patch");
+    // Of the OpenAI tools only programmatic tool calling supports deferred
+    // results (src/tool/programmatic-tool-calling.ts:55).
+    assert_eq!(
+        openai
+            .tools
+            .programmatic_tool_calling()
+            .supports_deferred_results,
+        Some(true)
+    );
+    assert_eq!(openai.tools.apply_patch().supports_deferred_results, None);
     let mut call = options();
     call.tools = Some(vec![Tool::Provider(tool)]);
     openai

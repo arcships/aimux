@@ -24,7 +24,7 @@ use crate::types::ReasoningEffort;
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ResponseFormat {
     /// Plain text (default).
     Text,
@@ -59,7 +59,7 @@ pub enum ResponseFormat {
 /// without a timeout.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TimeoutConfiguration {
     /// Overall timeout for the entire call (including retries and, for
     /// streaming, the whole stream), in milliseconds.
@@ -99,7 +99,7 @@ pub struct TimeoutConfiguration {
 /// (`language-model-v4-call-options.ts:8-138` has none of them).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct CallOptions {
     /// The standardized prompt (message array). Required.
     pub prompt: LanguageModelPrompt,
@@ -184,12 +184,6 @@ pub struct CallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
-    /// RFC-0023 recording context (R7 快照绑定;internal;never serialized)。
-    /// 层 A 入口构造一次,provider 复制到 `HttpRequest`。None = 不录制。
-    #[serde(skip)]
-    #[ts(skip)]
-    pub recording_context: Option<crate::recording::RecordingContext>,
-
     /// Emit raw provider stream chunks as `StreamPart::Raw` (the AI SDK's
     /// `includeRawChunks`). When `Some(true)`, a streaming model yields one
     /// `Raw` part per SSE event, carrying the event's parsed JSON, before the
@@ -232,7 +226,6 @@ impl CallOptions {
             provider_options: None,
             reasoning: None,
             abort_signal: None,
-            recording_context: None,
             include_raw_chunks: None,
         }
     }
