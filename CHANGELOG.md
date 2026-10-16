@@ -1038,7 +1038,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **All bindings**
 
-- Typed provider tools in Java, Kotlin, Swift, Python and Flutter carry
+- Typed provider tools in Java, Kotlin, Swift, Python, Flutter and Go carry
   optional `supportsDeferredResults`, omitted from JSON when absent
   (provider-utils@5.0.55 src/types/tool.ts:316-326).
 
