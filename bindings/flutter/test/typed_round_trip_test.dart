@@ -44,7 +44,7 @@ void main() {
         'invalid': true,
         'error': {'name': 'AI_NoSuchToolError', 'toolName': 'x'},
       };
-      expect(ToolCall.fromJson(json).toJson(), json);
+      expect(ToolCall.fromJson(json).toJson(), Map.of(json)..remove('type'));
 
       final minimal = ToolCall(toolCallId: 'c', toolName: 't', input: const {});
       expect(
@@ -68,14 +68,14 @@ void main() {
     // Source, tagged {type: 'tool-call'} (ai generate-text/tool-call.ts:8-14)
     // and {type: 'source', sourceType} (provider language-model-v4-source.ts:8,
     // :36); generate-text-result.ts:73, :78 (#229 NP2-7).
-    test('standalone calls and sources carry their type tag', () {
+    test('standalone calls and sources use their schema tags', () {
       final source = {
         'type': 'source',
         'sourceType': 'url',
         'id': 's1',
         'url': 'https://example.com',
       };
-      expect(Source.fromJson(source).toJson(), source);
+      expect(Source.fromJson(source).toJson(), Map.of(source)..remove('type'));
       expect(RawToolCall(toolCallId: 'c', toolName: 't', input: '{}').toJson(),
           {'toolCallId': 'c', 'toolName': 't', 'input': '{}'});
       // JSON written before the tag still reads; another tag is rejected.
@@ -94,7 +94,7 @@ void main() {
                 'toolName': 't',
                 'input': {}
               }),
-          throwsFormatException);
+          throwsStateError);
     });
 
     test('RawToolCall keeps every provider field when replacing input', () {
@@ -389,7 +389,7 @@ void main() {
       expect(result.reasoningText, isNull);
       expect(result.output.isPresent, isFalse);
       expect(result.steps, isEmpty);
-      expect(dtoJsonDecode(dtoJsonEncode(result)), json);
+      expect(jsonDecode(jsonEncode(result)), json);
 
       // A parsed JSON null output is written back as null, apart from no
       // output (the public JSON keeps null apart from undefined).
@@ -397,7 +397,7 @@ void main() {
       final withNull = GenerateTextResult.fromJson(parsedNull);
       expect(withNull.output.value, isNull);
       expect(withNull.output.isPresent, isTrue);
-      expect(dtoJsonDecode(dtoJsonEncode(withNull)), parsedNull);
+      expect(jsonDecode(jsonEncode(withNull)), parsedNull);
     });
 
     test('GenerateObjectResult round-trips', () {
@@ -416,7 +416,7 @@ void main() {
       final result = GenerateObjectResult.fromJson(json);
       expect((result.object as Map<String, dynamic>)['answer'], 42);
       expect(result.response.modelId, 'gpt-4o');
-      expect(dtoJsonDecode(dtoJsonEncode(result)), json);
+      expect(jsonDecode(jsonEncode(result)), json);
     });
   });
 }

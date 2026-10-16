@@ -11,9 +11,10 @@ final class ToolCallRepair {
       ToolRepairContextResult.fromJson(
           await client.call('toolRepair.context', params: params));
   Future<ToolCall> apply(ToolRepairApplyRequest params) async =>
-      ToolCall.fromJson(await client.call('toolRepair.apply', params: params));
+      ToolCall.fromJson((await client.call('toolRepair.apply', params: params))
+          as Map<String, dynamic>);
   Future<GenerateTextResult> applyResult(
           ToolRepairApplyResultRequest params) async =>
-      GenerateTextResult.fromJson(
-          await client.call('toolRepair.applyResult', params: params));
+      GenerateTextResult.fromJson((await client.call('toolRepair.applyResult',
+          params: params)) as Map<String, dynamic>);
 }

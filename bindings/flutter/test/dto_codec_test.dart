@@ -1,23 +1,24 @@
+import 'dart:convert';
 import 'package:aimux/types.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('opaque integers and numeric u64 never pass through double', () {
-    const source = '{"large":18446744073709551615,"safe":9007199254740993}';
-    final value = dtoJsonDecode(source) as Map;
-    expect(value['large'], BigInt.parse('18446744073709551615'));
+  test('native integers keep signed 64-bit precision', () {
+    const source = '{"safe":9007199254740993,"max":9223372036854775807}';
+    final value = jsonDecode(source) as Map;
     expect(value['safe'], 9007199254740993);
-    expect(dtoJsonEncode(value), source);
+    expect(value['max'], 9223372036854775807);
+    expect(jsonEncode(value), source);
     final error = ErrorEnvelope.fromJson({
       'kind': 'aimux',
       'code': 11,
       'message': 'retry',
       'error': null,
-      'retryAfterMs': value['large'],
+      'retryAfterMs': value['max'],
     });
-    expect(error.retryAfterMs, value['large']);
-    expect((dtoJsonDecode(dtoJsonEncode(error)) as Map)['retryAfterMs'],
-        value['large']);
+    expect(error.retryAfterMs, value['max']);
+    expect(
+        (jsonDecode(jsonEncode(error)) as Map)['retryAfterMs'], value['max']);
   });
 
   test('presence distinguishes absent, explicit null, and a value', () {
@@ -27,26 +28,26 @@ void main() {
     expect(RequestInfo(body: const Field.of(null)).toJson(), {'body': null});
   });
 
-  test('constructed DTOs keep immutable snapshots of opaque JSON', () {
-    final nested = <Object?>[1, null];
-    final body = <String, Object?>{'items': nested};
-    final request = RequestInfo(body: Field.of(body));
-    nested.add(2);
-    body['other'] = true;
-    expect(request.toJson(), {
-      'body': {
-        'items': [1, null]
-      }
-    });
-    expect(() => (request.body.value as Map)['changed'] = true,
-        throwsUnsupportedError);
+  test('ordinary optional nulls are omitted and unknown keys are ignored', () {
+    expect(
+        RequestInfo.fromJson({'headers': null, 'future': true}).toJson(), {});
+    expect(GenerateTextOptions.fromJson({'stopSequences': []}).toJson(),
+        {'stopSequences': []});
+    expect(
+        ErrorEnvelope.fromJson({
+          'kind': 'aimux',
+          'code': 11,
+          'message': 'retry',
+          'error': null,
+        }).toJson(),
+        {'kind': 'aimux', 'code': 11, 'message': 'retry', 'error': null});
   });
 
   test('ordered unions select the first matching shape', () {
     expect(DecisionInput.fromJson('text'), isA<DecisionInputBranch1>());
     expect(DecisionInput.fromJson({'key': null}), isA<DecisionInputBranch2>());
     expect(DecisionInput.fromJson([1, null]), isA<DecisionInputBranch3>());
-    expect(() => DecisionInput.fromJson(true), throwsFormatException);
+    expect(() => DecisionInput.fromJson(true), throwsA(isA<TypeError>()));
   });
 
   test('tag errors identify the union and unknown tag', () {

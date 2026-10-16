@@ -22,7 +22,7 @@ impl Emitter for Dart {
             let name = &type_name(&named.name);
             docs(&mut out, named.doc.as_deref(), "");
             match &named.kind {
-                Kind::Struct { fields, .. } => class(&mut out, name, fields, None),
+                Kind::Struct { fields, .. } => class(&mut out, name, fields, None, model),
                 Kind::StringEnum(values) => {
                     writeln!(out, "enum {name} {{").unwrap();
                     for (i, value) in values.iter().enumerate() {
@@ -35,7 +35,7 @@ impl Emitter for Dart {
                         )
                         .unwrap();
                     }
-                    writeln!(out, "  const {name}(this.wireValue);\n  final String wireValue;\n  static {name} fromJson(Object? value) {{\n    for (final item in values) {{\n      if (item.wireValue == value) return item;\n    }}\n    throw FormatException('Invalid {name}: $value');\n  }}\n  String toJson() => wireValue;\n}}\n").unwrap();
+                    writeln!(out, "\n  const {name}(this.wireValue);\n  final String wireValue;\n  static {name} fromJson(Object? value) =>\n      values.firstWhere((item) => item.wireValue == value);\n  String toJson() => wireValue;\n}}\n").unwrap();
                 }
                 Kind::Tagged { tag, variants } => {
                     writeln!(
@@ -58,53 +58,96 @@ impl Emitter for Dart {
                             }
                         }
                     }
-                    writeln!(out, "  factory {name}.fromJson(Object? value) {{\n    final json = _object(value, {});\n    switch (json[{}]) {{", quote(name), quote(tag)).unwrap();
+                    expression(
+                        &mut out,
+                        "  factory ",
+                        &format!("{name}.fromJson(Map<String, dynamic> json)"),
+                        " {",
+                        2,
+                    );
+                    writeln!(out, "    switch (json[{}]) {{", quote(tag)).unwrap();
                     let mut tags = std::collections::BTreeSet::new();
                     for v in variants {
                         if !tags.insert(&v.tag_value) {
                             continue;
                         }
                         writeln!(out, "      case {}:", quote(&v.tag_value)).unwrap();
-                        for candidate in variants.iter().filter(|c| c.tag_value == v.tag_value) {
-                            writeln!(out, "        try {{ return {name}{}.fromJson(json); }} on FormatException {{ /* Try the next shape. */ }}", candidate.name).unwrap();
+                        let candidates: Vec<_> = variants
+                            .iter()
+                            .filter(|c| c.tag_value == v.tag_value)
+                            .collect();
+                        for (i, candidate) in candidates.iter().enumerate() {
+                            let call = format!("{name}{}.fromJson(json)", candidate.name);
+                            if i + 1 == candidates.len() {
+                                writeln!(out, "        return {call};").unwrap();
+                            } else {
+                                writeln!(out, "        try {{\n          return {call};\n        }} catch (_) {{\n          // Try the next shape with this tag.\n        }}").unwrap();
+                            }
                         }
-                        writeln!(
-                            out,
-                            "        throw FormatException('Invalid {name} tag: ${{json[{}]}}');",
-                            quote(tag)
-                        )
-                        .unwrap();
                     }
-                    writeln!(out, "      default: throw FormatException('Unknown {name} tag: ${{json[{}]}}');\n    }}\n  }}\n  Map<String, dynamic> toJson();\n}}\n", quote(tag)).unwrap();
+                    out.push_str("      default:\n");
+                    expression(
+                        &mut out,
+                        "        throw ",
+                        &format!(
+                            "FormatException('Unknown {name} tag: ${{json[{}]}}')",
+                            quote(tag)
+                        ),
+                        ";",
+                        8,
+                    );
+                    out.push_str("    }\n  }\n\n  Map<String, dynamic> toJson();\n}\n\n");
                     for v in variants {
                         class(
                             &mut out,
                             &format!("{name}{}", v.name),
                             &v.fields,
                             Some((name, tag, &v.tag_value)),
+                            model,
                         );
                     }
                 }
                 Kind::Untagged(branches) => {
                     writeln!(out, "sealed class {name} {{\n  const {name}();\n  factory {name}.fromJson(Object? value) {{").unwrap();
                     for (i, _) in branches.iter().enumerate() {
-                        writeln!(out, "    try {{ return {name}Branch{}.fromJson(value); }} on FormatException {{ /* Ordered fallback. */ }}", i + 1).unwrap();
+                        let call = format!("{name}Branch{}.fromJson(value)", i + 1);
+                        if i + 1 == branches.len() {
+                            writeln!(out, "    return {call};").unwrap();
+                        } else {
+                            writeln!(out, "    try {{\n      return {call};\n    }} catch (_) {{\n      // Try the next branch in declaration order.\n    }}").unwrap();
+                        }
                     }
-                    writeln!(out, "    throw FormatException('No {name} branch accepts: $value');\n  }}\n  Object? toJson();\n}}\n").unwrap();
+                    out.push_str("  }\n\n  Object? toJson();\n}\n\n");
                     for (i, ty) in branches.iter().enumerate() {
-                        wrapper(&mut out, &format!("{name}Branch{}", i + 1), ty, Some(name));
+                        wrapper(
+                            &mut out,
+                            &format!("{name}Branch{}", i + 1),
+                            ty,
+                            Some(name),
+                            model,
+                        );
                     }
                 }
-                Kind::Alias(ty) => wrapper(&mut out, name, ty, None),
+                Kind::Alias(ty) => wrapper(&mut out, name, ty, None, model),
             }
-            writeln!(
-                table,
-                "    case {}: return {name}.fromJson(value).toJson();",
-                quote(&named.name)
-            )
-            .unwrap();
+            let input = if matches!(named.kind, Kind::Struct { .. } | Kind::Tagged { .. }) {
+                "value as Map<String, dynamic>"
+            } else {
+                "value"
+            };
+            writeln!(table, "    case {}:", quote(&named.name)).unwrap();
+            expression(
+                &mut table,
+                "      return ",
+                &format!("{name}.fromJson({input}).toJson()"),
+                ";",
+                6,
+            );
         }
-        table.push_str("    default: throw FormatException('Unknown DTO type: $type');\n  }\n}\n");
+        table.push_str(
+            "    default:\n      throw FormatException('Unknown DTO type: $type');\n  }\n}\n",
+        );
+        out.pop(); // Finish with one newline, without a trailing blank line.
         vec![
             ("bindings/flutter/lib/src/generated/types.dart".into(), out),
             (
@@ -116,7 +159,15 @@ impl Emitter for Dart {
 }
 
 fn quote(value: &str) -> String {
-    serde_json::to_string(value).unwrap().replace('$', "\\$")
+    format!(
+        "'{}'",
+        value
+            .replace('\\', "\\\\")
+            .replace('\'', "\\'")
+            .replace('$', "\\$")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+    )
 }
 
 fn type_name(name: &str) -> String {
@@ -155,84 +206,16 @@ fn ident(value: &str) -> String {
     if result.is_empty() {
         result.push_str("value");
     }
-    if [
-        "abstract",
-        "as",
-        "assert",
-        "async",
-        "await",
-        "base",
-        "break",
-        "case",
-        "catch",
-        "class",
-        "const",
-        "continue",
-        "covariant",
-        "default",
-        "deferred",
-        "do",
-        "dynamic",
-        "else",
-        "enum",
-        "export",
-        "extends",
-        "extension",
-        "external",
-        "factory",
-        "false",
-        "final",
-        "finally",
-        "for",
-        "Function",
-        "get",
-        "hide",
-        "if",
-        "implements",
-        "import",
-        "in",
-        "interface",
-        "is",
-        "late",
-        "library",
-        "mixin",
-        "new",
-        "null",
-        "of",
-        "on",
-        "operator",
-        "part",
-        "required",
-        "rethrow",
-        "return",
-        "sealed",
-        "set",
-        "show",
-        "static",
-        "super",
-        "switch",
-        "sync",
-        "this",
-        "throw",
-        "true",
-        "try",
-        "typedef",
-        "var",
-        "void",
-        "when",
-        "while",
-        "with",
-        "yield",
-        "values",
-        "index",
-        "toJson",
-        "fromJson",
-        "hashCode",
-        "runtimeType",
-        "noSuchMethod",
-        "toString",
-    ]
-    .contains(&result.as_str())
+    if concat!(
+        "abstract as assert async await base break case catch class const continue covariant ",
+        "default deferred do dynamic else enum export extends extension external factory ",
+        "false final finally for Function get hide if implements import in interface is late ",
+        "library mixin new null of on operator part required rethrow return sealed set show ",
+        "static super switch sync this throw true try typedef var void when while with yield ",
+        "values index toJson fromJson hashCode runtimeType noSuchMethod toString",
+    )
+    .split_whitespace()
+    .any(|keyword| keyword == result)
     {
         result.push('_');
     }
@@ -240,10 +223,9 @@ fn ident(value: &str) -> String {
 }
 
 fn docs(out: &mut String, doc: Option<&str>, indent: &str) {
-    if let Some(doc) = doc {
-        for line in doc.lines() {
-            writeln!(out, "{indent}/// {line}").unwrap();
-        }
+    for line in doc.unwrap_or_default().lines() {
+        out.push_str(format!("{indent}/// {line}").trim_end());
+        out.push('\n');
     }
 }
 
@@ -251,23 +233,11 @@ fn presence(ty: &Ty) -> bool {
     matches!(ty, Ty::Codec(Codec::Presence, _))
 }
 
-fn nullable(ty: &Ty) -> bool {
-    match ty {
-        Ty::Json | Ty::Nullable(_) => true,
-        Ty::Codec(_, inner) => nullable(inner),
-        _ => false,
-    }
-}
-
 fn dtype(ty: &Ty) -> String {
     match ty {
         Ty::Ref(name) => type_name(name),
         Ty::String => "String".into(),
         Ty::Bool => "bool".into(),
-        Ty::Int {
-            unsigned: true,
-            bits: 64,
-        } => "BigInt".into(),
         Ty::Int { .. } => "int".into(),
         Ty::Float => "double".into(),
         Ty::Array(inner) => format!("List<{}>", dtype(inner)),
@@ -281,11 +251,7 @@ fn dtype(ty: &Ty) -> String {
 }
 
 fn optional(ty: String) -> String {
-    if ty.ends_with('?') {
-        ty
-    } else {
-        format!("{ty}?")
-    }
+    format!("{}?", ty.trim_end_matches('?'))
 }
 
 fn field_type(f: &Field) -> String {
@@ -296,37 +262,77 @@ fn field_type(f: &Field) -> String {
     }
 }
 
-fn decode(ty: &Ty, v: &str) -> String {
+fn decode(ty: &Ty, v: &str, model: &Model) -> String {
     match ty {
-        Ty::Ref(name) => format!("{}.fromJson({v})", type_name(name)),
-        Ty::String => format!("_string({v})"),
-        Ty::Bool => format!("_boolean({v})"),
-        Ty::Int { unsigned, bits } => format!(
-            "_integer({v}, {unsigned}, {bits}){}",
-            if *unsigned && *bits == 64 {
-                ""
+        Ty::Ref(name) => {
+            let named = model.types.iter().find(|t| t.name == *name).unwrap();
+            let input = if matches!(named.kind, Kind::Struct { .. } | Kind::Tagged { .. }) {
+                format!("{v} as Map<String, dynamic>")
             } else {
-                ".toInt()"
-            }
+                v.into()
+            };
+            format!("{}.fromJson({input})", type_name(name))
+        }
+        Ty::String | Ty::Bool | Ty::Int { .. } => format!("{v} as {}", dtype(ty)),
+        Ty::Float => format!("({v} as num).toDouble()"),
+        Ty::Array(inner) if plain_scalar(inner) => {
+            format!("({v} as List).cast<{}>()", dtype(inner))
+        }
+        Ty::Array(inner) => format!(
+            "({v} as List).map((item) => {}).toList()",
+            decode(inner, "item", model)
         ),
-        Ty::Float => format!("_number({v})"),
-        Ty::Array(inner) => format!("_array({v}, (item) => {})", decode(inner, "item")),
-        Ty::Map(inner) => format!("_map({v}, (item) => {})", decode(inner, "item")),
-        Ty::Json => format!("_json({v})"),
-        Ty::Nullable(inner) => format!("({v} == null ? null : {})", decode(inner, v)),
-        Ty::Codec(Codec::U64String, _) => format!("_u64String({v})"),
-        Ty::Codec(Codec::Timestamp, _) => format!("_timestamp({v})"),
-        Ty::Codec(Codec::Presence, inner) => format!("Field.of({})", decode(inner, v)),
-        Ty::Codec(_, inner) => decode(inner, v),
+        Ty::Map(inner) if plain_scalar(inner) => {
+            format!("Map<String, {}>.from({v} as Map)", dtype(inner))
+        }
+        Ty::Map(inner) => format!(
+            "({v} as Map).map((key, item) => MapEntry(key as String, {}))",
+            decode(inner, "item", model)
+        ),
+        Ty::Json => v.into(),
+        Ty::Nullable(inner) => match **inner {
+            Ty::String | Ty::Bool | Ty::Int { .. } => format!("{v} as {}", dtype(ty)),
+            Ty::Json => v.into(),
+            _ => format!("{v} == null ? null : {}", decode(inner, v, model)),
+        },
+        Ty::Codec(Codec::U64String, _) => format!("_u64String({v} as String)"),
+        Ty::Codec(Codec::Timestamp, _) => format!("_timestamp({v} as String)"),
+        Ty::Codec(Codec::Presence, inner) => format!("Field.of({})", decode(inner, v, model)),
+        Ty::Codec(_, inner) => decode(inner, v, model),
+    }
+}
+
+fn decode_optional(ty: &Ty, v: &str, model: &Model) -> String {
+    if matches!(ty, Ty::Nullable(_) | Ty::Json) {
+        return decode(ty, v, model);
+    }
+    match ty {
+        Ty::String | Ty::Bool | Ty::Int { .. } => format!("{v} as {}", optional(dtype(ty))),
+        _ => format!("{v} == null ? null : {}", decode(ty, v, model)),
+    }
+}
+
+fn plain_scalar(ty: &Ty) -> bool {
+    matches!(ty, Ty::String | Ty::Bool | Ty::Int { .. } | Ty::Json)
+        || matches!(ty, Ty::Nullable(inner) if plain_scalar(inner))
+}
+
+fn needs_encoding(ty: &Ty) -> bool {
+    match ty {
+        Ty::Ref(_) | Ty::Codec(Codec::Presence, _) => true,
+        Ty::Codec(Codec::Timestamp | Codec::U64String, _) => false,
+        Ty::Array(inner) | Ty::Map(inner) | Ty::Nullable(inner) | Ty::Codec(_, inner) => {
+            needs_encoding(inner)
+        }
+        _ => false,
     }
 }
 
 fn encode(ty: &Ty, v: &str) -> String {
+    if !needs_encoding(ty) {
+        return v.trim_end_matches('!').into();
+    }
     match ty {
-        Ty::Int {
-            unsigned: true,
-            bits: 64,
-        } => format!("_wireInteger({v})"),
         Ty::Ref(_) => format!("{v}.toJson()"),
         Ty::Array(inner) => format!("{v}.map((item) => {}).toList()", encode(inner, "item")),
         Ty::Map(inner) => format!(
@@ -334,9 +340,7 @@ fn encode(ty: &Ty, v: &str) -> String {
             encode(inner, "item")
         ),
         Ty::Nullable(inner) if v.ends_with('!') => encode(inner, v),
-        Ty::Nullable(inner) if !matches!(**inner, Ty::Json) => {
-            format!("({v} == null ? null : {})", encode(inner, &format!("{v}!")))
-        }
+        Ty::Nullable(inner) => encode(inner, v).replacen(&format!("{v}."), &format!("{v}?."), 1),
         Ty::Codec(Codec::Presence, inner) => encode(inner, &format!("{v}.value")),
         Ty::Codec(Codec::Timestamp | Codec::U64String, _) => v.into(),
         Ty::Codec(_, inner) => encode(inner, v),
@@ -344,89 +348,171 @@ fn encode(ty: &Ty, v: &str) -> String {
     }
 }
 
-fn freeze(ty: &Ty, value: &str) -> String {
-    match ty {
-        Ty::Int { .. } => decode(ty, value),
-        Ty::Float => format!("_number({value})"),
-        Ty::Json => format!("_json({value})"),
-        Ty::Array(inner) => format!(
-            "List<{}>.unmodifiable({value}.map((item) => {}))",
-            dtype(inner),
-            freeze(inner, "item")
-        ),
-        Ty::Map(inner) => format!(
-            "Map<String, {}>.unmodifiable({value}.map((key, item) => MapEntry(key, {})))",
-            dtype(inner),
-            freeze(inner, "item")
-        ),
-        Ty::Nullable(inner) => format!("({value} == null ? null : {})", freeze(inner, value)),
-        Ty::Codec(Codec::Presence, inner) => format!(
-            "({value}.isPresent ? Field.of({}) : const Field.absent())",
-            freeze(inner, &format!("{value}.value"))
-        ),
-        Ty::Codec(Codec::Timestamp | Codec::U64String, _) => decode(ty, value),
-        Ty::Codec(_, inner) => freeze(inner, value),
-        _ => value.into(),
+// Layout the small set of Dart expressions we emit, using the package's 80-column style.
+fn expression(out: &mut String, prefix: &str, value: &str, suffix: &str, indent: usize) {
+    if prefix.len() + value.len() + suffix.len() <= 80 {
+        writeln!(out, "{prefix}{value}{suffix}").unwrap();
+        return;
     }
-}
-
-fn freeze_present(ty: &Ty, value: &str) -> String {
-    match ty {
-        Ty::Nullable(inner) | Ty::Codec(Codec::Base64 | Codec::Tagged, inner) => {
-            freeze_present(inner, value)
+    let continuation = " ".repeat(indent + 4);
+    if (prefix.trim_start().starts_with("factory ") && prefix.trim_end().ends_with("=>"))
+        || (prefix.trim_end().ends_with("=>")
+            && continuation.len() + value.len() + suffix.len() <= 80)
+        || (prefix.trim_end().ends_with(':')
+            && continuation.len() + value.len() + suffix.len() <= 80)
+    {
+        writeln!(out, "{}", prefix.trim_end()).unwrap();
+        expression(out, &continuation, value, suffix, indent + 4);
+        return;
+    }
+    if let Some(i) = top_level(value, " ? ") {
+        let (condition, rest) = value.split_at(i);
+        let rest = &rest[3..];
+        let colon = top_level(rest, " : ").unwrap();
+        let (yes, no) = (&rest[..colon], &rest[colon + 3..]);
+        writeln!(out, "{prefix}{condition}").unwrap();
+        expression(out, &format!("{continuation}? "), yes, "", indent + 4);
+        expression(out, &format!("{continuation}: "), no, suffix, indent + 4);
+    } else if let Some(i) = top_level(value, ").") {
+        let rest = &value[i + 1..];
+        if top_level(rest, ").").is_none()
+            && rest.starts_with(".map(")
+            && continuation.len() + rest.len() + suffix.len() > 80
+        {
+            let receiver = format!("{prefix}{}", &value[..i + 1]);
+            expression(out, &receiver, rest, suffix, indent);
+        } else {
+            expression(out, prefix, &value[..i + 1], "", indent + 4);
+            let mut rest = rest;
+            while let Some(j) = top_level(rest, ").") {
+                expression(out, &continuation, &rest[..j + 1], "", indent + 4);
+                rest = &rest[j + 1..];
+            }
+            expression(out, &continuation, rest, suffix, indent + 4);
         }
-        _ => freeze(ty, value),
+    } else if let Some(i) = top_level(value, " => ") {
+        writeln!(out, "{prefix}{} =>", &value[..i]).unwrap();
+        expression(out, &continuation, &value[i + 4..], suffix, indent + 4);
+    } else if let Some(i) = top_level(value, "(") {
+        let close = value.rfind(')').unwrap();
+        let args = &value[i + 1..close];
+        let tail = format!("{}{suffix}", &value[close..]);
+        let head = format!("{prefix}{}", &value[..i + 1]);
+        if let Some(dot) = top_level(value, ".map(")
+            && dot > 0
+            && continuation.len() + value[dot..].len() + suffix.len() <= 80
+        {
+            writeln!(out, "{prefix}{}", &value[..dot]).unwrap();
+            expression(out, &continuation, &value[dot..], suffix, indent + 4);
+        } else if continuation.len() + args.len() + tail.len() <= 80 {
+            writeln!(out, "{head}").unwrap();
+            expression(out, &continuation, args, &tail, indent + 4);
+        } else if let Some(arrow) = top_level(args, " => ") {
+            let body = &args[arrow + 4..];
+            let prefix = format!("{head}{} => ", &args[..arrow]);
+            expression(out, &prefix, body, &tail, indent);
+        } else if top_level(args, ", ").is_none()
+            && (top_level(args, ").").is_some() || top_level(args, " ? ").is_some())
+        {
+            expression(out, &head, args, &tail, indent);
+        } else if let Some(comma) = top_level(args, ", ")
+            && head.len() + comma < 80
+            && top_level(&args[comma + 2..], ", ").is_none()
+            && continuation.len() + args[comma + 2..].len() + tail.len() <= 80
+        {
+            writeln!(out, "{head}{},", &args[..comma]).unwrap();
+            expression(out, &continuation, &args[comma + 2..], &tail, indent + 4);
+        } else {
+            writeln!(out, "{head}").unwrap();
+            let mut rest = args;
+            while let Some(comma) = top_level(rest, ", ") {
+                expression(out, &continuation, &rest[..comma], ",", indent + 4);
+                rest = &rest[comma + 2..];
+            }
+            expression(out, &continuation, rest, &tail, indent + 4);
+        }
+    } else {
+        writeln!(out, "{prefix}{value}{suffix}").unwrap();
     }
 }
 
-fn class(out: &mut String, name: &str, fields: &[Field], parent: Option<(&str, &str, &str)>) {
-    let track_nulls = fields.iter().any(|f| !f.required && !presence(&f.ty));
-    writeln!(
-        out,
-        "final class {name}{} {{",
-        parent.map_or(String::new(), |(base, _, _)| format!(" extends {base}"))
-    )
-    .unwrap();
-    for f in fields {
+fn top_level(value: &str, token: &str) -> Option<usize> {
+    let mut depth = 0;
+    let mut quote = None;
+    let mut escaped = false;
+    for (i, c) in value.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if c == '\\' {
+            escaped = true;
+            continue;
+        }
+        if let Some(q) = quote {
+            if c == q {
+                quote = None;
+            }
+            continue;
+        }
+        if c == '\'' || c == '"' {
+            quote = Some(c);
+            continue;
+        }
+        if c == ')' || c == ']' || (c == '>' && !value[..i].ends_with('=')) {
+            depth -= 1;
+        }
+        if depth == 0 && value[i..].starts_with(token) {
+            return Some(i);
+        }
+        if c == '(' || c == '[' || c == '<' {
+            depth += 1;
+        }
+    }
+    None
+}
+
+fn class(
+    out: &mut String,
+    name: &str,
+    fields: &[Field],
+    parent: Option<(&str, &str, &str)>,
+    model: &Model,
+) {
+    let base = parent.map_or(String::new(), |(base, _, _)| format!(" extends {base}"));
+    let declaration = format!("final class {name}{base} {{");
+    if declaration.len() > 80 {
+        writeln!(out, "final class {name}\n   {base} {{").unwrap();
+    } else {
+        writeln!(out, "{declaration}").unwrap();
+    }
+    for (i, f) in fields.iter().enumerate() {
+        if i > 0 && f.doc.is_some() {
+            out.push('\n');
+        }
         docs(out, f.doc.as_deref(), "  ");
         writeln!(out, "  final {} {};", field_type(f), ident(&f.json_name)).unwrap();
     }
-    if track_nulls {
-        out.push_str("  final Set<String> _present;\n");
+    if fields.is_empty() {
+        writeln!(out, "  const {name}();").unwrap();
+    } else {
+        writeln!(out, "  const {name}({{").unwrap();
+        for f in fields {
+            writeln!(
+                out,
+                "    {}this.{}{},",
+                if f.required { "required " } else { "" },
+                ident(&f.json_name),
+                if !f.required && presence(&f.ty) {
+                    " = const Field.absent()"
+                } else {
+                    ""
+                }
+            )
+            .unwrap();
+        }
+        out.push_str("  });\n");
     }
-    out.push_str("  final Map<String, dynamic> _extra;\n");
-    writeln!(out, "  {name}({{").unwrap();
-    for f in fields {
-        writeln!(
-            out,
-            "    {}{} {}{},",
-            if f.required { "required " } else { "" },
-            field_type(f),
-            ident(&f.json_name),
-            if !f.required && presence(&f.ty) {
-                " = const Field.absent()"
-            } else {
-                ""
-            }
-        )
-        .unwrap();
-    }
-    out.push_str(
-        "    Set<String> present = const {},\n    Map<String, dynamic> extra = const {},\n  }) :\n",
-    );
-    for f in fields {
-        let field = ident(&f.json_name);
-        let value = if !f.required && !presence(&f.ty) {
-            format!("{field} == null ? null : {}", freeze_present(&f.ty, &field))
-        } else {
-            freeze(&f.ty, &field)
-        };
-        writeln!(out, "       {field} = {value},").unwrap();
-    }
-    if track_nulls {
-        out.push_str("       _present = Set.unmodifiable(present),\n");
-    }
-    out.push_str("       _extra = _map(extra, _json);\n");
     if let Some((_, tag, value)) = parent {
         writeln!(
             out,
@@ -436,227 +522,131 @@ fn class(out: &mut String, name: &str, fields: &[Field], parent: Option<(&str, &
         )
         .unwrap();
     }
+    expression(
+        out,
+        "  factory ",
+        &format!("{name}.fromJson(Map<String, dynamic> json)"),
+        " {",
+        2,
+    );
     writeln!(
         out,
-        "  factory {name}.fromJson(Object? value) {{\n    final json = _object(value, {});",
-        quote(name)
+        "    return {name}{}",
+        if fields.is_empty() { "();" } else { "(" }
     )
     .unwrap();
-    if let Some((_, tag, value)) = parent {
-        writeln!(
-            out,
-            "    if (json[{}] != {}) throw const FormatException({});",
-            quote(tag),
-            quote(value),
-            quote(&format!("Invalid {name} tag"))
-        )
-        .unwrap();
-    }
-    writeln!(out, "    return {name}(").unwrap();
+    // Fields are direct casts; only Presence records whether a key exists.
     for f in fields {
-        let key = quote(&f.json_name);
-        let v = if f.required {
-            format!("_required(json, {key})")
-        } else {
-            format!("json[{key}]")
-        };
+        let v = format!("json[{}]", quote(&f.json_name));
         let expr = if !f.required && presence(&f.ty) {
             format!(
-                "json.containsKey({key}) ? {} : const Field.absent()",
-                decode(&f.ty, &v)
+                "json.containsKey({}) ? {} : const Field.absent()",
+                quote(&f.json_name),
+                decode(&f.ty, &v, model)
             )
-        } else if !f.required && !nullable(&f.ty) {
-            format!("{v} == null ? null : {}", decode(&f.ty, &v))
+        } else if !f.required {
+            decode_optional(&f.ty, &v, model)
         } else {
-            decode(&f.ty, &v)
+            decode(&f.ty, &v, model)
         };
-        writeln!(out, "      {}: {expr},", ident(&f.json_name)).unwrap();
+        expression(
+            out,
+            &format!("      {}: ", ident(&f.json_name)),
+            &expr,
+            ",",
+            6,
+        );
     }
-    let mut keys: Vec<String> = fields.iter().map(|f| quote(&f.json_name)).collect();
-    if let Some((_, tag, _)) = parent {
-        keys.push(quote(tag));
+    if !fields.is_empty() {
+        out.push_str("    );\n");
     }
-    writeln!(out, "      present: Set.unmodifiable(json.keys),\n      extra: Map.unmodifiable(Map.of(json)..removeWhere((key, _) => const <String>{{{}}}.contains(key))),\n    );\n  }}", keys.join(", ")).unwrap();
-    out.push_str("  Map<String, dynamic> toJson() => {\n    ..._extra,\n");
+    out.push_str("  }\n\n");
+    if fields.is_empty() && parent.is_none() {
+        out.push_str("  Map<String, dynamic> toJson() => {};\n}\n\n");
+        return;
+    }
+    out.push_str("  Map<String, dynamic> toJson() => {\n");
     if let Some((_, tag, value)) = parent {
-        writeln!(out, "    {}: {},", quote(tag), quote(value)).unwrap();
+        writeln!(out, "        {}: {},", quote(tag), quote(value)).unwrap();
     }
     for f in fields {
         let field = ident(&f.json_name);
         let key = quote(&f.json_name);
-        if !f.required && presence(&f.ty) {
-            writeln!(
-                out,
-                "    if ({field}.isPresent) {key}: {},",
-                encode(&f.ty, &field)
-            )
-            .unwrap();
+        let (condition, value) = if !f.required && presence(&f.ty) {
+            (format!("if ({field}.isPresent) "), encode(&f.ty, &field))
         } else if !f.required {
-            let expr = encode(&f.ty, &format!("{field}!"));
-            writeln!(out, "    if ({field} != null || _present.contains({key})) {key}: {field} == null ? null : {expr},").unwrap();
+            (
+                format!("if ({field} != null) "),
+                encode(&f.ty, &format!("{field}!")),
+            )
         } else {
-            writeln!(out, "    {key}: {},", encode(&f.ty, &field)).unwrap();
+            (String::new(), encode(&f.ty, &field))
+        };
+        if !condition.is_empty() && 8 + condition.len() + key.len() + 2 + value.len() + 1 > 80 {
+            writeln!(out, "        {}", condition.trim_end()).unwrap();
+            expression(out, &format!("          {key}: "), &value, ",", 10);
+        } else {
+            expression(out, &format!("        {condition}{key}: "), &value, ",", 8);
         }
     }
-    out.push_str("  };\n}\n\n");
+    out.push_str("      };\n}\n\n");
 }
 
-fn wrapper(out: &mut String, name: &str, ty: &Ty, parent: Option<&str>) {
-    writeln!(out, "final class {name}{} {{\n  final {} value;\n  {name}({} value) : value = {};\n  factory {name}.fromJson(Object? value) => {name}({});\n  Object? toJson() => {};\n}}\n", parent.map_or(String::new(), |p| format!(" extends {p}")), dtype(ty), dtype(ty), freeze(ty, "value"), decode(ty, "value"), encode(ty, "value")).unwrap();
+fn wrapper(out: &mut String, name: &str, ty: &Ty, parent: Option<&str>, model: &Model) {
+    writeln!(
+        out,
+        "final class {name}{} {{\n  final {} value;\n  const {name}(this.value);",
+        parent.map_or(String::new(), |p| format!(" extends {p}")),
+        dtype(ty)
+    )
+    .unwrap();
+    let prefix = format!("  factory {name}.fromJson(Object? value) => ");
+    expression(
+        out,
+        &prefix,
+        &format!("{name}({})", decode(ty, "value", model)),
+        ";",
+        2,
+    );
+    expression(out, "  Object? toJson() => ", &encode(ty, "value"), ";", 2);
+    out.push_str("}\n\n");
 }
 
 const RUNTIME: &str = r#"// Generated by aimux-codegen. Do not edit.
-// ignore_for_file: unnecessary_non_null_assertion, unused_element
-import 'dart:convert' as convert;
 
 /// An optional field whose explicit null differs from an absent key.
 final class Field<T> {
   final bool isPresent;
   final T? _value;
-  const Field.absent() : isPresent = false, _value = null;
-  const Field.of(T value) : isPresent = true, _value = value;
+  const Field.absent()
+      : isPresent = false,
+        _value = null;
+  const Field.of(T value)
+      : isPresent = true,
+        _value = value;
   T get value {
     if (!isPresent) throw StateError('Absent field');
     return _value as T;
   }
 }
 
-Map<String, dynamic> _object(Object? value, String type) {
-  if (value is! Map || value.keys.any((key) => key is! String)) throw FormatException('Expected $type object');
-  return Map<String, dynamic>.from(value);
-}
-Object? _required(Map<String, dynamic> json, String key) {
-  if (!json.containsKey(key)) throw FormatException('Missing field: $key');
-  return json[key];
-}
-String _string(Object? value) {
-  if (value is! String) throw const FormatException('Expected string');
-  return value;
-}
-bool _boolean(Object? value) {
-  if (value is! bool) throw const FormatException('Expected boolean');
-  return value;
-}
-double _number(Object? value) {
-  if (value is! num || !value.isFinite) throw const FormatException('Expected finite number');
-  return value.toDouble();
-}
-BigInt _integer(Object? value, bool unsigned, int bits) {
-  final BigInt number;
-  if (value is int) { number = BigInt.from(value); }
-  else if (value is BigInt) { number = value; }
-  else { throw const FormatException('Expected integer'); }
-  final min = unsigned ? BigInt.zero : -(BigInt.one << (bits - 1));
-  final max = (BigInt.one << (unsigned ? bits : bits - 1)) - BigInt.one;
-  if (number < min || number > max) throw FormatException('Integer exceeds ${unsigned ? "u" : "i"}$bits');
-  return number;
-}
-Object _wireInteger(BigInt value) => value.bitLength <= 53 ? value.toInt() : value;
-List<T> _array<T>(Object? value, T Function(Object?) decode) {
-  if (value is! List) throw const FormatException('Expected array');
-  return List.unmodifiable(value.map(decode));
-}
-Map<String, T> _map<T>(Object? value, T Function(Object?) decode) =>
-    Map.unmodifiable(_object(value, 'map').map((key, item) => MapEntry(key, decode(item))));
-Object? _json(Object? value) {
-  if (value is List) return _array(value, _json);
-  if (value is Map) return _map(value, _json);
-  if (value == null || value is String || value is bool || value is BigInt || value is num && value.isFinite) return value;
-  throw const FormatException('Invalid JSON value');
-}
-String _u64String(Object? value) {
-  final text = _string(value);
-  if (!RegExp(r'^[0-9]+$').hasMatch(text)) throw const FormatException('Expected u64 string');
-  _integer(BigInt.parse(text), true, 64);
+String _u64String(String text) {
+  final digits = text.replaceFirst(RegExp(r'^0+'), '');
+  if (!RegExp(r'^[0-9]+$').hasMatch(text) ||
+      digits.length > 20 ||
+      digits.length == 20 && digits.compareTo('18446744073709551615') > 0) {
+    throw const FormatException('Expected u64 string');
+  }
   return text;
 }
-String _timestamp(Object? value) {
-  final text = _string(value);
-  if (!RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$').hasMatch(text) || DateTime.tryParse(text) == null) {
+
+String _timestamp(String text) {
+  if (!RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$')
+          .hasMatch(text) ||
+      DateTime.tryParse(text) == null) {
     throw const FormatException('Expected RFC 3339 timestamp');
   }
   return text;
-}
-
-/// JSON with integers beyond Dart's signed range represented by BigInt.
-Object? dtoJsonDecode(String source) => _JsonReader(source).read();
-
-/// Writes BigInt as a JSON number, including inside opaque JSON values.
-String dtoJsonEncode(Object? value) {
-  if (value is BigInt) return value.toString();
-  if (value is List) return '[${value.map(dtoJsonEncode).join(',')}]';
-  if (value is Map) return '{${value.entries.map((e) => '${convert.jsonEncode(e.key as String)}:${dtoJsonEncode(e.value)}').join(',')}}';
-  if (value == null || value is String || value is num || value is bool) return convert.jsonEncode(value);
-  return dtoJsonEncode((value as dynamic).toJson());
-}
-
-final class _JsonReader {
-  final String source;
-  int offset = 0;
-  _JsonReader(this.source);
-  void space() { while (offset < source.length && const [32, 9, 10, 13].contains(source.codeUnitAt(offset))) { offset++; } }
-  Never fail() => throw FormatException('Invalid JSON', source, offset);
-  bool take(String text) {
-    space();
-    if (!source.startsWith(text, offset)) return false;
-    offset += text.length;
-    return true;
-  }
-  Object? read() {
-    final value = next();
-    space();
-    if (offset != source.length) fail();
-    return value;
-  }
-  String string() {
-    space();
-    if (offset >= source.length || source[offset] != '"') fail();
-    final start = offset++;
-    while (offset < source.length) {
-      final char = source[offset++];
-      if (char == '"') return convert.jsonDecode(source.substring(start, offset)) as String;
-      if (char == '\\') offset++;
-    }
-    fail();
-  }
-  Object? next() {
-    space();
-    if (offset >= source.length) fail();
-    if (source[offset] == '"') return string();
-    if (take('{')) {
-      final result = <String, dynamic>{};
-      if (take('}')) return result;
-      do {
-        final key = string();
-        if (!take(':')) fail();
-        result[key] = next();
-      } while (take(','));
-      if (!take('}')) fail();
-      return result;
-    }
-    if (take('[')) {
-      final result = <Object?>[];
-      if (take(']')) return result;
-      do { result.add(next()); } while (take(','));
-      if (!take(']')) fail();
-      return result;
-    }
-    if (take('true')) return true;
-    if (take('false')) return false;
-    if (take('null')) return null;
-    final match = RegExp(r'-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?').matchAsPrefix(source, offset);
-    if (match == null) fail();
-    final token = match.group(0)!;
-    offset = match.end;
-    if (!token.contains(RegExp(r'[.eE]'))) {
-      final integer = int.tryParse(token);
-      if (integer != null && BigInt.from(integer) == BigInt.parse(token)) return integer;
-      return BigInt.parse(token);
-    }
-    final value = double.parse(token);
-    if (!value.isFinite) fail();
-    return value;
-  }
 }
 
 "#;
@@ -664,44 +654,32 @@ final class _JsonReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
-    fn dart_preserves_presence_and_ordered_dispatch() {
-        let model = Model {
-            types: vec![
-                crate::model::NamedType {
-                    name: "Example".into(),
-                    doc: Some("A DTO.".into()),
-                    kind: Kind::Struct {
-                        fields: vec![Field {
-                            json_name: "dynamic".into(),
-                            ty: Ty::Codec(Codec::Presence, Box::new(Ty::Json)),
-                            required: false,
-                            doc: None,
-                        }],
-                        closed: false,
-                    },
-                },
-                crate::model::NamedType {
-                    name: "Choice".into(),
-                    doc: None,
-                    kind: Kind::Untagged(vec![Ty::String, Ty::Bool]),
-                },
-            ],
-        };
+    fn ordinary_optionals_and_presence_have_separate_wire_rules() {
+        let model = crate::model::normalize(&json!({"input": {}, "output": {
+            "Example": {"type": "object", "properties": {
+                "count": {"type": "integer", "format": "uint64"},
+                "body": {"x-aimux-codec": "presence"}
+            }},
+            "Choice": {"anyOf": [{"type": "string"}, {"type": "boolean"}],
+                       "x-aimux-codec": "ordered-untagged"}
+        }}))
+        .unwrap();
         let files = Dart.files(&model);
         let text = &files[0].1;
-        assert!(text.contains("/// A DTO."));
-        assert!(text.contains("Field<Object?> dynamic_"));
-        assert!(text.contains("json.containsKey(\"dynamic\") ? Field.of"));
-        assert!(text.contains("if (dynamic_.isPresent)"));
+        assert!(text.contains("final int? count;"));
+        assert!(text.contains("const Example({"));
+        assert!(text.contains("count: json['count'] as int?"));
+        assert!(text.contains("if (count != null) 'count': count"));
+        assert!(text.contains("json.containsKey('body')"));
+        assert!(text.contains("if (body.isPresent) 'body': body.value"));
+        for removed in ["_present", "_extra", "BigInt", "_JsonReader", "_integer"] {
+            assert!(!text.contains(removed), "{removed}");
+        }
         assert!(
             text.find("return ChoiceBranch1").unwrap() < text.find("return ChoiceBranch2").unwrap()
-        );
-        assert!(
-            files[1]
-                .1
-                .contains("case \"Example\": return Example.fromJson(value).toJson()")
         );
     }
 }

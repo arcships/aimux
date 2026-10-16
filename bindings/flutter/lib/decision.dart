@@ -10,10 +10,10 @@ final class DecisionModel {
     DecideOptions options, {
     OpsHandle? abort,
   }) async =>
-      DecideResult.fromJson(await client.call('decision.decide',
+      DecideResult.fromJson((await client.call('decision.decide',
           handle: handle,
           params: DecisionDecideRequest(options: options),
-          abort: abort));
+          abort: abort)) as Map<String, dynamic>);
 
   Future<Map<String, dynamic>> capabilities() async =>
       await client.call('decision.capabilities', handle: handle)

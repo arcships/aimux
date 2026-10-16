@@ -3,326 +3,741 @@ import 'types.dart';
 
 Object? roundTripDto(String type, Object? value) {
   switch (type) {
-    case "AiMuxError": return AiMuxError.fromJson(value).toJson();
-    case "AiMuxErrorInput": return AiMuxErrorInput.fromJson(value).toJson();
-    case "ApiCallError": return ApiCallError.fromJson(value).toJson();
-    case "ApiCallErrorInput": return ApiCallErrorInput.fromJson(value).toJson();
-    case "AspectRatio": return AspectRatio.fromJson(value).toJson();
-    case "AssistantContent": return AssistantContent.fromJson(value).toJson();
-    case "AssistantContentPart": return AssistantContentPart.fromJson(value).toJson();
-    case "AssistantPart": return AssistantPart.fromJson(value).toJson();
-    case "AudioData": return AudioData.fromJson(value).toJson();
-    case "AudioInput": return AudioInput.fromJson(value).toJson();
-    case "AuditMode": return AuditMode.fromJson(value).toJson();
-    case "AuditMode2": return AuditMode2.fromJson(value).toJson();
-    case "BackendConfig": return BackendConfig.fromJson(value).toJson();
-    case "BreakKind": return BreakKind.fromJson(value).toJson();
-    case "CancelResult": return CancelResult.fromJson(value).toJson();
-    case "CapturePolicy": return CapturePolicy.fromJson(value).toJson();
-    case "Catalogue": return Catalogue.fromJson(value).toJson();
-    case "CatalogueFetchRequest": return CatalogueFetchRequest.fromJson(value).toJson();
-    case "CatalogueSource": return CatalogueSource.fromJson(value).toJson();
-    case "ChatCompletion": return ChatCompletion.fromJson(value).toJson();
-    case "ChatCompletionChoice": return ChatCompletionChoice.fromJson(value).toJson();
-    case "ChatCompletionChunk": return ChatCompletionChunk.fromJson(value).toJson();
-    case "ChatCompletionChunkChoice": return ChatCompletionChunkChoice.fromJson(value).toJson();
-    case "ChatCompletionChunkFunction": return ChatCompletionChunkFunction.fromJson(value).toJson();
-    case "ChatCompletionChunkToolCall": return ChatCompletionChunkToolCall.fromJson(value).toJson();
-    case "ChatCompletionDelta": return ChatCompletionDelta.fromJson(value).toJson();
-    case "ChatCompletionFunction": return ChatCompletionFunction.fromJson(value).toJson();
-    case "ChatCompletionMessage": return ChatCompletionMessage.fromJson(value).toJson();
-    case "ChatCompletionToolCall": return ChatCompletionToolCall.fromJson(value).toJson();
-    case "ChatCompletionUsage": return ChatCompletionUsage.fromJson(value).toJson();
-    case "CodexRefreshRequest": return CodexRefreshRequest.fromJson(value).toJson();
-    case "CodexTokens": return CodexTokens.fromJson(value).toJson();
-    case "CompletionTokensDetails": return CompletionTokensDetails.fromJson(value).toJson();
-    case "ContentPart": return ContentPart.fromJson(value).toJson();
-    case "ContentPart4SourceType": return ContentPart4SourceType.fromJson(value).toJson();
-    case "ContentPart5SourceType": return ContentPart5SourceType.fromJson(value).toJson();
-    case "ContentPartInput": return ContentPartInput.fromJson(value).toJson();
-    case "ContentPartInput4SourceType": return ContentPartInput4SourceType.fromJson(value).toJson();
-    case "ContentPartInput5SourceType": return ContentPartInput5SourceType.fromJson(value).toJson();
-    case "CreateRecorderParams": return CreateRecorderParams.fromJson(value).toJson();
-    case "CredentialParams": return CredentialParams.fromJson(value).toJson();
-    case "CustomPart": return CustomPart.fromJson(value).toJson();
-    case "DecideOptions": return DecideOptions.fromJson(value).toJson();
-    case "DecideResult": return DecideResult.fromJson(value).toJson();
-    case "DecideUsage": return DecideUsage.fromJson(value).toJson();
-    case "DecisionAnswer": return DecisionAnswer.fromJson(value).toJson();
-    case "DecisionBooleanCriteria": return DecisionBooleanCriteria.fromJson(value).toJson();
-    case "DecisionDecideRequest": return DecisionDecideRequest.fromJson(value).toJson();
-    case "DecisionInput": return DecisionInput.fromJson(value).toJson();
-    case "DecisionQuestion": return DecisionQuestion.fromJson(value).toJson();
-    case "DecisionRounding": return DecisionRounding.fromJson(value).toJson();
-    case "EmbeddingCallOptions": return EmbeddingCallOptions.fromJson(value).toJson();
-    case "EmbeddingResponse": return EmbeddingResponse.fromJson(value).toJson();
-    case "EmbeddingResult": return EmbeddingResult.fromJson(value).toJson();
-    case "EmbeddingUsage": return EmbeddingUsage.fromJson(value).toJson();
-    case "EmptyParams": return EmptyParams.fromJson(value).toJson();
-    case "EmptyParams2": return EmptyParams2.fromJson(value).toJson();
-    case "ErrorDomain": return ErrorDomain.fromJson(value).toJson();
-    case "ErrorEnvelope": return ErrorEnvelope.fromJson(value).toJson();
-    case "Fallback": return Fallback.fromJson(value).toJson();
-    case "FileBytes": return FileBytes.fromJson(value).toJson();
-    case "FileData": return FileData.fromJson(value).toJson();
-    case "FilePart": return FilePart.fromJson(value).toJson();
-    case "FilePartData": return FilePartData.fromJson(value).toJson();
-    case "Fingerprint": return Fingerprint.fromJson(value).toJson();
-    case "FinishReasonUnified": return FinishReasonUnified.fromJson(value).toJson();
-    case "FunctionTool": return FunctionTool.fromJson(value).toJson();
-    case "FunctionToolInputExample": return FunctionToolInputExample.fromJson(value).toJson();
-    case "GenerateContent": return GenerateContent.fromJson(value).toJson();
-    case "GenerateContent2SourceType": return GenerateContent2SourceType.fromJson(value).toJson();
-    case "GenerateContent3SourceType": return GenerateContent3SourceType.fromJson(value).toJson();
-    case "GenerateObjectResponse": return GenerateObjectResponse.fromJson(value).toJson();
-    case "GenerateObjectResult": return GenerateObjectResult.fromJson(value).toJson();
-    case "GenerateTextOptions": return GenerateTextOptions.fromJson(value).toJson();
-    case "GenerateTextResult": return GenerateTextResult.fromJson(value).toJson();
-    case "GenerateTextResultInput": return GenerateTextResultInput.fromJson(value).toJson();
-    case "GeneratedFile": return GeneratedFile.fromJson(value).toJson();
-    case "GeneratedFileData": return GeneratedFileData.fromJson(value).toJson();
-    case "GeneratedFileOutput": return GeneratedFileOutput.fromJson(value).toJson();
-    case "HandleId": return HandleId.fromJson(value).toJson();
-    case "HandleIdInput": return HandleIdInput.fromJson(value).toJson();
-    case "HandleKind": return HandleKind.fromJson(value).toJson();
-    case "HandleResult": return HandleResult.fromJson(value).toJson();
-    case "HandleResult2": return HandleResult2.fromJson(value).toJson();
-    case "HandleResult3": return HandleResult3.fromJson(value).toJson();
-    case "HttpExchange": return HttpExchange.fromJson(value).toJson();
-    case "HttpRecord": return HttpRecord.fromJson(value).toJson();
-    case "ImageCallOptions": return ImageCallOptions.fromJson(value).toJson();
-    case "ImageFile": return ImageFile.fromJson(value).toJson();
-    case "ImageFileData": return ImageFileData.fromJson(value).toJson();
-    case "ImageOutputs": return ImageOutputs.fromJson(value).toJson();
-    case "ImageResponse": return ImageResponse.fromJson(value).toJson();
-    case "ImageResult": return ImageResult.fromJson(value).toJson();
-    case "ImageUsage": return ImageUsage.fromJson(value).toJson();
-    case "InputAudioFormat": return InputAudioFormat.fromJson(value).toJson();
-    case "InputRecord": return InputRecord.fromJson(value).toJson();
-    case "InputTokenDetails": return InputTokenDetails.fromJson(value).toJson();
-    case "LanguageModelFile": return LanguageModelFile.fromJson(value).toJson();
-    case "LanguageModelMessage": return LanguageModelMessage.fromJson(value).toJson();
-    case "LanguageModelUsage": return LanguageModelUsage.fromJson(value).toJson();
-    case "LanguageModelUsageInput": return LanguageModelUsageInput.fromJson(value).toJson();
-    case "LanguageModelV4ToolChoice": return LanguageModelV4ToolChoice.fromJson(value).toJson();
-    case "LiveTarget": return LiveTarget.fromJson(value).toJson();
-    case "LogLevel": return LogLevel.fromJson(value).toJson();
-    case "LoggingConfig": return LoggingConfig.fromJson(value).toJson();
-    case "MiddlewareParams": return MiddlewareParams.fromJson(value).toJson();
-    case "MoaFailMode": return MoaFailMode.fromJson(value).toJson();
-    case "MoaParams": return MoaParams.fromJson(value).toJson();
-    case "Modality": return Modality.fromJson(value).toJson();
-    case "ModelCapabilities": return ModelCapabilities.fromJson(value).toJson();
-    case "ModelCost": return ModelCost.fromJson(value).toJson();
-    case "ModelInfo": return ModelInfo.fromJson(value).toJson();
-    case "ModelInfoParams": return ModelInfoParams.fromJson(value).toJson();
-    case "ModelLimits": return ModelLimits.fromJson(value).toJson();
-    case "ModelMessage": return ModelMessage.fromJson(value).toJson();
-    case "ModelMethod": return ModelMethod.fromJson(value).toJson();
-    case "ModelModalities": return ModelModalities.fromJson(value).toJson();
-    case "ModelPrompt": return ModelPrompt.fromJson(value).toJson();
-    case "ModelRef": return ModelRef.fromJson(value).toJson();
-    case "ModelResolveParams": return ModelResolveParams.fromJson(value).toJson();
-    case "ModelSpec": return ModelSpec.fromJson(value).toJson();
-    case "ModelType": return ModelType.fromJson(value).toJson();
-    case "ModelWrapParams": return ModelWrapParams.fromJson(value).toJson();
-    case "NamespacedKind": return NamespacedKind.fromJson(value).toJson();
-    case "OpenAiOutputRequest": return OpenAiOutputRequest.fromJson(value).toJson();
-    case "OpenAiTextRequest": return OpenAiTextRequest.fromJson(value).toJson();
-    case "OperationCapabilities": return OperationCapabilities.fromJson(value).toJson();
-    case "OperationNextParams": return OperationNextParams.fromJson(value).toJson();
-    case "OperationOutcome": return OperationOutcome.fromJson(value).toJson();
-    case "OperationPollResult": return OperationPollResult.fromJson(value).toJson();
-    case "OperationState": return OperationState.fromJson(value).toJson();
-    case "OperationStatus": return OperationStatus.fromJson(value).toJson();
-    case "Options": return Options.fromJson(value).toJson();
-    case "Outcome": return Outcome.fromJson(value).toJson();
-    case "OutcomeRecord": return OutcomeRecord.fromJson(value).toJson();
-    case "OutcomeStatus": return OutcomeStatus.fromJson(value).toJson();
-    case "Output": return Output.fromJson(value).toJson();
-    case "OutputChunkTimingStats": return OutputChunkTimingStats.fromJson(value).toJson();
-    case "OutputTokenDetails": return OutputTokenDetails.fromJson(value).toJson();
-    case "PrefixBreak": return PrefixBreak.fromJson(value).toJson();
-    case "PromptTokensDetails": return PromptTokensDetails.fromJson(value).toJson();
-    case "ProviderCreateParams": return ProviderCreateParams.fromJson(value).toJson();
-    case "ProviderCustomParams": return ProviderCustomParams.fromJson(value).toJson();
-    case "ProviderDefaultParams": return ProviderDefaultParams.fromJson(value).toJson();
-    case "ProviderInvokeParams": return ProviderInvokeParams.fromJson(value).toJson();
-    case "ProviderModelParams": return ProviderModelParams.fromJson(value).toJson();
-    case "ProviderRecord": return ProviderRecord.fromJson(value).toJson();
-    case "ProviderSettings": return ProviderSettings.fromJson(value).toJson();
-    case "ProviderTool": return ProviderTool.fromJson(value).toJson();
-    case "ProviderWrapParams": return ProviderWrapParams.fromJson(value).toJson();
-    case "RawToolApprovalRequest": return RawToolApprovalRequest.fromJson(value).toJson();
-    case "RawToolCall": return RawToolCall.fromJson(value).toJson();
-    case "ReasoningEffort": return ReasoningEffort.fromJson(value).toJson();
-    case "ReasoningFilePart": return ReasoningFilePart.fromJson(value).toJson();
-    case "ReasoningFilePartData": return ReasoningFilePartData.fromJson(value).toJson();
-    case "ReasoningMode": return ReasoningMode.fromJson(value).toJson();
-    case "ReasoningOutput": return ReasoningOutput.fromJson(value).toJson();
-    case "ReasoningPart": return ReasoningPart.fromJson(value).toJson();
-    case "ReasoningPart2": return ReasoningPart2.fromJson(value).toJson();
-    case "ReasoningSpec": return ReasoningSpec.fromJson(value).toJson();
-    case "ReasoningVisibility": return ReasoningVisibility.fromJson(value).toJson();
-    case "RecorderExport": return RecorderExport.fromJson(value).toJson();
-    case "RecorderHandleResult": return RecorderHandleResult.fromJson(value).toJson();
-    case "RecorderStats": return RecorderStats.fromJson(value).toJson();
-    case "Recording": return Recording.fromJson(value).toJson();
-    case "RecordingOperation": return RecordingOperation.fromJson(value).toJson();
-    case "RegistryCreateParams": return RegistryCreateParams.fromJson(value).toJson();
-    case "RegistryEntry": return RegistryEntry.fromJson(value).toJson();
-    case "RegistryProviderParams": return RegistryProviderParams.fromJson(value).toJson();
-    case "ReplayCreateParams": return ReplayCreateParams.fromJson(value).toJson();
-    case "ReplayInspection": return ReplayInspection.fromJson(value).toJson();
-    case "ReplayLiveParams": return ReplayLiveParams.fromJson(value).toJson();
-    case "ReplayLiveResult": return ReplayLiveResult.fromJson(value).toJson();
-    case "ReplayPlan": return ReplayPlan.fromJson(value).toJson();
-    case "ReplayPlannedCall": return ReplayPlannedCall.fromJson(value).toJson();
-    case "ReplayRecordingInfo": return ReplayRecordingInfo.fromJson(value).toJson();
-    case "ReplaySessionHandle": return ReplaySessionHandle.fromJson(value).toJson();
-    case "RequestCacheHints": return RequestCacheHints.fromJson(value).toJson();
-    case "RequestInfo": return RequestInfo.fromJson(value).toJson();
-    case "RerankingCallOptions": return RerankingCallOptions.fromJson(value).toJson();
-    case "RerankingDocuments": return RerankingDocuments.fromJson(value).toJson();
-    case "RerankingRank": return RerankingRank.fromJson(value).toJson();
-    case "RerankingResponse": return RerankingResponse.fromJson(value).toJson();
-    case "RerankingResult": return RerankingResult.fromJson(value).toJson();
-    case "ResponseInfo": return ResponseInfo.fromJson(value).toJson();
-    case "ResponseRecord": return ResponseRecord.fromJson(value).toJson();
-    case "RetryError": return RetryError.fromJson(value).toJson();
-    case "RetryErrorInput": return RetryErrorInput.fromJson(value).toJson();
-    case "RetryErrorReason": return RetryErrorReason.fromJson(value).toJson();
-    case "RouterParams": return RouterParams.fromJson(value).toJson();
-    case "RuntimeConfigureParams": return RuntimeConfigureParams.fromJson(value).toJson();
-    case "RuntimeConfigureParamsProxy": return RuntimeConfigureParamsProxy.fromJson(value).toJson();
-    case "RuntimeDescribeParams": return RuntimeDescribeParams.fromJson(value).toJson();
-    case "RuntimeModel": return RuntimeModel.fromJson(value).toJson();
-    case "SearchCallOptions": return SearchCallOptions.fromJson(value).toJson();
-    case "SearchResponse": return SearchResponse.fromJson(value).toJson();
-    case "SearchResult": return SearchResult.fromJson(value).toJson();
-    case "SearchResultItem": return SearchResultItem.fromJson(value).toJson();
-    case "SessionCall": return SessionCall.fromJson(value).toJson();
-    case "SessionChainView": return SessionChainView.fromJson(value).toJson();
-    case "SessionSource": return SessionSource.fromJson(value).toJson();
-    case "SessionStepStat": return SessionStepStat.fromJson(value).toJson();
-    case "SessionStoreCallsParams": return SessionStoreCallsParams.fromJson(value).toJson();
-    case "SessionStoreCreateParams": return SessionStoreCreateParams.fromJson(value).toJson();
-    case "SessionStoreHandle": return SessionStoreHandle.fromJson(value).toJson();
-    case "SessionView": return SessionView.fromJson(value).toJson();
-    case "Size": return Size.fromJson(value).toJson();
-    case "Source": return Source.fromJson(value).toJson();
-    case "SpeechCallOptions": return SpeechCallOptions.fromJson(value).toJson();
-    case "SpeechRequest": return SpeechRequest.fromJson(value).toJson();
-    case "SpeechResponse": return SpeechResponse.fromJson(value).toJson();
-    case "SpeechResult": return SpeechResult.fromJson(value).toJson();
-    case "StepModel": return StepModel.fromJson(value).toJson();
-    case "StepResponse": return StepResponse.fromJson(value).toJson();
-    case "StepResponseInput": return StepResponseInput.fromJson(value).toJson();
-    case "StepResponseMetadata": return StepResponseMetadata.fromJson(value).toJson();
-    case "StepResult": return StepResult.fromJson(value).toJson();
-    case "StepResultInput": return StepResultInput.fromJson(value).toJson();
-    case "StepResultPerformance": return StepResultPerformance.fromJson(value).toJson();
-    case "StepResultPerformanceInput": return StepResultPerformanceInput.fromJson(value).toJson();
-    case "Strategy": return Strategy.fromJson(value).toJson();
-    case "StreamFrame": return StreamFrame.fromJson(value).toJson();
-    case "StreamFrame0Event": return StreamFrame0Event.fromJson(value).toJson();
-    case "StreamOptions": return StreamOptions.fromJson(value).toJson();
-    case "TaggedToolResult": return TaggedToolResult.fromJson(value).toJson();
-    case "TaggedToolResultType": return TaggedToolResultType.fromJson(value).toJson();
-    case "TerminalSummary": return TerminalSummary.fromJson(value).toJson();
-    case "TextPart": return TextPart.fromJson(value).toJson();
-    case "TextRequest": return TextRequest.fromJson(value).toJson();
-    case "TextStreamPart": return TextStreamPart.fromJson(value).toJson();
-    case "TextStreamPart10SourceType": return TextStreamPart10SourceType.fromJson(value).toJson();
-    case "TextStreamPart11SourceType": return TextStreamPart11SourceType.fromJson(value).toJson();
-    case "TimeoutConfiguration": return TimeoutConfiguration.fromJson(value).toJson();
-    case "Timestamp": return Timestamp.fromJson(value).toJson();
-    case "TimingRecord": return TimingRecord.fromJson(value).toJson();
-    case "Tool": return Tool.fromJson(value).toJson();
-    case "ToolApprovalRequestOutput": return ToolApprovalRequestOutput.fromJson(value).toJson();
-    case "ToolApprovalRequestOutputInput": return ToolApprovalRequestOutputInput.fromJson(value).toJson();
-    case "ToolApprovalResponseOutput": return ToolApprovalResponseOutput.fromJson(value).toJson();
-    case "ToolApprovalResponseOutputInput": return ToolApprovalResponseOutputInput.fromJson(value).toJson();
-    case "ToolApprovalResponsePart": return ToolApprovalResponsePart.fromJson(value).toJson();
-    case "ToolCall": return ToolCall.fromJson(value).toJson();
-    case "ToolCallInput": return ToolCallInput.fromJson(value).toJson();
-    case "ToolCallPart": return ToolCallPart.fromJson(value).toJson();
-    case "ToolCallRepairReply": return ToolCallRepairReply.fromJson(value).toJson();
-    case "ToolCallRepairReply0ToolCall": return ToolCallRepairReply0ToolCall.fromJson(value).toJson();
-    case "ToolCallRepairReply0ToolCallType": return ToolCallRepairReply0ToolCallType.fromJson(value).toJson();
-    case "ToolChoice": return ToolChoice.fromJson(value).toJson();
-    case "ToolChoice0": return ToolChoice0.fromJson(value).toJson();
-    case "ToolChoice1": return ToolChoice1.fromJson(value).toJson();
-    case "ToolChoice1Type": return ToolChoice1Type.fromJson(value).toJson();
-    case "ToolChoiceViolationError": return ToolChoiceViolationError.fromJson(value).toJson();
-    case "ToolContentPart": return ToolContentPart.fromJson(value).toJson();
-    case "ToolOutputDenied": return ToolOutputDenied.fromJson(value).toJson();
-    case "ToolPart": return ToolPart.fromJson(value).toJson();
-    case "ToolRepairApplyRequest": return ToolRepairApplyRequest.fromJson(value).toJson();
-    case "ToolRepairApplyResultRequest": return ToolRepairApplyResultRequest.fromJson(value).toJson();
-    case "ToolRepairContextRequest": return ToolRepairContextRequest.fromJson(value).toJson();
-    case "ToolRepairContextResult": return ToolRepairContextResult.fromJson(value).toJson();
-    case "ToolRepairContextSchema": return ToolRepairContextSchema.fromJson(value).toJson();
-    case "ToolRepairContextSchemaToolCall": return ToolRepairContextSchemaToolCall.fromJson(value).toJson();
-    case "ToolRepairContextSchemaToolCallType": return ToolRepairContextSchemaToolCallType.fromJson(value).toJson();
-    case "ToolResult": return ToolResult.fromJson(value).toJson();
-    case "ToolResultContent": return ToolResultContent.fromJson(value).toJson();
-    case "ToolResultContentPart": return ToolResultContentPart.fromJson(value).toJson();
-    case "ToolResultFileId": return ToolResultFileId.fromJson(value).toJson();
-    case "ToolResultOutput": return ToolResultOutput.fromJson(value).toJson();
-    case "ToolResultOutput2": return ToolResultOutput2.fromJson(value).toJson();
-    case "ToolResultPart": return ToolResultPart.fromJson(value).toJson();
-    case "ToolResultPart2": return ToolResultPart2.fromJson(value).toJson();
-    case "TraceAggregateParams": return TraceAggregateParams.fromJson(value).toJson();
-    case "TraceAggregateParamsFilter": return TraceAggregateParamsFilter.fromJson(value).toJson();
-    case "TraceCreateParams": return TraceCreateParams.fromJson(value).toJson();
-    case "TraceRecord": return TraceRecord.fromJson(value).toJson();
-    case "TraceSessionParams": return TraceSessionParams.fromJson(value).toJson();
-    case "TraceStats": return TraceStats.fromJson(value).toJson();
-    case "TranscriptionCallOptions": return TranscriptionCallOptions.fromJson(value).toJson();
-    case "TranscriptionRequest": return TranscriptionRequest.fromJson(value).toJson();
-    case "TranscriptionResponse": return TranscriptionResponse.fromJson(value).toJson();
-    case "TranscriptionResult": return TranscriptionResult.fromJson(value).toJson();
-    case "TranscriptionSegment": return TranscriptionSegment.fromJson(value).toJson();
-    case "TranscriptionStartParams": return TranscriptionStartParams.fromJson(value).toJson();
-    case "TranscriptionStreamPart": return TranscriptionStreamPart.fromJson(value).toJson();
-    case "TransportParams": return TransportParams.fromJson(value).toJson();
-    case "TransportParams0Proxy": return TransportParams0Proxy.fromJson(value).toJson();
-    case "TransportParams1Proxy": return TransportParams1Proxy.fromJson(value).toJson();
-    case "TypedSource": return TypedSource.fromJson(value).toJson();
-    case "TypedSource0Type": return TypedSource0Type.fromJson(value).toJson();
-    case "TypedSource1Type": return TypedSource1Type.fromJson(value).toJson();
-    case "TypedToolCall": return TypedToolCall.fromJson(value).toJson();
-    case "TypedToolCallInput": return TypedToolCallInput.fromJson(value).toJson();
-    case "TypedToolCallInputType": return TypedToolCallInputType.fromJson(value).toJson();
-    case "TypedToolCallType": return TypedToolCallType.fromJson(value).toJson();
-    case "TypedToolError": return TypedToolError.fromJson(value).toJson();
-    case "TypedToolResult": return TypedToolResult.fromJson(value).toJson();
-    case "UploadFileData": return UploadFileData.fromJson(value).toJson();
-    case "UploadFileParams": return UploadFileParams.fromJson(value).toJson();
-    case "UploadFileResult": return UploadFileResult.fromJson(value).toJson();
-    case "UsageSnapshot": return UsageSnapshot.fromJson(value).toJson();
-    case "UserContent": return UserContent.fromJson(value).toJson();
-    case "UserContentPart": return UserContentPart.fromJson(value).toJson();
-    case "UserPart": return UserPart.fromJson(value).toJson();
-    case "Verdict": return Verdict.fromJson(value).toJson();
-    case "VerdictConfidence": return VerdictConfidence.fromJson(value).toJson();
-    case "VerdictKind": return VerdictKind.fromJson(value).toJson();
-    case "VideoCallOptions": return VideoCallOptions.fromJson(value).toJson();
-    case "VideoData": return VideoData.fromJson(value).toJson();
-    case "VideoFile": return VideoFile.fromJson(value).toJson();
-    case "VideoFileData": return VideoFileData.fromJson(value).toJson();
-    case "VideoFrameImage": return VideoFrameImage.fromJson(value).toJson();
-    case "VideoFrameType": return VideoFrameType.fromJson(value).toJson();
-    case "VideoPollOptions": return VideoPollOptions.fromJson(value).toJson();
-    case "VideoResponse": return VideoResponse.fromJson(value).toJson();
-    case "VideoResult": return VideoResult.fromJson(value).toJson();
-    case "Warning": return Warning.fromJson(value).toJson();
-    case "_aimux_core_model_catalogue_RuntimeModel_": return WireAimuxCoreModelCatalogueRuntimeModel.fromJson(value).toJson();
-    case "_aimux_core_session_SessionCall_": return WireAimuxCoreSessionSessionCall.fromJson(value).toJson();
-    case "_aimux_core_session_SessionView_": return WireAimuxCoreSessionSessionView.fromJson(value).toJson();
-    case "_aimux_core_trace_store_SessionStepStat_": return WireAimuxCoreTraceStoreSessionStepStat.fromJson(value).toJson();
-    case "_aimux_core_trace_store_TraceStats_": return WireAimuxCoreTraceStoreTraceStats.fromJson(value).toJson();
-    default: throw FormatException('Unknown DTO type: $type');
+    case 'AiMuxError':
+      return AiMuxError.fromJson(value as Map<String, dynamic>).toJson();
+    case 'AiMuxErrorInput':
+      return AiMuxErrorInput.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ApiCallError':
+      return ApiCallError.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ApiCallErrorInput':
+      return ApiCallErrorInput.fromJson(value as Map<String, dynamic>).toJson();
+    case 'AspectRatio':
+      return AspectRatio.fromJson(value).toJson();
+    case 'AssistantContent':
+      return AssistantContent.fromJson(value).toJson();
+    case 'AssistantContentPart':
+      return AssistantContentPart.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'AssistantPart':
+      return AssistantPart.fromJson(value as Map<String, dynamic>).toJson();
+    case 'AudioData':
+      return AudioData.fromJson(value).toJson();
+    case 'AudioInput':
+      return AudioInput.fromJson(value).toJson();
+    case 'AuditMode':
+      return AuditMode.fromJson(value).toJson();
+    case 'AuditMode2':
+      return AuditMode2.fromJson(value).toJson();
+    case 'BackendConfig':
+      return BackendConfig.fromJson(value as Map<String, dynamic>).toJson();
+    case 'BreakKind':
+      return BreakKind.fromJson(value).toJson();
+    case 'CancelResult':
+      return CancelResult.fromJson(value).toJson();
+    case 'CapturePolicy':
+      return CapturePolicy.fromJson(value).toJson();
+    case 'Catalogue':
+      return Catalogue.fromJson(value as Map<String, dynamic>).toJson();
+    case 'CatalogueFetchRequest':
+      return CatalogueFetchRequest.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'CatalogueSource':
+      return CatalogueSource.fromJson(value).toJson();
+    case 'ChatCompletion':
+      return ChatCompletion.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ChatCompletionChoice':
+      return ChatCompletionChoice.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ChatCompletionChunk':
+      return ChatCompletionChunk.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ChatCompletionChunkChoice':
+      return ChatCompletionChunkChoice.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ChatCompletionChunkFunction':
+      return ChatCompletionChunkFunction.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ChatCompletionChunkToolCall':
+      return ChatCompletionChunkToolCall.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ChatCompletionDelta':
+      return ChatCompletionDelta.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ChatCompletionFunction':
+      return ChatCompletionFunction.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ChatCompletionMessage':
+      return ChatCompletionMessage.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ChatCompletionToolCall':
+      return ChatCompletionToolCall.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ChatCompletionUsage':
+      return ChatCompletionUsage.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'CodexRefreshRequest':
+      return CodexRefreshRequest.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'CodexTokens':
+      return CodexTokens.fromJson(value as Map<String, dynamic>).toJson();
+    case 'CompletionTokensDetails':
+      return CompletionTokensDetails.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ContentPart':
+      return ContentPart.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ContentPart4SourceType':
+      return ContentPart4SourceType.fromJson(value).toJson();
+    case 'ContentPart5SourceType':
+      return ContentPart5SourceType.fromJson(value).toJson();
+    case 'ContentPartInput':
+      return ContentPartInput.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ContentPartInput4SourceType':
+      return ContentPartInput4SourceType.fromJson(value).toJson();
+    case 'ContentPartInput5SourceType':
+      return ContentPartInput5SourceType.fromJson(value).toJson();
+    case 'CreateRecorderParams':
+      return CreateRecorderParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'CredentialParams':
+      return CredentialParams.fromJson(value as Map<String, dynamic>).toJson();
+    case 'CustomPart':
+      return CustomPart.fromJson(value as Map<String, dynamic>).toJson();
+    case 'DecideOptions':
+      return DecideOptions.fromJson(value as Map<String, dynamic>).toJson();
+    case 'DecideResult':
+      return DecideResult.fromJson(value as Map<String, dynamic>).toJson();
+    case 'DecideUsage':
+      return DecideUsage.fromJson(value as Map<String, dynamic>).toJson();
+    case 'DecisionAnswer':
+      return DecisionAnswer.fromJson(value as Map<String, dynamic>).toJson();
+    case 'DecisionBooleanCriteria':
+      return DecisionBooleanCriteria.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'DecisionDecideRequest':
+      return DecisionDecideRequest.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'DecisionInput':
+      return DecisionInput.fromJson(value).toJson();
+    case 'DecisionQuestion':
+      return DecisionQuestion.fromJson(value as Map<String, dynamic>).toJson();
+    case 'DecisionRounding':
+      return DecisionRounding.fromJson(value as Map<String, dynamic>).toJson();
+    case 'EmbeddingCallOptions':
+      return EmbeddingCallOptions.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'EmbeddingResponse':
+      return EmbeddingResponse.fromJson(value as Map<String, dynamic>).toJson();
+    case 'EmbeddingResult':
+      return EmbeddingResult.fromJson(value as Map<String, dynamic>).toJson();
+    case 'EmbeddingUsage':
+      return EmbeddingUsage.fromJson(value as Map<String, dynamic>).toJson();
+    case 'EmptyParams':
+      return EmptyParams.fromJson(value as Map<String, dynamic>).toJson();
+    case 'EmptyParams2':
+      return EmptyParams2.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ErrorDomain':
+      return ErrorDomain.fromJson(value).toJson();
+    case 'ErrorEnvelope':
+      return ErrorEnvelope.fromJson(value as Map<String, dynamic>).toJson();
+    case 'Fallback':
+      return Fallback.fromJson(value).toJson();
+    case 'FileBytes':
+      return FileBytes.fromJson(value).toJson();
+    case 'FileData':
+      return FileData.fromJson(value as Map<String, dynamic>).toJson();
+    case 'FilePart':
+      return FilePart.fromJson(value as Map<String, dynamic>).toJson();
+    case 'FilePartData':
+      return FilePartData.fromJson(value).toJson();
+    case 'Fingerprint':
+      return Fingerprint.fromJson(value as Map<String, dynamic>).toJson();
+    case 'FinishReasonUnified':
+      return FinishReasonUnified.fromJson(value).toJson();
+    case 'FunctionTool':
+      return FunctionTool.fromJson(value as Map<String, dynamic>).toJson();
+    case 'FunctionToolInputExample':
+      return FunctionToolInputExample.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'GenerateContent':
+      return GenerateContent.fromJson(value as Map<String, dynamic>).toJson();
+    case 'GenerateContent2SourceType':
+      return GenerateContent2SourceType.fromJson(value).toJson();
+    case 'GenerateContent3SourceType':
+      return GenerateContent3SourceType.fromJson(value).toJson();
+    case 'GenerateObjectResponse':
+      return GenerateObjectResponse.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'GenerateObjectResult':
+      return GenerateObjectResult.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'GenerateTextOptions':
+      return GenerateTextOptions.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'GenerateTextResult':
+      return GenerateTextResult.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'GenerateTextResultInput':
+      return GenerateTextResultInput.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'GeneratedFile':
+      return GeneratedFile.fromJson(value as Map<String, dynamic>).toJson();
+    case 'GeneratedFileData':
+      return GeneratedFileData.fromJson(value as Map<String, dynamic>).toJson();
+    case 'GeneratedFileOutput':
+      return GeneratedFileOutput.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'HandleId':
+      return HandleId.fromJson(value).toJson();
+    case 'HandleIdInput':
+      return HandleIdInput.fromJson(value).toJson();
+    case 'HandleKind':
+      return HandleKind.fromJson(value).toJson();
+    case 'HandleResult':
+      return HandleResult.fromJson(value as Map<String, dynamic>).toJson();
+    case 'HandleResult2':
+      return HandleResult2.fromJson(value as Map<String, dynamic>).toJson();
+    case 'HandleResult3':
+      return HandleResult3.fromJson(value as Map<String, dynamic>).toJson();
+    case 'HttpExchange':
+      return HttpExchange.fromJson(value as Map<String, dynamic>).toJson();
+    case 'HttpRecord':
+      return HttpRecord.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ImageCallOptions':
+      return ImageCallOptions.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ImageFile':
+      return ImageFile.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ImageFileData':
+      return ImageFileData.fromJson(value).toJson();
+    case 'ImageOutputs':
+      return ImageOutputs.fromJson(value).toJson();
+    case 'ImageResponse':
+      return ImageResponse.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ImageResult':
+      return ImageResult.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ImageUsage':
+      return ImageUsage.fromJson(value as Map<String, dynamic>).toJson();
+    case 'InputAudioFormat':
+      return InputAudioFormat.fromJson(value as Map<String, dynamic>).toJson();
+    case 'InputRecord':
+      return InputRecord.fromJson(value as Map<String, dynamic>).toJson();
+    case 'InputTokenDetails':
+      return InputTokenDetails.fromJson(value as Map<String, dynamic>).toJson();
+    case 'LanguageModelFile':
+      return LanguageModelFile.fromJson(value as Map<String, dynamic>).toJson();
+    case 'LanguageModelMessage':
+      return LanguageModelMessage.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'LanguageModelUsage':
+      return LanguageModelUsage.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'LanguageModelUsageInput':
+      return LanguageModelUsageInput.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'LanguageModelV4ToolChoice':
+      return LanguageModelV4ToolChoice.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'LiveTarget':
+      return LiveTarget.fromJson(value as Map<String, dynamic>).toJson();
+    case 'LogLevel':
+      return LogLevel.fromJson(value).toJson();
+    case 'LoggingConfig':
+      return LoggingConfig.fromJson(value as Map<String, dynamic>).toJson();
+    case 'MiddlewareParams':
+      return MiddlewareParams.fromJson(value as Map<String, dynamic>).toJson();
+    case 'MoaFailMode':
+      return MoaFailMode.fromJson(value).toJson();
+    case 'MoaParams':
+      return MoaParams.fromJson(value as Map<String, dynamic>).toJson();
+    case 'Modality':
+      return Modality.fromJson(value).toJson();
+    case 'ModelCapabilities':
+      return ModelCapabilities.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ModelCost':
+      return ModelCost.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ModelInfo':
+      return ModelInfo.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ModelInfoParams':
+      return ModelInfoParams.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ModelLimits':
+      return ModelLimits.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ModelMessage':
+      return ModelMessage.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ModelMethod':
+      return ModelMethod.fromJson(value).toJson();
+    case 'ModelModalities':
+      return ModelModalities.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ModelPrompt':
+      return ModelPrompt.fromJson(value).toJson();
+    case 'ModelRef':
+      return ModelRef.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ModelResolveParams':
+      return ModelResolveParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ModelSpec':
+      return ModelSpec.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ModelType':
+      return ModelType.fromJson(value).toJson();
+    case 'ModelWrapParams':
+      return ModelWrapParams.fromJson(value as Map<String, dynamic>).toJson();
+    case 'NamespacedKind':
+      return NamespacedKind.fromJson(value).toJson();
+    case 'OpenAiOutputRequest':
+      return OpenAiOutputRequest.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'OpenAiTextRequest':
+      return OpenAiTextRequest.fromJson(value as Map<String, dynamic>).toJson();
+    case 'OperationCapabilities':
+      return OperationCapabilities.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'OperationNextParams':
+      return OperationNextParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'OperationOutcome':
+      return OperationOutcome.fromJson(value).toJson();
+    case 'OperationPollResult':
+      return OperationPollResult.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'OperationState':
+      return OperationState.fromJson(value).toJson();
+    case 'OperationStatus':
+      return OperationStatus.fromJson(value as Map<String, dynamic>).toJson();
+    case 'Options':
+      return Options.fromJson(value as Map<String, dynamic>).toJson();
+    case 'Outcome':
+      return Outcome.fromJson(value).toJson();
+    case 'OutcomeRecord':
+      return OutcomeRecord.fromJson(value as Map<String, dynamic>).toJson();
+    case 'OutcomeStatus':
+      return OutcomeStatus.fromJson(value).toJson();
+    case 'Output':
+      return Output.fromJson(value as Map<String, dynamic>).toJson();
+    case 'OutputChunkTimingStats':
+      return OutputChunkTimingStats.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'OutputTokenDetails':
+      return OutputTokenDetails.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'PrefixBreak':
+      return PrefixBreak.fromJson(value as Map<String, dynamic>).toJson();
+    case 'PromptTokensDetails':
+      return PromptTokensDetails.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ProviderCreateParams':
+      return ProviderCreateParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ProviderCustomParams':
+      return ProviderCustomParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ProviderDefaultParams':
+      return ProviderDefaultParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ProviderInvokeParams':
+      return ProviderInvokeParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ProviderModelParams':
+      return ProviderModelParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ProviderRecord':
+      return ProviderRecord.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ProviderSettings':
+      return ProviderSettings.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ProviderTool':
+      return ProviderTool.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ProviderWrapParams':
+      return ProviderWrapParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'RawToolApprovalRequest':
+      return RawToolApprovalRequest.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'RawToolCall':
+      return RawToolCall.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ReasoningEffort':
+      return ReasoningEffort.fromJson(value).toJson();
+    case 'ReasoningFilePart':
+      return ReasoningFilePart.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ReasoningFilePartData':
+      return ReasoningFilePartData.fromJson(value).toJson();
+    case 'ReasoningMode':
+      return ReasoningMode.fromJson(value).toJson();
+    case 'ReasoningOutput':
+      return ReasoningOutput.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ReasoningPart':
+      return ReasoningPart.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ReasoningPart2':
+      return ReasoningPart2.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ReasoningSpec':
+      return ReasoningSpec.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ReasoningVisibility':
+      return ReasoningVisibility.fromJson(value).toJson();
+    case 'RecorderExport':
+      return RecorderExport.fromJson(value as Map<String, dynamic>).toJson();
+    case 'RecorderHandleResult':
+      return RecorderHandleResult.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'RecorderStats':
+      return RecorderStats.fromJson(value as Map<String, dynamic>).toJson();
+    case 'Recording':
+      return Recording.fromJson(value as Map<String, dynamic>).toJson();
+    case 'RecordingOperation':
+      return RecordingOperation.fromJson(value).toJson();
+    case 'RegistryCreateParams':
+      return RegistryCreateParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'RegistryEntry':
+      return RegistryEntry.fromJson(value as Map<String, dynamic>).toJson();
+    case 'RegistryProviderParams':
+      return RegistryProviderParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ReplayCreateParams':
+      return ReplayCreateParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ReplayInspection':
+      return ReplayInspection.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ReplayLiveParams':
+      return ReplayLiveParams.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ReplayLiveResult':
+      return ReplayLiveResult.fromJson(value).toJson();
+    case 'ReplayPlan':
+      return ReplayPlan.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ReplayPlannedCall':
+      return ReplayPlannedCall.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ReplayRecordingInfo':
+      return ReplayRecordingInfo.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ReplaySessionHandle':
+      return ReplaySessionHandle.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'RequestCacheHints':
+      return RequestCacheHints.fromJson(value as Map<String, dynamic>).toJson();
+    case 'RequestInfo':
+      return RequestInfo.fromJson(value as Map<String, dynamic>).toJson();
+    case 'RerankingCallOptions':
+      return RerankingCallOptions.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'RerankingDocuments':
+      return RerankingDocuments.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'RerankingRank':
+      return RerankingRank.fromJson(value as Map<String, dynamic>).toJson();
+    case 'RerankingResponse':
+      return RerankingResponse.fromJson(value as Map<String, dynamic>).toJson();
+    case 'RerankingResult':
+      return RerankingResult.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ResponseInfo':
+      return ResponseInfo.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ResponseRecord':
+      return ResponseRecord.fromJson(value as Map<String, dynamic>).toJson();
+    case 'RetryError':
+      return RetryError.fromJson(value as Map<String, dynamic>).toJson();
+    case 'RetryErrorInput':
+      return RetryErrorInput.fromJson(value as Map<String, dynamic>).toJson();
+    case 'RetryErrorReason':
+      return RetryErrorReason.fromJson(value).toJson();
+    case 'RouterParams':
+      return RouterParams.fromJson(value as Map<String, dynamic>).toJson();
+    case 'RuntimeConfigureParams':
+      return RuntimeConfigureParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'RuntimeConfigureParamsProxy':
+      return RuntimeConfigureParamsProxy.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'RuntimeDescribeParams':
+      return RuntimeDescribeParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'RuntimeModel':
+      return RuntimeModel.fromJson(value as Map<String, dynamic>).toJson();
+    case 'SearchCallOptions':
+      return SearchCallOptions.fromJson(value as Map<String, dynamic>).toJson();
+    case 'SearchResponse':
+      return SearchResponse.fromJson(value as Map<String, dynamic>).toJson();
+    case 'SearchResult':
+      return SearchResult.fromJson(value as Map<String, dynamic>).toJson();
+    case 'SearchResultItem':
+      return SearchResultItem.fromJson(value as Map<String, dynamic>).toJson();
+    case 'SessionCall':
+      return SessionCall.fromJson(value as Map<String, dynamic>).toJson();
+    case 'SessionChainView':
+      return SessionChainView.fromJson(value as Map<String, dynamic>).toJson();
+    case 'SessionSource':
+      return SessionSource.fromJson(value).toJson();
+    case 'SessionStepStat':
+      return SessionStepStat.fromJson(value as Map<String, dynamic>).toJson();
+    case 'SessionStoreCallsParams':
+      return SessionStoreCallsParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'SessionStoreCreateParams':
+      return SessionStoreCreateParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'SessionStoreHandle':
+      return SessionStoreHandle.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'SessionView':
+      return SessionView.fromJson(value as Map<String, dynamic>).toJson();
+    case 'Size':
+      return Size.fromJson(value).toJson();
+    case 'Source':
+      return Source.fromJson(value as Map<String, dynamic>).toJson();
+    case 'SpeechCallOptions':
+      return SpeechCallOptions.fromJson(value as Map<String, dynamic>).toJson();
+    case 'SpeechRequest':
+      return SpeechRequest.fromJson(value as Map<String, dynamic>).toJson();
+    case 'SpeechResponse':
+      return SpeechResponse.fromJson(value as Map<String, dynamic>).toJson();
+    case 'SpeechResult':
+      return SpeechResult.fromJson(value as Map<String, dynamic>).toJson();
+    case 'StepModel':
+      return StepModel.fromJson(value as Map<String, dynamic>).toJson();
+    case 'StepResponse':
+      return StepResponse.fromJson(value as Map<String, dynamic>).toJson();
+    case 'StepResponseInput':
+      return StepResponseInput.fromJson(value as Map<String, dynamic>).toJson();
+    case 'StepResponseMetadata':
+      return StepResponseMetadata.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'StepResult':
+      return StepResult.fromJson(value as Map<String, dynamic>).toJson();
+    case 'StepResultInput':
+      return StepResultInput.fromJson(value as Map<String, dynamic>).toJson();
+    case 'StepResultPerformance':
+      return StepResultPerformance.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'StepResultPerformanceInput':
+      return StepResultPerformanceInput.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'Strategy':
+      return Strategy.fromJson(value as Map<String, dynamic>).toJson();
+    case 'StreamFrame':
+      return StreamFrame.fromJson(value as Map<String, dynamic>).toJson();
+    case 'StreamFrame0Event':
+      return StreamFrame0Event.fromJson(value).toJson();
+    case 'StreamOptions':
+      return StreamOptions.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TaggedToolResult':
+      return TaggedToolResult.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TaggedToolResultType':
+      return TaggedToolResultType.fromJson(value).toJson();
+    case 'TerminalSummary':
+      return TerminalSummary.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TextPart':
+      return TextPart.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TextRequest':
+      return TextRequest.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TextStreamPart':
+      return TextStreamPart.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TextStreamPart10SourceType':
+      return TextStreamPart10SourceType.fromJson(value).toJson();
+    case 'TextStreamPart11SourceType':
+      return TextStreamPart11SourceType.fromJson(value).toJson();
+    case 'TimeoutConfiguration':
+      return TimeoutConfiguration.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'Timestamp':
+      return Timestamp.fromJson(value).toJson();
+    case 'TimingRecord':
+      return TimingRecord.fromJson(value as Map<String, dynamic>).toJson();
+    case 'Tool':
+      return Tool.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ToolApprovalRequestOutput':
+      return ToolApprovalRequestOutput.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ToolApprovalRequestOutputInput':
+      return ToolApprovalRequestOutputInput.fromJson(
+              value as Map<String, dynamic>)
+          .toJson();
+    case 'ToolApprovalResponseOutput':
+      return ToolApprovalResponseOutput.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ToolApprovalResponseOutputInput':
+      return ToolApprovalResponseOutputInput.fromJson(
+              value as Map<String, dynamic>)
+          .toJson();
+    case 'ToolApprovalResponsePart':
+      return ToolApprovalResponsePart.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ToolCall':
+      return ToolCall.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ToolCallInput':
+      return ToolCallInput.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ToolCallPart':
+      return ToolCallPart.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ToolCallRepairReply':
+      return ToolCallRepairReply.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ToolCallRepairReply0ToolCall':
+      return ToolCallRepairReply0ToolCall.fromJson(
+              value as Map<String, dynamic>)
+          .toJson();
+    case 'ToolCallRepairReply0ToolCallType':
+      return ToolCallRepairReply0ToolCallType.fromJson(value).toJson();
+    case 'ToolChoice':
+      return ToolChoice.fromJson(value).toJson();
+    case 'ToolChoice0':
+      return ToolChoice0.fromJson(value).toJson();
+    case 'ToolChoice1':
+      return ToolChoice1.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ToolChoice1Type':
+      return ToolChoice1Type.fromJson(value).toJson();
+    case 'ToolChoiceViolationError':
+      return ToolChoiceViolationError.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ToolContentPart':
+      return ToolContentPart.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ToolOutputDenied':
+      return ToolOutputDenied.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ToolPart':
+      return ToolPart.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ToolRepairApplyRequest':
+      return ToolRepairApplyRequest.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ToolRepairApplyResultRequest':
+      return ToolRepairApplyResultRequest.fromJson(
+              value as Map<String, dynamic>)
+          .toJson();
+    case 'ToolRepairContextRequest':
+      return ToolRepairContextRequest.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ToolRepairContextResult':
+      return ToolRepairContextResult.fromJson(value).toJson();
+    case 'ToolRepairContextSchema':
+      return ToolRepairContextSchema.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ToolRepairContextSchemaToolCall':
+      return ToolRepairContextSchemaToolCall.fromJson(
+              value as Map<String, dynamic>)
+          .toJson();
+    case 'ToolRepairContextSchemaToolCallType':
+      return ToolRepairContextSchemaToolCallType.fromJson(value).toJson();
+    case 'ToolResult':
+      return ToolResult.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ToolResultContent':
+      return ToolResultContent.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ToolResultContentPart':
+      return ToolResultContentPart.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ToolResultFileId':
+      return ToolResultFileId.fromJson(value).toJson();
+    case 'ToolResultOutput':
+      return ToolResultOutput.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ToolResultOutput2':
+      return ToolResultOutput2.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ToolResultPart':
+      return ToolResultPart.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ToolResultPart2':
+      return ToolResultPart2.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TraceAggregateParams':
+      return TraceAggregateParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'TraceAggregateParamsFilter':
+      return TraceAggregateParamsFilter.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'TraceCreateParams':
+      return TraceCreateParams.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TraceRecord':
+      return TraceRecord.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TraceSessionParams':
+      return TraceSessionParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'TraceStats':
+      return TraceStats.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TranscriptionCallOptions':
+      return TranscriptionCallOptions.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'TranscriptionRequest':
+      return TranscriptionRequest.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'TranscriptionResponse':
+      return TranscriptionResponse.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'TranscriptionResult':
+      return TranscriptionResult.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'TranscriptionSegment':
+      return TranscriptionSegment.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'TranscriptionStartParams':
+      return TranscriptionStartParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'TranscriptionStreamPart':
+      return TranscriptionStreamPart.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'TransportParams':
+      return TransportParams.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TransportParams0Proxy':
+      return TransportParams0Proxy.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'TransportParams1Proxy':
+      return TransportParams1Proxy.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'TypedSource':
+      return TypedSource.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TypedSource0Type':
+      return TypedSource0Type.fromJson(value).toJson();
+    case 'TypedSource1Type':
+      return TypedSource1Type.fromJson(value).toJson();
+    case 'TypedToolCall':
+      return TypedToolCall.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TypedToolCallInput':
+      return TypedToolCallInput.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'TypedToolCallInputType':
+      return TypedToolCallInputType.fromJson(value).toJson();
+    case 'TypedToolCallType':
+      return TypedToolCallType.fromJson(value).toJson();
+    case 'TypedToolError':
+      return TypedToolError.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TypedToolResult':
+      return TypedToolResult.fromJson(value as Map<String, dynamic>).toJson();
+    case 'UploadFileData':
+      return UploadFileData.fromJson(value as Map<String, dynamic>).toJson();
+    case 'UploadFileParams':
+      return UploadFileParams.fromJson(value as Map<String, dynamic>).toJson();
+    case 'UploadFileResult':
+      return UploadFileResult.fromJson(value as Map<String, dynamic>).toJson();
+    case 'UsageSnapshot':
+      return UsageSnapshot.fromJson(value as Map<String, dynamic>).toJson();
+    case 'UserContent':
+      return UserContent.fromJson(value).toJson();
+    case 'UserContentPart':
+      return UserContentPart.fromJson(value as Map<String, dynamic>).toJson();
+    case 'UserPart':
+      return UserPart.fromJson(value as Map<String, dynamic>).toJson();
+    case 'Verdict':
+      return Verdict.fromJson(value as Map<String, dynamic>).toJson();
+    case 'VerdictConfidence':
+      return VerdictConfidence.fromJson(value).toJson();
+    case 'VerdictKind':
+      return VerdictKind.fromJson(value).toJson();
+    case 'VideoCallOptions':
+      return VideoCallOptions.fromJson(value as Map<String, dynamic>).toJson();
+    case 'VideoData':
+      return VideoData.fromJson(value as Map<String, dynamic>).toJson();
+    case 'VideoFile':
+      return VideoFile.fromJson(value as Map<String, dynamic>).toJson();
+    case 'VideoFileData':
+      return VideoFileData.fromJson(value).toJson();
+    case 'VideoFrameImage':
+      return VideoFrameImage.fromJson(value as Map<String, dynamic>).toJson();
+    case 'VideoFrameType':
+      return VideoFrameType.fromJson(value).toJson();
+    case 'VideoPollOptions':
+      return VideoPollOptions.fromJson(value as Map<String, dynamic>).toJson();
+    case 'VideoResponse':
+      return VideoResponse.fromJson(value as Map<String, dynamic>).toJson();
+    case 'VideoResult':
+      return VideoResult.fromJson(value as Map<String, dynamic>).toJson();
+    case 'Warning':
+      return Warning.fromJson(value as Map<String, dynamic>).toJson();
+    case '_aimux_core_model_catalogue_RuntimeModel_':
+      return WireAimuxCoreModelCatalogueRuntimeModel.fromJson(value).toJson();
+    case '_aimux_core_session_SessionCall_':
+      return WireAimuxCoreSessionSessionCall.fromJson(value).toJson();
+    case '_aimux_core_session_SessionView_':
+      return WireAimuxCoreSessionSessionView.fromJson(value).toJson();
+    case '_aimux_core_trace_store_SessionStepStat_':
+      return WireAimuxCoreTraceStoreSessionStepStat.fromJson(value).toJson();
+    case '_aimux_core_trace_store_TraceStats_':
+      return WireAimuxCoreTraceStoreTraceStats.fromJson(value).toJson();
+    default:
+      throw FormatException('Unknown DTO type: $type');
   }
 }

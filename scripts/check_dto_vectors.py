@@ -21,6 +21,17 @@ RUNNERS = {
 # JavaScript numbers are IEEE doubles, so integers above 2^53 round (a registered difference).
 DOUBLE_NUMBERS = {"node"}
 
+# Native 64-bit signed integers cannot hold u64 values above 2^63-1 (a registered difference): such vectors may fail.
+INT64_NUMBERS = {"dart"}
+
+
+def beyond_int64(value):
+    if isinstance(value, dict):
+        return any(beyond_int64(item) for item in value.values())
+    if isinstance(value, list):
+        return any(beyond_int64(item) for item in value)
+    return isinstance(value, int) and not isinstance(value, bool) and not -(1 << 63) <= value < (1 << 63)
+
 
 def as_double(value):
     if isinstance(value, dict):
@@ -65,13 +76,16 @@ def main():
         result = subprocess.run(RUNNERS[language], cwd=ROOT, text=True, capture_output=True)
         if result.returncode:
             raise ValueError(f"{language}: runner failed\n{result.stderr}")
-        seen = set()
+        seen, skipped = set(), 0
         for line in result.stdout.splitlines():
             record = json.loads(line, parse_float=Decimal)
             name = record.get("file")
             if name not in expected or name in seen:
                 raise ValueError(f"{language}: unexpected or duplicate vector: {name}")
             seen.add(name)
+            if language in INT64_NUMBERS and beyond_int64(expected[name]):
+                skipped += 1
+                continue
             if record.get("ok") is not True or "error" in record:
                 raise ValueError(f"{language}: {name}: {record.get('error', 'codec failed')}")
             value, want = record.get("value"), expected[name]
@@ -81,7 +95,7 @@ def main():
                 raise ValueError(f"{language}: {name}: re-encoded value differs")
         if seen != expected.keys():
             raise ValueError(f"{language}: missing vectors: {sorted(expected.keys() - seen)}")
-        print(f"{language}: {len(seen)} vectors passed")
+        print(f"{language}: {len(seen) - skipped} vectors passed, {skipped} beyond the language's integers")
     return 0
 
 

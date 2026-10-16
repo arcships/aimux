@@ -11,7 +11,7 @@ final class OpsException implements Exception {
   int get code => envelope.code;
   String get message => envelope.message;
   Object? get error => envelope.error;
-  BigInt? get retryAfterMs => envelope.retryAfterMs;
+  int? get retryAfterMs => envelope.retryAfterMs;
   Map<String, dynamic> toJson() => envelope.toJson();
 
   @override

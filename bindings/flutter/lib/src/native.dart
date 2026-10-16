@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
@@ -53,7 +54,7 @@ void checkJsonValue(Object? value) {
 
 String encodeParams(Object? value) {
   checkJsonValue(value);
-  return dtoJsonEncode(value);
+  return jsonEncode(value);
 }
 
 int parseHandle(String wire) {
@@ -85,7 +86,7 @@ final class NativeApi {
     if (value == nullptr) return;
     try {
       throw OpsException.fromJson(
-        dtoJsonDecode(takeString(ffi.errorJson(value))) as Map<String, dynamic>,
+        jsonDecode(takeString(ffi.errorJson(value))) as Map<String, dynamic>,
       );
     } finally {
       ffi.errorFree(value);
@@ -98,7 +99,7 @@ final class NativeApi {
       checkError(invoke(out));
       final ptr = out.value;
       out.value = nullptr;
-      return dtoJsonDecode(takeString(ptr));
+      return jsonDecode(takeString(ptr));
     } finally {
       if (out.value != nullptr) ffi.freeString(out.value);
       calloc.free(out);
@@ -193,7 +194,7 @@ Object? _execute(NativeRequest r) {
             out.value = nullptr;
             return OperationPollResultPart(
                     part_: TranscriptionStreamPart.fromJson(
-                        dtoJsonDecode(api.takeString(ptr))))
+                        jsonDecode(api.takeString(ptr))))
                 .toJson();
           case 2:
           case 3:

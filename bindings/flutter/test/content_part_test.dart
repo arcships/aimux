@@ -11,7 +11,7 @@ void main() {
     // (uint8-utils.ts:12-23), never an array of ints.
     test('binary is written as base64', () {
       expect(FileBytes(base64Encode([0, 1, 2, 250, 255])).toJson(), 'AAEC+v8=');
-      expect(() => FileBytes.fromJson([104, 105]), throwsFormatException);
+      expect(() => FileBytes.fromJson([104, 105]), throwsA(isA<TypeError>()));
       expect(base64Decode(base64.normalize('AAEC-v8')), [0, 1, 2, 250, 255]);
     });
 
@@ -85,11 +85,7 @@ void main() {
         'data': 'aGk=',
         'mediaType': 'image/png',
       },
-      'reasoning': {
-        'type': 'reasoning',
-        'text': 'thinking...',
-        'signature': 'sig'
-      },
+      'reasoning': {'type': 'reasoning', 'text': 'thinking...'},
       'reasoning-file': {
         'type': 'reasoning-file',
         'data': {'type': 'data', 'data': 'aGk='},

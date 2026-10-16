@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:isolate';
 import 'dart:typed_data';
@@ -126,7 +127,8 @@ final class Aimux {
         handle: _id(operation),
         timeout: timeoutMs,
       ),
-    ).then(OperationPollResult.fromJson);
+    ).then(
+        (value) => OperationPollResult.fromJson(value as Map<String, dynamic>));
   }
 
   int _id(OpsHandle? handle) {
@@ -241,7 +243,7 @@ final class _NativeStreamProducer implements BlockingStreamProducer {
         if (failure != null || cancelled) return;
         final json = pointer.toDartString();
         final frame = StreamFrame.fromJson(
-          dtoJsonDecode(json) as Map<String, dynamic>,
+          jsonDecode(json) as Map<String, dynamic>,
         );
         final seq = BigInt.parse(frame.seq);
         if (terminal != null || lastSeq != null && seq <= lastSeq!) {
@@ -311,7 +313,7 @@ Stream<StreamFrame> _stream(
   final finished = Completer<void>();
   Future<void> start() async {
     try {
-      final requestParams = dtoJsonDecode(params);
+      final requestParams = jsonDecode(params);
       final suppliedAbort =
           requestParams is Map ? requestParams['abort'] : null;
       late final int abortId;
@@ -336,7 +338,7 @@ Stream<StreamFrame> _stream(
       );
       subscription = bridge.stream.listen(
         (json) => controller.add(
-            StreamFrame.fromJson(dtoJsonDecode(json) as Map<String, dynamic>)),
+            StreamFrame.fromJson(jsonDecode(json) as Map<String, dynamic>)),
         onError: (Object error, StackTrace stack) =>
             controller.addError(error, stack),
         onDone: () => unawaited(controller.close()),
