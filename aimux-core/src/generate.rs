@@ -106,7 +106,7 @@ async fn resolve_file(
 /// Unlike `CallOptions` (provider-facing), this does not include `prompt`
 /// (passed separately) and defaults are more ergonomic.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateTextOptions {
     pub max_output_tokens: Option<u32>,
     pub temperature: Option<f64>,
@@ -513,7 +513,8 @@ impl GenerateTextResult {
 /// `finalStep` and the static/dynamic subsets are left out: they are the
 /// last entry of `steps` and a filter on `dynamic`.
 #[derive(Serialize, TS)]
-#[ts(export, rename = "GenerateTextResult")]
+#[ts(rename = "GenerateTextResult")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 struct GenerateTextResultSnapshot<'a> {
     content: Vec<&'a ContentPart>,
     text: String,
@@ -614,7 +615,7 @@ fn stream_output(step: &StepResult, output: Option<&Output>) -> OutputState {
 /// Result of the deprecated [`generate_object`]: the AI SDK's
 /// `GenerateObjectResult` (`generate-object/generate-object-result.ts`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateObjectResult {
     /// The generated object, as parsed by the output.
     pub object: Value,
@@ -641,7 +642,7 @@ pub struct GenerateObjectResult {
 /// `GenerateObjectResult.response`: the AI SDK's
 /// `Omit<LanguageModelResponseMetadata, 'messages'>`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateObjectResponse {
     pub id: String,
     pub timestamp: String,

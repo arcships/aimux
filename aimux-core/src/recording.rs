@@ -71,7 +71,7 @@ where
 /// Operation stored in a unified recording. Older recordings are language calls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum RecordingOperation {
     #[default]
     LanguageModel,
@@ -86,7 +86,7 @@ impl RecordingOperation {
 
 /// 一次完整调用的录制记录(三层 + call_id 关联)。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct Recording {
     /// 格式版本。Written as [`RECORDING_SCHEMA`]; schemas 1 and 2 are read.
     /// Recordings written by aimux 0.5 and earlier also carry a configuration
@@ -175,7 +175,7 @@ impl Recording {
 
 /// ① 输入侧:完整调用参数,足以重建 generate_text 调用。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct InputRecord {
     /// Decision contract used for validation and deterministic offline replay.
     /// Connection settings remain outside the recording.
@@ -257,7 +257,7 @@ impl InputRecord {
 /// 只记身份,不记配置:回放时按 `provider_id` + `model_id` 重新构建 model,
 /// 凭证与 base URL 只来自环境/registry(RFC-0036 §3.3)。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ProviderRecord {
     /// provider 名(registry 名),回放重建的查找键,如 "openai"、"deepseek"。
     /// Empty in a recording written by aimux 0.5 or earlier, which has none
@@ -312,7 +312,7 @@ impl ProviderRecord {
 
 /// ③ HTTP 侧:单次 attempt 的 wire 交换。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct HttpExchange {
     /// Composite step this exchange belongs to (e.g. `router[0]:openai/gpt-4o`
     /// or `moa.ref[1]:...`). `None` for a plain, non-composite operation.
@@ -340,7 +340,7 @@ fn default_finalized() -> bool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct HttpRecord {
     pub method: String,
     pub url: String,
@@ -351,7 +351,7 @@ pub struct HttpRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ResponseRecord {
     pub status: u16,
     pub headers: Vec<(String, String)>,
@@ -365,7 +365,7 @@ pub struct ResponseRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TimingRecord {
     /// ms 级延迟,TS 用 number(远小于 2^53,避免 bigint)。
     #[ts(type = "number")]
@@ -377,7 +377,7 @@ pub struct TimingRecord {
 /// 调用终结状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum OutcomeStatus {
     /// 未到(内部哨兵,不作为最终输出)。
     #[default]
@@ -393,7 +393,7 @@ pub enum OutcomeStatus {
 
 /// 最终结果摘要。
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct OutcomeRecord {
     /// Normalized decision result, independent of a provider's wire format.
     #[serde(default, skip_serializing_if = "Option::is_none")]

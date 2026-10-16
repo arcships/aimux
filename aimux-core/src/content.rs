@@ -25,7 +25,7 @@ use crate::types::NamespacedKind;
 /// A part of a user message: upstream's `TextPart | ImagePart | FilePart`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum UserContentPart {
     /// A text segment.
     Text {
@@ -98,7 +98,7 @@ pub enum UserContentPart {
 /// ToolResultPart | ToolApprovalRequest`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AssistantContentPart {
     /// A text segment.
     Text {
@@ -219,7 +219,7 @@ pub enum AssistantContentPart {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolContentPart {
     /// The result of a tool call.
     ToolResult(ToolResultPart),
@@ -300,7 +300,8 @@ impl ToolContentPart {
 /// form; any other output is written as `output`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(try_from = "ToolResultPartJson", into = "ToolResultPartJson")]
-#[ts(export, as = "ToolResultPartJson")]
+#[ts(as = "ToolResultPartJson")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolResultPart {
     pub tool_call_id: String,
     /// The tool name. Required upstream; when absent here, the conversion
@@ -445,7 +446,7 @@ impl From<ToolResultPart> for ToolResultPartJson {
 /// The output of a tool call (upstream `ToolResultOutput`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolResultOutput {
     /// Text for the model.
     Text {
@@ -525,7 +526,7 @@ impl ToolResultOutput {
 /// upstream's `mapToolResultOutput` does.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolResultContentPart {
     /// Text.
     Text {
@@ -612,7 +613,7 @@ pub enum ToolResultContentPart {
 /// (`string | Record<string, string>`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolResultFileId {
     Id(String),
     ByProvider(SharedProviderReference),

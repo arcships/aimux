@@ -147,3 +147,7 @@ tools/aimux-web/
   `web/src/types/generated/`(同样由 `scripts/gen_ts_types.py` 生成、CI `--check` 防漂移)。
   不导出到 `bindings/node`,因为它们属于前端而非 node 绑定。改 `src/wire.rs` 后运行
   `scripts/gen_ts_types.py` 并一起提交,**不要手改** `generated/` 下的文件。
+- **类型导出**:`aimux-core` 和 `aimux-web` 都通过 `ts-export` feature 门控导出测试,
+  普通 `cargo test` 不写入类型文件。`scripts/gen_ts_types.py` 是唯一写入入口,
+  由它启用 feature,先在临时目录导出再同步到受跟踪目录;CI 用 `--check` 检查漂移和
+  未门控的导出属性。

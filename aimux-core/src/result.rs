@@ -16,7 +16,7 @@ use crate::types::{FinishReason, NamespacedKind, ProviderMetadata, Usage, Warnin
 /// A content item a provider returns (V4 `LanguageModelV4Content`). Text
 /// generation turns it into the core [`ContentPart`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum GenerateContent {
     /// Generated text.
     Text {
@@ -59,7 +59,7 @@ pub enum GenerateContent {
 /// `convertLanguageModelContent` builds them
 /// (`generate-text/convert-language-model-content.ts`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ContentPart {
     /// Generated text.
     Text {
@@ -104,7 +104,7 @@ pub enum ContentPart {
 /// aimux has no user-level tool definitions, so upstream's `toolMetadata`
 /// and `title`, which come from them, are absent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TypedToolResult {
     pub tool_call_id: String,
     pub tool_name: String,
@@ -127,7 +127,7 @@ pub struct TypedToolResult {
 /// `generate-text/tool-error.ts:6-36`). `toolMetadata` and `title` are
 /// absent, as on [`TypedToolResult`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TypedToolError {
     pub tool_call_id: String,
     pub tool_name: String,
@@ -147,7 +147,7 @@ pub struct TypedToolError {
 /// `ToolApprovalResponseOutput`, `ai`
 /// `generate-text/tool-approval-response-output.ts:7-35`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolApprovalResponseOutput {
     pub approval_id: String,
     pub tool_call: crate::tool::ToolCall,
@@ -161,7 +161,7 @@ pub struct ToolApprovalResponseOutput {
 /// The output of a tool whose execution was denied (the AI SDK's
 /// `StaticToolOutputDenied`, `ai` `generate-text/tool-output-denied.ts:7-15`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolOutputDenied {
     pub tool_call_id: String,
     pub tool_name: String,
@@ -173,7 +173,7 @@ pub struct ToolOutputDenied {
 
 /// Provider approval request for a provider-executed call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RawToolApprovalRequest {
     pub approval_id: String,
     pub tool_call_id: String,
@@ -183,7 +183,7 @@ pub struct RawToolApprovalRequest {
 
 /// Approval request exposed by text generation.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolApprovalRequestOutput {
     pub approval_id: String,
     pub tool_call: crate::tool::ToolCall,
@@ -208,7 +208,7 @@ pub struct ToolApprovalRequestOutput {
 /// payload of both `GenerateContent::Source` and `StreamPart::Source`, and the
 /// element of the text results' `sources`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[serde(tag = "source_type", rename_all = "lowercase")]
 pub enum Source {
     Url {
@@ -235,7 +235,7 @@ pub enum Source {
 /// or URL. The payload of both `GenerateContent::File` and
 /// `StreamPart::File`, and the element of the text results' `files`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GeneratedFile {
     pub data: GeneratedFileData,
     pub media_type: String,
@@ -249,7 +249,7 @@ pub struct GeneratedFile {
 /// (`providerMetadata.anthropic.signature`). The payload of
 /// `GenerateContent::Reasoning` and the element of the text results' `reasoning`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ReasoningOutput {
     pub text: String,
     pub provider_metadata: Option<ProviderMetadata>,
@@ -258,14 +258,14 @@ pub struct ReasoningOutput {
 /// Text or a generated file produced during reasoning.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ReasoningPart {
     Text(ReasoningOutput),
     File(ReasoningFileOutput),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ReasoningFileOutput {
     pub file: GeneratedFile,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -274,7 +274,7 @@ pub struct ReasoningFileOutput {
 
 /// Result of `LanguageModel::do_generate` (non-streaming).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateResult {
     /// Generated content items (text, tool calls, etc.).
     pub content: Vec<GenerateContent>,
