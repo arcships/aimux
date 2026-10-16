@@ -112,28 +112,28 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct RegistryCreateParams {
+pub struct RegistryCreateParams {
     #[serde(default)]
     namespace: String,
     entries: Vec<RegistryEntry>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RegistryEntry {
     key: String,
     provider: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct RegistryProviderParams {
+pub struct RegistryProviderParams {
     key: String,
 }
 
-#[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Debug, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ModelRef {
     namespace: String,
@@ -142,7 +142,7 @@ struct ModelRef {
     model_id: String,
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, Debug)]
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, Debug, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 enum ModelMethod {
     LanguageModel,
@@ -157,19 +157,19 @@ enum ModelMethod {
     Decision,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ModelResolveParams {
+pub struct ModelResolveParams {
     model_ref: ModelRef,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct ModelInfoParams {}
+pub struct ModelInfoParams {}
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct ModelWrapParams {
+pub struct ModelWrapParams {
     middleware: Vec<String>,
 }
 
@@ -197,15 +197,15 @@ fn wrong(entry: &Entry, expected: &[HandleKind]) -> OpsError {
     })
 }
 
-#[derive(Serialize)]
-struct HandleResult {
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct HandleResult {
     handle: HandleId,
     kind: HandleKind,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
-struct ModelInfo<'a> {
+pub struct ModelInfo<'a> {
     provider: &'a str,
     model_id: &'a str,
     modality: &'static str,

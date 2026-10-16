@@ -2,12 +2,11 @@
 //! strict/shared dual mode. Pure, table-driven — the prototype's `judge`
 //! ported into the core, with provider parameters in a matrix (§7).
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 /// Verdict kinds (RFC-0015 §4.1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub enum VerdictKind {
     Trusted,
     SuspectOverclaim,
@@ -16,8 +15,7 @@ pub enum VerdictKind {
 }
 
 /// Confidence level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum VerdictConfidence {
     High,
     Medium,
@@ -25,9 +23,8 @@ pub enum VerdictConfidence {
 }
 
 /// A verdict for one call.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct Verdict {
     pub kind: VerdictKind,
     pub confidence: VerdictConfidence,
@@ -59,14 +56,12 @@ impl Verdict {
 
 /// Provider audit parameters (RFC-0015 §7 matrix — the part that lives in
 /// core; display logic belongs to the CLI).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ProviderAuditSpec {
     /// Provider family for family-specific invariants.
     pub family: ProviderFamily,
     /// Token quantization granularity; `None` = no quantization.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gran: Option<u64>,
     /// Minimum cache threshold (tokens): below it `claimed` must be 0.
@@ -78,15 +73,13 @@ pub struct ProviderAuditSpec {
     pub model56plus: bool,
     /// Claimed-hit ceiling: above this multiple of the client upper bound
     /// the verdict is overclaim (W) even in shared mode. `None` = use U+τ.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shared_ceiling_mult: Option<f64>,
 }
 
 /// Provider family (only families with distinct invariants need dispatch;
 /// gran/threshold/ttl live in `ProviderAuditSpec`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum ProviderFamily {
     OpenAi,
     DeepSeek,

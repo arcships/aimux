@@ -4,8 +4,8 @@
 //! (`reference/ai/packages/provider/src/video-model/v4/`).
 
 use async_trait::async_trait;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 use std::time::{Duration, Instant};
 
@@ -19,13 +19,12 @@ use crate::{AbortSignal, retry, timeout};
 /// A video or image file used for video editing or image-to-video generation.
 ///
 /// Aligned with V4 `VideoModelV4File`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum VideoFile {
     /// Inline file data (base64 or binary) with an explicit media type.
     File {
@@ -39,7 +38,6 @@ pub enum VideoFile {
         /// The URL of the video or image file.
         url: String,
         /// The media type of the referenced file, when known.
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         media_type: Option<String>,
     },
@@ -48,8 +46,9 @@ pub enum VideoFile {
 /// File payload for a [`VideoFile::File`]: base64 string or raw bytes.
 ///
 /// The JSON is a base64 string either way, as in the AI SDK's JSON.
-#[derive(Debug, Clone, TS)]
-#[ts(export, type = "string")]
+#[derive(Debug, Clone, JsonSchema)]
+#[schemars(with = "String")]
+#[schemars(extend("x-aimux-codec" = "base64"))]
 pub enum VideoFileData {
     /// Base64-encoded string.
     Base64(String),
@@ -62,9 +61,8 @@ crate::wire::base64_wire_enum!(VideoFileData);
 /// The role a frame image plays in video generation.
 ///
 /// Aligned with V4 `VideoModelV4FrameType`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(export)]
 pub enum VideoFrameType {
     /// The starting frame the model animates from.
     FirstFrame,
@@ -75,9 +73,8 @@ pub enum VideoFrameType {
 /// A role-tagged image input for image-to-video and first-last-frame generation.
 ///
 /// Aligned with V4 `VideoModelV4FrameImage`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct VideoFrameImage {
     /// The image file used for this frame.
     pub image: VideoFile,
@@ -89,13 +86,12 @@ pub struct VideoFrameImage {
 ///
 /// Aligned with V4 `VideoModelV4VideoData`. Most providers return URLs due to
 /// large file sizes.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum VideoData {
     /// Video available as a URL (most common).
     Url { url: String, media_type: String },
@@ -103,7 +99,7 @@ pub enum VideoData {
     Base64 { data: String, media_type: String },
     /// Video as binary data (a base64 string in the JSON).
     Binary {
-        #[ts(type = "string")]
+        #[schemars(with = "String", extend("x-aimux-codec" = "base64"))]
         #[serde(with = "crate::wire::base64_bytes")]
         data: Vec<u8>,
         media_type: String,
@@ -113,12 +109,10 @@ pub enum VideoData {
 /// Options passed to [`VideoModel::do_start`] and [`VideoModel::do_status`].
 ///
 /// Aligned with V4 `VideoModelV4CallOptions`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct VideoCallOptions {
     /// Text prompt for the video generation. `None` when not required.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
 
@@ -130,47 +124,38 @@ pub struct VideoCallOptions {
     pub n: u32,
 
     /// Aspect ratio, in `{width}:{height}` format (e.g. `"16:9"`).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aspect_ratio: Option<AspectRatio>,
 
     /// Resolution, in `{width}x{height}` format (e.g. `"1280x720"`).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolution: Option<Size>,
 
     /// Duration of the video in seconds. Typically 3–10 seconds.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration: Option<u32>,
 
     /// Frames per second. Common values: 24, 30, 60.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fps: Option<u32>,
 
     /// Seed for deterministic generation. `None` uses a random seed.
-    #[ts(optional, type = "number")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
 
     /// Input image for image-to-video generation (the starting frame).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image: Option<VideoFile>,
 
     /// Role-tagged image inputs for first-last-frame generation.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame_images: Option<Vec<VideoFrameImage>>,
 
     /// Reference inputs for reference-to-video generation (images or videos).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_references: Option<Vec<VideoFile>>,
 
     /// Whether the model should generate audio alongside the video.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generate_audio: Option<bool>,
 
@@ -180,29 +165,24 @@ pub struct VideoCallOptions {
 
     /// Abort signal for cancelling the operation.
     #[serde(skip)]
-    #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
     /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     /// retrying. `None` uses 2, the AI SDK default.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
 
     /// Poll pacing for the start/status flow, the AI SDK's `generateVideo`
     /// `poll` option. Unset fields use the AI SDK defaults (5000 ms between
     /// status checks, 600000 ms in total).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub poll: Option<VideoPollOptions>,
 
     /// Per-call operation timeout.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<crate::options::TimeoutConfiguration>,
 
     /// Additional HTTP headers to send with the request.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
 
@@ -213,7 +193,6 @@ pub struct VideoCallOptions {
     ///
     /// Runtime handle; never crosses the JSON boundary.
     #[serde(skip)]
-    #[ts(skip)]
     pub download: Option<Download>,
 }
 
@@ -250,18 +229,15 @@ impl VideoCallOptions {
 /// Per-call poll pacing for video generation (AI SDK `generateVideo` `poll`,
 /// ai@7.0.127 `generate-video/generate-video.ts:55-80`). The poll settings
 /// belong to the operation, as upstream: a video model has none of its own.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct VideoPollOptions {
     /// Delay between consecutive status checks, in milliseconds.
     // `number`, not the `bigint` ts-rs infers from u64: the JS bindings pass
     // options through `JSON.stringify`, which throws on BigInt.
-    #[ts(optional, type = "number")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interval_ms: Option<u64>,
     /// Maximum total time to wait for completion, in milliseconds.
-    #[ts(optional, type = "number")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
 }
@@ -269,9 +245,8 @@ pub struct VideoPollOptions {
 /// The final result of a video generation operation.
 ///
 /// Aligned with V4 `VideoModelV4Result`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct VideoResult {
     /// Generated videos as URLs, base64 strings, or binary data.
     pub videos: Vec<VideoData>,
@@ -280,7 +255,6 @@ pub struct VideoResult {
     pub warnings: Vec<Warning>,
 
     /// Additional provider-specific metadata, keyed by provider name.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<SharedProviderMetadata>,
 
@@ -289,20 +263,16 @@ pub struct VideoResult {
 }
 
 /// Response information for a video generation call.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct VideoResponse {
     /// Timestamp for the start of the generated response (`toISOString()` in the JSON).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<crate::timestamp::Timestamp>,
     /// The ID of the model that was used to generate the response.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
     /// Response headers.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
 }

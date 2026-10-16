@@ -1,47 +1,41 @@
 //! Tool / function-calling types.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::shared::SharedProviderOptions;
 use crate::types::{NamespacedKind, ProviderMetadata};
 
 /// A tool definition passed to the model in `CallOptions.tools`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct FunctionTool {
     /// Unique tool name.
     pub name: String,
     /// Human-readable description.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// JSON Schema describing the tool's parameters.
     pub input_schema: Value,
     /// Whether the tool supports strict schema enforcement (OpenAI strict mode).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strict: Option<bool>,
     /// Provider-specific options, keyed by provider name
     /// (e.g. `{"anthropic": {"eagerInputStreaming": true}}`). Aligned with the
     /// V4 `providerOptions` field on function tools.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
     /// Example inputs for the tool (V4 `inputExamples`), used by some providers
     /// to emit `input_examples` in the request body.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_examples: Option<Vec<FunctionToolInputExample>>,
 }
 
 /// An example input for a function tool.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct FunctionToolInputExample {
     pub input: Map<String, Value>,
 }
@@ -84,9 +78,8 @@ impl FunctionTool {
 /// Provider tools are specific to a certain provider. The input and output
 /// schemas are defined by the provider, and some are executed on the provider's
 /// servers (e.g. web search, code execution).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ProviderTool {
     /// The ID of the tool, following the format `<provider-id>.<unique-tool-name>`.
     pub id: NamespacedKind,
@@ -100,9 +93,8 @@ pub struct ProviderTool {
 /// A tool that can be either a user-defined function tool or a
 /// provider-defined tool. Mirrors the V4
 /// `Array<LanguageModelV4FunctionTool | LanguageModelV4ProviderTool>`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "lowercase")]
-#[ts(export)]
 pub enum Tool {
     /// A user-defined function tool.
     Function(FunctionTool),
@@ -120,28 +112,23 @@ impl From<FunctionTool> for Tool {
 ///
 /// The wire shape matches [`ToolCall`] field for field, except that `input`
 /// is the provider's raw argument *text* rather than a parsed value.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct RawToolCall {
     pub tool_call_id: String,
     pub tool_name: String,
     pub input: String,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_executed: Option<bool>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<bool>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
 }
 
 /// A tool call requested by the model.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ToolCall {
     /// Provider-assigned call id.
     pub tool_call_id: String,
@@ -151,24 +138,19 @@ pub struct ToolCall {
     /// provider input was not valid JSON.
     pub input: Value,
     /// Whether the tool call will be executed by the provider.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_executed: Option<bool>,
     /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<bool>,
     /// Additional provider-specific metadata associated with this call.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
     /// Set when lookup, JSON parsing, or schema validation still failed after
     /// the optional repair attempt.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invalid: Option<bool>,
     /// Typed failure associated with an invalid tool call.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<AiMuxError>,
 }
@@ -190,23 +172,21 @@ impl crate::wire::TypeTag for RawToolCall {
 /// request's `toolCall`): a [`ToolCall`] with its `type` tag, the AI SDK's
 /// `TypedToolCall` (`ai` `generate-text/tool-call.ts:8-14`).
 ///
-/// Only the TypeScript type is generated from this struct; Rust fields hold a
-/// [`ToolCall`] and serde writes the tag ([`crate::wire::typed`]).
-#[derive(TS)]
-#[ts(export)]
+/// Schema view of the tag written by [`crate::wire::typed`].
+#[derive(JsonSchema)]
 #[allow(dead_code)]
+#[schemars(schema_with = "crate::wire::tagged_schema::<ToolCall>")]
 pub struct TypedToolCall {
-    #[ts(rename = "type", type = "\"tool-call\"")]
+    #[schemars(rename = "type", with = "String", extend("const" = "tool-call"))]
     tag: (),
-    #[ts(flatten)]
+    #[schemars(flatten)]
     call: ToolCall,
 }
 
 /// A tool result produced by a provider-executed tool (e.g. xAI `file_search`,
 /// web search), carried next to the [`RawToolCall`] it answers.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ToolResult {
     /// Must match the corresponding call's `tool_call_id`.
     pub tool_call_id: String,
@@ -216,21 +196,18 @@ pub struct ToolResult {
     /// src/language-model/v4/language-model-v4-tool-result.ts:23`); a `null`
     /// result does not deserialize.
     #[serde(deserialize_with = "non_null_json")]
+    #[schemars(schema_with = "non_null_json_schema")]
     pub result: Value,
     /// Whether the result is an error or error message.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_error: Option<bool>,
     /// Whether the result is preliminary (replaces prior, e.g. image previews).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preliminary: Option<bool>,
     /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<bool>,
     /// Additional provider-specific metadata for the tool result.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
 }
@@ -258,11 +235,8 @@ where
 /// `Tool` variant as a tagged object), so serde is implemented by hand.
 /// [`prepare_tool_choice`] turns it into the [`LanguageModelV4ToolChoice`]
 /// a model call carries.
-#[derive(Debug, Clone, Default, PartialEq, TS)]
-#[ts(
-    export,
-    type = "\"auto\" | \"none\" | \"required\" | { type: \"tool\"; toolName: string }"
-)]
+#[derive(Debug, Clone, Default, PartialEq, JsonSchema)]
+#[schemars(schema_with = "tool_choice_schema")]
 pub enum ToolChoice {
     /// Model decides whether to call a tool (default).
     #[default]
@@ -273,6 +247,23 @@ pub enum ToolChoice {
     Required,
     /// Model must call the specified tool.
     Tool { tool_name: String },
+}
+
+fn tool_choice_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "anyOf": [
+            { "type": "string", "enum": ["auto", "none", "required"] },
+            { "type": "object", "properties": {
+                "type": { "const": "tool" }, "toolName": { "type": "string" }
+            }, "required": ["type", "toolName"] }
+        ]
+    })
+}
+
+fn non_null_json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "not": { "type": "null" }
+    })
 }
 
 impl Serialize for ToolChoice {
@@ -345,9 +336,8 @@ impl<'de> Deserialize<'de> for ToolChoice {
 /// [`CallOptions::tool_choice`](crate::options::CallOptions::tool_choice).
 ///
 /// Always an object tagged by `type`, unlike the user-level [`ToolChoice`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-#[ts(export)]
 pub enum LanguageModelV4ToolChoice {
     /// The model decides whether to call a tool.
     Auto,

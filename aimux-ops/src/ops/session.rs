@@ -12,25 +12,25 @@ use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
 use crate::ops::operation::EmptyParams;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct SessionStoreCreateParams {
+pub struct SessionStoreCreateParams {
     infer: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct SessionStoreCallsParams {
+pub struct SessionStoreCallsParams {
     session_id: String,
 }
 
-#[derive(Serialize)]
-struct SessionStoreHandle {
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct SessionStoreHandle {
     handle: HandleId,
 }
 
-type SessionViews = Vec<aimux_core::session::SessionView>;
-type SessionCalls = Vec<aimux_core::session::SessionCall>;
+pub type SessionViews = Vec<aimux_core::session::SessionView>;
+pub type SessionCalls = Vec<aimux_core::session::SessionCall>;
 
 pub(crate) static OPS: &[OpDescriptor] = &[
     OpDescriptor {

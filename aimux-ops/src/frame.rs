@@ -10,7 +10,7 @@ use serde::Serialize;
 use crate::dispatch::EventStream;
 use crate::envelope::{ErrorEnvelope, OpsError, ProtocolError};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum Outcome {
     Success,
@@ -18,19 +18,28 @@ pub enum Outcome {
     Cancelled,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum StreamFrame {
     Event {
+        #[schemars(extend("x-aimux-codec" = "u64-string"))]
         seq: String,
+        #[schemars(schema_with = "frame_event_schema")]
         event: serde_json::Value,
     },
     End {
+        #[schemars(extend("x-aimux-codec" = "u64-string"))]
         seq: String,
         outcome: Outcome,
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<ErrorEnvelope>,
     },
+}
+
+fn frame_event_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let text = generator.subschema_for::<aimux_core::stream_part::TextStreamPart>();
+    let openai = generator.subschema_for::<aimux_core::openai_output::ChatCompletionChunk>();
+    schemars::json_schema!({ "anyOf": [text, openai] })
 }
 
 /// Pull-driven framing: at most one upstream item is read for each output item.

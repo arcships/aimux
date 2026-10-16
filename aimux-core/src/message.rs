@@ -7,55 +7,50 @@
 //! `LanguageModelPrompt` (provider-facing) before calling
 //! `LanguageModel::do_generate` / `do_stream`.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 use crate::content::{AssistantContentPart, ToolContentPart, UserContentPart};
 use crate::shared::SharedProviderOptions;
 
 /// A single user-facing chat message, a union by role.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "role",
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum ModelMessage {
     /// Upstream `SystemModelMessage`.
     System {
         content: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// Upstream `UserModelMessage`.
     User {
         content: UserContent,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// Upstream `AssistantModelMessage`.
     Assistant {
         content: AssistantContent,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// Upstream `ToolModelMessage`.
     Tool {
         content: ToolContent,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
 }
 
 /// The content of a user message: a string or parts (upstream `UserContent`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
-#[ts(export)]
+#[schemars(extend("x-aimux-codec" = "ordered-untagged"))]
 pub enum UserContent {
     Text(String),
     Parts(Vec<UserContentPart>),
@@ -63,9 +58,9 @@ pub enum UserContent {
 
 /// The content of an assistant message: a string or parts (upstream
 /// `AssistantContent`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
-#[ts(export)]
+#[schemars(extend("x-aimux-codec" = "ordered-untagged"))]
 pub enum AssistantContent {
     Text(String),
     Parts(Vec<AssistantContentPart>),
@@ -160,9 +155,9 @@ impl ModelMessage {
 /// What the user passes as `prompt` to `generate_text` / `stream_text`.
 ///
 /// Can be a simple string (converted to a single user message) or a list of messages.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
-#[ts(export)]
+#[schemars(extend("x-aimux-codec" = "ordered-untagged"))]
 pub enum ModelPrompt {
     /// A plain string prompt — equivalent to a single user message.
     Text(String),

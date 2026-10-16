@@ -1,9 +1,9 @@
 //! Result types for `do_generate` and `do_stream`.
 
 use futures::Stream;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
-use ts_rs::TS;
 
 use crate::error::AiMuxError;
 pub use crate::shared::GeneratedFileData;
@@ -15,18 +15,16 @@ use crate::types::{FinishReason, NamespacedKind, ProviderMetadata, Usage, Warnin
 
 /// A content item a provider returns (V4 `LanguageModelV4Content`). Text
 /// generation turns it into the core [`ContentPart`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum GenerateContent {
     /// Generated text.
     Text {
         text: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -45,7 +43,6 @@ pub enum GenerateContent {
     /// Provider-specific content.
     Custom {
         kind: NamespacedKind,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -66,25 +63,22 @@ pub enum GenerateContent {
 /// generated file is wrapped as `{ file, providerMetadata }`, as upstream's
 /// `convertLanguageModelContent` builds them
 /// (`generate-text/convert-language-model-content.ts`).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum ContentPart {
     /// Generated text.
     Text {
         text: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
     /// Provider-specific content.
     Custom {
         kind: NamespacedKind,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -97,7 +91,6 @@ pub enum ContentPart {
     /// A generated file.
     File {
         file: GeneratedFile,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -121,28 +114,22 @@ pub enum ContentPart {
 /// and `title`, which come from them, are absent. Its `type` tag is written
 /// by the union that holds it (`content`, the text stream) or, in a result's
 /// `toolResults`, by [`crate::wire::typed_vec`] ([`TaggedToolResult`]).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct TypedToolResult {
     pub tool_call_id: String,
     pub tool_name: String,
     /// The input of the tool call the result answers; absent for a deferred
     /// provider result, whose call is not in this response.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input: Option<serde_json::Value>,
     pub output: serde_json::Value,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_executed: Option<bool>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<bool>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preliminary: Option<bool>,
 }
@@ -155,39 +142,33 @@ impl crate::wire::TypeTag for TypedToolResult {
 /// with its `type` tag, as the AI SDK writes it (`ai`
 /// `generate-text/tool-result.ts:12`, `generate-text-result.ts:93`).
 ///
-/// Only the TypeScript type is generated from this struct; Rust fields hold a
-/// [`TypedToolResult`] and serde writes the tag ([`crate::wire::typed_vec`]).
-#[derive(TS)]
-#[ts(export)]
+/// Schema view of the tag written by [`crate::wire::typed_vec`].
+#[derive(JsonSchema)]
 #[allow(dead_code)]
+#[schemars(schema_with = "crate::wire::tagged_schema::<TypedToolResult>")]
 pub struct TaggedToolResult {
-    #[ts(rename = "type", type = "\"tool-result\"")]
+    #[schemars(rename = "type", with = "String", extend("const" = "tool-result"))]
     tag: (),
-    #[ts(flatten)]
+    #[schemars(flatten)]
     result: TypedToolResult,
 }
 
 /// A tool error (the AI SDK's `TypedToolError`, `ai`
 /// `generate-text/tool-error.ts:6-36`). `toolMetadata` and `title` are
 /// absent, as on [`TypedToolResult`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct TypedToolError {
     pub tool_call_id: String,
     pub tool_name: String,
     /// The input of the tool call; absent for a deferred provider result.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input: Option<serde_json::Value>,
     pub error: serde_json::Value,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_executed: Option<bool>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<bool>,
 }
@@ -195,72 +176,60 @@ pub struct TypedToolError {
 /// The answer to a tool approval request (the AI SDK's
 /// `ToolApprovalResponseOutput`, `ai`
 /// `generate-text/tool-approval-response-output.ts:7-35`).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ToolApprovalResponseOutput {
     pub approval_id: String,
     /// The answered call, with its `type` tag (`TypedToolCall`,
     /// `tool-approval-response-output.ts:18`).
     #[serde(with = "crate::wire::typed")]
-    #[ts(as = "crate::tool::TypedToolCall")]
+    #[schemars(with = "crate::tool::TypedToolCall", extend("x-aimux-codec" = "tagged"))]
     pub tool_call: crate::tool::ToolCall,
     pub approved: bool,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_executed: Option<bool>,
 }
 
 /// The output of a tool whose execution was denied (the AI SDK's
 /// `StaticToolOutputDenied`, `ai` `generate-text/tool-output-denied.ts:7-15`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ToolOutputDenied {
     pub tool_call_id: String,
     pub tool_name: String,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_executed: Option<bool>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<bool>,
 }
 
 /// Provider approval request for a provider-executed call.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct RawToolApprovalRequest {
     pub approval_id: String,
     pub tool_call_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub provider_metadata: Option<ProviderMetadata>,
 }
 
 /// Approval request exposed by text generation.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ToolApprovalRequestOutput {
     pub approval_id: String,
     /// The call to approve, with its `type` tag (`ai`
     /// `generate-text/tool-approval-request-output.ts:20`).
     #[serde(with = "crate::wire::typed")]
-    #[ts(as = "crate::tool::TypedToolCall")]
+    #[schemars(with = "crate::tool::TypedToolCall", extend("x-aimux-codec" = "tagged"))]
     pub tool_call: crate::tool::ToolCall,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub is_automatic: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub signature: Option<String>,
     /// The tool input before input-schema validation (upstream keeps it on
     /// the tool call, `tool-call.ts:64-86`). Rust-side only: not part of
@@ -269,29 +238,25 @@ pub struct ToolApprovalRequestOutput {
     /// (`to-response-messages.ts:133-146`). aimux's parse validates without
     /// transforming the input, so text generation leaves it `None`.
     #[serde(skip)]
-    #[ts(skip)]
     pub input_schema_input: Option<serde_json::Value>,
 }
 
 /// A source / citation (e.g. URL citation from search-preview models). The
 /// payload of both `GenerateContent::Source` and `StreamPart::Source`, and the
 /// element of the text results' `sources`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "sourceType",
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum Source {
     Url {
         id: String,
         url: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         title: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         provider_metadata: Option<ProviderMetadata>,
     },
     Document {
@@ -299,10 +264,8 @@ pub enum Source {
         media_type: String,
         title: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         filename: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         provider_metadata: Option<ProviderMetadata>,
     },
 }
@@ -317,15 +280,14 @@ impl crate::wire::TypeTag for Source {
 /// A source in a text result's `sources`: a [`Source`] with its `type` tag,
 /// the AI SDK's `Source` (`ai` `generate-text/generate-text-result.ts:73`).
 ///
-/// Only the TypeScript type is generated from this struct; Rust fields hold a
-/// [`Source`] and serde writes the tag ([`crate::wire::typed_vec`]).
-#[derive(TS)]
-#[ts(export)]
+/// Schema view of the tag written by [`crate::wire::typed_vec`].
+#[derive(JsonSchema)]
 #[allow(dead_code)]
+#[schemars(schema_with = "crate::wire::tagged_schema::<Source>")]
 pub struct TypedSource {
-    #[ts(rename = "type", type = "\"source\"")]
+    #[schemars(rename = "type", with = "String", extend("const" = "source"))]
     tag: (),
-    #[ts(flatten)]
+    #[schemars(flatten)]
     source: Source,
 }
 
@@ -334,14 +296,12 @@ pub struct TypedSource {
 /// `language-model/v4/language-model-v4-file.ts`), whose `data` is base64
 /// data or a URL. The payload of the provider-level `GenerateContent::File` /
 /// `ReasoningFile` and `StreamPart::File` / `ReasoningFile`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct LanguageModelFile {
     pub data: GeneratedFileData,
     pub media_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub provider_metadata: Option<ProviderMetadata>,
 }
 
@@ -352,16 +312,14 @@ pub struct LanguageModelFile {
 /// `GeneratedFile` exposes the bytes as `base64` and as `uint8Array`, and the
 /// JSON carries them once, as the base64 string. Text generation downloads a
 /// provider's URL file before it builds one (`resolve-generated-file-data.ts`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct GeneratedFile {
     /// The file's bytes, `base64` in the JSON.
     #[serde(rename = "base64")]
     pub data: FileBytes,
     pub media_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub provider_metadata: Option<ProviderMetadata>,
 }
 
@@ -395,13 +353,11 @@ impl GeneratedFile {
 /// `generate-text/convert-language-model-content.ts:55-70`,
 /// `stream-language-model-call.ts:569-590`). The part carries the provider
 /// metadata; the file itself has none.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct GeneratedFileOutput {
     pub file: GeneratedFile,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub provider_metadata: Option<ProviderMetadata>,
 }
 
@@ -410,20 +366,17 @@ pub struct GeneratedFileOutput {
 /// data such as the Anthropic thinking-block signature
 /// (`providerMetadata.anthropic.signature`). The payload of
 /// `GenerateContent::Reasoning` and the element of the text results' `reasoning`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ReasoningOutput {
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub provider_metadata: Option<ProviderMetadata>,
 }
 
 /// Text or a generated file produced during reasoning.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type")]
-#[ts(export)]
 pub enum ReasoningPart {
     #[serde(rename = "reasoning")]
     Text(ReasoningOutput),
@@ -432,9 +385,8 @@ pub enum ReasoningPart {
 }
 
 /// Result of `LanguageModel::do_generate` (non-streaming).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct GenerateResult {
     /// Generated content items (text, tool calls, etc.).
     pub content: Vec<GenerateContent>,
@@ -446,15 +398,12 @@ pub struct GenerateResult {
     pub warnings: Vec<Warning>,
     /// Provider-specific metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub provider_metadata: Option<ProviderMetadata>,
     /// Optional request information for telemetry and debugging.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub request: Option<RequestInfo>,
     /// Optional response metadata, headers, and body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub response: Option<ResponseInfo>,
 }
 

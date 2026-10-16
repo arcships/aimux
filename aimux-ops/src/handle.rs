@@ -7,7 +7,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 
 /// Global scope is 0; live resource identifiers are never reused.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, schemars::JsonSchema)]
+#[schemars(with = "String", extend("x-aimux-codec" = "u64-string"))]
 pub struct HandleId(pub u64);
 
 impl Serialize for HandleId {
@@ -33,7 +34,7 @@ pub enum Owner {
     Python(u64),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, schemars::JsonSchema)]
 pub enum HandleKind {
     Provider,
     Registry,

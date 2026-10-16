@@ -37,7 +37,7 @@ use aimux_core::AbortSignal;
 /// hop, or the WebSocket connector. With every field empty, HTTP follows the
 /// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
 /// reqwest does, and the WebSocket connector connects directly.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProxyConfig {
     pub http_url: Option<String>,
     pub https_url: Option<String>,

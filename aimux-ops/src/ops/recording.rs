@@ -23,29 +23,29 @@ use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 enum CapturePolicy {
     Full,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 enum BackendConfig {
     Ring { capacity: Option<usize> },
     Jsonl { directory: PathBuf },
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct CreateRecorderParams {
+pub struct CreateRecorderParams {
     backend: BackendConfig,
     capture_policy: CapturePolicy,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct EmptyParams {}
+pub struct EmptyParams {}
 
 enum Backend {
     Ring(RingRecorder),
@@ -191,23 +191,23 @@ fn invalid(message: impl Into<String>) -> OpsError {
     OpsError::Protocol(ProtocolError::InvalidParams(message.into()))
 }
 
-#[derive(Serialize)]
-struct RecorderHandleResult {
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct RecorderHandleResult {
     handle: HandleId,
 }
 
-#[derive(Serialize)]
-struct RecorderExport {
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct RecorderExport {
     jsonl: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-enum RecorderStats {
+pub enum RecorderStats {
     Ring {
         completed: usize,
         pending: usize,

@@ -131,18 +131,18 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplayCreateParams {
     recordings_jsonl: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct ReplaySessionHandle {
     handle: HandleId,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplayLiveParams {
     call_id: String,
@@ -152,19 +152,19 @@ pub struct ReplayLiveParams {
     _abort: Option<HandleId>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 enum LiveTarget {
     Model { handle: HandleId },
     Registry { handle: HandleId },
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct ReplayInspection {
     recordings: Vec<ReplayRecordingInfo>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct ReplayRecordingInfo {
     call_id: String,
@@ -175,12 +175,12 @@ struct ReplayRecordingInfo {
     exchange_count: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct ReplayPlan {
     calls: Vec<ReplayPlannedCall>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct ReplayPlannedCall {
     call_id: String,
@@ -190,8 +190,9 @@ struct ReplayPlannedCall {
     requires_target: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 #[serde(untagged)]
+#[schemars(extend("x-aimux-codec" = "ordered-untagged"))]
 pub enum ReplayLiveResult {
     Language(aimux_core::generate::GenerateTextResult),
     Decision(aimux_core::decision_model::DecideResult),

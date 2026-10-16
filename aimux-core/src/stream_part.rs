@@ -3,9 +3,9 @@
 //! Aligned with V4 `LanguageModelV4StreamPart`. v0.1 implements the P0/P1 variants;
 //! P2 variants (reasoning, file, source) are defined but not yet emitted by providers.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::result::{
@@ -26,19 +26,17 @@ use crate::types::{
 /// Generic over the tool-call payload: providers emit the default
 /// [`StreamPart`] (raw argument text); `stream_text` emits [`TextStreamPart`]
 /// (parsed and validated [`ToolCall`]).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export, concrete(C = RawToolCall, A = RawToolApprovalRequest, R = LanguageModelFile))]
 pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageModelFile> {
     // ── P0: text ──
     /// Start of a text segment.
     TextStart {
         id: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -46,14 +44,12 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageMod
     TextDelta {
         id: String,
         delta: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
     /// End of a text segment.
     TextEnd {
         id: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -67,7 +63,6 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageMod
     Finish {
         finish_reason: FinishReason,
         usage: Usage,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -82,18 +77,14 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageMod
         id: String,
         tool_name: String,
         /// Whether the tool call will be executed by the provider.
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_executed: Option<bool>,
         /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         dynamic: Option<bool>,
         /// Optional title for the tool call.
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         title: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -101,14 +92,12 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageMod
     ToolInputDelta {
         id: String,
         delta: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
     /// End of a tool call's input streaming.
     ToolInputEnd {
         id: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -129,7 +118,6 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageMod
     ReasoningFile(R),
     Custom {
         kind: NamespacedKind,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -140,7 +128,6 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageMod
         id: String,
         /// Provider-specific metadata (e.g. xAI `itemId`).
         #[allow(unused)]
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -149,7 +136,6 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageMod
         delta: String,
         /// Provider-specific metadata (e.g. xAI `itemId`).
         #[allow(unused)]
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -157,7 +143,6 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageMod
         id: String,
         /// Provider-specific metadata (e.g. xAI `itemId`, `reasoningEncryptedContent`).
         #[allow(unused)]
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -193,33 +178,29 @@ pub enum StreamPart<C = RawToolCall, A = RawToolApprovalRequest, R = LanguageMod
 /// prompt's last tool message, provider-executed ones included, before the
 /// first model call (`stream-text.ts:2030-2090`), which needs the prompt's
 /// approval collection (`collect-tool-approvals.ts`), not ported.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum TextStreamPart {
     // ── text ──
     /// Start of a text segment.
     TextStart {
         id: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
     /// End of a text segment.
     TextEnd {
         id: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
     /// A piece of generated text.
     TextDelta {
         id: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
         text: String,
@@ -228,19 +209,16 @@ pub enum TextStreamPart {
     // ── reasoning ──
     ReasoningStart {
         id: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
     ReasoningEnd {
         id: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
     /// A piece of reasoning text.
     ReasoningDelta {
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
         id: String,
@@ -250,7 +228,6 @@ pub enum TextStreamPart {
     /// Provider-specific content.
     Custom {
         kind: NamespacedKind,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -260,26 +237,21 @@ pub enum TextStreamPart {
     ToolInputStart {
         id: String,
         tool_name: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
         /// Whether the tool call will be executed by the provider.
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_executed: Option<bool>,
         /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         dynamic: Option<bool>,
         /// Optional title for the tool call.
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         title: Option<String>,
     },
     /// End of a tool call's input streaming.
     ToolInputEnd {
         id: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -287,7 +259,6 @@ pub enum TextStreamPart {
     ToolInputDelta {
         id: String,
         delta: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -327,10 +298,8 @@ pub enum TextStreamPart {
         usage: LanguageModelUsage,
         performance: StepResultPerformance,
         finish_reason: FinishReasonUnified,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         raw_finish_reason: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -339,7 +308,6 @@ pub enum TextStreamPart {
     /// The call completed.
     Finish {
         finish_reason: FinishReasonUnified,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         raw_finish_reason: Option<String>,
         /// Usage summed over every step.
@@ -347,7 +315,6 @@ pub enum TextStreamPart {
     },
     /// The caller aborted the call; the stream ends after this part.
     Abort {
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },

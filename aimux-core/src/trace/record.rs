@@ -4,112 +4,90 @@
 
 use std::collections::HashMap;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ts_rs::TS;
 
 use super::fingerprint::Fingerprint;
 use super::verdict::Verdict;
 
 /// Token usage snapshot (7 flat fields + raw passthrough).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct UsageSnapshot {
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_total: Option<u64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_no_cache: Option<u64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_read: Option<u64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_write: Option<u64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_total: Option<u64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_text: Option<u64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_reasoning: Option<u64>,
     /// Raw provider usage payload (opaque passthrough; numbers only — no
     /// prompt text).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw: Option<Value>,
 }
 
 /// Request-side cache hints (best-effort, e.g. Anthropic `cache_control`).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct RequestCacheHints {
     /// Whether any message requested `cache_control` (write) this call.
     pub requested_write: bool,
 }
 
 /// One probed call. Plaintext never persists — fingerprints only.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct TraceRecord {
     pub provider: String,
     pub model: String,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
     /// The explicit session id of the operation (RFC-0024), else the
     /// layer's default session.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     /// Call-level unique id (association key for Recording / replay,
     /// RFC-0023).
     pub call_id: String,
     /// When the call was sent (epoch ms).
-    #[ts(type = "number")]
     pub sent_at_unix_ms: i64,
     /// Monotonic clock ms (same domain as the store's TTL lookups; internal
     /// bookkeeping, not part of the wire contract).
     #[serde(skip)]
-    #[ts(skip)]
     pub monotonic_sent_ms: u64,
     /// Client-side LCP token upper bound (block upper bound, byte-proxy
     /// len/4). `None` when no history matched. Consumed by `TraceStats`
     /// aggregation.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lcp_token_upper: Option<u64>,
     /// Time to first streamed token (ms). Non-streaming: `None`.
-    #[ts(optional, type = "number")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ttft_ms: Option<u64>,
     pub fingerprint: Fingerprint,
     pub usage: UsageSnapshot,
     /// Response-side cache headers (e.g. `x-openrouter-cache-status`).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_cache_headers: Option<HashMap<String, String>>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_cache_hints: Option<RequestCacheHints>,
     /// Audit verdict (`None` when no auditor is attached — the default).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict: Option<Verdict>,
     /// Error string when the call failed (still recorded: failures are part
     /// of the session).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     /// Internal scope key (index only; never crosses the wire contract).
     #[serde(skip)]
-    #[ts(skip)]
     pub scope_key: u64,
 }
 

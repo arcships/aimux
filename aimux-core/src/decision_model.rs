@@ -17,9 +17,9 @@
 
 use async_trait::async_trait;
 use indexmap::IndexMap;
+use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::shared::{
@@ -29,14 +29,12 @@ use crate::{AbortSignal, retry, timeout};
 
 /// Shared state or structured instructions for a decision
 /// (`DecisionModelV4Input`: a string, a JSON object or a JSON array).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
-#[ts(export)]
+#[schemars(extend("x-aimux-codec" = "ordered-untagged"))]
 pub enum DecisionInput {
     Text(String),
-    #[ts(type = "Record<string, unknown>")]
     Object(JsonObject),
-    #[ts(type = "Array<unknown>")]
     Array(Vec<Value>),
 }
 
@@ -53,9 +51,8 @@ impl From<String> for DecisionInput {
 }
 
 /// The kind of a question (`DecisionModelV4Question['type']`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
-#[ts(export)]
 pub enum DecisionQuestionType {
     Choice,
     Score,
@@ -81,9 +78,8 @@ impl DecisionQuestionType {
 /// and an explicit `null` differ: `Some(None)` is `null` (no description).
 /// Other keys are rejected: Boolean criteria may only describe `true` and
 /// `false` (`ai@7.0.128 src/decide/validate-decision.ts:94-105`).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[ts(export)]
 pub struct DecisionBooleanCriteria {
     #[serde(
         rename = "true",
@@ -91,7 +87,7 @@ pub struct DecisionBooleanCriteria {
         deserialize_with = "present",
         skip_serializing_if = "Option::is_none"
     )]
-    #[ts(optional)]
+    #[schemars(with = "Option<Option<DecisionInput>>", extend("x-aimux-codec" = "presence"))]
     pub true_: Option<Option<DecisionInput>>,
     #[serde(
         rename = "false",
@@ -99,7 +95,7 @@ pub struct DecisionBooleanCriteria {
         deserialize_with = "present",
         skip_serializing_if = "Option::is_none"
     )]
-    #[ts(optional)]
+    #[schemars(with = "Option<Option<DecisionInput>>", extend("x-aimux-codec" = "presence"))]
     pub false_: Option<Option<DecisionInput>>,
 }
 
@@ -112,15 +108,13 @@ where
 }
 
 /// A judgment to make about the shared state (`DecisionModelV4Question`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "lowercase")]
-#[ts(export)]
 pub enum DecisionQuestion {
     Choice {
         instructions: DecisionInput,
         /// Nonempty map of option names to descriptions; `None` means no
         /// description. Insertion order is the option order.
-        #[ts(as = "std::collections::HashMap<String, Option<DecisionInput>>")]
         criteria: IndexMap<String, Option<DecisionInput>>,
     },
     Score {
@@ -131,7 +125,6 @@ pub enum DecisionQuestion {
     Boolean {
         instructions: DecisionInput,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
         criteria: Option<DecisionBooleanCriteria>,
     },
 }
@@ -164,29 +157,23 @@ pub type DecisionQuestions = IndexMap<String, DecisionQuestion>;
 /// Options passed to [`DecisionModel::do_decide`]
 /// (`DecisionModelV4CallOptions`,
 /// `@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4-call-options.ts:7-14`).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct DecisionCallOptions {
     /// One shared state, even when the value is an array.
     pub state: DecisionInput,
-    #[ts(as = "std::collections::HashMap<String, DecisionQuestion>")]
     pub questions: DecisionQuestions,
     /// Abort signal for cancelling the call.
     #[serde(skip)]
-    #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub headers: Option<SharedHeaders>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub provider_options: Option<SharedProviderOptions>,
     /// The operation's recording scope, set by [`decide`] for the transport
     /// (as `CallOptions::recording_context` is for language models). Never
     /// serialized, and not part of `DecisionModelV4CallOptions`.
     #[serde(skip)]
-    #[ts(skip)]
     pub recording_context: Option<crate::recording::RecordingContext>,
 }
 
@@ -206,9 +193,8 @@ impl DecisionCallOptions {
 }
 
 /// The answer to one question (`DecisionModelV4Answer`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "lowercase")]
-#[ts(export)]
 pub enum DecisionAnswer {
     Choice {
         /// The selected option, with maximal probability when a distribution
@@ -216,7 +202,6 @@ pub enum DecisionAnswer {
         choice: String,
         /// Complete distribution over the question's options, when available.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional, as = "Option<std::collections::HashMap<String, f64>>")]
         probabilities: Option<IndexMap<String, f64>>,
     },
     Score {
@@ -225,7 +210,6 @@ pub enum DecisionAnswer {
         /// Complete distribution keyed by zero-based level indices as
         /// strings; when supplied, `score` is its probability-weighted mean.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional, as = "Option<std::collections::HashMap<String, f64>>")]
         probabilities: Option<IndexMap<String, f64>>,
     },
     Boolean {
@@ -238,54 +222,42 @@ pub enum DecisionAnswer {
 /// Decimal places the provider rounded its output to; omit for full
 /// precision. Validation allows half a unit in the last place per rounded
 /// value (`decision-model-v4-result.ts:39-42`).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct DecisionRounding {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub probability_decimals: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub score_decimals: Option<u32>,
 }
 
 /// Token usage reported by a decision model
 /// (`decision-model-v4-result.ts:43-46`).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct DecisionUsage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub input_tokens: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub output_tokens: Option<u32>,
 }
 
 /// The result of [`DecisionModel::do_decide`] (`DecisionModelV4Result`,
 /// `@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4-result.ts:31-56`).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct DecisionResult {
     /// Exactly one answer per question, under the original question ids.
-    #[ts(as = "std::collections::HashMap<String, DecisionAnswer>")]
     pub answers: IndexMap<String, DecisionAnswer>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub rounding: Option<DecisionRounding>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub usage: Option<DecisionUsage>,
     #[serde(default)]
     pub warnings: Vec<Warning>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub provider_metadata: Option<SharedProviderMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub response: Option<ResponseInfo>,
 }
 
@@ -348,29 +320,22 @@ pub fn unsupported_question_type_error(
 
 /// Options of [`decide`]: the call options plus the operation settings
 /// (`ai@7.0.128 src/decide/decide.ts:53-61`).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct DecideOptions {
     pub state: DecisionInput,
-    #[ts(as = "std::collections::HashMap<String, DecisionQuestion>")]
     pub questions: DecisionQuestions,
     /// Maximum retries for transient provider failures. Defaults to 2.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub max_retries: Option<u32>,
     /// Operation deadline (aimux extension).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub timeout: Option<crate::options::TimeoutConfiguration>,
     #[serde(skip)]
-    #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub headers: Option<SharedHeaders>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
@@ -393,37 +358,29 @@ impl DecideOptions {
 /// Token usage of a decision, with the total when both counts are known
 /// (`ai@7.0.128 src/decide/decision-result.ts:27-31`): an unknown count is
 /// `undefined` there, so it is omitted.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct DecideUsage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub input_tokens: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub output_tokens: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub total_tokens: Option<u32>,
 }
 
 /// The result of [`decide`] (`DecisionResult` of
 /// `ai@7.0.128 src/decide/decision-result.ts:22-39`).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct DecideResult {
-    #[ts(as = "std::collections::HashMap<String, DecisionAnswer>")]
     pub answers: IndexMap<String, DecisionAnswer>,
     pub usage: DecideUsage,
     #[serde(default)]
     pub warnings: Vec<Warning>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub rounding: Option<DecisionRounding>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub provider_metadata: Option<SharedProviderMetadata>,
     /// The model's response information; the timestamp defaults to the end of
     /// the call and the model id to the model's.

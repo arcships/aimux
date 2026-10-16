@@ -85,7 +85,7 @@ pub enum PollResult {
     Timeout,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum CancelResult {
     First,
@@ -93,7 +93,7 @@ pub enum CancelResult {
     AlreadyTerminal,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum OperationOutcome {
     Success,
@@ -101,7 +101,7 @@ pub enum OperationOutcome {
     Cancelled,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum OperationState {
     Running,
@@ -109,7 +109,7 @@ pub enum OperationState {
     Terminal,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalSummary {
     pub outcome: OperationOutcome,
@@ -117,7 +117,7 @@ pub struct TerminalSummary {
     pub error: Option<ErrorEnvelope>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OperationCapabilities {
     pub push: bool,
@@ -126,7 +126,7 @@ pub struct OperationCapabilities {
     pub cancel: bool,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OperationStatus {
     pub subkind: &'static str,

@@ -10,8 +10,8 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::io::Write;
 use std::sync::Mutex;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 use super::fingerprint::Chain;
 use super::hash;
@@ -279,29 +279,23 @@ impl TraceStore {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Query filter (RFC-0015 §5.3).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct TraceFilter {
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub since_unix_ms: Option<i64>,
 }
 
 /// Aggregated statistics (RFC-0015 §5.2 — the two hit rates are reported
 /// side by side, never merged into a single number).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct TraceStats {
     pub provider: String,
     pub model: String,
@@ -309,26 +303,21 @@ pub struct TraceStats {
     pub input_tokens_total: u64,
     pub claimed_cache_read_total: u64,
     pub claimed_cache_write_total: u64,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reported_hit_rate: Option<f64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_upper_bound_hit_rate: Option<f64>,
     pub verdict_counts: BTreeMap<String, u64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ttft_p50_ms: Option<u64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ttft_p95_ms: Option<u64>,
     pub errors: u64,
 }
 
 /// Session chain view (append-only order + prefix stability, RFC-0015 §5.3).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct SessionChainView {
     pub session_id: String,
     pub record_ids: Vec<String>,
@@ -337,9 +326,8 @@ pub struct SessionChainView {
 }
 
 /// One step of a session's cache-hit trajectory (RFC-0024 §4.3).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct SessionStepStat {
     /// Step within the session (0-based, session order).
     pub step: u32,
@@ -347,23 +335,19 @@ pub struct SessionStepStat {
     pub call_id: String,
     /// Reported hit rate for this step (`cache_read / input_total`); `None`
     /// when the call carried no input/cache-read usage.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hit_rate: Option<f64>,
     /// Audit verdict (present only when an auditor is attached).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict: Option<Verdict>,
     /// Error string for failed calls (failures are part of the session).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
 /// A prefix break between two consecutive records of a session.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct PrefixBreak {
     pub at_record_id: String,
     pub prev_record_id: String,
@@ -372,8 +356,7 @@ pub struct PrefixBreak {
     pub kind: BreakKind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum BreakKind {
     SystemChanged,
     ToolsChanged,

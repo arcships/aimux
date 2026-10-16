@@ -29,9 +29,9 @@ use std::pin::Pin;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures::Stream;
+use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
-use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::generate::GenerateTextResult;
@@ -52,8 +52,7 @@ use crate::types::{FinishReasonUnified, LanguageModelUsage, as_language_model_us
 /// A complete Chat Completion response (non-streaming).
 ///
 /// Mirrors the OpenAI `chat.completion` object.
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletion {
     pub id: String,
     pub object: String,
@@ -65,8 +64,7 @@ pub struct ChatCompletion {
     pub system_fingerprint: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletionChoice {
     pub index: u32,
     pub message: ChatCompletionMessage,
@@ -78,8 +76,7 @@ pub struct ChatCompletionChoice {
     pub logprobs: Option<Value>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletionMessage {
     pub role: String,
     pub content: Option<String>,
@@ -91,8 +88,7 @@ pub struct ChatCompletionMessage {
     pub annotations: Option<Vec<Value>>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletionToolCall {
     pub id: String,
     #[serde(rename = "type")]
@@ -100,8 +96,7 @@ pub struct ChatCompletionToolCall {
     pub function: ChatCompletionFunction,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletionFunction {
     pub name: String,
     pub arguments: String,
@@ -114,8 +109,7 @@ pub struct ChatCompletionFunction {
 /// A single Chat Completion chunk (streaming).
 ///
 /// Mirrors the OpenAI `chat.completion.chunk` object.
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletionChunk {
     pub id: String,
     pub object: String,
@@ -126,8 +120,7 @@ pub struct ChatCompletionChunk {
     pub usage: Option<ChatCompletionUsage>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletionChunkChoice {
     pub index: u32,
     pub delta: ChatCompletionDelta,
@@ -136,8 +129,7 @@ pub struct ChatCompletionChunkChoice {
     pub logprobs: Option<Value>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
 pub struct ChatCompletionDelta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
@@ -149,8 +141,7 @@ pub struct ChatCompletionDelta {
     pub tool_calls: Option<Vec<ChatCompletionChunkToolCall>>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletionChunkToolCall {
     pub index: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -160,8 +151,7 @@ pub struct ChatCompletionChunkToolCall {
     pub function: ChatCompletionChunkFunction,
 }
 
-#[derive(Debug, Clone, Default, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
 pub struct ChatCompletionChunkFunction {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -173,8 +163,7 @@ pub struct ChatCompletionChunkFunction {
 // Usage (shared by streaming and non-streaming)
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Default, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
 pub struct ChatCompletionUsage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
@@ -185,16 +174,14 @@ pub struct ChatCompletionUsage {
     pub completion_tokens_details: Option<CompletionTokensDetails>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
 pub struct PromptTokensDetails {
     pub cached_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_write_tokens: Option<u32>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
 pub struct CompletionTokensDetails {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<u32>,

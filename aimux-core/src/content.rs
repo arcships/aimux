@@ -13,9 +13,9 @@
 //!
 //! [`ModelMessage`]: crate::message::ModelMessage
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ts_rs::TS;
 
 use crate::shared::{
     FileBytes, FileData, GeneratedFileData, SharedProviderOptions, SharedProviderReference,
@@ -23,19 +23,17 @@ use crate::shared::{
 use crate::types::NamespacedKind;
 
 /// A part of a user message: upstream's `TextPart | ImagePart | FilePart`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum UserContentPart {
     /// A text segment.
     Text {
         text: String,
         /// Provider-specific options for this part (e.g. `openai.promptCacheBreakpoint`).
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -47,11 +45,10 @@ pub enum UserContentPart {
     /// turns it into one and logs a deprecation warning. The JSON holds the
     /// bytes as a base64 string.
     Image {
-        #[ts(type = "string")]
+        #[schemars(with = "String", extend("x-aimux-codec" = "base64"))]
         #[serde(with = "crate::wire::base64_bytes")]
         image: Vec<u8>,
         media_type: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -63,10 +60,8 @@ pub enum UserContentPart {
     File {
         data: FilePartData,
         media_type: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -75,19 +70,17 @@ pub enum UserContentPart {
 /// A part of an assistant message: upstream's `TextPart | CustomPart |
 /// FilePart | ReasoningPart | ReasoningFilePart | ToolCallPart |
 /// ToolResultPart | ToolApprovalRequest`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum AssistantContentPart {
     /// A text segment.
     Text {
         text: String,
         /// Provider-specific options for this part.
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -95,7 +88,6 @@ pub enum AssistantContentPart {
     /// Provider-specific custom content.
     Custom {
         kind: NamespacedKind,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -107,10 +99,8 @@ pub enum AssistantContentPart {
     File {
         data: FilePartData,
         media_type: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -126,7 +116,6 @@ pub enum AssistantContentPart {
         /// Provider-specific options for this part (e.g.
         /// `anthropic.signature`, `anthropic.redactedData`,
         /// `anthropic.cacheControl`).
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -136,7 +125,6 @@ pub enum AssistantContentPart {
     ReasoningFile {
         data: ReasoningFilePartData,
         media_type: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -150,12 +138,10 @@ pub enum AssistantContentPart {
         /// Whether the tool call is executed by the provider rather than by
         /// the client. Providers need it to replay server tool calls on a
         /// later turn.
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_executed: Option<bool>,
         /// Provider-specific options for this part (e.g.
         /// `anthropic.cacheControl`).
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -169,21 +155,18 @@ pub enum AssistantContentPart {
     ToolApprovalRequest {
         approval_id: String,
         tool_call_id: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         is_automatic: Option<bool>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         signature: Option<String>,
-        #[ts(optional)]
         #[serde(
             default,
             deserialize_with = "crate::wire::present",
             skip_serializing_if = "Option::is_none"
         )]
+        #[schemars(extend("x-aimux-codec" = "presence"))]
         input_schema_input: Option<Value>,
     },
 }
@@ -192,13 +175,12 @@ pub enum AssistantContentPart {
 // Prompt content is built once per call and converted, not held in bulk, so
 // the size gap between the two parts is not worth a box.
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum ToolContentPart {
     /// The result of a tool call.
     ToolResult(ToolResultPart),
@@ -210,10 +192,8 @@ pub enum ToolContentPart {
     ToolApprovalResponse {
         approval_id: String,
         approved: bool,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_executed: Option<bool>,
     },
@@ -335,66 +315,56 @@ impl ToolContentPart {
 
 /// The result of a tool call (upstream `ToolResultPart`,
 /// `provider-utils` `types/content-part.ts:240-268`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ToolResultPart {
     pub tool_call_id: String,
     /// The tool name. Required upstream; when absent here, the conversion
     /// takes it from the preceding tool call with the same id.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_name: Option<String>,
     pub output: ToolResultOutput,
     /// Provider-specific options for this part (e.g. `anthropic.cacheControl`).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// The output of a tool call (upstream `ToolResultOutput`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum ToolResultOutput {
     /// Text for the model.
     Text {
         value: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// JSON for the model.
     Json {
         value: Value,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// The user denied the tool call.
     ExecutionDenied {
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// An error message.
     ErrorText {
         value: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// An error as JSON.
     ErrorJson {
         value: Value,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -443,18 +413,16 @@ impl ToolResultOutput {
 /// `file` (`content-part.ts:361-532`); they are accepted on input and the
 /// conversion turns each into a `file` part with a deprecation warning, as
 /// upstream's `mapToolResultOutput` does.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum ToolResultContentPart {
     /// Text.
     Text {
         text: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -462,10 +430,8 @@ pub enum ToolResultContentPart {
     File {
         data: crate::shared::FileData,
         media_type: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -473,20 +439,16 @@ pub enum ToolResultContentPart {
     FileData {
         data: String,
         media_type: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// A file URL. Deprecated: use `file` with `{ type: 'url' }` data.
     FileUrl {
         url: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         media_type: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -494,7 +456,6 @@ pub enum ToolResultContentPart {
     /// data.
     FileId {
         file_id: ToolResultFileId,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -502,7 +463,6 @@ pub enum ToolResultContentPart {
     /// `{ type: 'reference' }` data.
     FileReference {
         provider_reference: SharedProviderReference,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -510,14 +470,12 @@ pub enum ToolResultContentPart {
     ImageData {
         data: String,
         media_type: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// An image URL. Deprecated: use `file` with an `image` media type.
     ImageUrl {
         url: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -525,7 +483,6 @@ pub enum ToolResultContentPart {
     /// media type.
     ImageFileId {
         file_id: ToolResultFileId,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -533,13 +490,11 @@ pub enum ToolResultContentPart {
     /// media type.
     ImageFileReference {
         provider_reference: SharedProviderReference,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// Provider-specific content.
     Custom {
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -548,9 +503,9 @@ pub enum ToolResultContentPart {
 /// The `fileId` of a deprecated `file-id` / `image-file-id` tool output item:
 /// an id for the called provider, or ids keyed by provider
 /// (`string | Record<string, string>`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
-#[ts(export)]
+#[schemars(extend("x-aimux-codec" = "ordered-untagged"))]
 pub enum ToolResultFileId {
     Id(String),
     ByProvider(SharedProviderReference),
@@ -563,9 +518,9 @@ pub enum ToolResultFileId {
 /// A string is read as the AI SDK reads it when it converts the prompt
 /// (`ai` `prompt/file-part-data.ts:125-131`): a URL when it parses as one
 /// (a `data:` URL becomes inline data), base64 otherwise.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
-#[ts(export)]
+#[schemars(extend("x-aimux-codec" = "ordered-untagged"))]
 pub enum FilePartData {
     /// `{ type: 'data' | 'url' | 'reference' | 'text', ... }`.
     Tagged(FileData),
@@ -578,9 +533,9 @@ pub enum FilePartData {
 /// `ReasoningFilePart.data` (`types/content-part.ts:164`):
 /// `FileDataData | FileDataUrl | DataContent | URL`, in JSON tagged data or a
 /// URL, or a string (base64 or a URL).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
-#[ts(export)]
+#[schemars(extend("x-aimux-codec" = "ordered-untagged"))]
 pub enum ReasoningFilePartData {
     /// `{ type: 'data' | 'url', ... }`.
     Tagged(GeneratedFileData),

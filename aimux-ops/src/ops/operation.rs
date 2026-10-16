@@ -10,18 +10,18 @@ use std::time::Duration;
 
 pub type BinaryInput = [u8];
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct EmptyParams {}
+pub struct EmptyParams {}
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OperationNextParams {
     #[serde(default)]
     pub timeout_ms: u64,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TranscriptionStartParams {
     pub input_audio_format: Option<aimux_core::transcription_model::InputAudioFormat>,
@@ -33,10 +33,13 @@ pub struct TranscriptionStartParams {
     pub abort: Option<crate::HandleId>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum OperationPollResult {
-    Part { part: Value },
+    Part {
+        #[schemars(with = "aimux_core::transcription_model::TranscriptionStreamPart")]
+        part: Value,
+    },
     Ended,
     Timeout,
 }

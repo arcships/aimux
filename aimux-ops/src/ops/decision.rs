@@ -14,7 +14,7 @@ use crate::{
 /// Runtime controls surround the canonical business options; only the control
 /// object rejects unknown fields. Dispatch resolves `abort` with the caller's
 /// owner before entering the handler and supplies its signal in `Ctx`.
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DecisionDecideRequest {
     pub options: DecideOptions,

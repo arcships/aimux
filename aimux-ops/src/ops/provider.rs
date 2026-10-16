@@ -163,21 +163,21 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     );
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ProviderCreateParams {
+pub struct ProviderCreateParams {
     package: String,
     #[serde(default)]
     settings: ProviderSettings,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ProviderDefaultParams {
+pub struct ProviderDefaultParams {
     package: String,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProviderSettings {
     api_key: Option<String>,
@@ -195,35 +195,35 @@ struct ProviderSettings {
     probability_source: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ProviderModelParams {
+pub struct ProviderModelParams {
     method: Option<String>,
     model_id: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ProviderInvokeParams {
+pub struct ProviderInvokeParams {
     method: String,
     #[serde(rename = "abort")]
     _abort: Option<HandleId>,
 }
 
-type ProviderInvokeResult = Vec<aimux_core::model_catalogue::RuntimeModel>;
+pub type ProviderInvokeResult = Vec<aimux_core::model_catalogue::RuntimeModel>;
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ProviderWrapParams {
+pub struct ProviderWrapParams {
     #[serde(default)]
     language_model_middleware: Vec<HandleId>,
     #[serde(default)]
     image_model_middleware: Vec<HandleId>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ProviderCustomParams {
+pub struct ProviderCustomParams {
     #[serde(default)]
     language_models: HashMap<String, HandleId>,
     #[serde(default)]
@@ -251,9 +251,9 @@ struct ProviderCustomParams {
     image_model_middleware: Vec<HandleId>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
-struct HandleResult {
+pub struct HandleResult {
     handle: HandleId,
     kind: HandleKind,
 }

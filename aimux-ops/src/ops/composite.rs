@@ -15,9 +15,9 @@ use crate::envelope::{OpsError, ProtocolError};
 use crate::handle::{Entry, HandleKind, HandleRegistry, Owner};
 use crate::op::{Cancellation, OPS_VERSION, OpDescriptor, OpMode, RequestBytePolicy, Scope};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct RouterParams {
+pub struct RouterParams {
     children: Vec<String>,
     strategy: Strategy,
     #[serde(default)]
@@ -26,14 +26,14 @@ struct RouterParams {
     model_id: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 enum Strategy {
     Rule {},
     Weighted { weights: Vec<f64> },
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 enum Fallback {
     #[default]
@@ -41,9 +41,9 @@ enum Fallback {
     None,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct MoaParams {
+pub struct MoaParams {
     references: Vec<String>,
     aggregator: String,
     #[serde(flatten)]

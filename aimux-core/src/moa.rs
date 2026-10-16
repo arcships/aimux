@@ -25,7 +25,7 @@ use crate::stream_part::StreamPart;
 use crate::types::{Usage, Warning};
 
 /// Reference-failure policy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MoaFailMode {
     /// Drop a failed reference + emit a `Warning::Other`; keep going (default).
@@ -35,7 +35,7 @@ pub enum MoaFailMode {
     FailFast,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MoaConfig {
     /// `provider()` value (default `"moa"`).

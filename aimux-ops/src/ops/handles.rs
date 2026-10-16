@@ -15,7 +15,7 @@ use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
 
-#[derive(Clone, Copy, Default, Deserialize)]
+#[derive(Clone, Copy, Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum AuditMode {
     #[default]
@@ -26,23 +26,25 @@ pub enum AuditMode {
 
 use crate::ops::operation::EmptyParams;
 
-#[derive(Serialize)]
-struct HandleResult {
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct HandleResult {
     handle: HandleId,
     kind: HandleKind,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", deny_unknown_fields)]
-enum TransportParams {
+pub enum TransportParams {
     #[serde(rename = "fetch")]
     Fetch {
         #[serde(default, deserialize_with = "deserialize_proxy")]
+        #[schemars(schema_with = "transport_proxy_schema")]
         proxy: ProxyConfig,
     },
     #[serde(rename = "ws")]
     WebSocket {
         #[serde(default, deserialize_with = "deserialize_proxy")]
+        #[schemars(schema_with = "transport_proxy_schema")]
         proxy: ProxyConfig,
     },
     #[serde(rename = "download")]
@@ -54,6 +56,12 @@ enum TransportParams {
 
 // ProxyConfig is the canonical settings type, but its serde reader is open.
 // Close the control object without defining a second transport settings type.
+fn transport_proxy_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let mut schema = <ProxyConfig as schemars::JsonSchema>::json_schema(generator);
+    schema.insert("additionalProperties".into(), false.into());
+    schema
+}
+
 fn deserialize_proxy<'de, D>(deserializer: D) -> Result<ProxyConfig, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -73,15 +81,15 @@ where
     serde_json::from_value(value).map_err(serde::de::Error::custom)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct CredentialParams {
+pub struct CredentialParams {
     kind: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct MiddlewareParams {
+pub struct MiddlewareParams {
     kind: String,
     trace_store: Option<HandleId>,
     scope_name: Option<String>,

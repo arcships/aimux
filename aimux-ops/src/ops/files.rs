@@ -10,7 +10,7 @@ use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
 
 /// Runtime control is lifted separately from the canonical upload options.
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct UploadFileParams {
     #[serde(flatten)]
     pub options: UploadFileCallOptions,

@@ -22,8 +22,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Once, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 use crate::language_model_message::LanguageModelPrompt;
 
@@ -32,8 +32,7 @@ use crate::language_model_message::LanguageModelPrompt;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Where a session id came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum SessionSource {
     /// Passed explicitly via `GenerateTextOptions.session_id`.
     Explicit,
@@ -43,9 +42,8 @@ pub enum SessionSource {
 
 /// A single call within a session (an index entry only — call content lives
 /// in Recording (RFC-0023) / TraceRecord (RFC-0015)).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct SessionCall {
     /// Call-level unique id. This is the association key for the future
     /// Recording / TraceRecord `call_id` (RFC-0015/0023): once those land,
@@ -58,9 +56,8 @@ pub struct SessionCall {
 }
 
 /// Aggregated view of one session (session_id → ordered calls).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct SessionView {
     pub session_id: String,
     /// Where the session id came from (first call's source).

@@ -124,16 +124,16 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     ]);
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Options {
     #[serde(flatten)]
     core: GenerateTextOptions,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct TextRequest {
+pub struct TextRequest {
     prompt: ModelPrompt,
     #[serde(default)]
     options: Options,
@@ -141,9 +141,9 @@ struct TextRequest {
     _abort: Option<HandleId>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct OpenAiTextRequest {
+pub struct OpenAiTextRequest {
     prompt: ModelPrompt,
     #[serde(default)]
     options: Options,
@@ -153,7 +153,7 @@ struct OpenAiTextRequest {
     stream_options: StreamOptions,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields, default)]
 struct StreamOptions {
     include_usage: bool,

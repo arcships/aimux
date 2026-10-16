@@ -152,35 +152,36 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     );
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct CatalogueFetchRequest {
+pub struct CatalogueFetchRequest {
     source_url: Option<String>,
     #[serde(default, rename = "abort")]
     _abort: Option<HandleId>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ToolRepairContextRequest {
+pub struct ToolRepairContextRequest {
     tool_call: ToolCall,
     prompt: ModelPrompt,
     #[serde(default)]
     options: GenerateTextOptions,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ToolRepairApplyRequest {
+pub struct ToolRepairApplyRequest {
     tool_call: ToolCall,
     #[serde(default)]
     options: GenerateTextOptions,
     reply: ToolCallRepairReply,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ToolRepairApplyResultRequest {
+pub struct ToolRepairApplyResultRequest {
+    #[schemars(with = "GenerateTextResult")]
     result: Value,
     #[serde(default)]
     options: GenerateTextOptions,
@@ -189,16 +190,16 @@ struct ToolRepairApplyResultRequest {
 }
 
 // Deliberately no Debug implementation: token-bearing requests must not be logged.
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct CodexRefreshRequest {
+pub struct CodexRefreshRequest {
     refresh_token: String,
     client_id: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct OpenAiOutputRequest {
+pub struct OpenAiOutputRequest {
     result: GenerateTextResult,
     metadata_namespace: String,
 }
@@ -248,21 +249,38 @@ fn catalogue_fetch(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
     })
 }
 
-type ToolRepairContextResult = Option<Value>;
+#[derive(Serialize, schemars::JsonSchema)]
+#[serde(transparent)]
+pub struct ToolRepairContextResult(
+    #[schemars(with = "Option<ToolRepairContextSchema>")] Option<Value>,
+);
+
+#[derive(schemars::JsonSchema)]
+#[schemars(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct ToolRepairContextSchema {
+    #[schemars(schema_with = "aimux_core::wire::tagged_schema::<aimux_core::tool::RawToolCall>", extend("x-aimux-codec" = "tagged"))]
+    tool_call: aimux_core::tool::RawToolCall,
+    error: aimux_core::AiMuxError,
+    input_schema: Value,
+    tools: Vec<aimux_core::tool::Tool>,
+    messages: Vec<aimux_core::message::ModelMessage>,
+    instructions: Option<String>,
+}
 
 fn repair_context(_ctx: Ctx, _target: Target, value: Value) -> CallFuture {
     Box::pin(async move {
         let request: ToolRepairContextRequest = params(value)?;
         let (messages, instructions, tools) =
             parse_tool_call::tool_call_repair_inputs(request.prompt, &request.options);
-        let context: ToolRepairContextResult = parse_tool_call::tool_call_repair_context(
+        let context = parse_tool_call::tool_call_repair_context(
             &request.tool_call,
             tools,
             &messages,
             instructions,
         )
         .map_err(OpsError::AiMux)?;
-        output(&context)
+        output(&ToolRepairContextResult(context))
     })
 }
 

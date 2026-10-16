@@ -4,8 +4,8 @@
 //! (`reference/ai/packages/provider/src/image-model/v4/`).
 
 use async_trait::async_trait;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::shared::{
@@ -16,13 +16,12 @@ use crate::{AbortSignal, retry, timeout};
 /// An image file used for image editing or variation generation.
 ///
 /// Aligned with V4 `ImageModelV4File`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum ImageFile {
     /// Inline file data (base64 or binary) with an explicit media type.
     File {
@@ -41,8 +40,9 @@ pub enum ImageFile {
 /// File payload for an [`ImageFile::File`]: base64 string or raw bytes.
 ///
 /// The JSON is a base64 string either way, as in the AI SDK's JSON.
-#[derive(Debug, Clone, TS)]
-#[ts(export, type = "string")]
+#[derive(Debug, Clone, JsonSchema)]
+#[schemars(with = "String")]
+#[schemars(extend("x-aimux-codec" = "base64"))]
 pub enum ImageFileData {
     /// Base64-encoded string.
     Base64(String),
@@ -62,8 +62,9 @@ crate::wire::base64_wire_enum!(ImageFileData);
 ///
 /// The JSON is an array of base64 strings either way, as in the AI SDK's
 /// JSON; parsing yields `Base64`.
-#[derive(Debug, Clone, TS)]
-#[ts(export, type = "Array<string>")]
+#[derive(Debug, Clone, JsonSchema)]
+#[schemars(with = "Vec<String>")]
+#[schemars(extend("x-aimux-codec" = "base64"))]
 pub enum ImageOutputs {
     /// Images as base64-encoded strings.
     Base64(Vec<String>),
@@ -91,20 +92,16 @@ impl<'de> Deserialize<'de> for ImageOutputs {
 /// Token usage for an image generation call (if the provider reports it).
 ///
 /// Aligned with V4 `ImageModelV4Usage`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ImageUsage {
     /// Number of input (prompt) tokens used.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u32>,
     /// Number of output tokens used, if reported.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u32>,
     /// Total tokens as reported by the provider.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<u32>,
 }
@@ -112,13 +109,11 @@ pub struct ImageUsage {
 /// Options passed to [`ImageModel::do_generate`].
 ///
 /// Aligned with V4 `ImageModelV4CallOptions`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ImageCallOptions {
     /// Prompt for the image generation. `None` for operations (e.g. upscaling)
     /// that do not require a prompt.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
 
@@ -127,28 +122,23 @@ pub struct ImageCallOptions {
 
     /// Size of the images, in `{width}x{height}` format.
     /// `None` uses the provider's default size.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<Size>,
 
     /// Aspect ratio of the images, in `{width}:{height}` format.
     /// `None` uses the provider's default aspect ratio.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aspect_ratio: Option<AspectRatio>,
 
     /// Seed for deterministic generation. `None` uses the provider's default.
-    #[ts(optional, type = "number")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
 
     /// Images for image editing or variation generation.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files: Option<Vec<ImageFile>>,
 
     /// Mask image for inpainting operations.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mask: Option<ImageFile>,
 
@@ -157,22 +147,18 @@ pub struct ImageCallOptions {
 
     /// Abort signal for cancelling the operation.
     #[serde(skip)]
-    #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
     /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     /// retrying. `None` uses 2, the AI SDK default.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
 
     /// Per-call operation timeout.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<crate::options::TimeoutConfiguration>,
 
     /// Additional HTTP headers to send with the request.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
 }
@@ -200,9 +186,8 @@ impl ImageCallOptions {
 /// The result of [`ImageModel::do_generate`].
 ///
 /// Aligned with V4 `ImageModelV4Result`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ImageResult {
     /// Generated images (base64 strings or binary data).
     pub images: ImageOutputs,
@@ -211,7 +196,6 @@ pub struct ImageResult {
     pub warnings: Vec<Warning>,
 
     /// Additional provider-specific metadata, keyed by provider name.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<SharedProviderMetadata>,
 
@@ -219,26 +203,21 @@ pub struct ImageResult {
     pub response: ImageResponse,
 
     /// Optional token usage for the call (if the provider reports it).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<ImageUsage>,
 }
 
 /// Response information for an image generation call.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ImageResponse {
     /// Timestamp for the start of the generated response (`toISOString()` in the JSON).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<crate::timestamp::Timestamp>,
     /// The ID of the model that was used to generate the response.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
     /// Response headers.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
 }

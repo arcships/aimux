@@ -16,6 +16,7 @@
 
 use crate::language_model_message::LanguageModelPrompt;
 use crate::options::CallOptions;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufWriter, Write};
@@ -24,7 +25,6 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use ts_rs::TS;
 
 // ── 数据模型(三层 + call_id 关联;schema 版本)────────────────────────────
 
@@ -64,10 +64,26 @@ where
     Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
+fn recording_version_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let mut schema = u32::json_schema(generator);
+    if generator.contract().is_deserialize() {
+        schema.insert("minimum".into(), 1.into());
+        schema.insert("maximum".into(), RECORDING_SCHEMA.into());
+    }
+    schema
+}
+
+fn recorded_prompt_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    if generator.contract().is_serialize() {
+        generator.subschema_for::<LanguageModelPrompt>()
+    } else {
+        generator.subschema_for::<serde_json::Value>()
+    }
+}
+
 /// Operation stored in a unified recording. Older recordings are language calls.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(export)]
 pub enum RecordingOperation {
     #[default]
     LanguageModel,
@@ -81,9 +97,8 @@ impl RecordingOperation {
 }
 
 /// 一次完整调用的录制记录(三层 + call_id 关联)。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct Recording {
     /// 格式版本。Written as [`RECORDING_SCHEMA`]; schemas 1 and 2 are read.
     /// Recordings written by aimux 0.5 and earlier also carry a configuration
@@ -92,6 +107,7 @@ pub struct Recording {
     /// (`call_id`, `recorded_at`, ...), which are read as aliases of the
     /// camelCase keys this version writes.
     #[serde(deserialize_with = "deserialize_known_schema")]
+    #[schemars(schema_with = "recording_version_schema")]
     pub schema: u32,
     /// 暴露逻辑调用 ID,关联三层。
     #[serde(alias = "call_id")]
@@ -125,11 +141,9 @@ pub struct Recording {
     /// 会话归组(RFC-0024 P3):所在会话 id。None = 未归组(无 session_id 且
     /// 推断关闭)。由 `Recorder::record_session` 填充,写入 InputRecord 之前
     /// 或之后均可(writer 端按 call_id 合并)。
-    #[ts(optional)]
     #[serde(default, alias = "session_id", skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     /// 会话内步号(0 起,由 SessionStore 分配)。与 `session_id` 同生命周期。
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step: Option<u32>,
 }
@@ -177,15 +191,15 @@ impl Recording {
 }
 
 /// ① 输入侧:完整调用参数,足以重建 generate_text 调用。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct InputRecord {
     #[serde(default, skip_serializing_if = "RecordingOperation::is_language_model")]
     pub operation: RecordingOperation,
     /// 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。Loads as
     /// empty when this version cannot read it ([`Self::unreadable_prompt`]).
     #[serde(deserialize_with = "deserialize_prompt")]
+    #[schemars(schema_with = "recorded_prompt_schema")]
     pub prompt: LanguageModelPrompt,
     /// 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
     /// 加上所在操作的 `max_retries` / `timeout` / `session_id`
@@ -256,9 +270,8 @@ impl InputRecord {
 ///
 /// 只记身份,不记配置:回放时按 `provider_id` + `model_id` 重新构建 model,
 /// 凭证与 base URL 只来自环境/registry(RFC-0036 §3.3)。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ProviderRecord {
     /// provider 名(registry 名),回放重建的查找键,如 "openai"、"deepseek"。
     /// Empty in a recording written by aimux 0.5 or earlier, which has none
@@ -313,13 +326,11 @@ impl ProviderRecord {
 }
 
 /// ③ HTTP 侧:单次 attempt 的 wire 交换。
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct HttpExchange {
     /// Composite step this exchange belongs to (e.g. `router[0]:openai/gpt-4o`
     /// or `moa.ref[1]:...`). `None` for a plain, non-composite operation.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step: Option<String>,
     /// Core operation attempt, starting at 1. Attempt numbers are unique
@@ -331,11 +342,9 @@ pub struct HttpExchange {
     pub exchange_index: u32,
     pub request: HttpRecord,
     /// None = 请求失败未获响应。
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response: Option<ResponseRecord>,
     pub timing: TimingRecord,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     /// 流式:该 exchange 是否已终结(收到 response 补全)。非流式恒 true。
@@ -347,31 +356,26 @@ fn default_finalized() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct HttpRecord {
     pub method: String,
     pub url: String,
     /// 敏感头(authorization/cookie/含 api-key/key/x-amz-security-token 等)已脱敏为 "\[REDACTED\]"。
     pub headers: Vec<(String, String)>,
     /// 明文(脱敏后);None = 无 body。
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ResponseRecord {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     /// 非流式:完整 JSON;流式:原始 SSE 拼接文本(上限截断)。
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
-    #[ts(optional)]
     #[serde(
         default,
         alias = "stream_chunks",
@@ -379,28 +383,23 @@ pub struct ResponseRecord {
     )]
     pub stream_chunks: Option<usize>,
     /// 首字节延迟(流式)。
-    #[ts(optional, type = "number")]
     #[serde(default, alias = "ttfb_ms", skip_serializing_if = "Option::is_none")]
     pub ttfb_ms: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct TimingRecord {
     /// ms 级延迟,TS 用 number(远小于 2^53,避免 bigint)。
-    #[ts(type = "number")]
     #[serde(alias = "latency_ms")]
     pub latency_ms: u64,
-    #[ts(optional, type = "number")]
     #[serde(default, alias = "ttfb_ms", skip_serializing_if = "Option::is_none")]
     pub ttfb_ms: Option<u64>,
 }
 
 /// 调用终结状态。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[ts(export)]
 pub enum OutcomeStatus {
     /// 未到(内部哨兵,不作为最终输出)。
     #[default]
@@ -415,13 +414,11 @@ pub enum OutcomeStatus {
 }
 
 /// 最终结果摘要。
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct OutcomeRecord {
     /// The result `decide` returned (`DecideResult`), independent of a
     /// provider's wire format.
-    #[ts(optional)]
     #[serde(
         default,
         alias = "decision_result",
@@ -429,19 +426,16 @@ pub struct OutcomeRecord {
     )]
     pub decision_result: Option<serde_json::Value>,
     pub status: OutcomeStatus,
-    #[ts(optional)]
     #[serde(
         default,
         alias = "finish_reason",
         skip_serializing_if = "Option::is_none"
     )]
     pub finish_reason: Option<String>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     /// Lossless structured domain error. In particular, `RetryError.errors`
     /// keeps the complete attempt history rather than only its display text.
-    #[ts(optional)]
     #[serde(
         default,
         alias = "error_value",
@@ -449,7 +443,6 @@ pub struct OutcomeRecord {
     )]
     pub error_value: Option<serde_json::Value>,
     /// 序列化的 Usage。
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<serde_json::Value>,
 }

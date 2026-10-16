@@ -62,25 +62,26 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     r.push((&OPS[1], Handler::Call(configure)));
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct RuntimeDescribeParams {}
+pub struct RuntimeDescribeParams {}
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct RuntimeConfigureParams {
+pub struct RuntimeConfigureParams {
     logging: Option<LoggingConfig>,
     #[serde(default, deserialize_with = "deserialize_proxy")]
+    #[schemars(schema_with = "runtime_proxy_schema")]
     proxy: Option<ProxyConfig>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct LoggingConfig {
     level: LogLevel,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 enum LogLevel {
     Off,
@@ -106,6 +107,12 @@ impl LogLevel {
 
 // Reuse the transport's wire type, adding strict control-key validation only
 // at this boundary. ProxyConfig remains open for its existing Rust consumers.
+fn runtime_proxy_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let mut schema = <ProxyConfig as schemars::JsonSchema>::json_schema(generator);
+    schema.insert("additionalProperties".into(), false.into());
+    schemars::json_schema!({ "anyOf": [schema, { "type": "null" }] })
+}
+
 fn deserialize_proxy<'de, D>(deserializer: D) -> Result<Option<ProxyConfig>, D::Error>
 where
     D: Deserializer<'de>,

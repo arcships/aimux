@@ -11,9 +11,9 @@
 use std::collections::HashMap;
 
 use indexmap::IndexMap;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ts_rs::TS;
 
 // Keep the established shared-module paths while the canonical cancellation
 // implementation lives in its focused module.
@@ -150,8 +150,9 @@ pub type SharedProviderReference = IndexMap<String, String>;
 /// The JSON is a base64 string either way, as in the AI SDK's JSON: `Binary`
 /// is written as base64 and parsing yields `Base64`. Two values are equal when
 /// they hold the same bytes, whatever their form.
-#[derive(Debug, Clone, TS)]
-#[ts(export, type = "string")]
+#[derive(Debug, Clone, JsonSchema)]
+#[schemars(with = "String")]
+#[schemars(extend("x-aimux-codec" = "base64"))]
 pub enum FileBytes {
     /// Raw binary bytes.
     Binary(Vec<u8>),
@@ -177,20 +178,18 @@ impl PartialEq for FileBytes {
 /// File data as a tagged discriminated union.
 ///
 /// Aligned with V4 `SharedV4FileData`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum FileData {
     /// Raw bytes (`Uint8Array`) or a base64-encoded string.
     Data { data: FileBytes },
     /// A URL that points to the file.
     Url {
         url: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         original_url: Option<String>,
     },
@@ -201,20 +200,18 @@ pub enum FileData {
 }
 
 /// Data or a URL returned for a generated file.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
 pub enum GeneratedFileData {
     Data {
         data: FileBytes,
     },
     Url {
         url: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         original_url: Option<String>,
     },
@@ -225,9 +222,9 @@ pub enum GeneratedFileData {
 /// Newtype that enforces the `WxH` format used by V4 image `size` and video
 /// `resolution` options. Aligned with the TS template-literal type
 /// `` `${number}x${number}` ``.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(into = "String", try_from = "String")]
-#[ts(export, type = "`${number}x${number}`")]
+#[schemars(with = "String")]
 pub struct Size {
     width: u32,
     height: u32,
@@ -303,9 +300,9 @@ impl std::str::FromStr for Size {
 /// Newtype that enforces the `W:H` format used by V4 image and video
 /// `aspectRatio` options. Aligned with the TS template-literal type
 /// `` `${number}:${number}` ``.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(into = "String", try_from = "String")]
-#[ts(export, type = "`${number}:${number}`")]
+#[schemars(with = "String")]
 pub struct AspectRatio {
     width: u32,
     height: u32,
@@ -392,59 +389,51 @@ fn parse_pair(s: &str, sep: char) -> Option<(u32, u32)> {
 /// subsets; traits whose TS spec marks `response` as required use
 /// `ResponseInfo` directly, while those that mark it optional use
 /// `Option<ResponseInfo>`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ResponseInfo {
     /// ID of the generated response, when supplied by the provider.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     /// Timestamp for the start of the generated response (`toISOString()` in the JSON).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<crate::timestamp::Timestamp>,
     /// The ID of the model that was used to generate the response.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
     /// Response headers.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
     /// The response body (opaque JSON).
-    #[ts(optional)]
     #[serde(
         default,
         deserialize_with = "crate::wire::present",
         skip_serializing_if = "Option::is_none"
     )]
+    #[schemars(extend("x-aimux-codec" = "presence"))]
     pub body: Option<Value>,
 }
 
 /// Optional request information for telemetry and debugging.
 ///
 /// Aligned with the `request?` object that appears on some V4 model results.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct RequestInfo {
     /// The request body that was sent (opaque JSON).
-    #[ts(optional)]
     #[serde(
         default,
         deserialize_with = "crate::wire::present",
         skip_serializing_if = "Option::is_none"
     )]
+    #[schemars(extend("x-aimux-codec" = "presence"))]
     pub body: Option<Value>,
 }
 
 /// Response information returned when starting a language-model stream.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct StreamResponseInfo {
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
 }
