@@ -226,7 +226,7 @@ POST /api/calls
   2. **Settings 已存该 provider 的 key**(KeyStore,含启动时从磁盘加载的);
   3. `None` —— provider 读自己注册的默认 env var。
 
-  请求自带 `base_url` 且不是该 provider 的默认地址时,只用请求内直接给的 key(明文,仅回环):第 2、3 级不适用,`env:` 引用被拒绝,不给 key 则不带 key 发出。除 key 外还从服务端环境读凭据的 provider(AWS 凭据、Vertex access token、Codex 登录、DataForSEO 账号)不接受自定义 `base_url`。Replay 按录制的 provider 身份重建,总是发往该 provider 的默认地址(录制不存地址)。否则任何客户端都能把服务端的 key 发往自己指定的主机。
+  请求自带 `base_url` 且不是该 provider 的默认地址时,只用请求内直接给的 key(明文,仅回环):第 2、3 级不适用,`env:` 引用被拒绝,不给 key 则以空 key 发出(与 AI SDK 显式传 `apiKey: ''` 相同,不回落到 Settings key 或环境变量;部分 provider 因此发一个空凭据头,如 OpenAI 的 `Authorization: Bearer`)。除 key 外还从服务端环境读凭据的 provider(AWS 凭据、Vertex access token、Codex 登录、DataForSEO 账号)不接受自定义 `base_url`。Replay 按录制的 provider 身份重建,总是发往该 provider 的默认地址(录制不存地址)。否则任何客户端都能把服务端的 key 发往自己指定的主机。
 
 **威胁模型**:信任边界 = 本机回环客户端。回环下浏览器 ↔ 后端信道视为可信,故允许网页内明文录入与请求内明文直传;非回环(如 `--host 0.0.0.0` LAN 共享)下任何局域网客户端都能 POST,故全部明文入口关闭。明文 key 永不进日志、永不回传前端、永不进 Recording(录制层脱敏复用 RFC-0023 规则)。
 

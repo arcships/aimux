@@ -32,7 +32,7 @@ pub enum RerankingDocuments {
 ///
 /// Aligned with V4 `RerankingModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export)]
 pub struct RerankingCallOptions {
     /// Documents to rerank.

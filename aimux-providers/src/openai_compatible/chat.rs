@@ -15,21 +15,18 @@ use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::shared::{
-    RequestInfo, ResponseInfo, SharedProviderMetadata, StreamResponseInfo, Warning,
-    provider_namespace,
+    RequestInfo, ResponseInfo, SharedProviderMetadata, StreamResponseInfo, provider_namespace,
 };
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{
-    FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage,
-};
-use aimux_provider_utils::{
-    StreamingToolCallDelta, StreamingToolCallTracker, TransformStreamController, Transformer,
-    generate_id, pipe_through,
-};
+use aimux_core::types::{FinishReason, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage};
+use aimux_provider_utils::{Transformer, generate_id, pipe_through};
 
 use super::config::{ChatSettings, CompatModelConfig, StreamMetadataExtractor};
 use super::convert::{ChatBodySpec, RequestBodyResult, build_request_body, parse_finish_reason};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
+use crate::stream::{
+    ChatToolCalls, Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext, ToolCallDelta,
+};
 
 /// An OpenAI-compatible chat model. Holds no HTTP client: the request helpers
 /// of `aimux-provider-utils` use the injected or process-default transport.
@@ -276,10 +273,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
             .finish_reason
             .as_deref()
             .map(parse_finish_reason)
-            .unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            });
+            .unwrap_or(FINISH_OTHER);
 
         let chat = &self.config.chat;
         let usage = chat.convert_usage(raw.get("usage"));
@@ -344,7 +338,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
         let sse_stream = resp.value;
 
         let transformer = OpenAICompatibleChatStream {
-            warnings,
+            ctx: StreamContext::new(options, warnings, endpoint, &body, &response_headers),
             metadata_key,
             metadata_extractor: self
                 .config
@@ -353,20 +347,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
                 .as_ref()
                 .map(|extractor| extractor.create_stream_extractor()),
             chat: self.config.chat.clone(),
-            include_raw_chunks: options.include_raw_chunks == Some(true),
-            url: endpoint,
-            request_body: body.clone(),
-            response_headers: response_headers.clone(),
-            text_started: false,
-            reasoning_started: false,
-            final_usage_raw: None,
-            final_usage_parsed: None,
-            final_finish_reason: None,
-            response_metadata_emitted: false,
-            tool_calls: StreamingToolCallTracker::new().with_generate_id(generate_id),
-            tool_parts: Vec::new(),
-            pending: HashMap::new(),
-            forwarded: HashSet::new(),
+            ..OpenAICompatibleChatStream::default()
         };
         let stream = pipe_through(sse_stream, transformer);
 
@@ -385,18 +366,14 @@ const REASONING_ID: &str = "reasoning-0";
 
 /// The `TransformStream` of [`OpenAICompatibleChatModel::do_stream`]: turns
 /// the parsed SSE events into stream parts.
+#[derive(Default)]
 struct OpenAICompatibleChatStream {
-    warnings: Vec<Warning>,
+    ctx: StreamContext,
     metadata_key: String,
     /// The chat settings: usage accounting and the streaming usage key.
     chat: ChatSettings,
     /// The caller's extractor, fed every parsed chunk.
     metadata_extractor: Option<Box<dyn StreamMetadataExtractor>>,
-    include_raw_chunks: bool,
-    /// Request context for in-stream `error` payloads.
-    url: String,
-    request_body: Value,
-    response_headers: HashMap<String, String>,
 
     text_started: bool,
     reasoning_started: bool,
@@ -404,12 +381,26 @@ struct OpenAICompatibleChatStream {
     final_usage_parsed: Option<UsageResponse>,
     final_finish_reason: Option<FinishReason>,
     response_metadata_emitted: bool,
-    tool_calls: StreamingToolCallTracker,
-    tool_parts: Vec<StreamPart>,
+    tool_calls: ChatToolCalls,
     /// Some compatible servers send the first delta of a call without
     /// `function.name`; buffer by index until the name is known.
     pending: HashMap<usize, PendingToolCall>,
     forwarded: HashSet<usize>,
+}
+
+/// A chat stream with an empty request context and tool-call ids from
+/// `generate_id`, for tests that drive it chunk by chunk.
+/// `metadata_key` is the provider options key.
+#[cfg(test)]
+pub(crate) fn chat_test_stream(
+    metadata_key: &str,
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
+) -> impl Transformer<Input = Result<Value, AiMuxError>, Output = StreamPart> {
+    OpenAICompatibleChatStream {
+        metadata_key: metadata_key.to_string(),
+        tool_calls: ChatToolCalls::new(generate_id),
+        ..OpenAICompatibleChatStream::default()
+    }
 }
 
 impl OpenAICompatibleChatStream {
@@ -419,49 +410,26 @@ impl OpenAICompatibleChatStream {
                 .expect("provider metadata must be an object")
         })
     }
-
-    fn enqueue_tool_parts(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        for part in self.tool_parts.drain(..) {
-            controller.enqueue(part);
-        }
-    }
-
-    fn error_finish_reason() -> FinishReason {
-        FinishReason {
-            unified: FinishReasonUnified::Error,
-            raw: None,
-        }
-    }
 }
 
 impl Transformer for OpenAICompatibleChatStream {
     type Input = Result<Value, AiMuxError>;
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        controller.enqueue(StreamPart::StreamStart {
-            warnings: std::mem::take(&mut self.warnings),
-        });
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
     }
 
-    fn transform(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         let parsed = match event {
             Ok(parsed) => parsed,
             Err(error) => {
-                self.final_finish_reason = Some(Self::error_finish_reason());
+                self.final_finish_reason = Some(FINISH_ERROR);
                 controller.enqueue(StreamPart::Error { error });
                 return;
             }
         };
-        if self.include_raw_chunks {
-            controller.enqueue(StreamPart::Raw {
-                raw_value: parsed.clone(),
-            });
-        }
+        self.ctx.raw(&parsed, controller);
         if let Some(extractor) = self.metadata_extractor.as_mut() {
             extractor.process_chunk(&parsed);
         }
@@ -470,12 +438,12 @@ impl Transformer for OpenAICompatibleChatStream {
                 error: stream_error(
                     &self.metadata_key,
                     error,
-                    &self.url,
-                    self.request_body.clone(),
-                    self.response_headers.clone(),
+                    &self.ctx.url,
+                    self.ctx.request_body.clone(),
+                    self.ctx.response_headers.clone(),
                 ),
             });
-            self.final_finish_reason = Some(Self::error_finish_reason());
+            self.final_finish_reason = Some(FINISH_ERROR);
             return;
         }
 
@@ -488,7 +456,7 @@ impl Transformer for OpenAICompatibleChatStream {
         let chunk: StreamChunk = match serde_json::from_value(parsed) {
             Ok(chunk) => chunk,
             Err(e) => {
-                self.final_finish_reason = Some(Self::error_finish_reason());
+                self.final_finish_reason = Some(FINISH_ERROR);
                 controller.enqueue(StreamPart::Error { error: e.into() });
                 return;
             }
@@ -533,45 +501,25 @@ impl Transformer for OpenAICompatibleChatStream {
                 match part {
                     GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
                         if self.text_started {
-                            controller.enqueue(StreamPart::TextEnd {
-                                id: TEXT_ID.to_string(),
-                                provider_metadata: None,
-                            });
+                            controller.text_end(TEXT_ID);
                             self.text_started = false;
                         }
                         if !self.reasoning_started {
                             self.reasoning_started = true;
-                            controller.enqueue(StreamPart::ReasoningStart {
-                                id: REASONING_ID.to_string(),
-                                provider_metadata: None,
-                            });
+                            controller.reasoning_start(REASONING_ID);
                         }
-                        controller.enqueue(StreamPart::ReasoningDelta {
-                            id: REASONING_ID.to_string(),
-                            delta: text,
-                            provider_metadata: None,
-                        });
+                        controller.reasoning_delta(REASONING_ID, text);
                     }
                     GenerateContent::Text { text, .. } => {
                         if self.reasoning_started {
-                            controller.enqueue(StreamPart::ReasoningEnd {
-                                id: REASONING_ID.to_string(),
-                                provider_metadata: None,
-                            });
+                            controller.reasoning_end(REASONING_ID);
                             self.reasoning_started = false;
                         }
                         if !self.text_started {
                             self.text_started = true;
-                            controller.enqueue(StreamPart::TextStart {
-                                id: TEXT_ID.to_string(),
-                                provider_metadata: None,
-                            });
+                            controller.text_start(TEXT_ID);
                         }
-                        controller.enqueue(StreamPart::TextDelta {
-                            id: TEXT_ID.to_string(),
-                            delta: text,
-                            provider_metadata: None,
-                        });
+                        controller.text_delta(TEXT_ID, text);
                     }
                     _ => unreachable!(),
                 }
@@ -579,10 +527,7 @@ impl Transformer for OpenAICompatibleChatStream {
 
             if let Some(deltas) = choice.delta.tool_calls.filter(|deltas| !deltas.is_empty()) {
                 if self.reasoning_started {
-                    controller.enqueue(StreamPart::ReasoningEnd {
-                        id: REASONING_ID.to_string(),
-                        provider_metadata: None,
-                    });
+                    controller.reasoning_end(REASONING_ID);
                     self.reasoning_started = false;
                 }
                 for dtc in &deltas {
@@ -609,29 +554,27 @@ impl Transformer for OpenAICompatibleChatStream {
                             let Some(name) = name else { continue };
                             buffered = self.pending.remove(&index).unwrap_or_default();
                             self.forwarded.insert(index);
-                            StreamingToolCallDelta {
+                            ToolCallDelta {
                                 index: Some(index),
                                 id: buffered.id.as_deref(),
                                 name: Some(name),
                                 arguments: Some(&buffered.arguments),
                                 provider_metadata: self.signature_metadata(Some(&buffered.extra)),
-                                ..Default::default()
+                                ..ToolCallDelta::default()
                             }
                         }
-                        _ => StreamingToolCallDelta {
+                        _ => ToolCallDelta {
                             index: dtc.index,
                             id: dtc.id.as_deref(),
                             name: function.and_then(|f| f.name.as_deref()),
                             arguments,
                             provider_metadata: self.signature_metadata(dtc.extra_content.as_ref()),
-                            ..Default::default()
+                            ..ToolCallDelta::default()
                         },
                     };
-                    if let Err(error) = self.tool_calls.process(delta, &mut self.tool_parts) {
-                        controller.error(error.into());
+                    if !self.tool_calls.delta(delta, controller) {
                         return;
                     }
-                    self.enqueue_tool_parts(controller);
                 }
             }
 
@@ -663,39 +606,26 @@ impl Transformer for OpenAICompatibleChatStream {
         }
     }
 
-    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(mut self, controller: &mut Controller) {
         if self.reasoning_started {
-            controller.enqueue(StreamPart::ReasoningEnd {
-                id: REASONING_ID.to_string(),
-                provider_metadata: None,
-            });
+            controller.reasoning_end(REASONING_ID);
         }
         if self.text_started {
-            controller.enqueue(StreamPart::TextEnd {
-                id: TEXT_ID.to_string(),
-                provider_metadata: None,
-            });
+            controller.text_end(TEXT_ID);
         }
         for (index, entry) in std::mem::take(&mut self.pending) {
-            let delta = StreamingToolCallDelta {
+            let delta = ToolCallDelta {
                 index: Some(index),
                 id: entry.id.as_deref(),
                 arguments: Some(&entry.arguments),
                 provider_metadata: self.signature_metadata(Some(&entry.extra)),
-                ..Default::default()
+                ..ToolCallDelta::default()
             };
-            if let Err(error) = self.tool_calls.process(delta, &mut self.tool_parts) {
-                controller.error(error.into());
+            if !self.tool_calls.delta(delta, controller) {
                 return;
             }
-            self.enqueue_tool_parts(controller);
         }
-        // A parsable argument buffer can still be a prefix of a longer
-        // input: finalize only when the stream flushes.
-        self.tool_calls.finish(&mut self.tool_parts);
-        for part in self.tool_parts.drain(..) {
-            controller.enqueue(part);
-        }
+        self.tool_calls.finish(controller);
 
         let mut metadata = aimux_core::shared::SharedProviderMetadata::new();
         metadata.insert(self.metadata_key.clone(), Map::new());
@@ -720,9 +650,7 @@ impl Transformer for OpenAICompatibleChatStream {
             });
         }
         controller.enqueue(StreamPart::Finish {
-            finish_reason: self
-                .final_finish_reason
-                .unwrap_or_else(Self::error_finish_reason),
+            finish_reason: self.final_finish_reason.unwrap_or(FINISH_ERROR),
             usage: self.chat.convert_usage(self.final_usage_raw.as_ref()),
             provider_metadata: Some(metadata),
         });
@@ -888,10 +816,10 @@ mod tests {
         )
         .await;
         let chat = ChatSettings {
-            error_structure: |data: &Value| ProviderErrorParts {
+            error_structure: Arc::new(|data: &Value| ProviderErrorParts {
                 message: data["detail"].as_str().unwrap_or_default().to_string(),
                 provider_code: data["kind"].as_u64().map(|k| k.to_string()),
-            },
+            }),
             ..ChatSettings::default()
         };
         let error = provider(BaseUrl::Fixed(server.uri()), chat)
@@ -914,7 +842,6 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn a_lazy_base_url_is_evaluated_per_request_and_its_error_fails_the_request() {
-        use crate::openai_compatible::config::UsageDialect;
         use crate::preset::{AuthMode, ParamSpec, PresetDescriptor};
 
         const VAR: &str = "AIMUX_TEST_COMPAT_LAZY_BASE_URL";
@@ -937,7 +864,7 @@ mod tests {
             auth: AuthMode::None,
             base_url_env: Some(VAR.to_string()),
             max_tokens_key: None,
-            convert_usage: UsageDialect::default(),
+            convert_usage: None,
             params: vec![ParamSpec {
                 name: "host".to_string(),
                 env: Vec::new(),

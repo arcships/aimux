@@ -34,9 +34,10 @@ use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::image_model::ImageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, Resolvable, TransformStreamController, Transformer, pipe_through,
-    validate_base_url,
+    FetchFunction, HeaderMapOpt, Resolvable, Transformer, pipe_through, validate_base_url,
 };
+
+use crate::stream::{Controller, Emit, FINISH_OTHER};
 
 use crate::shared::{
     Credential, EndpointConfig, EndpointHeaders, ProviderHeaders, TransformRequestBody,
@@ -497,10 +498,7 @@ impl LanguageModel for OpenResponsesModel {
                 warnings,
                 final_usage: Usage::default(),
                 has_tool_calls: false,
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Other,
-                    raw: None,
-                },
+                finish_reason: FINISH_OTHER,
                 is_active_reasoning: false,
                 tool_calls: HashMap::new(),
             },
@@ -531,17 +529,13 @@ impl Transformer for OpenResponsesStream {
     type Input = Result<Value, AiMuxError>;
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn start(&mut self, controller: &mut Controller) {
         controller.enqueue(StreamPart::StreamStart {
             warnings: std::mem::take(&mut self.warnings),
         });
     }
 
-    fn transform(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         let Self {
             ref mut final_usage,
             ref mut has_tool_calls,
@@ -590,10 +584,7 @@ impl Transformer for OpenResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
-                                    controller.enqueue(StreamPart::ReasoningStart {
-                                        id,
-                                        provider_metadata: None,
-                                    });
+                                    controller.reasoning_start(id);
                                     *is_active_reasoning = true;
                                 }
                                 "message" => {
@@ -602,10 +593,7 @@ impl Transformer for OpenResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
-                                    controller.enqueue(StreamPart::TextStart {
-                                        id,
-                                        provider_metadata: None,
-                                    });
+                                    controller.text_start(id);
                                 }
                                 _ => {}
                             }
@@ -711,10 +699,7 @@ impl Transformer for OpenResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
-                                    controller.enqueue(StreamPart::ReasoningEnd {
-                                        id,
-                                        provider_metadata: None,
-                                    });
+                                    controller.reasoning_end(id);
                                     *is_active_reasoning = false;
                                 }
                                 "message" => {
@@ -723,10 +708,7 @@ impl Transformer for OpenResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
-                                    controller.enqueue(StreamPart::TextEnd {
-                                        id,
-                                        provider_metadata: None,
-                                    });
+                                    controller.text_end(id);
                                 }
                                 _ => {}
                             }
@@ -745,11 +727,7 @@ impl Transformer for OpenResponsesStream {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        controller.enqueue(StreamPart::ReasoningDelta {
-                            id,
-                            delta,
-                            provider_metadata: None,
-                        });
+                        controller.reasoning_delta(id, delta);
                     }
 
                     // -- Text delta --
@@ -764,11 +742,7 @@ impl Transformer for OpenResponsesStream {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        controller.enqueue(StreamPart::TextDelta {
-                            id,
-                            delta,
-                            provider_metadata: None,
-                        });
+                        controller.text_delta(id, delta);
                     }
 
                     // -- Completion events --
@@ -818,13 +792,10 @@ impl Transformer for OpenResponsesStream {
         }
     }
 
-    fn flush(self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(self, controller: &mut Controller) {
         // Close any dangling reasoning segment.
         if self.is_active_reasoning {
-            controller.enqueue(StreamPart::ReasoningEnd {
-                id: "reasoning-0".to_string(),
-                provider_metadata: None,
-            });
+            controller.reasoning_end("reasoning-0");
         }
 
         controller.enqueue(StreamPart::Finish {

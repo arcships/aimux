@@ -26,7 +26,7 @@ use aimux_provider_utils::{
     load_setting, validate_base_url,
 };
 
-use crate::openai_compatible::config::BaseUrl;
+use crate::openai_compatible::config::{BaseUrl, ResolveBaseUrl, ResolveFetchHeaders};
 use crate::openai_compatible::{
     OpenAICompatibleChatModel, OpenAICompatibleProvider, OpenAICompatibleProviderSettings,
 };
@@ -85,7 +85,7 @@ impl std::fmt::Debug for VertexPartnerProviderSettings {
 /// The base URL of a partner sub-provider with no explicit `base_url`, built
 /// from the project and location read when a request is made.
 #[derive(Clone, Debug)]
-pub(crate) struct PartnerBaseUrl {
+struct PartnerBaseUrl {
     project: Option<String>,
     location: Option<String>,
     /// MaaS picks the location's host (google-vertex-maas-provider.ts:91-106);
@@ -93,13 +93,13 @@ pub(crate) struct PartnerBaseUrl {
     regional_host: bool,
 }
 
-impl PartnerBaseUrl {
+impl ResolveBaseUrl for PartnerBaseUrl {
     /// The base URL of one request.
     ///
     /// # Errors
     ///
     /// `AiMuxError::LoadSetting` when no project is set.
-    pub(crate) fn resolve(&self) -> Result<String, AiMuxError> {
+    fn resolve(&self) -> Result<String, AiMuxError> {
         let project = load_setting(self.project.as_deref(), PROJECT_ENV_VAR, "project")?;
         let location = load_optional_setting(self.location.as_deref(), LOCATION_ENV_VAR)
             .unwrap_or_else(|| "global".to_string());
@@ -122,18 +122,19 @@ impl PartnerBaseUrl {
 /// them replaces the whole header (google-vertex-maas-provider-node.ts:34-58,
 /// google-vertex-xai-provider-node.ts:33-55).
 #[derive(Clone)]
-pub(crate) struct PartnerHeaders {
+struct PartnerHeaders {
     auth: Arc<GoogleAuth>,
     user: Option<HeadersFn>,
 }
 
-impl PartnerHeaders {
+#[async_trait::async_trait]
+impl ResolveFetchHeaders for PartnerHeaders {
     /// The headers of one request.
     ///
     /// # Errors
     ///
     /// The token or the caller's header producer error.
-    pub(crate) async fn resolve(&self) -> Result<HeaderMapOpt, AiMuxError> {
+    async fn resolve(&self) -> Result<HeaderMapOpt, AiMuxError> {
         let token = self.auth.access_token().await?;
         let user = match &self.user {
             Some(headers) => headers.resolve().await?,
@@ -151,7 +152,7 @@ impl PartnerHeaders {
 fn partner_parts(
     settings: &VertexPartnerProviderSettings,
     regional_host: bool,
-) -> Result<(BaseUrl, PartnerHeaders), AiMuxError> {
+) -> Result<(BaseUrl, Arc<dyn ResolveFetchHeaders>), AiMuxError> {
     let explicit = settings
         .base_url
         .as_deref()
@@ -159,11 +160,11 @@ fn partner_parts(
         .filter(|url| !url.is_empty());
     let base_url = match explicit {
         Some(url) => BaseUrl::Fixed(validate_base_url(url)?),
-        None => BaseUrl::VertexPartner(PartnerBaseUrl {
+        None => BaseUrl::Dynamic(Arc::new(PartnerBaseUrl {
             project: settings.project.clone(),
             location: settings.location.clone(),
             regional_host,
-        }),
+        })),
     };
 
     let mut auth_options = settings.google_auth_options.clone().unwrap_or_default();
@@ -173,10 +174,10 @@ fn partner_parts(
             ..Default::default()
         };
     }
-    let headers = PartnerHeaders {
+    let headers: Arc<dyn ResolveFetchHeaders> = Arc::new(PartnerHeaders {
         auth: Arc::new(GoogleAuth::new(auth_options, settings.fetch.clone())),
         user: settings.headers.clone(),
-    };
+    });
     Ok((base_url, headers))
 }
 

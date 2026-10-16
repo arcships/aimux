@@ -2,9 +2,18 @@
 
 > 基线：v0.5.0（2026-09-27 发布）。方向依据 [RFC-0036](rfc/0036-positioning-and-layered-architecture.md)
 > （定位与分层架构）；本文档只做排期，单项设计与差距分析在各 issue / RFC 内。
-> 上次复核：2026-09-29（open issues #95 #166 #167 #170 #171 #174 #175 #179 #180 #181 #185）。
+> 上次复核：2026-10-03；代码基线：`a8e3a996`（含 #200 / #221 / #213 / #226 / #203 的 master）。阶段划分沿用已合并的 #197 / #198；完成状态以合并记录和源码为准，未合并提案单独列出。
 >
-> 位置说明：放在仓库根目录而非 `docs/plan/`——后者在 E1 文档重组中整体归档；`docs/` 的英文约定不适用于本文。
+> 位置说明：放在仓库根目录而非 `docs/plan/`——后者计划在 E1 文档重组时整体归档，目前仍保留；`docs/` 的英文约定不适用于本文。
+
+## 当前状态（2026-10-03）
+
+- **已合并的路线基线**：[#198](https://github.com/arcships/aimux/pull/198)（`cddfee7`）加入定位与分层架构 RFC，[#197](https://github.com/arcships/aimux/pull/197)（`9ce501a`）加入本文的 0.6 → 1.0 分期。RFC 文件仍标 Draft，设计状态需与决策记录同步。
+- **已完成的前置工作**：#164 请求管线、[#169](https://github.com/arcships/aimux/pull/169) A1 脚本与依赖清理、[#196](https://github.com/arcships/aimux/pull/196) iOS staticlib 体积修复已合并；其后 master 又合入 [#213](https://github.com/arcships/aimux/pull/213)（`d3e3a290`，SSE 解码换用 sse-stream）、[#221](https://github.com/arcships/aimux/pull/221)（`0b365b39`，稳定 decision API 与官方 TypeSafe Jev provider）、[#226](https://github.com/arcships/aimux/pull/226)（`3f0673f2`，官方 decision providers、候选打分与原生媒体）、[#203](https://github.com/arcships/aimux/pull/203)（`a8e3a996`，A2 过期审计产物与未用 runner 清理）。A1 以 #169 的实际保留/删除清单为准；#196 不代表桌面 S1 或全产物 S2 已完成。
+- **仍待实施**：RFC-0032 / 0033 入库、B1（形式已按 #200 §0.7 调整为 descriptor 数据源 + `create_xxx` 工厂；C2 转发 shim 与“旧导出共存一个 minor”已撤销）、桌面 S1、全产物 S2、性能门禁 P、ops 协议与 L0 passthrough（后两项按 #200 §0.7 后置到切换之后）。RFC-0031 当前位于 [docs/ai-sdk-request-pipeline.md](docs/ai-sdk-request-pipeline.md)，迁入 `rfc/` 属文档整理，不是重新实现请求管线。
+- **对齐设计已入库**：[#200](https://github.com/arcships/aimux/pull/200)（`d8fb4ac5`）已合并为 [docs/aisdk-architecture-alignment.md](docs/aisdk-architecture-alignment.md)，不占 RFC 编号；其对本文与 RFC-0036 既有承诺的逐项定性见其 §0.7，本文受影响条目已加注指向该节。
+
+阶段中的版本和工期为规划估算，不是已承诺发布日期。完成项附合并 PR。
 
 ## 0. 方向（RFC-0036 摘要）
 
@@ -45,9 +54,9 @@ aimux 是 **provider 接入与治理的运行时**：
 | 项 | 内容 |
 |---|---|
 | RFC | RFC-0031 / 0032（写入 #166 的 7 条修正）/ 0033 入库——B1、#170、#174、#175 均引用它们 |
-| **S1** | 桌面 `.a` 切 LTO-off staticlib profile（`ios-release` 改名 `staticlib-release`）。**只改 staticlib job**：`aimux-ffi` 同时产出 cdylib，`.so/.dylib/.dll` 保持 fat-LTO。实测 138.4 → 66.5 MB；后置到全链路对齐迁移之后（见 §6.1） |
-| **S2** | 体积门禁推广到所有发布产物，**每个产物给具体阈值**（初期取当前值 +10%），CI 输出体积报告；后置到全链路对齐迁移之后（见 §6.1） |
-| **P** | 性能回归门禁：单请求开销、流式吞吐、RSS 增长；后置到全链路对齐迁移之后（见 §6.1） |
+| **S1** | 桌面 `.a` 切 LTO-off staticlib profile（`ios-release` 改名 `staticlib-release`）。**只改 staticlib job**：`aimux-ffi` 同时产出 cdylib，`.so/.dylib/.dll` 保持 fat-LTO。实测 138.4 → 66.5 MB |
+| **S2** | 体积门禁推广到所有发布产物，**每个产物给具体阈值**（初期取当前值 +10%），CI 输出体积报告 |
+| **P** | 性能回归门禁：单请求开销、流式吞吐、RSS 增长 |
 | A2–A5 | 删 `ProviderName` 枚举及各语言副本；归档 `provider-inventory/`；aimux-web 类型副本；Flutter example 桌面脚手架 |
 | E1 | 内部清理 + 文档三层重组 |
 | #185 | `ToolInput{Raw,Parsed}`；tracker 不删，改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils（#204）；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系) |
@@ -68,7 +77,7 @@ aimux 是 **provider 接入与治理的运行时**：
 | B2–B8 | 17 个 LanguageModel 实现 → ~7 个协议；33 个 wrapper 退役；responses 家族合并（遵循 #166 修正 3/6） |
 | #174 / #175 | registry `auth` 列作为 preset descriptor 数据，鉴权在各厂商包内以 headers 闭包 / fetch 装饰器实现；CredentialStore + TokenRefresher 随宿主回调后置（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 | L2 补齐 | `StreamPart::Raw` / `provider_metadata` 在各协议接线——投影不下的不得静默丢弃 |
-| **S3** | `cargo-bloat` 审计 0.5.0 增重（Android `.so` 13.4 → 21 MB）；feature gating 仅作可选小体积路径，默认全量；后置到全链路对齐迁移之后（见 §6.1） |
+| **S3** | `cargo-bloat` 审计 0.5.0 增重（Android `.so` 13.4 → 21 MB）；feature gating 仅作可选小体积路径，默认全量 |
 | ~~调研 RFC~~ | ~~L2 数据模型选型（AI SDK 形态 / Open Responses items / 自有），指标见 RFC-0036 §3~~ 撤销：选型已定为 AI SDK V4 形态（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 
 版本语义：Rust API、binding wire 与 C ABI 在全链路对齐切换时一次性 breaking（33 wrapper 退役、构造器替换），不经 C2 转发（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）。
@@ -111,13 +120,16 @@ aimux 是 **provider 接入与治理的运行时**：
 - **瘦身不改变对外 API**（§6.1）。
 - 语言规则：`docs/` 与 `bindings/*/README` 英文，`rfc/` 中文。
 
-## 4. 近期第一步（本周可并行开）
+## 4. 近期入口与依赖门
 
-1. **RFC-0032 / 0033 入库**：B1 与 #174 的前提。
-2. **S1 + S2**：一个小 PR——改 profile 名、staticlib job 换 profile、全产物体积阈值（后置，见 §6.1）。
-3. **A2–A5**：四个独立 PR；#166 的 A1 checkbox 补勾（#169 已合入）。
-4. **#185**：先删 tracker，再换 `ToolInput`。
-5. **B1 + C2**：解锁项。
+1. **状态与方向对齐**：#166 A1 按 #169 的实际交付补勾，E1 改为 master 上独立 PR；#200 已合并为 [docs/aisdk-architecture-alignment.md](docs/aisdk-architecture-alignment.md)，与现行路线的关系见其 §0.7，不再有同号待厘清项。不在本轮文档维护中决定 ABI 切换方式或 #185 的最终类型架构。
+2. **RFC-0032 / 0033 入库**：B1 与 #174 的规范前提。纳入 #166 已记录的修正；不能以未合并分支中的文档替代 master 的规范。
+3. **S1 / S2 / P**：S1 只改 staticlib job，cdylib 保持现有 profile；S2 给出各发布产物的基线与阈值；P 明确测量方法、回归阈值与基线更新规则，再作为发布门禁。
+4. **A2–A5 与 #185**：按现有独立 PR 边界推进；涉及公开类型、绑定生成或 provider/core 边界的部分，先核对 #200（[§0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）的决策影响，避免重复实施。A2 的源码迁移说明保留。
+5. **B1**：后续 provider 删除的解锁项；B1 形式已按 #200 §0.7 调整为 descriptor 数据源 + `create_xxx` 工厂，C2 转发 shim 已撤销；B4/B5 还需完成直接构造调用点迁移。#174 依赖 B1，#175 依赖 #174。
+6. **ops schema / L0 passthrough**：分别明确跟踪项和验收条件。ops 至少覆盖 op×handle、错误信封、二进制帧、版本协商与取消；passthrough 覆盖字节保真及 auth / 重试 / 录制的共享路径。
+
+每项记录依赖、验收条件、关联 PR 和复核日期；方向变更确认后再调整版本归属。
 
 ## 5. 版本节奏预估
 
@@ -137,7 +149,7 @@ aimux 是 **provider 接入与治理的运行时**：
 
 ### 6.1 产物体积与性能（硬门禁）
 
-> 2026-10-13 调整：全链路对齐迁移按 [docs/aisdk-architecture-alignment.md §9.1](docs/aisdk-architecture-alignment.md#91-集成原则) 逐层合入主线。S1–S3、P、`aimux` CLI 体积预算与 0.9 能力矩阵排在迁移之后；体积与性能门禁的阈值和形式等维护者改写 #208（RFC-0038 体积/性能预算）后再定。在此之前，每个迁移层的 PR 描述列出产物改前改后的体积。
+> 2026-10-13 调整：全链路对齐迁移按 [docs/aisdk-architecture-alignment.md §9.1](docs/aisdk-architecture-alignment.md#91-集成原则) 逐层合入主线，每个迁移层的 PR 描述列出产物改前改后的体积；0.9 能力矩阵排在迁移之后。2026-10-15 修订：体积与性能门禁的计量、预算与判定按 [RFC-0043](rfc/0043-size-performance-budgets.md)（#208），不以迁移完成为前提。
 
 | 产物 | v0.5.0 | 目标 | 手段 |
 |---|---|---|---|

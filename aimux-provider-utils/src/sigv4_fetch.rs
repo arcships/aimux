@@ -582,7 +582,10 @@ mod tests {
 
     /// Expected values come from botocore 1.43's `SigV4Auth` (AWS's own
     /// Python signer) for the same credentials, headers, body and fixed
-    /// time, not from this implementation.
+    /// time, not from this implementation. The request was given an explicit
+    /// `X-Amz-Content-SHA256: <hex body hash>` header before signing, as the
+    /// `AllHeaders` rule sends one; `SigV4Auth` adds that header itself only
+    /// for S3 (`S3SigV4Auth`), so botocore's values differ without it.
     #[test]
     fn signatures_match_botocore() {
         let signed = sign_request_at(

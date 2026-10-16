@@ -17,7 +17,9 @@ use aimux_core::tool::RawToolCall;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::pin::Pin;
 
-use aimux_provider_utils::{TransformStreamController, Transformer, pipe_through};
+use aimux_provider_utils::{Transformer, pipe_through};
+
+use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext};
 use futures::{Stream, StreamExt};
 use serde_json::{Value, json};
 
@@ -621,50 +623,31 @@ where
     let stream = pipe_through(
         futures::stream::iter(first_event).chain(sse_stream),
         OpenAIResponsesStream {
-            warnings,
+            ctx: StreamContext {
+                warnings,
+                include_raw_chunks,
+                url: request_url,
+                request_body,
+                response_headers,
+                ..StreamContext::default()
+            },
             provider_key,
             store_flag,
-            request_url,
-            request_body,
-            response_headers,
-            include_raw_chunks,
             tool_names,
             prompt_approval_tool_call_ids,
             shell_provider_executed,
-            ongoing_tool_calls: HashMap::new(),
-            active_reasoning: HashMap::new(),
-            has_function_call: false,
-            final_usage: None,
-            final_raw_usage: None,
-            final_service_tier: None,
-            final_reasoning_context: None,
-            final_finish_reason: None,
-            response_id: None,
-            stream_errored: false,
-            text_states: HashMap::new(),
-            output_ids: HashMap::new(),
-            text_annotations: HashMap::new(),
-            logprobs: Vec::new(),
-            provider_items: HashMap::new(),
-            emitted_calls: HashSet::new(),
-            ended_inputs: HashSet::new(),
-            diff_received: HashSet::new(),
-            hosted_tool_search_ids: VecDeque::new(),
-            approval_tool_call_ids: HashMap::new(),
+            ..OpenAIResponsesStream::default()
         },
     );
     Ok(Box::pin(stream))
 }
 
 /// The `TransformStream` of the OpenAI Responses `doStream`.
+#[derive(Default)]
 struct OpenAIResponsesStream {
-    warnings: Vec<Warning>,
+    ctx: StreamContext,
     provider_key: String,
     store_flag: bool,
-    request_url: String,
-    request_body: Value,
-    response_headers: HashMap<String, String>,
-    include_raw_chunks: bool,
     tool_names: HashMap<String, String>,
     prompt_approval_tool_call_ids: HashMap<String, String>,
     shell_provider_executed: bool,
@@ -696,24 +679,22 @@ impl Transformer for OpenAIResponsesStream {
     type Input = Result<Value, AiMuxError>;
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        controller.enqueue(StreamPart::StreamStart {
-            warnings: std::mem::take(&mut self.warnings),
-        });
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
     }
 
-    fn transform(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         let Self {
             ref provider_key,
             store_flag,
-            ref request_url,
-            ref request_body,
-            ref response_headers,
-            include_raw_chunks,
+            ctx:
+                StreamContext {
+                    ref url,
+                    ref request_body,
+                    ref response_headers,
+                    include_raw_chunks,
+                    ..
+                },
             ref tool_names,
             ref prompt_approval_tool_call_ids,
             shell_provider_executed,
@@ -823,14 +804,7 @@ impl Transformer for OpenAIResponsesStream {
                                             tool_call_id: call_id.clone(),
                                         },
                                     );
-                                    controller.enqueue(StreamPart::ToolInputStart {
-                                        id: call_id,
-                                        tool_name: name,
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        title: None,
-                                        provider_metadata: None,
-                                    });
+                                    controller.tool_input_start(call_id, name);
                                 }
                                 "custom_tool_call" => {
                                     let call_id = item
@@ -849,14 +823,7 @@ impl Transformer for OpenAIResponsesStream {
                                             tool_call_id: call_id.clone(),
                                         },
                                     );
-                                    controller.enqueue(StreamPart::ToolInputStart {
-                                        id: call_id,
-                                        tool_name: name,
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        title: None,
-                                        provider_metadata: None,
-                                    });
+                                    controller.tool_input_start(call_id, name);
                                 }
                                 "reasoning" => {
                                     let id = item
@@ -934,11 +901,10 @@ impl Transformer for OpenAIResponsesStream {
                                 .unwrap_or_default()
                                 .to_owned();
                             diff_received.insert(id.clone());
-                            controller.enqueue(StreamPart::ToolInputDelta {
+                            controller.tool_input_delta(
                                 id,
-                                delta: escaped_delta(parsed["delta"].as_str().unwrap_or_default()),
-                                provider_metadata: None,
-                            });
+                                escaped_delta(parsed["delta"].as_str().unwrap_or_default()),
+                            );
                         }
                     }
                     "response.code_interpreter_call_code.done"
@@ -955,23 +921,16 @@ impl Transformer for OpenAIResponsesStream {
                             if ended_inputs.insert(id.clone()) {
                                 let code = etype == "response.code_interpreter_call_code.done";
                                 if !code && !diff_received.contains(&id) {
-                                    controller.enqueue(StreamPart::ToolInputDelta {
-                                        id: id.clone(),
-                                        delta: escaped_delta(
-                                            parsed["diff"].as_str().unwrap_or_default(),
-                                        ),
-                                        provider_metadata: None,
-                                    });
+                                    controller.tool_input_delta(
+                                        id.clone(),
+                                        escaped_delta(parsed["diff"].as_str().unwrap_or_default()),
+                                    );
                                 }
-                                controller.enqueue(StreamPart::ToolInputDelta {
-                                    id: id.clone(),
-                                    delta: if code { "\"}" } else { "\"}}" }.to_owned(),
-                                    provider_metadata: None,
-                                });
-                                controller.enqueue(StreamPart::ToolInputEnd {
-                                    id: id.clone(),
-                                    provider_metadata: None,
-                                });
+                                controller.tool_input_delta(
+                                    id.clone(),
+                                    if code { "\"}" } else { "\"}}" }.to_owned(),
+                                );
+                                controller.tool_input_end(id.clone());
                                 if code {
                                     let mut item = item.clone();
                                     item["code"] = parsed["code"].clone();
@@ -1017,11 +976,7 @@ impl Transformer for OpenAIResponsesStream {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        controller.enqueue(StreamPart::TextDelta {
-                            id,
-                            delta,
-                            provider_metadata: None,
-                        });
+                        controller.text_delta(id, delta);
                     }
 
                     // ── function_call_arguments.delta → ToolInputDelta ────────
@@ -1037,11 +992,7 @@ impl Transformer for OpenAIResponsesStream {
                             .unwrap_or("")
                             .to_string();
                         if let Some(tc) = ongoing_tool_calls.get(&output_index) {
-                            controller.enqueue(StreamPart::ToolInputDelta {
-                                id: tc.tool_call_id.clone(),
-                                delta,
-                                provider_metadata: None,
-                            });
+                            controller.tool_input_delta(tc.tool_call_id.clone(), delta);
                         }
                     }
 
@@ -1105,11 +1056,7 @@ impl Transformer for OpenAIResponsesStream {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        controller.enqueue(StreamPart::ReasoningDelta {
-                            id: format!("{item_id}:{summary_index}"),
-                            delta,
-                            provider_metadata: None,
-                        });
+                        controller.reasoning_delta(format!("{item_id}:{summary_index}"), delta);
                     }
 
                     // ── reasoning_summary_part.done ───────────────────────────
@@ -1200,10 +1147,7 @@ impl Transformer for OpenAIResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("{}")
                                         .to_string();
-                                    controller.enqueue(StreamPart::ToolInputEnd {
-                                        id: call_id.clone(),
-                                        provider_metadata: None,
-                                    });
+                                    controller.tool_input_end(call_id.clone());
                                     let input = arguments;
                                     controller.enqueue(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: call_id,
@@ -1232,10 +1176,7 @@ impl Transformer for OpenAIResponsesStream {
                                         .to_string();
                                     let input_str =
                                         item.get("input").and_then(|v| v.as_str()).unwrap_or("{}");
-                                    controller.enqueue(StreamPart::ToolInputEnd {
-                                        id: call_id.clone(),
-                                        provider_metadata: None,
-                                    });
+                                    controller.tool_input_end(call_id.clone());
                                     let input = serde_json::to_string(input_str).expect(
                                         "serializing a custom-tool input string cannot fail",
                                     );
@@ -1310,25 +1251,17 @@ impl Transformer for OpenAIResponsesStream {
                                             && item["operation"]["type"] != "delete_file"
                                         {
                                             if !diff_received.contains(&id) {
-                                                controller.enqueue(StreamPart::ToolInputDelta {
-                                                    id: id.clone(),
-                                                    delta: escaped_delta(
+                                                controller.tool_input_delta(
+                                                    id.clone(),
+                                                    escaped_delta(
                                                         item["operation"]["diff"]
                                                             .as_str()
                                                             .unwrap_or_default(),
                                                     ),
-                                                    provider_metadata: None,
-                                                });
+                                                );
                                             }
-                                            controller.enqueue(StreamPart::ToolInputDelta {
-                                                id: id.clone(),
-                                                delta: "\"}}".into(),
-                                                provider_metadata: None,
-                                            });
-                                            controller.enqueue(StreamPart::ToolInputEnd {
-                                                id,
-                                                provider_metadata: None,
-                                            });
+                                            controller.tool_input_delta(id.clone(), "\"}}");
+                                            controller.tool_input_end(id);
                                         }
                                     }
                                     if item_type == "tool_search_call"
@@ -1534,7 +1467,7 @@ impl Transformer for OpenAIResponsesStream {
                                 controller.enqueue(StreamPart::Error {
                                     error: super::super::openai_stream_error(
                                         &parsed,
-                                        request_url,
+                                        url,
                                         request_body.clone(),
                                         response_headers.clone(),
                                     ),
@@ -1553,7 +1486,7 @@ impl Transformer for OpenAIResponsesStream {
                         controller.enqueue(StreamPart::Error {
                             error: super::super::openai_stream_error(
                                 &parsed,
-                                request_url,
+                                url,
                                 request_body.clone(),
                                 response_headers.clone(),
                             ),
@@ -1570,16 +1503,13 @@ impl Transformer for OpenAIResponsesStream {
             }
             Err(error) => {
                 *stream_errored = true;
-                *final_finish_reason = Some(FinishReason {
-                    unified: FinishReasonUnified::Error,
-                    raw: None,
-                });
+                *final_finish_reason = Some(FINISH_ERROR);
                 controller.enqueue(StreamPart::Error { error });
             }
         }
     }
 
-    fn flush(self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(self, controller: &mut Controller) {
         // Build provider metadata for the Finish part: { <provider_key>: {
         // responseId, serviceTier?, reasoningContext? } }. Mirrors the TS
         // flush() providerMetadata, which carries `service_tier` and
@@ -1600,10 +1530,7 @@ impl Transformer for OpenAIResponsesStream {
         );
 
         controller.enqueue(StreamPart::Finish {
-            finish_reason: self.final_finish_reason.unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            }),
+            finish_reason: self.final_finish_reason.unwrap_or(FINISH_OTHER),
             usage: convert_responses_usage(self.final_usage.as_ref(), self.final_raw_usage),
             provider_metadata,
         });

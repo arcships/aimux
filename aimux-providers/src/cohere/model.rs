@@ -13,11 +13,12 @@ use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
+use aimux_core::types::{FinishReason, ResponseMetadata, Usage};
 
-use aimux_provider_utils::{TransformStreamController, Transformer, pipe_through};
+use aimux_provider_utils::{Transformer, pipe_through};
 
 use crate::shared::EndpointConfig;
+use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext};
 
 use super::convert::{build_request_body, parse_finish_reason};
 use super::types::{ChatResponse, StreamEvent, UsageResponse};
@@ -254,19 +255,15 @@ impl LanguageModel for CohereModel {
         let response_headers = resp.response_headers;
         let sse_stream = resp.value;
         let stream_warnings = body_result.warnings;
-        let include_raw_chunks = options.include_raw_chunks.unwrap_or(false);
         let stream = pipe_through(
             sse_stream,
             CohereChatStream {
-                warnings: stream_warnings,
-                include_raw_chunks,
-                final_usage: Usage::default(),
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Other,
-                    raw: None,
+                ctx: StreamContext {
+                    warnings: stream_warnings,
+                    include_raw_chunks: options.include_raw_chunks == Some(true),
+                    ..StreamContext::default()
                 },
-                pending_tool_call: None,
-                is_reasoning: false,
+                ..CohereChatStream::default()
             },
         );
 
@@ -281,11 +278,12 @@ impl LanguageModel for CohereModel {
 }
 
 /// The `TransformStream` of `CohereChatLanguageModel.doStream`.
+#[derive(Default)]
 struct CohereChatStream {
-    warnings: Vec<Warning>,
-    include_raw_chunks: bool,
+    ctx: StreamContext,
     final_usage: Usage,
-    finish_reason: FinishReason,
+    /// `other` until a chunk says otherwise.
+    finish_reason: Option<FinishReason>,
     pending_tool_call: Option<PendingToolCall>,
     is_reasoning: bool,
 }
@@ -294,17 +292,11 @@ impl Transformer for CohereChatStream {
     type Input = Result<Value, AiMuxError>;
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        controller.enqueue(StreamPart::StreamStart {
-            warnings: std::mem::take(&mut self.warnings),
-        });
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
     }
 
-    fn transform(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         let raw = match event {
             Ok(raw) => raw,
             Err(error) => {
@@ -312,31 +304,17 @@ impl Transformer for CohereChatStream {
                     controller.error(error);
                     return;
                 }
-                if self.include_raw_chunks {
-                    controller.enqueue(StreamPart::Raw {
-                        raw_value: Value::Null,
-                    });
-                }
-                self.finish_reason = FinishReason {
-                    unified: FinishReasonUnified::Error,
-                    raw: None,
-                };
+                self.ctx.raw(&Value::Null, controller);
+                self.finish_reason = Some(FINISH_ERROR);
                 controller.enqueue(StreamPart::Error { error });
                 return;
             }
         };
-        if self.include_raw_chunks {
-            controller.enqueue(StreamPart::Raw {
-                raw_value: raw.clone(),
-            });
-        }
+        self.ctx.raw(&raw, controller);
         let parsed = match StreamEvent::parse(raw) {
             Ok(parsed) => parsed,
             Err(error) => {
-                self.finish_reason = FinishReason {
-                    unified: FinishReasonUnified::Error,
-                    raw: None,
-                };
+                self.finish_reason = Some(FINISH_ERROR);
                 controller.enqueue(StreamPart::Error { error });
                 return;
             }
@@ -360,15 +338,9 @@ impl Transformer for CohereChatStream {
                     .unwrap();
                 if content["type"] == "thinking" {
                     self.is_reasoning = true;
-                    controller.enqueue(StreamPart::ReasoningStart {
-                        id,
-                        provider_metadata: None,
-                    });
+                    controller.reasoning_start(id);
                 } else {
-                    controller.enqueue(StreamPart::TextStart {
-                        id,
-                        provider_metadata: None,
-                    });
+                    controller.text_start(id);
                 }
             }
             "content-delta" => {
@@ -379,31 +351,17 @@ impl Transformer for CohereChatStream {
                     .and_then(|message| message.content.as_ref())
                     .unwrap();
                 if let Some(text) = content.get("text").and_then(Value::as_str) {
-                    controller.enqueue(StreamPart::TextDelta {
-                        id,
-                        delta: text.into(),
-                        provider_metadata: None,
-                    });
+                    controller.text_delta(id, text);
                 } else {
-                    controller.enqueue(StreamPart::ReasoningDelta {
-                        id,
-                        delta: content["thinking"].as_str().unwrap().into(),
-                        provider_metadata: None,
-                    });
+                    controller.reasoning_delta(id, content["thinking"].as_str().unwrap());
                 }
             }
             "content-end" => {
                 if self.is_reasoning {
-                    controller.enqueue(StreamPart::ReasoningEnd {
-                        id,
-                        provider_metadata: None,
-                    });
+                    controller.reasoning_end(id);
                     self.is_reasoning = false;
                 } else {
-                    controller.enqueue(StreamPart::TextEnd {
-                        id,
-                        provider_metadata: None,
-                    });
+                    controller.text_end(id);
                 }
             }
             "tool-call-start" => {
@@ -421,20 +379,9 @@ impl Transformer for CohereChatStream {
                     name: name.clone(),
                     arguments: arguments.clone(),
                 });
-                controller.enqueue(StreamPart::ToolInputStart {
-                    id: id.clone(),
-                    tool_name: name,
-                    provider_executed: None,
-                    dynamic: None,
-                    title: None,
-                    provider_metadata: None,
-                });
+                controller.tool_input_start(id.clone(), name);
                 if !arguments.is_empty() {
-                    controller.enqueue(StreamPart::ToolInputDelta {
-                        id,
-                        delta: arguments,
-                        provider_metadata: None,
-                    });
+                    controller.tool_input_delta(id, arguments);
                 }
             }
             "tool-call-delta" => {
@@ -449,19 +396,12 @@ impl Transformer for CohereChatStream {
                         .unwrap()
                         .to_string();
                     tool.arguments.push_str(&delta);
-                    controller.enqueue(StreamPart::ToolInputDelta {
-                        id: tool.id.clone(),
-                        delta,
-                        provider_metadata: None,
-                    });
+                    controller.tool_input_delta(tool.id.clone(), delta);
                 }
             }
             "tool-call-end" => {
                 if let Some(tool) = self.pending_tool_call.take() {
-                    controller.enqueue(StreamPart::ToolInputEnd {
-                        id: tool.id.clone(),
-                        provider_metadata: None,
-                    });
+                    controller.tool_input_end(tool.id.clone());
                     let text = tool.arguments.trim();
                     let input = match serde_json::from_str::<Value>(if text.is_empty() {
                         "{}"
@@ -492,16 +432,17 @@ impl Transformer for CohereChatStream {
             }
             "message-end" => {
                 let delta = parsed.delta.unwrap();
-                self.finish_reason = parse_finish_reason(delta.finish_reason.as_ref().unwrap());
+                self.finish_reason =
+                    Some(parse_finish_reason(delta.finish_reason.as_ref().unwrap()));
                 self.final_usage = convert_usage(delta.usage.as_ref().unwrap());
             }
             _ => {}
         }
     }
 
-    fn flush(self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(self, controller: &mut Controller) {
         controller.enqueue(StreamPart::Finish {
-            finish_reason: self.finish_reason,
+            finish_reason: self.finish_reason.unwrap_or(FINISH_OTHER),
             usage: self.final_usage,
             provider_metadata: None,
         });

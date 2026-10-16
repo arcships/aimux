@@ -42,7 +42,7 @@ use crate::shared::{RequestInfo, SharedHeaders, SharedProviderOptions};
 use crate::step_result::{
     StepModel, StepResponse, StepResponseMetadata, StepResult, StepResultPerformance,
 };
-use crate::stream_part::{StreamPart, TextStreamPart};
+use crate::stream_part::{StreamPart, StreamPartPayload, TextStreamPart};
 use crate::tool::{Tool, ToolCall, ToolResult};
 use crate::types::{
     FinishReasonUnified, LanguageModelUsage, ProviderMetadata, ReasoningEffort, Warning,
@@ -113,8 +113,12 @@ async fn resolve_file(
 ///
 /// Unlike `CallOptions` (provider-facing), this does not include `prompt`
 /// (passed separately) and defaults are more ergonomic.
+///
+/// Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+/// 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+/// naming the key instead of the default it would silently fall back to.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(export)]
 pub struct GenerateTextOptions {
     #[ts(optional)]
@@ -887,6 +891,12 @@ impl StreamTextResult {
                     total_usage = Some(usage);
                     break;
                 }
+                // stream-text.ts:1725-1757: an abort after a recorded step
+                // resolves the result (null total usage without `finish`);
+                // only a stream that recorded no step fails with the abort
+                // (:1729-1740). stream_text itself yields FinishStep and
+                // Finish back to back, so this order only comes from a
+                // caller-supplied stream.
                 TextStreamPart::Abort { reason } => {
                     aborted = Some(AiMuxError::Aborted(
                         reason.unwrap_or_else(|| "request aborted".into()),
@@ -1803,53 +1813,30 @@ async fn stream_in_operation(
                     item = rx.recv() => item,
                 };
                 let Some((arrived, item)) = next else { break };
+                let part = match item {
+                    Ok(part) => part,
+                    Err(error) => {
+                        let terminal = !error.is_recoverable_stream_error();
+                        yield Err(error);
+                        if terminal { return; }
+                        continue;
+                    }
+                };
                 // `model-call-start` only carries the warnings; every other
                 // chunk first opens the step (stream-text.ts:2822-2840).
-                if let Ok(StreamPart::StreamStart { warnings }) = item {
-                    step.warnings = warnings;
-                    continue;
-                }
-                if item.is_ok() && !step.started {
-                    step.started = true;
-                    yield Ok(TextStreamPart::StartStep {
-                        request: step_request.clone(),
-                        warnings: step.warnings.clone(),
-                    });
-                }
-                if let Ok(part) = &item {
-                    step.record_chunk(part, arrived);
-                    content.observe(part);
-                }
-                match item {
-                    Ok(StreamPart::StreamStart { .. }) => unreachable!("handled above"),
-                    Ok(StreamPart::ResponseMetadata(metadata)) => step.response_metadata(metadata),
-                    // `stream-language-model-call.ts:644-687`: a response that
-                    // breaks an enforced tool choice finishes the model call
-                    // with an `error` finish reason (the raw reason is kept),
-                    // followed by an error part.
-                    Ok(StreamPart::Finish { mut finish_reason, usage, provider_metadata }) => {
-                        let violation = tool_choice_violation_error(
-                            tool_choice.as_ref(),
-                            tool_calls.values().map(|call| call.tool_name.as_str()),
-                            finish_reason.unified,
-                            &step_provider,
-                            &step_model_id,
-                            || std::mem::take(&mut content.content),
-                        );
-                        if violation.is_some() {
-                            finish_reason.unified = FinishReasonUnified::Error;
-                        }
-                        step.finish(finish_reason, &usage, provider_metadata, arrived);
-                        if let Some(error) = violation {
-                            yield Ok(TextStreamPart::Error { error });
-                        }
+                if !matches!(part, StreamPart::StreamStart { .. }) {
+                    if !step.started {
+                        step.started = true;
+                        yield Ok(TextStreamPart::StartStep {
+                            request: step_request.clone(),
+                            warnings: step.warnings.clone(),
+                        });
                     }
-                    Ok(StreamPart::Error { error }) => {
-                        step.terminal = true;
-                        step.finish_reason = FinishReasonUnified::Error;
-                        yield Ok(TextStreamPart::Error { error });
-                    }
-                    Ok(StreamPart::ToolCall(raw)) => {
+                    step.record_chunk(&part, arrived);
+                    content.observe(&part);
+                }
+                match part.split_payload() {
+                    StreamPartPayload::ToolCall(raw) => {
                         let parsed = parse_tool_call(
                             raw,
                             tools.as_deref(),
@@ -1864,23 +1851,13 @@ async fn stream_in_operation(
                             yield Ok(TextStreamPart::ToolError(error));
                         }
                     }
-                    Ok(StreamPart::ToolResult(result)) => {
-                        let input = tool_calls.get(&result.tool_call_id).map(|call| call.input.clone());
-                        yield Ok(provider_tool_result_part(result, input));
-                    }
-                    Ok(StreamPart::File(file)) => {
+                    StreamPartPayload::File(file) => {
                         match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
                             Ok(output) => yield Ok(TextStreamPart::File(output)),
                             Err(error) => yield Ok(TextStreamPart::Error { error }),
                         }
                     }
-                    Ok(StreamPart::ReasoningFile(file)) => {
-                        match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
-                            Ok(output) => yield Ok(TextStreamPart::ReasoningFile(output)),
-                            Err(error) => yield Ok(TextStreamPart::Error { error }),
-                        }
-                    }
-                    Ok(StreamPart::ToolApprovalRequest(approval)) => {
+                    StreamPartPayload::ToolApprovalRequest(approval) => {
                         if let Some(call) = tool_calls.get(&approval.tool_call_id) {
                             yield Ok(TextStreamPart::ToolApprovalRequest(ToolApprovalRequestOutput {
                                 approval_id: approval.approval_id, tool_call: call.clone(),
@@ -1892,24 +1869,58 @@ async fn stream_in_operation(
                             }});
                         }
                     }
-                    // An empty text delta without provider metadata is not
-                    // forwarded (stream-text.ts:2881-2891); providers emit
-                    // one, e.g. OpenAI chat's opening `"content": ""`.
-                    Ok(StreamPart::TextDelta { delta, provider_metadata: None, .. }) if delta.is_empty() => {}
-                    Ok(part) => {
-                        if let Some(part) = part
-                            .map_payloads(|_| unreachable!("matched above"), |_| unreachable!("matched above"))
-                            .map_file(|_| unreachable!("matched above"))
-                            .into_text_stream_part()
-                        {
-                            yield Ok(part);
+                    StreamPartPayload::ReasoningFile(file) => {
+                        match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
+                            Ok(output) => yield Ok(TextStreamPart::ReasoningFile(output)),
+                            Err(error) => yield Ok(TextStreamPart::Error { error }),
                         }
                     }
-                    Err(error) => {
-                        let terminal = !error.is_recoverable_stream_error();
-                        yield Err(error);
-                        if terminal { return; }
-                    }
+                    StreamPartPayload::Other(part) => match part {
+                        StreamPart::StreamStart { warnings } => step.warnings = warnings,
+                        StreamPart::ResponseMetadata(metadata) => step.response_metadata(metadata),
+                        // `stream-language-model-call.ts:644-687`: a response that
+                        // breaks an enforced tool choice finishes the model call
+                        // with an `error` finish reason (the raw reason is kept),
+                        // followed by an error part.
+                        StreamPart::Finish { mut finish_reason, usage, provider_metadata } => {
+                            let violation = tool_choice_violation_error(
+                                tool_choice.as_ref(),
+                                tool_calls.values().map(|call| call.tool_name.as_str()),
+                                finish_reason.unified,
+                                &step_provider,
+                                &step_model_id,
+                                || std::mem::take(&mut content.content),
+                            );
+                            if violation.is_some() {
+                                finish_reason.unified = FinishReasonUnified::Error;
+                            }
+                            step.finish(finish_reason, &usage, provider_metadata, arrived);
+                            if let Some(error) = violation {
+                                yield Ok(TextStreamPart::Error { error });
+                            }
+                        }
+                        StreamPart::Error { error } => {
+                            step.terminal = true;
+                            step.finish_reason = FinishReasonUnified::Error;
+                            yield Ok(TextStreamPart::Error { error });
+                        }
+                        StreamPart::ToolResult(result) => {
+                            let input = tool_calls.get(&result.tool_call_id).map(|call| call.input.clone());
+                            yield Ok(provider_tool_result_part(result, input));
+                        }
+                        // An empty text delta without provider metadata is not
+                        // forwarded (stream-text.ts:2881-2891); providers emit
+                        // one, e.g. OpenAI chat's opening `"content": ""`.
+                        StreamPart::TextDelta { delta, provider_metadata: None, .. } if delta.is_empty() => {}
+                        part => {
+                            if let Some(part) = part
+                                .widen::<ToolCall, ToolApprovalRequestOutput, GeneratedFileOutput>()
+                                .into_text_stream_part()
+                            {
+                                yield Ok(part);
+                            }
+                        }
+                    },
                 }
             }
             // An incomplete model stream without output is an error, not an

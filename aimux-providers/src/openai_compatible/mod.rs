@@ -171,7 +171,7 @@ pub(crate) fn build(
     settings: OpenAICompatibleProviderSettings,
     base_url: BaseUrl,
     headers: ProviderHeaders,
-    fetch_headers: Option<crate::vertex::PartnerHeaders>,
+    fetch_headers: Option<Arc<dyn config::ResolveFetchHeaders>>,
     package: Package,
 ) -> Result<OpenAICompatibleProvider, AiMuxError> {
     let defaults = ChatSettings::default();
@@ -227,7 +227,7 @@ pub struct OpenAICompatibleProvider {
     base_url: BaseUrl,
     query_params: Option<Arc<Vec<(String, String)>>>,
     headers: ProviderHeaders,
-    fetch_headers: Option<crate::vertex::PartnerHeaders>,
+    fetch_headers: Option<Arc<dyn config::ResolveFetchHeaders>>,
     fetch: Option<FetchFunction>,
     transform_request_body: Option<TransformRequestBody>,
     chat: ChatSettings,

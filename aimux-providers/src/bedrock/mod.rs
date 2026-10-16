@@ -57,7 +57,7 @@ use aimux_provider_utils::{
 };
 
 use crate::shared::{
-    Endpoint, EndpointConfig, EndpointSource, TransformRequestBody, is_valid_hostname_part,
+    Endpoint, EndpointConfig, ResolveEndpoint, TransformRequestBody, is_valid_hostname_part,
 };
 
 pub use embedding::BedrockEmbeddingModel;
@@ -467,7 +467,7 @@ pub struct AmazonBedrockProvider {
 /// when there is one (otherwise the transport signs with SigV4, after
 /// checking here that signing has its inputs).
 #[derive(Clone)]
-pub(crate) struct BedrockEndpoint {
+struct BedrockEndpoint {
     auth: Arc<Auth>,
     base_url: Option<String>,
     /// `bedrock-runtime` or `bedrock-agent-runtime`.
@@ -476,9 +476,10 @@ pub(crate) struct BedrockEndpoint {
     user: Option<HeaderMapOpt>,
 }
 
-impl BedrockEndpoint {
+#[async_trait::async_trait]
+impl ResolveEndpoint for BedrockEndpoint {
     /// The base URL and provider headers of one request.
-    pub(crate) async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
+    async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
         let base_url = Auth::base_url(
             self.base_url.as_deref(),
             self.service,
@@ -490,7 +491,9 @@ impl BedrockEndpoint {
             headers: self.headers().await?,
         })
     }
+}
 
+impl BedrockEndpoint {
     async fn headers(&self) -> Result<HeaderMapOpt, AiMuxError> {
         let mut user = combine_headers(&[&self.user.clone().unwrap_or_default()]);
         // amazon-bedrock-provider.ts:292-295 (getHeaders) appends the pinned
@@ -527,13 +530,13 @@ impl AmazonBedrockProvider {
     ) -> EndpointConfig {
         EndpointConfig::new(
             PROVIDER.to_string(),
-            EndpointSource::Bedrock(BedrockEndpoint {
+            BedrockEndpoint {
                 auth: self.auth.clone(),
                 base_url: self.base_url.clone(),
                 service,
                 endpoint_env_var,
                 user: self.user_headers.clone(),
-            }),
+            },
             Some(self.fetch.clone()),
         )
         .with_transform_request_body(self.transform_request_body.clone())

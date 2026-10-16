@@ -1078,7 +1078,8 @@ fn mock_replay(recordings_jsonl: &str) -> PyResult<Model> {
 /// (per config_json). `models` must be non-empty.
 ///
 /// `config_json` (optional): {"router": "rule"|"weighted", "weights": [...],
-/// "fallback": "on_error"|"none", "provider_name", "model_id"}.
+/// "fallback": "on_error"|"none", "providerName", "modelId"}; an unknown key
+/// is an error.
 #[pyfunction]
 #[pyo3(signature = (models, config_json=None))]
 fn router(models: Vec<PyRef<Model>>, config_json: Option<&str>) -> PyResult<Model> {
@@ -1139,8 +1140,10 @@ fn moa(
     })
 }
 
-/// Lenient router config (mirrors the FFI-side shape; all fields optional).
+/// Router config, the C ABI's shape: camelCase, all fields optional,
+/// unknown keys rejected.
 #[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RouterFfiConfig {
     router: Option<String>,
     weights: Option<Vec<f64>>,
@@ -1354,5 +1357,30 @@ fn parse_opts(json: Option<&str>) -> PyResult<GenerateTextOptions> {
             }
             wire_json("opts_json", s)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RouterFfiConfig;
+
+    /// The router config is the C ABI's: camelCase, unknown keys rejected,
+    /// so the same JSON names the router in every binding.
+    #[test]
+    fn router_config_is_camel_case_and_strict() {
+        let cfg: RouterFfiConfig = serde_json::from_str(
+            r#"{"router":"weighted","weights":[1.0],"fallback":"none","providerName":"r","modelId":"m"}"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.router.as_deref(), Some("weighted"));
+        assert_eq!(cfg.provider_name.as_deref(), Some("r"));
+        assert_eq!(cfg.model_id.as_deref(), Some("m"));
+        let error = serde_json::from_str::<RouterFfiConfig>(r#"{"provider_name":"r"}"#)
+            .err()
+            .expect("a snake_case key is rejected");
+        assert!(
+            error.to_string().contains("unknown field `provider_name`"),
+            "{error}"
+        );
     }
 }

@@ -173,6 +173,7 @@ pub use default_providers::{
 };
 pub mod preset;
 pub(crate) mod shared;
+pub(crate) mod stream;
 pub mod vertex;
 pub mod voyage;
 
