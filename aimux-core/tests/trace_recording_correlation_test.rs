@@ -11,7 +11,7 @@ use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::CallOptions;
-use aimux_core::recording::{Recorder, RingRecorder, init_recording};
+use aimux_core::recording::{Recorder, RecordingContext, RingRecorder, init_recording};
 use aimux_core::replay::{ReplayOverrides, replay_with_model};
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
@@ -20,18 +20,20 @@ use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
 use async_trait::async_trait;
 use futures::StreamExt;
 
-/// Answers "ok" and keeps the call options of every call.
+/// Answers "ok" and keeps the call options of every call, with the call id
+/// of the recording scope it ran in.
 #[derive(Default)]
 struct Echo {
-    seen: Mutex<Vec<CallOptions>>,
+    seen: Mutex<Vec<(CallOptions, Option<String>)>>,
 }
 
 impl Echo {
     fn observe(&self, options: &CallOptions) {
-        self.seen.lock().unwrap().push(options.clone());
+        let call_id = RecordingContext::current().map(|context| context.call_id);
+        self.seen.lock().unwrap().push((options.clone(), call_id));
     }
 
-    fn calls(&self) -> Vec<CallOptions> {
+    fn calls(&self) -> Vec<(CallOptions, Option<String>)> {
         self.seen.lock().unwrap().clone()
     }
 }
@@ -149,13 +151,8 @@ async fn a_traced_call_carries_its_recording_id_and_the_recording_replays() {
     // Each trace id names the recording of the call the model saw.
     let calls = echo.calls();
     assert_eq!(calls.len(), 2);
-    for (id, call) in ids.iter().zip(&calls) {
-        assert_eq!(
-            call.recording_context
-                .as_ref()
-                .map(|context| context.call_id.as_str()),
-            Some(id.as_str())
-        );
+    for (id, (call, call_id)) in ids.iter().zip(&calls) {
+        assert_eq!(call_id.as_deref(), Some(id.as_str()));
         let recorded = ring
             .get(id)
             .unwrap_or_else(|| panic!("no recording for the traced call {id}"));
@@ -166,8 +163,8 @@ async fn a_traced_call_carries_its_recording_id_and_the_recording_replays() {
         replay_with_model(&recorded, &replayed, None).await.unwrap();
         let resent = replayed.calls();
         assert_eq!(resent.len(), 1);
-        assert_eq!(resent[0].prompt, call.prompt);
-        assert_eq!(resent[0].temperature, Some(0.7));
+        assert_eq!(resent[0].0.prompt, call.prompt);
+        assert_eq!(resent[0].0.temperature, Some(0.7));
     }
 
     // ... and with an override.
@@ -183,5 +180,5 @@ async fn a_traced_call_carries_its_recording_id_and_the_recording_replays() {
     replay_with_model(&recorded, &replayed, Some(&overrides))
         .await
         .unwrap();
-    assert_eq!(replayed.calls()[0].prompt, prompt);
+    assert_eq!(replayed.calls()[0].0.prompt, prompt);
 }

@@ -39,6 +39,7 @@ fn computer_tool(name: &str) -> Tool {
         id: TOOLSET_ID.parse().unwrap(),
         name: name.to_string(),
         args: serde_json::Map::new(),
+        supports_deferred_results: None,
     })
 }
 
