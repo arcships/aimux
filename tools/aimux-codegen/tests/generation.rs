@@ -189,7 +189,10 @@ fn deterministic_complete_outputs_cover_every_language_and_abi_primitive() {
     for language in ["go", "java", "kotlin", "swift", "flutter", "node", "python"] {
         let (_, bytes) = outputs
             .iter()
-            .find(|(path, _)| path.starts_with(format!("bindings/{language}/generated")))
+            .find(|(path, _)| {
+                path.starts_with(format!("bindings/{language}"))
+                    && path.to_string_lossy().contains("generated/")
+            })
             .unwrap();
         let text = std::str::from_utf8(bytes).unwrap();
         for op in fixture()["ops"].as_array().unwrap() {

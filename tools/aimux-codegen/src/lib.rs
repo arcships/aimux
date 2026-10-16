@@ -18,14 +18,15 @@ const HEADERS: [&str; 2] = [
     "bindings/flutter/native/aimux_ops.h",
 ];
 const SCHEMA_BASE: &str = "https://aimux.dev/schema/ops/";
+/// Each binding's constants file. Dart's sits under `lib/` so `package:aimux` imports resolve.
 const LANGUAGES: &[(&str, &str)] = &[
-    ("go", "ops.go"),
-    ("java", "AimuxOps.java"),
-    ("kotlin", "AimuxOps.kt"),
-    ("swift", "AimuxOps.swift"),
-    ("flutter", "ops.dart"),
-    ("node", "ops.ts"),
-    ("python", "ops.py"),
+    ("go", "bindings/go/generated/ops.go"),
+    ("java", "bindings/java/generated/AimuxOps.java"),
+    ("kotlin", "bindings/kotlin/generated/AimuxOps.kt"),
+    ("swift", "bindings/swift/generated/AimuxOps.swift"),
+    ("flutter", "bindings/flutter/lib/generated/ops.dart"),
+    ("node", "bindings/node/generated/ops.ts"),
+    ("python", "bindings/python/generated/ops.py"),
 ];
 
 #[derive(Deserialize)]
@@ -209,9 +210,9 @@ pub fn generate(value: &Value, runtime_digest: &str) -> Result<Artifacts> {
     let [c_header, flutter_header] = HEADERS;
     artifacts.insert(c_header.into(), header.clone());
     artifacts.insert(flutter_header.into(), header);
-    for &(language, filename) in LANGUAGES {
+    for &(language, path) in LANGUAGES {
         artifacts.insert(
-            format!("bindings/{language}/generated/{filename}").into(),
+            path.into(),
             constants(&manifest, &digest, language)?.into_bytes(),
         );
     }
@@ -415,9 +416,9 @@ fn managed_path(path: &Path) -> bool {
             name.starts_with("ops.") || name.starts_with("ops-") || name.starts_with("AimuxOps")
         });
     constants
-        && LANGUAGES.iter().any(|(language, filename)| {
-            path.starts_with(format!("bindings/{language}/generated"))
-                && path.extension() == Path::new(filename).extension()
+        && LANGUAGES.iter().any(|&(_, file)| {
+            let file = Path::new(file);
+            path.parent() == file.parent() && path.extension() == file.extension()
         })
 }
 
@@ -445,12 +446,8 @@ fn existing_files(root: &Path) -> Result<BTreeSet<PathBuf>> {
     for path in [INDEX].into_iter().chain(HEADERS).chain(["schema/ops"]) {
         collect_files(root, Path::new(path), &mut files)?;
     }
-    for &(language, _) in LANGUAGES {
-        collect_files(
-            root,
-            Path::new(&format!("bindings/{language}/generated")),
-            &mut files,
-        )?;
+    for &(_, file) in LANGUAGES {
+        collect_files(root, Path::new(file).parent().unwrap(), &mut files)?;
     }
     files.retain(|path| managed_path(path));
     Ok(files)
