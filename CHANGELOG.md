@@ -153,6 +153,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and result this way, and replay refuses recorded options with snake_case
   keys instead of ignoring them.
 
+- Request options reject keys they do not have (RFC-0042 §7.2):
+  `GenerateTextOptions` and its `timeout`, the options of the other
+  operations (embedding, speech, image, transcription, reranking, video and
+  its `poll`, search, file upload, `decide`), the MoA config, and the router
+  and transcription-session configs of the C ABI, Node and Python. aimux
+  0.5's snake_case keys (`max_retries`, `timeout.total_ms`, `fail_mode`,
+  `provider_name`) and typos fail naming the key instead of falling back to
+  the default. The Node and Python router and transcription-session configs
+  are camelCase, as the C ABI's are.
+
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
   model and provider ids take precedence over middleware overrides.
@@ -214,6 +224,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with no `auth`, a request uses `ANTHROPIC_AWS_API_KEY` when it is set and
   otherwise SigV4 with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
   `AWS_SESSION_TOKEN`. All of them are read when a request is made.
+
+- Anthropic gains the computer toolset of `@ai-sdk/anthropic` 4.0.71
+  (`anthropic.computer_toolset_20260801`). A member call in a response (for
+  example `left_click`) comes back as one call of the caller's toolset tool,
+  with the member name as `action` in its input and
+  `providerMetadata.anthropic.toolsetName`. Sent back as history, the call
+  keeps its input as it is, `action` included; a call without a string
+  `action` is still sent, named after the toolset, with a warning; the
+  toolset name is read from the call's tools or from
+  `providerOptions.anthropic.toolsetName` only.
+
+- Anthropic checks the args of the provider-defined tools that
+  `@ai-sdk/anthropic` 4.0.71 `prepareTools` validates (computer toolset,
+  advisor, `text_editor_20250728`, the three `web_fetch` and three
+  `web_search` versions): args that do not match fail the call with
+  `InvalidArgument` before any request, on Anthropic, Vertex and Bedrock
+  alike. `anthropic::prepare_tools::{prepare_tools,
+  prepare_tools_with_provider}` return a `Result`.
 
 - Public surface (`aimux-core`, `aimux-provider-utils`): removed
   `recording::init_recording_from_env`; made private the retry preparation
@@ -326,10 +354,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tool_approval_response { approval_id, approved, reason, provider_executed }`,
   which reaches the provider only for a provider-executed tool, as upstream;
   a tool message left empty is dropped. Wire format: the role and part tags
-  are unchanged; a tool result still reads the earlier `result` (or untyped
-  `output`) value with `is_error` and writes `text` / `json` / error outputs
-  that way, while `output` holding an AI SDK output object is read as typed;
-  a part its role does not allow (an `image` in an assistant message, a
+  are unchanged; a tool result carries only `output`, an AI SDK output
+  object, and the earlier `result` / `is_error` fields are no longer read or
+  written; a part its role does not allow (an `image` in an assistant message, a
   non-text system message, a string or text part in a tool message) is now
   rejected when the prompt is parsed instead of when it is converted.
 
@@ -1113,6 +1140,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider and model no longer match each other's prefix history. The trace
   scope isolates by provider name and model id; `TraceLayer::with_scope_name`
   names a scope for a host that calls one provider at several endpoints.
+
+### Removed
+
+- The cross-language contract fixtures are retired (#249):
+  `contract-tests/fixtures/wire-format.json` (a record of Rust's own serde
+  output, not of the AI SDK), `tool-call-repair.json`, the Node runner
+  `contract-tests/run-node.ts`, `aimux-core/tests/contract_test.rs` and the
+  bindings' contract and repair tests are deleted. Wire behaviour is pinned
+  instead by fixtures recorded from the pinned AI SDK packages under
+  `fixtures/aisdk/` (versions and sha512 integrity in
+  `fixtures/aisdk/VERSIONS.json`, fetched by `scripts/fetch-aisdk.sh`) and by
+  tests ported from upstream. The two decision fixtures stay in
+  `contract-tests/fixtures/`.
 
 ### RFCs
 

@@ -66,6 +66,10 @@
  *   NULL or empty is a C ABI failure.
  * - Malformed JSON text is a C ABI failure; well-formed JSON of the wrong
  *   shape is AiMuxError AIMUX_E_INVALID_ARGUMENT.
+ * - Every `opts_json` that is read, and the router / MoA `config_json`, is
+ *   camelCase and strict: a key it does not have (aimux 0.5's snake_case
+ *   `max_retries` or `timeout.total_ms`, a typo) is AIMUX_E_INVALID_ARGUMENT
+ *   naming the key, never silently ignored.
  * - Results: serialized JSON of GenerateTextResult on success
  * - Stream parts: serialized JSON of TextStreamPart
  */

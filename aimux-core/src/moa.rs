@@ -35,8 +35,11 @@ pub enum MoaFailMode {
     FailFast,
 }
 
+/// MoA configuration, camelCase JSON with every field optional. Unknown keys
+/// are rejected, so aimux 0.5's `fail_mode` is an error naming it rather than
+/// the default policy.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MoaConfig {
     /// `provider()` value (default `"moa"`).
     #[serde(default = "default_moa_provider")]
