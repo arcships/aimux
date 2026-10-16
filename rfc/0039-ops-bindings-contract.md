@@ -22,7 +22,7 @@
 6. provider/model/fetch/token/telemetry 的任意宿主控制流回调在**所有八种接口**后置。结果流的搬运 callback、取消通知和 RFC-0035 已有宿主侧修复能力仍在范围内。
 7. D8（业务 DTO 与语言类型生成）在本次 ops/ABI 切换之后按 RFC-0042 交付，不是切换前提。切换时 descriptor → manifest → codegen 负责控制对象 Schema、头文件及操作常量；业务类型暂由现有 ts-rs / `scripts/gen_ts_types.py` 链生成，并保留其漂移门禁。D8 完成时业务 Schema 与语言 DTO 收束到同源生成链，同时删除过渡 ts-rs 链及其门禁；不长期维护两份业务类型权威。
 8. 当前切换只交付已有能力的清理、V4 对齐和缺陷修复。stdio 服务、新的一次性二进制上传接口、任意 native passthrough、新模态均需单独通过后续范围门禁。
-9. 一次性替换整个依赖闭包；不发布旧/新 ABI 并存的 minor，不添加 deprecated alias 或配置归一化 shim。schema-2 录制读写作为明确的临时顺序例外保留到本系列最后一个 PR，届时迁至 schema 3 并移除 schema-2 读取（§7.1）。
+9. 一次性替换整个依赖闭包；不发布旧/新 ABI 并存的 minor，不添加 deprecated alias 或配置归一化 shim。schema-2 录制读写作为明确的临时顺序例外保留到本系列最后一个 PR，届时迁至 schema 3 并移除 schema-2 及更早格式的读取（§7.1）。
 
 ### 0.2 精确替代清单
 
