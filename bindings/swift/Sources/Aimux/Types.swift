@@ -345,9 +345,12 @@ public struct ProviderTool: Codable, Equatable {
     public var id: String
     public var name: String
     public var args: [String: JSONValue]
+    /// Whether a result may arrive in a later response than its call (provider-utils@5.0.55 src/types/tool.ts:316-326).
+    public var supportsDeferredResults: Bool?
 
-    public init(id: String, name: String, args: [String: JSONValue]) {
+    public init(id: String, name: String, args: [String: JSONValue], supportsDeferredResults: Bool? = nil) {
         self.id = id; self.name = name; self.args = args
+        self.supportsDeferredResults = supportsDeferredResults
     }
 }
 
@@ -375,7 +378,8 @@ public enum Tool: Codable, Equatable {
             self = .provider(ProviderTool(
                 id: try c.decode(String.self, forKey: AnyCodingKey("id")),
                 name: try c.decode(String.self, forKey: AnyCodingKey("name")),
-                args: try c.decode([String: JSONValue].self, forKey: AnyCodingKey("args"))))
+                args: try c.decode([String: JSONValue].self, forKey: AnyCodingKey("args")),
+                supportsDeferredResults: try c.decodeIfPresent(Bool.self, forKey: AnyCodingKey("supportsDeferredResults"))))
         default:
             throw aimuxDecodingError(c.codingPath, "unknown tool type \(type)")
         }
@@ -397,6 +401,7 @@ public enum Tool: Codable, Equatable {
             try c.encode(pt.id, forKey: AnyCodingKey("id"))
             try c.encode(pt.name, forKey: AnyCodingKey("name"))
             try c.encode(pt.args, forKey: AnyCodingKey("args"))
+            try c.encodeIfPresent(pt.supportsDeferredResults, forKey: AnyCodingKey("supportsDeferredResults"))
         }
     }
 }

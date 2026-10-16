@@ -28,6 +28,25 @@ Map<String, dynamic> deepFlatten(Map<String, dynamic> json) =>
     jsonDecode(jsonEncode(json)) as Map<String, dynamic>;
 
 void main() {
+  group('Provider tool round-trip', () {
+    test('preserves deferred results and omits null', () {
+      for (final supported in <bool?>[null, true, false]) {
+        final original = Tool.provider(
+          id: 'anthropic.code_execution_20250522',
+          name: 'code_execution',
+          args: {},
+          supportsDeferredResults: supported,
+        );
+        final json = deepFlatten(original.toJson());
+        expect(json.containsKey('supportsDeferredResults'), supported != null);
+        expect(json['supportsDeferredResults'], supported);
+        final decoded = Tool.fromJson(json);
+        expect(decoded.supportsDeferredResults, supported);
+        expect(decoded.toJson(), json);
+      }
+    });
+  });
+
   group('ToolCall round-trip', () {
     test('preserves provider_metadata', () {
       final original = ToolCall(
