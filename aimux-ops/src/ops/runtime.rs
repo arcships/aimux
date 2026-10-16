@@ -154,6 +154,7 @@ fn description(manifest: &Value, digest: String) -> Value {
         "capabilities": {
             "operations": operations,
             "handleKinds": manifest["handleKinds"],
+            "packages": manifest["packages"],
         },
     })
 }
@@ -226,6 +227,7 @@ mod tests {
                 "manifestRevision": "revision",
                 "ops": [{"name": "runtime.describe"}, {"name": "text.generate"}],
                 "handleKinds": ["Language"],
+                "packages": ["jev", "openai"],
             }),
             "digest".into(),
         );
@@ -237,6 +239,7 @@ mod tests {
             json!(["runtime.describe", "text.generate"])
         );
         assert_eq!(result["capabilities"]["handleKinds"], json!(["Language"]));
+        assert_eq!(result["capabilities"]["packages"], json!(["jev", "openai"]));
     }
 
     #[test]

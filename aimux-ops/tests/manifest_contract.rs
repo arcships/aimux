@@ -634,3 +634,19 @@ fn all_owned_types_publish_schemas_and_family_controls_are_strict() {
     assert!(!handles.is_valid(&serde_json::json!("18446744073709551616")));
     assert!(!handles.is_valid(&serde_json::json!(1)));
 }
+
+#[test]
+fn packages_list_every_provider_create_package_once() {
+    let manifest = manifest();
+    let packages: Vec<&str> = manifest["packages"]
+        .as_array()
+        .expect("manifest.packages")
+        .iter()
+        .map(|name| name.as_str().expect("package name"))
+        .collect();
+    assert!(packages.windows(2).all(|pair| pair[0] < pair[1]));
+    assert!(packages.contains(&"jev"));
+    for name in aimux_providers::provider_names() {
+        assert!(packages.contains(&name), "{name}");
+    }
+}

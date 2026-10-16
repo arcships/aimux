@@ -35,10 +35,9 @@ async fn description_matches_the_real_manifest_and_digest() {
         result["manifestDigest"],
         aimux_ops::manifest::manifest_digest()
     );
-    assert_eq!(
-        result["capabilities"]["handleKinds"],
-        manifest["handleKinds"]
-    );
+    for field in ["handleKinds", "packages"] {
+        assert_eq!(result["capabilities"][field], manifest[field]);
+    }
     let operations: Vec<_> = manifest["ops"]
         .as_array()
         .unwrap()
@@ -47,7 +46,7 @@ async fn description_matches_the_real_manifest_and_digest() {
         .collect();
     assert_eq!(result["capabilities"]["operations"], json!(operations));
     assert_eq!(result.as_object().unwrap().len(), 6);
-    assert_eq!(result["capabilities"].as_object().unwrap().len(), 2);
+    assert_eq!(result["capabilities"].as_object().unwrap().len(), 3);
 }
 
 #[tokio::test]

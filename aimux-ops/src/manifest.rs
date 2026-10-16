@@ -26,6 +26,7 @@ pub fn manifest() -> Value {
         "manifestRevision": "1",
         "ops": ops,
         "handleKinds": HandleKind::ALL,
+        "packages": crate::ops::provider::packages(),
         "errorCodes": error_codes,
         "types": types(),
         "registeredGaps": [
